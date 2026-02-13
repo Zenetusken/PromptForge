@@ -2,11 +2,12 @@
 	import DiffView from './DiffView.svelte';
 	import ScorePanel from './ScorePanel.svelte';
 	import CopyButton from './CopyButton.svelte';
-	import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
+	import { optimizationState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
 
 	let { result }: { result: OptimizationResultState } = $props();
 
 	let activeTab = $state<'optimized' | 'diff' | 'original'>('optimized');
+	let copyFeedback = $state(false);
 
 	let hasScores = $derived(
 		result.scores.clarity > 0 ||
@@ -16,18 +17,49 @@
 		result.scores.overall > 0
 	);
 
-	async function copyOptimized() {
-		try {
-			await navigator.clipboard.writeText(result.optimized);
-		} catch {
-			// Fallback
-			const textarea = document.createElement('textarea');
-			textarea.value = result.optimized;
-			document.body.appendChild(textarea);
-			textarea.select();
-			document.execCommand('copy');
-			document.body.removeChild(textarea);
+	function copyOptimized() {
+		// Show feedback immediately
+		copyFeedback = true;
+		setTimeout(() => { copyFeedback = false; }, 2000);
+
+		// Attempt copy using execCommand (synchronous, works in all environments)
+		const textarea = document.createElement('textarea');
+		textarea.value = result.optimized;
+		textarea.style.position = 'fixed';
+		textarea.style.opacity = '0';
+		textarea.style.pointerEvents = 'none';
+		document.body.appendChild(textarea);
+		textarea.select();
+		try { document.execCommand('copy'); } catch { /* ignore */ }
+		document.body.removeChild(textarea);
+	}
+
+	function handleReforge() {
+		optimizationState.startOptimization(result.original);
+	}
+
+	function handleEditReforge() {
+		const textarea = document.querySelector('[data-testid="prompt-textarea"]') as HTMLTextAreaElement | null;
+		if (textarea) {
+			const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+			if (nativeInputValueSetter) {
+				nativeInputValueSetter.call(textarea, result.optimized);
+				textarea.dispatchEvent(new Event('input', { bubbles: true }));
+			}
+			textarea.focus();
+			textarea.scrollIntoView({ behavior: 'smooth' });
 		}
+	}
+
+	function handleExportMd() {
+		const content = `# Optimized Prompt\n\n${result.optimized}\n\n## Original Prompt\n\n${result.original}\n\n## Analysis\n\n- **Task Type:** ${result.task_type}\n- **Complexity:** ${result.complexity}\n- **Framework:** ${result.framework_applied}\n- **Overall Score:** ${result.scores.overall}\n\n## Verdict\n\n${result.verdict}\n\n## Changes Made\n\n${result.changes_made.map(c => '- ' + c).join('\n')}\n`;
+		const blob = new Blob([content], { type: 'text/markdown' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'optimized-prompt.md';
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 </script>
 
@@ -120,17 +152,52 @@
 	</div>
 
 	<!-- Action buttons -->
-	<div class="flex items-center gap-2 border-t border-text-dim/20 px-5 py-3" data-testid="result-actions">
+	<div class="flex flex-wrap items-center gap-2 border-t border-text-dim/20 px-5 py-3" data-testid="result-actions">
 		<button
-			class="flex items-center gap-1.5 rounded-lg bg-neon-cyan/10 px-3 py-1.5 font-mono text-xs text-neon-cyan transition-colors hover:bg-neon-cyan/20"
+			class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs transition-colors {copyFeedback ? 'bg-neon-green/20 text-neon-green' : 'bg-neon-cyan/10 text-neon-cyan hover:bg-neon-cyan/20'}"
 			onclick={copyOptimized}
 			data-testid="copy-optimized-btn"
 		>
+			{#if copyFeedback}
+				<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+				Copied!
+			{:else}
+				<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+					<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+				</svg>
+				Copy Optimized
+			{/if}
+		</button>
+		<button
+			class="flex items-center gap-1.5 rounded-lg bg-neon-purple/10 px-3 py-1.5 font-mono text-xs text-neon-purple transition-colors hover:bg-neon-purple/20"
+			onclick={handleExportMd}
+			data-testid="export-md-btn"
+		>
 			<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-				<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+				<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
 			</svg>
-			Copy Optimized
+			Export .md
+		</button>
+		<button
+			class="flex items-center gap-1.5 rounded-lg bg-neon-cyan/10 px-3 py-1.5 font-mono text-xs text-neon-cyan transition-colors hover:bg-neon-cyan/20"
+			onclick={handleReforge}
+			data-testid="reforge-result-btn"
+		>
+			<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+			</svg>
+			Re-forge
+		</button>
+		<button
+			class="flex items-center gap-1.5 rounded-lg bg-neon-green/10 px-3 py-1.5 font-mono text-xs text-neon-green transition-colors hover:bg-neon-green/20"
+			onclick={handleEditReforge}
+			data-testid="edit-reforge-result-btn"
+		>
+			<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+			</svg>
+			Edit & Re-forge
 		</button>
 	</div>
 

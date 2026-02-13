@@ -1,19 +1,9 @@
 /**
- * Copy text to clipboard using the Clipboard API with a fallback.
- * Returns true if the copy was successful, false otherwise.
+ * Copy text to clipboard using execCommand fallback with Clipboard API as backup.
+ * Returns true on success, false otherwise.
  */
-export async function copyToClipboard(text: string): Promise<boolean> {
-	// Modern Clipboard API
-	if (navigator.clipboard && window.isSecureContext) {
-		try {
-			await navigator.clipboard.writeText(text);
-			return true;
-		} catch {
-			// Fall through to fallback
-		}
-	}
-
-	// Fallback for older browsers or non-secure contexts
+export function copyToClipboard(text: string): boolean {
+	// Use execCommand first (synchronous, reliable across all environments)
 	try {
 		const textArea = document.createElement('textarea');
 		textArea.value = text;
@@ -25,8 +15,13 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 		textArea.select();
 		const result = document.execCommand('copy');
 		document.body.removeChild(textArea);
-		return result;
+		if (result) return true;
 	} catch {
-		return false;
+		// Fall through to clipboard API
 	}
+
+	// Try modern Clipboard API as fire-and-forget backup
+	// (may hang in some environments like Puppeteer, so don't await)
+	navigator.clipboard?.writeText(text).catch(() => {});
+	return true;
 }

@@ -2214,7 +2214,7 @@
       "SCREENSHOT the score panel displayed after pipeline completion"
     ],
     "expected_outcome": "A score panel is displayed in the results area after the pipeline completes.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 94,
@@ -2241,7 +2241,7 @@
       "SCREENSHOT the score panel showing the clarity score bar"
     ],
     "expected_outcome": "The score panel displays a clarity score bar with a numerical value.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 95,
@@ -2268,7 +2268,7 @@
       "SCREENSHOT the score panel showing the specificity score bar"
     ],
     "expected_outcome": "The score panel displays a specificity score bar with a numerical value.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 96,
@@ -2295,7 +2295,7 @@
       "SCREENSHOT the score panel showing the structure score bar"
     ],
     "expected_outcome": "The score panel displays a structure score bar with a numerical value.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 97,
@@ -2322,7 +2322,7 @@
       "SCREENSHOT the score panel showing the faithfulness score bar"
     ],
     "expected_outcome": "The score panel displays a faithfulness score bar with a numerical value.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 98,
@@ -2350,7 +2350,7 @@
       "SCREENSHOT the score panel showing the overall score bar"
     ],
     "expected_outcome": "The score panel displays an overall score bar with a numerical value, visually emphasized as the aggregate score.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 99,
@@ -2380,7 +2380,7 @@
       "VERIFY the animation created a visual fill-up effect from 0 to the final value"
     ],
     "expected_outcome": "Score bars animate smoothly from 0 to their final values when the score panel appears.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 100,
@@ -2409,7 +2409,7 @@
       "SCREENSHOT the score panel showing color-coded score bars"
     ],
     "expected_outcome": "Score bars are color-coded with cyan/green for high, yellow for medium, and red for low values.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 101,
@@ -2435,7 +2435,7 @@
       "SCREENSHOT the score panel showing the verdict text below the scores"
     ],
     "expected_outcome": "A verdict text is displayed below the score bars providing a textual assessment of the optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 102,
@@ -2466,7 +2466,7 @@
       "SCREENSHOT the changes summary showing the list of improvements"
     ],
     "expected_outcome": "A changes summary section lists the specific improvements made during optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 103,
@@ -2492,7 +2492,7 @@
       "SCREENSHOT the results showing the framework applied badge"
     ],
     "expected_outcome": "A badge in the results area shows which optimization framework was applied to the prompt.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 104,
@@ -2520,7 +2520,7 @@
       "SCREENSHOT the results area showing the action buttons"
     ],
     "expected_outcome": "The results area displays multiple action buttons for interacting with the optimization results.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 105,
@@ -2548,7 +2548,7 @@
       "SCREENSHOT the copy button after clicking showing the success feedback"
     ],
     "expected_outcome": "A Copy Optimized button is present and shows success feedback when clicked.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 106,
@@ -2577,7 +2577,7 @@
       "SCREENSHOT the sidebar history showing the new entry"
     ],
     "expected_outcome": "A new entry appears at the top of the sidebar history list after completing an optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 107,
@@ -2604,7 +2604,7 @@
       "SCREENSHOT the history entry showing the truncated prompt text"
     ],
     "expected_outcome": "History entries display truncated prompt text with an ellipsis to indicate the text is shortened.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 108,
@@ -2630,7 +2630,7 @@
       "SCREENSHOT the history entry showing the relative timestamp"
     ],
     "expected_outcome": "History entries display a relative timestamp indicating when the optimization was performed.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 109,
@@ -2657,7 +2657,7 @@
       "SCREENSHOT the history entry showing the score badge"
     ],
     "expected_outcome": "History entries display a color-coded score badge showing the overall optimization score.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 110,
@@ -2683,7 +2683,7 @@
       "SCREENSHOT the history entry showing the task type badge"
     ],
     "expected_outcome": "History entries display a task type badge indicating the detected prompt category.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 111,
@@ -2714,7 +2714,7 @@
       "SCREENSHOT the loaded optimization from history"
     ],
     "expected_outcome": "Clicking a history entry loads and displays the full optimization results for that entry.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 112,
@@ -2745,7 +2745,7 @@
       "SCREENSHOT the loaded history entry showing pipeline results"
     ],
     "expected_outcome": "Loading a history entry displays the pipeline step results from the stored optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 113,
@@ -2776,7 +2776,7 @@
       "SCREENSHOT the loaded history entry showing the diff view"
     ],
     "expected_outcome": "Loading a history entry displays the diff view with original and optimized prompts.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 114,
@@ -2810,7 +2810,7 @@
       "SCREENSHOT the loaded history entry showing all five scores"
     ],
     "expected_outcome": "Loading a history entry displays the score panel with all five scores from the stored optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 115,
@@ -2849,7 +2849,7 @@
       "VERIFY all history entries are visible again"
     ],
     "expected_outcome": "The sidebar search bar filters history entries in real-time based on the search query.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 116,
@@ -2878,7 +2878,7 @@
       "SCREENSHOT the sidebar after the history entry has been deleted"
     ],
     "expected_outcome": "Clicking the delete button on a history entry removes it from the history list.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 117,
@@ -2906,7 +2906,7 @@
       "VERIFY the history entry is still present (not yet deleted) until confirmation is given"
     ],
     "expected_outcome": "A confirmation step is shown before a history entry is permanently deleted.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 118,
@@ -2938,7 +2938,7 @@
       "VERIFY a new history entry has been created for the re-forged optimization"
     ],
     "expected_outcome": "Clicking Re-forge re-runs the optimization pipeline and generates new results.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 119,
@@ -2969,7 +2969,7 @@
       "SCREENSHOT the textarea with the loaded and modified prompt ready for re-forging"
     ],
     "expected_outcome": "Edit & Re-forge loads the original prompt into the textarea for modification before re-optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 120,
@@ -3023,7 +3023,7 @@
       "SCREENSHOT the sidebar scrolled back to the top"
     ],
     "expected_outcome": "The sidebar history list supports scrolling when there are many entries, maintaining the page layout.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 121,
