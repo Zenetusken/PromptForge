@@ -1445,7 +1445,7 @@
       "SCREENSHOT the pipeline started via Ctrl+Enter shortcut"
     ],
     "expected_outcome": "Pressing Ctrl+Enter in the textarea submits the prompt and starts the optimization pipeline.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 64,
@@ -1503,7 +1503,7 @@
       "SCREENSHOT the full results area after pipeline completion"
     ],
     "expected_outcome": "After all pipeline steps complete, a comprehensive results area is displayed with the optimized prompt, diff view, scores, and action buttons.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 66,
