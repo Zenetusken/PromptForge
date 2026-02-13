@@ -12,6 +12,14 @@
 	let color = $derived(getColor());
 	let isActive = $derived(step.status === 'running' || step.status === 'complete');
 
+	function getBorderColor(): string {
+		if (step.status === 'error') return 'var(--color-neon-red)';
+		if (step.status === 'pending') return 'rgba(85, 85, 119, 0.3)';
+		if (index === 0) return 'var(--color-neon-cyan)';
+		if (index === 1) return 'var(--color-neon-purple)';
+		return 'var(--color-neon-green)';
+	}
+
 	// Auto-collapse: show expanded only when running or when it's the latest completed and active
 	let isExpanded = $derived(step.status === 'running' || isLatestActive);
 
@@ -78,7 +86,11 @@
 	});
 </script>
 
-<div class="flex flex-1 flex-col items-center gap-2 rounded-lg p-3 text-center transition-all duration-300" data-testid="pipeline-step-{step.name}">
+<div
+	class="flex flex-1 flex-col items-center gap-2 rounded-lg border-l-2 p-3 text-center transition-all duration-300"
+	style="border-left-color: {getBorderColor()};"
+	data-testid="pipeline-step-{step.name}"
+>
 	<!-- Status indicator -->
 	<div class="relative flex h-12 w-12 items-center justify-center">
 		{#if step.status === 'running'}

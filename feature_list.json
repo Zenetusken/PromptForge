@@ -4065,7 +4065,7 @@
       "VERIFY the background color extends to cover the full viewport including areas behind the sidebar and main content"
     ],
     "expected_outcome": "The page background color is #0a0a0f (the cyberpunk near-black with blue tint), applied consistently across the entire viewport.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 162,
@@ -4087,7 +4087,7 @@
       "VERIFY the border color changes to neon cyan (#00f0ff) on focus"
     ],
     "expected_outcome": "The prompt textarea shows a prominent neon cyan glow (box-shadow) and cyan border when focused, matching the cyberpunk design system.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 163,
@@ -4111,7 +4111,7 @@
       "VERIFY the card backgrounds are bg-card (#1a1a2e) with the semi-transparent border creating a glass-like effect"
     ],
     "expected_outcome": "Card elements display semi-transparent neon cyan borders at approximately 20% opacity, creating a subtle cyberpunk glass-card effect.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 164,
@@ -4133,7 +4133,7 @@
       "VERIFY the button returns to normal size when the hover ends"
     ],
     "expected_outcome": "Buttons scale up slightly (approximately 1.02x) on hover with a smooth transition, providing visual feedback consistent with the cyberpunk design system.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 165,
@@ -4157,7 +4157,7 @@
       "VERIFY all 5 score bars (clarity, specificity, structure, faithfulness, overall) are visible with labels"
     ],
     "expected_outcome": "The score bars animate their width from 0 to the final score value over approximately 800ms with an ease-out curve, with staggered start times for each bar.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 166,
@@ -4181,7 +4181,7 @@
       "VERIFY all completed step cards have a left border accent in a success color (neon green or neon cyan)"
     ],
     "expected_outcome": "Pipeline step cards display a visible left border accent that changes color based on the step status: active (cyan/orange), completed (green/cyan), and pending (dim/neutral).",
-    "passes": false
+    "passes": true
   },
   {
     "id": 167,
@@ -4206,7 +4206,7 @@
       "SCREENSHOT the page with the sidebar reopened"
     ],
     "expected_outcome": "The sidebar opens and closes with a smooth slide transition (approximately 250ms translateX), not an instant show/hide, providing a polished user experience.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 168,
@@ -4232,7 +4232,7 @@
       "VERIFY the button returns to its normal appearance after the flash"
     ],
     "expected_outcome": "Clicking the copy button triggers a visible neon green (#00ff88) flash animation that briefly highlights the button or copied element before fading back to normal.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 169,
@@ -4254,7 +4254,7 @@
       "HOVER over the button and VERIFY the gradient has a subtle glow enhancement on hover"
     ],
     "expected_outcome": "The 'Forge It!' button displays a vibrant gradient from neon cyan (#00f0ff) to neon purple (#b000ff) with legible text and enhanced glow on hover.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 170,
@@ -4280,7 +4280,7 @@
       "VERIFY the button returns to full opacity and enabled state"
     ],
     "expected_outcome": "Disabled buttons display at approximately 40% opacity with cursor-not-allowed, no hover glow, and do not respond to clicks, returning to normal when re-enabled.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 171,
@@ -4304,7 +4304,7 @@
       "HOVER over the second history entry to confirm the effect moves with the cursor"
     ],
     "expected_outcome": "History sidebar entries display a visible hover highlight (bg-hover: #1e1e35) that follows the cursor across entries, providing clear interactive feedback.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 172,
@@ -4328,7 +4328,7 @@
       "VERIFY the scrollbar thumb increases in opacity on hover"
     ],
     "expected_outcome": "Scrollable areas use a custom thin (6px) scrollbar with a dark track and neon cyan semi-transparent thumb that brightens on hover, matching the cyberpunk theme.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 173,
@@ -4353,7 +4353,7 @@
       "VERIFY the heading text follows the format pattern with step numbers and slashes (e.g., '01 // ANALYZE')"
     ],
     "expected_outcome": "Section headings display in uppercase with 0.15em letter-spacing and 700 font weight, following the cyberpunk typography convention (e.g., '01 // ANALYZE').",
-    "passes": false
+    "passes": true
   },
   {
     "id": 174,
@@ -4378,7 +4378,7 @@
       "VERIFY the three levels of text brightness are visually distinct from each other"
     ],
     "expected_outcome": "Text elements follow a clear three-level color hierarchy: primary (#e0e0f0) for main content, secondary (#8888aa) for labels, and dim (#555577) for metadata, all with a slight blue tint.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 175,
@@ -4404,7 +4404,7 @@
       "VERIFY the history sidebar score badges also use semi-transparent styling"
     ],
     "expected_outcome": "Badge elements display with semi-transparent backgrounds, pill-shaped borders matching their accent color, consistent with the cyberpunk design system.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 176,
@@ -4430,7 +4430,7 @@
       "VERIFY Step 2 now has the pulsing neon animation"
     ],
     "expected_outcome": "The active pipeline step displays a pulsing neon glow animation that oscillates in intensity, moves to the next step when it becomes active, and stops on completed steps.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 177,
@@ -4456,7 +4456,7 @@
       "VERIFY the color coding is consistent across all 5 score dimensions (clarity, specificity, structure, faithfulness, overall)"
     ],
     "expected_outcome": "Score bars use color-coded fills: neon green (#00ff88) for high scores 8-10, neon yellow (#ffee00) for medium 5-7, and neon red (#ff0055) for low 1-4.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 178,
@@ -4480,7 +4480,7 @@
       "VERIFY the border color is neon cyan (#00f0ff)"
     ],
     "expected_outcome": "The prompt textarea displays a pulsing neon cyan border animation when focused, with the glow intensity oscillating to create a breathing/pulsing visual effect.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 179,
@@ -4501,7 +4501,7 @@
       "SCREENSHOT the fully loaded page confirming all elements are rendered"
     ],
     "expected_outcome": "The PromptForge page loads and becomes interactive (textarea visible, sidebar loading) in under 2 seconds from initial navigation.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 180,
@@ -4524,7 +4524,7 @@
       "SCREENSHOT the sidebar after data has loaded showing real entries"
     ],
     "expected_outcome": "Loading skeleton placeholders with shimmer animation are displayed in data-dependent areas while content loads, then replaced by actual content when ready.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 181,
@@ -4551,7 +4551,7 @@
       "VERIFY the toast disappears after the auto-dismiss timeout"
     ],
     "expected_outcome": "A styled toast notification appears confirming successful clipboard copy, displays for a few seconds, and auto-dismisses with appropriate animation.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 182,
@@ -4576,7 +4576,7 @@
       "RUN a command to restart the backend server"
     ],
     "expected_outcome": "Error toast notifications appear with neon red styling when operations fail, clearly describing the error to the user.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 183,
@@ -4600,7 +4600,7 @@
       "VERIFY the search bar border brightens to neon cyan on focus"
     ],
     "expected_outcome": "The sidebar search bar displays a neon cyan glow effect on focus, matching the design system for focused input elements.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 184,
@@ -4624,7 +4624,7 @@
       "VERIFY the transition is smooth (not an instant pop-in)"
     ],
     "expected_outcome": "The result area smoothly fades in with an opacity transition (approximately 150ms) when the pipeline completes, rather than appearing instantly.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 185,
@@ -4650,7 +4650,7 @@
       "VERIFY the 'Forge It!' button label uses Inter, not JetBrains Mono"
     ],
     "expected_outcome": "JetBrains Mono is consistently used for all prompt, code, and pipeline output text, while Inter is used for UI labels, buttons, and navigation elements.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 186,

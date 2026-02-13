@@ -130,7 +130,7 @@
 			oninput={handleSearch}
 			placeholder="Search history..."
 			data-testid="history-search"
-			class="w-full rounded-lg border border-text-dim/20 bg-bg-input px-3 py-2 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/40"
+			class="search-input w-full rounded-lg border border-text-dim/20 bg-bg-input px-3 py-2 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
 		/>
 		<div class="flex items-center gap-2">
 			<select
@@ -179,16 +179,16 @@
 
 	<div class="flex-1 overflow-y-auto px-2 pb-2" data-testid="history-list">
 		{#if historyState.isLoading && !historyState.hasLoaded}
-			<div class="flex items-center justify-center py-10">
-				<svg
-					class="h-5 w-5 animate-spin text-text-dim"
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-				>
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-				</svg>
+			<div class="space-y-2 p-2" data-testid="history-skeleton">
+				{#each [1, 2, 3, 4, 5] as _}
+					<div class="rounded-lg p-3">
+						<div class="skeleton mb-2 h-4 w-4/5"></div>
+						<div class="flex items-center justify-between">
+							<div class="skeleton h-3 w-16"></div>
+							<div class="skeleton h-5 w-8 rounded-full"></div>
+						</div>
+					</div>
+				{/each}
 			</div>
 		{:else if filteredItems.length === 0}
 			<div class="flex flex-col items-center justify-center py-10 text-center" data-testid="empty-state">
@@ -216,7 +216,7 @@
 			{#each filteredItems as item (item.id)}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
-					class="group mb-1 w-full cursor-pointer rounded-lg p-3 text-left transition-colors hover:bg-bg-card"
+					class="group mb-1 w-full cursor-pointer rounded-lg p-3 text-left transition-colors hover:bg-bg-hover"
 					onclick={() => loadEntry(item)}
 					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadEntry(item); } }}
 					role="button"
@@ -311,3 +311,10 @@
 		{/if}
 	</div>
 </aside>
+
+<style>
+	.search-input:focus {
+		box-shadow: 0 0 8px rgba(0, 240, 255, 0.3), 0 0 16px rgba(0, 240, 255, 0.1);
+		border-color: rgba(0, 240, 255, 0.6);
+	}
+</style>

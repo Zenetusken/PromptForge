@@ -5,11 +5,13 @@
 	--color-bg-secondary: #12121a;
 	--color-bg-card: #1a1a2e;
 	--color-bg-input: #0f0f1a;
+	--color-bg-hover: #1e1e35;
 	--color-neon-cyan: #00f0ff;
 	--color-neon-purple: #b000ff;
 	--color-neon-green: #00ff88;
 	--color-neon-red: #ff0055;
 	--color-neon-yellow: #ffee00;
+	--color-neon-orange: #ff6600;
 	--color-text-primary: #e0e0f0;
 	--color-text-secondary: #8888aa;
 	--color-text-dim: #555577;
@@ -26,7 +28,7 @@ body {
 	min-height: 100vh;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar — thin, cyberpunk themed */
 ::-webkit-scrollbar {
 	width: 6px;
 	height: 6px;
@@ -37,16 +39,67 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-	background: var(--color-text-dim);
+	background: rgba(0, 240, 255, 0.4);
 	border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background: var(--color-text-secondary);
+	background: rgba(0, 240, 255, 0.8);
 }
 
 /* Firefox scrollbar */
 * {
 	scrollbar-width: thin;
-	scrollbar-color: var(--color-text-dim) var(--color-bg-secondary);
+	scrollbar-color: rgba(0, 240, 255, 0.4) var(--color-bg-secondary);
+}
+
+/* Neon pulse animation for active pipeline indicators */
+@keyframes neon-pulse {
+	0%, 100% { box-shadow: 0 0 5px rgba(0, 240, 255, 0.3), 0 0 10px rgba(0, 240, 255, 0.1); }
+	50% { box-shadow: 0 0 15px rgba(0, 240, 255, 0.6), 0 0 30px rgba(0, 240, 255, 0.2); }
+}
+
+@keyframes neon-pulse-border {
+	0%, 100% {
+		box-shadow: 0 0 5px rgba(0, 240, 255, 0.2), 0 0 10px rgba(0, 240, 255, 0.1);
+		border-color: rgba(0, 240, 255, 0.4);
+	}
+	50% {
+		box-shadow: 0 0 15px rgba(0, 240, 255, 0.4), 0 0 25px rgba(0, 240, 255, 0.15);
+		border-color: rgba(0, 240, 255, 0.7);
+	}
+}
+
+/* Copy flash animation */
+@keyframes copy-flash {
+	0% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.6); }
+	50% { box-shadow: 0 0 20px 4px rgba(0, 255, 136, 0.3); }
+	100% { box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); }
+}
+
+.copy-flash {
+	animation: copy-flash 0.6s ease-out;
+}
+
+/* Fade in animation for result area */
+@keyframes fade-in {
+	from { opacity: 0; transform: translateY(8px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+	animation: fade-in 300ms ease-out forwards;
+}
+
+/* Loading skeleton shimmer */
+@keyframes shimmer {
+	0% { background-position: -200px 0; }
+	100% { background-position: calc(200px + 100%) 0; }
+}
+
+.skeleton {
+	background: linear-gradient(90deg, var(--color-bg-card) 25%, var(--color-bg-hover) 37%, var(--color-bg-card) 63%);
+	background-size: 200px 100%;
+	animation: shimmer 1.5s infinite ease-in-out;
+	border-radius: 4px;
 }

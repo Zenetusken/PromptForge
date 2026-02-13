@@ -2,7 +2,7 @@
 	import DiffView from './DiffView.svelte';
 	import ScorePanel from './ScorePanel.svelte';
 	import CopyButton from './CopyButton.svelte';
-	import { optimizationState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
+	import { optimizationState, toastState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
 
 	let { result }: { result: OptimizationResultState } = $props();
 
@@ -22,16 +22,23 @@
 		copyFeedback = true;
 		setTimeout(() => { copyFeedback = false; }, 2000);
 
-		// Attempt copy using execCommand (synchronous, works in all environments)
-		const textarea = document.createElement('textarea');
-		textarea.value = result.optimized;
-		textarea.style.position = 'fixed';
-		textarea.style.opacity = '0';
-		textarea.style.pointerEvents = 'none';
-		document.body.appendChild(textarea);
-		textarea.select();
-		try { document.execCommand('copy'); } catch { /* ignore */ }
-		document.body.removeChild(textarea);
+		// Copy to clipboard in next microtask to avoid blocking Puppeteer/automation
+		setTimeout(() => {
+			try {
+				const textarea = document.createElement('textarea');
+				textarea.value = result.optimized;
+				textarea.style.position = 'fixed';
+				textarea.style.opacity = '0';
+				textarea.style.pointerEvents = 'none';
+				document.body.appendChild(textarea);
+				textarea.select();
+				document.execCommand('copy');
+				document.body.removeChild(textarea);
+			} catch { /* clipboard copy is best-effort */ }
+		}, 0);
+
+		// Show toast notification
+		toastState.show('Copied to clipboard!', 'success', 3000);
 	}
 
 	function handleReforge() {
@@ -63,7 +70,7 @@
 	}
 </script>
 
-<div class="rounded-xl border border-text-dim/20 bg-bg-card" data-testid="result-panel">
+<div class="animate-fade-in rounded-xl border border-neon-cyan/20 bg-bg-card" data-testid="result-panel">
 	<!-- Header with metadata -->
 	<div class="flex flex-wrap items-center gap-2 border-b border-text-dim/20 px-5 py-3" data-testid="result-metadata">
 		{#if result.task_type}
@@ -154,7 +161,7 @@
 	<!-- Action buttons -->
 	<div class="flex flex-wrap items-center gap-2 border-t border-text-dim/20 px-5 py-3" data-testid="result-actions">
 		<button
-			class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs transition-colors {copyFeedback ? 'bg-neon-green/20 text-neon-green' : 'bg-neon-cyan/10 text-neon-cyan hover:bg-neon-cyan/20'}"
+			class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-xs transition-all {copyFeedback ? 'copy-flash bg-neon-green/20 text-neon-green' : 'bg-neon-cyan/10 text-neon-cyan hover:bg-neon-cyan/20'}"
 			onclick={copyOptimized}
 			data-testid="copy-optimized-btn"
 		>

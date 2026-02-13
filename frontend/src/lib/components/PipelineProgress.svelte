@@ -30,7 +30,7 @@
 	});
 </script>
 
-<div class="rounded-xl border border-text-dim/20 bg-bg-card p-5" data-testid="pipeline-progress">
+<div class="rounded-xl border border-neon-cyan/20 bg-bg-card p-5" data-testid="pipeline-progress">
 	<h3 class="mb-4 font-mono text-sm font-semibold uppercase tracking-wider text-text-secondary">
 		Pipeline Progress
 	</h3>

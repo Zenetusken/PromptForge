@@ -31,7 +31,7 @@
 	});
 </script>
 
-<div class="rounded-xl border border-text-dim/20 bg-bg-card p-4 transition-colors focus-within:border-neon-cyan/40">
+<div class="prompt-input-container rounded-xl border border-text-dim/20 bg-bg-card p-4 transition-all duration-300 focus-within:border-neon-cyan/60" style="transition: border-color 0.3s, box-shadow 0.3s;">
 	<textarea
 		data-testid="prompt-textarea"
 		bind:this={textareaEl}
@@ -57,7 +57,7 @@
 			data-testid="forge-button"
 			onclick={handleSubmit}
 			disabled={disabled || !prompt.trim()}
-			class="rounded-lg px-6 py-2 font-semibold text-bg-primary transition-all disabled:cursor-not-allowed disabled:opacity-40"
+			class="rounded-lg px-6 py-2 font-semibold text-bg-primary transition-all duration-200 hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
 			style="background: linear-gradient(135deg, var(--color-neon-cyan), var(--color-neon-purple)); box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);"
 		>
 			{#if disabled}
@@ -79,3 +79,21 @@
 		</button>
 	</div>
 </div>
+
+<style>
+	.prompt-input-container:focus-within {
+		animation: neon-pulse-border 2s ease-in-out infinite;
+		box-shadow: 0 0 10px rgba(0, 240, 255, 0.2), 0 0 20px rgba(0, 240, 255, 0.1);
+	}
+
+	@keyframes neon-pulse-border {
+		0%, 100% {
+			box-shadow: 0 0 5px rgba(0, 240, 255, 0.2), 0 0 10px rgba(0, 240, 255, 0.1);
+			border-color: rgba(0, 240, 255, 0.6);
+		}
+		50% {
+			box-shadow: 0 0 15px rgba(0, 240, 255, 0.4), 0 0 25px rgba(0, 240, 255, 0.15);
+			border-color: rgba(0, 240, 255, 0.8);
+		}
+	}
+</style>
