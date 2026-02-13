@@ -975,7 +975,7 @@
       "SCREENSHOT the pipeline in progress"
     ],
     "expected_outcome": "After clicking Forge It!, the pipeline progress area appears with step cards showing the optimization process has started.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 47,
@@ -1000,7 +1000,7 @@
       "SCREENSHOT the first pipeline step card showing the ANALYZE label"
     ],
     "expected_outcome": "The first pipeline step card clearly displays the 'ANALYZE' label identifying the analysis phase.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 48,
@@ -1025,7 +1025,7 @@
       "VERIFY the indicator uses a neon color consistent with the cyberpunk theme (cyan #00f0ff or similar)"
     ],
     "expected_outcome": "The first pipeline step shows a visible pulsing or animated indicator while it is actively processing.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 49,
