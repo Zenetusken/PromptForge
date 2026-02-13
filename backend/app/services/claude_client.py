@@ -3,6 +3,8 @@
 import json
 import os
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 
 from claude_code_sdk import (
@@ -33,7 +35,7 @@ def _get_sdk_env() -> dict[str, str]:
 # Isolated working directory so the SDK subprocess doesn't pick up
 # project-level CLAUDE.md, agent_scratchpad, or codebase context that
 # cause the model to respond as a coding agent instead of returning JSON.
-_ISOLATED_CWD = "/tmp"
+_ISOLATED_CWD = tempfile.gettempdir()
 
 
 @dataclass
@@ -142,5 +144,5 @@ class ClaudeClient:
         )
 
     def is_available(self) -> bool:
-        """Check if the Claude CLI is available (always true with MAX sub)."""
-        return True
+        """Check if the Claude CLI is available on PATH."""
+        return shutil.which("claude") is not None

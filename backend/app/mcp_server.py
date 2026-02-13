@@ -19,23 +19,20 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
-from sqlalchemy import delete, desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ALLOWED_SORT_FIELDS, OptimizationStatus
+from app.constants import OptimizationStatus
 from app.converters import (
-    apply_pipeline_result_to_orm,
     optimization_to_dict,
     optimization_to_summary,
     score_to_int,
-    serialize_json_field,
+    update_optimization_status,
 )
 from app.database import async_session_factory, init_db
 from app.models.optimization import Optimization
+from app.repositories.optimization import ListFilters, OptimizationRepository, Pagination
 from app.services.claude_client import ClaudeClient
 from app.services.pipeline import run_pipeline
 
@@ -96,7 +93,8 @@ async def promptforge_optimize(
 
     # Create initial DB record
     async with async_session_factory() as session:
-        opt = Optimization(
+        repo = OptimizationRepository(session)
+        await repo.create(
             id=optimization_id,
             raw_prompt=prompt,
             status=OptimizationStatus.RUNNING,
@@ -104,7 +102,6 @@ async def promptforge_optimize(
             tags=json.dumps(tags) if tags else None,
             title=title,
         )
-        session.add(opt)
         await session.commit()
 
     # Run pipeline
@@ -112,14 +109,11 @@ async def promptforge_optimize(
         result = await run_pipeline(prompt)
         elapsed_ms = int((time.time() - start_time) * 1000)
 
-        # Update DB record with results
-        async with async_session_factory() as session:
-            stmt = select(Optimization).where(Optimization.id == optimization_id)
-            db_result = await session.execute(stmt)
-            opt = db_result.scalar_one_or_none()
-            if opt:
-                apply_pipeline_result_to_orm(opt, asdict(result), elapsed_ms)
-                await session.commit()
+        await update_optimization_status(
+            optimization_id,
+            result_data=asdict(result),
+            start_time=start_time,
+        )
 
         return {
             "id": optimization_id,
@@ -144,15 +138,7 @@ async def promptforge_optimize(
             "status": OptimizationStatus.COMPLETED,
         }
     except Exception as e:
-        # Update DB with error
-        async with async_session_factory() as session:
-            stmt = select(Optimization).where(Optimization.id == optimization_id)
-            db_result = await session.execute(stmt)
-            opt = db_result.scalar_one_or_none()
-            if opt:
-                opt.status = OptimizationStatus.ERROR
-                opt.error_message = str(e)
-                await session.commit()
+        await update_optimization_status(optimization_id, error=str(e))
         return {"error": str(e), "id": optimization_id, "status": OptimizationStatus.ERROR}
 
 
@@ -178,9 +164,8 @@ async def promptforge_get(optimization_id: str) -> dict:
         optimization_id: The UUID of the optimization to retrieve.
     """
     async with async_session_factory() as session:
-        stmt = select(Optimization).where(Optimization.id == optimization_id)
-        result = await session.execute(stmt)
-        opt = result.scalar_one_or_none()
+        repo = OptimizationRepository(session)
+        opt = await repo.get_by_id(optimization_id)
 
         if not opt:
             return {"error": f"Optimization not found: {optimization_id}"}
@@ -226,62 +211,25 @@ async def promptforge_list(
         order: Sort order ('asc' or 'desc'). Default 'desc'.
     """
     async with async_session_factory() as session:
-        query = select(Optimization).where(Optimization.status == OptimizationStatus.COMPLETED)
-        count_query = select(func.count(Optimization.id)).where(Optimization.status == OptimizationStatus.COMPLETED)
+        repo = OptimizationRepository(session)
+        filters = ListFilters(
+            project=project,
+            task_type=task_type,
+            min_score=min_score,
+            search=search,
+            completed_only=True,
+        )
+        pagination = Pagination(sort=sort, order=order, offset=offset, limit=limit)
 
-        # Apply filters
-        if project:
-            query = query.where(Optimization.project == project)
-            count_query = count_query.where(Optimization.project == project)
+        items, total = await repo.list(filters=filters, pagination=pagination)
 
-        if task_type:
-            query = query.where(Optimization.task_type == task_type)
-            count_query = count_query.where(Optimization.task_type == task_type)
-
-        if min_score is not None:
-            # Scores stored as 0.0-1.0 in DB, but MCP interface uses 1-10 scale
-            # Always convert from 1-10 scale to 0.0-1.0 storage scale
-            threshold = min_score / 10.0 if min_score >= 1 else min_score
-            query = query.where(Optimization.overall_score >= threshold)
-            count_query = count_query.where(Optimization.overall_score >= threshold)
-
-        if search:
-            search_filter = (
-                Optimization.raw_prompt.ilike(f"%{search}%")
-                | Optimization.optimized_prompt.ilike(f"%{search}%")
-                | Optimization.title.ilike(f"%{search}%")
-                | Optimization.tags.ilike(f"%{search}%")
-                | Optimization.project.ilike(f"%{search}%")
-            )
-            query = query.where(search_filter)
-            count_query = count_query.where(search_filter)
-
-        # Get total count
-        total_result = await session.execute(count_query)
-        total = total_result.scalar() or 0
-
-        # Apply sorting (validate against whitelist)
-        if sort not in ALLOWED_SORT_FIELDS:
-            sort = "created_at"
-        sort_column = getattr(Optimization, sort, Optimization.created_at)
-        if order == "asc":
-            query = query.order_by(sort_column)
-        else:
-            query = query.order_by(desc(sort_column))
-
-        # Apply pagination
-        query = query.offset(offset).limit(limit)
-
-        result = await session.execute(query)
-        optimizations = result.scalars().all()
-
-        items = [optimization_to_summary(opt) for opt in optimizations]
-        count = len(items)
+        summaries = [optimization_to_summary(opt) for opt in items]
+        count = len(summaries)
         has_more = (offset + count) < total
         next_offset = offset + count if has_more else None
 
         return {
-            "items": items,
+            "items": summaries,
             "total": total,
             "count": count,
             "offset": offset,
@@ -317,25 +265,21 @@ async def promptforge_get_by_project(
         limit: Maximum number of results (default 50).
     """
     async with async_session_factory() as session:
-        query = (
-            select(Optimization)
-            .where(Optimization.project == project)
-            .where(Optimization.status == OptimizationStatus.COMPLETED)
-            .order_by(desc(Optimization.created_at))
-            .limit(limit)
-        )
-        result = await session.execute(query)
-        optimizations = result.scalars().all()
+        repo = OptimizationRepository(session)
+        filters = ListFilters(project=project, completed_only=True)
+        pagination = Pagination(sort="created_at", order="desc", limit=limit)
+
+        items, _ = await repo.list(filters=filters, pagination=pagination)
 
         if include_prompts:
-            items = [optimization_to_dict(opt) for opt in optimizations]
+            converted = [optimization_to_dict(opt) for opt in items]
         else:
-            items = [optimization_to_summary(opt) for opt in optimizations]
+            converted = [optimization_to_summary(opt) for opt in items]
 
         return {
             "project": project,
-            "items": items,
-            "count": len(items),
+            "items": converted,
+            "count": len(converted),
         }
 
 
@@ -367,29 +311,14 @@ async def promptforge_search(
         return {"error": "Search query must be at least 2 characters", "items": [], "total": 0}
 
     async with async_session_factory() as session:
-        search_filter = (
-            Optimization.raw_prompt.ilike(f"%{query}%")
-            | Optimization.optimized_prompt.ilike(f"%{query}%")
-            | Optimization.title.ilike(f"%{query}%")
-            | Optimization.tags.ilike(f"%{query}%")
-            | Optimization.project.ilike(f"%{query}%")
-        )
+        repo = OptimizationRepository(session)
+        filters = ListFilters(search=query)
+        pagination = Pagination(sort="created_at", order="desc", limit=limit)
 
-        count_stmt = select(func.count(Optimization.id)).where(search_filter)
-        count_result = await session.execute(count_stmt)
-        total = count_result.scalar() or 0
-
-        stmt = (
-            select(Optimization)
-            .where(search_filter)
-            .order_by(desc(Optimization.created_at))
-            .limit(limit)
-        )
-        result = await session.execute(stmt)
-        optimizations = result.scalars().all()
+        items, total = await repo.list(filters=filters, pagination=pagination)
 
         return {
-            "items": [optimization_to_summary(opt) for opt in optimizations],
+            "items": [optimization_to_summary(opt) for opt in items],
             "total": total,
             "query": query,
         }
@@ -427,43 +356,20 @@ async def promptforge_tag(
         title: Set the title (use empty string to clear).
     """
     async with async_session_factory() as session:
-        stmt = select(Optimization).where(Optimization.id == optimization_id)
-        result = await session.execute(stmt)
-        opt = result.scalar_one_or_none()
+        repo = OptimizationRepository(session)
+        result = await repo.update_tags(
+            optimization_id,
+            add_tags=add_tags,
+            remove_tags=remove_tags,
+            project=project if project is not None else ...,
+            title=title if title is not None else ...,
+        )
 
-        if not opt:
+        if result is None:
             return {"error": f"Optimization not found: {optimization_id}"}
 
-        # Handle tags
-        current_tags = serialize_json_field(opt.tags) or []
-
-        if add_tags:
-            for tag in add_tags:
-                if tag not in current_tags:
-                    current_tags.append(tag)
-
-        if remove_tags:
-            current_tags = [t for t in current_tags if t not in remove_tags]
-
-        opt.tags = json.dumps(current_tags) if current_tags else None
-
-        # Handle project
-        if project is not None:
-            opt.project = project if project else None
-
-        # Handle title
-        if title is not None:
-            opt.title = title if title else None
-
         await session.commit()
-
-        return {
-            "id": optimization_id,
-            "tags": current_tags,
-            "project": opt.project,
-            "title": opt.title,
-            "updated": True,
-        }
+        return result
 
 
 # --- Tool 7: promptforge_stats ---
@@ -488,89 +394,8 @@ async def promptforge_stats(project: str | None = None) -> dict:
         project: Optional project name to scope statistics to.
     """
     async with async_session_factory() as session:
-        base_filter = Optimization.status == OptimizationStatus.COMPLETED
-        if project:
-            base_filter = base_filter & (Optimization.project == project)
-
-        # Total optimizations
-        total_result = await session.execute(
-            select(func.count(Optimization.id)).where(base_filter)
-        )
-        total_optimizations = total_result.scalar() or 0
-
-        if total_optimizations == 0:
-            return {
-                "total_optimizations": 0,
-                "avg_overall_score": 0,
-                "projects": {},
-                "task_types": {},
-                "top_frameworks": {},
-                "optimizations_today": 0,
-                "optimizations_this_week": 0,
-            }
-
-        # Average overall score
-        avg_result = await session.execute(
-            select(func.avg(Optimization.overall_score)).where(
-                base_filter & Optimization.overall_score.isnot(None)
-            )
-        )
-        avg_raw = avg_result.scalar()
-        avg_overall = round(avg_raw * 10, 1) if avg_raw is not None and avg_raw <= 1 else round(avg_raw, 1) if avg_raw else 0
-
-        # Projects breakdown
-        projects_result = await session.execute(
-            select(Optimization.project, func.count(Optimization.id))
-            .where(base_filter & Optimization.project.isnot(None))
-            .group_by(Optimization.project)
-        )
-        projects = {row[0]: row[1] for row in projects_result.all()}
-
-        # Task types breakdown
-        task_types_result = await session.execute(
-            select(Optimization.task_type, func.count(Optimization.id))
-            .where(base_filter & Optimization.task_type.isnot(None))
-            .group_by(Optimization.task_type)
-        )
-        task_types = {row[0]: row[1] for row in task_types_result.all()}
-
-        # Top frameworks
-        frameworks_result = await session.execute(
-            select(Optimization.framework_applied, func.count(Optimization.id))
-            .where(base_filter & Optimization.framework_applied.isnot(None))
-            .group_by(Optimization.framework_applied)
-        )
-        top_frameworks = {row[0]: row[1] for row in frameworks_result.all()}
-
-        # Optimizations today
-        today_start = datetime.now(timezone.utc).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        today_result = await session.execute(
-            select(func.count(Optimization.id)).where(
-                base_filter & (Optimization.created_at >= today_start)
-            )
-        )
-        optimizations_today = today_result.scalar() or 0
-
-        # Optimizations this week (last 7 days)
-        week_start = datetime.now(timezone.utc) - timedelta(days=7)
-        week_result = await session.execute(
-            select(func.count(Optimization.id)).where(
-                base_filter & (Optimization.created_at >= week_start)
-            )
-        )
-        optimizations_this_week = week_result.scalar() or 0
-
-        return {
-            "total_optimizations": total_optimizations,
-            "avg_overall_score": avg_overall,
-            "projects": projects,
-            "task_types": task_types,
-            "top_frameworks": top_frameworks,
-            "optimizations_today": optimizations_today,
-            "optimizations_this_week": optimizations_this_week,
-        }
+        repo = OptimizationRepository(session)
+        return await repo.get_stats(project=project)
 
 
 # --- Tool 8: promptforge_delete ---
@@ -594,18 +419,13 @@ async def promptforge_delete(optimization_id: str) -> dict:
         optimization_id: The UUID of the optimization to delete.
     """
     async with async_session_factory() as session:
-        stmt = select(Optimization).where(Optimization.id == optimization_id)
-        result = await session.execute(stmt)
-        opt = result.scalar_one_or_none()
+        repo = OptimizationRepository(session)
+        deleted = await repo.delete_by_id(optimization_id)
 
-        if not opt:
+        if not deleted:
             return {"error": f"Optimization not found: {optimization_id}"}
 
-        await session.execute(
-            delete(Optimization).where(Optimization.id == optimization_id)
-        )
         await session.commit()
-
         return {"deleted": True, "id": optimization_id}
 
 

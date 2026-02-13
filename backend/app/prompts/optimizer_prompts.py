@@ -34,27 +34,3 @@ Return a JSON object with:
 
 Return ONLY valid JSON. Do not include any other text.
 """
-
-
-STRATEGY_PROMPTS = {
-    "structured-enhancement": (
-        "Focus on adding clear structure: role definition at the start, "
-        "organized task description, explicit output format, and relevant constraints."
-    ),
-    "chain-of-thought": (
-        "Focus on adding step-by-step reasoning: break the task into logical steps, "
-        "add thinking instructions, and structure the workflow sequentially."
-    ),
-    "few-shot": (
-        "Focus on adding examples: provide 2-3 diverse input/output examples that "
-        "demonstrate the expected behavior, covering common and edge cases."
-    ),
-    "role-based": (
-        "Focus on role assignment: define a specific expert persona with relevant "
-        "expertise, professional context, and domain knowledge."
-    ),
-    "constraint-focused": (
-        "Focus on adding constraints: specify explicit boundaries, include negative "
-        "examples of what to avoid, and define precise output requirements."
-    ),
-}

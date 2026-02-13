@@ -4,14 +4,15 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ALLOWED_SORT_FIELDS
 from app.converters import optimization_to_response
 from app.database import get_db
 from app.models.optimization import Optimization
+from app.repositories.optimization import ListFilters, OptimizationRepository, Pagination
 from app.schemas.optimization import HistoryResponse, StatsResponse
+from app.utils.scores import round_score
 
 router = APIRouter(tags=["history"])
 
@@ -34,59 +35,23 @@ async def get_history(
     Supports searching by prompt text/title, filtering by project/task_type/status,
     and sorting by any column. Accepts both 'sort' and 'sort_by' parameter names.
     """
-    # Support sort_by as alias for sort
     if sort_by is not None:
         sort = sort_by
 
-    # Build base query
-    query = select(Optimization)
-    count_query = select(func.count(Optimization.id))
-
-    # Apply filters
-    if search:
-        search_filter = (
-            Optimization.raw_prompt.ilike(f"%{search}%")
-            | Optimization.title.ilike(f"%{search}%")
-            | Optimization.optimized_prompt.ilike(f"%{search}%")
-        )
-        query = query.where(search_filter)
-        count_query = count_query.where(search_filter)
-
-    if project:
-        query = query.where(Optimization.project == project)
-        count_query = count_query.where(Optimization.project == project)
-
-    if task_type:
-        query = query.where(Optimization.task_type == task_type)
-        count_query = count_query.where(Optimization.task_type == task_type)
-
-    if status:
-        query = query.where(Optimization.status == status)
-        count_query = count_query.where(Optimization.status == status)
-
-    # Get total count
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Apply sorting (validate against whitelist)
-    if sort not in ALLOWED_SORT_FIELDS:
-        sort = "created_at"
-    sort_column = getattr(Optimization, sort, Optimization.created_at)
-    if order == "desc":
-        query = query.order_by(desc(sort_column))
-    else:
-        query = query.order_by(sort_column)
-
-    # Apply pagination
+    repo = OptimizationRepository(db)
     offset = (page - 1) * per_page
-    query = query.offset(offset).limit(per_page)
+    filters = ListFilters(
+        project=project,
+        task_type=task_type,
+        status=status,
+        search=search,
+    )
+    pagination = Pagination(sort=sort, order=order, offset=offset, limit=per_page)
 
-    # Execute
-    result = await db.execute(query)
-    optimizations = result.scalars().all()
+    items, total = await repo.list(filters=filters, pagination=pagination)
 
     return HistoryResponse(
-        items=[optimization_to_response(opt) for opt in optimizations],
+        items=[optimization_to_response(opt) for opt in items],
         total=total,
         page=page,
         per_page=per_page,
@@ -98,15 +63,13 @@ async def clear_all_history(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete all optimization records from the database."""
-    result = await db.execute(select(func.count(Optimization.id)))
-    count = result.scalar() or 0
+    repo = OptimizationRepository(db)
+    count = await repo.clear_all()
 
     if count == 0:
         return {"message": "No records to delete", "deleted_count": 0}
 
-    await db.execute(delete(Optimization))
     await db.commit()
-
     return {"message": f"Deleted {count} records", "deleted_count": count}
 
 
@@ -116,18 +79,13 @@ async def delete_optimization(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a single optimization record by ID."""
-    stmt = select(Optimization).where(Optimization.id == optimization_id)
-    result = await db.execute(stmt)
-    optimization = result.scalar_one_or_none()
+    repo = OptimizationRepository(db)
+    deleted = await repo.delete_by_id(optimization_id)
 
-    if not optimization:
+    if not deleted:
         raise HTTPException(status_code=404, detail="Optimization not found")
 
-    await db.execute(
-        delete(Optimization).where(Optimization.id == optimization_id)
-    )
     await db.commit()
-
     return {"message": "Optimization deleted", "id": optimization_id}
 
 
@@ -221,20 +179,13 @@ async def get_stats(
 
     return StatsResponse(
         total_optimizations=total_optimizations,
-        average_overall_score=_round_or_none(avg_overall.scalar()),
-        average_clarity_score=_round_or_none(avg_clarity.scalar()),
-        average_specificity_score=_round_or_none(avg_specificity.scalar()),
-        average_structure_score=_round_or_none(avg_structure.scalar()),
-        average_faithfulness_score=_round_or_none(avg_faithfulness.scalar()),
+        average_overall_score=round_score(avg_overall.scalar()),
+        average_clarity_score=round_score(avg_clarity.scalar()),
+        average_specificity_score=round_score(avg_specificity.scalar()),
+        average_structure_score=round_score(avg_structure.scalar()),
+        average_faithfulness_score=round_score(avg_faithfulness.scalar()),
         improvement_rate=round(improvement_rate, 4) if improvement_rate is not None else None,
         total_projects=total_projects,
         most_common_task_type=most_common_task_type,
         optimizations_today=optimizations_today,
     )
-
-
-def _round_or_none(value: float | None, digits: int = 4) -> float | None:
-    """Round a float value or return None if the value is None."""
-    if value is None:
-        return None
-    return round(value, digits)

@@ -13,30 +13,6 @@ class StrategySelection:
     reasoning: str
 
 
-# Available optimization strategies
-STRATEGIES = {
-    "structured-enhancement": (
-        "Adds structure, role definitions, and output format specifications. "
-        "Best for general-purpose prompts that lack organization."
-    ),
-    "chain-of-thought": (
-        "Adds step-by-step reasoning instructions. "
-        "Best for complex analytical or problem-solving prompts."
-    ),
-    "few-shot": (
-        "Adds example input/output pairs. "
-        "Best for classification, formatting, or pattern-following tasks."
-    ),
-    "role-based": (
-        "Assigns a specific expert role and persona. "
-        "Best for domain-specific or professional tasks."
-    ),
-    "constraint-focused": (
-        "Adds explicit constraints and boundaries. "
-        "Best for prompts that need precise output control."
-    ),
-}
-
 
 class StrategySelector:
     """Selects the most appropriate optimization strategy based on prompt analysis.

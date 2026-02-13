@@ -1,13 +1,22 @@
 """Shared converters for transforming Optimization ORM objects."""
 
 import json
+import logging
+import time
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import OptimizationStatus
+from app.database import async_session_factory
 from app.models.optimization import Optimization
 from app.schemas.optimization import OptimizationResponse
+from app.utils.scores import score_to_display
+
+logger = logging.getLogger(__name__)
 
 
-def serialize_json_field(value: str | None) -> list[str] | None:
+def deserialize_json_field(value: str | None) -> list[str] | None:
     """Deserialize a JSON string field to a list, or return None."""
     if value is None:
         return None
@@ -17,49 +26,22 @@ def serialize_json_field(value: str | None) -> list[str] | None:
         return None
 
 
-def optimization_to_response(opt: Optimization) -> OptimizationResponse:
-    """Convert an Optimization ORM object to an OptimizationResponse schema."""
-    return OptimizationResponse(
-        id=opt.id,
-        created_at=opt.created_at,
-        raw_prompt=opt.raw_prompt,
-        optimized_prompt=opt.optimized_prompt,
-        task_type=opt.task_type,
-        complexity=opt.complexity,
-        weaknesses=serialize_json_field(opt.weaknesses),
-        strengths=serialize_json_field(opt.strengths),
-        changes_made=serialize_json_field(opt.changes_made),
-        framework_applied=opt.framework_applied,
-        optimization_notes=opt.optimization_notes,
-        clarity_score=opt.clarity_score,
-        specificity_score=opt.specificity_score,
-        structure_score=opt.structure_score,
-        faithfulness_score=opt.faithfulness_score,
-        overall_score=opt.overall_score,
-        is_improvement=opt.is_improvement,
-        verdict=opt.verdict,
-        duration_ms=opt.duration_ms,
-        model_used=opt.model_used,
-        status=opt.status,
-        error_message=opt.error_message,
-        project=opt.project,
-        tags=serialize_json_field(opt.tags),
-        title=opt.title,
-    )
+def _extract_optimization_fields(opt: Optimization) -> dict:
+    """Extract the common field set from an Optimization ORM object.
 
-
-def optimization_to_dict(opt: Optimization) -> dict:
-    """Convert an Optimization ORM object to a serializable dict."""
+    Returns a dict with all shared fields (JSON list fields already deserialized).
+    Used as the single source of truth for both optimization_to_response and
+    optimization_to_dict.
+    """
     return {
         "id": opt.id,
-        "created_at": opt.created_at.isoformat() if opt.created_at else None,
         "raw_prompt": opt.raw_prompt,
         "optimized_prompt": opt.optimized_prompt,
         "task_type": opt.task_type,
         "complexity": opt.complexity,
-        "weaknesses": serialize_json_field(opt.weaknesses),
-        "strengths": serialize_json_field(opt.strengths),
-        "changes_made": serialize_json_field(opt.changes_made),
+        "weaknesses": deserialize_json_field(opt.weaknesses),
+        "strengths": deserialize_json_field(opt.strengths),
+        "changes_made": deserialize_json_field(opt.changes_made),
         "framework_applied": opt.framework_applied,
         "optimization_notes": opt.optimization_notes,
         "clarity_score": opt.clarity_score,
@@ -74,9 +56,23 @@ def optimization_to_dict(opt: Optimization) -> dict:
         "status": opt.status,
         "error_message": opt.error_message,
         "project": opt.project,
-        "tags": serialize_json_field(opt.tags),
+        "tags": deserialize_json_field(opt.tags),
         "title": opt.title,
     }
+
+
+def optimization_to_response(opt: Optimization) -> OptimizationResponse:
+    """Convert an Optimization ORM object to an OptimizationResponse schema."""
+    fields = _extract_optimization_fields(opt)
+    fields["created_at"] = opt.created_at
+    return OptimizationResponse(**fields)
+
+
+def optimization_to_dict(opt: Optimization) -> dict:
+    """Convert an Optimization ORM object to a serializable dict."""
+    fields = _extract_optimization_fields(opt)
+    fields["created_at"] = opt.created_at.isoformat() if opt.created_at else None
+    return fields
 
 
 def optimization_to_summary(opt: Optimization) -> dict:
@@ -91,19 +87,14 @@ def optimization_to_summary(opt: Optimization) -> dict:
         "overall_score": score_to_int(opt.overall_score),
         "status": opt.status,
         "project": opt.project,
-        "tags": serialize_json_field(opt.tags),
+        "tags": deserialize_json_field(opt.tags),
         "title": opt.title,
     }
 
 
 def score_to_int(score: float | None) -> int | None:
     """Convert a 0.0-1.0 float score to a 1-10 integer scale."""
-    if score is None:
-        return None
-    # Scores may already be on 1-10 scale or 0-1 scale
-    if score <= 1.0:
-        return max(1, min(10, round(score * 10)))
-    return max(1, min(10, round(score)))
+    return score_to_display(score)
 
 
 def apply_pipeline_result_to_orm(
@@ -132,3 +123,53 @@ def apply_pipeline_result_to_orm(
     opt.verdict = data.get("verdict")
     opt.duration_ms = elapsed_ms
     opt.model_used = data.get("model_used")
+
+
+async def update_optimization_status(
+    optimization_id: str,
+    *,
+    result_data: dict | None = None,
+    start_time: float | None = None,
+    error: str | None = None,
+    model_fallback: str | None = None,
+    session: AsyncSession | None = None,
+) -> None:
+    """Update a DB optimization record after pipeline completes (success or error).
+
+    Shared by the streaming router and the MCP server to avoid duplicating
+    the fetch-record → apply-result → commit pattern.
+
+    Args:
+        optimization_id: The optimization UUID.
+        result_data: Pipeline result dict (for success path).
+        start_time: Pipeline start timestamp for elapsed_ms calculation.
+        error: Error message string (for error path).
+        model_fallback: Fallback model name if result doesn't include one.
+        session: Optional existing session. If None, creates a new one.
+    """
+    async def _do_update(sess):
+        stmt = select(Optimization).where(Optimization.id == optimization_id)
+        result = await sess.execute(stmt)
+        opt = result.scalar_one_or_none()
+        if not opt:
+            return
+        if error is not None:
+            opt.status = OptimizationStatus.ERROR
+            opt.error_message = error
+        elif result_data is not None:
+            elapsed_ms = int((time.time() - start_time) * 1000) if start_time else 0
+            apply_pipeline_result_to_orm(opt, result_data, elapsed_ms)
+            if not opt.model_used and model_fallback:
+                opt.model_used = model_fallback
+
+    if session is not None:
+        await _do_update(session)
+        await session.commit()
+    else:
+        async with async_session_factory() as new_session:
+            try:
+                await _do_update(new_session)
+                await new_session.commit()
+            except Exception as e:
+                await new_session.rollback()
+                logger.error("Error updating optimization %s: %s", optimization_id, e)
