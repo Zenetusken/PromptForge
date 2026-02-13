@@ -1,0 +1,260 @@
+"""History endpoints for browsing and managing past optimizations."""
+
+import json
+from datetime import datetime, timezone
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import delete, desc, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.models.optimization import Optimization
+from app.schemas.optimization import (
+    HistoryResponse,
+    OptimizationResponse,
+    StatsResponse,
+)
+
+router = APIRouter(tags=["history"])
+
+
+def _serialize_json_field(value: str | None) -> list[str] | None:
+    """Deserialize a JSON string field to a list, or return None."""
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _optimization_to_response(opt: Optimization) -> OptimizationResponse:
+    """Convert an Optimization ORM object to an OptimizationResponse schema."""
+    return OptimizationResponse(
+        id=opt.id,
+        created_at=opt.created_at,
+        raw_prompt=opt.raw_prompt,
+        optimized_prompt=opt.optimized_prompt,
+        task_type=opt.task_type,
+        complexity=opt.complexity,
+        weaknesses=_serialize_json_field(opt.weaknesses),
+        strengths=_serialize_json_field(opt.strengths),
+        changes_made=_serialize_json_field(opt.changes_made),
+        framework_applied=opt.framework_applied,
+        optimization_notes=opt.optimization_notes,
+        clarity_score=opt.clarity_score,
+        specificity_score=opt.specificity_score,
+        structure_score=opt.structure_score,
+        faithfulness_score=opt.faithfulness_score,
+        overall_score=opt.overall_score,
+        is_improvement=opt.is_improvement,
+        verdict=opt.verdict,
+        duration_ms=opt.duration_ms,
+        model_used=opt.model_used,
+        status=opt.status,
+        error_message=opt.error_message,
+        project=opt.project,
+        tags=_serialize_json_field(opt.tags),
+        title=opt.title,
+    )
+
+
+@router.get("/api/history", response_model=HistoryResponse)
+async def get_history(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    search: str | None = Query(None, description="Search in prompt text and title"),
+    sort: str = Query("created_at", description="Field to sort by"),
+    order: Literal["asc", "desc"] = Query("desc", description="Sort order"),
+    project: str | None = Query(None, description="Filter by project"),
+    task_type: str | None = Query(None, description="Filter by task type"),
+    status: str | None = Query(None, description="Filter by status"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve paginated optimization history with filtering and sorting.
+
+    Supports searching by prompt text/title, filtering by project/task_type/status,
+    and sorting by any column.
+    """
+    # Build base query
+    query = select(Optimization)
+    count_query = select(func.count(Optimization.id))
+
+    # Apply filters
+    if search:
+        search_filter = (
+            Optimization.raw_prompt.ilike(f"%{search}%")
+            | Optimization.title.ilike(f"%{search}%")
+            | Optimization.optimized_prompt.ilike(f"%{search}%")
+        )
+        query = query.where(search_filter)
+        count_query = count_query.where(search_filter)
+
+    if project:
+        query = query.where(Optimization.project == project)
+        count_query = count_query.where(Optimization.project == project)
+
+    if task_type:
+        query = query.where(Optimization.task_type == task_type)
+        count_query = count_query.where(Optimization.task_type == task_type)
+
+    if status:
+        query = query.where(Optimization.status == status)
+        count_query = count_query.where(Optimization.status == status)
+
+    # Get total count
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Apply sorting
+    sort_column = getattr(Optimization, sort, Optimization.created_at)
+    if order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(sort_column)
+
+    # Apply pagination
+    offset = (page - 1) * per_page
+    query = query.offset(offset).limit(per_page)
+
+    # Execute
+    result = await db.execute(query)
+    optimizations = result.scalars().all()
+
+    return HistoryResponse(
+        items=[_optimization_to_response(opt) for opt in optimizations],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.delete("/api/history/{optimization_id}")
+async def delete_optimization(
+    optimization_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a single optimization record by ID."""
+    stmt = select(Optimization).where(Optimization.id == optimization_id)
+    result = await db.execute(stmt)
+    optimization = result.scalar_one_or_none()
+
+    if not optimization:
+        raise HTTPException(status_code=404, detail="Optimization not found")
+
+    await db.execute(
+        delete(Optimization).where(Optimization.id == optimization_id)
+    )
+    await db.commit()
+
+    return {"message": "Optimization deleted", "id": optimization_id}
+
+
+@router.get("/api/history/stats", response_model=StatsResponse)
+async def get_stats(
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve aggregated statistics across all optimizations.
+
+    Returns averages for all scores, improvement rate, total counts,
+    and the most common task type.
+    """
+    # Total optimizations
+    total_result = await db.execute(select(func.count(Optimization.id)))
+    total_optimizations = total_result.scalar() or 0
+
+    if total_optimizations == 0:
+        return StatsResponse()
+
+    # Average scores
+    avg_overall = await db.execute(
+        select(func.avg(Optimization.overall_score)).where(
+            Optimization.overall_score.isnot(None)
+        )
+    )
+    avg_clarity = await db.execute(
+        select(func.avg(Optimization.clarity_score)).where(
+            Optimization.clarity_score.isnot(None)
+        )
+    )
+    avg_specificity = await db.execute(
+        select(func.avg(Optimization.specificity_score)).where(
+            Optimization.specificity_score.isnot(None)
+        )
+    )
+    avg_structure = await db.execute(
+        select(func.avg(Optimization.structure_score)).where(
+            Optimization.structure_score.isnot(None)
+        )
+    )
+    avg_faithfulness = await db.execute(
+        select(func.avg(Optimization.faithfulness_score)).where(
+            Optimization.faithfulness_score.isnot(None)
+        )
+    )
+
+    # Improvement rate
+    improved_count_result = await db.execute(
+        select(func.count(Optimization.id)).where(Optimization.is_improvement == True)
+    )
+    validated_count_result = await db.execute(
+        select(func.count(Optimization.id)).where(
+            Optimization.is_improvement.isnot(None)
+        )
+    )
+    improved_count = improved_count_result.scalar() or 0
+    validated_count = validated_count_result.scalar() or 0
+    improvement_rate = (
+        (improved_count / validated_count) if validated_count > 0 else None
+    )
+
+    # Total distinct projects
+    projects_result = await db.execute(
+        select(func.count(func.distinct(Optimization.project))).where(
+            Optimization.project.isnot(None)
+        )
+    )
+    total_projects = projects_result.scalar() or 0
+
+    # Most common task type
+    task_type_result = await db.execute(
+        select(Optimization.task_type, func.count(Optimization.id).label("cnt"))
+        .where(Optimization.task_type.isnot(None))
+        .group_by(Optimization.task_type)
+        .order_by(desc("cnt"))
+        .limit(1)
+    )
+    most_common_row = task_type_result.first()
+    most_common_task_type = most_common_row[0] if most_common_row else None
+
+    # Optimizations today
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    today_result = await db.execute(
+        select(func.count(Optimization.id)).where(
+            Optimization.created_at >= today_start
+        )
+    )
+    optimizations_today = today_result.scalar() or 0
+
+    return StatsResponse(
+        total_optimizations=total_optimizations,
+        average_overall_score=_round_or_none(avg_overall.scalar()),
+        average_clarity_score=_round_or_none(avg_clarity.scalar()),
+        average_specificity_score=_round_or_none(avg_specificity.scalar()),
+        average_structure_score=_round_or_none(avg_structure.scalar()),
+        average_faithfulness_score=_round_or_none(avg_faithfulness.scalar()),
+        improvement_rate=round(improvement_rate, 4) if improvement_rate is not None else None,
+        total_projects=total_projects,
+        most_common_task_type=most_common_task_type,
+        optimizations_today=optimizations_today,
+    )
+
+
+def _round_or_none(value: float | None, digits: int = 4) -> float | None:
+    """Round a float value or return None if the value is None."""
+    if value is None:
+        return None
+    return round(value, digits)

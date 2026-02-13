@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+*.egg
+
+# Node
+node_modules/
+.svelte-kit/
+build/
+.env
+.env.*
+!.env.example
+
+# Data
+data/*.db
+data/*.sqlite
+
+# Logs
+logs/*.log
+logs/*.json
+logs/*.pid
+!logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude_settings.json
