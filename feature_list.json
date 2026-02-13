@@ -1819,7 +1819,7 @@
       "SCREENSHOT the result area after pipeline completion"
     ],
     "expected_outcome": "A result area with optimization output is displayed after the pipeline completes.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 80,
@@ -1845,7 +1845,7 @@
       "SCREENSHOT the diff view toggle control"
     ],
     "expected_outcome": "The diff view provides a visible toggle to switch between side-by-side and inline diff modes.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 81,
@@ -1876,7 +1876,7 @@
       "SCREENSHOT the side-by-side diff showing the original prompt in the left panel"
     ],
     "expected_outcome": "The left panel of the side-by-side diff displays the original prompt text.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 82,
@@ -1907,7 +1907,7 @@
       "SCREENSHOT the side-by-side diff showing the optimized prompt in the right panel"
     ],
     "expected_outcome": "The right panel of the side-by-side diff displays the optimized prompt text.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 83,
@@ -1934,7 +1934,7 @@
       "SCREENSHOT the diff view showing green-highlighted additions"
     ],
     "expected_outcome": "Added text in the optimized prompt is highlighted in green in the side-by-side diff.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 84,
@@ -1961,7 +1961,7 @@
       "SCREENSHOT the diff view showing red-highlighted removals"
     ],
     "expected_outcome": "Removed or changed text in the original prompt is highlighted in red in the side-by-side diff.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 85,
@@ -1992,7 +1992,7 @@
       "SCREENSHOT the diff view showing line numbers in both panels"
     ],
     "expected_outcome": "Line numbers are displayed alongside text in both panels of the side-by-side diff.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 86,
@@ -2019,7 +2019,7 @@
       "SCREENSHOT the inline diff showing the unified view"
     ],
     "expected_outcome": "The inline diff mode displays a unified single-column view with additions and removals interleaved.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 87,
@@ -2046,7 +2046,7 @@
       "SCREENSHOT the inline diff showing green-highlighted additions"
     ],
     "expected_outcome": "Added text in the inline diff mode has a green background highlight.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 88,
@@ -2074,7 +2074,7 @@
       "SCREENSHOT the inline diff showing red-highlighted removals with strikethrough"
     ],
     "expected_outcome": "Removed text in the inline diff mode has a red background and strikethrough styling.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 89,
@@ -2105,7 +2105,7 @@
       "VERIFY the content is consistent across mode switches (same original and optimized text)"
     ],
     "expected_outcome": "The diff view toggle successfully switches between side-by-side and inline modes, maintaining content consistency.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 90,
@@ -2134,7 +2134,7 @@
       "VERIFY the scroll positions of both panels are synchronized"
     ],
     "expected_outcome": "Scrolling one panel in the side-by-side diff automatically scrolls the other panel to the same position.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 91,
@@ -2160,7 +2160,7 @@
       "SCREENSHOT the diff view showing the monospace font rendering"
     ],
     "expected_outcome": "The diff view uses a monospace font for consistent text alignment.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 92,
@@ -2187,7 +2187,7 @@
       "SCREENSHOT the diff view showing its default side-by-side mode"
     ],
     "expected_outcome": "The diff view defaults to side-by-side mode when results first appear.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 93,
