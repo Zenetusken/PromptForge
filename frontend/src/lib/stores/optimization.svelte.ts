@@ -1,4 +1,6 @@
-import { fetchOptimize, type PipelineEvent, type HistoryItem } from '$lib/api/client';
+import { goto } from '$app/navigation';
+import { fetchOptimize, fetchRetry, type PipelineEvent, type HistoryItem } from '$lib/api/client';
+import { historyState } from '$lib/stores/history.svelte';
 
 export interface StepState {
 	name: string;
@@ -64,6 +66,31 @@ class OptimizationState {
 		this.abortController = fetchOptimize(
 			prompt,
 			(event) => this.handleEvent(event, prompt),
+			(err) => {
+				this.error = err.message;
+				this.isRunning = false;
+				toastState.show(err.message, 'error');
+			}
+		);
+	}
+
+	retryOptimization(id: string, originalPrompt: string) {
+		this.cancel();
+
+		this.isRunning = true;
+		this.error = null;
+		this.result = null;
+		this.currentRun = {
+			steps: [
+				{ name: 'analyze', label: 'ANALYZE', status: 'pending', description: 'Analyzing prompt structure and intent' },
+				{ name: 'optimize', label: 'OPTIMIZE', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
+				{ name: 'validate', label: 'VALIDATE', status: 'pending', description: 'Scoring and quality assessment' }
+			]
+		};
+
+		this.abortController = fetchRetry(
+			id,
+			(event) => this.handleEvent(event, originalPrompt),
 			(err) => {
 				this.error = err.message;
 				this.isRunning = false;
@@ -154,8 +181,12 @@ class OptimizationState {
 					}));
 				}
 				toastState.show('Optimization complete!', 'success');
+				// Navigate to detail page (replaceState so back button returns to forge)
+				if (typeof window !== 'undefined' && this.result.id) {
+					goto(`/optimize/${this.result.id}`, { replaceState: true });
+				}
 				// Trigger history refresh
-				historyRefreshCallback?.();
+				historyState.loadHistory();
 				break;
 			}
 
@@ -196,6 +227,9 @@ class OptimizationState {
 			verdict: item.verdict || '',
 			duration_ms: item.duration_ms || 0,
 		};
+		if (typeof window !== 'undefined' && item.id) {
+			goto(`/optimize/${item.id}`, { replaceState: true });
+		}
 	}
 
 	cancel() {
@@ -211,6 +245,9 @@ class OptimizationState {
 		this.currentRun = null;
 		this.result = null;
 		this.error = null;
+		if (typeof window !== 'undefined' && window.location.pathname.startsWith('/optimize/')) {
+			goto('/', { replaceState: true });
+		}
 	}
 }
 
@@ -279,12 +316,6 @@ const toastActions = {
 		this.message = '';
 	}
 };
-
-// Callback for history refresh after optimization
-let historyRefreshCallback: (() => void) | null = null;
-export function setHistoryRefreshCallback(cb: () => void) {
-	historyRefreshCallback = cb;
-}
 
 export const optimizationState = new OptimizationState();
 export const toastState = toastActions;

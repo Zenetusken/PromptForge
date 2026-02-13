@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { promptState } from '$lib/stores/prompt.svelte';
+
 	let {
 		onsubmit,
 		disabled = false
@@ -27,6 +30,16 @@
 	$effect(() => {
 		if (textareaEl) {
 			textareaEl.focus();
+		}
+	});
+
+	$effect(() => {
+		const storeText = promptState.text;
+		if (storeText !== untrack(() => prompt)) {
+			prompt = storeText;
+			if (storeText && textareaEl) {
+				textareaEl.focus();
+			}
 		}
 	});
 </script>

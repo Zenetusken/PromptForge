@@ -1,4 +1,6 @@
-const BASE_URL = '/api';
+const BASE_URL = import.meta.env.VITE_API_URL
+	? `${import.meta.env.VITE_API_URL}/api`
+	: '/api';
 
 export interface OptimizationResult {
 	id: string;
@@ -146,22 +148,18 @@ function mapSSEEvent(eventType: string, data: Record<string, unknown>): Pipeline
 }
 
 /**
- * Opens an SSE connection to the optimization endpoint.
- * Calls the provided callback for each event received.
+ * Open an SSE stream from a fetch request and dispatch parsed events.
+ * Shared by fetchOptimize and fetchRetry.
  */
-export function fetchOptimize(
-	prompt: string,
+function openSSEStream(
+	url: string,
+	init: RequestInit,
 	onEvent: (event: PipelineEvent) => void,
 	onError?: (error: Error) => void
 ): AbortController {
 	const controller = new AbortController();
 
-	fetch(`${BASE_URL}/optimize`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ prompt }),
-		signal: controller.signal
-	})
+	fetch(url, { ...init, signal: controller.signal })
 		.then(async (response) => {
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -200,7 +198,6 @@ export function fetchOptimize(
 						}
 						currentEventType = '';
 					} else if (trimmed === '') {
-						// Empty line marks end of event block - reset event type
 						currentEventType = '';
 					}
 				}
@@ -213,6 +210,39 @@ export function fetchOptimize(
 		});
 
 	return controller;
+}
+
+/**
+ * Opens an SSE connection to the optimization endpoint.
+ */
+export function fetchOptimize(
+	prompt: string,
+	onEvent: (event: PipelineEvent) => void,
+	onError?: (error: Error) => void
+): AbortController {
+	return openSSEStream(
+		`${BASE_URL}/optimize`,
+		{ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) },
+		onEvent,
+		onError
+	);
+}
+
+/**
+ * Retry an existing optimization via the backend retry endpoint.
+ * Preserves project/tags metadata from the original.
+ */
+export function fetchRetry(
+	id: string,
+	onEvent: (event: PipelineEvent) => void,
+	onError?: (error: Error) => void
+): AbortController {
+	return openSSEStream(
+		`${BASE_URL}/optimize/${id}/retry`,
+		{ method: 'POST' },
+		onEvent,
+		onError
+	);
 }
 
 /**
@@ -245,11 +275,12 @@ export async function fetchHistory(
 }
 
 /**
- * Fetch a single optimization by ID
+ * Fetch a single optimization by ID.
+ * Currently unused — available for future deep-linking to individual results.
  */
-export async function fetchOptimization(id: string): Promise<HistoryItem | null> {
+export async function fetchOptimization(id: string, fetchFn: typeof fetch = fetch): Promise<HistoryItem | null> {
 	try {
-		const response = await fetch(`${BASE_URL}/optimize/${id}`);
+		const response = await fetchFn(`${BASE_URL}/optimize/${id}`);
 		if (!response.ok) return null;
 		return await response.json();
 	} catch {
@@ -286,11 +317,31 @@ export async function clearAllHistory(): Promise<boolean> {
 }
 
 /**
- * Fetch usage statistics
+ * Fetch usage statistics.
  */
 export async function fetchStats(): Promise<StatsResponse | null> {
 	try {
 		const response = await fetch(`${BASE_URL}/history/stats`);
+		if (!response.ok) return null;
+		return await response.json();
+	} catch {
+		return null;
+	}
+}
+
+export interface HealthResponse {
+	status: string;
+	claude_available: boolean;
+	db_connected: boolean;
+	version: string;
+}
+
+/**
+ * Fetch API health status.
+ */
+export async function fetchHealth(): Promise<HealthResponse | null> {
+	try {
+		const response = await fetch(`${BASE_URL}/health`);
 		if (!response.ok) return null;
 		return await response.json();
 	} catch {

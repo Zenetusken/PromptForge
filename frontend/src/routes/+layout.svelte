@@ -4,10 +4,18 @@
 	import Footer from '$lib/components/Footer.svelte';
 	import HistorySidebar from '$lib/components/HistorySidebar.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import { historyState } from '$lib/stores/history.svelte';
+	import { onMount } from 'svelte';
 
 	let { children } = $props();
 
 	let sidebarOpen = $state(true);
+
+	onMount(() => {
+		if (!historyState.hasLoaded) {
+			historyState.loadHistory();
+		}
+	});
 </script>
 
 <div class="flex h-screen w-screen overflow-hidden">

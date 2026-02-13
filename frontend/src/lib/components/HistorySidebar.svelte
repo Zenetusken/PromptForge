@@ -1,6 +1,8 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { historyState } from '$lib/stores/history.svelte';
-	import { optimizationState, setHistoryRefreshCallback } from '$lib/stores/optimization.svelte';
+	import { optimizationState } from '$lib/stores/optimization.svelte';
+	import { promptState } from '$lib/stores/prompt.svelte';
 	import { truncateText, formatRelativeTime } from '$lib/utils/format';
 	import type { HistoryItem } from '$lib/api/client';
 
@@ -42,7 +44,7 @@
 	}
 
 	function loadEntry(item: HistoryItem) {
-		optimizationState.loadFromHistory(item);
+		goto(`/optimize/${item.id}`);
 	}
 
 	function requestDelete(e: Event, id: string) {
@@ -63,20 +65,12 @@
 
 	function handleReforge(e: Event, item: HistoryItem) {
 		e.stopPropagation();
-		optimizationState.startOptimization(item.raw_prompt);
+		optimizationState.retryOptimization(item.id, item.raw_prompt);
 	}
 
 	function handleEditReforge(e: Event, item: HistoryItem) {
 		e.stopPropagation();
-		const textarea = document.querySelector('[data-testid="prompt-textarea"]') as HTMLTextAreaElement | null;
-		if (textarea) {
-			const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-			if (nativeInputValueSetter) {
-				nativeInputValueSetter.call(textarea, item.raw_prompt);
-				textarea.dispatchEvent(new Event('input', { bubbles: true }));
-			}
-			textarea.focus();
-		}
+		promptState.set(item.raw_prompt);
 	}
 
 	function handleSortChange(e: Event) {
@@ -96,11 +90,6 @@
 	function cancelClearHistory() {
 		showClearConfirm = false;
 	}
-
-	// Register history refresh callback so optimization store can trigger reloads
-	setHistoryRefreshCallback(() => {
-		historyState.loadHistory();
-	});
 
 	$effect(() => {
 		if (open && !historyState.hasLoaded) {

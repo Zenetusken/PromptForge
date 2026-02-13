@@ -3,18 +3,17 @@
 	import PipelineProgress from '$lib/components/PipelineProgress.svelte';
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
-
-	let lastPrompt = $state('');
+	import { promptState } from '$lib/stores/prompt.svelte';
 
 	function handleOptimize(prompt: string) {
-		lastPrompt = prompt;
+		promptState.set(prompt);
 		optimizationState.startOptimization(prompt);
 	}
 
 	function handleRetry() {
-		if (lastPrompt) {
+		if (promptState.text) {
 			optimizationState.error = null;
-			optimizationState.startOptimization(lastPrompt);
+			optimizationState.startOptimization(promptState.text);
 		}
 	}
 </script>
@@ -34,7 +33,7 @@
 					<p class="text-sm font-semibold text-neon-red">Error</p>
 					<p class="mt-0.5 text-sm text-text-secondary">{optimizationState.error}</p>
 				</div>
-				{#if lastPrompt}
+				{#if promptState.text}
 					<button
 						onclick={handleRetry}
 						class="shrink-0 rounded-lg border border-neon-cyan/30 bg-neon-cyan/10 px-4 py-1.5 font-mono text-xs text-neon-cyan transition-colors hover:bg-neon-cyan/20"

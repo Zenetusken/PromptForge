@@ -3,6 +3,7 @@
 	import ScorePanel from './ScorePanel.svelte';
 	import CopyButton from './CopyButton.svelte';
 	import { optimizationState, toastState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
+	import { promptState } from '$lib/stores/prompt.svelte';
 
 	let { result }: { result: OptimizationResultState } = $props();
 
@@ -42,20 +43,16 @@
 	}
 
 	function handleReforge() {
-		optimizationState.startOptimization(result.original);
+		if (result.id) {
+			optimizationState.retryOptimization(result.id, result.original);
+		} else {
+			optimizationState.startOptimization(result.original);
+		}
 	}
 
 	function handleEditReforge() {
-		const textarea = document.querySelector('[data-testid="prompt-textarea"]') as HTMLTextAreaElement | null;
-		if (textarea) {
-			const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-			if (nativeInputValueSetter) {
-				nativeInputValueSetter.call(textarea, result.optimized);
-				textarea.dispatchEvent(new Event('input', { bubbles: true }));
-			}
-			textarea.focus();
-			textarea.scrollIntoView({ behavior: 'smooth' });
-		}
+		promptState.set(result.optimized);
+		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	function handleExportMd() {
