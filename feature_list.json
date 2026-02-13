@@ -1255,7 +1255,7 @@
       "SCREENSHOT the pipeline showing Step 2 complete and Step 3 active"
     ],
     "expected_outcome": "Step 3 automatically activates and begins processing once Step 2 completes, showing a clear transition from pending to active.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 57,
@@ -1524,7 +1524,7 @@
       "SCREENSHOT the prompt textarea showing its neon cyan border"
     ],
     "expected_outcome": "The prompt textarea displays a neon cyan border that fits the cyberpunk/hacker UI theme.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 67,
@@ -1545,7 +1545,7 @@
       "SCREENSHOT the textarea showing the monospace font rendering"
     ],
     "expected_outcome": "The prompt textarea uses a monospace font (JetBrains Mono or similar) for code-friendly text display.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 68,
@@ -1567,7 +1567,7 @@
       "SCREENSHOT the textarea showing the placeholder text"
     ],
     "expected_outcome": "The prompt textarea displays helpful placeholder text when empty.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 69,
@@ -1590,7 +1590,7 @@
       "SCREENSHOT the textarea with the character count visible"
     ],
     "expected_outcome": "The prompt textarea displays a live character count that updates as the user types.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 70,
@@ -1610,7 +1610,7 @@
       "VERIFY the textarea CSS allows resizing (resize property is not 'none')"
     ],
     "expected_outcome": "The prompt textarea supports resizing to accommodate different prompt lengths.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 71,
@@ -1636,7 +1636,7 @@
       "SCREENSHOT the Forge It! button showing its hover state with enhanced glow"
     ],
     "expected_outcome": "The Forge It! button displays a neon gradient background with cyberpunk-themed glow effects.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 72,
@@ -1657,7 +1657,7 @@
       "SCREENSHOT the header showing the PromptForge logo text"
     ],
     "expected_outcome": "The header prominently displays 'PromptForge' as the application brand name with cyberpunk styling.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 73,
@@ -1699,7 +1699,7 @@
       "SCREENSHOT the sidebar showing the history list area"
     ],
     "expected_outcome": "The sidebar is visible and contains a dedicated history list area for past optimizations.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 75,
@@ -1722,7 +1722,7 @@
       "SCREENSHOT the sidebar showing the search bar with text entered"
     ],
     "expected_outcome": "The sidebar contains a functional search bar for filtering history entries.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 76,
@@ -1750,7 +1750,7 @@
       "SCREENSHOT the page with the sidebar re-expanded"
     ],
     "expected_outcome": "The sidebar can be collapsed and expanded via a toggle button.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 77,
@@ -1770,7 +1770,7 @@
       "SCREENSHOT the footer showing the version information"
     ],
     "expected_outcome": "The footer displays version information for the PromptForge application.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 78,
