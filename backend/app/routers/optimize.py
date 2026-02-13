@@ -1,6 +1,5 @@
 """Optimization endpoints for running the prompt optimization pipeline."""
 
-import asyncio
 import json
 import time
 import uuid
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session_factory, get_db
 from app.models.optimization import Optimization
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
+from app.services.pipeline import run_pipeline_streaming
 
 router = APIRouter(tags=["optimize"])
 
@@ -58,80 +58,6 @@ def _optimization_to_response(opt: Optimization) -> OptimizationResponse:
     )
 
 
-async def _generate_mock_sse_events(optimization_id: str, raw_prompt: str):
-    """Generate mock SSE events simulating the optimization pipeline.
-
-    In production, this would call the actual pipeline stages.
-    Each event is a Server-Sent Event with a JSON data payload.
-    """
-    # Stage 1: Analyzing
-    yield f"event: stage\ndata: {json.dumps({'stage': 'analyzing', 'message': 'Analyzing prompt structure and intent...'})}\n\n"
-    await asyncio.sleep(0.5)
-
-    analysis = {
-        "task_type": "general",
-        "complexity": "medium",
-        "weaknesses": ["Lacks specificity", "No output format specified"],
-        "strengths": ["Clear intent", "Good context"],
-    }
-    yield f"event: analysis\ndata: {json.dumps(analysis)}\n\n"
-    await asyncio.sleep(0.3)
-
-    # Stage 2: Optimizing
-    yield f"event: stage\ndata: {json.dumps({'stage': 'optimizing', 'message': 'Applying optimization strategies...'})}\n\n"
-    await asyncio.sleep(0.5)
-
-    optimized_prompt = (
-        f"You are an expert assistant. Your task is as follows:\n\n"
-        f"{raw_prompt}\n\n"
-        f"Please provide a detailed, well-structured response. "
-        f"Include specific examples where relevant. "
-        f"Format your output using clear headings and bullet points."
-    )
-
-    optimization = {
-        "optimized_prompt": optimized_prompt,
-        "framework_applied": "structured-enhancement",
-        "changes_made": [
-            "Added role definition",
-            "Specified output format",
-            "Added structure requirements",
-            "Enhanced specificity",
-        ],
-        "optimization_notes": "Applied structured enhancement framework to improve clarity and specificity.",
-    }
-    yield f"event: optimization\ndata: {json.dumps(optimization)}\n\n"
-    await asyncio.sleep(0.3)
-
-    # Stage 3: Validating
-    yield f"event: stage\ndata: {json.dumps({'stage': 'validating', 'message': 'Validating optimization quality...'})}\n\n"
-    await asyncio.sleep(0.5)
-
-    validation = {
-        "clarity_score": 0.85,
-        "specificity_score": 0.78,
-        "structure_score": 0.90,
-        "faithfulness_score": 0.95,
-        "overall_score": 0.87,
-        "is_improvement": True,
-        "verdict": "The optimized prompt significantly improves structure and clarity while maintaining the original intent.",
-    }
-    yield f"event: validation\ndata: {json.dumps(validation)}\n\n"
-    await asyncio.sleep(0.2)
-
-    # Final: Complete
-    complete_data = {
-        "id": optimization_id,
-        "status": "completed",
-        **analysis,
-        **optimization,
-        **validation,
-        "duration_ms": 1800,
-        "model_used": "mock",
-    }
-    yield f"event: complete\ndata: {json.dumps(complete_data)}\n\n"
-
-
 async def _update_db_after_stream(optimization_id: str, final_data: dict, start_time: float):
     """Update the database record with final pipeline results."""
     async with async_session_factory() as session:
@@ -158,7 +84,7 @@ async def _update_db_after_stream(optimization_id: str, final_data: dict, start_
                 opt.is_improvement = final_data.get("is_improvement")
                 opt.verdict = final_data.get("verdict")
                 opt.duration_ms = elapsed_ms
-                opt.model_used = final_data.get("model_used", "mock")
+                opt.model_used = final_data.get("model_used", "claude-code-sdk")
                 await session.commit()
         except Exception as e:
             await session.rollback()
@@ -192,14 +118,32 @@ async def optimize_prompt(
     await db.commit()
 
     async def event_stream():
-        """Wrap the SSE generator and update the DB record on completion."""
+        """Wrap the real pipeline SSE generator and update the DB on completion."""
         final_data = {}
-        async for event in _generate_mock_sse_events(optimization_id, request.prompt):
-            # Capture complete event data for DB update
-            if event.startswith("event: complete"):
-                data_line = event.split("data: ", 1)[1].strip()
-                final_data = json.loads(data_line)
-            yield event
+        try:
+            async for event in run_pipeline_streaming(request.prompt):
+                # Capture complete event data for DB update
+                if event.startswith("event: complete"):
+                    data_line = event.split("data: ", 1)[1].strip()
+                    final_data = json.loads(data_line)
+                yield event
+        except Exception as e:
+            # Emit an error event if the pipeline fails
+            error_data = {"status": "error", "error": str(e)}
+            yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
+            # Update the DB record with error status
+            async with async_session_factory() as session:
+                try:
+                    stmt = select(Optimization).where(Optimization.id == optimization_id)
+                    result = await session.execute(stmt)
+                    opt = result.scalar_one_or_none()
+                    if opt:
+                        opt.status = "error"
+                        opt.error_message = str(e)
+                        await session.commit()
+                except Exception:
+                    await session.rollback()
+            return
 
         # Update the database record with final results
         await _update_db_after_stream(optimization_id, final_data, start_time)
@@ -264,13 +208,29 @@ async def retry_optimization(
     await db.commit()
 
     async def event_stream():
-        """Wrap the SSE generator and update the DB record on completion."""
+        """Wrap the real pipeline SSE generator and update the DB on completion."""
         final_data = {}
-        async for event in _generate_mock_sse_events(new_id, raw_prompt):
-            if event.startswith("event: complete"):
-                data_line = event.split("data: ", 1)[1].strip()
-                final_data = json.loads(data_line)
-            yield event
+        try:
+            async for event in run_pipeline_streaming(raw_prompt):
+                if event.startswith("event: complete"):
+                    data_line = event.split("data: ", 1)[1].strip()
+                    final_data = json.loads(data_line)
+                yield event
+        except Exception as e:
+            error_data = {"status": "error", "error": str(e)}
+            yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
+            async with async_session_factory() as session:
+                try:
+                    stmt = select(Optimization).where(Optimization.id == new_id)
+                    result = await session.execute(stmt)
+                    opt = result.scalar_one_or_none()
+                    if opt:
+                        opt.status = "error"
+                        opt.error_message = str(e)
+                        await session.commit()
+                except Exception:
+                    await session.rollback()
+            return
 
         # Update the database record with final results
         await _update_db_after_stream(new_id, final_data, start_time)

@@ -19,7 +19,10 @@ async def _health_response(db: AsyncSession):
     except Exception:
         db_connected = False
 
-    claude_available = bool(config.ANTHROPIC_API_KEY)
+    # SDK uses CLI auth (MAX subscription), no API key needed
+    from app.services.claude_client import ClaudeClient
+
+    claude_available = ClaudeClient().is_available()
 
     return {
         "status": "ok",

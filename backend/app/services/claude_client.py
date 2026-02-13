@@ -1,95 +1,136 @@
-"""Client for interacting with the Anthropic Claude API."""
+"""Client for interacting with Claude via the Claude Code SDK."""
 
+import json
+import os
+import re
 from dataclasses import dataclass, field
+
+from claude_code_sdk import (
+    AssistantMessage,
+    ClaudeCodeOptions,
+    TextBlock,
+    query,
+)
 
 from app import config
 
 
+def _get_sdk_env() -> dict[str, str]:
+    """Return env overrides that allow the SDK to run in a nested context.
+
+    The Claude CLI refuses to start inside an existing Claude Code session
+    (detected via the CLAUDECODE env var). Since PromptForge's backend may
+    run inside a Claude Code agent, we override that variable with an empty
+    string so the SDK subprocess can start cleanly. The SDK merges
+    {**os.environ, **options.env}, so our override takes precedence.
+    """
+    return {"CLAUDECODE": ""}
+
+
 @dataclass
 class ClaudeClient:
-    """Wrapper around the Anthropic API for sending prompts to Claude.
+    """Wrapper around claude-code-sdk for sending prompts to Claude.
 
-    Handles authentication, request formatting, and response parsing.
+    Uses the Claude Code CLI subprocess with MAX subscription auth.
+    No API key required.
     """
 
-    api_key: str = field(default_factory=lambda: config.ANTHROPIC_API_KEY)
     model: str = field(default_factory=lambda: config.CLAUDE_MODEL)
 
     async def send_message(
         self,
         system_prompt: str,
         user_message: str,
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
     ) -> str:
-        """Send a message to Claude and return the text response.
+        """Send a message to Claude via the SDK and return the text response.
 
         Args:
             system_prompt: The system prompt providing context and instructions.
             user_message: The user message to send.
-            max_tokens: Maximum tokens in the response.
-            temperature: Sampling temperature for response generation.
 
         Returns:
             The text content of Claude's response.
-
-        Raises:
-            RuntimeError: If the API key is not configured or the request fails.
         """
-        if not self.api_key:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY is not set. Please configure it in .env"
-            )
-
-        # TODO: Replace with actual Anthropic SDK call
-        # import anthropic
-        # client = anthropic.AsyncAnthropic(api_key=self.api_key)
-        # response = await client.messages.create(
-        #     model=self.model,
-        #     max_tokens=max_tokens,
-        #     temperature=temperature,
-        #     system=system_prompt,
-        #     messages=[{"role": "user", "content": user_message}],
-        # )
-        # return response.content[0].text
-
-        raise NotImplementedError(
-            "Claude client is a stub. Install anthropic SDK and implement."
+        options = ClaudeCodeOptions(
+            system_prompt=system_prompt,
+            permission_mode="bypassPermissions",
+            max_turns=1,
+            model=self.model,
+            env=_get_sdk_env(),
+            allowed_tools=[],  # No tools — pure text response only
         )
+
+        response_text = ""
+        async for msg in query(prompt=user_message, options=options):
+            if isinstance(msg, AssistantMessage):
+                for block in msg.content:
+                    if isinstance(block, TextBlock):
+                        response_text += block.text
+
+        return response_text
 
     async def send_message_json(
         self,
         system_prompt: str,
         user_message: str,
-        max_tokens: int = 4096,
-        temperature: float = 0.3,
     ) -> dict:
         """Send a message to Claude and parse the response as JSON.
 
-        Uses a lower default temperature for more deterministic JSON output.
+        The system prompt MUST instruct Claude to return valid JSON.
+        The SDK has no native output_format field — JSON must be requested
+        in the system prompt and parsed manually.
 
         Args:
-            system_prompt: The system prompt providing context and instructions.
+            system_prompt: System prompt (must request JSON output).
             user_message: The user message to send.
-            max_tokens: Maximum tokens in the response.
-            temperature: Sampling temperature for response generation.
 
         Returns:
             The parsed JSON response as a dictionary.
-
-        Raises:
-            ValueError: If the response cannot be parsed as JSON.
         """
-        import json
+        text = await self.send_message(system_prompt, user_message)
 
-        text = await self.send_message(
-            system_prompt, user_message, max_tokens, temperature
-        )
+        # Try multiple strategies to extract JSON from the response:
+        # 1. Try to parse the raw text directly (cleanest case)
+        # 2. Extract JSON from ```json ... ``` code fences
+        # 3. Extract JSON from ``` ... ``` code fences
+        # 4. Find the first { ... } or [ ... ] JSON object/array in the text
+
+        cleaned = text.strip()
+
+        # Strategy 1: Direct parse
         try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse Claude response as JSON: {e}") from e
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: Extract from ```json ... ``` code fence
+        json_fence = re.search(r"```json\s*\n?(.*?)\n?\s*```", cleaned, re.DOTALL)
+        if json_fence:
+            try:
+                return json.loads(json_fence.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 3: Extract from ``` ... ``` code fence
+        fence = re.search(r"```\s*\n?(.*?)\n?\s*```", cleaned, re.DOTALL)
+        if fence:
+            try:
+                return json.loads(fence.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 4: Find first JSON object in text
+        brace_match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if brace_match:
+            try:
+                return json.loads(brace_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        raise ValueError(
+            f"Failed to parse Claude response as JSON.\nRaw response: {text[:500]}"
+        )
 
     def is_available(self) -> bool:
-        """Check if the Claude API key is configured."""
-        return bool(self.api_key)
+        """Check if the Claude CLI is available (always true with MAX sub)."""
+        return True

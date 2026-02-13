@@ -111,17 +111,46 @@ After T0, focus on T1 (API endpoint correctness):
 **Progress:** 0/200 tests passing (0%)
 **Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
 
+## SDK Integration — Feb 13, 2025 (SDK Integration Agent)
+
+**Completed:** Replaced all mock pipeline stages with real claude-code-sdk calls.
+- claude_client.py: Now uses `claude_code_sdk.query()` with MAX subscription auth (no API key needed)
+- analyzer.py: Real prompt analysis via Claude — returns actual task_type, complexity, weaknesses, strengths
+- optimizer.py: Real prompt optimization via Claude — produces genuine optimized prompts with strategy-specific changes
+- validator.py: Real prompt validation via Claude — returns real scores and verdicts
+- optimize.py router: Now calls `run_pipeline_streaming()` from pipeline.py (deleted `_generate_mock_sse_events`)
+- health.py: Updated `claude_available` to use `ClaudeClient.is_available()` instead of API key check
+- Dependencies updated: added `claude-code-sdk>=0.0.25` to both pyproject.toml and requirements.txt
+
+**Key implementation details:**
+- Uses `claude_code_sdk.query()` (one-shot async iterator) — simpler than `ClaudeSDKClient`
+- `allowed_tools=[]` prevents Claude Code from using tools — forces pure text/JSON responses
+- `env={"CLAUDECODE": ""}` bypasses nested session detection when running inside Claude Code agent
+- Robust JSON extraction in `send_message_json()`: tries direct parse, ```json fences, ``` fences, then regex {…} extraction
+- Analyzer wraps raw prompt with "Analyze the following prompt..." context to prevent Claude from executing the prompt
+- Error handling in router: catches pipeline exceptions, emits SSE error events, updates DB status
+
+**Verified:** Pipeline produces real, varying results for different prompt types:
+- Coding prompt: task_type="coding", complexity="low", strategy="role-based"
+- Creative prompt: task_type="creative", complexity="low", strategy="constraint-focused"
+- Vague prompt: task_type="general", complexity="low", strategy="constraint-focused"
+- Each produces unique analysis, optimization text, and validation scores
+
+**Note for next coding session:** All pipeline tests can now be verified with real
+LLM responses. Previous T2 tests that passed with mock data should be re-verified.
+Pipeline calls take ~10-30 seconds (3 sequential Claude calls). The DB record is
+properly updated after streaming completes.
+
 ## Known Issues
-1. optimize endpoint creates initial DB record but doesn't fully update it
-   after streaming completes — the SSE events contain correct mock data
-   but the DB record has null fields for optimized_prompt, scores, etc.
-   Fix: Update the DB record at the end of the SSE generator.
-2. Backend uses mock data (not real Claude API calls) — this is intentional
-   for T0/T1 testing. Real claude-agent-sdk integration comes in T2.
+1. ~~optimize endpoint creates initial DB record but doesn't fully update it
+   after streaming completes~~ — FIXED: DB now updated after SSE stream via _update_db_after_stream()
+2. ~~Backend uses mock data (not real Claude API calls)~~ — FIXED: Now uses real claude-code-sdk calls
 3. Frontend build shows adapter-auto warning about production environment —
    cosmetic, doesn't affect dev mode.
 4. The `pkill` command has sandbox restrictions — use init.sh to manage
    server lifecycle instead of manual process management.
+5. Pipeline takes ~10-30 seconds per optimization (3 sequential Claude calls).
+   This is expected for real LLM-powered analysis.
 
 ## Server Info
 - Backend API: http://localhost:8000

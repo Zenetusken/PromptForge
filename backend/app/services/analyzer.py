@@ -34,17 +34,17 @@ class PromptAnalyzer:
         Returns:
             An AnalysisResult with task_type, complexity, weaknesses, and strengths.
         """
-        # TODO: Replace with actual Claude API call using ANALYZER_SYSTEM_PROMPT
-        # response = await self.claude_client.send_message_json(
-        #     system_prompt=ANALYZER_SYSTEM_PROMPT,
-        #     user_message=raw_prompt,
-        # )
-        # return AnalysisResult(**response)
-
-        # Mock analysis for now
+        user_message = (
+            f"Analyze the following prompt and return your analysis as JSON:\n\n"
+            f"---\n{raw_prompt}\n---"
+        )
+        response = await self.claude_client.send_message_json(
+            system_prompt=ANALYZER_SYSTEM_PROMPT,
+            user_message=user_message,
+        )
         return AnalysisResult(
-            task_type="general",
-            complexity="medium",
-            weaknesses=["Lacks specificity", "No output format specified"],
-            strengths=["Clear intent", "Good context"],
+            task_type=response.get("task_type", "general"),
+            complexity=response.get("complexity", "medium"),
+            weaknesses=response.get("weaknesses", []),
+            strengths=response.get("strengths", []),
         )

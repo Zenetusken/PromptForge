@@ -1,5 +1,6 @@
 """Prompt validator service - validates optimization quality and faithfulness."""
 
+import json
 from dataclasses import dataclass
 
 from app.services.claude_client import ClaudeClient
@@ -43,27 +44,20 @@ class PromptValidator:
         Returns:
             A ValidationResult with scores and improvement verdict.
         """
-        # TODO: Replace with actual Claude API call using VALIDATOR_SYSTEM_PROMPT
-        # user_message = json.dumps({
-        #     "raw_prompt": raw_prompt,
-        #     "optimized_prompt": optimized_prompt,
-        # })
-        # response = await self.claude_client.send_message_json(
-        #     system_prompt=VALIDATOR_SYSTEM_PROMPT,
-        #     user_message=user_message,
-        # )
-        # return ValidationResult(**response)
-
-        # Mock validation for now
+        user_message = json.dumps({
+            "raw_prompt": raw_prompt,
+            "optimized_prompt": optimized_prompt,
+        })
+        response = await self.claude_client.send_message_json(
+            system_prompt=VALIDATOR_SYSTEM_PROMPT,
+            user_message=user_message,
+        )
         return ValidationResult(
-            clarity_score=0.85,
-            specificity_score=0.78,
-            structure_score=0.90,
-            faithfulness_score=0.95,
-            overall_score=0.87,
-            is_improvement=True,
-            verdict=(
-                "The optimized prompt significantly improves structure and "
-                "clarity while maintaining the original intent."
-            ),
+            clarity_score=float(response.get("clarity_score", 0.5)),
+            specificity_score=float(response.get("specificity_score", 0.5)),
+            structure_score=float(response.get("structure_score", 0.5)),
+            faithfulness_score=float(response.get("faithfulness_score", 0.5)),
+            overall_score=float(response.get("overall_score", 0.5)),
+            is_improvement=bool(response.get("is_improvement", False)),
+            verdict=response.get("verdict", "No verdict available."),
         )
