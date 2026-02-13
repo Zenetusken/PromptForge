@@ -24,6 +24,7 @@ data/*.sqlite
 
 # Logs
 logs/*.log
+logs/*.log.gz
 logs/*.json
 logs/*.pid
 !logs/.gitkeep
@@ -41,3 +42,4 @@ Thumbs.db
 
 # Claude
 .claude_settings.json
+agent_scratchpad.json
