@@ -629,3 +629,46 @@ T2 full verification (33 of 33 passing):
 
 **Progress:** 78/200 tests passing (39.0%)
 **Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
+
+## Session 9 — Feb 13, 2026 (Coding Agent — T2 Completion)
+
+**Completed:** #79-120 (42 tests — entire remaining T2 tier)
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** T3 tests (IDs 121-160): Secondary Features
+
+**What was done:**
+- Enhanced DiffView.svelte with proper line-level diffs using `diffLines` from `diff` package
+  - Side-by-side: left panel shows original with red highlights for removed lines
+  - Side-by-side: right panel shows optimized with green highlights for added lines
+  - Line numbers on both panels
+  - Synchronized scrolling between left and right panels
+  - Inline: unified view with green additions, red removals with strikethrough
+  - Toggle switches between Side-by-side and Inline modes
+  - Default mode is side-by-side, monospace font (JetBrains Mono)
+- Added `computeLineDiff()` to diff.ts for side-by-side diff computation
+- Enhanced ResultPanel.svelte with 4 action buttons:
+  - Copy Optimized (with "Copied!" green feedback)
+  - Export .md (downloads markdown file)
+  - Re-forge (re-runs pipeline on same prompt)
+  - Edit & Re-forge (loads optimized prompt into textarea)
+- Fixed clipboard utility to avoid navigator.clipboard.writeText() which hangs in Puppeteer
+  - Uses document.execCommand('copy') as primary method
+  - Feedback shows immediately via synchronous state update
+- Verified all score panel features: 5 animated bars, color coding, verdict, changes summary
+- Verified all history sidebar features: search, delete confirmation, re-forge, edit & re-forge
+- All 42 tests verified end-to-end via Puppeteer browser automation
+
+**T2 tier is now COMPLETE (75/75 passing)**
+
+**Tier boundary note:** T2 is complete. Next session should start on T3 (IDs 121-160).
+Validator should run a full regression check across all tiers before T3 work begins.
+
+**Puppeteer notes:**
+- navigator.clipboard.writeText() hangs indefinitely in Puppeteer — use execCommand fallback
+- Copy button "Copied!" feedback is verified via queueMicrotask but too fast for screenshot
+- Screenshots occasionally timeout after long waits — retry after sleep 2
+- puppeteer_click sometimes fails on buttons — use puppeteer_evaluate with .click() as fallback
+
+**Progress:** 120/200 tests passing (60%)
+**Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
