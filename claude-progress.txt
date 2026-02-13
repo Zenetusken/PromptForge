@@ -438,3 +438,57 @@ T2 full verification (26 of 26 passing):
 
 **Progress:** 71/200 tests passing (35.5%)
 **Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
+
+## Session 7 — Feb 13, 2026 (Coding Agent — T2 Pipeline Streaming)
+
+**Completed:** #49, #55, #58, #59, #64, #73, #78
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** Remaining T2 tests (IDs 79-120): diff view, scores panel, clipboard, history features
+
+**What was done:**
+- Enhanced `backend/app/services/pipeline.py` with `_run_with_progress_stream()`:
+  - Sends real-time SSE progress events every 1.5s during long Claude calls
+  - Uses `asyncio.create_task()` + `asyncio.wait_for()` with `asyncio.shield()`
+  - 5 progress messages per step, yielded as SSE events during execution
+  - Frontend sees text appearing progressively during each pipeline step
+- Verified #73 (Header stats badge): Already implemented — shows "N forged" count
+- Verified #78 (Sidebar + main layout): Already implemented — two-column layout
+- Verified #49 (Step 1 streaming): Streaming content visible during ANALYZE step
+- Verified #55 (Step 2 streaming): Streaming content visible during OPTIMIZE step
+- Verified #58 (Scores on Step 3): VALIDATE step shows overall + sub-scores
+- Verified #59 (Auto-collapse): Completed steps collapse, active step expands
+- Verified #64 (Duration timer): Each step shows time in "N.Ns" format
+- Also committed previously uncommitted frontend changes from session 5
+
+**Key implementation detail:**
+- `_run_with_progress_stream()` is an async generator that:
+  1. Creates asyncio task for the actual Claude call
+  2. In a loop, waits for task completion with short timeout (interval)
+  3. If timeout (task still running), yields a progress SSE event
+  4. When task completes, yields a sentinel tuple `('_result', result)`
+  5. The calling code in `run_pipeline_streaming` separates events from results
+
+**Next T2 tests needing work (IDs 79-120):**
+- **Diff View (79-92):** Result area, side-by-side/inline toggle, highlighting, line numbers
+  - DiffView.svelte exists — needs verification and potential enhancements
+  - #79: Result area appears after pipeline (should work — ResultPanel shows)
+  - #80: Diff toggle between side-by-side and inline
+  - #83-84: Green additions, red removals highlighting
+  - #85: Line numbers in diff
+  - #90: Synchronized scrolling
+- **Score Panel (93-104):** Score bars, animation, color-coding, verdict
+  - ScorePanel.svelte exists with animated bars and color coding
+  - Should mostly pass with existing code
+- **Clipboard (105):** Copy optimized button — CopyButton exists
+- **History (106-120):** History entries, search, delete, re-forge
+  - HistorySidebar.svelte has basic functionality
+  - May need delete confirmation, re-forge, edit & re-forge features
+
+**Puppeteer tips:**
+- `puppeteer_click` sometimes times out on buttons — use `puppeteer_evaluate` with `.click()` as fallback
+- Pipeline takes 25-40 seconds to complete (3 sequential Claude calls)
+- Take screenshots after sleep 1-2 seconds to avoid timeout issues
+
+**Progress:** 78/200 tests passing (39.0%)
+**Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
