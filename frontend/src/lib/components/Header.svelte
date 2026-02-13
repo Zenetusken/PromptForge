@@ -1,28 +1,31 @@
 <script lang="ts">
-	import { fetchStats } from '$lib/api/client';
-	import { onMount } from 'svelte';
+	import { historyState } from '$lib/stores/history.svelte';
+	import { fetchStats, type StatsResponse } from '$lib/api/client';
 
 	let { sidebarOpen = $bindable(true) }: { sidebarOpen: boolean } = $props();
 
-	let totalOptimizations = $state(0);
+	let statsOpen = $state(false);
+	let stats: StatsResponse | null = $state(null);
+	let loadingStats = $state(false);
 
-	async function loadStats() {
-		const stats = await fetchStats();
-		if (stats) {
-			totalOptimizations = stats.total_optimizations;
+	async function toggleStats() {
+		statsOpen = !statsOpen;
+		if (statsOpen) {
+			loadingStats = true;
+			stats = await fetchStats();
+			loadingStats = false;
 		}
 	}
 
-	onMount(() => {
-		loadStats();
-		// Refresh stats periodically
-		const interval = setInterval(loadStats, 10000);
-		return () => clearInterval(interval);
-	});
+	function formatScore(value: number | null): string {
+		if (value === null || value === undefined) return '—';
+		const pct = value <= 1 ? value * 100 : value;
+		return Math.round(pct).toString();
+	}
 
-	// Also expose a refresh method for external callers
-	export function refreshStats() {
-		loadStats();
+	function formatRate(value: number | null): string {
+		if (value === null || value === undefined) return '—';
+		return `${Math.round(value * 100)}%`;
 	}
 </script>
 
@@ -69,13 +72,78 @@
 	</div>
 
 	<div class="flex items-center gap-3">
-		<div
-			class="flex items-center gap-1.5 rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1 text-sm"
+		<button
+			class="flex items-center gap-1.5 rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1 text-sm transition-colors hover:bg-neon-cyan/20"
+			onclick={toggleStats}
 			data-testid="stats-badge"
 		>
 			<div class="h-2 w-2 rounded-full bg-neon-green shadow-[0_0_6px_var(--color-neon-green)]"></div>
-			<span class="font-mono font-semibold text-neon-cyan" data-testid="stats-count">{totalOptimizations}</span>
+			<span class="font-mono font-semibold text-neon-cyan" data-testid="stats-count">{historyState.total}</span>
 			<span class="text-text-secondary">forged</span>
-		</div>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				width="12"
+				height="12"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				class="text-text-dim transition-transform {statsOpen ? 'rotate-180' : ''}"
+			>
+				<polyline points="6 9 12 15 18 9" />
+			</svg>
+		</button>
 	</div>
 </header>
+
+{#if statsOpen}
+	<div
+		class="border-b border-text-dim/20 bg-bg-secondary px-6 py-4 animate-fade-in"
+		data-testid="stats-panel"
+	>
+		{#if loadingStats}
+			<div class="flex items-center justify-center py-4">
+				<span class="font-mono text-xs text-text-dim">Loading stats...</span>
+			</div>
+		{:else if stats}
+			<div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+				<div class="rounded-lg border border-neon-cyan/20 bg-bg-card p-3 text-center">
+					<div class="font-mono text-lg font-bold text-neon-cyan">{formatScore(stats.average_overall_score)}</div>
+					<div class="font-mono text-[10px] text-text-dim">Overall</div>
+				</div>
+				<div class="rounded-lg border border-neon-purple/20 bg-bg-card p-3 text-center">
+					<div class="font-mono text-lg font-bold text-neon-purple">{formatRate(stats.improvement_rate)}</div>
+					<div class="font-mono text-[10px] text-text-dim">Improved</div>
+				</div>
+				<div class="rounded-lg border border-neon-green/20 bg-bg-card p-3 text-center">
+					<div class="font-mono text-lg font-bold text-neon-green">{stats.optimizations_today}</div>
+					<div class="font-mono text-[10px] text-text-dim">Today</div>
+				</div>
+				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
+					<div class="font-mono text-lg font-bold text-text-primary">{stats.most_common_task_type || '—'}</div>
+					<div class="font-mono text-[10px] text-text-dim">Top Task</div>
+				</div>
+				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
+					<div class="font-mono text-lg font-bold text-text-secondary">{formatScore(stats.average_clarity_score)}</div>
+					<div class="font-mono text-[10px] text-text-dim">Clarity</div>
+				</div>
+				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
+					<div class="font-mono text-lg font-bold text-text-secondary">{formatScore(stats.average_specificity_score)}</div>
+					<div class="font-mono text-[10px] text-text-dim">Specificity</div>
+				</div>
+				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
+					<div class="font-mono text-lg font-bold text-text-secondary">{formatScore(stats.average_structure_score)}</div>
+					<div class="font-mono text-[10px] text-text-dim">Structure</div>
+				</div>
+				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
+					<div class="font-mono text-lg font-bold text-text-secondary">{formatScore(stats.average_faithfulness_score)}</div>
+					<div class="font-mono text-[10px] text-text-dim">Faithfulness</div>
+				</div>
+			</div>
+		{:else}
+			<div class="flex items-center justify-center py-4">
+				<span class="font-mono text-xs text-text-dim">No stats available</span>
+			</div>
+		{/if}
+	</div>
+{/if}
