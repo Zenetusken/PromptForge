@@ -24,7 +24,16 @@ def _get_sdk_env() -> dict[str, str]:
     string so the SDK subprocess can start cleanly. The SDK merges
     {**os.environ, **options.env}, so our override takes precedence.
     """
-    return {"CLAUDECODE": ""}
+    return {
+        "CLAUDECODE": "",
+        "CLAUDE_CODE_DISABLE_NONINTERACTIVE_TIPS": "1",
+    }
+
+
+# Isolated working directory so the SDK subprocess doesn't pick up
+# project-level CLAUDE.md, agent_scratchpad, or codebase context that
+# cause the model to respond as a coding agent instead of returning JSON.
+_ISOLATED_CWD = "/tmp"
 
 
 @dataclass
@@ -56,6 +65,7 @@ class ClaudeClient:
             permission_mode="bypassPermissions",
             max_turns=1,
             model=self.model,
+            cwd=_ISOLATED_CWD,
             env=_get_sdk_env(),
             allowed_tools=[],  # No tools — pure text response only
         )

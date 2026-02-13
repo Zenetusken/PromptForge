@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from app.database import async_session_factory, init_db
 from app.models.optimization import Optimization
+from app import config
 
 
 EXAMPLE_OPTIMIZATIONS = [
@@ -49,7 +50,7 @@ EXAMPLE_OPTIMIZATIONS = [
         "is_improvement": True,
         "verdict": "Excellent optimization with clear structure and specific requirements.",
         "duration_ms": 2150,
-        "model_used": "mock",
+        "model_used": config.CLAUDE_MODEL,
         "status": "completed",
         "project": "python-tutorials",
         "tags": json.dumps(["coding", "python", "algorithms"]),
@@ -92,7 +93,7 @@ EXAMPLE_OPTIMIZATIONS = [
         "is_improvement": True,
         "verdict": "Strong improvement with clear structure and defined audience.",
         "duration_ms": 1890,
-        "model_used": "mock",
+        "model_used": config.CLAUDE_MODEL,
         "status": "completed",
         "project": "education",
         "tags": json.dumps(["education", "machine-learning", "explanation"]),
@@ -140,7 +141,7 @@ EXAMPLE_OPTIMIZATIONS = [
         "is_improvement": True,
         "verdict": "Well-structured code review prompt with clear output expectations.",
         "duration_ms": 2340,
-        "model_used": "mock",
+        "model_used": config.CLAUDE_MODEL,
         "status": "completed",
         "project": "dev-tools",
         "tags": json.dumps(["coding", "code-review", "debugging"]),

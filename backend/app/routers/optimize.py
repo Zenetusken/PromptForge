@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import config
 from app.database import async_session_factory, get_db
 from app.models.optimization import Optimization
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
@@ -84,7 +85,7 @@ async def _update_db_after_stream(optimization_id: str, final_data: dict, start_
                 opt.is_improvement = final_data.get("is_improvement")
                 opt.verdict = final_data.get("verdict")
                 opt.duration_ms = elapsed_ms
-                opt.model_used = final_data.get("model_used", "claude-code-sdk")
+                opt.model_used = final_data.get("model_used", config.CLAUDE_MODEL)
                 await session.commit()
         except Exception as e:
             await session.rollback()
