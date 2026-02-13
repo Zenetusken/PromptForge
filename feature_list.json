@@ -1083,7 +1083,7 @@
       "SCREENSHOT the completed Step 1 card showing the task_type badge"
     ],
     "expected_outcome": "After Step 1 completes, a task type badge is displayed showing the classification of the submitted prompt.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 51,
@@ -1109,7 +1109,7 @@
       "SCREENSHOT the completed Step 1 showing the weaknesses list"
     ],
     "expected_outcome": "The completed Analyze step displays a visible list of weaknesses identified in the original prompt.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 52,
@@ -1135,7 +1135,7 @@
       "SCREENSHOT the completed Step 1 showing the strengths list"
     ],
     "expected_outcome": "The completed Analyze step displays a visible list of strengths identified in the original prompt.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 53,
@@ -1167,7 +1167,7 @@
       "SCREENSHOT the pipeline showing Step 1 complete and Step 2 active"
     ],
     "expected_outcome": "Step 2 automatically activates and begins processing once Step 1 completes, showing a clear transition from pending to active.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 54,
@@ -1191,7 +1191,7 @@
       "SCREENSHOT the second pipeline step card showing the OPTIMIZE label"
     ],
     "expected_outcome": "The second pipeline step card clearly displays the 'OPTIMIZE' label identifying the optimization phase.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 55,
@@ -1279,7 +1279,7 @@
       "SCREENSHOT the third pipeline step card showing the VALIDATE label"
     ],
     "expected_outcome": "The third pipeline step card clearly displays the 'VALIDATE' label identifying the validation phase.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 58,
@@ -1363,7 +1363,7 @@
       "SCREENSHOT the auto-expanded results section"
     ],
     "expected_outcome": "After all pipeline steps complete, the results section automatically expands to show the full optimization output.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 61,
@@ -1393,7 +1393,7 @@
       "VERIFY the button styling returns to its original neon gradient appearance"
     ],
     "expected_outcome": "The Forge It! button is disabled during pipeline execution and re-enabled after the pipeline completes.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 62,
@@ -1418,7 +1418,7 @@
       "SCREENSHOT the Forge It! button showing the loading animation"
     ],
     "expected_outcome": "The Forge It! button shows a visible loading animation during pipeline execution.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 63,
