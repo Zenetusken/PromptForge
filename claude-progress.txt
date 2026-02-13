@@ -1,5 +1,59 @@
 # PromptForge — Development Progress
-# Last updated: Session 39 (Coding — no-op, 200/200 passing)
+# Last updated: Session 40 (Validator — quick validation, 200/200 passing)
+
+## Validation Report — Session 40
+
+**Code integrity audit:**
+- Files scanned: 10+ (claude_client.py, analyzer.py, optimizer.py, validator.py, pipeline.py, optimize.py, database.py, client.ts, optimization.svelte.ts, pyproject.toml, package.json)
+- Mocks/stubs found: 0 new (1 known wontfix: seed_examples.py model_used:"mock")
+- Mocks/stubs fixed: 0
+- Mocks/stubs remaining: 1 (seed_examples.py — cosmetic, wontfix)
+- TODOs found: 0 in project code
+- TODOs resolved: 0
+- All `pass` statements verified as proper exception handlers (claude_client.py JSON extraction) or SQLAlchemy base class (database.py)
+- All service files confirmed real SDK integrations via ClaudeClient.send_message_json()
+- Frontend API client confirmed real fetch calls to backend
+- Frontend store confirmed no hardcoded data — wires to real API
+- Dependencies verified: claude-code-sdk>=0.0.25 in pyproject.toml
+
+**Scope:** Quick validation — 5 spot checks across T0-T4 + integration checks (no code changes since session 8)
+**Infrastructure:** Healthy — backend and frontend both running, DB connected, claude_available=true
+
+**Spot checks performed:**
+- #1 (T0): Backend server starts on port 8000 — PASS (HTTP 200 response)
+- #25 (T1): History search filters by prompt text — PASS (4 results for "python", 0 for nonexistent term)
+- #55 (T2): Pipeline Step 2 streams optimized prompt text — PASS (streaming content visible: "Applying role-based optimization strategy...", "Restructuring for maximum clarity...", text not JSON)
+- #105 (T2): Result area shows Copy Optimized button — PASS (clipboard icon + "Copy" label, enabled and clickable, in action area)
+- #165 (T4): Score bars animate on appearance — PASS (5 bars: Clarity 95, Specificity 95, Structure 95, Faithfulness 90, Overall 94 — non-zero widths, neon green styling)
+
+**Cross-feature checks:**
+- Frontend build: PASS (4.26s, zero errors)
+- End-to-end pipeline: PASS (38.1s, real LLM call, "writing" task type, role-based framework, 94 overall score)
+- Console errors: None detected
+- Visual coherence: Cyberpunk theme intact, history sidebar with 22 entries, neon accents, proper layout, footer "Healthy" status
+- Data flow: New optimization appeared in history sidebar immediately after completion (21→22 forged)
+
+**Regressions found:** 0
+**Regressions fixed:** 0 of 0
+**Tests still passing after validation:** 200/200
+
+**Tier breakdown:**
+- T0: 14/14 passing
+- T1: 31/31 passing
+- T2: 75/75 passing
+- T3: 40/40 passing
+- T4: 25/25 passing
+- T5: 15/15 passing
+
+**Guidance for next coding session:**
+- No mocks/stubs remaining (seed_examples.py wontfix is cosmetic only)
+- No issues to be aware of
+- All 200 tests passing — project is complete
+- Puppeteer click actions may timeout; use evaluate with .click() as workaround
+- Puppeteer screenshots may timeout intermittently; retry or use default viewport size
+
+**Progress:** 200/200 tests passing (100%)
+**Server info:** Backend http://localhost:8000, Frontend http://localhost:5173, start with ./init.sh
 
 ## Session 39 — Coding Agent (no-op)
 
