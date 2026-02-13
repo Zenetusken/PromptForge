@@ -6,6 +6,9 @@ export interface StepState {
 	status: 'pending' | 'running' | 'complete' | 'error';
 	description?: string;
 	data?: Record<string, unknown>;
+	streamingContent?: string;
+	startTime?: number;
+	durationMs?: number;
 }
 
 export interface RunState {
@@ -77,7 +80,18 @@ class OptimizationState {
 				const stepName = event.step || '';
 				this.currentRun.steps = this.currentRun.steps.map((s) =>
 					s.name === stepName
-						? { ...s, status: 'running' as const }
+						? { ...s, status: 'running' as const, startTime: Date.now(), streamingContent: '' }
+						: s
+				);
+				break;
+			}
+
+			case 'step_progress': {
+				const stepName = event.step || '';
+				const content = (event.data?.content as string) || '';
+				this.currentRun.steps = this.currentRun.steps.map((s) =>
+					s.name === stepName
+						? { ...s, streamingContent: (s.streamingContent || '') + '\n' + content }
 						: s
 				);
 				break;
@@ -85,11 +99,14 @@ class OptimizationState {
 
 			case 'step_complete': {
 				const stepName = event.step || '';
-				this.currentRun.steps = this.currentRun.steps.map((s) =>
-					s.name === stepName
-						? { ...s, status: 'complete' as const, data: event.data }
-						: s
-				);
+				const stepDurationMs = (event.data?.step_duration_ms as number) || 0;
+				this.currentRun.steps = this.currentRun.steps.map((s) => {
+					if (s.name === stepName) {
+						const durationMs = stepDurationMs || (s.startTime ? Date.now() - s.startTime : 0);
+						return { ...s, status: 'complete' as const, data: event.data, durationMs, streamingContent: undefined };
+					}
+					return s;
+				});
 				break;
 			}
 

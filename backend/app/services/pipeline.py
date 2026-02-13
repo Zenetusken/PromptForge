@@ -1,8 +1,10 @@
 """Main optimization pipeline - orchestrates analysis, optimization, and validation."""
 
+import asyncio
 import json
 import time
 from dataclasses import asdict, dataclass
+from typing import AsyncIterator
 
 from app.services.analyzer import AnalysisResult, PromptAnalyzer
 from app.services.claude_client import ClaudeClient
@@ -100,11 +102,58 @@ async def run_pipeline(
     )
 
 
+async def _run_with_progress_stream(
+    coro,
+    step_name: str,
+    progress_messages: list[str],
+    interval: float = 1.5,
+):
+    """Run a coroutine while yielding periodic progress events.
+
+    This is an async generator that yields SSE progress events at regular intervals
+    while the main coroutine is running, then yields the final result as a special
+    sentinel value.
+
+    Args:
+        coro: The async coroutine to run (e.g., analyzer.analyze()).
+        step_name: The pipeline step name for progress events.
+        progress_messages: List of progress messages to send during execution.
+        interval: Seconds between progress messages.
+
+    Yields:
+        SSE event strings for progress, then a tuple ('_result', result) at the end.
+    """
+    task = asyncio.create_task(coro)
+    msg_index = 0
+
+    while not task.done():
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=interval)
+            # Task completed during wait
+            break
+        except asyncio.TimeoutError:
+            # Task still running, send a progress message
+            if msg_index < len(progress_messages):
+                yield _sse_event("step_progress", {
+                    "step": step_name,
+                    "content": progress_messages[msg_index],
+                    "progress": min(0.4 + 0.1 * msg_index, 0.9),
+                })
+                msg_index += 1
+        except Exception:
+            break
+
+    # Get the result (may re-raise exception)
+    result = await task
+    yield ("_result", result)
+
+
 async def run_pipeline_streaming(raw_prompt: str, claude_client: ClaudeClient | None = None):
     """Run the pipeline and yield SSE events for each stage.
 
     This is an async generator that yields Server-Sent Event formatted strings
-    as the pipeline progresses through each stage.
+    as the pipeline progresses through each stage. Progress events are sent
+    periodically during long-running LLM calls for real-time streaming.
 
     Args:
         raw_prompt: The original prompt text to optimize.
@@ -113,36 +162,132 @@ async def run_pipeline_streaming(raw_prompt: str, claude_client: ClaudeClient | 
     Yields:
         SSE-formatted strings for each pipeline stage and the final result.
     """
-    start_time = time.time()
+    pipeline_start = time.time()
     client = claude_client or ClaudeClient()
 
     # Stage 1: Analyze
-    yield _sse_event("stage", {"stage": "analyzing", "message": "Analyzing prompt..."})
+    step_start = time.time()
+    yield _sse_event("stage", {"stage": "analyzing", "message": "Analyzing prompt structure and intent..."})
+    yield _sse_event("step_progress", {
+        "step": "analyze",
+        "content": "Examining prompt structure...",
+        "progress": 0.1,
+    })
     analyzer = PromptAnalyzer(client)
-    analysis = await analyzer.analyze(raw_prompt)
-    yield _sse_event("analysis", asdict(analysis))
+    yield _sse_event("step_progress", {
+        "step": "analyze",
+        "content": "Identifying task type, complexity, and patterns...",
+        "progress": 0.3,
+    })
+
+    analysis = None
+    async for event in _run_with_progress_stream(
+        analyzer.analyze(raw_prompt),
+        "analyze",
+        [
+            "Detecting prompt intent and goal...",
+            "Evaluating clarity and specificity...",
+            "Analyzing structural patterns...",
+            "Identifying strengths and weaknesses...",
+            "Compiling analysis results...",
+        ],
+        interval=1.5,
+    ):
+        if isinstance(event, tuple) and event[0] == "_result":
+            analysis = event[1]
+        else:
+            yield event
+
+    step_duration = int((time.time() - step_start) * 1000)
+    analysis_dict = asdict(analysis)
+    analysis_dict["step_duration_ms"] = step_duration
+    yield _sse_event("analysis", analysis_dict)
 
     # Stage 2: Strategy Selection
     selector = StrategySelector()
     strategy = selector.select(analysis)
+
+    # Stage 3: Optimize
+    step_start = time.time()
     yield _sse_event("stage", {
         "stage": "optimizing",
         "message": f"Applying {strategy.strategy} strategy...",
     })
-
-    # Stage 3: Optimize
+    yield _sse_event("step_progress", {
+        "step": "optimize",
+        "content": f"Applying {strategy.strategy} optimization strategy...",
+        "progress": 0.1,
+    })
     optimizer = PromptOptimizer(client)
-    optimization = await optimizer.optimize(raw_prompt, analysis, strategy.strategy)
-    yield _sse_event("optimization", asdict(optimization))
+    yield _sse_event("step_progress", {
+        "step": "optimize",
+        "content": f"Rewriting prompt with {strategy.strategy} framework...",
+        "progress": 0.3,
+    })
+
+    optimization = None
+    async for event in _run_with_progress_stream(
+        optimizer.optimize(raw_prompt, analysis, strategy.strategy),
+        "optimize",
+        [
+            "Restructuring for maximum clarity...",
+            "Adding context and specificity...",
+            "Refining language and tone...",
+            "Incorporating best practices...",
+            "Finalizing optimized prompt...",
+        ],
+        interval=1.5,
+    ):
+        if isinstance(event, tuple) and event[0] == "_result":
+            optimization = event[1]
+        else:
+            yield event
+
+    step_duration = int((time.time() - step_start) * 1000)
+    optimization_dict = asdict(optimization)
+    optimization_dict["step_duration_ms"] = step_duration
+    yield _sse_event("optimization", optimization_dict)
 
     # Stage 4: Validate
-    yield _sse_event("stage", {"stage": "validating", "message": "Validating..."})
+    step_start = time.time()
+    yield _sse_event("stage", {"stage": "validating", "message": "Validating optimization quality..."})
+    yield _sse_event("step_progress", {
+        "step": "validate",
+        "content": "Scoring clarity, specificity, and structure...",
+        "progress": 0.1,
+    })
     validator = PromptValidator(client)
-    validation = await validator.validate(raw_prompt, optimization.optimized_prompt)
-    yield _sse_event("validation", asdict(validation))
+    yield _sse_event("step_progress", {
+        "step": "validate",
+        "content": "Evaluating improvement and generating verdict...",
+        "progress": 0.3,
+    })
+
+    validation = None
+    async for event in _run_with_progress_stream(
+        validator.validate(raw_prompt, optimization.optimized_prompt),
+        "validate",
+        [
+            "Comparing original and optimized versions...",
+            "Measuring clarity improvement...",
+            "Assessing specificity and structure...",
+            "Checking faithfulness to intent...",
+            "Generating final verdict...",
+        ],
+        interval=1.5,
+    ):
+        if isinstance(event, tuple) and event[0] == "_result":
+            validation = event[1]
+        else:
+            yield event
+
+    step_duration = int((time.time() - step_start) * 1000)
+    validation_dict = asdict(validation)
+    validation_dict["step_duration_ms"] = step_duration
+    yield _sse_event("validation", validation_dict)
 
     # Complete
-    elapsed_ms = int((time.time() - start_time) * 1000)
+    elapsed_ms = int((time.time() - pipeline_start) * 1000)
     complete_data = {
         **asdict(analysis),
         **asdict(optimization),

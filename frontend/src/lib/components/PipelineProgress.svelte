@@ -11,6 +11,23 @@
 	];
 
 	let displaySteps = $derived(steps.length > 0 ? steps : defaultSteps);
+
+	// Find the latest active step (running or last completed)
+	let latestActiveIndex = $derived.by(() => {
+		// If any step is running, that's the active one
+		const runningIdx = displaySteps.findIndex((s) => s.status === 'running');
+		if (runningIdx >= 0) return runningIdx;
+
+		// Otherwise, find the last completed step
+		let lastComplete = -1;
+		for (let i = displaySteps.length - 1; i >= 0; i--) {
+			if (displaySteps[i].status === 'complete') {
+				lastComplete = i;
+				break;
+			}
+		}
+		return lastComplete;
+	});
 </script>
 
 <div class="rounded-xl border border-text-dim/20 bg-bg-card p-5" data-testid="pipeline-progress">
@@ -20,7 +37,7 @@
 
 	<div class="flex items-start gap-2">
 		{#each displaySteps as step, i (step.name)}
-			<PipelineStep {step} index={i} />
+			<PipelineStep {step} index={i} isLatestActive={i === latestActiveIndex} />
 			{#if i < displaySteps.length - 1}
 				<div class="flex h-12 items-center pt-1">
 					<div

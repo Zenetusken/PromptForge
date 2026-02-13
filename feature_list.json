@@ -1057,7 +1057,7 @@
       "VERIFY the completed content includes structured analysis output (task type, strengths, or weaknesses)"
     ],
     "expected_outcome": "Content streams into the Analyze step card progressively via SSE, with text appearing incrementally rather than loading all at once.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 50,
@@ -1224,7 +1224,7 @@
       "VERIFY the optimized text includes specific instructions, context, or structure not in the original"
     ],
     "expected_outcome": "The optimized prompt text streams progressively into the Optimize step card via SSE, showing the improved prompt being generated in real-time.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 56,
@@ -1305,7 +1305,7 @@
       "SCREENSHOT the completed Step 3 card showing the score results"
     ],
     "expected_outcome": "The completed Validate step displays numerical score results for the optimized prompt evaluation.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 59,
@@ -1336,7 +1336,7 @@
       "SCREENSHOT the pipeline showing collapsed Steps 1-2 and expanded Step 3"
     ],
     "expected_outcome": "Completed pipeline steps automatically collapse to show only a summary, while the active step remains expanded.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 60,
@@ -1473,7 +1473,7 @@
       "SCREENSHOT all three completed pipeline steps showing their duration timers"
     ],
     "expected_outcome": "Each pipeline step displays a duration timer showing how long it took to process.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 65,
@@ -1678,7 +1678,7 @@
       "SCREENSHOT the header showing the stats badge"
     ],
     "expected_outcome": "The header displays a stats badge with usage statistics.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 74,
@@ -1793,7 +1793,7 @@
       "SCREENSHOT the full page showing the sidebar + main area layout structure"
     ],
     "expected_outcome": "The application uses a sidebar + main area layout structure.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 79,

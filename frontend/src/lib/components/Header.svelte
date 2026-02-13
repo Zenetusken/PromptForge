@@ -1,5 +1,29 @@
 <script lang="ts">
+	import { fetchStats } from '$lib/api/client';
+	import { onMount } from 'svelte';
+
 	let { sidebarOpen = $bindable(true) }: { sidebarOpen: boolean } = $props();
+
+	let totalOptimizations = $state(0);
+
+	async function loadStats() {
+		const stats = await fetchStats();
+		if (stats) {
+			totalOptimizations = stats.total_optimizations;
+		}
+	}
+
+	onMount(() => {
+		loadStats();
+		// Refresh stats periodically
+		const interval = setInterval(loadStats, 10000);
+		return () => clearInterval(interval);
+	});
+
+	// Also expose a refresh method for external callers
+	export function refreshStats() {
+		loadStats();
+	}
 </script>
 
 <header
@@ -45,9 +69,13 @@
 	</div>
 
 	<div class="flex items-center gap-3">
-		<div class="flex items-center gap-1.5 text-sm text-text-secondary" data-testid="stats-badge">
+		<div
+			class="flex items-center gap-1.5 rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1 text-sm"
+			data-testid="stats-badge"
+		>
 			<div class="h-2 w-2 rounded-full bg-neon-green shadow-[0_0_6px_var(--color-neon-green)]"></div>
-			<span>Pipeline Ready</span>
+			<span class="font-mono font-semibold text-neon-cyan" data-testid="stats-count">{totalOptimizations}</span>
+			<span class="text-text-secondary">forged</span>
 		</div>
 	</div>
 </header>

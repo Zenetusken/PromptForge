@@ -1,0 +1,21 @@
+{
+  "$schema_version": 1,
+  "session_log": [],
+  "active_warnings": [],
+  "outstanding_mocks": [],
+  "blocked_tests": [],
+  "validation_coverage": {
+    "last_full_validation_session": 0,
+    "tests_verified": {},
+    "tests_spot_checked": {}
+  },
+  "next_actions": [],
+  "server_state": {
+    "backend_url": "",
+    "frontend_url": "",
+    "health_endpoint": "",
+    "start_command": "",
+    "last_verified_session": 0,
+    "notes": ""
+  }
+}

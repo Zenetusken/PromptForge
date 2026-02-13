@@ -100,6 +100,13 @@ function mapSSEEvent(eventType: string, data: Record<string, unknown>): Pipeline
 				message: data.message as string
 			};
 		}
+		case 'step_progress': {
+			return {
+				type: 'step_progress',
+				step: data.step as string,
+				data: data
+			};
+		}
 		case 'analysis': {
 			return {
 				type: 'step_complete',
