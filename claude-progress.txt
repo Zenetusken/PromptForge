@@ -1,5 +1,56 @@
 # PromptForge — Development Progress
-# Last updated: Session 37 (Coding — no-op, 200/200 passing)
+# Last updated: Session 38 (Validator — quick validation, 200/200 passing)
+
+## Validation Report — Session 38
+
+**Code integrity audit:**
+- Files scanned: 10 (claude_client.py, analyzer.py, optimizer.py, validator.py, pipeline.py, optimize.py, database.py, client.ts, pyproject.toml, package.json)
+- Mocks/stubs found: 0 new (1 known wontfix: seed_examples.py model_used:"mock")
+- Mocks/stubs fixed: 0
+- Mocks/stubs remaining: 1 (seed_examples.py — cosmetic, wontfix)
+- TODOs found: 0 in project code
+- TODOs resolved: 0
+- All `pass` statements verified as proper exception handlers (claude_client.py JSON extraction) or SQLAlchemy base class (database.py)
+- All service files confirmed real SDK integrations via ClaudeClient.send_message_json()
+- Frontend API client confirmed real fetch calls to backend
+- Dependencies verified: claude-code-sdk>=0.0.25 in pyproject.toml
+
+**Scope:** Quick validation — 5 spot checks across T0-T5 + integration checks (no code changes since session 8)
+**Infrastructure:** Healthy — backend and frontend both running, DB connected, claude_available=true
+
+**Spot checks performed:**
+- #2 (T0): Frontend SvelteKit serves on localhost:5173 — PASS (full cyberpunk UI rendered with header, sidebar, main content)
+- #42 (T1): History page shows list of past optimizations — PASS (API returns 21 items, sidebar displays all with scores and task types)
+- #70 (T2): Score bars animated width percentage — PASS (5 bars with transition-all duration-700 ease-out, widths match percentages: 92%, 90%, 93%, 72%, 82%)
+- #113 (T2): Loading history entry shows diff view — PASS (Side by Side/Inline toggle, Original vs Optimized columns with color coding)
+- #189 (T5): Score values have text alternatives — PASS (5 role="meter" elements with aria-label, aria-valuenow, aria-valuemin, aria-valuemax)
+
+**Cross-feature checks:**
+- Frontend build: PASS (4.26s, zero errors)
+- Console errors: None detected
+- Visual coherence: Cyberpunk theme intact, history sidebar with 21 entries, neon accents, proper layout, footer "Healthy" status
+
+**Regressions found:** 0
+**Regressions fixed:** 0 of 0
+**Tests still passing after validation:** 200/200
+
+**Tier breakdown:**
+- T0: 14/14 passing
+- T1: 31/31 passing
+- T2: 75/75 passing
+- T3: 40/40 passing
+- T4: 25/25 passing
+- T5: 15/15 passing
+
+**Guidance for next coding session:**
+- No mocks/stubs remaining (seed_examples.py wontfix is cosmetic only)
+- No issues to be aware of
+- All 200 tests passing — project is complete
+- Puppeteer click actions may timeout; use evaluate with .click() as workaround
+- Puppeteer screenshots may timeout intermittently; retry or use default viewport size
+
+**Progress:** 200/200 tests passing (100%)
+**Server info:** Backend http://localhost:8000, Frontend http://localhost:5173, start with ./init.sh
 
 ## Session 37 — Coding Agent (no-op)
 
