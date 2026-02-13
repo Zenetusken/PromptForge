@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fetchHealth, type HealthResponse } from '$lib/api/client';
+	import MCPInfo from './MCPInfo.svelte';
 
 	let health: HealthResponse | null = $state(null);
 	let checking = $state(true);
 	let showTooltip = $state(false);
+	let showMCPInfo = $state(false);
+
+	const apiDocsUrl = import.meta.env.VITE_API_URL
+		? `${import.meta.env.VITE_API_URL}/docs`
+		: '/docs';
 
 	async function pollHealth() {
 		checking = true;
@@ -34,13 +40,36 @@
 	let statusLabel = $derived(getStatusLabel(health, checking));
 </script>
 
+<MCPInfo bind:open={showMCPInfo} />
+
 <footer
 	class="flex h-8 shrink-0 items-center justify-between border-t border-text-dim/20 bg-bg-secondary px-4"
 	data-testid="footer"
 >
-	<span class="font-mono text-[10px] text-text-dim">
-		PromptForge v1.0 &mdash; Powered by Claude
-	</span>
+	<div class="flex items-center gap-3">
+		<span class="font-mono text-[10px] text-text-dim">
+			PromptForge v1.0 &mdash; Powered by Claude
+		</span>
+		<a
+			href={apiDocsUrl}
+			target="_blank"
+			rel="noopener noreferrer"
+			class="font-mono text-[10px] text-text-dim transition-colors hover:text-neon-cyan"
+			data-testid="api-docs-link"
+		>
+			API Docs
+		</a>
+		<button
+			class="flex items-center gap-1 font-mono text-[10px] text-text-dim transition-colors hover:text-neon-cyan"
+			onclick={() => (showMCPInfo = true)}
+			data-testid="mcp-info-btn"
+		>
+			<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+			</svg>
+			MCP
+		</button>
+	</div>
 
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
