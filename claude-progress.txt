@@ -1,5 +1,57 @@
 # PromptForge — Development Progress
-# Last updated: Session 25 (Coding — no-op, all 200/200 passing)
+# Last updated: Session 26 (Validator — quick validation, all 200/200 passing)
+
+## Validation Report — Session 26
+
+**Code integrity audit:**
+- Files scanned: 12 (claude_client.py, analyzer.py, optimizer.py, validator.py, pipeline.py, optimize.py, database.py, client.ts, PromptInput.svelte, HistorySidebar.svelte, seed_examples.py, pyproject.toml)
+- Mocks/stubs found: 0 new (1 known wontfix: seed_examples.py model_used:"mock")
+- Mocks/stubs fixed: 0
+- Mocks/stubs remaining: 1 (seed_examples.py — cosmetic, wontfix)
+- TODOs found: 0 in project code
+- TODOs resolved: 0
+- All `pass` statements verified as proper exception handlers (claude_client.py JSON extraction) or SQLAlchemy base class pattern (database.py)
+- All service files confirmed real SDK integrations via ClaudeClient.send_message_json()
+- Frontend API client confirmed real fetch calls to backend
+- Dependencies verified: claude-code-sdk in pyproject.toml
+
+**Scope:** Quick validation — 5 spot checks across T0-T4 + integration checks (no code changes since session 8)
+**Infrastructure:** Healthy — backend and frontend both running, DB connected, claude_available=true
+
+**Spot checks performed:**
+- #10 (T0): Frontend renders root layout structure — PASS (header with PromptForge v1.0, main content with prompt input and 3-step pipeline cards, sidebar with history list)
+- #36 (T1): Optimization stores framework_applied — PASS (framework_applied='role-based', non-empty string, task_type='coding', status='completed')
+- #109 (T2): History entry shows score badge — PASS (score badges 90-96 visible, green/cyan styling, distinct from other text)
+- #140 (T3): MCP promptforge_list supports offset pagination — PASS (page 1 returns 2 items, page 2 returns 2 different items, no overlap, total=11)
+- #174 (T4): Text uses proper color hierarchy — PASS (primary=bright headings, secondary=muted descriptions, dim=timestamps/metadata, three distinct levels)
+
+**Cross-feature checks:**
+- Frontend build: PASS (4.19s, 207 modules, zero errors)
+- Data flow: Stats endpoint returns real aggregated data (11 optimizations, avg score 0.921, improvement_rate 1.0)
+- Visual coherence: Cyberpunk theme intact, history sidebar populated with varied task types and scores
+- Data variety: Scores 90-96, task types: coding/writing/education
+
+**Regressions found:** 0
+**Regressions fixed:** 0 of 0
+**Tests still passing after validation:** 200/200
+
+**Tier breakdown:**
+- T0: 14/14 passing
+- T1: 31/31 passing
+- T2: 75/75 passing
+- T3: 40/40 passing
+- T4: 25/25 passing
+- T5: 15/15 passing
+
+**Guidance for next coding session:**
+- No mocks/stubs remaining (seed_examples.py wontfix is cosmetic only)
+- No issues to be aware of
+- All 200 tests passing — project is complete
+- Puppeteer click actions may timeout; use evaluate with .click() as workaround
+- Puppeteer screenshots may timeout intermittently; retry or use default viewport size
+
+**Progress:** 200/200 tests passing (100%)
+**Server info:** Backend http://localhost:8000, Frontend http://localhost:5173, start with ./init.sh
 
 ## Session 25 — Coding Agent (no-op)
 
