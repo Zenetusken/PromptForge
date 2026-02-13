@@ -2,16 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 24,
-      "session_type": "validator",
-      "tests_completed": [],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "mocks_found": 0,
-      "mocks_fixed": 0,
-      "summary": "Quick validation (no code changes since session 8). 5 spot checks across T1-T5 via API + Puppeteer: #22 (retry endpoint), #49 (pipeline streaming), #132 (MCP tag), #164 (button hover scale), #195 (network error retry). Zero regressions. Code audit clean (12 files scanned). Frontend build succeeds (4.13s). Live pipeline run completed. Infrastructure healthy. 200/200 confirmed passing."
-    },
-    {
       "session_id": 25,
       "session_type": "coding",
       "tests_completed": [],
@@ -60,6 +50,16 @@
       "mocks_found": 0,
       "mocks_fixed": 0,
       "summary": "No-op coding session. All 200/200 tests already passing. Verified backend health (claude_available=true, db_connected=true) and feature_list.json (0 failing). No failing tests, no blocked tests, no regressions. Project is complete."
+    },
+    {
+      "session_id": 30,
+      "session_type": "validator",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "mocks_found": 0,
+      "mocks_fixed": 0,
+      "summary": "Quick validation (no code changes since session 8). 5 spot checks across T1-T3 via API + Puppeteer: #33 (weaknesses array), #92 (side-by-side default), #102 (changes summary), #113 (history loads diff), #155 (special chars). Zero regressions. Code audit clean (10 files scanned). Frontend build succeeds (3.61s). Infrastructure healthy. 200/200 confirmed passing."
     }
   ],
   "active_warnings": [],
@@ -70,7 +70,7 @@
       "pattern": "model_used: mock",
       "status": "wontfix",
       "found_session": 2,
-      "last_checked_session": 28,
+      "last_checked_session": 30,
       "reason": "Cosmetic metadata in seed data script, not a stub implementation"
     }
   ],
@@ -106,7 +106,7 @@
       "30": 5,
       "31": 5,
       "32": 5,
-      "33": 5,
+      "33": 30,
       "34": 5,
       "35": 5,
       "36": 5,
@@ -165,7 +165,7 @@
       "89": 5,
       "90": 5,
       "91": 5,
-      "92": 5,
+      "92": 30,
       "93": 12,
       "94": 12,
       "95": 12,
@@ -175,7 +175,7 @@
       "99": 12,
       "100": 12,
       "101": 5,
-      "102": 5,
+      "102": 30,
       "103": 5,
       "104": 5,
       "105": 11,
@@ -186,7 +186,7 @@
       "110": 9,
       "111": 5,
       "112": 5,
-      "113": 5,
+      "113": 30,
       "114": 5,
       "115": 5,
       "116": 5,
@@ -228,7 +228,7 @@
       "152": 5,
       "153": 5,
       "154": 5,
-      "155": 5,
+      "155": 30,
       "156": 5,
       "157": 5,
       "158": 5,
@@ -385,7 +385,12 @@
       "63": 28,
       "70": 28,
       "78": 28,
-      "86": 28
+      "86": 28,
+      "33": 30,
+      "92": 30,
+      "102": 30,
+      "113": 30,
+      "155": 30
     }
   },
   "next_actions": [],
@@ -394,7 +399,7 @@
     "frontend_url": "http://localhost:5173",
     "health_endpoint": "http://localhost:8000/api/health",
     "start_command": "./init.sh",
-    "last_verified_session": 28,
-    "notes": "ALL TESTS COMPLETE (200/200, 100%). Quick validation passed (session 28). Both servers healthy. Backend uses uvicorn with --reload flag. Pipeline takes ~28-38s per optimization. Zero console errors in frontend. Build succeeds (3.70s). Toast uses direct DOM manipulation on document.body. Clipboard uses document.execCommand('copy'). MCP server has 8 tools. Database has 12 records. Puppeteer click actions timeout frequently \u2014 use evaluate with .click() as workaround. Puppeteer screenshots may timeout intermittently \u2014 retry or use default viewport size."
+    "last_verified_session": 30,
+    "notes": "ALL TESTS COMPLETE (200/200, 100%). Quick validation passed (session 30). Both servers healthy. Backend uses uvicorn with --reload flag. Pipeline takes ~28-38s per optimization. Zero console errors in frontend. Build succeeds (3.61s). Toast uses direct DOM manipulation on document.body. Clipboard uses document.execCommand('copy'). MCP server has 8 tools. Database has 13 records. Puppeteer click actions timeout frequently — use evaluate with .click() as workaround. Puppeteer screenshots may timeout intermittently — retry or use default viewport size."
   }
 }
