@@ -1,0 +1,85 @@
+# PromptForge — Development Progress
+# Last updated: Session 1 (Initializer Agent)
+
+## Completed
+- feature_list.json: 200 test cases created (IDs 1-200, all passes=false)
+  - T0 Infrastructure: 14 tests (IDs 1-14)
+  - T1 Auth & Core Data: 31 tests (IDs 15-45)
+  - T2 Primary Features: 75 tests (IDs 46-120)
+  - T3 Secondary Features: 40 tests (IDs 121-160)
+  - T4 Style & Polish: 25 tests (IDs 161-185)
+  - T5 Accessibility & Edge Cases: 15 tests (IDs 186-200)
+- init.sh: Idempotent setup script (installs deps, starts servers, health checks)
+- .gitignore, README.md, .env.example, docker-compose.yml
+- Backend project structure (all files created with working code):
+  - FastAPI app with CORS, lifespan, 3 routers
+  - SQLAlchemy async models with full optimization schema (24 columns)
+  - Pydantic v2 schemas (request/response validation)
+  - Health endpoint (GET /api/health) — TESTED, WORKING
+  - History endpoint (GET /api/history, DELETE, GET stats) — TESTED, WORKING
+  - Optimize endpoint (POST /api/optimize) — SSE streaming with mock data — TESTED, WORKING
+  - GET /api/optimize/{id} — TESTED, WORKING (returns 404 for missing)
+  - Pipeline services (analyzer, optimizer, validator, strategy_selector, claude_client)
+  - System prompts for all 3 pipeline stages
+  - MCP server stub
+  - Seed script with 3 example optimizations
+- Frontend project structure (SvelteKit 2 / Svelte 5):
+  - All 14 components created with Svelte 5 runes syntax
+  - Cyberpunk theme CSS with Tailwind CSS 4 @theme
+  - API client with SSE support
+  - Stores (optimization, history) using $state runes
+  - Utility functions (diff, format, clipboard)
+  - BUILD VERIFIED — compiles without errors
+- Git initialized with initial commit (61 files, 9864 lines)
+
+## In Progress
+- None (session ending)
+
+## Next Up (for next coding agent)
+Priority: Work on T0 tests first (IDs 1-14), then T1 (IDs 15-45)
+
+The backend is largely functional with mock data. Key work needed:
+1. ID 1: Backend server starts on port 8000 — SHOULD PASS (init.sh starts it)
+2. ID 2: Frontend dev server starts on port 5173 — SHOULD PASS (init.sh starts it)
+3. ID 3: Health endpoint returns OK — SHOULD PASS (already verified)
+4. ID 4: Database auto-creates on startup — SHOULD PASS (lifespan handler)
+5. ID 5: Frontend serves index page — SHOULD PASS (SvelteKit serves it)
+6. ID 9: Frontend loads cyberpunk CSS — Check that the theme renders correctly
+7. ID 10: Root layout structure renders — Check sidebar + main area
+8. ID 12: Frontend can reach backend API — Check CORS works in browser
+9. ID 14: Header component renders — Check "PromptForge" text visible
+
+After T0, focus on T1 (API endpoint correctness):
+- The SSE optimize endpoint creates records but currently uses mock data
+  and doesn't update the DB record after streaming. The record is created
+  at stream start but fields like optimized_prompt stay null. This needs
+  fixing for tests 28-40 to pass.
+- The optimize endpoint needs to update the DB record with full pipeline
+  results after the SSE stream completes.
+
+## Known Issues
+1. optimize endpoint creates initial DB record but doesn't fully update it
+   after streaming completes — the SSE events contain correct mock data
+   but the DB record has null fields for optimized_prompt, scores, etc.
+   Fix: Update the DB record at the end of the SSE generator.
+2. Backend uses mock data (not real Claude API calls) — this is intentional
+   for T0/T1 testing. Real claude-agent-sdk integration comes in T2.
+3. Frontend build shows adapter-auto warning about production environment —
+   cosmetic, doesn't affect dev mode.
+4. The `pkill` command has sandbox restrictions — use init.sh to manage
+   server lifecycle instead of manual process management.
+
+## Server Info
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
+- Frontend: http://localhost:5173
+- Health Check: http://localhost:8000/api/health
+- Start everything: ./init.sh
+- Backend runs from: backend/ directory with venv activated
+- Frontend runs from: frontend/ directory with npm run dev
+
+## Architecture Notes
+- Backend CWD should be set to backend/ before starting uvicorn
+- Frontend vite.config.ts proxies /api/* to http://localhost:8000
+- Database file: data/promptforge.db (auto-created on first start)
+- Scores are stored as floats 0.0-1.0 in the DB (multiply by 10 for display)
