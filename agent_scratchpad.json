@@ -2,16 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 21,
-      "session_type": "coding",
-      "tests_completed": [],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "mocks_found": 0,
-      "mocks_fixed": 0,
-      "summary": "No-op coding session. All 200/200 tests already passing. Verified backend health, frontend health, and feature_list.json. No failing tests, no blocked tests, no regressions. Project is complete."
-    },
-    {
       "session_id": 22,
       "session_type": "validator",
       "tests_completed": [],
@@ -60,6 +50,16 @@
       "mocks_found": 0,
       "mocks_fixed": 0,
       "summary": "Quick validation (no code changes since session 8). 5 spot checks across T0-T4 via Puppeteer + API: #10 (root layout), #36 (framework_applied), #109 (score badge), #140 (offset pagination), #174 (color hierarchy). Zero regressions. Code audit clean (12 files scanned, all service files read). Frontend build succeeds (4.19s). Infrastructure healthy. 200/200 confirmed passing."
+    },
+    {
+      "session_id": 27,
+      "session_type": "coding",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "mocks_found": 0,
+      "mocks_fixed": 0,
+      "summary": "No-op coding session. All 200/200 tests already passing. Verified backend health (claude_available=true, db_connected=true), frontend health, and feature_list.json (0 failing). No failing tests, no blocked tests, no regressions. Project is complete."
     }
   ],
   "active_warnings": [],
@@ -285,7 +285,7 @@
       "7": 12,
       "8": 14,
       "9": 14,
-      "10": 14,
+      "10": 26,
       "11": 9,
       "12": 12,
       "13": 9,
@@ -377,7 +377,6 @@
       "132": 24,
       "164": 24,
       "195": 24,
-      "10": 26,
       "36": 26,
       "109": 26,
       "140": 26,
