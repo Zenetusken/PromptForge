@@ -1,19 +1,30 @@
-import { fetchHistory, deleteOptimization, type HistoryEntry } from '$lib/api/client';
+import { fetchHistory, deleteOptimization, type HistoryItem, type HistoryResponse } from '$lib/api/client';
 
 class HistoryState {
-	entries: HistoryEntry[] = $state([]);
+	items: HistoryItem[] = $state([]);
+	total: number = $state(0);
+	page: number = $state(1);
+	perPage: number = $state(20);
 	isLoading: boolean = $state(false);
 	hasLoaded: boolean = $state(false);
 
-	async loadHistory() {
+	async loadHistory(params?: { page?: number; search?: string }) {
 		if (this.isLoading) return;
 		this.isLoading = true;
 
 		try {
-			this.entries = await fetchHistory();
+			const response: HistoryResponse = await fetchHistory({
+				page: params?.page ?? 1,
+				per_page: this.perPage,
+				search: params?.search
+			});
+			this.items = response.items;
+			this.total = response.total;
+			this.page = response.page;
+			this.perPage = response.per_page;
 			this.hasLoaded = true;
 		} catch {
-			// Silently fail - entries stay empty
+			// Silently fail - items stay empty
 		} finally {
 			this.isLoading = false;
 		}
@@ -22,13 +33,15 @@ class HistoryState {
 	async removeEntry(id: string) {
 		const success = await deleteOptimization(id);
 		if (success) {
-			this.entries = this.entries.filter((e) => e.id !== id);
+			this.items = this.items.filter((e) => e.id !== id);
+			this.total = Math.max(0, this.total - 1);
 		}
 		return success;
 	}
 
-	addEntry(entry: HistoryEntry) {
-		this.entries = [entry, ...this.entries];
+	addEntry(item: HistoryItem) {
+		this.items = [item, ...this.items];
+		this.total += 1;
 	}
 }
 

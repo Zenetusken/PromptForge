@@ -2,31 +2,140 @@ const BASE_URL = '/api';
 
 export interface OptimizationResult {
 	id: string;
-	original: string;
-	optimized: string;
-	scores: Record<string, number>;
-	explanation: string;
-	createdAt: string;
+	optimized_prompt: string;
+	raw_prompt: string;
+	task_type: string;
+	complexity: string;
+	weaknesses: string[];
+	strengths: string[];
+	changes_made: string[];
+	framework_applied: string;
+	optimization_notes: string;
+	clarity_score: number;
+	specificity_score: number;
+	structure_score: number;
+	faithfulness_score: number;
+	overall_score: number;
+	is_improvement: boolean;
+	verdict: string;
+	duration_ms: number;
+	model_used: string;
+	status: string;
 }
 
-export interface HistoryEntry {
+export interface HistoryItem {
 	id: string;
-	prompt: string;
-	score?: number;
-	createdAt: string;
+	created_at: string;
+	raw_prompt: string;
+	optimized_prompt: string | null;
+	task_type: string | null;
+	complexity: string | null;
+	weaknesses: string[] | null;
+	strengths: string[] | null;
+	changes_made: string[] | null;
+	framework_applied: string | null;
+	optimization_notes: string | null;
+	clarity_score: number | null;
+	specificity_score: number | null;
+	structure_score: number | null;
+	faithfulness_score: number | null;
+	overall_score: number | null;
+	is_improvement: boolean | null;
+	verdict: string | null;
+	duration_ms: number | null;
+	model_used: string | null;
+	status: string;
+	error_message: string | null;
+	project: string | null;
+	tags: string[] | null;
+	title: string | null;
+}
+
+export interface HistoryResponse {
+	items: HistoryItem[];
+	total: number;
+	page: number;
+	per_page: number;
 }
 
 export interface PipelineEvent {
-	type: 'step_start' | 'step_complete' | 'step_error' | 'result' | 'error';
+	type: 'step_start' | 'step_complete' | 'step_progress' | 'step_error' | 'result' | 'error';
 	step?: string;
-	data?: unknown;
+	data?: Record<string, unknown>;
 	error?: string;
+	message?: string;
 }
 
-export interface Stats {
-	totalOptimizations: number;
-	averageScore: number;
-	topCategories: Record<string, number>;
+export interface StatsResponse {
+	total_optimizations: number;
+	average_overall_score: number | null;
+	average_clarity_score: number | null;
+	average_specificity_score: number | null;
+	average_structure_score: number | null;
+	average_faithfulness_score: number | null;
+	improvement_rate: number | null;
+	total_projects: number;
+	most_common_task_type: string | null;
+	optimizations_today: number;
+}
+
+/**
+ * Map backend SSE event types to frontend PipelineEvent types.
+ * Backend sends: event: stage|analysis|optimization|validation|complete
+ * Frontend expects: step_start|step_complete|step_progress|result|error
+ */
+function mapSSEEvent(eventType: string, data: Record<string, unknown>): PipelineEvent | null {
+	switch (eventType) {
+		case 'stage': {
+			const stage = data.stage as string;
+			// Map stage names to step names
+			const stepMap: Record<string, string> = {
+				analyzing: 'analyze',
+				optimizing: 'optimize',
+				validating: 'validate'
+			};
+			return {
+				type: 'step_start',
+				step: stepMap[stage] || stage,
+				message: data.message as string
+			};
+		}
+		case 'analysis': {
+			return {
+				type: 'step_complete',
+				step: 'analyze',
+				data: data
+			};
+		}
+		case 'optimization': {
+			return {
+				type: 'step_complete',
+				step: 'optimize',
+				data: data
+			};
+		}
+		case 'validation': {
+			return {
+				type: 'step_complete',
+				step: 'validate',
+				data: data
+			};
+		}
+		case 'complete': {
+			return {
+				type: 'result',
+				data: data
+			};
+		}
+		case 'error': {
+			return {
+				type: 'error',
+				error: (data.error as string) || 'Unknown error'
+			};
+		}
+		default:
+			return null;
+	}
 }
 
 /**
@@ -58,6 +167,7 @@ export function fetchOptimize(
 
 			const decoder = new TextDecoder();
 			let buffer = '';
+			let currentEventType = '';
 
 			while (true) {
 				const { done, value } = await reader.read();
@@ -69,13 +179,22 @@ export function fetchOptimize(
 
 				for (const line of lines) {
 					const trimmed = line.trim();
-					if (trimmed.startsWith('data: ')) {
+					if (trimmed.startsWith('event: ')) {
+						currentEventType = trimmed.slice(7).trim();
+					} else if (trimmed.startsWith('data: ')) {
 						try {
 							const data = JSON.parse(trimmed.slice(6));
-							onEvent(data as PipelineEvent);
+							const mapped = mapSSEEvent(currentEventType || 'unknown', data);
+							if (mapped) {
+								onEvent(mapped);
+							}
 						} catch {
 							// Skip malformed JSON
 						}
+						currentEventType = '';
+					} else if (trimmed === '') {
+						// Empty line marks end of event block - reset event type
+						currentEventType = '';
 					}
 				}
 			}
@@ -92,13 +211,42 @@ export function fetchOptimize(
 /**
  * Fetch optimization history
  */
-export async function fetchHistory(): Promise<HistoryEntry[]> {
+export async function fetchHistory(
+	params?: {
+		page?: number;
+		per_page?: number;
+		search?: string;
+		sort?: string;
+		order?: string;
+	}
+): Promise<HistoryResponse> {
 	try {
-		const response = await fetch(`${BASE_URL}/history`);
-		if (!response.ok) return [];
+		const searchParams = new URLSearchParams();
+		if (params?.page) searchParams.set('page', String(params.page));
+		if (params?.per_page) searchParams.set('per_page', String(params.per_page));
+		if (params?.search) searchParams.set('search', params.search);
+		if (params?.sort) searchParams.set('sort', params.sort);
+		if (params?.order) searchParams.set('order', params.order);
+
+		const url = `${BASE_URL}/history${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
+		const response = await fetch(url);
+		if (!response.ok) return { items: [], total: 0, page: 1, per_page: 20 };
 		return await response.json();
 	} catch {
-		return [];
+		return { items: [], total: 0, page: 1, per_page: 20 };
+	}
+}
+
+/**
+ * Fetch a single optimization by ID
+ */
+export async function fetchOptimization(id: string): Promise<HistoryItem | null> {
+	try {
+		const response = await fetch(`${BASE_URL}/optimize/${id}`);
+		if (!response.ok) return null;
+		return await response.json();
+	} catch {
+		return null;
 	}
 }
 
@@ -119,9 +267,9 @@ export async function deleteOptimization(id: string): Promise<boolean> {
 /**
  * Fetch usage statistics
  */
-export async function fetchStats(): Promise<Stats | null> {
+export async function fetchStats(): Promise<StatsResponse | null> {
 	try {
-		const response = await fetch(`${BASE_URL}/stats`);
+		const response = await fetch(`${BASE_URL}/history/stats`);
 		if (!response.ok) return null;
 		return await response.json();
 	} catch {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import Header from '$lib/components/Header.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 	import HistorySidebar from '$lib/components/HistorySidebar.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 
@@ -18,6 +19,8 @@
 		<main class="flex-1 overflow-y-auto p-6">
 			{@render children()}
 		</main>
+
+		<Footer />
 	</div>
 </div>
 

@@ -166,3 +166,98 @@ properly updated after streaming completes.
 - Frontend vite.config.ts proxies /api/* to http://localhost:8000
 - Database file: data/promptforge.db (auto-created on first start)
 - Scores are stored as floats 0.0-1.0 in the DB (multiply by 10 for display)
+
+## Validation Report — Session 4 (Validator Agent, Feb 13 2026)
+
+**Code integrity audit:**
+- Files scanned: 15+ (all backend services, routers, frontend stores, API client, dependencies)
+- Mocks/stubs found: 0 in service code
+- Mocks/stubs fixed: 0 (none needed)
+- Mocks/stubs remaining: 0
+- TODOs found: 0
+- TODOs resolved: N/A
+- Note: `scripts/seed_examples.py` has `"model_used": "mock"` as metadata for pre-seeded records — this is cosmetic, not a stub implementation.
+- Note: `pass` statements in `claude_client.py` are legitimate (exception handlers in JSON parse retry chain).
+- All services (analyzer.py, optimizer.py, validator.py) make real calls to `claude_client.send_message_json()`
+- Pipeline (pipeline.py) calls all 3 real services sequentially
+- Router (optimize.py) calls `run_pipeline_streaming()` — no inline mock generator
+- Frontend stores start empty (no hardcoded data), API client makes real fetch() calls
+- `claude-code-sdk>=0.0.25` present in both pyproject.toml and requirements.txt
+
+**Scope:** Standard validation — 45 tests verified (all T0 + all T1)
+**Infrastructure:** Healthy (no issues found)
+- Backend health: `{"status":"ok","claude_available":true,"db_connected":true,"version":"0.1.0"}` ✅
+- Frontend loads: HTTP 200, cyberpunk UI renders correctly ✅
+- Frontend build: Succeeds without errors ✅
+- No crash loops after 5-second stability check ✅
+
+**Regressions found:** 0
+**Regressions fixed:** 0 of 0
+
+**Test results (all 45 verified):**
+- T0 #1: Backend responds 200 on port 8000 ✅
+- T0 #2: Frontend responds 200 on port 5173 ✅
+- T0 #3: Health endpoint returns {"status":"ok"} ✅
+- T0 #4: Database file exists at data/promptforge.db ✅
+- T0 #5: Frontend serves HTML with <!doctype html> ✅
+- T0 #6: CORS allows frontend origin (access-control-allow-origin: http://localhost:5173) ✅
+- T0 #7: Swagger UI loads at /docs with all endpoints ✅
+- T0 #8: Content-Type: application/json ✅
+- T0 #9: Cyberpunk theme renders (dark bg, neon accents) ✅
+- T0 #10: Root layout structure (header + sidebar + main) ✅
+- T0 #11: Optimizations table exists with 25 columns ✅
+- T0 #12: Frontend reaches backend API (history sidebar loads data) ✅
+- T0 #13: SSE endpoint returns text/event-stream ✅
+- T0 #14: Header shows "PromptForge v1.0" ✅
+- T1 #15: POST /api/optimize accepts prompt and streams SSE ✅
+- T1 #16: SSE stream has correct event format ✅
+- T1 #17: GET /api/history returns {items, total, page, per_page} ✅
+- T1 #18: History endpoint functional with correct format ✅
+- T1 #19: GET /api/optimize/{id} returns full record ✅
+- T1 #20: DELETE removes record, subsequent GET returns 404 ✅
+- T1 #21: Stats endpoint returns all expected fields ✅
+- T1 #22: Retry endpoint returns 200 with SSE stream ✅
+- T1 #23: Pagination with page parameter works ✅
+- T1 #24: Pagination with per_page parameter works (returns ≤ requested) ✅
+- T1 #25: Search filters by prompt text ("poem" → 1 result) ✅
+- T1 #26: Sort by created_at desc works (dates in descending order) ✅
+- T1 #27: Sort by created_at asc works (dates in ascending order) ✅
+- T1 #28-40: All optimization record fields verified on real pipeline output:
+  - raw_prompt, optimized_prompt, task_type, complexity, weaknesses, strengths,
+    changes_made, framework_applied, 5 scores, verdict, duration_ms, status ✅
+- T1 #41: Invalid payload returns 422 ✅
+- T1 #42: Non-existent ID returns 404 ✅
+- T1 #43: Empty prompt returns 422 ✅
+- T1 #44: Stats totals match history count ✅
+- T1 #45: Delete non-existent returns 404 ✅
+
+**Cross-feature integration:**
+- Frontend build: ✅ succeeds
+- History → Result panel data flow: ✅ clicking history item loads real results
+- UI visual coherence: ✅ cyberpunk theme, all sections render correctly
+- Metadata badges, tabs (Optimized/Diff View/Original), scores all display ✅
+
+**Tests still passing after validation:** 45/200
+
+**Tier breakdown:**
+- T0: 14/14 passing
+- T1: 31/31 passing
+- T2: 0/75 passing
+- T3: 0/40 passing
+- T4: 0/25 passing
+- T5: 0/15 passing
+
+**Guidance for next coding session:**
+- Code integrity is clean — no mocks/stubs/TODOs remaining in service code
+- All 45 T0+T1 tests confirmed passing with real data flowing end-to-end
+- Real pipeline produces varied results (different task_types, scores, strategies for different prompts)
+- Next focus: T2 tests (IDs 46-120, Primary Features)
+  - These are likely UI interaction tests: submitting prompts, viewing results,
+    pipeline progress animation, diff view, copy button, etc.
+  - Pipeline calls take ~10-30 seconds (3 sequential Claude calls) — account for this in test timeouts
+- Frontend components have data-testid attributes: history-sidebar, history-count, history-search, history-list
+- History items are <div> elements with onclick handlers (not <button>), inside [data-testid="history-list"]
+- puppeteer_evaluate returns undefined for string results — use screenshot-based verification or side effects instead
+
+**Progress:** 45/200 tests passing (22.5%)
+**Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh

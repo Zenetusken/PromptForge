@@ -1,20 +1,38 @@
-import { fetchOptimize, type PipelineEvent, type OptimizationResult } from '$lib/api/client';
+import { fetchOptimize, type PipelineEvent, type HistoryItem } from '$lib/api/client';
 
 export interface StepState {
 	name: string;
+	label: string;
 	status: 'pending' | 'running' | 'complete' | 'error';
 	description?: string;
+	data?: Record<string, unknown>;
 }
 
 export interface RunState {
 	steps: StepState[];
 }
 
-interface OptimizationResultState {
+export interface OptimizationResultState {
+	id: string;
 	original: string;
 	optimized: string;
-	scores: Record<string, number>;
-	explanation: string;
+	task_type: string;
+	complexity: string;
+	weaknesses: string[];
+	strengths: string[];
+	changes_made: string[];
+	framework_applied: string;
+	optimization_notes: string;
+	scores: {
+		clarity: number;
+		specificity: number;
+		structure: number;
+		faithfulness: number;
+		overall: number;
+	};
+	is_improvement: boolean;
+	verdict: string;
+	duration_ms: number;
 }
 
 class OptimizationState {
@@ -34,9 +52,9 @@ class OptimizationState {
 		this.result = null;
 		this.currentRun = {
 			steps: [
-				{ name: 'Analyze', status: 'pending', description: 'Analyzing prompt structure and intent' },
-				{ name: 'Optimize', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
-				{ name: 'Validate', status: 'pending', description: 'Scoring and quality assessment' }
+				{ name: 'analyze', label: 'ANALYZE', status: 'pending', description: 'Analyzing prompt structure and intent' },
+				{ name: 'optimize', label: 'OPTIMIZE', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
+				{ name: 'validate', label: 'VALIDATE', status: 'pending', description: 'Scoring and quality assessment' }
 			]
 		};
 
@@ -58,7 +76,7 @@ class OptimizationState {
 			case 'step_start': {
 				const stepName = event.step || '';
 				this.currentRun.steps = this.currentRun.steps.map((s) =>
-					s.name.toLowerCase() === stepName.toLowerCase()
+					s.name === stepName
 						? { ...s, status: 'running' as const }
 						: s
 				);
@@ -68,8 +86,8 @@ class OptimizationState {
 			case 'step_complete': {
 				const stepName = event.step || '';
 				this.currentRun.steps = this.currentRun.steps.map((s) =>
-					s.name.toLowerCase() === stepName.toLowerCase()
-						? { ...s, status: 'complete' as const }
+					s.name === stepName
+						? { ...s, status: 'complete' as const, data: event.data }
 						: s
 				);
 				break;
@@ -78,7 +96,7 @@ class OptimizationState {
 			case 'step_error': {
 				const stepName = event.step || '';
 				this.currentRun.steps = this.currentRun.steps.map((s) =>
-					s.name.toLowerCase() === stepName.toLowerCase()
+					s.name === stepName
 						? { ...s, status: 'error' as const }
 						: s
 				);
@@ -87,16 +105,40 @@ class OptimizationState {
 			}
 
 			case 'result': {
-				const data = event.data as OptimizationResult;
+				const data = event.data || {};
 				this.result = {
+					id: (data.id as string) || '',
 					original: originalPrompt,
-					optimized: data?.optimized || '',
-					scores: data?.scores || {},
-					explanation: data?.explanation || ''
+					optimized: (data.optimized_prompt as string) || '',
+					task_type: (data.task_type as string) || '',
+					complexity: (data.complexity as string) || '',
+					weaknesses: (data.weaknesses as string[]) || [],
+					strengths: (data.strengths as string[]) || [],
+					changes_made: (data.changes_made as string[]) || [],
+					framework_applied: (data.framework_applied as string) || '',
+					optimization_notes: (data.optimization_notes as string) || '',
+					scores: {
+						clarity: (data.clarity_score as number) || 0,
+						specificity: (data.specificity_score as number) || 0,
+						structure: (data.structure_score as number) || 0,
+						faithfulness: (data.faithfulness_score as number) || 0,
+						overall: (data.overall_score as number) || 0,
+					},
+					is_improvement: (data.is_improvement as boolean) ?? true,
+					verdict: (data.verdict as string) || '',
+					duration_ms: (data.duration_ms as number) || 0,
 				};
 				this.isRunning = false;
-				this.currentRun = null;
+				// Mark all steps as complete
+				if (this.currentRun) {
+					this.currentRun.steps = this.currentRun.steps.map((s) => ({
+						...s,
+						status: 'complete' as const
+					}));
+				}
 				toastState.show('Optimization complete!', 'success');
+				// Trigger history refresh
+				historyRefreshCallback?.();
 				break;
 			}
 
@@ -107,6 +149,36 @@ class OptimizationState {
 				break;
 			}
 		}
+	}
+
+	/**
+	 * Load a result from history (no pipeline animation)
+	 */
+	loadFromHistory(item: HistoryItem) {
+		this.cancel();
+		this.currentRun = null;
+		this.result = {
+			id: item.id,
+			original: item.raw_prompt,
+			optimized: item.optimized_prompt || '',
+			task_type: item.task_type || '',
+			complexity: item.complexity || '',
+			weaknesses: item.weaknesses || [],
+			strengths: item.strengths || [],
+			changes_made: item.changes_made || [],
+			framework_applied: item.framework_applied || '',
+			optimization_notes: item.optimization_notes || '',
+			scores: {
+				clarity: item.clarity_score || 0,
+				specificity: item.specificity_score || 0,
+				structure: item.structure_score || 0,
+				faithfulness: item.faithfulness_score || 0,
+				overall: item.overall_score || 0,
+			},
+			is_improvement: item.is_improvement ?? true,
+			verdict: item.verdict || '',
+			duration_ms: item.duration_ms || 0,
+		};
 	}
 
 	cancel() {
@@ -149,6 +221,12 @@ class ToastState {
 			this.timeoutId = null;
 		}
 	}
+}
+
+// Callback for history refresh after optimization
+let historyRefreshCallback: (() => void) | null = null;
+export function setHistoryRefreshCallback(cb: () => void) {
+	historyRefreshCallback = cb;
 }
 
 export const optimizationState = new OptimizationState();

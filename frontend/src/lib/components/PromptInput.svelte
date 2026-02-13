@@ -33,18 +33,19 @@
 
 <div class="rounded-xl border border-text-dim/20 bg-bg-card p-4 transition-colors focus-within:border-neon-cyan/40">
 	<textarea
+		data-testid="prompt-textarea"
 		bind:this={textareaEl}
 		bind:value={prompt}
 		onkeydown={handleKeydown}
 		{disabled}
 		placeholder="Paste your prompt here... PromptForge will handle the rest."
 		rows="6"
-		class="w-full resize-none bg-transparent font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-dim disabled:opacity-50"
+		class="w-full resize-y bg-transparent font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-dim disabled:opacity-50"
 	></textarea>
 
 	<div class="mt-3 flex items-center justify-between border-t border-text-dim/10 pt-3">
 		<div class="flex items-center gap-4">
-			<span class="font-mono text-xs text-text-dim">
+			<span class="font-mono text-xs text-text-dim" data-testid="char-count">
 				{charCount} chars
 			</span>
 			<span class="text-xs text-text-dim">
@@ -53,6 +54,7 @@
 		</div>
 
 		<button
+			data-testid="forge-button"
 			onclick={handleSubmit}
 			disabled={disabled || !prompt.trim()}
 			class="rounded-lg px-6 py-2 font-semibold text-bg-primary transition-all disabled:cursor-not-allowed disabled:opacity-40"

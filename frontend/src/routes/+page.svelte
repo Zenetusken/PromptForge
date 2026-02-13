@@ -12,20 +12,28 @@
 <div class="mx-auto flex max-w-6xl flex-col gap-6">
 	<PromptInput onsubmit={handleOptimize} disabled={optimizationState.isRunning} />
 
+	{#if optimizationState.error}
+		<div class="rounded-xl border border-neon-red/30 bg-neon-red/5 p-4">
+			<div class="flex items-center gap-2">
+				<svg class="h-5 w-5 shrink-0 text-neon-red" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+					<circle cx="12" cy="12" r="10" />
+					<line x1="15" y1="9" x2="9" y2="15" />
+					<line x1="9" y1="9" x2="15" y2="15" />
+				</svg>
+				<p class="text-sm text-neon-red">{optimizationState.error}</p>
+			</div>
+		</div>
+	{/if}
+
 	{#if optimizationState.currentRun}
 		<PipelineProgress steps={optimizationState.currentRun.steps} />
 	{/if}
 
 	{#if optimizationState.result}
-		<ResultPanel
-			original={optimizationState.result.original}
-			optimized={optimizationState.result.optimized}
-			scores={optimizationState.result.scores}
-			explanation={optimizationState.result.explanation}
-		/>
+		<ResultPanel result={optimizationState.result} />
 	{/if}
 
-	{#if !optimizationState.currentRun && !optimizationState.result}
+	{#if !optimizationState.currentRun && !optimizationState.result && !optimizationState.error}
 		<div class="flex flex-col items-center justify-center py-20">
 			<div
 				class="mb-6 text-6xl font-bold tracking-tight"

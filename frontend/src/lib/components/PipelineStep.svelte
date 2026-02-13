@@ -11,6 +11,12 @@
 
 	let color = $derived(getColor());
 	let isActive = $derived(step.status === 'running' || step.status === 'complete');
+
+	// Extract useful data from completed steps
+	let taskType = $derived(step.data?.task_type as string | undefined);
+	let weaknesses = $derived(step.data?.weaknesses as string[] | undefined);
+	let strengths = $derived(step.data?.strengths as string[] | undefined);
+	let hasStepData = $derived(step.status === 'complete' && step.data && Object.keys(step.data).length > 0);
 </script>
 
 <div class="flex flex-1 flex-col items-center gap-2 rounded-lg p-3 text-center">
@@ -81,7 +87,7 @@
 		{/if}
 	</div>
 
-	<!-- Step name -->
+	<!-- Step label -->
 	<div
 		class="font-mono text-sm font-semibold"
 		class:text-neon-cyan={index === 0 && isActive}
@@ -90,11 +96,40 @@
 		class:text-text-dim={step.status === 'pending'}
 		class:text-neon-red={step.status === 'error'}
 	>
-		{step.name}
+		{step.label}
 	</div>
 
 	<!-- Description -->
 	{#if step.description}
 		<div class="text-xs text-text-dim">{step.description}</div>
+	{/if}
+
+	<!-- Step data details (shown when complete) -->
+	{#if hasStepData}
+		<div class="mt-1 flex flex-col items-center gap-1">
+			{#if taskType}
+				<span class="inline-block rounded-full bg-neon-cyan/10 px-2 py-0.5 font-mono text-[10px] text-neon-cyan">
+					{taskType}
+				</span>
+			{/if}
+			{#if weaknesses && weaknesses.length > 0}
+				<div class="flex flex-wrap justify-center gap-1">
+					{#each weaknesses.slice(0, 2) as weakness}
+						<span class="inline-block max-w-[140px] truncate rounded bg-neon-red/10 px-1.5 py-0.5 text-[10px] text-neon-red">
+							{weakness}
+						</span>
+					{/each}
+				</div>
+			{/if}
+			{#if strengths && strengths.length > 0}
+				<div class="flex flex-wrap justify-center gap-1">
+					{#each strengths.slice(0, 2) as strength}
+						<span class="inline-block max-w-[140px] truncate rounded bg-neon-green/10 px-1.5 py-0.5 text-[10px] text-neon-green">
+							{strength}
+						</span>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	{/if}
 </div>

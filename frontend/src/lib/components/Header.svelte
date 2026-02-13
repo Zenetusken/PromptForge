@@ -4,12 +4,14 @@
 
 <header
 	class="flex h-14 shrink-0 items-center justify-between border-b border-text-dim/20 bg-bg-secondary px-6"
+	data-testid="header"
 >
 	<div class="flex items-center gap-3">
 		<button
 			onclick={() => (sidebarOpen = !sidebarOpen)}
 			class="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-bg-card hover:text-neon-cyan"
 			aria-label="Toggle sidebar"
+			data-testid="sidebar-toggle"
 		>
 			<svg
 				xmlns="http://www.w3.org/2000/svg"
@@ -32,6 +34,7 @@
 			<span
 				class="font-mono text-xl font-bold tracking-tight"
 				style="background: linear-gradient(135deg, var(--color-neon-cyan), var(--color-neon-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"
+				data-testid="logo-text"
 			>
 				PromptForge
 			</span>
@@ -42,7 +45,7 @@
 	</div>
 
 	<div class="flex items-center gap-3">
-		<div class="flex items-center gap-1.5 text-sm text-text-secondary">
+		<div class="flex items-center gap-1.5 text-sm text-text-secondary" data-testid="stats-badge">
 			<div class="h-2 w-2 rounded-full bg-neon-green shadow-[0_0_6px_var(--color-neon-green)]"></div>
 			<span>Pipeline Ready</span>
 		</div>
