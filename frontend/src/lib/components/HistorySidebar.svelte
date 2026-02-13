@@ -3,7 +3,7 @@
 	import { historyState } from '$lib/stores/history.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { promptState } from '$lib/stores/prompt.svelte';
-	import { truncateText, formatRelativeTime } from '$lib/utils/format';
+	import { truncateText, formatRelativeTime, normalizeScore, getScoreColorClass } from '$lib/utils/format';
 	import type { HistoryItem } from '$lib/api/client';
 
 	let { open = $bindable(true) }: { open: boolean } = $props();
@@ -22,24 +22,16 @@
 			: historyState.items
 	);
 
-	function normalizeScore(score: number | null): number | null {
-		if (score === null || score === undefined) return null;
-		if (score <= 1) return Math.round(score * 100);
-		return Math.round(score);
-	}
-
 	function getScoreClass(score: number | null): string {
 		if (score === null) return 'bg-text-dim/10 text-text-dim';
-		const pct = score <= 1 ? score * 100 : score;
-		if (pct >= 70) return 'bg-neon-green/10 text-neon-green';
-		if (pct >= 40) return 'bg-neon-yellow/10 text-neon-yellow';
-		return 'bg-neon-red/10 text-neon-red';
+		const color = getScoreColorClass(score);
+		return `bg-${color}/10 text-${color}`;
 	}
 
 	function handleSearch() {
 		if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
 		searchDebounceTimer = setTimeout(() => {
-			historyState.loadHistory({ search: searchQuery || undefined });
+			historyState.setSearch(searchQuery);
 		}, 300);
 	}
 
@@ -66,16 +58,28 @@
 	function handleReforge(e: Event, item: HistoryItem) {
 		e.stopPropagation();
 		optimizationState.retryOptimization(item.id, item.raw_prompt);
+		goto('/');
 	}
 
 	function handleEditReforge(e: Event, item: HistoryItem) {
 		e.stopPropagation();
 		promptState.set(item.raw_prompt);
+		goto('/');
 	}
 
 	function handleSortChange(e: Event) {
 		const select = e.target as HTMLSelectElement;
 		historyState.setSortBy(select.value);
+	}
+
+	function handleTaskTypeFilter(e: Event) {
+		const select = e.target as HTMLSelectElement;
+		historyState.setFilterTaskType(select.value);
+	}
+
+	function handleProjectFilter(e: Event) {
+		const select = e.target as HTMLSelectElement;
+		historyState.setFilterProject(select.value);
 	}
 
 	function requestClearHistory() {
@@ -85,6 +89,7 @@
 	async function confirmClearHistory() {
 		showClearConfirm = false;
 		await historyState.clearAll();
+		searchQuery = '';
 	}
 
 	function cancelClearHistory() {
@@ -143,6 +148,38 @@
 				Clear
 			</button>
 		</div>
+		{#if historyState.availableTaskTypes.length > 0 || historyState.availableProjects.length > 0}
+			<div class="flex items-center gap-2">
+				{#if historyState.availableTaskTypes.length > 0}
+					<select
+						value={historyState.filterTaskType}
+						onchange={handleTaskTypeFilter}
+						aria-label="Filter by task type"
+						class="flex-1 rounded-lg border border-text-dim/20 bg-bg-input px-2 py-1.5 font-mono text-xs text-text-secondary outline-none focus:border-neon-cyan/40"
+						data-testid="filter-task-type"
+					>
+						<option value="">All types</option>
+						{#each historyState.availableTaskTypes as taskType}
+							<option value={taskType}>{taskType}</option>
+						{/each}
+					</select>
+				{/if}
+				{#if historyState.availableProjects.length > 0}
+					<select
+						value={historyState.filterProject}
+						onchange={handleProjectFilter}
+						aria-label="Filter by project"
+						class="flex-1 rounded-lg border border-text-dim/20 bg-bg-input px-2 py-1.5 font-mono text-xs text-text-secondary outline-none focus:border-neon-cyan/40"
+						data-testid="filter-project"
+					>
+						<option value="">All projects</option>
+						{#each historyState.availableProjects as project}
+							<option value={project}>{project}</option>
+						{/each}
+					</select>
+				{/if}
+			</div>
+		{/if}
 	</div>
 
 	<!-- Clear History Confirmation Dialog -->

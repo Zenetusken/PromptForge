@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import DiffView from './DiffView.svelte';
 	import ScorePanel from './ScorePanel.svelte';
 	import CopyButton from './CopyButton.svelte';
 	import { optimizationState, toastState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
 	import { promptState } from '$lib/stores/prompt.svelte';
+	import { copyToClipboard } from '$lib/utils/clipboard';
+	import { normalizeScore } from '$lib/utils/format';
 
 	let { result }: { result: OptimizationResultState } = $props();
 
@@ -19,26 +22,10 @@
 	);
 
 	function copyOptimized() {
-		// Show feedback immediately
 		copyFeedback = true;
 		setTimeout(() => { copyFeedback = false; }, 2000);
 
-		// Copy to clipboard in next microtask to avoid blocking Puppeteer/automation
-		setTimeout(() => {
-			try {
-				const textarea = document.createElement('textarea');
-				textarea.value = result.optimized;
-				textarea.style.position = 'fixed';
-				textarea.style.opacity = '0';
-				textarea.style.pointerEvents = 'none';
-				document.body.appendChild(textarea);
-				textarea.select();
-				document.execCommand('copy');
-				document.body.removeChild(textarea);
-			} catch { /* clipboard copy is best-effort */ }
-		}, 0);
-
-		// Show toast notification
+		copyToClipboard(result.optimized);
 		toastState.show('Copied to clipboard!', 'success', 3000);
 	}
 
@@ -48,15 +35,24 @@
 		} else {
 			optimizationState.startOptimization(result.original);
 		}
+		// Navigate home so pipeline progress is visible
+		if (window.location.pathname !== '/') {
+			goto('/');
+		}
 	}
 
 	function handleEditReforge() {
 		promptState.set(result.optimized);
-		window.scrollTo({ top: 0, behavior: 'smooth' });
+		// Navigate home where PromptInput exists
+		if (window.location.pathname !== '/') {
+			goto('/');
+		} else {
+			window.scrollTo({ top: 0, behavior: 'smooth' });
+		}
 	}
 
 	function handleExportMd() {
-		const content = `# Optimized Prompt\n\n${result.optimized}\n\n## Original Prompt\n\n${result.original}\n\n## Analysis\n\n- **Task Type:** ${result.task_type}\n- **Complexity:** ${result.complexity}\n- **Framework:** ${result.framework_applied}\n- **Overall Score:** ${result.scores.overall}\n\n## Verdict\n\n${result.verdict}\n\n## Changes Made\n\n${result.changes_made.map(c => '- ' + c).join('\n')}\n`;
+		const content = `# Optimized Prompt\n\n${result.optimized}\n\n## Original Prompt\n\n${result.original}\n\n## Analysis\n\n- **Task Type:** ${result.task_type}\n- **Complexity:** ${result.complexity}\n- **Framework:** ${result.framework_applied}\n- **Overall Score:** ${normalizeScore(result.scores.overall) ?? 0}/100\n- **Clarity:** ${normalizeScore(result.scores.clarity) ?? 0}/100\n- **Specificity:** ${normalizeScore(result.scores.specificity) ?? 0}/100\n- **Structure:** ${normalizeScore(result.scores.structure) ?? 0}/100\n- **Faithfulness:** ${normalizeScore(result.scores.faithfulness) ?? 0}/100\n\n## Verdict\n\n${result.verdict}\n\n## Changes Made\n\n${result.changes_made.map(c => '- ' + c).join('\n')}\n`;
 		const blob = new Blob([content], { type: 'text/markdown' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');

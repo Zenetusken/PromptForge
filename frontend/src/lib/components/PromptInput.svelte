@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { promptState } from '$lib/stores/prompt.svelte';
+	import type { OptimizeMetadata } from '$lib/api/client';
 
 	let {
 		onsubmit,
 		disabled = false
 	}: {
-		onsubmit: (prompt: string) => void;
+		onsubmit: (prompt: string, metadata?: OptimizeMetadata) => void;
 		disabled?: boolean;
 	} = $props();
 
@@ -14,9 +15,26 @@
 	let charCount = $derived(prompt.length);
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
 
+	// Metadata fields
+	let showMetadata = $state(false);
+	let title = $state('');
+	let project = $state('');
+	let tagsInput = $state('');
+
+	function buildMetadata(): OptimizeMetadata | undefined {
+		const meta: OptimizeMetadata = {};
+		if (title.trim()) meta.title = title.trim();
+		if (project.trim()) meta.project = project.trim();
+		if (tagsInput.trim()) {
+			const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+			if (tags.length > 0) meta.tags = tags;
+		}
+		return Object.keys(meta).length > 0 ? meta : undefined;
+	}
+
 	function handleSubmit() {
 		if (prompt.trim() && !disabled) {
-			onsubmit(prompt.trim());
+			onsubmit(prompt.trim(), buildMetadata());
 		}
 	}
 
@@ -56,6 +74,61 @@
 		rows="6"
 		class="w-full resize-y bg-transparent font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-dim disabled:opacity-50"
 	></textarea>
+
+	<!-- Collapsible Metadata Section -->
+	<div class="mt-2 border-t border-text-dim/10 pt-2">
+		<button
+			type="button"
+			onclick={() => showMetadata = !showMetadata}
+			class="flex items-center gap-1.5 font-mono text-xs text-text-dim transition-colors hover:text-neon-cyan"
+			data-testid="metadata-toggle"
+		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				width="12"
+				height="12"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				class="transition-transform duration-200"
+				class:rotate-90={showMetadata}
+			>
+				<polyline points="9 18 15 12 9 6" />
+			</svg>
+			Metadata
+		</button>
+		{#if showMetadata}
+			<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3" data-testid="metadata-fields">
+				<input
+					type="text"
+					bind:value={title}
+					placeholder="Title..."
+					aria-label="Optimization title"
+					data-testid="metadata-title"
+					class="rounded-lg border border-text-dim/20 bg-bg-input px-3 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
+				/>
+				<input
+					type="text"
+					bind:value={project}
+					placeholder="Project..."
+					aria-label="Project name"
+					data-testid="metadata-project"
+					class="rounded-lg border border-text-dim/20 bg-bg-input px-3 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
+				/>
+				<input
+					type="text"
+					bind:value={tagsInput}
+					placeholder="Tags (comma-separated)..."
+					aria-label="Tags"
+					data-testid="metadata-tags"
+					class="rounded-lg border border-text-dim/20 bg-bg-input px-3 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
+				/>
+			</div>
+		{/if}
+	</div>
 
 	<div class="mt-3 flex items-center justify-between border-t border-text-dim/10 pt-3">
 		<div class="flex items-center gap-4">

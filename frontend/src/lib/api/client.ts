@@ -68,6 +68,12 @@ export interface PipelineEvent {
 	message?: string;
 }
 
+export interface OptimizeMetadata {
+	title?: string;
+	project?: string;
+	tags?: string[];
+}
+
 export interface StatsResponse {
 	total_optimizations: number;
 	average_overall_score: number | null;
@@ -218,11 +224,12 @@ function openSSEStream(
 export function fetchOptimize(
 	prompt: string,
 	onEvent: (event: PipelineEvent) => void,
-	onError?: (error: Error) => void
+	onError?: (error: Error) => void,
+	metadata?: OptimizeMetadata
 ): AbortController {
 	return openSSEStream(
 		`${BASE_URL}/optimize`,
-		{ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) },
+		{ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, ...metadata }) },
 		onEvent,
 		onError
 	);
@@ -255,6 +262,8 @@ export async function fetchHistory(
 		search?: string;
 		sort?: string;
 		order?: string;
+		task_type?: string;
+		project?: string;
 	}
 ): Promise<HistoryResponse> {
 	try {
@@ -264,6 +273,8 @@ export async function fetchHistory(
 		if (params?.search) searchParams.set('search', params.search);
 		if (params?.sort) searchParams.set('sort', params.sort);
 		if (params?.order) searchParams.set('order', params.order);
+		if (params?.task_type) searchParams.set('task_type', params.task_type);
+		if (params?.project) searchParams.set('project', params.project);
 
 		const url = `${BASE_URL}/history${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
 		const response = await fetch(url);
