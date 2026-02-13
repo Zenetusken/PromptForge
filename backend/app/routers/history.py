@@ -135,6 +135,23 @@ async def get_history(
     )
 
 
+@router.delete("/api/history/all")
+async def clear_all_history(
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete all optimization records from the database."""
+    result = await db.execute(select(func.count(Optimization.id)))
+    count = result.scalar() or 0
+
+    if count == 0:
+        return {"message": "No records to delete", "deleted_count": 0}
+
+    await db.execute(delete(Optimization))
+    await db.commit()
+
+    return {"message": f"Deleted {count} records", "deleted_count": count}
+
+
 @router.delete("/api/history/{optimization_id}")
 async def delete_optimization(
     optimization_id: str,
@@ -154,23 +171,6 @@ async def delete_optimization(
     await db.commit()
 
     return {"message": "Optimization deleted", "id": optimization_id}
-
-
-@router.delete("/api/history/all")
-async def clear_all_history(
-    db: AsyncSession = Depends(get_db),
-):
-    """Delete all optimization records from the database."""
-    result = await db.execute(select(func.count(Optimization.id)))
-    count = result.scalar() or 0
-
-    if count == 0:
-        return {"message": "No records to delete", "deleted_count": 0}
-
-    await db.execute(delete(Optimization))
-    await db.commit()
-
-    return {"message": f"Deleted {count} records", "deleted_count": count}
 
 
 @router.api_route("/api/history/stats", methods=["GET", "HEAD"], response_model=StatsResponse)

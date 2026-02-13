@@ -129,6 +129,7 @@
 			bind:value={searchQuery}
 			oninput={handleSearch}
 			placeholder="Search history..."
+			aria-label="Search optimization history"
 			data-testid="history-search"
 			class="search-input w-full rounded-lg border border-text-dim/20 bg-bg-input px-3 py-2 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
 		/>
@@ -136,6 +137,7 @@
 			<select
 				value={historyState.sortBy}
 				onchange={handleSortChange}
+				aria-label="Sort history by"
 				class="flex-1 rounded-lg border border-text-dim/20 bg-bg-input px-2 py-1.5 font-mono text-xs text-text-secondary outline-none focus:border-neon-cyan/40"
 				data-testid="history-sort"
 			>
@@ -146,6 +148,7 @@
 			<button
 				class="rounded-lg border border-neon-red/20 px-2 py-1.5 font-mono text-xs text-neon-red transition-colors hover:bg-neon-red/10"
 				onclick={requestClearHistory}
+				aria-label="Clear all history"
 				data-testid="clear-history-btn"
 			>
 				Clear
@@ -192,25 +195,35 @@
 			</div>
 		{:else if filteredItems.length === 0}
 			<div class="flex flex-col items-center justify-center py-10 text-center" data-testid="empty-state">
-				<div class="mb-2 text-2xl text-text-dim">
+				<div class="mb-3 text-text-dim">
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
-						width="24"
-						height="24"
+						width="32"
+						height="32"
 						viewBox="0 0 24 24"
 						fill="none"
 						stroke="currentColor"
-						stroke-width="2"
+						stroke-width="1.5"
 						stroke-linecap="round"
 						stroke-linejoin="round"
 					>
-						<circle cx="12" cy="12" r="10" />
-						<polyline points="12 6 12 12 16 14" />
+						{#if searchQuery}
+							<circle cx="11" cy="11" r="8" />
+							<line x1="21" y1="21" x2="16.65" y2="16.65" />
+						{:else}
+							<path d="M12 2L2 7l10 5 10-5-10-5z" />
+							<path d="M2 17l10 5 10-5" />
+							<path d="M2 12l10 5 10-5" />
+						{/if}
 					</svg>
 				</div>
-				<p class="text-xs text-text-dim">
-					{searchQuery ? 'No matching entries' : 'No optimizations yet'}
-				</p>
+				{#if searchQuery}
+					<p class="text-sm font-semibold text-text-secondary">No matching entries</p>
+					<p class="mt-1 text-xs text-text-dim">Try a different search term</p>
+				{:else}
+					<p class="text-sm font-semibold text-text-secondary">No optimizations yet</p>
+					<p class="mt-1 px-4 text-xs text-text-dim">Get started by pasting a prompt and clicking Forge It!</p>
+				{/if}
 			</div>
 		{:else}
 			{#each filteredItems as item (item.id)}

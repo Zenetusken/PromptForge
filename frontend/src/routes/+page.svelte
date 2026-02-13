@@ -4,8 +4,18 @@
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 
+	let lastPrompt = $state('');
+
 	function handleOptimize(prompt: string) {
+		lastPrompt = prompt;
 		optimizationState.startOptimization(prompt);
+	}
+
+	function handleRetry() {
+		if (lastPrompt) {
+			optimizationState.error = null;
+			optimizationState.startOptimization(lastPrompt);
+		}
 	}
 </script>
 
@@ -13,14 +23,26 @@
 	<PromptInput onsubmit={handleOptimize} disabled={optimizationState.isRunning} />
 
 	{#if optimizationState.error}
-		<div class="rounded-xl border border-neon-red/30 bg-neon-red/5 p-4">
-			<div class="flex items-center gap-2">
+		<div class="rounded-xl border border-neon-red/30 bg-neon-red/5 p-4" role="alert" data-testid="error-display">
+			<div class="flex items-center gap-3">
 				<svg class="h-5 w-5 shrink-0 text-neon-red" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 					<circle cx="12" cy="12" r="10" />
-					<line x1="15" y1="9" x2="9" y2="15" />
-					<line x1="9" y1="9" x2="15" y2="15" />
+					<line x1="12" y1="8" x2="12" y2="12" />
+					<line x1="12" y1="16" x2="12.01" y2="16" />
 				</svg>
-				<p class="text-sm text-neon-red">{optimizationState.error}</p>
+				<div class="flex-1">
+					<p class="text-sm font-semibold text-neon-red">Error</p>
+					<p class="mt-0.5 text-sm text-text-secondary">{optimizationState.error}</p>
+				</div>
+				{#if lastPrompt}
+					<button
+						onclick={handleRetry}
+						class="shrink-0 rounded-lg border border-neon-cyan/30 bg-neon-cyan/10 px-4 py-1.5 font-mono text-xs text-neon-cyan transition-colors hover:bg-neon-cyan/20"
+						data-testid="retry-button"
+					>
+						Retry
+					</button>
+				{/if}
 			</div>
 		</div>
 	{/if}

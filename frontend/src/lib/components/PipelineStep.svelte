@@ -23,6 +23,13 @@
 	// Auto-collapse: show expanded only when running or when it's the latest completed and active
 	let isExpanded = $derived(step.status === 'running' || isLatestActive);
 
+	// ARIA status label for screen readers
+	let ariaStatusLabel = $derived.by(() => {
+		const stepNumber = index + 1;
+		const statusText = step.status === 'running' ? 'in progress' : step.status;
+		return `Step ${stepNumber} ${step.label}: ${statusText}`;
+	});
+
 	// Extract useful data from completed steps
 	let taskType = $derived(step.data?.task_type as string | undefined);
 	let weaknesses = $derived(step.data?.weaknesses as string[] | undefined);
@@ -90,6 +97,8 @@
 	class="flex flex-1 flex-col items-center gap-2 rounded-lg border-l-2 p-3 text-center transition-all duration-300"
 	style="border-left-color: {getBorderColor()};"
 	data-testid="pipeline-step-{step.name}"
+	aria-label={ariaStatusLabel}
+	role="group"
 >
 	<!-- Status indicator -->
 	<div class="relative flex h-12 w-12 items-center justify-center">

@@ -39,6 +39,7 @@
 		onkeydown={handleKeydown}
 		{disabled}
 		placeholder="Paste your prompt here... PromptForge will handle the rest."
+		aria-label="Enter your prompt for optimization"
 		rows="6"
 		class="w-full resize-y bg-transparent font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-dim disabled:opacity-50"
 	></textarea>
@@ -57,6 +58,7 @@
 			data-testid="forge-button"
 			onclick={handleSubmit}
 			disabled={disabled || !prompt.trim()}
+			aria-label={disabled ? 'Optimization in progress' : 'Forge It! — Optimize your prompt'}
 			class="rounded-lg px-6 py-2 font-semibold text-bg-primary transition-all duration-200 hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
 			style="background: linear-gradient(135deg, var(--color-neon-cyan), var(--color-neon-purple)); box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);"
 		>

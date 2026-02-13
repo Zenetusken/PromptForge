@@ -46,7 +46,7 @@
 			{@const rawScore = scores[key]}
 			{@const pct = normalizeScore(rawScore)}
 			{@const color = getScoreColor(rawScore)}
-			<div class="rounded-lg bg-bg-input p-3" class:sm:col-span-2={key === 'overall'} data-testid="score-bar-{key}">
+			<div class="rounded-lg bg-bg-input p-3" class:sm:col-span-2={key === 'overall'} data-testid="score-bar-{key}" role="meter" aria-label="{label}: {pct} out of 100" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
 				<div class="mb-2 flex items-center justify-between">
 					<span class="text-sm text-text-primary" class:font-semibold={key === 'overall'}>
 						{label}

@@ -4677,7 +4677,7 @@
       "VERIFY no interactive elements are skipped in the tab order"
     ],
     "expected_outcome": "Tab navigation follows a logical order through all main interactive elements (search, textarea, submit button) without skipping any elements or getting trapped.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 187,
@@ -4699,7 +4699,7 @@
       "VERIFY no form element has an empty accessible name"
     ],
     "expected_outcome": "All form elements have proper accessible labels through label elements, aria-label, aria-labelledby, or visible text content, ensuring screen readers can identify them.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 188,
@@ -4722,7 +4722,7 @@
       "VERIFY completed steps have their status conveyed through ARIA attributes (e.g., aria-label='Step 1 Analyze: completed')"
     ],
     "expected_outcome": "Pipeline status changes are communicated to assistive technology through ARIA live regions and descriptive ARIA labels on each step indicator.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 189,
@@ -4747,7 +4747,7 @@
       "VERIFY a screen reader would be able to determine 'Clarity: 8 out of 10' or equivalent from the markup"
     ],
     "expected_outcome": "Score bar visualizations include visible numeric labels and ARIA attributes that convey the exact score values to screen readers.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 190,
@@ -4773,7 +4773,7 @@
       "SCREENSHOT the pipeline steps and score panel to confirm non-color indicators are present"
     ],
     "expected_outcome": "All status information is conveyed through icons, text labels, or shapes in addition to color, ensuring accessibility for users with color vision deficiencies.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 191,
@@ -4798,7 +4798,7 @@
       "VERIFY no interactive element has outline:none or focus-visible:none without a replacement indicator"
     ],
     "expected_outcome": "All interactive elements display a clearly visible focus indicator (outline, ring, or glow) when navigated via keyboard, visible against the dark background.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 192,
@@ -4824,7 +4824,7 @@
       "RUN a command to restart the backend server"
     ],
     "expected_outcome": "Errors are displayed prominently with neon red styling, human-readable messages, and no exposed technical internals, making it clear something went wrong.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 193,
@@ -4847,7 +4847,7 @@
       "VERIFY the main PromptForge page loads correctly"
     ],
     "expected_outcome": "Invalid routes display a styled 404 page with cyberpunk theme, clear 'Not Found' message, and a link back to the main page.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 194,
@@ -4871,7 +4871,7 @@
       "VERIFY the empty state message uses appropriate styling (not raw unstyled text)"
     ],
     "expected_outcome": "An empty history sidebar displays a helpful, styled message encouraging the user to create their first optimization rather than showing a blank sidebar.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 195,
@@ -4899,7 +4899,7 @@
       "VERIFY the pipeline starts running after clicking Retry"
     ],
     "expected_outcome": "Network errors display a clear error message with a 'Retry' button that, when clicked after the server is restored, successfully restarts the optimization pipeline.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 196,
@@ -4924,7 +4924,7 @@
       "SCREENSHOT the result area showing the scrollable long content"
     ],
     "expected_outcome": "Very long optimization results display properly within a scrollable container, without breaking the page layout or truncating content.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 197,
@@ -4950,7 +4950,7 @@
       "VERIFY the application handles forward navigation without errors"
     ],
     "expected_outcome": "The browser back and forward buttons work correctly within the SPA, navigating between views without causing blank pages or unhandled errors.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 198,
@@ -4974,7 +4974,7 @@
       "VERIFY the title is meaningful and includes 'PromptForge'"
     ],
     "expected_outcome": "The page title is set to a meaningful value containing 'PromptForge' (not the default SvelteKit title), helping users identify the application in their browser tabs.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 199,
@@ -4998,7 +4998,7 @@
       "VERIFY all three new optimizations appear in the history"
     ],
     "expected_outcome": "Three concurrent optimization requests all complete successfully with correct, non-mixed results, and all three are persisted in the database without data corruption.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 200,
@@ -5024,6 +5024,6 @@
       "VERIFY the stats reflect all three optimizations in the total count"
     ],
     "expected_outcome": "Concurrent database write operations (optimizations, tag updates) all complete successfully without 'database is locked' errors, data corruption, or lost writes.",
-    "passes": false
+    "passes": true
   }
 ]
