@@ -10,12 +10,8 @@ from app.database import get_db
 router = APIRouter(tags=["health"])
 
 
-@router.get("/api/health")
-async def health_check(db: AsyncSession = Depends(get_db)):
-    """Check the health of the API, database connection, and Claude availability.
-
-    Returns a JSON object with status information for each component.
-    """
+async def _health_response(db: AsyncSession):
+    """Shared health check logic."""
     db_connected = False
     try:
         result = await db.execute(text("SELECT 1"))
@@ -31,3 +27,21 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         "db_connected": db_connected,
         "version": config.APP_VERSION,
     }
+
+
+@router.api_route("/api/health", methods=["GET", "HEAD"])
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """Check the health of the API, database connection, and Claude availability.
+
+    Returns a JSON object with status information for each component.
+    """
+    return await _health_response(db)
+
+
+@router.api_route("/health", methods=["GET", "HEAD"])
+async def health_check_alias(db: AsyncSession = Depends(get_db)):
+    """Alias for /api/health at the root path.
+
+    Some monitoring tools expect health checks at /health.
+    """
+    return await _health_response(db)

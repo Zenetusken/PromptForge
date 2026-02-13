@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class OptimizeRequest(BaseModel):
@@ -12,6 +12,14 @@ class OptimizeRequest(BaseModel):
     project: str | None = Field(None, description="Optional project name for organization")
     tags: list[str] | None = Field(None, description="Optional tags for categorization")
     title: str | None = Field(None, description="Optional title for the optimization")
+
+    @field_validator("prompt")
+    @classmethod
+    def prompt_must_not_be_blank(cls, v: str) -> str:
+        """Validate that the prompt is not empty or whitespace-only."""
+        if not v.strip():
+            raise ValueError("Prompt must not be empty or whitespace-only")
+        return v
 
 
 class OptimizationResponse(BaseModel):

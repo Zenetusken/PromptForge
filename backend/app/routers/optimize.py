@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session_factory, get_db
 from app.models.optimization import Optimization
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
 
@@ -132,6 +132,39 @@ async def _generate_mock_sse_events(optimization_id: str, raw_prompt: str):
     yield f"event: complete\ndata: {json.dumps(complete_data)}\n\n"
 
 
+async def _update_db_after_stream(optimization_id: str, final_data: dict, start_time: float):
+    """Update the database record with final pipeline results."""
+    async with async_session_factory() as session:
+        try:
+            stmt = select(Optimization).where(Optimization.id == optimization_id)
+            result = await session.execute(stmt)
+            opt = result.scalar_one_or_none()
+            if opt:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                opt.status = "completed"
+                opt.optimized_prompt = final_data.get("optimized_prompt")
+                opt.task_type = final_data.get("task_type")
+                opt.complexity = final_data.get("complexity")
+                opt.weaknesses = json.dumps(final_data.get("weaknesses"))
+                opt.strengths = json.dumps(final_data.get("strengths"))
+                opt.changes_made = json.dumps(final_data.get("changes_made"))
+                opt.framework_applied = final_data.get("framework_applied")
+                opt.optimization_notes = final_data.get("optimization_notes")
+                opt.clarity_score = final_data.get("clarity_score")
+                opt.specificity_score = final_data.get("specificity_score")
+                opt.structure_score = final_data.get("structure_score")
+                opt.faithfulness_score = final_data.get("faithfulness_score")
+                opt.overall_score = final_data.get("overall_score")
+                opt.is_improvement = final_data.get("is_improvement")
+                opt.verdict = final_data.get("verdict")
+                opt.duration_ms = elapsed_ms
+                opt.model_used = final_data.get("model_used", "mock")
+                await session.commit()
+        except Exception as e:
+            await session.rollback()
+            print(f"Error updating optimization {optimization_id}: {e}")
+
+
 @router.post("/api/optimize")
 async def optimize_prompt(
     request: OptimizeRequest,
@@ -169,31 +202,7 @@ async def optimize_prompt(
             yield event
 
         # Update the database record with final results
-        async with get_db_session() as session:
-            stmt = select(Optimization).where(Optimization.id == optimization_id)
-            result = await session.execute(stmt)
-            opt = result.scalar_one_or_none()
-            if opt:
-                elapsed_ms = int((time.time() - start_time) * 1000)
-                opt.status = "completed"
-                opt.optimized_prompt = final_data.get("optimized_prompt")
-                opt.task_type = final_data.get("task_type")
-                opt.complexity = final_data.get("complexity")
-                opt.weaknesses = json.dumps(final_data.get("weaknesses"))
-                opt.strengths = json.dumps(final_data.get("strengths"))
-                opt.changes_made = json.dumps(final_data.get("changes_made"))
-                opt.framework_applied = final_data.get("framework_applied")
-                opt.optimization_notes = final_data.get("optimization_notes")
-                opt.clarity_score = final_data.get("clarity_score")
-                opt.specificity_score = final_data.get("specificity_score")
-                opt.structure_score = final_data.get("structure_score")
-                opt.faithfulness_score = final_data.get("faithfulness_score")
-                opt.overall_score = final_data.get("overall_score")
-                opt.is_improvement = final_data.get("is_improvement")
-                opt.verdict = final_data.get("verdict")
-                opt.duration_ms = elapsed_ms
-                opt.model_used = final_data.get("model_used", "mock")
-                await session.commit()
+        await _update_db_after_stream(optimization_id, final_data, start_time)
 
     return StreamingResponse(
         event_stream(),
@@ -240,10 +249,12 @@ async def retry_optimization(
         raise HTTPException(status_code=404, detail="Optimization not found")
 
     # Create a new optimization record for the retry
+    start_time = time.time()
     new_id = str(uuid.uuid4())
+    raw_prompt = original.raw_prompt
     new_optimization = Optimization(
         id=new_id,
-        raw_prompt=original.raw_prompt,
+        raw_prompt=raw_prompt,
         status="running",
         project=original.project,
         tags=original.tags,
@@ -252,8 +263,20 @@ async def retry_optimization(
     db.add(new_optimization)
     await db.commit()
 
+    async def event_stream():
+        """Wrap the SSE generator and update the DB record on completion."""
+        final_data = {}
+        async for event in _generate_mock_sse_events(new_id, raw_prompt):
+            if event.startswith("event: complete"):
+                data_line = event.split("data: ", 1)[1].strip()
+                final_data = json.loads(data_line)
+            yield event
+
+        # Update the database record with final results
+        await _update_db_after_stream(new_id, final_data, start_time)
+
     return StreamingResponse(
-        _generate_mock_sse_events(new_id, original.raw_prompt),
+        event_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -261,22 +284,3 @@ async def retry_optimization(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-async def get_db_session():
-    """Create a standalone async session context manager for use outside of request scope."""
-    from app.database import async_session_factory
-
-    class _SessionCtx:
-        async def __aenter__(self):
-            self.session = async_session_factory()
-            return self.session
-
-        async def __aexit__(self, exc_type, exc_val, exc_tb):
-            if exc_type:
-                await self.session.rollback()
-            else:
-                await self.session.commit()
-            await self.session.close()
-
-    return _SessionCtx()

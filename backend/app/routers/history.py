@@ -60,12 +60,13 @@ def _optimization_to_response(opt: Optimization) -> OptimizationResponse:
     )
 
 
-@router.get("/api/history", response_model=HistoryResponse)
+@router.api_route("/api/history", methods=["GET", "HEAD"], response_model=HistoryResponse)
 async def get_history(
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     search: str | None = Query(None, description="Search in prompt text and title"),
     sort: str = Query("created_at", description="Field to sort by"),
+    sort_by: str | None = Query(None, description="Alias for sort (field to sort by)"),
     order: Literal["asc", "desc"] = Query("desc", description="Sort order"),
     project: str | None = Query(None, description="Filter by project"),
     task_type: str | None = Query(None, description="Filter by task type"),
@@ -75,8 +76,12 @@ async def get_history(
     """Retrieve paginated optimization history with filtering and sorting.
 
     Supports searching by prompt text/title, filtering by project/task_type/status,
-    and sorting by any column.
+    and sorting by any column. Accepts both 'sort' and 'sort_by' parameter names.
     """
+    # Support sort_by as alias for sort
+    if sort_by is not None:
+        sort = sort_by
+
     # Build base query
     query = select(Optimization)
     count_query = select(func.count(Optimization.id))
@@ -151,7 +156,7 @@ async def delete_optimization(
     return {"message": "Optimization deleted", "id": optimization_id}
 
 
-@router.get("/api/history/stats", response_model=StatsResponse)
+@router.api_route("/api/history/stats", methods=["GET", "HEAD"], response_model=StatsResponse)
 async def get_stats(
     db: AsyncSession = Depends(get_db),
 ):

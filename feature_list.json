@@ -16,7 +16,7 @@
       "VERIFY HTTP response status code is 200 or 404 (server is responding)"
     ],
     "expected_outcome": "Backend server is running and accepting connections on port 8000.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 2,
@@ -35,7 +35,7 @@
       "VERIFY HTTP response status code is 200 indicating the dev server is serving content"
     ],
     "expected_outcome": "Frontend dev server is running and accepting connections on port 5173.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 3,
@@ -53,7 +53,7 @@
       "VERIFY HTTP response status code is 200"
     ],
     "expected_outcome": "Health endpoint returns JSON with status 'ok' and HTTP 200.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 4,
@@ -72,7 +72,7 @@
       "VERIFY the database contains at least one table related to optimizations"
     ],
     "expected_outcome": "SQLite database file is auto-created on startup with optimization tables initialized.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 5,
@@ -91,7 +91,7 @@
       "VERIFY response includes <script> tags for JavaScript bundle loading"
     ],
     "expected_outcome": "Root URL serves valid HTML with SvelteKit application bootstrap code.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 6,
@@ -110,7 +110,7 @@
       "VERIFY HTTP response status is 200 or 204 for the preflight request"
     ],
     "expected_outcome": "CORS preflight response allows requests from http://localhost:5173 with POST method.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 7,
@@ -129,7 +129,7 @@
       "VERIFY page displays at least one API endpoint path"
     ],
     "expected_outcome": "Swagger UI documentation page loads at /docs showing all available API endpoints.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 8,
@@ -148,7 +148,7 @@
       "VERIFY response headers contain Content-Type: application/json"
     ],
     "expected_outcome": "Backend API endpoints return responses with Content-Type: application/json header.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 9,
@@ -168,7 +168,7 @@
       "VERIFY text is light-colored for contrast against the dark background"
     ],
     "expected_outcome": "Frontend renders with a cyberpunk theme featuring dark backgrounds and neon accent colors.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 10,
@@ -188,7 +188,7 @@
       "VERIFY page layout uses a structured grid or flex layout with sidebar and content regions"
     ],
     "expected_outcome": "Root layout renders with header, sidebar, and main content structural regions.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 11,
@@ -207,7 +207,7 @@
       "VERIFY table schema includes a created_at or timestamp column"
     ],
     "expected_outcome": "Optimizations table exists with columns for id, raw_prompt, optimized_prompt, status, task_type, complexity, scores, and created_at.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 12,
@@ -229,7 +229,7 @@
       "VERIFY the page does not show a loading spinner that never resolves (indicating failed API call)"
     ],
     "expected_outcome": "Frontend loads without connection errors and can communicate with the backend API.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 13,
@@ -248,7 +248,7 @@
       "VERIFY HTTP response status is 200"
     ],
     "expected_outcome": "POST /api/optimize returns an SSE stream with Content-Type text/event-stream and properly formatted SSE data.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 14,
@@ -268,7 +268,7 @@
       "VERIFY header is positioned at the top of the viewport"
     ],
     "expected_outcome": "Header component renders at the top with 'PromptForge' branding in cyberpunk theme styling.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 15,
@@ -287,7 +287,7 @@
       "VERIFY the prompt text 'Help me write a Python function that sorts a list of dictionaries by a specific key' is acknowledged in the response stream"
     ],
     "expected_outcome": "POST /api/optimize accepts the JSON prompt payload and begins streaming optimization results.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 16,
@@ -308,7 +308,7 @@
       "VERIFY stream ends with a completion or done event"
     ],
     "expected_outcome": "SSE stream delivers events for all three pipeline stages (Analyze, Optimize, Validate) and terminates with a completion event.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 17,
@@ -331,7 +331,7 @@
       "VERIFY each record in the list contains at minimum an id and raw_prompt field"
     ],
     "expected_outcome": "GET /api/history returns a paginated JSON response containing optimization records with pagination metadata.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 18,
@@ -352,7 +352,7 @@
       "VERIFY response total count is 0 or the array length is 0"
     ],
     "expected_outcome": "GET /api/history returns an empty list when no optimization records exist in the database.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 19,
@@ -374,7 +374,7 @@
       "VERIFY the raw_prompt field matches 'Write a haiku about programming'"
     ],
     "expected_outcome": "GET /api/optimize/{id} returns the complete optimization record matching the requested ID.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 20,
@@ -396,7 +396,7 @@
       "VERIFY the deleted record returns 404 when fetched by ID"
     ],
     "expected_outcome": "DELETE /api/history/{id} removes the record and subsequent GET for that ID returns 404.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 21,
@@ -418,7 +418,7 @@
       "VERIFY response contains average score or average duration statistics"
     ],
     "expected_outcome": "GET /api/history/stats returns JSON with aggregate statistics including total count and average metrics.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 22,
@@ -441,7 +441,7 @@
       "VERIFY the record has been updated with new optimization results"
     ],
     "expected_outcome": "POST /api/optimize/{id}/retry re-runs the optimization pipeline and updates the existing record with fresh results.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 23,
@@ -463,7 +463,7 @@
       "VERIFY pagination metadata reflects the correct current page number"
     ],
     "expected_outcome": "History endpoint correctly paginates results based on the page query parameter.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 24,
@@ -486,7 +486,7 @@
       "VERIFY response contains up to 10 records"
     ],
     "expected_outcome": "History endpoint returns the correct number of records as specified by per_page parameter.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 25,
@@ -509,7 +509,7 @@
       "VERIFY response contains 0 records for a term that does not match any prompt"
     ],
     "expected_outcome": "History search parameter correctly filters records by matching prompt text content.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 26,
@@ -532,7 +532,7 @@
       "VERIFY the first record has a later created_at timestamp than the last record"
     ],
     "expected_outcome": "History results are correctly sorted by created_at timestamp in both ascending and descending order.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 27,
@@ -552,7 +552,7 @@
       "VERIFY the order of records is reversed between the two requests"
     ],
     "expected_outcome": "History endpoint correctly applies desc and asc sort order to results.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 28,
@@ -585,7 +585,7 @@
       "VERIFY record contains 'created_at' field (timestamp)"
     ],
     "expected_outcome": "Optimization record contains all 15+ required fields spanning analysis, optimization, and validation phases.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 29,
@@ -605,7 +605,7 @@
       "VERIFY raw_prompt is stored as a non-empty string"
     ],
     "expected_outcome": "The raw_prompt field stores the exact original prompt text without modification.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 30,
@@ -627,7 +627,7 @@
       "VERIFY the optimized_prompt is longer or more detailed than the raw_prompt 'Write a sorting algorithm'"
     ],
     "expected_outcome": "The optimized_prompt field contains an improved, more detailed version of the original prompt.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 31,
@@ -648,7 +648,7 @@
       "VERIFY the task_type value is a recognized category such as 'coding', 'writing', 'analysis', 'creative', 'technical', or similar classification"
     ],
     "expected_outcome": "The task_type field contains a valid classification string categorizing the nature of the prompt.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 32,
@@ -669,7 +669,7 @@
       "VERIFY the complexity value is a numeric rating (e.g., 1-10) or a descriptive level (e.g., 'low', 'medium', 'high', 'expert')"
     ],
     "expected_outcome": "The complexity field contains a valid rating indicating the difficulty level of the optimization task.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 33,
@@ -691,7 +691,7 @@
       "VERIFY each weakness entry is a non-empty descriptive string"
     ],
     "expected_outcome": "The weaknesses field is a populated array of strings describing identified issues with the original prompt.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 34,
@@ -713,7 +713,7 @@
       "VERIFY each strength entry is a non-empty descriptive string"
     ],
     "expected_outcome": "The strengths field is a populated array of strings describing positive aspects of the original prompt.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 35,
@@ -735,7 +735,7 @@
       "VERIFY each change entry is a non-empty string explaining what was changed and why"
     ],
     "expected_outcome": "The changes_made field is a populated array of strings documenting each optimization modification.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 36,
@@ -756,7 +756,7 @@
       "VERIFY the framework_applied value names a recognizable prompt engineering framework or methodology (e.g., 'COSTAR', 'Chain of Thought', 'RISE', 'Few-Shot', or a custom framework name)"
     ],
     "expected_outcome": "The framework_applied field contains the name of the prompt engineering framework used for optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 37,
@@ -779,7 +779,7 @@
       "VERIFY all five score values are within a valid range (e.g., 0-10 or 0-100)"
     ],
     "expected_outcome": "The record contains five numeric quality scores covering distinct dimensions of prompt quality.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 38,
@@ -801,7 +801,7 @@
       "VERIFY the verdict text describes the overall quality or improvement of the optimized prompt"
     ],
     "expected_outcome": "The verdict field contains a descriptive text summary assessing the overall quality of the optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 39,
@@ -823,7 +823,7 @@
       "VERIFY the duration_ms value is a reasonable number (e.g., between 100 and 300000 milliseconds)"
     ],
     "expected_outcome": "The duration_ms field contains a positive numeric value representing the total pipeline execution time in milliseconds.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 40,
@@ -845,7 +845,7 @@
       "VERIFY the status field uses a recognized status value from the set: 'pending', 'processing', 'analyzing', 'optimizing', 'validating', 'completed', 'failed', 'success'"
     ],
     "expected_outcome": "The status field contains 'completed' or 'success' for a finished optimization record.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 41,
@@ -865,7 +865,7 @@
       "VERIFY response body contains validation error detail message"
     ],
     "expected_outcome": "Invalid payloads with missing or wrong-typed prompt field return HTTP 422 with validation error details.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 42,
@@ -885,7 +885,7 @@
       "VERIFY response body contains an error message indicating the record was not found"
     ],
     "expected_outcome": "Requesting a non-existent optimization ID returns HTTP 404 with a descriptive error message.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 43,
@@ -905,7 +905,7 @@
       "VERIFY HTTP response status code is 422 or 400 for whitespace-only prompt"
     ],
     "expected_outcome": "Empty or whitespace-only prompt strings are rejected with HTTP 422/400 and a descriptive validation error.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 44,
@@ -930,7 +930,7 @@
       "VERIFY the stats totals are consistent with the actual record count"
     ],
     "expected_outcome": "History stats total count accurately reflects the number of optimization records in the database (3 after setup).",
-    "passes": false
+    "passes": true
   },
   {
     "id": 45,
@@ -950,7 +950,7 @@
       "VERIFY response body contains an error message indicating the record was not found"
     ],
     "expected_outcome": "DELETE request for a non-existent record ID returns HTTP 404 with a descriptive not-found error message.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 46,
