@@ -1,5 +1,17 @@
 # PromptForge — Development Progress
-# Last updated: Session 36 (Validator — quick validation, 200/200 passing)
+# Last updated: Session 37 (Coding — no-op, 200/200 passing)
+
+## Session 37 — Coding Agent (no-op)
+
+**Completed:** None (no failing tests)
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** None — all 200 tests passing
+**Known issues:** None
+**Progress:** 200/200 tests passing (100%)
+**Server info:** Backend http://localhost:8000, Frontend http://localhost:5173, start with ./init.sh
+
+All 200/200 tests confirmed passing. Backend healthy (claude_available=true, db_connected=true). Frontend serving correctly (HTTP 200). No failing tests found in feature_list.json. Project is complete.
 
 ## Validation Report — Session 36
 
