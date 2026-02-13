@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { historyState } from '$lib/stores/history.svelte';
 	import { fetchStats, type StatsResponse } from '$lib/api/client';
+	import { formatScore } from '$lib/utils/format';
 
 	let { sidebarOpen = $bindable(true) }: { sidebarOpen: boolean } = $props();
 
@@ -15,12 +16,6 @@
 			stats = await fetchStats();
 			loadingStats = false;
 		}
-	}
-
-	function formatScore(value: number | null): string {
-		if (value === null || value === undefined) return '—';
-		const pct = value <= 1 ? value * 100 : value;
-		return Math.round(pct).toString();
 	}
 
 	function formatRate(value: number | null): string {

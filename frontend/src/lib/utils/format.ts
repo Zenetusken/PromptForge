@@ -50,3 +50,34 @@ export function truncateText(text: string, maxLength: number): string {
 export function formatPercent(value: number): string {
 	return `${Math.round(value)}%`;
 }
+
+/**
+ * Normalize a score to 0-100 scale.
+ * Scores <= 1 are treated as 0-1 scale; otherwise as 0-100.
+ */
+export function normalizeScore(score: number | null | undefined): number | null {
+	if (score === null || score === undefined) return null;
+	if (score <= 1) return Math.round(score * 100);
+	return Math.round(score);
+}
+
+/**
+ * Format a score as a display string (e.g. "85" or "—").
+ */
+export function formatScore(score: number | null | undefined): string {
+	const normalized = normalizeScore(score);
+	if (normalized === null) return '—';
+	return normalized.toString();
+}
+
+/**
+ * Get a Tailwind color class name based on score value.
+ * Returns 'neon-green' (>= 70), 'neon-yellow' (>= 40), or 'neon-red'.
+ */
+export function getScoreColorClass(score: number | null | undefined): string {
+	const normalized = normalizeScore(score);
+	if (normalized === null) return 'neon-red';
+	if (normalized >= 70) return 'neon-green';
+	if (normalized >= 40) return 'neon-yellow';
+	return 'neon-red';
+}

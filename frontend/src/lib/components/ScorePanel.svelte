@@ -1,25 +1,10 @@
 <script lang="ts">
 	import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
+	import { normalizeScore, getScoreColorClass } from '$lib/utils/format';
 
 	type Scores = OptimizationResultState['scores'];
 
 	let { scores }: { scores: Scores } = $props();
-
-	/**
-	 * Normalize score: if <= 1, treat as 0-1 scale and multiply by 100.
-	 * Otherwise treat as already 0-100.
-	 */
-	function normalizeScore(score: number): number {
-		if (score <= 1) return Math.round(score * 100);
-		return Math.round(score);
-	}
-
-	function getScoreColor(score: number): string {
-		const pct = normalizeScore(score);
-		if (pct >= 70) return 'neon-green';
-		if (pct >= 40) return 'neon-yellow';
-		return 'neon-red';
-	}
 
 	const scoreLabels: { key: keyof Scores; label: string }[] = [
 		{ key: 'clarity', label: 'Clarity' },
@@ -45,7 +30,7 @@
 		{#each scoreLabels as { key, label } (key)}
 			{@const rawScore = scores[key]}
 			{@const pct = normalizeScore(rawScore)}
-			{@const color = getScoreColor(rawScore)}
+			{@const color = getScoreColorClass(rawScore)}
 			<div class="rounded-lg bg-bg-input p-3" class:sm:col-span-2={key === 'overall'} data-testid="score-bar-{key}" role="meter" aria-label="{label}: {pct} out of 100" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
 				<div class="mb-2 flex items-center justify-between">
 					<span class="text-sm text-text-primary" class:font-semibold={key === 'overall'}>

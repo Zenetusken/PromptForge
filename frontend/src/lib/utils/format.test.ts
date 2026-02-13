@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatRelativeTime, truncateText, formatPercent, formatDate } from './format';
+import { formatRelativeTime, truncateText, formatPercent, formatDate, normalizeScore, formatScore, getScoreColorClass } from './format';
 
 describe('formatRelativeTime', () => {
 	it('returns "just now" for recent timestamps', () => {
@@ -64,5 +64,74 @@ describe('formatDate', () => {
 		expect(result).toContain('June');
 		expect(result).toContain('15');
 		expect(result).toContain('2024');
+	});
+});
+
+describe('normalizeScore', () => {
+	it('returns null for null input', () => {
+		expect(normalizeScore(null)).toBeNull();
+	});
+
+	it('returns null for undefined input', () => {
+		expect(normalizeScore(undefined)).toBeNull();
+	});
+
+	it('converts 0-1 scale to 0-100', () => {
+		expect(normalizeScore(0.85)).toBe(85);
+	});
+
+	it('rounds 0-1 scale values', () => {
+		expect(normalizeScore(0.856)).toBe(86);
+	});
+
+	it('passes through 0-100 values', () => {
+		expect(normalizeScore(75)).toBe(75);
+	});
+
+	it('handles exact 1 as 100', () => {
+		expect(normalizeScore(1)).toBe(100);
+	});
+
+	it('handles 0 as 0', () => {
+		expect(normalizeScore(0)).toBe(0);
+	});
+});
+
+describe('formatScore', () => {
+	it('returns dash for null', () => {
+		expect(formatScore(null)).toBe('—');
+	});
+
+	it('returns dash for undefined', () => {
+		expect(formatScore(undefined)).toBe('—');
+	});
+
+	it('formats 0-1 score as string', () => {
+		expect(formatScore(0.85)).toBe('85');
+	});
+
+	it('formats 0-100 score as string', () => {
+		expect(formatScore(75)).toBe('75');
+	});
+});
+
+describe('getScoreColorClass', () => {
+	it('returns neon-green for high scores', () => {
+		expect(getScoreColorClass(0.85)).toBe('neon-green');
+		expect(getScoreColorClass(70)).toBe('neon-green');
+	});
+
+	it('returns neon-yellow for medium scores', () => {
+		expect(getScoreColorClass(0.5)).toBe('neon-yellow');
+		expect(getScoreColorClass(40)).toBe('neon-yellow');
+	});
+
+	it('returns neon-red for low scores', () => {
+		expect(getScoreColorClass(0.2)).toBe('neon-red');
+		expect(getScoreColorClass(30)).toBe('neon-red');
+	});
+
+	it('returns neon-red for null', () => {
+		expect(getScoreColorClass(null)).toBe('neon-red');
 	});
 });
