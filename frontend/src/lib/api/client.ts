@@ -272,6 +272,20 @@ export async function deleteOptimization(id: string): Promise<boolean> {
 }
 
 /**
+ * Clear all history entries
+ */
+export async function clearAllHistory(): Promise<boolean> {
+	try {
+		const response = await fetch(`${BASE_URL}/history/all`, {
+			method: 'DELETE'
+		});
+		return response.ok;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Fetch usage statistics
  */
 export async function fetchStats(): Promise<StatsResponse | null> {

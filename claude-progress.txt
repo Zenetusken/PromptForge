@@ -672,3 +672,62 @@ Validator should run a full regression check across all tiers before T3 work beg
 
 **Progress:** 120/200 tests passing (60%)
 **Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
+
+## Session 10 — Feb 13, 2026 (Coding Agent — T3 Complete)
+
+**Completed:** #121-160 (40 tests — entire T3 tier)
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** T4 tests (IDs 161-185): Style & Polish
+
+**What was done:**
+
+**MCP Server (Tests 121-140):**
+- Rewrote `backend/app/mcp_server.py` from stub to full implementation with 8 FastMCP tools:
+  1. `promptforge_optimize` — runs full 3-stage pipeline, returns structured result with scores
+  2. `promptforge_get` — retrieves optimization by UUID with full record
+  3. `promptforge_list` — paginated list with project/task_type/min_score/search/sort/order filters
+  4. `promptforge_get_by_project` — project-scoped listing with include_prompts toggle
+  5. `promptforge_search` — full-text search across prompts, titles, tags, projects (min 2 chars)
+  6. `promptforge_tag` — add/remove tags, set project name, set title (idempotent)
+  7. `promptforge_stats` — usage statistics with project scoping, task types, top frameworks
+  8. `promptforge_delete` — permanent record deletion with proper error handling
+- All tools have proper `ToolAnnotations` (readOnlyHint, destructiveHint, idempotentHint)
+- Scores stored as 0.0-1.0 in DB, displayed as 1-10 integers via `_score_to_int()`
+- Fixed min_score filtering bug: `min_score >= 1` threshold conversion (was `> 1`)
+- Verified via test scripts against real database with 20+ records
+- MCP server starts via `python -m app.mcp_server` on stdio transport
+
+**Frontend Features (Tests 141-160):**
+- Added `DELETE /api/history/all` endpoint to history router (clear all optimization records)
+- Added `clearAllHistory()` to frontend API client
+- Updated history store with `sortBy`, `sortOrder`, `setSortBy()`, `clearAll()` methods
+- Enhanced HistorySidebar with:
+  - Sort dropdown (Date/Score/Task Type) with `data-testid="history-sort"`
+  - Clear History button with confirmation dialog (`data-testid="clear-history-btn"`)
+  - Confirmation shows warning text, Confirm/Cancel buttons
+  - Load More pagination button (`data-testid="load-more-btn"`)
+- Verified via Puppeteer:
+  - Sort by score: entries ordered 96→96→95→95→94→93...
+  - Clear History dialog appears with warning, cancel preserves entries
+  - Pipeline optimization completed (~29s)
+  - All action buttons visible (Copy Optimized, Export .md, Re-forge, Edit & Re-forge)
+  - Edit & Re-forge loads prompt into textarea (984 chars)
+  - Copy Optimized shows "Copied!" feedback
+  - History loads on page refresh with 21 entries
+  - Clicking history entry loads full result with scores
+
+**Key files modified:**
+- `backend/app/mcp_server.py` — Complete rewrite (8 FastMCP tools)
+- `backend/app/routers/history.py` — Added DELETE /api/history/all endpoint
+- `frontend/src/lib/api/client.ts` — Added clearAllHistory() function
+- `frontend/src/lib/stores/history.svelte.ts` — Added sortBy, sortOrder, setSortBy(), clearAll()
+- `frontend/src/lib/components/HistorySidebar.svelte` — Sort dropdown, Clear History, confirmation dialog
+
+**T3 tier is now COMPLETE (40/40 passing)**
+
+**Tier boundary note:** T3 is complete. Next session should start on T4 (IDs 161-185, Style & Polish).
+Validator should run a full regression check across all tiers before T4 work begins.
+
+**Progress:** 160/200 tests passing (80%)
+**Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh

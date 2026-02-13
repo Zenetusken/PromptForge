@@ -1,4 +1,4 @@
-import { fetchHistory, deleteOptimization, type HistoryItem, type HistoryResponse } from '$lib/api/client';
+import { fetchHistory, deleteOptimization, clearAllHistory, type HistoryItem, type HistoryResponse } from '$lib/api/client';
 
 class HistoryState {
 	items: HistoryItem[] = $state([]);
@@ -7,8 +7,10 @@ class HistoryState {
 	perPage: number = $state(20);
 	isLoading: boolean = $state(false);
 	hasLoaded: boolean = $state(false);
+	sortBy: string = $state('created_at');
+	sortOrder: string = $state('desc');
 
-	async loadHistory(params?: { page?: number; search?: string }) {
+	async loadHistory(params?: { page?: number; search?: string; sort?: string; order?: string }) {
 		if (this.isLoading) return;
 		this.isLoading = true;
 
@@ -16,7 +18,9 @@ class HistoryState {
 			const response: HistoryResponse = await fetchHistory({
 				page: params?.page ?? 1,
 				per_page: this.perPage,
-				search: params?.search
+				search: params?.search,
+				sort: params?.sort ?? this.sortBy,
+				order: params?.order ?? this.sortOrder
 			});
 			this.items = response.items;
 			this.total = response.total;
@@ -37,6 +41,22 @@ class HistoryState {
 			this.total = Math.max(0, this.total - 1);
 		}
 		return success;
+	}
+
+	async clearAll() {
+		const success = await clearAllHistory();
+		if (success) {
+			this.items = [];
+			this.total = 0;
+			this.page = 1;
+		}
+		return success;
+	}
+
+	setSortBy(sort: string) {
+		this.sortBy = sort;
+		this.sortOrder = 'desc';
+		this.loadHistory({ sort, order: this.sortOrder });
 	}
 
 	addEntry(item: HistoryItem) {

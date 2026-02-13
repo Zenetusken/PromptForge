@@ -3045,7 +3045,7 @@
       "VERIFY the import command exits with return code 0"
     ],
     "expected_outcome": "The MCP server starts cleanly and listens on stdio transport without any Python errors or missing dependency issues.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 122,
@@ -3070,7 +3070,7 @@
       "VERIFY the response contains a 'task_type' field with a valid type string"
     ],
     "expected_outcome": "The promptforge_optimize tool accepts the prompt input without errors and returns a JSON response containing at minimum an id, optimized_prompt, and task_type.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 123,
@@ -3099,7 +3099,7 @@
       "VERIFY the response contains a 'verdict' field that is a non-empty descriptive string"
     ],
     "expected_outcome": "The promptforge_optimize tool returns a fully populated response with optimized prompt text, a list of specific changes, the framework used, all five score dimensions as integers 1-10, and a human-readable verdict.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 124,
@@ -3127,7 +3127,7 @@
       "VERIFY the response contains 'status' field equal to 'completed'"
     ],
     "expected_outcome": "The promptforge_get tool retrieves the full optimization record matching the given UUID, including the original prompt, optimized prompt, all scores, task type, and timestamp.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 125,
@@ -3154,7 +3154,7 @@
       "VERIFY the items in the second page do not overlap with items from the first page (different IDs)"
     ],
     "expected_outcome": "The promptforge_list tool returns properly paginated results with correct total count, offset, limit, has_more flag, and non-overlapping items across pages.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 126,
@@ -3176,7 +3176,7 @@
       "VERIFY none of the returned items have project 'other-project'"
     ],
     "expected_outcome": "The promptforge_list tool returns only optimization records matching the specified project filter, excluding records from other projects.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 127,
@@ -3198,7 +3198,7 @@
       "VERIFY the 'total' count is less than or equal to the total count from the unfiltered list"
     ],
     "expected_outcome": "The promptforge_list tool returns only records matching the specified task_type, and the total count accurately reflects the filtered set.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 128,
@@ -3222,7 +3222,7 @@
       "VERIFY this returns all optimizations (since all scores are >= 1)"
     ],
     "expected_outcome": "The promptforge_list tool correctly filters by minimum overall score, returning only records at or above the threshold for each tested value.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 129,
@@ -3244,7 +3244,7 @@
       "VERIFY the response 'items' array is empty or 'total' is 0"
     ],
     "expected_outcome": "The search parameter filters optimizations by matching text content, returning relevant results for matching queries and empty results for non-matching queries.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 130,
@@ -3269,7 +3269,7 @@
       "VERIFY the response for a nonexistent project returns an empty list or zero items"
     ],
     "expected_outcome": "The promptforge_get_by_project tool returns all optimizations for the specified project sorted by most recent, and returns empty results for nonexistent projects.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 131,
@@ -3295,7 +3295,7 @@
       "VERIFY the response returns zero results for a non-matching query"
     ],
     "expected_outcome": "The promptforge_search tool finds relevant optimizations by searching across prompt content and metadata, enforces minimum query length, and returns empty results for non-matching queries.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 132,
@@ -3321,7 +3321,7 @@
       "VERIFY the tags now include all four tags: 'python', 'cli', 'tools', 'automation'"
     ],
     "expected_outcome": "The promptforge_tag tool successfully adds tags to an optimization, the tags persist when retrieved, and additional tags can be appended without losing existing ones.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 133,
@@ -3343,7 +3343,7 @@
       "VERIFY the persisted record's tags contain 'refactoring' and 'cleanup' but NOT 'legacy'"
     ],
     "expected_outcome": "The promptforge_tag tool removes only the specified tags while preserving all other tags on the optimization.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 134,
@@ -3368,7 +3368,7 @@
       "VERIFY the project field is now cleared (null or empty string)"
     ],
     "expected_outcome": "The promptforge_tag tool can set, change, and clear the project name on an optimization record, with changes persisting in the database.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 135,
@@ -3393,7 +3393,7 @@
       "VERIFY 'optimizations_today' <= 'optimizations_this_week' <= 'total_optimizations'"
     ],
     "expected_outcome": "The promptforge_stats tool returns a complete statistics summary with all expected fields, correct value types, and logically consistent numbers.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 136,
@@ -3417,7 +3417,7 @@
       "VERIFY the response for a nonexistent project shows 'total_optimizations' equal to 0"
     ],
     "expected_outcome": "The promptforge_stats tool returns statistics scoped to the specified project, with lower totals than global stats, and returns zero counts for nonexistent projects.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 137,
@@ -3445,7 +3445,7 @@
       "VERIFY the deleted optimization does not appear in list results"
     ],
     "expected_outcome": "The promptforge_delete tool permanently removes the optimization record, and subsequent get and list calls confirm the record no longer exists.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 138,
@@ -3465,7 +3465,7 @@
       "VERIFY the response contains an error about invalid ID format or not found"
     ],
     "expected_outcome": "The promptforge_delete tool returns a clear error message when given a non-existent or invalid UUID, rather than silently succeeding or crashing.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 139,
@@ -3490,7 +3490,7 @@
       "VERIFY the response items are sorted by overall_score in ascending order (lowest first)"
     ],
     "expected_outcome": "The promptforge_list tool correctly sorts results by the specified field and order, with descending and ascending both functioning for created_at and overall_score.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 140,
@@ -3519,7 +3519,7 @@
       "VERIFY if page3 'items' has fewer than 2 entries then 'has_more' is false"
     ],
     "expected_outcome": "Offset pagination returns non-overlapping pages of results with correct offset tracking, next_offset calculation, and has_more flag indicating when results are exhausted.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 141,
@@ -3546,7 +3546,7 @@
       "VERIFY the clipboard contains text that is longer than the original prompt and includes optimization improvements"
     ],
     "expected_outcome": "The 'Copy Optimized' button copies the full optimized prompt to the clipboard and shows a visual confirmation (neon green flash or toast notification).",
-    "passes": false
+    "passes": true
   },
   {
     "id": 142,
@@ -3575,7 +3575,7 @@
       "VERIFY the downloaded file contains score values (clarity, specificity, structure, faithfulness, overall)"
     ],
     "expected_outcome": "The 'Export .md' button triggers a markdown file download containing the complete optimization record with original prompt, optimized prompt, scores, and analysis details.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 143,
@@ -3599,7 +3599,7 @@
       "VERIFY the clipboard contains exactly 'Summarize the key points of machine learning'"
     ],
     "expected_outcome": "The copy button for the original prompt copies the exact original prompt text to the clipboard and shows visual confirmation.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 144,
@@ -3624,7 +3624,7 @@
       "VERIFY the clipboard contains analysis information including the task type classification"
     ],
     "expected_outcome": "The copy button within the analysis step card copies the analysis result text to the clipboard, including task type, weaknesses, strengths, and framework recommendations.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 145,
@@ -3655,7 +3655,7 @@
       "VERIFY a new entry appears in the history sidebar (total history count increases by 1)"
     ],
     "expected_outcome": "The 'Re-forge' button re-runs the full 3-step pipeline on the same original prompt, producing a new optimization result and a new history entry.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 146,
@@ -3682,7 +3682,7 @@
       "VERIFY the 'Forge It!' button is enabled and ready for a new submission"
     ],
     "expected_outcome": "The 'Edit & Re-forge' button populates the main textarea with the optimized prompt text, allowing the user to make edits and re-submit for iterative refinement.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 147,
@@ -3708,7 +3708,7 @@
       "VERIFY the newly loaded entries have older timestamps than the initially visible entries"
     ],
     "expected_outcome": "The history sidebar loads additional entries beyond the initial page through pagination or infinite scroll, showing progressively older optimization records.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 148,
@@ -3732,7 +3732,7 @@
       "SCREENSHOT the re-sorted history sidebar showing entries ordered by score"
     ],
     "expected_outcome": "The history sidebar correctly re-sorts entries by overall score when the sort option is selected, displaying highest-scoring optimizations first.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 149,
@@ -3760,7 +3760,7 @@
       "VERIFY the count of entries is the same as before clicking 'Clear History'"
     ],
     "expected_outcome": "The 'Clear History' button shows a confirmation dialog, and clicking cancel preserves all history entries without deleting anything.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 150,
@@ -3787,7 +3787,7 @@
       "VERIFY the API returns total count of 0 or empty items array"
     ],
     "expected_outcome": "Confirming 'Clear History' removes all optimization records from both the UI sidebar and the backend database, showing an empty state.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 151,
@@ -3810,7 +3810,7 @@
       "VERIFY the final scores panel is visible with all 5 score dimensions"
     ],
     "expected_outcome": "The pipeline handles the validation step result appropriately, automatically retrying the optimization step once if the initial validation score is below 5, and ultimately displaying a final result.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 152,
@@ -3841,7 +3841,7 @@
       "CLICK the first history entry (haiku) to verify it loads the correct result"
     ],
     "expected_outcome": "Three sequential optimizations complete successfully, each producing independent results, and all three appear in the history sidebar in correct order.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 153,
@@ -3866,7 +3866,7 @@
       "VERIFY the scores panel displays all 5 score dimensions"
     ],
     "expected_outcome": "A 1000+ character prompt is accepted, processed through the full pipeline without errors or truncation, and produces a complete optimization result with diff view and scores.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 154,
@@ -3888,7 +3888,7 @@
       "VERIFY no unhandled errors or blank screens appear"
     ],
     "expected_outcome": "A very short prompt is handled gracefully - either optimized into a more detailed version or rejected with a clear, helpful message suggesting the user provide more detail.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 155,
@@ -3912,7 +3912,7 @@
       "SCREENSHOT the diff view showing proper handling of special characters"
     ],
     "expected_outcome": "Prompts with special characters (quotes, angle brackets, ampersands, escape sequences, unicode) are correctly preserved through the pipeline and displayed without escaping issues or XSS vulnerabilities.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 156,
@@ -3936,7 +3936,7 @@
       "SCREENSHOT the result showing the code block handling in the diff view"
     ],
     "expected_outcome": "Prompts containing code blocks with triple backtick fencing are correctly processed, preserved in the diff view, and the optimized version maintains proper code formatting.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 157,
@@ -3960,7 +3960,7 @@
       "SCREENSHOT the result showing the markdown-formatted prompt in the diff view"
     ],
     "expected_outcome": "Prompts with markdown formatting are processed correctly, with formatting characters preserved as raw text in the diff view and the optimized version maintaining the markdown structure.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 158,
@@ -3988,7 +3988,7 @@
       "VERIFY both optimizations appear in the history sidebar of both tabs after refresh"
     ],
     "expected_outcome": "Two simultaneous optimization sessions in separate browser tabs complete independently, each showing their own correct results without cross-tab interference.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 159,
@@ -4016,7 +4016,7 @@
       "SCREENSHOT the restored result after refresh and compare with pre-refresh screenshot"
     ],
     "expected_outcome": "The optimization result is fully persisted in the database and can be restored by clicking the history entry after a page refresh, with all data (prompts, diff, scores) intact.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 160,
@@ -4042,7 +4042,7 @@
       "SCREENSHOT the history sidebar showing loaded entries on initial visit"
     ],
     "expected_outcome": "The history sidebar loads and displays existing optimization records from the database on the initial page visit without requiring any user interaction.",
-    "passes": false
+    "passes": true
   },
   {
     "id": 161,

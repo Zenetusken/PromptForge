@@ -9,6 +9,7 @@
 	let searchQuery = $state('');
 	let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let confirmDeleteId: string | null = $state(null);
+	let showClearConfirm = $state(false);
 
 	let filteredItems = $derived(
 		searchQuery
@@ -67,7 +68,6 @@
 
 	function handleEditReforge(e: Event, item: HistoryItem) {
 		e.stopPropagation();
-		// Set the prompt text in the input by dispatching a custom event
 		const textarea = document.querySelector('[data-testid="prompt-textarea"]') as HTMLTextAreaElement | null;
 		if (textarea) {
 			const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
@@ -77,6 +77,24 @@
 			}
 			textarea.focus();
 		}
+	}
+
+	function handleSortChange(e: Event) {
+		const select = e.target as HTMLSelectElement;
+		historyState.setSortBy(select.value);
+	}
+
+	function requestClearHistory() {
+		showClearConfirm = true;
+	}
+
+	async function confirmClearHistory() {
+		showClearConfirm = false;
+		await historyState.clearAll();
+	}
+
+	function cancelClearHistory() {
+		showClearConfirm = false;
 	}
 
 	// Register history refresh callback so optimization store can trigger reloads
@@ -105,7 +123,7 @@
 		</span>
 	</div>
 
-	<div class="p-3">
+	<div class="p-3 space-y-2">
 		<input
 			type="text"
 			bind:value={searchQuery}
@@ -114,7 +132,50 @@
 			data-testid="history-search"
 			class="w-full rounded-lg border border-text-dim/20 bg-bg-input px-3 py-2 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/40"
 		/>
+		<div class="flex items-center gap-2">
+			<select
+				value={historyState.sortBy}
+				onchange={handleSortChange}
+				class="flex-1 rounded-lg border border-text-dim/20 bg-bg-input px-2 py-1.5 font-mono text-xs text-text-secondary outline-none focus:border-neon-cyan/40"
+				data-testid="history-sort"
+			>
+				<option value="created_at">Date</option>
+				<option value="overall_score">Score</option>
+				<option value="task_type">Task Type</option>
+			</select>
+			<button
+				class="rounded-lg border border-neon-red/20 px-2 py-1.5 font-mono text-xs text-neon-red transition-colors hover:bg-neon-red/10"
+				onclick={requestClearHistory}
+				data-testid="clear-history-btn"
+			>
+				Clear
+			</button>
+		</div>
 	</div>
+
+	<!-- Clear History Confirmation Dialog -->
+	{#if showClearConfirm}
+		<div class="mx-3 mb-2 rounded-lg border border-neon-red/30 bg-neon-red/5 p-3" data-testid="clear-confirm-dialog">
+			<p class="mb-2 text-xs text-neon-red font-semibold">Clear all history?</p>
+			<p class="mb-3 text-xs text-text-dim">This will permanently delete all optimization records. This action cannot be undone.</p>
+			<div class="flex gap-2">
+				<button
+					class="flex-1 rounded-md bg-neon-red/20 py-1.5 font-mono text-xs text-neon-red transition-colors hover:bg-neon-red/30"
+					onclick={confirmClearHistory}
+					data-testid="confirm-clear-btn"
+				>
+					Confirm
+				</button>
+				<button
+					class="flex-1 rounded-md bg-text-dim/10 py-1.5 font-mono text-xs text-text-dim transition-colors hover:bg-text-dim/20"
+					onclick={cancelClearHistory}
+					data-testid="cancel-clear-btn"
+				>
+					Cancel
+				</button>
+			</div>
+		</div>
+	{/if}
 
 	<div class="flex-1 overflow-y-auto px-2 pb-2" data-testid="history-list">
 		{#if historyState.isLoading && !historyState.hasLoaded}
@@ -130,7 +191,7 @@
 				</svg>
 			</div>
 		{:else if filteredItems.length === 0}
-			<div class="flex flex-col items-center justify-center py-10 text-center">
+			<div class="flex flex-col items-center justify-center py-10 text-center" data-testid="empty-state">
 				<div class="mb-2 text-2xl text-text-dim">
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -148,7 +209,7 @@
 					</svg>
 				</div>
 				<p class="text-xs text-text-dim">
-					{searchQuery ? 'No matching entries' : 'No history yet'}
+					{searchQuery ? 'No matching entries' : 'No optimizations yet'}
 				</p>
 			</div>
 		{:else}
@@ -235,12 +296,13 @@
 				</div>
 			{/each}
 
-			<!-- Pagination hint -->
+			<!-- Load More button -->
 			{#if historyState.total > historyState.items.length}
 				<div class="py-2 text-center">
 					<button
 						class="font-mono text-xs text-text-dim transition-colors hover:text-neon-cyan"
 						onclick={() => historyState.loadHistory({ page: historyState.page + 1 })}
+						data-testid="load-more-btn"
 					>
 						Load more ({historyState.total - historyState.items.length} remaining)
 					</button>
