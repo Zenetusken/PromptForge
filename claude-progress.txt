@@ -1,5 +1,5 @@
 # PromptForge — Development Progress
-# Last updated: Session 1 (Initializer Agent)
+# Last updated: Session 5 (Coding Agent — T2 Verification)
 
 ## Completed
 - feature_list.json: 200 test cases created (IDs 1-200, all passes=false)
@@ -260,4 +260,54 @@ properly updated after streaming completes.
 - puppeteer_evaluate returns undefined for string results — use screenshot-based verification or side effects instead
 
 **Progress:** 45/200 tests passing (22.5%)
+**Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
+
+## Session 5 — Feb 13, 2026 (Coding Agent — T2 Verification)
+
+**Completed:** #46, #47, #48, #50, #51, #52, #53, #54, #56, #57, #60, #61, #62, #63, #65, #66, #67, #68, #69, #70, #71, #72, #74, #75, #76, #77
+**Regressions fixed:** None (no regressions found)
+**In progress:** None
+**Next up:** #49, #55, #58, #59, #64, #73 (require code changes)
+
+**What was done:**
+- Verified 26 T2 tests that were already passing with existing code (no code changes needed)
+- All tests verified end-to-end via Puppeteer browser automation with screenshots
+- Pipeline flow fully working: submit prompt → 3-step pipeline → results with scores
+- Ctrl+Enter shortcut confirmed working
+- Sidebar collapse/expand confirmed working
+- All UI styling confirmed: neon cyan borders, JetBrains Mono font, gradient buttons, placeholder text, char count, resize
+
+**Tests that need actual code changes (next session):**
+1. **#49**: Pipeline Step 1 streams analysis content in real-time
+   - PipelineStep component currently only shows badges on completion
+   - Needs: streaming text area during 'running' status
+   - Backend sends step_start events but no intermediate step_progress events with text
+   - Need to either: add step_progress SSE events from backend, or show a progress text area in step cards
+
+2. **#55**: Pipeline Step 2 streams optimized prompt text
+   - Same issue as #49 — needs streaming text content visible during optimization
+
+3. **#58**: Pipeline Step 3 shows score results on completion
+   - PipelineStep only renders task_type/weaknesses/strengths for completed steps
+   - Needs: score display (e.g., overall score badge) for validate step completion data
+
+4. **#59**: Pipeline auto-collapses completed steps
+   - Currently all 3 step cards remain the same size after completion
+   - Needs: auto-collapse mechanism where completed steps shrink and active step expands
+
+5. **#64**: Pipeline shows duration timer per step
+   - Needs: per-step timing (start time → end time) displayed in each step card
+
+6. **#73**: Header shows stats badge with numerical value
+   - Currently shows "Pipeline Ready" text, not a number
+   - Needs: fetch stats count (total optimizations) and display as number
+
+**Puppeteer tips for next session:**
+- `puppeteer_click` sometimes times out — use `puppeteer_evaluate` with `.click()` as fallback
+- `puppeteer_evaluate` returns `undefined` for strings — use `console.log()` and read from console output
+- Pipeline takes 25-40 seconds to complete (3 sequential Claude calls)
+- After clicking Forge It!, wait 3 seconds to see pipeline progress, 40 seconds for full completion
+- Screenshots sometimes timeout if taken immediately after long waits — retry after sleep 2
+
+**Progress:** 71/200 tests passing (35.5%)
 **Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
