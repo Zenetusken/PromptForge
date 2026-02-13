@@ -1,6 +1,6 @@
-import { goto } from '$app/navigation';
-import { fetchOptimize, fetchRetry, type PipelineEvent, type HistoryItem } from '$lib/api/client';
+import { fetchOptimize, fetchRetry, type PipelineEvent, type HistoryItem, type OptimizeMetadata } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
+import { toastState } from '$lib/stores/toast.svelte';
 
 export interface StepState {
 	name: string;
@@ -40,15 +40,28 @@ export interface OptimizationResultState {
 	duration_ms: number;
 }
 
+const INITIAL_PIPELINE_STEPS: StepState[] = [
+	{ name: 'analyze', label: 'ANALYZE', status: 'pending', description: 'Analyzing prompt structure and intent' },
+	{ name: 'optimize', label: 'OPTIMIZE', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
+	{ name: 'validate', label: 'VALIDATE', status: 'pending', description: 'Scoring and quality assessment' }
+];
+
 class OptimizationState {
 	currentRun: RunState | null = $state(null);
 	result: OptimizationResultState | null = $state(null);
 	isRunning: boolean = $state(false);
 	error: string | null = $state(null);
+	pendingNavigation: string | null = $state(null);
 
 	private abortController: AbortController | null = null;
 
-	startOptimization(prompt: string) {
+	consumeNavigation(): string | null {
+		const nav = this.pendingNavigation;
+		this.pendingNavigation = null;
+		return nav;
+	}
+
+	startOptimization(prompt: string, metadata?: OptimizeMetadata) {
 		// Clean up previous run
 		this.cancel();
 
@@ -56,11 +69,7 @@ class OptimizationState {
 		this.error = null;
 		this.result = null;
 		this.currentRun = {
-			steps: [
-				{ name: 'analyze', label: 'ANALYZE', status: 'pending', description: 'Analyzing prompt structure and intent' },
-				{ name: 'optimize', label: 'OPTIMIZE', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
-				{ name: 'validate', label: 'VALIDATE', status: 'pending', description: 'Scoring and quality assessment' }
-			]
+			steps: INITIAL_PIPELINE_STEPS.map(s => ({ ...s }))
 		};
 
 		this.abortController = fetchOptimize(
@@ -70,7 +79,8 @@ class OptimizationState {
 				this.error = err.message;
 				this.isRunning = false;
 				toastState.show(err.message, 'error');
-			}
+			},
+			metadata
 		);
 	}
 
@@ -81,11 +91,7 @@ class OptimizationState {
 		this.error = null;
 		this.result = null;
 		this.currentRun = {
-			steps: [
-				{ name: 'analyze', label: 'ANALYZE', status: 'pending', description: 'Analyzing prompt structure and intent' },
-				{ name: 'optimize', label: 'OPTIMIZE', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
-				{ name: 'validate', label: 'VALIDATE', status: 'pending', description: 'Scoring and quality assessment' }
-			]
+			steps: INITIAL_PIPELINE_STEPS.map(s => ({ ...s }))
 		};
 
 		this.abortController = fetchRetry(
@@ -181,9 +187,9 @@ class OptimizationState {
 					}));
 				}
 				toastState.show('Optimization complete!', 'success');
-				// Navigate to detail page (replaceState so back button returns to forge)
-				if (typeof window !== 'undefined' && this.result.id) {
-					goto(`/optimize/${this.result.id}`, { replaceState: true });
+				// Signal navigation to detail page
+				if (this.result.id) {
+					this.pendingNavigation = `/optimize/${this.result.id}`;
 				}
 				// Trigger history refresh
 				historyState.loadHistory();
@@ -227,9 +233,6 @@ class OptimizationState {
 			verdict: item.verdict || '',
 			duration_ms: item.duration_ms || 0,
 		};
-		if (typeof window !== 'undefined' && item.id) {
-			goto(`/optimize/${item.id}`, { replaceState: true });
-		}
 	}
 
 	cancel() {
@@ -246,76 +249,10 @@ class OptimizationState {
 		this.result = null;
 		this.error = null;
 		if (typeof window !== 'undefined' && window.location.pathname.startsWith('/optimize/')) {
-			goto('/', { replaceState: true });
+			this.pendingNavigation = '/';
 		}
 	}
 }
 
-// Toast system using direct DOM manipulation for guaranteed cross-component reactivity
-function getToastStyles(toastType: string): string {
-	switch (toastType) {
-		case 'success': return 'border-color: rgba(0,255,136,0.3); background: rgba(0,255,136,0.1);';
-		case 'error': return 'border-color: rgba(255,0,85,0.3); background: rgba(255,0,85,0.1);';
-		default: return 'border-color: rgba(0,240,255,0.3); background: rgba(0,240,255,0.1);';
-	}
-}
-
-function getToastIcon(toastType: string): string {
-	if (toastType === 'success') return '<svg class="h-5 w-5" style="color:#00ff88" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
-	if (toastType === 'error') return '<svg class="h-5 w-5" style="color:#ff0055" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
-	return '<svg class="h-5 w-5" style="color:#00f0ff" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
-}
-
-const toastActions = {
-	message: '',
-	type: 'info' as 'success' | 'error' | 'info',
-	show(msg: string, toastType: 'success' | 'error' | 'info' = 'info', duration = 4000) {
-		if (typeof document === 'undefined') return;
-		// Remove any existing toast
-		const existing = document.getElementById('app-toast');
-		if (existing) existing.remove();
-
-		toastActions.message = msg;
-		toastActions.type = toastType;
-
-		// Append directly to document.body with fixed positioning
-		// (avoids Svelte DOM reconciliation removing manually-added children)
-		const toast = document.createElement('div');
-		toast.id = 'app-toast';
-		toast.setAttribute('role', 'alert');
-		toast.setAttribute('data-testid', 'toast-notification');
-		toast.style.cssText = `
-			position: fixed; bottom: 24px; right: 24px; z-index: 9999;
-			display: flex; align-items: center; gap: 12px;
-			padding: 12px 20px; border-radius: 12px; border: 1px solid;
-			box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3);
-			transition: all 300ms; font-size: 14px; color: #e0e0f0;
-			${getToastStyles(toastType)}
-		`;
-		toast.innerHTML = `${getToastIcon(toastType)}<span>${msg}</span>`;
-
-		// Add dismiss button
-		const dismissBtn = document.createElement('button');
-		dismissBtn.style.cssText = 'margin-left: 8px; color: #555577; cursor: pointer; background: none; border: none; padding: 2px;';
-		dismissBtn.setAttribute('aria-label', 'Dismiss notification');
-		dismissBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-		dismissBtn.onclick = () => toast.remove();
-		toast.appendChild(dismissBtn);
-
-		document.body.appendChild(toast);
-
-		// Auto-dismiss after duration
-		setTimeout(() => {
-			if (toast.parentElement) toast.remove();
-		}, duration);
-	},
-	dismiss() {
-		if (typeof document === 'undefined') return;
-		const existing = document.getElementById('app-toast');
-		if (existing) existing.remove();
-		this.message = '';
-	}
-};
-
 export const optimizationState = new OptimizationState();
-export const toastState = toastActions;
+export { toastState };

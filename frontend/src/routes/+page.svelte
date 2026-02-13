@@ -4,10 +4,11 @@
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { promptState } from '$lib/stores/prompt.svelte';
+	import type { OptimizeMetadata } from '$lib/api/client';
 
-	function handleOptimize(prompt: string) {
+	function handleOptimize(prompt: string, metadata?: OptimizeMetadata) {
 		promptState.set(prompt);
-		optimizationState.startOptimization(prompt);
+		optimizationState.startOptimization(prompt, metadata);
 	}
 
 	function handleRetry() {
