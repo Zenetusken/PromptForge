@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, Float, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants import OptimizationStatus
 from app.database import Base
 
 
@@ -60,7 +61,7 @@ class Optimization(Base):
     # Execution metadata
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_used: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default=OptimizationStatus.PENDING)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Organization

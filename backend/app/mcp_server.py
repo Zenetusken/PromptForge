@@ -14,93 +14,30 @@ Tools:
   - promptforge_delete: Delete an optimization record
 """
 
-import asyncio
 import json
 import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import async_session_factory, engine, init_db
+from app.constants import ALLOWED_SORT_FIELDS, OptimizationStatus
+from app.converters import (
+    apply_pipeline_result_to_orm,
+    optimization_to_dict,
+    optimization_to_summary,
+    score_to_int,
+    serialize_json_field,
+)
+from app.database import async_session_factory, init_db
 from app.models.optimization import Optimization
 from app.services.claude_client import ClaudeClient
 from app.services.pipeline import run_pipeline
-
-
-# --- Helpers ---
-
-def _serialize_json_field(value: str | None) -> list[str] | None:
-    """Deserialize a JSON string field to a list."""
-    if value is None:
-        return None
-    try:
-        return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-
-def _opt_to_dict(opt: Optimization) -> dict:
-    """Convert an Optimization ORM object to a serializable dict."""
-    return {
-        "id": opt.id,
-        "created_at": opt.created_at.isoformat() if opt.created_at else None,
-        "raw_prompt": opt.raw_prompt,
-        "optimized_prompt": opt.optimized_prompt,
-        "task_type": opt.task_type,
-        "complexity": opt.complexity,
-        "weaknesses": _serialize_json_field(opt.weaknesses),
-        "strengths": _serialize_json_field(opt.strengths),
-        "changes_made": _serialize_json_field(opt.changes_made),
-        "framework_applied": opt.framework_applied,
-        "optimization_notes": opt.optimization_notes,
-        "clarity_score": opt.clarity_score,
-        "specificity_score": opt.specificity_score,
-        "structure_score": opt.structure_score,
-        "faithfulness_score": opt.faithfulness_score,
-        "overall_score": opt.overall_score,
-        "is_improvement": opt.is_improvement,
-        "verdict": opt.verdict,
-        "duration_ms": opt.duration_ms,
-        "model_used": opt.model_used,
-        "status": opt.status,
-        "error_message": opt.error_message,
-        "project": opt.project,
-        "tags": _serialize_json_field(opt.tags),
-        "title": opt.title,
-    }
-
-
-def _opt_to_summary(opt: Optimization) -> dict:
-    """Convert an Optimization ORM object to a summary dict (for list views)."""
-    raw = opt.raw_prompt or ""
-    return {
-        "id": opt.id,
-        "created_at": opt.created_at.isoformat() if opt.created_at else None,
-        "raw_prompt_preview": raw[:100] + ("..." if len(raw) > 100 else ""),
-        "task_type": opt.task_type,
-        "complexity": opt.complexity,
-        "overall_score": _score_to_int(opt.overall_score),
-        "status": opt.status,
-        "project": opt.project,
-        "tags": _serialize_json_field(opt.tags),
-        "title": opt.title,
-    }
-
-
-def _score_to_int(score: float | None) -> int | None:
-    """Convert a 0.0-1.0 float score to a 1-10 integer scale."""
-    if score is None:
-        return None
-    # Scores may already be on 1-10 scale or 0-1 scale
-    if score <= 1.0:
-        return max(1, min(10, round(score * 10)))
-    return max(1, min(10, round(score)))
 
 
 # --- Lifespan ---
@@ -162,7 +99,7 @@ async def promptforge_optimize(
         opt = Optimization(
             id=optimization_id,
             raw_prompt=prompt,
-            status="running",
+            status=OptimizationStatus.RUNNING,
             project=project,
             tags=json.dumps(tags) if tags else None,
             title=title,
@@ -181,24 +118,7 @@ async def promptforge_optimize(
             db_result = await session.execute(stmt)
             opt = db_result.scalar_one_or_none()
             if opt:
-                opt.status = "completed"
-                opt.optimized_prompt = result.optimized_prompt
-                opt.task_type = result.task_type
-                opt.complexity = result.complexity
-                opt.weaknesses = json.dumps(result.weaknesses)
-                opt.strengths = json.dumps(result.strengths)
-                opt.changes_made = json.dumps(result.changes_made)
-                opt.framework_applied = result.framework_applied
-                opt.optimization_notes = result.optimization_notes
-                opt.clarity_score = result.clarity_score
-                opt.specificity_score = result.specificity_score
-                opt.structure_score = result.structure_score
-                opt.faithfulness_score = result.faithfulness_score
-                opt.overall_score = result.overall_score
-                opt.is_improvement = result.is_improvement
-                opt.verdict = result.verdict
-                opt.duration_ms = elapsed_ms
-                opt.model_used = result.model_used
+                apply_pipeline_result_to_orm(opt, asdict(result), elapsed_ms)
                 await session.commit()
 
         return {
@@ -212,16 +132,16 @@ async def promptforge_optimize(
             "framework_applied": result.framework_applied,
             "optimization_notes": result.optimization_notes,
             "scores": {
-                "clarity": _score_to_int(result.clarity_score),
-                "specificity": _score_to_int(result.specificity_score),
-                "structure": _score_to_int(result.structure_score),
-                "faithfulness": _score_to_int(result.faithfulness_score),
-                "overall": _score_to_int(result.overall_score),
+                "clarity": score_to_int(result.clarity_score),
+                "specificity": score_to_int(result.specificity_score),
+                "structure": score_to_int(result.structure_score),
+                "faithfulness": score_to_int(result.faithfulness_score),
+                "overall": score_to_int(result.overall_score),
             },
             "is_improvement": result.is_improvement,
             "verdict": result.verdict,
             "duration_ms": elapsed_ms,
-            "status": "completed",
+            "status": OptimizationStatus.COMPLETED,
         }
     except Exception as e:
         # Update DB with error
@@ -230,10 +150,10 @@ async def promptforge_optimize(
             db_result = await session.execute(stmt)
             opt = db_result.scalar_one_or_none()
             if opt:
-                opt.status = "error"
+                opt.status = OptimizationStatus.ERROR
                 opt.error_message = str(e)
                 await session.commit()
-        return {"error": str(e), "id": optimization_id, "status": "error"}
+        return {"error": str(e), "id": optimization_id, "status": OptimizationStatus.ERROR}
 
 
 # --- Tool 2: promptforge_get ---
@@ -265,7 +185,7 @@ async def promptforge_get(optimization_id: str) -> dict:
         if not opt:
             return {"error": f"Optimization not found: {optimization_id}"}
 
-        return _opt_to_dict(opt)
+        return optimization_to_dict(opt)
 
 
 # --- Tool 3: promptforge_list ---
@@ -306,8 +226,8 @@ async def promptforge_list(
         order: Sort order ('asc' or 'desc'). Default 'desc'.
     """
     async with async_session_factory() as session:
-        query = select(Optimization).where(Optimization.status == "completed")
-        count_query = select(func.count(Optimization.id)).where(Optimization.status == "completed")
+        query = select(Optimization).where(Optimization.status == OptimizationStatus.COMPLETED)
+        count_query = select(func.count(Optimization.id)).where(Optimization.status == OptimizationStatus.COMPLETED)
 
         # Apply filters
         if project:
@@ -340,7 +260,9 @@ async def promptforge_list(
         total_result = await session.execute(count_query)
         total = total_result.scalar() or 0
 
-        # Apply sorting
+        # Apply sorting (validate against whitelist)
+        if sort not in ALLOWED_SORT_FIELDS:
+            sort = "created_at"
         sort_column = getattr(Optimization, sort, Optimization.created_at)
         if order == "asc":
             query = query.order_by(sort_column)
@@ -353,7 +275,7 @@ async def promptforge_list(
         result = await session.execute(query)
         optimizations = result.scalars().all()
 
-        items = [_opt_to_summary(opt) for opt in optimizations]
+        items = [optimization_to_summary(opt) for opt in optimizations]
         count = len(items)
         has_more = (offset + count) < total
         next_offset = offset + count if has_more else None
@@ -398,7 +320,7 @@ async def promptforge_get_by_project(
         query = (
             select(Optimization)
             .where(Optimization.project == project)
-            .where(Optimization.status == "completed")
+            .where(Optimization.status == OptimizationStatus.COMPLETED)
             .order_by(desc(Optimization.created_at))
             .limit(limit)
         )
@@ -406,9 +328,9 @@ async def promptforge_get_by_project(
         optimizations = result.scalars().all()
 
         if include_prompts:
-            items = [_opt_to_dict(opt) for opt in optimizations]
+            items = [optimization_to_dict(opt) for opt in optimizations]
         else:
-            items = [_opt_to_summary(opt) for opt in optimizations]
+            items = [optimization_to_summary(opt) for opt in optimizations]
 
         return {
             "project": project,
@@ -467,7 +389,7 @@ async def promptforge_search(
         optimizations = result.scalars().all()
 
         return {
-            "items": [_opt_to_summary(opt) for opt in optimizations],
+            "items": [optimization_to_summary(opt) for opt in optimizations],
             "total": total,
             "query": query,
         }
@@ -513,7 +435,7 @@ async def promptforge_tag(
             return {"error": f"Optimization not found: {optimization_id}"}
 
         # Handle tags
-        current_tags = _serialize_json_field(opt.tags) or []
+        current_tags = serialize_json_field(opt.tags) or []
 
         if add_tags:
             for tag in add_tags:
@@ -566,7 +488,7 @@ async def promptforge_stats(project: str | None = None) -> dict:
         project: Optional project name to scope statistics to.
     """
     async with async_session_factory() as session:
-        base_filter = Optimization.status == "completed"
+        base_filter = Optimization.status == OptimizationStatus.COMPLETED
         if project:
             base_filter = base_filter & (Optimization.project == project)
 
@@ -632,7 +554,6 @@ async def promptforge_stats(project: str | None = None) -> dict:
         optimizations_today = today_result.scalar() or 0
 
         # Optimizations this week (last 7 days)
-        from datetime import timedelta
         week_start = datetime.now(timezone.utc) - timedelta(days=7)
         week_result = await session.execute(
             select(func.count(Optimization.id)).where(

@@ -1,6 +1,5 @@
 """History endpoints for browsing and managing past optimizations."""
 
-import json
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -8,56 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants import ALLOWED_SORT_FIELDS
+from app.converters import optimization_to_response
 from app.database import get_db
 from app.models.optimization import Optimization
-from app.schemas.optimization import (
-    HistoryResponse,
-    OptimizationResponse,
-    StatsResponse,
-)
+from app.schemas.optimization import HistoryResponse, StatsResponse
 
 router = APIRouter(tags=["history"])
-
-
-def _serialize_json_field(value: str | None) -> list[str] | None:
-    """Deserialize a JSON string field to a list, or return None."""
-    if value is None:
-        return None
-    try:
-        return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-
-def _optimization_to_response(opt: Optimization) -> OptimizationResponse:
-    """Convert an Optimization ORM object to an OptimizationResponse schema."""
-    return OptimizationResponse(
-        id=opt.id,
-        created_at=opt.created_at,
-        raw_prompt=opt.raw_prompt,
-        optimized_prompt=opt.optimized_prompt,
-        task_type=opt.task_type,
-        complexity=opt.complexity,
-        weaknesses=_serialize_json_field(opt.weaknesses),
-        strengths=_serialize_json_field(opt.strengths),
-        changes_made=_serialize_json_field(opt.changes_made),
-        framework_applied=opt.framework_applied,
-        optimization_notes=opt.optimization_notes,
-        clarity_score=opt.clarity_score,
-        specificity_score=opt.specificity_score,
-        structure_score=opt.structure_score,
-        faithfulness_score=opt.faithfulness_score,
-        overall_score=opt.overall_score,
-        is_improvement=opt.is_improvement,
-        verdict=opt.verdict,
-        duration_ms=opt.duration_ms,
-        model_used=opt.model_used,
-        status=opt.status,
-        error_message=opt.error_message,
-        project=opt.project,
-        tags=_serialize_json_field(opt.tags),
-        title=opt.title,
-    )
 
 
 @router.api_route("/api/history", methods=["GET", "HEAD"], response_model=HistoryResponse)
@@ -112,7 +68,9 @@ async def get_history(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    # Apply sorting
+    # Apply sorting (validate against whitelist)
+    if sort not in ALLOWED_SORT_FIELDS:
+        sort = "created_at"
     sort_column = getattr(Optimization, sort, Optimization.created_at)
     if order == "desc":
         query = query.order_by(desc(sort_column))
@@ -128,7 +86,7 @@ async def get_history(
     optimizations = result.scalars().all()
 
     return HistoryResponse(
-        items=[_optimization_to_response(opt) for opt in optimizations],
+        items=[optimization_to_response(opt) for opt in optimizations],
         total=total,
         page=page,
         per_page=per_page,

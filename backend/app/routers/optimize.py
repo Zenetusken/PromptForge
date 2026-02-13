@@ -1,6 +1,7 @@
 """Optimization endpoints for running the prompt optimization pipeline."""
 
 import json
+import logging
 import time
 import uuid
 
@@ -10,53 +11,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
+from app.constants import OptimizationStatus
+from app.converters import apply_pipeline_result_to_orm, optimization_to_response
 from app.database import async_session_factory, get_db
 from app.models.optimization import Optimization
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
 from app.services.pipeline import run_pipeline_streaming
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["optimize"])
-
-
-def _serialize_json_field(value: str | None) -> list[str] | None:
-    """Deserialize a JSON string field to a list, or return None."""
-    if value is None:
-        return None
-    try:
-        return json.loads(value)
-    except (json.JSONDecodeError, TypeError):
-        return None
-
-
-def _optimization_to_response(opt: Optimization) -> OptimizationResponse:
-    """Convert an Optimization ORM object to an OptimizationResponse schema."""
-    return OptimizationResponse(
-        id=opt.id,
-        created_at=opt.created_at,
-        raw_prompt=opt.raw_prompt,
-        optimized_prompt=opt.optimized_prompt,
-        task_type=opt.task_type,
-        complexity=opt.complexity,
-        weaknesses=_serialize_json_field(opt.weaknesses),
-        strengths=_serialize_json_field(opt.strengths),
-        changes_made=_serialize_json_field(opt.changes_made),
-        framework_applied=opt.framework_applied,
-        optimization_notes=opt.optimization_notes,
-        clarity_score=opt.clarity_score,
-        specificity_score=opt.specificity_score,
-        structure_score=opt.structure_score,
-        faithfulness_score=opt.faithfulness_score,
-        overall_score=opt.overall_score,
-        is_improvement=opt.is_improvement,
-        verdict=opt.verdict,
-        duration_ms=opt.duration_ms,
-        model_used=opt.model_used,
-        status=opt.status,
-        error_message=opt.error_message,
-        project=opt.project,
-        tags=_serialize_json_field(opt.tags),
-        title=opt.title,
-    )
 
 
 async def _update_db_after_stream(optimization_id: str, final_data: dict, start_time: float):
@@ -68,28 +32,62 @@ async def _update_db_after_stream(optimization_id: str, final_data: dict, start_
             opt = result.scalar_one_or_none()
             if opt:
                 elapsed_ms = int((time.time() - start_time) * 1000)
-                opt.status = "completed"
-                opt.optimized_prompt = final_data.get("optimized_prompt")
-                opt.task_type = final_data.get("task_type")
-                opt.complexity = final_data.get("complexity")
-                opt.weaknesses = json.dumps(final_data.get("weaknesses"))
-                opt.strengths = json.dumps(final_data.get("strengths"))
-                opt.changes_made = json.dumps(final_data.get("changes_made"))
-                opt.framework_applied = final_data.get("framework_applied")
-                opt.optimization_notes = final_data.get("optimization_notes")
-                opt.clarity_score = final_data.get("clarity_score")
-                opt.specificity_score = final_data.get("specificity_score")
-                opt.structure_score = final_data.get("structure_score")
-                opt.faithfulness_score = final_data.get("faithfulness_score")
-                opt.overall_score = final_data.get("overall_score")
-                opt.is_improvement = final_data.get("is_improvement")
-                opt.verdict = final_data.get("verdict")
-                opt.duration_ms = elapsed_ms
-                opt.model_used = final_data.get("model_used", config.CLAUDE_MODEL)
+                apply_pipeline_result_to_orm(opt, final_data, elapsed_ms)
+                if not opt.model_used:
+                    opt.model_used = config.CLAUDE_MODEL
                 await session.commit()
         except Exception as e:
             await session.rollback()
-            print(f"Error updating optimization {optimization_id}: {e}")
+            logger.error("Error updating optimization %s: %s", optimization_id, e)
+
+
+def _create_streaming_response(
+    opt_id: str, raw_prompt: str, start_time: float
+) -> StreamingResponse:
+    """Create a StreamingResponse wrapping the pipeline with DB persistence."""
+
+    async def event_stream():
+        final_data = {}
+        try:
+            async for event in run_pipeline_streaming(raw_prompt):
+                if event.startswith("event: complete"):
+                    lines = event.split("\n")
+                    for i, line in enumerate(lines):
+                        if line.startswith("data: "):
+                            final_data = json.loads(line[6:])
+                            # Inject ID into the SSE payload without mutating final_data
+                            client_data = {**final_data, "id": opt_id}
+                            lines[i] = "data: " + json.dumps(client_data)
+                            break
+                    event = "\n".join(lines)
+                yield event
+        except Exception as e:
+            error_data = {"status": OptimizationStatus.ERROR, "error": str(e)}
+            yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
+            async with async_session_factory() as session:
+                try:
+                    stmt = select(Optimization).where(Optimization.id == opt_id)
+                    result = await session.execute(stmt)
+                    opt = result.scalar_one_or_none()
+                    if opt:
+                        opt.status = OptimizationStatus.ERROR
+                        opt.error_message = str(e)
+                        await session.commit()
+                except Exception:
+                    await session.rollback()
+            return
+
+        await _update_db_after_stream(opt_id, final_data, start_time)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/api/optimize")
@@ -110,7 +108,7 @@ async def optimize_prompt(
     optimization = Optimization(
         id=optimization_id,
         raw_prompt=request.prompt,
-        status="running",
+        status=OptimizationStatus.RUNNING,
         project=request.project,
         tags=json.dumps(request.tags) if request.tags else None,
         title=request.title,
@@ -118,46 +116,7 @@ async def optimize_prompt(
     db.add(optimization)
     await db.commit()
 
-    async def event_stream():
-        """Wrap the real pipeline SSE generator and update the DB on completion."""
-        final_data = {}
-        try:
-            async for event in run_pipeline_streaming(request.prompt):
-                # Capture complete event data for DB update
-                if event.startswith("event: complete"):
-                    data_line = event.split("data: ", 1)[1].strip()
-                    final_data = json.loads(data_line)
-                yield event
-        except Exception as e:
-            # Emit an error event if the pipeline fails
-            error_data = {"status": "error", "error": str(e)}
-            yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
-            # Update the DB record with error status
-            async with async_session_factory() as session:
-                try:
-                    stmt = select(Optimization).where(Optimization.id == optimization_id)
-                    result = await session.execute(stmt)
-                    opt = result.scalar_one_or_none()
-                    if opt:
-                        opt.status = "error"
-                        opt.error_message = str(e)
-                        await session.commit()
-                except Exception:
-                    await session.rollback()
-            return
-
-        # Update the database record with final results
-        await _update_db_after_stream(optimization_id, final_data, start_time)
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return _create_streaming_response(optimization_id, request.prompt, start_time)
 
 
 @router.get("/api/optimize/{optimization_id}", response_model=OptimizationResponse)
@@ -173,7 +132,7 @@ async def get_optimization(
     if not optimization:
         raise HTTPException(status_code=404, detail="Optimization not found")
 
-    return _optimization_to_response(optimization)
+    return optimization_to_response(optimization)
 
 
 @router.post("/api/optimize/{optimization_id}/retry")
@@ -200,7 +159,7 @@ async def retry_optimization(
     new_optimization = Optimization(
         id=new_id,
         raw_prompt=raw_prompt,
-        status="running",
+        status=OptimizationStatus.RUNNING,
         project=original.project,
         tags=original.tags,
         title=f"Retry: {original.title}" if original.title else "Retry",
@@ -208,40 +167,4 @@ async def retry_optimization(
     db.add(new_optimization)
     await db.commit()
 
-    async def event_stream():
-        """Wrap the real pipeline SSE generator and update the DB on completion."""
-        final_data = {}
-        try:
-            async for event in run_pipeline_streaming(raw_prompt):
-                if event.startswith("event: complete"):
-                    data_line = event.split("data: ", 1)[1].strip()
-                    final_data = json.loads(data_line)
-                yield event
-        except Exception as e:
-            error_data = {"status": "error", "error": str(e)}
-            yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
-            async with async_session_factory() as session:
-                try:
-                    stmt = select(Optimization).where(Optimization.id == new_id)
-                    result = await session.execute(stmt)
-                    opt = result.scalar_one_or_none()
-                    if opt:
-                        opt.status = "error"
-                        opt.error_message = str(e)
-                        await session.commit()
-                except Exception:
-                    await session.rollback()
-            return
-
-        # Update the database record with final results
-        await _update_db_after_stream(new_id, final_data, start_time)
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return _create_streaming_response(new_id, raw_prompt, start_time)

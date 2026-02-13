@@ -6,6 +6,7 @@ import time
 from dataclasses import asdict, dataclass
 from typing import AsyncIterator
 
+from app.constants import OptimizationStatus
 from app.services.analyzer import AnalysisResult, PromptAnalyzer
 from app.services.claude_client import ClaudeClient
 from app.services.optimizer import OptimizationResult, PromptOptimizer
@@ -107,7 +108,7 @@ async def _run_with_progress_stream(
     step_name: str,
     progress_messages: list[str],
     interval: float = 1.5,
-):
+) -> AsyncIterator[str | tuple[str, object]]:
     """Run a coroutine while yielding periodic progress events.
 
     This is an async generator that yields SSE progress events at regular intervals
@@ -148,7 +149,7 @@ async def _run_with_progress_stream(
     yield ("_result", result)
 
 
-async def run_pipeline_streaming(raw_prompt: str, claude_client: ClaudeClient | None = None):
+async def run_pipeline_streaming(raw_prompt: str, claude_client: ClaudeClient | None = None) -> AsyncIterator[str]:
     """Run the pipeline and yield SSE events for each stage.
 
     This is an async generator that yields Server-Sent Event formatted strings
@@ -294,7 +295,7 @@ async def run_pipeline_streaming(raw_prompt: str, claude_client: ClaudeClient | 
         **asdict(validation),
         "duration_ms": elapsed_ms,
         "model_used": client.model,
-        "status": "completed",
+        "status": OptimizationStatus.COMPLETED,
     }
     yield _sse_event("complete", complete_data)
 
