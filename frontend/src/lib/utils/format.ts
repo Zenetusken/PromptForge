@@ -71,6 +71,14 @@ export function formatScore(score: number | null | undefined): string {
 }
 
 /**
+ * Format a 0-1 rate as a percentage string (e.g. "73%") or "—".
+ */
+export function formatRate(value: number | null | undefined): string {
+	if (value === null || value === undefined) return '—';
+	return `${Math.round(value * 100)}%`;
+}
+
+/**
  * Get a Tailwind color class name based on score value.
  * Returns 'neon-green' (>= 70), 'neon-yellow' (>= 40), or 'neon-red'.
  */

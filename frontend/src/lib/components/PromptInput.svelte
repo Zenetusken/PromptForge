@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { promptState } from '$lib/stores/prompt.svelte';
 	import type { OptimizeMetadata } from '$lib/api/client';
 
@@ -14,6 +13,9 @@
 	let prompt = $state('');
 	let charCount = $derived(prompt.length);
 	let textareaEl: HTMLTextAreaElement | undefined = $state();
+
+	// Track the last value synced from the store to avoid infinite loops
+	let lastSyncedFromStore = '';
 
 	// Metadata fields
 	let showMetadata = $state(false);
@@ -53,7 +55,8 @@
 
 	$effect(() => {
 		const storeText = promptState.text;
-		if (storeText !== untrack(() => prompt)) {
+		if (storeText !== lastSyncedFromStore) {
+			lastSyncedFromStore = storeText;
 			prompt = storeText;
 			if (storeText && textareaEl) {
 				textareaEl.focus();

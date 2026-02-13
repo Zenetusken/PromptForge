@@ -92,11 +92,14 @@ export interface StatsResponse {
  * Backend sends: event: stage|analysis|optimization|validation|complete
  * Frontend expects: step_start|step_complete|step_progress|result|error
  */
+function isString(v: unknown): v is string {
+	return typeof v === 'string';
+}
+
 function mapSSEEvent(eventType: string, data: Record<string, unknown>): PipelineEvent | null {
 	switch (eventType) {
 		case 'stage': {
-			const stage = data.stage as string;
-			// Map stage names to step names
+			const stage = isString(data.stage) ? data.stage : '';
 			const stepMap: Record<string, string> = {
 				analyzing: 'analyze',
 				optimizing: 'optimize',
@@ -105,13 +108,13 @@ function mapSSEEvent(eventType: string, data: Record<string, unknown>): Pipeline
 			return {
 				type: 'step_start',
 				step: stepMap[stage] || stage,
-				message: data.message as string
+				message: isString(data.message) ? data.message : undefined
 			};
 		}
 		case 'step_progress': {
 			return {
 				type: 'step_progress',
-				step: data.step as string,
+				step: isString(data.step) ? data.step : '',
 				data: data
 			};
 		}
@@ -145,7 +148,7 @@ function mapSSEEvent(eventType: string, data: Record<string, unknown>): Pipeline
 		case 'error': {
 			return {
 				type: 'error',
-				error: (data.error as string) || 'Unknown error'
+				error: isString(data.error) ? data.error : 'Unknown error'
 			};
 		}
 		default:
@@ -252,6 +255,39 @@ export function fetchRetry(
 	);
 }
 
+// ---------------------------------------------------------------------------
+// Generic fetch helpers — single try-catch shared by all API functions
+// ---------------------------------------------------------------------------
+
+async function apiFetch<T>(
+	url: string,
+	fallback: T,
+	options?: RequestInit & { fetchFn?: typeof fetch }
+): Promise<T> {
+	try {
+		const fetchFn = options?.fetchFn ?? fetch;
+		const { fetchFn: _, ...init } = options ?? {};
+		const response = await fetchFn(url, init);
+		if (!response.ok) return fallback;
+		return await response.json();
+	} catch {
+		return fallback;
+	}
+}
+
+async function apiFetchOk(url: string, options?: RequestInit): Promise<boolean> {
+	try {
+		const response = await fetch(url, options);
+		return response.ok;
+	} catch {
+		return false;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// API functions
+// ---------------------------------------------------------------------------
+
 /**
  * Fetch optimization history
  */
@@ -266,78 +302,40 @@ export async function fetchHistory(
 		project?: string;
 	}
 ): Promise<HistoryResponse> {
-	try {
-		const searchParams = new URLSearchParams();
-		if (params?.page) searchParams.set('page', String(params.page));
-		if (params?.per_page) searchParams.set('per_page', String(params.per_page));
-		if (params?.search) searchParams.set('search', params.search);
-		if (params?.sort) searchParams.set('sort', params.sort);
-		if (params?.order) searchParams.set('order', params.order);
-		if (params?.task_type) searchParams.set('task_type', params.task_type);
-		if (params?.project) searchParams.set('project', params.project);
+	const searchParams = new URLSearchParams();
+	if (params?.page) searchParams.set('page', String(params.page));
+	if (params?.per_page) searchParams.set('per_page', String(params.per_page));
+	if (params?.search) searchParams.set('search', params.search);
+	if (params?.sort) searchParams.set('sort', params.sort);
+	if (params?.order) searchParams.set('order', params.order);
+	if (params?.task_type) searchParams.set('task_type', params.task_type);
+	if (params?.project) searchParams.set('project', params.project);
 
-		const url = `${BASE_URL}/history${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
-		const response = await fetch(url);
-		if (!response.ok) return { items: [], total: 0, page: 1, per_page: 20 };
-		return await response.json();
-	} catch {
-		return { items: [], total: 0, page: 1, per_page: 20 };
-	}
+	const qs = searchParams.toString();
+	return apiFetch(`${BASE_URL}/history${qs ? '?' + qs : ''}`, { items: [], total: 0, page: 1, per_page: 20 });
 }
 
 /**
  * Fetch a single optimization by ID.
- * Currently unused — available for future deep-linking to individual results.
+ * Accepts a custom fetchFn for SSR deep-linking (SvelteKit load function).
  */
 export async function fetchOptimization(id: string, fetchFn: typeof fetch = fetch): Promise<HistoryItem | null> {
-	try {
-		const response = await fetchFn(`${BASE_URL}/optimize/${id}`);
-		if (!response.ok) return null;
-		return await response.json();
-	} catch {
-		return null;
-	}
+	return apiFetch(`${BASE_URL}/optimize/${id}`, null, { fetchFn });
 }
 
-/**
- * Delete an optimization from history
- */
+/** Delete an optimization from history */
 export async function deleteOptimization(id: string): Promise<boolean> {
-	try {
-		const response = await fetch(`${BASE_URL}/history/${id}`, {
-			method: 'DELETE'
-		});
-		return response.ok;
-	} catch {
-		return false;
-	}
+	return apiFetchOk(`${BASE_URL}/history/${id}`, { method: 'DELETE' });
 }
 
-/**
- * Clear all history entries
- */
+/** Clear all history entries */
 export async function clearAllHistory(): Promise<boolean> {
-	try {
-		const response = await fetch(`${BASE_URL}/history/all`, {
-			method: 'DELETE'
-		});
-		return response.ok;
-	} catch {
-		return false;
-	}
+	return apiFetchOk(`${BASE_URL}/history/all`, { method: 'DELETE' });
 }
 
-/**
- * Fetch usage statistics.
- */
+/** Fetch usage statistics. */
 export async function fetchStats(): Promise<StatsResponse | null> {
-	try {
-		const response = await fetch(`${BASE_URL}/history/stats`);
-		if (!response.ok) return null;
-		return await response.json();
-	} catch {
-		return null;
-	}
+	return apiFetch(`${BASE_URL}/history/stats`, null);
 }
 
 export interface HealthResponse {
@@ -347,15 +345,7 @@ export interface HealthResponse {
 	version: string;
 }
 
-/**
- * Fetch API health status.
- */
+/** Fetch API health status. */
 export async function fetchHealth(): Promise<HealthResponse | null> {
-	try {
-		const response = await fetch(`${BASE_URL}/health`);
-		if (!response.ok) return null;
-		return await response.json();
-	} catch {
-		return null;
-	}
+	return apiFetch(`${BASE_URL}/health`, null);
 }

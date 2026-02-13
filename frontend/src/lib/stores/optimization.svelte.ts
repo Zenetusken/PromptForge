@@ -2,6 +2,35 @@ import { fetchOptimize, fetchRetry, type PipelineEvent, type HistoryItem, type O
 import { historyState } from '$lib/stores/history.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 
+export interface AnalysisStepData {
+	task_type?: string;
+	complexity?: string;
+	weaknesses?: string[];
+	strengths?: string[];
+	step_duration_ms?: number;
+}
+
+export interface OptimizationStepData {
+	optimized_prompt?: string;
+	framework_applied?: string;
+	changes_made?: string[];
+	optimization_notes?: string;
+	step_duration_ms?: number;
+}
+
+export interface ValidationStepData {
+	clarity_score?: number;
+	specificity_score?: number;
+	structure_score?: number;
+	faithfulness_score?: number;
+	overall_score?: number;
+	is_improvement?: boolean;
+	verdict?: string;
+	step_duration_ms?: number;
+}
+
+export type StepData = AnalysisStepData | OptimizationStepData | ValidationStepData;
+
 export interface StepState {
 	name: string;
 	label: string;
@@ -38,6 +67,11 @@ export interface OptimizationResultState {
 	is_improvement: boolean;
 	verdict: string;
 	duration_ms: number;
+	model_used: string;
+	title: string;
+	project: string;
+	tags: string[];
+	strategy_reasoning: string;
 }
 
 const INITIAL_PIPELINE_STEPS: StepState[] = [
@@ -45,6 +79,57 @@ const INITIAL_PIPELINE_STEPS: StepState[] = [
 	{ name: 'optimize', label: 'OPTIMIZE', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
 	{ name: 'validate', label: 'VALIDATE', status: 'pending', description: 'Scoring and quality assessment' }
 ];
+
+// --- Safe accessors for untyped data sources ---
+
+function safeString(value: unknown, fallback = ''): string {
+	return typeof value === 'string' ? value : fallback;
+}
+
+function safeNumber(value: unknown, fallback = 0): number {
+	return typeof value === 'number' ? value : fallback;
+}
+
+function safeArray(value: unknown): string[] {
+	return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Map a data source (SSE result or HistoryItem) to an OptimizationResultState.
+ * Shared by handleEvent('result') and loadFromHistory().
+ */
+function mapToResultState(
+	source: Record<string, unknown>,
+	originalPrompt: string
+): OptimizationResultState {
+	return {
+		id: safeString(source.id),
+		original: originalPrompt,
+		optimized: safeString(source.optimized_prompt),
+		task_type: safeString(source.task_type),
+		complexity: safeString(source.complexity),
+		weaknesses: safeArray(source.weaknesses),
+		strengths: safeArray(source.strengths),
+		changes_made: safeArray(source.changes_made),
+		framework_applied: safeString(source.framework_applied),
+		optimization_notes: safeString(source.optimization_notes),
+		scores: {
+			clarity: safeNumber(source.clarity_score),
+			specificity: safeNumber(source.specificity_score),
+			structure: safeNumber(source.structure_score),
+			faithfulness: safeNumber(source.faithfulness_score),
+			overall: safeNumber(source.overall_score),
+		},
+		is_improvement: typeof source.is_improvement === 'boolean' ? source.is_improvement : true,
+		verdict: safeString(source.verdict),
+		duration_ms: safeNumber(source.duration_ms),
+		model_used: safeString(source.model_used),
+		title: safeString(source.title),
+		project: safeString(source.project),
+		tags: safeArray(source.tags),
+		strategy_reasoning: safeString(source.strategy_reasoning),
+	};
+}
 
 class OptimizationState {
 	currentRun: RunState | null = $state(null);
@@ -61,123 +146,84 @@ class OptimizationState {
 		return nav;
 	}
 
-	startOptimization(prompt: string, metadata?: OptimizeMetadata) {
-		// Clean up previous run
+	private _resetRunState() {
 		this.cancel();
-
 		this.isRunning = true;
 		this.error = null;
 		this.result = null;
 		this.currentRun = {
 			steps: INITIAL_PIPELINE_STEPS.map(s => ({ ...s }))
 		};
+	}
+
+	private _onStreamError = (err: Error) => {
+		this.error = err.message;
+		this.isRunning = false;
+		toastState.show(err.message, 'error');
+	};
+
+	startOptimization(prompt: string, metadata?: OptimizeMetadata) {
+		this._resetRunState();
 
 		this.abortController = fetchOptimize(
 			prompt,
 			(event) => this.handleEvent(event, prompt),
-			(err) => {
-				this.error = err.message;
-				this.isRunning = false;
-				toastState.show(err.message, 'error');
-			},
+			this._onStreamError,
 			metadata
 		);
 	}
 
 	retryOptimization(id: string, originalPrompt: string) {
-		this.cancel();
-
-		this.isRunning = true;
-		this.error = null;
-		this.result = null;
-		this.currentRun = {
-			steps: INITIAL_PIPELINE_STEPS.map(s => ({ ...s }))
-		};
+		this._resetRunState();
 
 		this.abortController = fetchRetry(
 			id,
 			(event) => this.handleEvent(event, originalPrompt),
-			(err) => {
-				this.error = err.message;
-				this.isRunning = false;
-				toastState.show(err.message, 'error');
-			}
+			this._onStreamError
 		);
+	}
+
+	private updateStep(stepName: string, updater: Partial<StepState> | ((s: StepState) => Partial<StepState>)) {
+		if (!this.currentRun) return;
+		this.currentRun.steps = this.currentRun.steps.map((s) => {
+			if (s.name !== stepName) return s;
+			const patch = typeof updater === 'function' ? updater(s) : updater;
+			return { ...s, ...patch };
+		});
 	}
 
 	private handleEvent(event: PipelineEvent, originalPrompt: string) {
 		if (!this.currentRun) return;
 
 		switch (event.type) {
-			case 'step_start': {
-				const stepName = event.step || '';
-				this.currentRun.steps = this.currentRun.steps.map((s) =>
-					s.name === stepName
-						? { ...s, status: 'running' as const, startTime: Date.now(), streamingContent: '' }
-						: s
-				);
+			case 'step_start':
+				this.updateStep(event.step || '', { status: 'running' as const, startTime: Date.now(), streamingContent: '' });
 				break;
-			}
 
 			case 'step_progress': {
-				const stepName = event.step || '';
 				const content = (event.data?.content as string) || '';
-				this.currentRun.steps = this.currentRun.steps.map((s) =>
-					s.name === stepName
-						? { ...s, streamingContent: (s.streamingContent || '') + '\n' + content }
-						: s
-				);
+				this.updateStep(event.step || '', (s) => ({
+					streamingContent: (s.streamingContent || '') + '\n' + content
+				}));
 				break;
 			}
 
 			case 'step_complete': {
-				const stepName = event.step || '';
 				const stepDurationMs = (event.data?.step_duration_ms as number) || 0;
-				this.currentRun.steps = this.currentRun.steps.map((s) => {
-					if (s.name === stepName) {
-						const durationMs = stepDurationMs || (s.startTime ? Date.now() - s.startTime : 0);
-						return { ...s, status: 'complete' as const, data: event.data, durationMs, streamingContent: undefined };
-					}
-					return s;
+				this.updateStep(event.step || '', (s) => {
+					const durationMs = stepDurationMs || (s.startTime ? Date.now() - s.startTime : 0);
+					return { status: 'complete' as const, data: event.data, durationMs, streamingContent: undefined };
 				});
 				break;
 			}
 
-			case 'step_error': {
-				const stepName = event.step || '';
-				this.currentRun.steps = this.currentRun.steps.map((s) =>
-					s.name === stepName
-						? { ...s, status: 'error' as const }
-						: s
-				);
+			case 'step_error':
+				this.updateStep(event.step || '', { status: 'error' as const });
 				this.error = event.error || 'Step failed';
 				break;
-			}
 
 			case 'result': {
-				const data = event.data || {};
-				this.result = {
-					id: (data.id as string) || '',
-					original: originalPrompt,
-					optimized: (data.optimized_prompt as string) || '',
-					task_type: (data.task_type as string) || '',
-					complexity: (data.complexity as string) || '',
-					weaknesses: (data.weaknesses as string[]) || [],
-					strengths: (data.strengths as string[]) || [],
-					changes_made: (data.changes_made as string[]) || [],
-					framework_applied: (data.framework_applied as string) || '',
-					optimization_notes: (data.optimization_notes as string) || '',
-					scores: {
-						clarity: (data.clarity_score as number) || 0,
-						specificity: (data.specificity_score as number) || 0,
-						structure: (data.structure_score as number) || 0,
-						faithfulness: (data.faithfulness_score as number) || 0,
-						overall: (data.overall_score as number) || 0,
-					},
-					is_improvement: (data.is_improvement as boolean) ?? true,
-					verdict: (data.verdict as string) || '',
-					duration_ms: (data.duration_ms as number) || 0,
-				};
+				this.result = mapToResultState(event.data || {}, originalPrompt);
 				this.isRunning = false;
 				// Mark all steps as complete
 				if (this.currentRun) {
@@ -187,11 +233,9 @@ class OptimizationState {
 					}));
 				}
 				toastState.show('Optimization complete!', 'success');
-				// Signal navigation to detail page
 				if (this.result.id) {
 					this.pendingNavigation = `/optimize/${this.result.id}`;
 				}
-				// Trigger history refresh
 				historyState.loadHistory();
 				break;
 			}
@@ -211,28 +255,7 @@ class OptimizationState {
 	loadFromHistory(item: HistoryItem) {
 		this.cancel();
 		this.currentRun = null;
-		this.result = {
-			id: item.id,
-			original: item.raw_prompt,
-			optimized: item.optimized_prompt || '',
-			task_type: item.task_type || '',
-			complexity: item.complexity || '',
-			weaknesses: item.weaknesses || [],
-			strengths: item.strengths || [],
-			changes_made: item.changes_made || [],
-			framework_applied: item.framework_applied || '',
-			optimization_notes: item.optimization_notes || '',
-			scores: {
-				clarity: item.clarity_score || 0,
-				specificity: item.specificity_score || 0,
-				structure: item.structure_score || 0,
-				faithfulness: item.faithfulness_score || 0,
-				overall: item.overall_score || 0,
-			},
-			is_improvement: item.is_improvement ?? true,
-			verdict: item.verdict || '',
-			duration_ms: item.duration_ms || 0,
-		};
+		this.result = mapToResultState(item as unknown as Record<string, unknown>, item.raw_prompt);
 	}
 
 	cancel() {
@@ -255,4 +278,3 @@ class OptimizationState {
 }
 
 export const optimizationState = new OptimizationState();
-export { toastState };

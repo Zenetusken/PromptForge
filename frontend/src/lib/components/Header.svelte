@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { historyState } from '$lib/stores/history.svelte';
 	import { fetchStats, type StatsResponse } from '$lib/api/client';
-	import { formatScore } from '$lib/utils/format';
+	import { formatScore, formatRate } from '$lib/utils/format';
 
 	let { sidebarOpen = $bindable(true) }: { sidebarOpen: boolean } = $props();
 
@@ -16,11 +16,6 @@
 			stats = await fetchStats();
 			loadingStats = false;
 		}
-	}
-
-	function formatRate(value: number | null): string {
-		if (value === null || value === undefined) return '—';
-		return `${Math.round(value * 100)}%`;
 	}
 </script>
 

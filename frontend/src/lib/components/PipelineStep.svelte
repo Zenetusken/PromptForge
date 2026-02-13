@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { StepState } from '$lib/stores/optimization.svelte';
+	import { formatScore } from '$lib/utils/format';
 
 	let { step, index, isLatestActive = false }: { step: StepState; index: number; isLatestActive?: boolean } = $props();
 
@@ -24,11 +25,9 @@
 	let isExpanded = $derived(step.status === 'running' || isLatestActive);
 
 	// ARIA status label for screen readers
-	let ariaStatusLabel = $derived.by(() => {
-		const stepNumber = index + 1;
-		const statusText = step.status === 'running' ? 'in progress' : step.status;
-		return `Step ${stepNumber} ${step.label}: ${statusText}`;
-	});
+	let ariaStatusLabel = $derived(
+		`Step ${index + 1} ${step.label}: ${step.status === 'running' ? 'in progress' : step.status}`
+	);
 
 	// Extract useful data from completed steps
 	let taskType = $derived(step.data?.task_type as string | undefined);
@@ -60,13 +59,6 @@
 		return null;
 	});
 
-	// Format score for display (stored as 0-1 floats, display as 0-100)
-	function formatScore(score: number | undefined): string {
-		if (score === undefined || score === null) return '—';
-		// Scores might be 0-1 or 0-100 range
-		const displayScore = score <= 1 ? Math.round(score * 100) : Math.round(score);
-		return String(displayScore);
-	}
 
 	// Live timer
 	let liveTimer = $state('');
