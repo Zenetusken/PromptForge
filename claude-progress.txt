@@ -1,5 +1,5 @@
 # PromptForge — Development Progress
-# Last updated: Session 6 (Validator Agent — Standard Validation)
+# Last updated: Session 8 (Coding Agent — T5 Accessibility & Edge Cases)
 
 ## Completed
 - feature_list.json: 200 test cases created (IDs 1-200, all passes=false)
@@ -1061,4 +1061,85 @@ T4 full verification (25 of 25 passing):
 - Database has 24 records (including 1 stale "running" record from interrupted SSE test)
 
 **Progress:** 185/200 tests passing (92.5%)
+**Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
+
+## Session 14 — Feb 13, 2026 (Coding Agent — T5 Accessibility & Edge Cases)
+
+**Completed:** #186-200 (15 tests — entire T5 tier)
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** DONE — All 200/200 tests passing (100%)
+
+**What was done:**
+
+**Accessibility Enhancements (Tests 186-191):**
+- **PromptInput.svelte**: Added `aria-label="Enter your prompt for optimization"` on textarea,
+  dynamic `aria-label` on Forge It! button (changes to "Optimization in progress" when disabled)
+- **HistorySidebar.svelte**: Added `aria-label="Search optimization history"` on search input,
+  `aria-label="Sort history by"` on sort select, `aria-label="Clear all history"` on clear button.
+  Enhanced empty state with icon, bold "No optimizations yet" title, and helpful description text.
+- **PipelineProgress.svelte**: Added `aria-live="polite"` and `role="status"` for screen reader announcements
+- **PipelineStep.svelte**: Added computed `ariaStatusLabel` derived state
+  (`Step N {label}: {status}`), `role="group"` and `aria-label` on each step container
+- **ScorePanel.svelte**: Added `role="meter"`, `aria-label="{label}: {pct} out of 100"`,
+  `aria-valuenow`, `aria-valuemin=0`, `aria-valuemax=100` on all score bars
+- **app.css**: Added `:focus-visible` styles with 2px solid cyan outline + glow for keyboard navigation
+
+**Error Handling & Edge Cases (Tests 192-200):**
+- **+error.svelte** (NEW FILE): Created cyberpunk-themed error page with gradient status code,
+  error message, and "Back to PromptForge" link (data-testid="back-home-link")
+- **+page.svelte**: Enhanced error display with `role="alert"`, red border, warning icon,
+  "Error" heading, human-readable message, and Retry button (data-testid="retry-button").
+  Added `lastPrompt` state tracking for retry functionality.
+- **history.py**: Fixed route ordering — moved `DELETE /api/history/all` BEFORE
+  `DELETE /api/history/{optimization_id}` to prevent "all" being matched as an ID parameter.
+  This was causing 404 errors on the clear-all endpoint.
+
+**Verification Summary (all 15 tests verified via Puppeteer):**
+- #186: Tab navigation — search, sort, clear, entries, toggle, textarea, button all tabbable ✅
+- #187: Form labels — all elements have accessible names (aria-label or text content) ✅
+- #188: ARIA live regions — pipeline progress has role="status", aria-live="polite" ✅
+- #189: Score ARIA — bars have role="meter", aria-valuenow, aria-label like "Clarity: 92 out of 100" ✅
+- #190: Color independence — checkmark icons for complete, spinner for running, numeric score values ✅
+- #191: Focus visible — cyan outline 2px solid visible on dark background ✅
+- #192: Error display — red border, icon, "Error" heading, human-readable message, role="alert" ✅
+- #193: 404 page — cyberpunk themed, gradient status code, "Back to PromptForge" link works ✅
+- #194: Empty history — shows "No optimizations yet" with helpful guidance text ✅
+- #195: Retry button — visible alongside error, successfully restarts pipeline ✅
+- #196: Long content — 2877+ chars displays with scrolling, no layout breaking ✅
+- #197: Browser back — no blank screens or errors during back/forward navigation ✅
+- #198: Page title — document.title === "PromptForge" ✅
+- #199: Concurrent requests — 3 parallel requests complete with unique IDs, correct task types ✅
+- #200: Concurrent DB writes — all concurrent operations succeed without lock errors ✅
+
+**Key files modified:**
+- `frontend/src/lib/components/PromptInput.svelte` — aria-labels on textarea and button
+- `frontend/src/lib/components/HistorySidebar.svelte` — aria-labels, enhanced empty state
+- `frontend/src/lib/components/PipelineProgress.svelte` — aria-live, role="status"
+- `frontend/src/lib/components/PipelineStep.svelte` — ariaStatusLabel, role="group"
+- `frontend/src/lib/components/ScorePanel.svelte` — role="meter", aria-valuenow
+- `frontend/src/app.css` — :focus-visible styles with cyan outline
+- `frontend/src/routes/+error.svelte` — NEW: cyberpunk 404/error page
+- `frontend/src/routes/+page.svelte` — error display with retry, lastPrompt tracking
+- `backend/app/routers/history.py` — route ordering fix (static before parameterized)
+
+**Route ordering fix detail:**
+The DELETE `/api/history/all` endpoint was defined AFTER `DELETE /api/history/{optimization_id}`.
+FastAPI matches routes in order, so "all" was being captured as an `optimization_id` parameter
+(returning 404 since no record has id="all"). Fixed by moving the static route before the
+parameterized one. This fix was necessary for T5 test #194 (empty history state after clear).
+
+**T5 tier is now COMPLETE (15/15 passing)**
+
+**ALL TIERS COMPLETE — 200/200 tests passing (100%)**
+
+**Final tier breakdown:**
+- T0: 14/14 passing (Infrastructure)
+- T1: 31/31 passing (Auth & Core Data)
+- T2: 75/75 passing (Primary Features)
+- T3: 40/40 passing (Secondary Features)
+- T4: 25/25 passing (Style & Polish)
+- T5: 15/15 passing (Accessibility & Edge Cases)
+
+**Progress:** 200/200 tests passing (100%)
 **Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
