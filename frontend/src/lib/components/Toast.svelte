@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { toastState } from '$lib/stores/optimization';
+	import { toastState } from '$lib/stores/optimization.svelte';
 
 	let visible = $derived(toastState.message !== '');
 

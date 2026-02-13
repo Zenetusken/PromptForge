@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { historyState } from '$lib/stores/history';
+	import { historyState } from '$lib/stores/history.svelte';
 	import { truncateText, formatRelativeTime } from '$lib/utils/format';
 
 	let { open = $bindable(true) }: { open: boolean } = $props();

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import PipelineStep from './PipelineStep.svelte';
-	import type { StepState } from '$lib/stores/optimization';
+	import type { StepState } from '$lib/stores/optimization.svelte';
 
 	let { steps }: { steps: StepState[] } = $props();
 

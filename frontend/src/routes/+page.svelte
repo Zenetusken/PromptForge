@@ -2,7 +2,7 @@
 	import PromptInput from '$lib/components/PromptInput.svelte';
 	import PipelineProgress from '$lib/components/PipelineProgress.svelte';
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
-	import { optimizationState } from '$lib/stores/optimization';
+	import { optimizationState } from '$lib/stores/optimization.svelte';
 
 	function handleOptimize(prompt: string) {
 		optimizationState.startOptimization(prompt);

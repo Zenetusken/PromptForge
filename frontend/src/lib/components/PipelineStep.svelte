@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { StepState } from '$lib/stores/optimization';
+	import type { StepState } from '$lib/stores/optimization.svelte';
 
 	let { step, index }: { step: StepState; index: number } = $props();
 

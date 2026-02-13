@@ -57,6 +57,60 @@ After T0, focus on T1 (API endpoint correctness):
 - The optimize endpoint needs to update the DB record with full pipeline
   results after the SSE stream completes.
 
+## Validation Report — Session 2 (Validator Agent)
+
+**Scope:** Quick validation — 0 previously passing tests, focused on infrastructure health
+**Infrastructure:** Fixed (2 critical issues found and resolved)
+
+**Infrastructure issues found and fixed:**
+1. Backend crash on startup — `sqlite3.OperationalError: unable to open database file`
+   - Root cause: `.env` file set `DATABASE_URL=sqlite+aiosqlite:///./data/promptforge.db` (relative path).
+     When uvicorn starts from `backend/` directory, this resolved to `backend/data/` which doesn't exist.
+     The `config.py` already had a correct absolute path as default, but `.env` was overriding it.
+   - Fix: Removed `DATABASE_URL` from `.env` and `.env.example` so config.py's absolute path default is used.
+
+2. Frontend SSR crash — `rune_outside_svelte: The $state rune is only available inside .svelte and .svelte.js/ts files`
+   - Root cause: Store files `history.ts` and `optimization.ts` used `$state()` runes but had `.ts` extension.
+     Svelte 5 runes require `.svelte.ts` file extension.
+   - Fix: Renamed `history.ts` → `history.svelte.ts`, `optimization.ts` → `optimization.svelte.ts`.
+     Updated all 5 import paths in components (HistorySidebar, +page, Toast, PipelineStep, PipelineProgress).
+
+**Regressions found:** 0 (no previously passing tests to regress)
+**Tests still passing after validation:** 0/200
+
+**Tier breakdown:**
+- T0: 0/14 passing
+- T1: 0/31 passing
+- T2: 0/75 passing
+- T3: 0/40 passing
+- T4: 0/25 passing
+- T5: 0/15 passing
+
+**Post-fix verification:**
+- Backend health: `{"status":"ok","db_connected":true,"version":"0.1.0"}` ✅
+- Frontend loads: HTTP 200, cyberpunk UI renders correctly ✅
+- Frontend build: Succeeds without errors ✅
+- Database: `optimizations` table created with 25 columns ✅
+- Frontend→Backend API: Vite proxy working, fetch to /api/health succeeds ✅
+- No console errors in browser ✅
+- No SSR errors in frontend logs ✅
+
+**Guidance for next coding session:**
+- Infrastructure is now healthy — both servers start and stay running
+- Begin working on T0 tests (IDs 1-14). Most should be ready to pass now:
+  - IDs 1-5: Server startup, health, DB, frontend serve — all verified working
+  - ID 6: CORS — verified working (frontend can fetch /api/health)
+  - ID 9: Cyberpunk CSS — verified rendering in screenshot
+  - ID 10: Layout structure — sidebar + main area visible
+  - ID 12: Frontend→Backend API connectivity — verified
+  - ID 14: Header component — "PromptForge" text visible
+- After marking T0 tests as passing, move to T1 (IDs 15-45)
+- Key T1 blocker: optimize endpoint creates DB record but doesn't update after streaming
+- Store files are now `.svelte.ts` — always use this extension for files with runes
+
+**Progress:** 0/200 tests passing (0%)
+**Server info:** Backend on :8000, Frontend on :5173, start with ./init.sh
+
 ## Known Issues
 1. optimize endpoint creates initial DB record but doesn't fully update it
    after streaming completes — the SSE events contain correct mock data
