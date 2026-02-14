@@ -37,6 +37,7 @@ export interface HistorySummaryItem {
 	raw_prompt: string;
 	title: string | null;
 	task_type: string | null;
+	complexity: string | null;
 	project: string | null;
 	tags: string[] | null;
 	overall_score: number | null;

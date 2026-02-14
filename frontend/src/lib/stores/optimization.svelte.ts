@@ -1,6 +1,7 @@
 import { fetchOptimize, fetchRetry, type PipelineEvent, type HistoryItem, type OptimizeMetadata } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
+import { safeString, safeNumber, safeArray } from '$lib/utils/safe';
 
 export interface AnalysisStepData {
 	task_type?: string;
@@ -79,20 +80,6 @@ const INITIAL_PIPELINE_STEPS: StepState[] = [
 	{ name: 'optimize', label: 'OPTIMIZE', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
 	{ name: 'validate', label: 'VALIDATE', status: 'pending', description: 'Scoring and quality assessment' }
 ];
-
-// --- Safe accessors for untyped data sources ---
-
-function safeString(value: unknown, fallback = ''): string {
-	return typeof value === 'string' ? value : fallback;
-}
-
-function safeNumber(value: unknown, fallback = 0): number {
-	return typeof value === 'number' ? value : fallback;
-}
-
-function safeArray(value: unknown): string[] {
-	return Array.isArray(value) ? value : [];
-}
 
 /**
  * Map a data source (SSE result or HistoryItem) to an OptimizationResultState.
@@ -256,6 +243,7 @@ class OptimizationState {
 	loadFromHistory(item: HistoryItem) {
 		this.cancel();
 		this.currentRun = null;
+		this.result = null;
 		this.result = mapToResultState({ ...item }, item.raw_prompt);
 	}
 

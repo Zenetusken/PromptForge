@@ -20,6 +20,12 @@
 		}, 300);
 	}
 
+	$effect(() => {
+		return () => {
+			if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+		};
+	});
+
 	const sortOptions = [
 		{ value: 'created_at', label: 'Date' },
 		{ value: 'overall_score', label: 'Score' },

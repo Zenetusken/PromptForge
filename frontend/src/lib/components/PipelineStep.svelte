@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { StepState } from '$lib/stores/optimization.svelte';
 	import { formatScore } from '$lib/utils/format';
+	import { safeStringOrUndefined, safeNumberOrUndefined, safeArrayOrUndefined } from '$lib/utils/safe';
 	import Icon from './Icon.svelte';
 
 	let { step, index, isLatestActive = false }: { step: StepState; index: number; isLatestActive?: boolean } = $props();
@@ -16,21 +17,21 @@
 	);
 
 	// Extract useful data from completed steps
-	let taskType = $derived(step.data?.task_type as string | undefined);
-	let weaknesses = $derived(step.data?.weaknesses as string[] | undefined);
-	let strengths = $derived(step.data?.strengths as string[] | undefined);
+	let taskType = $derived(safeStringOrUndefined(step.data?.task_type));
+	let weaknesses = $derived(safeArrayOrUndefined(step.data?.weaknesses));
+	let strengths = $derived(safeArrayOrUndefined(step.data?.strengths));
 	let hasStepData = $derived(step.status === 'complete' && step.data && Object.keys(step.data).length > 0);
 
 	// Scores for validate step
-	let overallScore = $derived(step.data?.overall_score as number | undefined);
-	let clarityScore = $derived(step.data?.clarity_score as number | undefined);
-	let specificityScore = $derived(step.data?.specificity_score as number | undefined);
-	let structureScore = $derived(step.data?.structure_score as number | undefined);
-	let verdict = $derived(step.data?.verdict as string | undefined);
+	let overallScore = $derived(safeNumberOrUndefined(step.data?.overall_score));
+	let clarityScore = $derived(safeNumberOrUndefined(step.data?.clarity_score));
+	let specificityScore = $derived(safeNumberOrUndefined(step.data?.specificity_score));
+	let structureScore = $derived(safeNumberOrUndefined(step.data?.structure_score));
+	let verdict = $derived(safeStringOrUndefined(step.data?.verdict));
 	let isValidateStep = $derived(step.name === 'validate');
 
 	// Optimized prompt preview for optimize step
-	let optimizedPrompt = $derived(step.data?.optimized_prompt as string | undefined);
+	let optimizedPrompt = $derived(safeStringOrUndefined(step.data?.optimized_prompt));
 	let isOptimizeStep = $derived(step.name === 'optimize');
 
 	// Duration formatting
@@ -147,7 +148,7 @@
 
 	<!-- Streaming content (shown while running) -->
 	{#if step.status === 'running' && step.streamingContent}
-		<div class="mt-1 w-full max-w-[200px] rounded-lg border border-border-subtle bg-bg-primary/60 p-2 text-left" data-testid="streaming-content-{step.name}">
+		<div class="mt-1 w-full max-w-[200px] rounded-lg border border-border-subtle bg-bg-primary/60 p-2 text-left" aria-live="polite" data-testid="streaming-content-{step.name}">
 			<p class="whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-text-secondary">
 				{step.streamingContent.trim()}
 			</p>
