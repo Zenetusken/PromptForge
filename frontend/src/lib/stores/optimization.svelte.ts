@@ -185,11 +185,12 @@ class OptimizationState {
 
 	private updateStep(stepName: string, updater: Partial<StepState> | ((s: StepState) => Partial<StepState>)) {
 		if (!this.currentRun) return;
-		this.currentRun.steps = this.currentRun.steps.map((s) => {
-			if (s.name !== stepName) return s;
-			const patch = typeof updater === 'function' ? updater(s) : updater;
-			return { ...s, ...patch };
-		});
+		const steps = this.currentRun.steps;
+		const idx = steps.findIndex((s) => s.name === stepName);
+		if (idx === -1) return;
+		const patch = typeof updater === 'function' ? updater(steps[idx]) : updater;
+		Object.assign(steps[idx], patch);
+		this.currentRun.steps = steps; // single reassignment triggers reactivity
 	}
 
 	private handleEvent(event: PipelineEvent, originalPrompt: string) {
@@ -203,7 +204,7 @@ class OptimizationState {
 			case 'step_progress': {
 				const content = (event.data?.content as string) || '';
 				this.updateStep(event.step || '', (s) => ({
-					streamingContent: (s.streamingContent || '') + '\n' + content
+					streamingContent: s.streamingContent ? s.streamingContent + '\n' + content : content
 				}));
 				break;
 			}
@@ -255,7 +256,7 @@ class OptimizationState {
 	loadFromHistory(item: HistoryItem) {
 		this.cancel();
 		this.currentRun = null;
-		this.result = mapToResultState(item as unknown as Record<string, unknown>, item.raw_prompt);
+		this.result = mapToResultState({ ...item }, item.raw_prompt);
 	}
 
 	cancel() {
