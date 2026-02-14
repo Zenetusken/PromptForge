@@ -27,8 +27,8 @@ from app.constants import OptimizationStatus
 from app.converters import (
     optimization_to_dict,
     optimization_to_summary,
-    score_to_int,
     update_optimization_status,
+    with_display_scores,
 )
 from app.database import async_session_factory, init_db
 from app.models.optimization import Optimization
@@ -115,28 +115,9 @@ async def promptforge_optimize(
             start_time=start_time,
         )
 
-        return {
-            "id": optimization_id,
-            "optimized_prompt": result.optimized_prompt,
-            "task_type": result.task_type,
-            "complexity": result.complexity,
-            "weaknesses": result.weaknesses,
-            "strengths": result.strengths,
-            "changes_made": result.changes_made,
-            "framework_applied": result.framework_applied,
-            "optimization_notes": result.optimization_notes,
-            "scores": {
-                "clarity": score_to_int(result.clarity_score),
-                "specificity": score_to_int(result.specificity_score),
-                "structure": score_to_int(result.structure_score),
-                "faithfulness": score_to_int(result.faithfulness_score),
-                "overall": score_to_int(result.overall_score),
-            },
-            "is_improvement": result.is_improvement,
-            "verdict": result.verdict,
-            "duration_ms": elapsed_ms,
-            "status": OptimizationStatus.COMPLETED,
-        }
+        result_dict = with_display_scores(asdict(result))
+        result_dict.update(id=optimization_id, duration_ms=elapsed_ms, status=OptimizationStatus.COMPLETED)
+        return result_dict
     except Exception as e:
         await update_optimization_status(optimization_id, error=str(e))
         return {"error": str(e), "id": optimization_id, "status": OptimizationStatus.ERROR}
@@ -170,7 +151,7 @@ async def promptforge_get(optimization_id: str) -> dict:
         if not opt:
             return {"error": f"Optimization not found: {optimization_id}"}
 
-        return optimization_to_dict(opt)
+        return with_display_scores(optimization_to_dict(opt))
 
 
 # --- Tool 3: promptforge_list ---
@@ -272,7 +253,7 @@ async def promptforge_get_by_project(
         items, _ = await repo.list(filters=filters, pagination=pagination)
 
         if include_prompts:
-            converted = [optimization_to_dict(opt) for opt in items]
+            converted = [with_display_scores(optimization_to_dict(opt)) for opt in items]
         else:
             converted = [optimization_to_summary(opt) for opt in items]
 

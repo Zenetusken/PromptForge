@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import OptimizationStatus
 from app.database import async_session_factory
 from app.models.optimization import Optimization
-from app.schemas.optimization import OptimizationResponse
+from app.schemas.optimization import HistorySummaryResponse, OptimizationResponse
 from app.utils.scores import score_to_display
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ def _extract_optimization_fields(opt: Optimization) -> dict:
         "changes_made": deserialize_json_field(opt.changes_made),
         "framework_applied": opt.framework_applied,
         "optimization_notes": opt.optimization_notes,
+        "strategy_reasoning": opt.strategy_reasoning,
         "clarity_score": opt.clarity_score,
         "specificity_score": opt.specificity_score,
         "structure_score": opt.structure_score,
@@ -75,6 +76,22 @@ def optimization_to_dict(opt: Optimization) -> dict:
     return fields
 
 
+def optimization_to_summary_response(opt: Optimization) -> HistorySummaryResponse:
+    """Convert an Optimization ORM object to a lightweight HistorySummaryResponse."""
+    return HistorySummaryResponse(
+        id=opt.id,
+        created_at=opt.created_at,
+        raw_prompt=opt.raw_prompt,
+        title=opt.title,
+        task_type=opt.task_type,
+        project=opt.project,
+        tags=deserialize_json_field(opt.tags),
+        overall_score=opt.overall_score,
+        status=opt.status,
+        error_message=opt.error_message,
+    )
+
+
 def optimization_to_summary(opt: Optimization) -> dict:
     """Convert an Optimization ORM object to a summary dict (for list views)."""
     raw = opt.raw_prompt or ""
@@ -84,7 +101,7 @@ def optimization_to_summary(opt: Optimization) -> dict:
         "raw_prompt_preview": raw[:100] + ("..." if len(raw) > 100 else ""),
         "task_type": opt.task_type,
         "complexity": opt.complexity,
-        "overall_score": score_to_int(opt.overall_score),
+        "overall_score": score_to_display(opt.overall_score),
         "status": opt.status,
         "project": opt.project,
         "tags": deserialize_json_field(opt.tags),
@@ -92,9 +109,20 @@ def optimization_to_summary(opt: Optimization) -> dict:
     }
 
 
-def score_to_int(score: float | None) -> int | None:
-    """Convert a 0.0-1.0 float score to a 1-10 integer scale."""
-    return score_to_display(score)
+_SCORE_FIELDS = ("clarity_score", "specificity_score", "structure_score", "faithfulness_score", "overall_score")
+
+
+def with_display_scores(fields: dict) -> dict:
+    """Return a copy of *fields* with score values converted to 1-10 integers.
+
+    Used by MCP-facing converters so all MCP tools return scores on the same
+    display scale.
+    """
+    out = dict(fields)
+    for key in _SCORE_FIELDS:
+        if key in out:
+            out[key] = score_to_display(out[key])
+    return out
 
 
 def apply_pipeline_result_to_orm(
@@ -114,6 +142,7 @@ def apply_pipeline_result_to_orm(
     opt.changes_made = json.dumps(data.get("changes_made"))
     opt.framework_applied = data.get("framework_applied")
     opt.optimization_notes = data.get("optimization_notes")
+    opt.strategy_reasoning = data.get("strategy_reasoning")
     opt.clarity_score = data.get("clarity_score")
     opt.specificity_score = data.get("specificity_score")
     opt.structure_score = data.get("structure_score")

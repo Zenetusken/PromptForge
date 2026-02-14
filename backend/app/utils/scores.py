@@ -5,16 +5,12 @@ def score_to_display(score: float | None) -> int | None:
     """Convert DB score (0.0-1.0) to display (1-10)."""
     if score is None:
         return None
-    if score <= 1.0:
-        return max(1, min(10, round(score * 10)))
-    return max(1, min(10, round(score)))
+    return max(1, min(10, round(score * 10)))
 
 
 def score_threshold_to_db(display_score: float) -> float:
     """Convert display score (1-10) to DB threshold (0.0-1.0)."""
-    if display_score >= 1:
-        return display_score / 10.0
-    return display_score
+    return display_score / 10.0
 
 
 def round_score(value: float | None, digits: int = 4) -> float | None:
