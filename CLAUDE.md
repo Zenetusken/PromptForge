@@ -97,8 +97,9 @@ Routes: `/` (home with PromptInput + ResultPanel) and `/optimize/[id]` (detail p
 Environment defaults (set in `backend/app/config.py`, overridable via `.env`):
 - `FRONTEND_URL` — default `http://localhost:5173`
 - `BACKEND_PORT` — default `8000`
-- `CLAUDE_MODEL` — default `claude-opus-4-6`
+- `HOST` — default `0.0.0.0`
 - `DATABASE_URL` — default `sqlite+aiosqlite:///<project>/data/promptforge.db`
+- `CLAUDE_MODEL` — default `claude-opus-4-6`
 - `ANTHROPIC_API_KEY` — leave empty to use MAX subscription
 
 ## Linting
