@@ -3,17 +3,17 @@
 import logging
 from contextlib import asynccontextmanager
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import config
 from app.database import init_db
 from app.routers import health, history, optimize
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 
 @asynccontextmanager

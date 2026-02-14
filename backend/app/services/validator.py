@@ -3,8 +3,8 @@
 import json
 from dataclasses import dataclass
 
-from app.services.claude_client import ClaudeClient
 from app.prompts.validator_prompt import VALIDATOR_SYSTEM_PROMPT
+from app.services.claude_client import ClaudeClient
 
 
 @dataclass

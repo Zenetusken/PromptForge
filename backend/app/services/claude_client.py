@@ -1,7 +1,6 @@
 """Client for interacting with Claude via the Claude Code SDK."""
 
 import json
-import os
 import re
 import shutil
 import tempfile
@@ -143,7 +142,7 @@ class ClaudeClient:
         # 1. Try to parse the raw text directly (cleanest case)
         # 2. Extract JSON from ```json ... ``` code fences
         # 3. Extract JSON from ``` ... ``` code fences
-        # 4. Find the first { ... } or [ ... ] JSON object/array in the text
+        # 4. Find the first balanced { ... } JSON object in the text
 
         cleaned = text.strip()
 

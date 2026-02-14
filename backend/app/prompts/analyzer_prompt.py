@@ -1,6 +1,7 @@
 """System prompt for the prompt analyzer stage."""
 
-ANALYZER_SYSTEM_PROMPT = """You are an expert prompt analyst. Your job is to analyze a given prompt \
+ANALYZER_SYSTEM_PROMPT = """\
+You are an expert prompt analyst. Your job is to analyze a given prompt \
 and identify its characteristics, strengths, and weaknesses.
 
 Analyze the following prompt and return a JSON object with these fields:

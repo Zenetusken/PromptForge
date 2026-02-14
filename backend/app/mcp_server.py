@@ -31,11 +31,8 @@ from app.converters import (
     with_display_scores,
 )
 from app.database import async_session_factory, init_db
-from app.models.optimization import Optimization
 from app.repositories.optimization import ListFilters, OptimizationRepository, Pagination
-from app.services.claude_client import ClaudeClient
 from app.services.pipeline import run_pipeline
-
 
 # --- Lifespan ---
 
@@ -116,7 +113,9 @@ async def promptforge_optimize(
         )
 
         result_dict = with_display_scores(asdict(result))
-        result_dict.update(id=optimization_id, duration_ms=elapsed_ms, status=OptimizationStatus.COMPLETED)
+        result_dict["id"] = optimization_id
+        result_dict["duration_ms"] = elapsed_ms
+        result_dict["status"] = OptimizationStatus.COMPLETED
         return result_dict
     except Exception as e:
         await update_optimization_status(optimization_id, error=str(e))

@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
 from app.constants import OptimizationStatus
-from app.converters import optimization_to_response, update_optimization_status
+from app.converters import (
+    deserialize_json_field,
+    optimization_to_response,
+    update_optimization_status,
+)
 from app.database import get_db
 from app.models.optimization import Optimization
 from app.repositories.optimization import OptimizationRepository
@@ -36,7 +40,8 @@ def _create_streaming_response(
     async def event_stream():
         final_data = {}
         try:
-            async for event in run_pipeline_streaming(raw_prompt, complete_metadata=complete_metadata):
+            stream = run_pipeline_streaming(raw_prompt, complete_metadata=complete_metadata)
+            async for event in stream:
                 if isinstance(event, PipelineComplete):
                     final_data = event.data
                     continue
@@ -137,7 +142,7 @@ async def retry_optimization(
     new_id = str(uuid.uuid4())
     raw_prompt = original.raw_prompt
     retry_title = f"Retry: {original.title}" if original.title else "Retry"
-    retry_tags = json.loads(original.tags) if original.tags else []
+    retry_tags = deserialize_json_field(original.tags) or []
     new_optimization = Optimization(
         id=new_id,
         raw_prompt=raw_prompt,

@@ -49,6 +49,7 @@ Example response:
   "faithfulness_score": 0.95,
   "overall_score": 0.87,
   "is_improvement": true,
-  "verdict": "The optimized prompt significantly improves structure and clarity while faithfully preserving the original intent."
+  "verdict": "The optimized prompt significantly improves structure and clarity \
+while faithfully preserving the original intent."
 }
 """

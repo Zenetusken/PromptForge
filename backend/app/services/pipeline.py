@@ -30,7 +30,7 @@ class StageResult:
 
 @dataclass
 class PipelineComplete:
-    """Yielded after the final SSE event so callers can capture pipeline data without re-parsing SSE."""
+    """Yielded after the final SSE event for structured pipeline data capture."""
 
     data: dict
 
@@ -118,7 +118,10 @@ async def run_pipeline(
     validation = await validator.validate(raw_prompt, optimization.optimized_prompt)
 
     elapsed_ms = int((time.time() - start_time) * 1000)
-    return _assemble_result(analysis, strategy_selection.reasoning, optimization, validation, elapsed_ms, client.model)
+    return _assemble_result(
+        analysis, strategy_selection.reasoning,
+        optimization, validation, elapsed_ms, client.model,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +171,7 @@ async def _stream_stage(
     stage: StageConfig,
     fmt: dict[str, str] | None = None,
 ) -> AsyncIterator[str | StageResult]:
-    """Stream a full pipeline stage: start event, initial progress, run with progress, complete event.
+    """Stream a full pipeline stage: start, progress, run with progress, complete.
 
     Yields SSE strings for the stage lifecycle, then a StageResult sentinel
     so the caller can capture the stage result.

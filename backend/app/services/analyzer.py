@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from app.services.claude_client import ClaudeClient
 from app.prompts.analyzer_prompt import ANALYZER_SYSTEM_PROMPT
+from app.services.claude_client import ClaudeClient
 
 
 @dataclass

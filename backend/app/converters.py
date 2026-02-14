@@ -105,7 +105,10 @@ def optimization_to_summary(opt: Optimization) -> dict:
     return fields
 
 
-_SCORE_FIELDS = ("clarity_score", "specificity_score", "structure_score", "faithfulness_score", "overall_score")
+_SCORE_FIELDS = (
+    "clarity_score", "specificity_score", "structure_score",
+    "faithfulness_score", "overall_score",
+)
 
 
 def with_display_scores(fields: dict) -> dict:

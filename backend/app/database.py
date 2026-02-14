@@ -35,8 +35,10 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE optimizations ADD COLUMN strategy_reasoning TEXT",
     "CREATE INDEX IF NOT EXISTS ix_optimizations_status ON optimizations (status)",
     "CREATE INDEX IF NOT EXISTS ix_optimizations_overall_score ON optimizations (overall_score)",
-    "CREATE INDEX IF NOT EXISTS ix_optimizations_status_created_at ON optimizations (status, created_at)",
-    "CREATE INDEX IF NOT EXISTS ix_optimizations_task_type_project ON optimizations (task_type, project)",
+    "CREATE INDEX IF NOT EXISTS ix_optimizations_status_created_at"
+    " ON optimizations (status, created_at)",
+    "CREATE INDEX IF NOT EXISTS ix_optimizations_task_type_project"
+    " ON optimizations (task_type, project)",
 ]
 
 

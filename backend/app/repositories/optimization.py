@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import ALLOWED_SORT_FIELDS, OptimizationStatus
 from app.converters import deserialize_json_field
 from app.models.optimization import Optimization
-from app.utils.scores import score_threshold_to_db
+from app.utils.scores import round_score, score_threshold_to_db
 
 
 @dataclass
@@ -202,43 +202,51 @@ class OptimizationRepository:
     async def get_stats(self, project: str | None = None) -> dict:
         """Get usage statistics in a single aggregation query.
 
-        Returns a dict suitable for both the web API (StatsResponse) and MCP.
-        Optionally scoped to a project.
+        Returns a dict suitable for both the web API (StatsResponse)
+        and MCP. Optionally scoped to a project.
         """
-        O = Optimization
+        Opt = Optimization
 
         today_start = datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
 
         most_common_subq = (
-            select(O.task_type)
-            .where(O.task_type.isnot(None))
-            .group_by(O.task_type)
-            .order_by(desc(func.count(O.id)))
+            select(Opt.task_type)
+            .where(Opt.task_type.isnot(None))
+            .group_by(Opt.task_type)
+            .order_by(desc(func.count(Opt.id)))
             .limit(1)
             .correlate(None)
             .scalar_subquery()
         )
 
+        completed = Opt.status == OptimizationStatus.COMPLETED
+
         base_query = select(
-            func.count(O.id).label("total"),
-            func.avg(O.overall_score).label("avg_overall"),
-            func.avg(O.clarity_score).label("avg_clarity"),
-            func.avg(O.specificity_score).label("avg_specificity"),
-            func.avg(O.structure_score).label("avg_structure"),
-            func.avg(O.faithfulness_score).label("avg_faithfulness"),
-            func.count(O.id).filter(O.is_improvement == True).label("improved"),
-            func.count(O.id).filter(O.is_improvement.isnot(None)).label("validated"),
-            func.count(func.distinct(O.project)).filter(O.project.isnot(None)).label("projects"),
-            func.count(O.id).filter(O.created_at >= today_start).label("today"),
+            func.count(Opt.id).label("total"),
+            func.avg(Opt.overall_score).label("avg_overall"),
+            func.avg(Opt.clarity_score).label("avg_clarity"),
+            func.avg(Opt.specificity_score).label("avg_specificity"),
+            func.avg(Opt.structure_score).label("avg_structure"),
+            func.avg(Opt.faithfulness_score).label("avg_faithfulness"),
+            func.count(Opt.id).filter(
+                Opt.is_improvement.is_(True),
+            ).label("improved"),
+            func.count(Opt.id).filter(
+                Opt.is_improvement.isnot(None),
+            ).label("validated"),
+            func.count(func.distinct(Opt.project)).filter(
+                Opt.project.isnot(None),
+            ).label("projects"),
+            func.count(Opt.id).filter(
+                Opt.created_at >= today_start,
+            ).label("today"),
             most_common_subq.label("most_common_task"),
-        )
+        ).where(completed)
 
         if project:
-            base_query = base_query.where(
-                (O.status == OptimizationStatus.COMPLETED) & (O.project == project)
-            )
+            base_query = base_query.where(Opt.project == project)
 
         result = await self._session.execute(base_query)
         row = result.one()
@@ -258,16 +266,16 @@ class OptimizationRepository:
                 "optimizations_today": 0,
             }
 
-        improvement_rate = (row.improved / row.validated) if row.validated else None
+        imp = row.improved / row.validated if row.validated else None
 
         return {
             "total_optimizations": total,
-            "average_overall_score": round(row.avg_overall, 4) if row.avg_overall is not None else None,
-            "average_clarity_score": round(row.avg_clarity, 4) if row.avg_clarity is not None else None,
-            "average_specificity_score": round(row.avg_specificity, 4) if row.avg_specificity is not None else None,
-            "average_structure_score": round(row.avg_structure, 4) if row.avg_structure is not None else None,
-            "average_faithfulness_score": round(row.avg_faithfulness, 4) if row.avg_faithfulness is not None else None,
-            "improvement_rate": round(improvement_rate, 4) if improvement_rate is not None else None,
+            "average_overall_score": round_score(row.avg_overall),
+            "average_clarity_score": round_score(row.avg_clarity),
+            "average_specificity_score": round_score(row.avg_specificity),
+            "average_structure_score": round_score(row.avg_structure),
+            "average_faithfulness_score": round_score(row.avg_faithfulness),
+            "improvement_rate": round_score(imp),
             "total_projects": row.projects or 0,
             "most_common_task_type": row.most_common_task,
             "optimizations_today": row.today or 0,

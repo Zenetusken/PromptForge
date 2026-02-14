@@ -9,9 +9,13 @@ class OptimizeRequest(BaseModel):
     """Request body for the optimize endpoint."""
 
     prompt: str = Field(..., min_length=1, description="The raw prompt to optimize")
-    project: str | None = Field(None, max_length=100, description="Optional project name for organization")
-    tags: list[str] | None = Field(None, description="Optional tags for categorization")
-    title: str | None = Field(None, max_length=200, description="Optional title for the optimization")
+    project: str | None = Field(
+        None, max_length=100, description="Optional project name",
+    )
+    tags: list[str] | None = Field(None, description="Optional tags")
+    title: str | None = Field(
+        None, max_length=200, description="Optional title",
+    )
 
     @field_validator("tags")
     @classmethod

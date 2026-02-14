@@ -3,9 +3,9 @@
 import json
 from dataclasses import asdict, dataclass
 
+from app.prompts.optimizer_prompts import OPTIMIZER_SYSTEM_PROMPT
 from app.services.analyzer import AnalysisResult
 from app.services.claude_client import ClaudeClient
-from app.prompts.optimizer_prompts import OPTIMIZER_SYSTEM_PROMPT
 
 
 @dataclass

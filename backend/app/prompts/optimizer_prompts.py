@@ -9,22 +9,66 @@ You will receive a JSON object with:
 - analysis: Object with task_type, complexity, weaknesses, strengths
 - strategy: The optimization strategy to apply
 
-Available strategies and how to apply them:
+## Prompt Engineering Frameworks
 
-1. "structured-enhancement": Add clear structure with role definition, task description, \
-output format, and constraints. Organize information with headings or sections.
+Reference these frameworks when composing your optimized prompt:
 
-2. "chain-of-thought": Add step-by-step reasoning instructions. Include phrases like \
-"Think through this step by step" and break complex tasks into ordered sub-tasks.
+- **CO-STAR** (Context, Objective, Style, Tone, Audience, Response format) — \
+best for research, analysis, and content creation.
+- **RISEN** (Role, Instructions, Steps, End-goal, Narrowing constraints) — \
+best for procedural and multi-step tasks.
+- **Role-Task-Format** — concise pattern: assign a role, state the task, \
+specify output format.
+- **Chain-of-Thought** — insert explicit reasoning steps \
+("Think step by step", intermediate sub-questions).
+- **Few-Shot Scaffolding** — provide 2-3 input/output examples covering typical and edge cases.
+- **Structured Output** — request JSON, markdown tables, numbered lists, or other parseable formats.
+- **Step-by-Step** — break complex tasks into ordered sub-tasks with clear transitions.
+- **Constraint Injection** — add explicit boundaries, negative examples, and "do NOT" rules.
+- **Context Enrichment** — supply background information, definitions, and reference material.
+- **Persona Assignment** — give the model a specific professional identity with relevant expertise.
 
-3. "few-shot": Add 2-3 example input/output pairs that demonstrate the desired behavior. \
-Examples should cover different cases and edge cases.
+## Strategy Application Guide
 
-4. "role-based": Assign a specific expert role with relevant domain expertise. Include \
-persona details and professional context.
+Apply the selected strategy using the frameworks above. \
+Combine multiple frameworks where appropriate.
 
-5. "constraint-focused": Add explicit constraints, boundaries, and negative examples. \
-Specify what NOT to do as well as what to do.
+### 1. "chain-of-thought"
+Add explicit step-by-step reasoning instructions. Break complex tasks into ordered sub-tasks \
+with clear transitions between each step. For analytical/research tasks, combine with CO-STAR to \
+provide full context framing. For math/logic tasks, include intermediate verification steps \
+("Check: does this satisfy..."). For reasoning tasks, add self-reflection prompts \
+("Before answering, consider alternative interpretations"). Combine with Structured Output \
+when the final answer needs a specific format.
+
+### 2. "role-based"
+Assign a specific expert persona with relevant domain credentials and professional context. \
+For coding tasks, combine with Structured Output (specify code format, language, comments) and \
+Constraint Injection (error handling requirements, style guidelines). For creative/writing tasks, \
+use CO-STAR to define audience and tone alongside the persona. For medical or legal tasks, always \
+include domain-appropriate disclaimers and specify the level of detail expected. Use RISEN when \
+the task involves a multi-step workflow (e.g., code review, document drafting).
+
+### 3. "few-shot"
+Add 2-3 example input/output pairs demonstrating the desired behavior. Cover both typical cases \
+and edge cases. For extraction tasks, combine with Structured Output to show exact JSON or table \
+format. For classification tasks, include examples from each category plus borderline cases. \
+For formatting tasks, show before/after transformation pairs. Ensure examples are consistent \
+in style and complexity with the expected real inputs.
+
+### 4. "constraint-focused"
+Add explicit constraints, boundaries, and negative examples to address identified weaknesses. \
+Use Constraint Injection to specify what NOT to do alongside what to do. Combine with \
+Step-by-Step to impose ordering constraints. Add length limits, format requirements, and scope \
+boundaries. Include negative examples ("Do NOT produce X"). Directly address each weakness \
+found in the analysis with a corresponding constraint.
+
+### 5. "structured-enhancement"
+Apply general structural improvements using Role-Task-Format as the backbone. Add Context \
+Enrichment to supply missing background information. For education-related tasks, include \
+learning objectives and progressive difficulty. For general/other tasks, use CO-STAR or \
+RISEN to add structure where the original prompt lacks it. Ensure the output format is \
+explicitly specified even when the input doesn't mention one.
 
 Return a JSON object with:
 - optimized_prompt: The improved prompt text
