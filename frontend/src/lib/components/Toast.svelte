@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { toastState } from '$lib/stores/toast.svelte';
+	import Icon from './Icon.svelte';
 
 	function toastClasses(type: 'success' | 'error' | 'info'): string {
 		switch (type) {
-			case 'success': return 'border-neon-green/30 bg-neon-green/10';
-			case 'error': return 'border-neon-red/30 bg-neon-red/10';
-			default: return 'border-neon-cyan/30 bg-neon-cyan/10';
+			case 'success': return 'border-neon-green/20 bg-bg-card';
+			case 'error': return 'border-neon-red/20 bg-bg-card';
+			default: return 'border-neon-cyan/20 bg-bg-card';
 		}
 	}
 </script>
@@ -15,22 +16,29 @@
 		<div
 			role="alert"
 			data-testid="toast-notification"
-			class="flex items-center gap-3 rounded-xl border px-5 py-3 text-sm shadow-lg transition-all duration-300 {toastClasses(toast.type)}"
+			class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm shadow-2xl {toastClasses(toast.type)} {toast.dismissing ? 'animate-slide-out-right' : 'animate-slide-in-right'}"
+			style="backdrop-filter: blur(16px);"
 		>
 			{#if toast.type === 'success'}
-				<svg class="h-5 w-5 shrink-0 text-neon-green" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+				<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neon-green/15">
+					<Icon name="check" size={14} class="text-neon-green" />
+				</div>
 			{:else if toast.type === 'error'}
-				<svg class="h-5 w-5 shrink-0 text-neon-red" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+				<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neon-red/15">
+					<Icon name="x" size={14} class="text-neon-red" />
+				</div>
 			{:else}
-				<svg class="h-5 w-5 shrink-0 text-neon-cyan" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+				<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neon-cyan/15">
+					<Icon name="info" size={14} class="text-neon-cyan" />
+				</div>
 			{/if}
 			<span class="text-text-primary">{toast.message}</span>
 			<button
-				class="ml-2 text-text-dim hover:text-text-secondary"
+				class="btn-icon ml-1"
 				aria-label="Dismiss notification"
 				onclick={() => toastState.dismiss(toast.id)}
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				<Icon name="x" size={12} />
 			</button>
 		</div>
 	{/each}

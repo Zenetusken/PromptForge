@@ -1,25 +1,11 @@
 <script lang="ts">
 	import type { StepState } from '$lib/stores/optimization.svelte';
 	import { formatScore } from '$lib/utils/format';
+	import Icon from './Icon.svelte';
 
 	let { step, index, isLatestActive = false }: { step: StepState; index: number; isLatestActive?: boolean } = $props();
 
-	function getColor(): string {
-		if (index === 0) return 'neon-cyan';
-		if (index === 1) return 'neon-purple';
-		return 'neon-green';
-	}
-
-	let color = $derived(getColor());
 	let isActive = $derived(step.status === 'running' || step.status === 'complete');
-
-	function getBorderColor(): string {
-		if (step.status === 'error') return 'var(--color-neon-red)';
-		if (step.status === 'pending') return 'rgba(85, 85, 119, 0.3)';
-		if (index === 0) return 'var(--color-neon-cyan)';
-		if (index === 1) return 'var(--color-neon-purple)';
-		return 'var(--color-neon-green)';
-	}
 
 	// Auto-collapse: show expanded only when running or when it's the latest completed and active
 	let isExpanded = $derived(step.status === 'running' || isLatestActive);
@@ -53,28 +39,26 @@
 			return (step.durationMs / 1000).toFixed(1) + 's';
 		}
 		if (step.status === 'running' && step.startTime) {
-			// Live timer will be updated via interval
 			return '...';
 		}
 		return null;
 	});
-
 
 	// Live timer
 	let liveTimer = $state('');
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
 
 	$effect(() => {
+		// Always clear any existing interval first to prevent orphaned timers
+		if (timerInterval) {
+			clearInterval(timerInterval);
+			timerInterval = null;
+		}
 		if (step.status === 'running' && step.startTime) {
 			timerInterval = setInterval(() => {
 				const elapsed = (Date.now() - (step.startTime || Date.now())) / 1000;
-				liveTimer = elapsed.toFixed(1) + 's';
-			}, 100);
-		} else {
-			if (timerInterval) {
-				clearInterval(timerInterval);
-				timerInterval = null;
-			}
+				liveTimer = Math.floor(elapsed) + 's';
+			}, 1000);
 		}
 		return () => {
 			if (timerInterval) {
@@ -86,17 +70,16 @@
 </script>
 
 <div
-	class="flex flex-1 flex-col items-center gap-2 rounded-lg border-l-2 p-3 text-center transition-all duration-300"
-	style="border-left-color: {getBorderColor()};"
+	class="flex flex-1 flex-col items-center gap-2 rounded-xl p-3 text-center transition-[background-color] duration-300 {isExpanded ? 'bg-bg-hover/30' : ''}"
 	data-testid="pipeline-step-{step.name}"
 	aria-label={ariaStatusLabel}
 	role="group"
 >
 	<!-- Status indicator -->
-	<div class="relative flex h-12 w-12 items-center justify-center">
+	<div class="relative flex h-11 w-11 items-center justify-center">
 		{#if step.status === 'running'}
 			<div
-				class="absolute inset-0 animate-ping rounded-full opacity-20"
+				class="absolute inset-0 animate-ping rounded-full opacity-15"
 				class:bg-neon-cyan={index === 0}
 				class:bg-neon-purple={index === 1}
 				class:bg-neon-green={index === 2}
@@ -107,61 +90,36 @@
 				class:border-neon-purple={index === 1}
 				class:border-neon-green={index === 2}
 			>
-				<svg
-					class="h-5 w-5 animate-spin"
-					class:text-neon-cyan={index === 0}
-					class:text-neon-purple={index === 1}
-					class:text-neon-green={index === 2}
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-				>
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-				</svg>
+				<Icon
+					name="spinner"
+					size={16}
+					class="animate-spin {index === 0 ? 'text-neon-cyan' : index === 1 ? 'text-neon-purple' : 'text-neon-green'}"
+				/>
 			</div>
 		{:else if step.status === 'complete'}
 			<div
-				class="flex h-10 w-10 items-center justify-center rounded-full {color === 'neon-cyan' ? 'bg-neon-cyan/20' : color === 'neon-purple' ? 'bg-neon-purple/20' : 'bg-neon-green/20'}"
+				class="flex h-10 w-10 items-center justify-center rounded-full {index === 0 ? 'bg-neon-cyan/15' : index === 1 ? 'bg-neon-purple/15' : 'bg-neon-green/15'}"
 			>
-				<svg
-					class="h-5 w-5"
-					class:text-neon-cyan={index === 0}
-					class:text-neon-purple={index === 1}
-					class:text-neon-green={index === 2}
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<polyline points="20 6 9 17 4 12" />
-				</svg>
+				<Icon
+					name="check"
+					size={16}
+					class={index === 0 ? 'text-neon-cyan' : index === 1 ? 'text-neon-purple' : 'text-neon-green'}
+				/>
 			</div>
 		{:else if step.status === 'error'}
-			<div class="flex h-10 w-10 items-center justify-center rounded-full bg-neon-red/20">
-				<svg
-					class="h-5 w-5 text-neon-red"
-					xmlns="http://www.w3.org/2000/svg"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-					stroke-width="2"
-				>
-					<line x1="18" y1="6" x2="6" y2="18" />
-					<line x1="6" y1="6" x2="18" y2="18" />
-				</svg>
+			<div class="flex h-10 w-10 items-center justify-center rounded-full bg-neon-red/15">
+				<Icon name="x" size={16} class="text-neon-red" />
 			</div>
 		{:else}
-			<div class="flex h-10 w-10 items-center justify-center rounded-full border-2 border-text-dim/30">
-				<span class="font-mono text-sm text-text-dim">{String(index + 1).padStart(2, '0')}</span>
+			<div class="flex h-10 w-10 items-center justify-center rounded-full border border-text-dim/20">
+				<span class="font-mono text-xs text-text-dim">{String(index + 1).padStart(2, '0')}</span>
 			</div>
 		{/if}
 	</div>
 
 	<!-- Step label -->
 	<div
-		class="font-mono text-sm font-semibold"
+		class="font-display text-xs font-bold tracking-widest"
 		class:text-neon-cyan={index === 0 && isActive}
 		class:text-neon-purple={index === 1 && isActive}
 		class:text-neon-green={index === 2 && isActive}
@@ -173,27 +131,27 @@
 
 	<!-- Duration timer -->
 	{#if step.status === 'running' && liveTimer}
-		<div class="font-mono text-xs text-text-secondary" data-testid="step-timer-{step.name}">
+		<div class="font-mono text-[10px] tabular-nums text-text-secondary" data-testid="step-timer-{step.name}">
 			{liveTimer}
 		</div>
 	{:else if step.status === 'complete' && durationDisplay}
-		<div class="font-mono text-xs text-text-secondary" data-testid="step-duration-{step.name}">
+		<div class="font-mono text-[10px] tabular-nums text-text-dim" data-testid="step-duration-{step.name}">
 			{durationDisplay}
 		</div>
 	{/if}
 
 	<!-- Description (shown when pending or running) -->
 	{#if step.description && (step.status === 'pending' || step.status === 'running')}
-		<div class="text-xs text-text-dim">{step.description}</div>
+		<div class="text-[11px] text-text-dim">{step.description}</div>
 	{/if}
 
 	<!-- Streaming content (shown while running) -->
 	{#if step.status === 'running' && step.streamingContent}
-		<div class="mt-1 w-full max-w-[200px] rounded border border-text-dim/20 bg-bg-primary/50 p-2 text-left" data-testid="streaming-content-{step.name}">
+		<div class="mt-1 w-full max-w-[200px] rounded-lg border border-border-subtle bg-bg-primary/60 p-2 text-left" data-testid="streaming-content-{step.name}">
 			<p class="whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-text-secondary">
 				{step.streamingContent.trim()}
 			</p>
-			<span class="mt-1 inline-block h-3 w-1 animate-pulse bg-neon-cyan"></span>
+			<span class="mt-1 inline-block h-3 w-0.5 animate-pulse bg-neon-cyan"></span>
 		</div>
 	{/if}
 
@@ -208,7 +166,7 @@
 			{#if weaknesses && weaknesses.length > 0}
 				<div class="flex flex-wrap justify-center gap-1">
 					{#each weaknesses.slice(0, 2) as weakness}
-						<span class="inline-block max-w-[140px] truncate rounded bg-neon-red/10 px-1.5 py-0.5 text-[10px] text-neon-red">
+						<span class="inline-block max-w-[140px] truncate rounded-md bg-neon-red/8 px-1.5 py-0.5 text-[10px] text-neon-red">
 							{weakness}
 						</span>
 					{/each}
@@ -217,14 +175,14 @@
 			{#if strengths && strengths.length > 0}
 				<div class="flex flex-wrap justify-center gap-1">
 					{#each strengths.slice(0, 2) as strength}
-						<span class="inline-block max-w-[140px] truncate rounded bg-neon-green/10 px-1.5 py-0.5 text-[10px] text-neon-green">
+						<span class="inline-block max-w-[140px] truncate rounded-md bg-neon-green/8 px-1.5 py-0.5 text-[10px] text-neon-green">
 							{strength}
 						</span>
 					{/each}
 				</div>
 			{/if}
 			{#if isOptimizeStep && optimizedPrompt}
-				<div class="mt-1 max-w-[200px] rounded border border-neon-purple/20 bg-neon-purple/5 p-1.5 text-left">
+				<div class="mt-1 max-w-[200px] rounded-lg border border-neon-purple/15 bg-neon-purple/5 p-1.5 text-left">
 					<p class="line-clamp-3 font-mono text-[10px] leading-relaxed text-text-secondary">
 						{optimizedPrompt.slice(0, 150)}{optimizedPrompt.length > 150 ? '...' : ''}
 					</p>
@@ -233,24 +191,24 @@
 			{#if isValidateStep && overallScore !== undefined}
 				<div class="mt-1 flex flex-col items-center gap-1" data-testid="step-scores">
 					<div class="flex items-center gap-1">
-						<span class="rounded-full bg-neon-green/20 px-2 py-0.5 font-mono text-sm font-bold text-neon-green" data-testid="overall-score">
+						<span class="rounded-full bg-neon-green/15 px-2 py-0.5 font-mono text-sm font-bold text-neon-green" data-testid="overall-score">
 							{formatScore(overallScore)}
 						</span>
 						<span class="text-[10px] text-text-dim">overall</span>
 					</div>
 					<div class="flex flex-wrap justify-center gap-1">
 						{#if clarityScore !== undefined}
-							<span class="rounded bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
+							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
 								CLA {formatScore(clarityScore)}
 							</span>
 						{/if}
 						{#if specificityScore !== undefined}
-							<span class="rounded bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
+							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
 								SPE {formatScore(specificityScore)}
 							</span>
 						{/if}
 						{#if structureScore !== undefined}
-							<span class="rounded bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
+							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
 								STR {formatScore(structureScore)}
 							</span>
 						{/if}
@@ -272,12 +230,12 @@
 				</span>
 			{/if}
 			{#if isValidateStep && overallScore !== undefined}
-				<span class="rounded-full bg-neon-green/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green" data-testid="collapsed-score">
+				<span class="rounded-full bg-neon-green/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green" data-testid="collapsed-score">
 					{formatScore(overallScore)}
 				</span>
 			{/if}
 			{#if durationDisplay}
-				<span class="font-mono text-[9px] text-text-dim" data-testid="step-duration-{step.name}">
+				<span class="font-mono text-[9px] tabular-nums text-text-dim" data-testid="step-duration-{step.name}">
 					{durationDisplay}
 				</span>
 			{/if}

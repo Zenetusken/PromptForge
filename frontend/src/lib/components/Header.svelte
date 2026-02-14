@@ -2,138 +2,138 @@
 	import { historyState } from '$lib/stores/history.svelte';
 	import { fetchStats, type StatsResponse } from '$lib/api/client';
 	import { formatScore, formatRate } from '$lib/utils/format';
+	import Icon from './Icon.svelte';
 
 	let { sidebarOpen = $bindable(true) }: { sidebarOpen: boolean } = $props();
 
 	let statsOpen = $state(false);
 	let stats: StatsResponse | null = $state(null);
 	let loadingStats = $state(false);
+	let statsFetchedAt = 0;
 
 	async function toggleStats() {
 		statsOpen = !statsOpen;
 		if (statsOpen) {
+			// Use cached stats if fetched within the last 60 seconds
+			if (stats && Date.now() - statsFetchedAt < 60_000) return;
 			loadingStats = true;
 			stats = await fetchStats();
+			statsFetchedAt = Date.now();
 			loadingStats = false;
 		}
 	}
 </script>
 
 <header
-	class="flex h-14 shrink-0 items-center justify-between border-b border-text-dim/20 bg-bg-secondary px-6"
+	class="glass sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-border-subtle px-5"
 	data-testid="header"
 >
 	<div class="flex items-center gap-3">
 		<button
 			onclick={() => (sidebarOpen = !sidebarOpen)}
-			class="flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-bg-card hover:text-neon-cyan"
+			class="flex h-8 w-8 items-center justify-center rounded-lg text-text-dim transition-[background-color,color] duration-200 hover:bg-bg-hover hover:text-neon-cyan"
 			aria-label="Toggle sidebar"
 			data-testid="sidebar-toggle"
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				width="18"
-				height="18"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				<line x1="3" y1="6" x2="21" y2="6" />
-				<line x1="3" y1="12" x2="21" y2="12" />
-				<line x1="3" y1="18" x2="21" y2="18" />
-			</svg>
+			{#if sidebarOpen}
+				<Icon name="sidebar" size={16} />
+			{:else}
+				<Icon name="menu" size={16} />
+			{/if}
 		</button>
 
-		<div class="flex items-center gap-2">
+		<a href="/" class="flex items-center gap-2.5 no-underline">
+			<!-- Forge icon -->
+			<div class="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-neon-cyan/20 to-neon-purple/20">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+					<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="url(#bolt-grad)" />
+					<defs>
+						<linearGradient id="bolt-grad" x1="3" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+							<stop stop-color="#00e5ff" />
+							<stop offset="1" stop-color="#a855f7" />
+						</linearGradient>
+					</defs>
+				</svg>
+			</div>
 			<span
-				class="font-mono text-xl font-bold tracking-tight"
-				style="background: linear-gradient(135deg, var(--color-neon-cyan), var(--color-neon-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"
+				class="text-gradient-forge font-display text-lg font-bold leading-normal tracking-tight"
 				data-testid="logo-text"
 			>
 				PromptForge
 			</span>
-			<span class="rounded-full bg-neon-cyan/10 px-2 py-0.5 font-mono text-xs text-neon-cyan">
-				v1.0
-			</span>
-		</div>
+		</a>
 	</div>
 
-	<div class="flex items-center gap-3">
+	<div class="flex items-center gap-2">
 		<button
-			class="flex items-center gap-1.5 rounded-full border border-neon-cyan/30 bg-neon-cyan/10 px-3 py-1 text-sm transition-colors hover:bg-neon-cyan/20"
+			class="flex items-center gap-2 rounded-full border border-border-subtle bg-bg-card/50 px-3 py-1.5 text-xs transition-[border-color,background-color] duration-200 hover:border-neon-cyan/20 hover:bg-bg-hover"
 			onclick={toggleStats}
 			data-testid="stats-badge"
 		>
-			<div class="h-2 w-2 rounded-full bg-neon-green shadow-[0_0_6px_var(--color-neon-green)]"></div>
-			<span class="font-mono font-semibold text-neon-cyan" data-testid="stats-count">{historyState.total}</span>
-			<span class="text-text-secondary">forged</span>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				width="12"
-				height="12"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				class="text-text-dim transition-transform {statsOpen ? 'rotate-180' : ''}"
-			>
-				<polyline points="6 9 12 15 18 9" />
-			</svg>
+			<div class="h-1.5 w-1.5 rounded-full bg-neon-green shadow-[0_0_6px_var(--color-neon-green)]"></div>
+			<span class="font-mono font-semibold text-text-primary" data-testid="stats-count">{historyState.total}</span>
+			<span class="text-text-dim">forged</span>
+			<Icon name="chevron-down" size={10} class="text-text-dim transition-transform duration-200 {statsOpen ? 'rotate-180' : ''}" />
 		</button>
 	</div>
 </header>
 
 {#if statsOpen}
 	<div
-		class="border-b border-text-dim/20 bg-bg-secondary px-6 py-4 animate-fade-in"
+		class="glass border-b border-border-subtle py-2.5 animate-fade-in"
 		data-testid="stats-panel"
 	>
+		<div class="mx-auto max-w-5xl px-6">
 		{#if loadingStats}
-			<div class="flex items-center justify-center py-4">
-				<span class="font-mono text-xs text-text-dim">Loading stats...</span>
+			<div class="flex items-center justify-center py-2">
+				<Icon name="spinner" size={14} class="animate-spin text-neon-cyan" />
 			</div>
 		{:else if stats}
-			<div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-				<div class="rounded-lg border border-neon-cyan/20 bg-bg-card p-3 text-center">
-					<div class="font-mono text-lg font-bold text-neon-cyan">{formatScore(stats.average_overall_score)}</div>
-					<div class="font-mono text-[10px] text-text-dim">Overall</div>
+			<div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5">
+				<!-- Primary stats -->
+				<div class="flex items-baseline gap-1.5">
+					<span class="font-mono text-sm font-bold text-neon-cyan">{formatScore(stats.average_overall_score)}</span>
+					<span class="text-[10px] tracking-wider text-text-dim">OVERALL</span>
 				</div>
-				<div class="rounded-lg border border-neon-purple/20 bg-bg-card p-3 text-center">
-					<div class="font-mono text-lg font-bold text-neon-purple">{formatRate(stats.improvement_rate)}</div>
-					<div class="font-mono text-[10px] text-text-dim">Improved</div>
+				<div class="flex items-baseline gap-1.5">
+					<span class="font-mono text-sm font-bold text-neon-purple">{formatRate(stats.improvement_rate)}</span>
+					<span class="text-[10px] tracking-wider text-text-dim">IMPROVED</span>
 				</div>
-				<div class="rounded-lg border border-neon-green/20 bg-bg-card p-3 text-center">
-					<div class="font-mono text-lg font-bold text-neon-green">{stats.optimizations_today}</div>
-					<div class="font-mono text-[10px] text-text-dim">Today</div>
+				<div class="flex items-baseline gap-1.5">
+					<span class="font-mono text-sm font-bold text-neon-green">{stats.optimizations_today}</span>
+					<span class="text-[10px] tracking-wider text-text-dim">TODAY</span>
 				</div>
-				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
-					<div class="font-mono text-lg font-bold text-text-primary">{stats.most_common_task_type || '—'}</div>
-					<div class="font-mono text-[10px] text-text-dim">Top Task</div>
+				<div class="flex items-baseline gap-1.5">
+					<span class="truncate font-mono text-sm font-bold text-text-primary">{stats.most_common_task_type || '—'}</span>
+					<span class="text-[10px] tracking-wider text-text-dim">TOP TASK</span>
 				</div>
-				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
-					<div class="font-mono text-lg font-bold text-text-secondary">{formatScore(stats.average_clarity_score)}</div>
-					<div class="font-mono text-[10px] text-text-dim">Clarity</div>
+
+				<!-- Divider -->
+				<div class="hidden h-3.5 w-px bg-border-subtle sm:block" aria-hidden="true"></div>
+
+				<!-- Sub-scores -->
+				<div class="flex items-baseline gap-1">
+					<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_clarity_score)}</span>
+					<span class="text-[9px] tracking-wider text-text-dim">CLR</span>
 				</div>
-				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
-					<div class="font-mono text-lg font-bold text-text-secondary">{formatScore(stats.average_specificity_score)}</div>
-					<div class="font-mono text-[10px] text-text-dim">Specificity</div>
+				<div class="flex items-baseline gap-1">
+					<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_specificity_score)}</span>
+					<span class="text-[9px] tracking-wider text-text-dim">SPC</span>
 				</div>
-				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
-					<div class="font-mono text-lg font-bold text-text-secondary">{formatScore(stats.average_structure_score)}</div>
-					<div class="font-mono text-[10px] text-text-dim">Structure</div>
+				<div class="flex items-baseline gap-1">
+					<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_structure_score)}</span>
+					<span class="text-[9px] tracking-wider text-text-dim">STR</span>
 				</div>
-				<div class="rounded-lg border border-text-dim/20 bg-bg-card p-3 text-center">
-					<div class="font-mono text-lg font-bold text-text-secondary">{formatScore(stats.average_faithfulness_score)}</div>
-					<div class="font-mono text-[10px] text-text-dim">Faithfulness</div>
+				<div class="flex items-baseline gap-1">
+					<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_faithfulness_score)}</span>
+					<span class="text-[9px] tracking-wider text-text-dim">FTH</span>
 				</div>
 			</div>
 		{:else}
-			<div class="flex items-center justify-center py-4">
-				<span class="font-mono text-xs text-text-dim">No stats available</span>
+			<div class="flex items-center justify-center py-2">
+				<span class="text-xs text-text-dim">No stats available</span>
 			</div>
 		{/if}
+		</div>
 	</div>
 {/if}

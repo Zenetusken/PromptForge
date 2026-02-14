@@ -23,32 +23,11 @@ export function formatRelativeTime(dateStr: string): string {
 }
 
 /**
- * Format a date string into a full readable format.
- */
-export function formatDate(dateStr: string): string {
-	const date = new Date(dateStr);
-	return date.toLocaleDateString('en-US', {
-		month: 'long',
-		day: 'numeric',
-		year: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit'
-	});
-}
-
-/**
  * Truncate text to a maximum length, adding ellipsis if needed.
  */
 export function truncateText(text: string, maxLength: number): string {
 	if (text.length <= maxLength) return text;
 	return text.slice(0, maxLength).trimEnd() + '...';
-}
-
-/**
- * Format a number as a percentage string.
- */
-export function formatPercent(value: number): string {
-	return `${Math.round(value)}%`;
 }
 
 /**

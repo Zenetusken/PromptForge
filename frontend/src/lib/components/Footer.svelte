@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { fetchHealth, type HealthResponse } from '$lib/api/client';
 	import MCPInfo from './MCPInfo.svelte';
+	import Icon from './Icon.svelte';
 
 	let health: HealthResponse | null = $state(null);
 	let checking = $state(true);
@@ -43,30 +44,28 @@
 <MCPInfo bind:open={showMCPInfo} />
 
 <footer
-	class="flex h-8 shrink-0 items-center justify-between border-t border-text-dim/20 bg-bg-secondary px-4"
+	class="flex h-9 shrink-0 items-center justify-between border-t border-border-subtle bg-bg-secondary/80 px-4"
 	data-testid="footer"
 >
-	<div class="flex items-center gap-3">
-		<span class="font-mono text-[10px] text-text-dim">
-			PromptForge v1.0 &mdash; Powered by Claude
+	<div class="flex items-center gap-4">
+		<span class="text-[10px] text-text-dim/60">
+			PromptForge &mdash; Powered by Claude
 		</span>
 		<a
 			href={apiDocsUrl}
 			target="_blank"
 			rel="noopener noreferrer"
-			class="font-mono text-[10px] text-text-dim transition-colors hover:text-neon-cyan"
+			class="text-[10px] text-text-dim/50 transition-colors hover:text-neon-cyan"
 			data-testid="api-docs-link"
 		>
-			API Docs
+			API
 		</a>
 		<button
-			class="flex items-center gap-1 font-mono text-[10px] text-text-dim transition-colors hover:text-neon-cyan"
+			class="flex items-center gap-1 text-[10px] text-text-dim/50 transition-colors hover:text-neon-cyan"
 			onclick={() => (showMCPInfo = true)}
 			data-testid="mcp-info-btn"
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-			</svg>
+			<Icon name="terminal" size={10} />
 			MCP
 		</button>
 	</div>
@@ -79,14 +78,14 @@
 		data-testid="health-indicator"
 	>
 		<div class="h-1.5 w-1.5 rounded-full {dotColor}"></div>
-		<span class="font-mono text-[10px] text-text-dim">{statusLabel}</span>
+		<span class="text-[10px] text-text-dim/60">{statusLabel}</span>
 
 		{#if showTooltip && health}
 			<div
-				class="absolute bottom-6 right-0 z-50 min-w-48 rounded-lg border border-text-dim/20 bg-bg-card p-3 shadow-lg"
+				class="animate-scale-in absolute bottom-7 right-0 z-50 min-w-44 rounded-xl border border-border-subtle bg-bg-card p-3 shadow-xl"
 				data-testid="health-tooltip"
 			>
-				<div class="space-y-1.5 font-mono text-[10px]">
+				<div class="space-y-2 text-[10px]">
 					<div class="flex items-center justify-between gap-4">
 						<span class="text-text-dim">API</span>
 						<span class={health.status === 'ok' ? 'text-neon-green' : 'text-neon-red'}>
@@ -107,7 +106,7 @@
 					</div>
 					<div class="flex items-center justify-between gap-4">
 						<span class="text-text-dim">Version</span>
-						<span class="text-text-secondary">{health.version}</span>
+						<span class="font-mono text-text-secondary">{health.version}</span>
 					</div>
 				</div>
 			</div>

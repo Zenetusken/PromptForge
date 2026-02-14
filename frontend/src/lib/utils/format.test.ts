@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatRelativeTime, truncateText, formatPercent, formatDate, normalizeScore, formatScore, getScoreColorClass } from './format';
+import { formatRelativeTime, truncateText, normalizeScore, formatScore, getScoreColorClass } from './format';
 
 describe('formatRelativeTime', () => {
 	it('returns "just now" for recent timestamps', () => {
@@ -41,29 +41,6 @@ describe('truncateText', () => {
 
 	it('returns exact text when equal to max length', () => {
 		expect(truncateText('12345', 5)).toBe('12345');
-	});
-});
-
-describe('formatPercent', () => {
-	it('formats a number as a percentage', () => {
-		expect(formatPercent(75)).toBe('75%');
-	});
-
-	it('rounds decimal values', () => {
-		expect(formatPercent(75.6)).toBe('76%');
-	});
-
-	it('handles zero', () => {
-		expect(formatPercent(0)).toBe('0%');
-	});
-});
-
-describe('formatDate', () => {
-	it('returns a readable date string', () => {
-		const result = formatDate('2024-06-15T10:30:00Z');
-		expect(result).toContain('June');
-		expect(result).toContain('15');
-		expect(result).toContain('2024');
 	});
 });
 

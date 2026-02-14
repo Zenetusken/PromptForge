@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { promptState } from '$lib/stores/prompt.svelte';
 	import type { OptimizeMetadata } from '$lib/api/client';
+	import Icon from './Icon.svelte';
 
 	let {
 		onsubmit,
@@ -65,80 +66,81 @@
 	});
 </script>
 
-<div class="prompt-input-container rounded-xl border border-text-dim/20 bg-bg-card p-4 transition-all duration-300 focus-within:border-neon-cyan/60" style="transition: border-color 0.3s, box-shadow 0.3s;">
-	<textarea
-		data-testid="prompt-textarea"
-		bind:this={textareaEl}
-		bind:value={prompt}
-		onkeydown={handleKeydown}
-		{disabled}
-		placeholder="Paste your prompt here... PromptForge will handle the rest."
-		aria-label="Enter your prompt for optimization"
-		rows="6"
-		class="w-full resize-y bg-transparent font-mono text-sm leading-relaxed text-text-primary outline-none placeholder:text-text-dim disabled:opacity-50"
-	></textarea>
+<div class="prompt-container relative rounded-2xl border border-text-dim/15 bg-bg-card shadow-sm shadow-black/30 transition-[border-color,box-shadow] duration-300 focus-within:border-neon-cyan/30">
+	<!-- Top edge glow line -->
+	<div class="glow-line absolute -top-px left-8 right-8 h-px opacity-0 transition-opacity duration-500"></div>
 
-	<!-- Collapsible Metadata Section -->
-	<div class="mt-2 border-t border-text-dim/10 pt-2">
+	<div class="p-5">
+		<textarea
+			data-testid="prompt-textarea"
+			bind:this={textareaEl}
+			bind:value={prompt}
+			onkeydown={handleKeydown}
+			{disabled}
+			placeholder="Describe what you want your prompt to do..."
+			aria-label="Enter your prompt for optimization"
+			rows="5"
+			class="w-full resize-y bg-transparent text-[15px] leading-relaxed text-text-primary outline-none placeholder:text-text-dim disabled:opacity-50"
+		></textarea>
+	</div>
+
+	<!-- Metadata Section -->
+	<div class="border-t border-border-subtle">
 		<button
 			type="button"
 			onclick={() => showMetadata = !showMetadata}
-			class="flex items-center gap-1.5 font-mono text-xs text-text-dim transition-colors hover:text-neon-cyan"
+			class="flex w-full items-center gap-2 px-5 py-2.5 text-xs text-text-dim transition-colors hover:text-text-secondary"
 			data-testid="metadata-toggle"
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				width="12"
-				height="12"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				class="transition-transform duration-200"
-				class:rotate-90={showMetadata}
-			>
-				<polyline points="9 18 15 12 9 6" />
-			</svg>
-			Metadata
+			<Icon
+				name="chevron-right"
+				size={12}
+				class="transition-transform duration-200 {showMetadata ? 'rotate-90' : ''}"
+			/>
+			<span class="tracking-wide">Metadata</span>
+			{#if title || project || tagsInput}
+				<span class="h-1 w-1 rounded-full bg-neon-cyan"></span>
+			{/if}
 		</button>
 		{#if showMetadata}
-			<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3" data-testid="metadata-fields">
-				<input
-					type="text"
-					bind:value={title}
-					placeholder="Title..."
-					aria-label="Optimization title"
-					data-testid="metadata-title"
-					class="rounded-lg border border-text-dim/20 bg-bg-input px-3 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
-				/>
-				<input
-					type="text"
-					bind:value={project}
-					placeholder="Project..."
-					aria-label="Project name"
-					data-testid="metadata-project"
-					class="rounded-lg border border-text-dim/20 bg-bg-input px-3 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
-				/>
-				<input
-					type="text"
-					bind:value={tagsInput}
-					placeholder="Tags (comma-separated)..."
-					aria-label="Tags"
-					data-testid="metadata-tags"
-					class="rounded-lg border border-text-dim/20 bg-bg-input px-3 py-1.5 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
-				/>
+			<div class="animate-fade-in px-5 pb-4" data-testid="metadata-fields">
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+					<input
+						type="text"
+						bind:value={title}
+						placeholder="Title"
+						aria-label="Optimization title"
+						data-testid="metadata-title"
+						class="input-field py-2 text-sm"
+					/>
+					<input
+						type="text"
+						bind:value={project}
+						placeholder="Project"
+						aria-label="Project name"
+						data-testid="metadata-project"
+						class="input-field py-2 text-sm"
+					/>
+					<input
+						type="text"
+						bind:value={tagsInput}
+						placeholder="Tags (comma-separated)"
+						aria-label="Tags"
+						data-testid="metadata-tags"
+						class="input-field py-2 text-sm"
+					/>
+				</div>
 			</div>
 		{/if}
 	</div>
 
-	<div class="mt-3 flex items-center justify-between border-t border-text-dim/10 pt-3">
+	<!-- Bottom bar -->
+	<div class="flex items-center justify-between border-t border-border-subtle px-5 py-3">
 		<div class="flex items-center gap-4">
-			<span class="font-mono text-xs text-text-dim" data-testid="char-count">
-				{charCount} chars
+			<span class="font-mono text-[11px] tabular-nums text-text-dim" data-testid="char-count">
+				{charCount} <span class="text-text-dim/50">chars</span>
 			</span>
-			<span class="text-xs text-text-dim">
+			<span class="hidden text-[11px] text-text-dim/40 sm:inline">
 				Ctrl+Enter to submit
 			</span>
 		</div>
@@ -148,20 +150,11 @@
 			onclick={handleSubmit}
 			disabled={disabled || !prompt.trim()}
 			aria-label={disabled ? 'Optimization in progress' : 'Forge It! — Optimize your prompt'}
-			class="rounded-lg px-6 py-2 font-semibold text-bg-primary transition-all duration-200 hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
-			style="background: linear-gradient(135deg, var(--color-neon-cyan), var(--color-neon-purple)); box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);"
+			class="btn-primary px-7 py-2.5 font-display text-sm tracking-wide"
 		>
 			{#if disabled}
 				<span class="flex items-center gap-2">
-					<svg
-						class="h-4 w-4 animate-spin"
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-					>
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-					</svg>
+					<Icon name="spinner" size={16} class="animate-spin" />
 					Forging...
 				</span>
 			{:else}
@@ -172,19 +165,23 @@
 </div>
 
 <style>
-	.prompt-input-container:focus-within {
-		animation: neon-pulse-border 2s ease-in-out infinite;
-		box-shadow: 0 0 10px rgba(0, 240, 255, 0.2), 0 0 20px rgba(0, 240, 255, 0.1);
+	.prompt-container:focus-within {
+		animation: neon-pulse-border 3s ease-in-out infinite;
+	}
+
+	.prompt-container:focus-within .glow-line {
+		opacity: 1;
+		background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.4), rgba(168, 85, 247, 0.3), transparent);
 	}
 
 	@keyframes neon-pulse-border {
 		0%, 100% {
-			box-shadow: 0 0 5px rgba(0, 240, 255, 0.2), 0 0 10px rgba(0, 240, 255, 0.1);
-			border-color: rgba(0, 240, 255, 0.6);
+			box-shadow: 0 0 10px rgba(0, 229, 255, 0.05), 0 0 20px rgba(0, 229, 255, 0.02);
+			border-color: rgba(0, 229, 255, 0.2);
 		}
 		50% {
-			box-shadow: 0 0 15px rgba(0, 240, 255, 0.4), 0 0 25px rgba(0, 240, 255, 0.15);
-			border-color: rgba(0, 240, 255, 0.8);
+			box-shadow: 0 0 20px rgba(0, 229, 255, 0.1), 0 0 40px rgba(0, 229, 255, 0.04);
+			border-color: rgba(0, 229, 255, 0.35);
 		}
 	}
 </style>

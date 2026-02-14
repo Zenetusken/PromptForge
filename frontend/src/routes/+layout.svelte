@@ -28,14 +28,16 @@
 	});
 </script>
 
-<div class="flex h-screen w-screen overflow-hidden">
+<div class="flex h-screen w-screen overflow-hidden bg-bg-primary">
 	<HistorySidebar bind:open={sidebarOpen} />
 
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<Header bind:sidebarOpen />
 
-		<main class="flex-1 overflow-y-auto p-6">
-			{@render children()}
+		<main class="relative flex-1 overflow-y-auto">
+			<div class="mx-auto max-w-5xl px-6 py-8">
+				{@render children()}
+			</div>
 		</main>
 
 		<Footer />

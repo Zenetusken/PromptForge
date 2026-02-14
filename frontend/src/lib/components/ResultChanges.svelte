@@ -5,14 +5,14 @@
 </script>
 
 {#if result.changes_made.length > 0}
-	<div class="border-t border-text-dim/20 px-5 py-4" data-testid="changes-made">
-		<h4 class="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-text-secondary">
+	<div class="border-t border-border-subtle px-5 py-4" data-testid="changes-made">
+		<h4 class="mb-3 section-heading">
 			Changes Made
 		</h4>
-		<ul class="space-y-1">
+		<ul class="space-y-1.5">
 			{#each result.changes_made as change}
-				<li class="flex items-start gap-2 text-sm text-text-secondary">
-					<span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-neon-cyan"></span>
+				<li class="flex items-start gap-2 text-sm leading-relaxed text-text-secondary">
+					<span class="mt-2 h-1 w-1 shrink-0 rounded-full bg-neon-cyan"></span>
 					{change}
 				</li>
 			{/each}
@@ -21,8 +21,8 @@
 {/if}
 
 {#if result.optimization_notes}
-	<div class="border-t border-text-dim/20 px-5 py-4" data-testid="optimization-notes">
-		<h4 class="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-text-secondary">
+	<div class="border-t border-border-subtle px-5 py-4" data-testid="optimization-notes">
+		<h4 class="mb-3 section-heading">
 			Notes
 		</h4>
 		<p class="text-sm leading-relaxed text-text-secondary">{result.optimization_notes}</p>

@@ -58,6 +58,9 @@ class Optimization(Base):
     is_improvement: Mapped[bool | None] = mapped_column(nullable=True)
     verdict: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Strategy
+    strategy_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Execution metadata
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_used: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -73,6 +76,10 @@ class Optimization(Base):
         Index("ix_optimizations_project", "project"),
         Index("ix_optimizations_task_type", "task_type"),
         Index("ix_optimizations_created_at", "created_at"),
+        Index("ix_optimizations_status", "status"),
+        Index("ix_optimizations_overall_score", "overall_score"),
+        Index("ix_optimizations_status_created_at", "status", "created_at"),
+        Index("ix_optimizations_task_type_project", "task_type", "project"),
     )
 
     def __repr__(self) -> str:

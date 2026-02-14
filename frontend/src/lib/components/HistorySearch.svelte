@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { historyState } from '$lib/stores/history.svelte';
+	import Icon from './Icon.svelte';
+	import Dropdown from './Dropdown.svelte';
 
 	let {
 		searchQuery = $bindable(''),
@@ -18,46 +20,46 @@
 		}, 300);
 	}
 
-	function handleSortChange(e: Event) {
-		const select = e.target as HTMLSelectElement;
-		historyState.setSortBy(select.value);
-	}
+	const sortOptions = [
+		{ value: 'created_at', label: 'Date' },
+		{ value: 'overall_score', label: 'Score' },
+		{ value: 'task_type', label: 'Task Type' }
+	];
 
-	function handleTaskTypeFilter(e: Event) {
-		const select = e.target as HTMLSelectElement;
-		historyState.setFilterTaskType(select.value);
-	}
+	let taskTypeOptions = $derived([
+		{ value: '', label: 'All types' },
+		...historyState.availableTaskTypes.map((t) => ({ value: t, label: t }))
+	]);
 
-	function handleProjectFilter(e: Event) {
-		const select = e.target as HTMLSelectElement;
-		historyState.setFilterProject(select.value);
-	}
+	let projectOptions = $derived([
+		{ value: '', label: 'All projects' },
+		...historyState.availableProjects.map((p) => ({ value: p, label: p }))
+	]);
 </script>
 
-<div class="p-3 space-y-2">
-	<input
-		type="text"
-		bind:value={searchQuery}
-		oninput={handleSearch}
-		placeholder="Search history..."
-		aria-label="Search optimization history"
-		data-testid="history-search"
-		class="search-input w-full rounded-lg border border-text-dim/20 bg-bg-input px-3 py-2 text-sm text-text-primary outline-none placeholder:text-text-dim focus:border-neon-cyan/60"
-	/>
-	<div class="flex items-center gap-2">
-		<select
+<div class="space-y-2 p-3">
+	<div class="relative">
+		<Icon name="search" size={13} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
+		<input
+			type="text"
+			bind:value={searchQuery}
+			oninput={handleSearch}
+			placeholder="Search..."
+			aria-label="Search optimization history"
+			data-testid="history-search"
+			class="input-field py-2 pl-9 pr-3 text-sm"
+		/>
+	</div>
+	<div class="flex items-center gap-1.5">
+		<Dropdown
 			value={historyState.sortBy}
-			onchange={handleSortChange}
-			aria-label="Sort history by"
-			class="flex-1 rounded-lg border border-text-dim/20 bg-bg-input px-2 py-1.5 font-mono text-xs text-text-secondary outline-none focus:border-neon-cyan/40"
-			data-testid="history-sort"
-		>
-			<option value="created_at">Date</option>
-			<option value="overall_score">Score</option>
-			<option value="task_type">Task Type</option>
-		</select>
+			options={sortOptions}
+			label="Sort history by"
+			onchange={(v) => historyState.setSortBy(v)}
+			testid="history-sort"
+		/>
 		<button
-			class="rounded-lg border border-neon-red/20 px-2 py-1.5 font-mono text-xs text-neon-red transition-colors hover:bg-neon-red/10"
+			class="rounded-lg border border-neon-red/15 px-2.5 py-1.5 text-xs text-neon-red/70 transition-colors hover:bg-neon-red/8 hover:text-neon-red"
 			onclick={() => { showClearConfirm = true; }}
 			aria-label="Clear all history"
 			data-testid="clear-history-btn"
@@ -66,42 +68,25 @@
 		</button>
 	</div>
 	{#if historyState.availableTaskTypes.length > 0 || historyState.availableProjects.length > 0}
-		<div class="flex items-center gap-2">
+		<div class="flex items-center gap-1.5">
 			{#if historyState.availableTaskTypes.length > 0}
-				<select
+				<Dropdown
 					value={historyState.filterTaskType}
-					onchange={handleTaskTypeFilter}
-					aria-label="Filter by task type"
-					class="flex-1 rounded-lg border border-text-dim/20 bg-bg-input px-2 py-1.5 font-mono text-xs text-text-secondary outline-none focus:border-neon-cyan/40"
-					data-testid="filter-task-type"
-				>
-					<option value="">All types</option>
-					{#each historyState.availableTaskTypes as taskType}
-						<option value={taskType}>{taskType}</option>
-					{/each}
-				</select>
+					options={taskTypeOptions}
+					label="Filter by task type"
+					onchange={(v) => historyState.setFilterTaskType(v)}
+					testid="filter-task-type"
+				/>
 			{/if}
 			{#if historyState.availableProjects.length > 0}
-				<select
+				<Dropdown
 					value={historyState.filterProject}
-					onchange={handleProjectFilter}
-					aria-label="Filter by project"
-					class="flex-1 rounded-lg border border-text-dim/20 bg-bg-input px-2 py-1.5 font-mono text-xs text-text-secondary outline-none focus:border-neon-cyan/40"
-					data-testid="filter-project"
-				>
-					<option value="">All projects</option>
-					{#each historyState.availableProjects as project}
-						<option value={project}>{project}</option>
-					{/each}
-				</select>
+					options={projectOptions}
+					label="Filter by project"
+					onchange={(v) => historyState.setFilterProject(v)}
+					testid="filter-project"
+				/>
 			{/if}
 		</div>
 	{/if}
 </div>
-
-<style>
-	.search-input:focus {
-		box-shadow: 0 0 8px rgba(0, 240, 255, 0.3), 0 0 16px rgba(0, 240, 255, 0.1);
-		border-color: rgba(0, 240, 255, 0.6);
-	}
-</style>

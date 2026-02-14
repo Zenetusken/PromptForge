@@ -1,7 +1,7 @@
-import { fetchHistory, deleteOptimization, clearAllHistory, type HistoryItem, type HistoryResponse } from '$lib/api/client';
+import { fetchHistory, deleteOptimization, clearAllHistory, type HistorySummaryItem, type HistoryResponse } from '$lib/api/client';
 
 class HistoryState {
-	items: HistoryItem[] = $state([]);
+	items: HistorySummaryItem[] = $state([]);
 	total: number = $state(0);
 	page: number = $state(1);
 	perPage: number = $state(20);
@@ -15,10 +15,15 @@ class HistoryState {
 	availableTaskTypes: string[] = $state([]);
 	availableProjects: string[] = $state([]);
 
-	async loadHistory(params?: { page?: number; sort?: string; order?: string }) {
-		if (this.isLoading) return;
-		this.isLoading = true;
+	private controller: AbortController | null = null;
 
+	async loadHistory(params?: { page?: number; sort?: string; order?: string }) {
+		// Abort any in-flight request before starting a new one
+		this.controller?.abort();
+		this.controller = new AbortController();
+		const { signal } = this.controller;
+
+		this.isLoading = true;
 		const requestedPage = params?.page ?? 1;
 
 		try {
@@ -29,7 +34,8 @@ class HistoryState {
 				sort: params?.sort ?? this.sortBy,
 				order: params?.order ?? this.sortOrder,
 				task_type: this.filterTaskType || undefined,
-				project: this.filterProject || undefined
+				project: this.filterProject || undefined,
+				signal
 			});
 
 			if (requestedPage > 1) {
@@ -46,8 +52,9 @@ class HistoryState {
 			this.perPage = response.per_page;
 			this.hasLoaded = true;
 			this.updateAvailableFilters();
-		} catch {
-			// Silently fail - items stay empty
+		} catch (e: unknown) {
+			// Silently ignore aborted requests; other errors keep items empty
+			if (e instanceof DOMException && e.name === 'AbortError') return;
 		} finally {
 			this.isLoading = false;
 		}
@@ -98,7 +105,7 @@ class HistoryState {
 		this.loadHistory();
 	}
 
-	addEntry(item: HistoryItem) {
+	addEntry(item: HistorySummaryItem) {
 		this.items = [item, ...this.items];
 		this.total += 1;
 		this.updateAvailableFilters();
@@ -111,8 +118,21 @@ class HistoryState {
 			if (item.task_type) taskTypes.add(item.task_type);
 			if (item.project) projects.add(item.project);
 		}
-		this.availableTaskTypes = [...taskTypes].sort();
-		this.availableProjects = [...projects].sort();
+		const newTaskTypes = [...taskTypes].sort();
+		const newProjects = [...projects].sort();
+
+		if (
+			newTaskTypes.length !== this.availableTaskTypes.length ||
+			newTaskTypes.some((v, i) => v !== this.availableTaskTypes[i])
+		) {
+			this.availableTaskTypes = newTaskTypes;
+		}
+		if (
+			newProjects.length !== this.availableProjects.length ||
+			newProjects.some((v, i) => v !== this.availableProjects[i])
+		) {
+			this.availableProjects = newProjects;
+		}
 	}
 }
 

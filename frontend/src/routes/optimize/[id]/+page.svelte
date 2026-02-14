@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import type { PageData } from './$types';
 
@@ -20,45 +21,41 @@
 	});
 </script>
 
-<div class="mx-auto flex max-w-6xl flex-col gap-6">
+<div class="flex flex-col gap-6">
 	<div class="flex items-center gap-3">
 		<a
 			href="/"
-			class="flex items-center gap-1.5 rounded-lg bg-bg-card px-3 py-1.5 font-mono text-xs text-text-secondary transition-colors hover:text-neon-cyan"
+			class="flex items-center gap-1.5 rounded-lg bg-bg-card/60 px-3 py-1.5 text-xs text-text-dim transition-colors hover:text-neon-cyan"
 			data-testid="back-link"
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-				<polyline points="15 18 9 12 15 6" />
-			</svg>
+			<Icon name="chevron-left" size={12} />
 			Back to Forge
 		</a>
 		{#if data.item?.title}
-			<span class="font-mono text-sm text-text-primary" data-testid="detail-title">{data.item.title}</span>
+			<span class="text-sm text-text-primary" data-testid="detail-title">{data.item.title}</span>
 		{/if}
 	</div>
 
 	{#if isError}
-		<div class="rounded-xl border border-neon-red/20 bg-bg-card p-6" data-testid="error-state">
+		<div class="rounded-2xl border border-neon-red/15 bg-bg-card/60 p-6" data-testid="error-state">
 			<div class="flex items-center gap-3 mb-4">
-				<span class="flex h-8 w-8 items-center justify-center rounded-full bg-neon-red/10">
-					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-neon-red">
-						<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-					</svg>
-				</span>
+				<div class="flex h-8 w-8 items-center justify-center rounded-full bg-neon-red/10">
+					<Icon name="x" size={16} class="text-neon-red" />
+				</div>
 				<div>
-					<h3 class="font-mono text-sm font-semibold text-neon-red">Optimization Failed</h3>
+					<h3 class="text-sm font-medium text-neon-red">Optimization Failed</h3>
 					<p class="text-xs text-text-dim">This optimization encountered an error during processing.</p>
 				</div>
 			</div>
 			{#if data.item?.error_message}
-				<div class="rounded-lg bg-neon-red/5 border border-neon-red/10 p-4">
-					<p class="font-mono text-xs text-text-secondary">{data.item.error_message}</p>
+				<div class="rounded-xl bg-neon-red/5 border border-neon-red/10 p-4">
+					<p class="font-mono text-xs leading-relaxed text-text-secondary">{data.item.error_message}</p>
 				</div>
 			{/if}
 			{#if data.item?.raw_prompt}
 				<div class="mt-4">
-					<h4 class="mb-2 font-mono text-xs font-semibold uppercase tracking-wider text-text-secondary">Original Prompt</h4>
-					<pre class="whitespace-pre-wrap rounded-lg bg-bg-secondary p-3 font-mono text-sm text-text-secondary">{data.item.raw_prompt}</pre>
+					<h4 class="section-heading mb-2">Original Prompt</h4>
+					<pre class="whitespace-pre-wrap rounded-xl bg-bg-secondary/80 p-4 font-mono text-sm leading-relaxed text-text-secondary">{data.item.raw_prompt}</pre>
 				</div>
 			{/if}
 		</div>
