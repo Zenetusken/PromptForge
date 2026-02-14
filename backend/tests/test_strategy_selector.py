@@ -4,6 +4,7 @@ from app.services.analyzer import AnalysisResult
 from app.services.strategy_selector import (
     TASK_TYPE_STRATEGY_MAP,
     StrategySelector,
+    _STRATEGY_REASON_MAP,
     _build_reasoning,
 )
 
@@ -168,3 +169,12 @@ class TestTaskTypeStrategyMap:
         }
         for strategy in TASK_TYPE_STRATEGY_MAP.values():
             assert strategy in valid_strategies
+
+
+class TestStrategyReasonMap:
+    def test_reason_map_covers_all_strategies(self):
+        valid_strategies = {
+            "chain-of-thought", "few-shot", "role-based",
+            "structured-enhancement", "constraint-focused",
+        }
+        assert set(_STRATEGY_REASON_MAP.keys()) == valid_strategies
