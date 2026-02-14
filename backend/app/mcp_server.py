@@ -99,6 +99,13 @@ async def promptforge_optimize(
         tags: Optional list of tags.
         title: Optional title for the optimization.
     """
+    if not prompt or not prompt.strip():
+        return {"error": "Prompt must not be empty or whitespace-only"}
+    if len(prompt) > 100_000:
+        return {"error": "Prompt must be 100,000 characters or fewer"}
+    if tags:
+        tags = [t[:50] for t in tags]
+
     start_time = time.time()
     optimization_id = str(uuid.uuid4())
 
@@ -347,6 +354,11 @@ async def promptforge_tag(
         project: Set the project name (use empty string to clear).
         title: Set the title (use empty string to clear).
     """
+    if add_tags:
+        add_tags = [t[:50] for t in add_tags]
+    if remove_tags:
+        remove_tags = [t[:50] for t in remove_tags]
+
     async with _repo_session() as (repo, session):
         result = await repo.update_tags(
             optimization_id,

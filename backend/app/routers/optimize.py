@@ -1,6 +1,7 @@
 """Optimization endpoints for running the prompt optimization pipeline."""
 
 import json
+import logging
 import time
 import uuid
 from typing import Any
@@ -21,6 +22,8 @@ from app.models.optimization import Optimization
 from app.repositories.optimization import OptimizationRepository
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
 from app.services.pipeline import PipelineComplete, run_pipeline_streaming
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["optimize"])
 
@@ -61,7 +64,7 @@ def _create_streaming_response(
                 model_fallback=config.CLAUDE_MODEL,
             )
         except Exception:
-            pass  # SSE already delivered; DB write failure is non-fatal
+            logger.warning("DB update failed for optimization %s", opt_id, exc_info=True)
 
     return StreamingResponse(
         event_stream(),

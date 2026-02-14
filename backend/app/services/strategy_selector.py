@@ -39,6 +39,7 @@ _STRATEGY_REASON_MAP: dict[str, str] = {
     "chain-of-thought": "enables step-by-step reasoning.",
     "few-shot": "provides concrete examples for pattern-based tasks.",
     "role-based": "leverages domain-specific expert persona.",
+    "constraint-focused": "addresses identified specificity weaknesses with explicit constraints.",
     "structured-enhancement": "applies general structural improvements.",
 }
 

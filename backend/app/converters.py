@@ -35,6 +35,14 @@ def deserialize_json_field(value: str | None) -> list[str] | None:
     return [str(item) for item in parsed]
 
 
+def _serialize_json_list(value: Any) -> str | None:
+    """Serialize a list to a JSON string, or return None for None values.
+
+    Prevents json.dumps(None) from storing the literal string "null" in the DB.
+    """
+    return json.dumps(value) if value is not None else None
+
+
 def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
     """Extract the common field set from an Optimization ORM object.
 
@@ -145,9 +153,9 @@ def apply_pipeline_result_to_orm(
     opt.optimized_prompt = data.get("optimized_prompt")
     opt.task_type = data.get("task_type")
     opt.complexity = data.get("complexity")
-    opt.weaknesses = json.dumps(data.get("weaknesses"))
-    opt.strengths = json.dumps(data.get("strengths"))
-    opt.changes_made = json.dumps(data.get("changes_made"))
+    opt.weaknesses = _serialize_json_list(data.get("weaknesses"))
+    opt.strengths = _serialize_json_list(data.get("strengths"))
+    opt.changes_made = _serialize_json_list(data.get("changes_made"))
     opt.framework_applied = data.get("framework_applied")
     opt.optimization_notes = data.get("optimization_notes")
     opt.strategy_reasoning = data.get("strategy_reasoning")

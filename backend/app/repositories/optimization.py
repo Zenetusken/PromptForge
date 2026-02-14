@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +16,8 @@ from app.constants import ALLOWED_SORT_FIELDS, OptimizationStatus
 from app.converters import deserialize_json_field
 from app.models.optimization import Optimization
 from app.utils.scores import round_score, score_threshold_to_db
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -113,6 +116,7 @@ class OptimizationRepository:
         """Apply sorting and pagination to a query."""
         sort_field = pagination.sort
         if sort_field not in ALLOWED_SORT_FIELDS:
+            logger.debug("Invalid sort field %r, defaulting to created_at", sort_field)
             sort_field = "created_at"
         sort_column = getattr(Optimization, sort_field, Optimization.created_at)
 

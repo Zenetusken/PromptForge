@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field, field_validator
 class OptimizeRequest(BaseModel):
     """Request body for the optimize endpoint."""
 
-    prompt: str = Field(..., min_length=1, description="The raw prompt to optimize")
+    prompt: str = Field(
+        ..., min_length=1, max_length=100_000, description="The raw prompt to optimize",
+    )
     project: str | None = Field(
         None, max_length=100, description="Optional project name",
     )
@@ -77,6 +79,7 @@ class HistorySummaryResponse(BaseModel):
     raw_prompt: str
     title: str | None = None
     task_type: str | None = None
+    complexity: str | None = None
     project: str | None = None
     tags: list[str] | None = None
     overall_score: float | None = None
