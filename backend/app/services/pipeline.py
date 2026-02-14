@@ -22,6 +22,13 @@ from app.services.validator import PromptValidator, ValidationResult
 
 
 @dataclass
+class StageResult:
+    """Typed sentinel yielded by streaming helpers to pass stage results."""
+
+    value: object
+
+
+@dataclass
 class PipelineResult:
     """Complete result from running the optimization pipeline."""
 
@@ -120,10 +127,10 @@ async def _run_with_progress_stream(
     coro,
     stage: StageConfig,
     fmt: dict[str, str] | None = None,
-) -> AsyncIterator[str | tuple[str, object]]:
+) -> AsyncIterator[str | StageResult]:
     """Run a coroutine while yielding periodic progress events.
 
-    Yields SSE progress event strings, then a ('_result', result) sentinel.
+    Yields SSE progress event strings, then a StageResult sentinel.
     """
     task = asyncio.create_task(coro)
     msg_index = 0
@@ -146,17 +153,17 @@ async def _run_with_progress_stream(
             break
 
     result = await task
-    yield ("_result", result)
+    yield StageResult(value=result)
 
 
 async def _stream_stage(
     coro,
     stage: StageConfig,
     fmt: dict[str, str] | None = None,
-) -> AsyncIterator[str | tuple[str, object]]:
+) -> AsyncIterator[str | StageResult]:
     """Stream a full pipeline stage: start event, initial progress, run with progress, complete event.
 
-    Yields SSE strings for the stage lifecycle, then a ('_result', result) sentinel
+    Yields SSE strings for the stage lifecycle, then a StageResult sentinel
     so the caller can capture the stage result.
     """
     step_start = time.time()
@@ -178,8 +185,8 @@ async def _stream_stage(
     # Run the coroutine with periodic progress
     result = None
     async for event in _run_with_progress_stream(coro, stage, fmt):
-        if isinstance(event, tuple) and event[0] == "_result":
-            result = event[1]
+        if isinstance(event, StageResult):
+            result = event.value
         else:
             yield event
 
@@ -189,7 +196,7 @@ async def _stream_stage(
     result_dict["step_duration_ms"] = step_duration
     yield _sse_event(stage.event_name, result_dict)
 
-    yield ("_result", result)
+    yield StageResult(value=result)
 
 
 # ---------------------------------------------------------------------------
@@ -219,8 +226,8 @@ async def run_pipeline_streaming(
     analyzer = PromptAnalyzer(client)
     analysis = None
     async for event in _stream_stage(analyzer.analyze(raw_prompt), STAGE_ANALYZE):
-        if isinstance(event, tuple) and event[0] == "_result":
-            analysis = event[1]
+        if isinstance(event, StageResult):
+            analysis = event.value
         else:
             yield event
 
@@ -237,8 +244,8 @@ async def run_pipeline_streaming(
         STAGE_OPTIMIZE,
         fmt,
     ):
-        if isinstance(event, tuple) and event[0] == "_result":
-            optimization = event[1]
+        if isinstance(event, StageResult):
+            optimization = event.value
         else:
             yield event
 
@@ -249,8 +256,8 @@ async def run_pipeline_streaming(
         validator.validate(raw_prompt, optimization.optimized_prompt),
         STAGE_VALIDATE,
     ):
-        if isinstance(event, tuple) and event[0] == "_result":
-            validation = event[1]
+        if isinstance(event, StageResult):
+            validation = event.value
         else:
             yield event
 
