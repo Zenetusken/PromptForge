@@ -2,9 +2,9 @@
 
 from app.services.analyzer import AnalysisResult
 from app.services.strategy_selector import (
+    _STRATEGY_REASON_MAP,
     TASK_TYPE_STRATEGY_MAP,
     StrategySelector,
-    _STRATEGY_REASON_MAP,
     _build_reasoning,
 )
 

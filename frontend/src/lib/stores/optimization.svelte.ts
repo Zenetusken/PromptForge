@@ -189,7 +189,7 @@ class OptimizationState {
 				break;
 
 			case 'step_progress': {
-				const content = (event.data?.content as string) || '';
+				const content = safeString(event.data?.content);
 				this.updateStep(event.step || '', (s) => ({
 					streamingContent: s.streamingContent ? s.streamingContent + '\n' + content : content
 				}));
@@ -197,7 +197,7 @@ class OptimizationState {
 			}
 
 			case 'step_complete': {
-				const stepDurationMs = (event.data?.step_duration_ms as number) || 0;
+				const stepDurationMs = safeNumber(event.data?.step_duration_ms);
 				this.updateStep(event.step || '', (s) => {
 					const durationMs = stepDurationMs || (s.startTime ? Date.now() - s.startTime : 0);
 					return { status: 'complete' as const, data: event.data, durationMs, streamingContent: undefined };
