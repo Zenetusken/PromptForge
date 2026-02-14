@@ -32,6 +32,44 @@ def _get_sdk_env() -> dict[str, str]:
     }
 
 
+def _extract_first_json_object(text: str) -> str | None:
+    """Extract the first balanced JSON object from *text*.
+
+    Counts brace depth while skipping characters inside JSON string literals,
+    so embedded braces in string values don't break extraction.  Returns None
+    if no balanced object is found.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escape = False
+
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            if in_string:
+                escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
 # Isolated working directory so the SDK subprocess doesn't pick up
 # project-level CLAUDE.md, agent_scratchpad, or codebase context that
 # cause the model to respond as a coding agent instead of returning JSON.
@@ -131,11 +169,11 @@ class ClaudeClient:
             except json.JSONDecodeError:
                 pass
 
-        # Strategy 4: Find first JSON object in text
-        brace_match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if brace_match:
+        # Strategy 4: Find first balanced JSON object via brace counting
+        json_obj = _extract_first_json_object(cleaned)
+        if json_obj is not None:
             try:
-                return json.loads(brace_match.group(0))
+                return json.loads(json_obj)
             except json.JSONDecodeError:
                 pass
 
