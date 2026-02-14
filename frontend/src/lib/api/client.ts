@@ -2,29 +2,6 @@ const BASE_URL = import.meta.env.VITE_API_URL
 	? `${import.meta.env.VITE_API_URL}/api`
 	: '/api';
 
-export interface OptimizationResult {
-	id: string;
-	optimized_prompt: string;
-	raw_prompt: string;
-	task_type: string;
-	complexity: string;
-	weaknesses: string[];
-	strengths: string[];
-	changes_made: string[];
-	framework_applied: string;
-	optimization_notes: string;
-	clarity_score: number;
-	specificity_score: number;
-	structure_score: number;
-	faithfulness_score: number;
-	overall_score: number;
-	is_improvement: boolean;
-	verdict: string;
-	duration_ms: number;
-	model_used: string;
-	status: string;
-}
-
 export interface HistoryItem {
 	id: string;
 	created_at: string;
@@ -37,6 +14,7 @@ export interface HistoryItem {
 	changes_made: string[] | null;
 	framework_applied: string | null;
 	optimization_notes: string | null;
+	strategy_reasoning: string | null;
 	clarity_score: number | null;
 	specificity_score: number | null;
 	structure_score: number | null;
@@ -53,8 +31,21 @@ export interface HistoryItem {
 	title: string | null;
 }
 
+export interface HistorySummaryItem {
+	id: string;
+	created_at: string;
+	raw_prompt: string;
+	title: string | null;
+	task_type: string | null;
+	project: string | null;
+	tags: string[] | null;
+	overall_score: number | null;
+	status: string;
+	error_message: string | null;
+}
+
 export interface HistoryResponse {
-	items: HistoryItem[];
+	items: HistorySummaryItem[];
 	total: number;
 	page: number;
 	per_page: number;
@@ -262,15 +253,17 @@ export function fetchRetry(
 async function apiFetch<T>(
 	url: string,
 	fallback: T,
-	options?: RequestInit & { fetchFn?: typeof fetch }
+	options?: RequestInit & { fetchFn?: typeof fetch; signal?: AbortSignal }
 ): Promise<T> {
 	try {
 		const fetchFn = options?.fetchFn ?? fetch;
-		const { fetchFn: _, ...init } = options ?? {};
-		const response = await fetchFn(url, init);
+		const { fetchFn: _, signal, ...init } = options ?? {};
+		const response = await fetchFn(url, { ...init, signal });
 		if (!response.ok) return fallback;
 		return await response.json();
-	} catch {
+	} catch (err) {
+		if (err instanceof DOMException && err.name === 'AbortError') return fallback;
+		console.warn('[PromptForge] API request failed:', url, err);
 		return fallback;
 	}
 }
@@ -279,7 +272,9 @@ async function apiFetchOk(url: string, options?: RequestInit): Promise<boolean> 
 	try {
 		const response = await fetch(url, options);
 		return response.ok;
-	} catch {
+	} catch (err) {
+		if (err instanceof DOMException && err.name === 'AbortError') return false;
+		console.warn('[PromptForge] API request failed:', url, err);
 		return false;
 	}
 }
@@ -300,6 +295,7 @@ export async function fetchHistory(
 		order?: string;
 		task_type?: string;
 		project?: string;
+		signal?: AbortSignal;
 	}
 ): Promise<HistoryResponse> {
 	const searchParams = new URLSearchParams();
@@ -312,7 +308,7 @@ export async function fetchHistory(
 	if (params?.project) searchParams.set('project', params.project);
 
 	const qs = searchParams.toString();
-	return apiFetch(`${BASE_URL}/history${qs ? '?' + qs : ''}`, { items: [], total: 0, page: 1, per_page: 20 });
+	return apiFetch(`${BASE_URL}/history${qs ? '?' + qs : ''}`, { items: [], total: 0, page: 1, per_page: 20 }, { signal: params?.signal });
 }
 
 /**
