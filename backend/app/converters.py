@@ -76,37 +76,33 @@ def optimization_to_dict(opt: Optimization) -> dict:
     return fields
 
 
+_SUMMARY_FIELDS = frozenset({
+    "id", "raw_prompt", "task_type", "complexity", "overall_score",
+    "status", "error_message", "project", "tags", "title",
+})
+
+
+def _extract_summary_fields(opt: Optimization) -> dict:
+    """Extract the lightweight summary field set from _extract_optimization_fields."""
+    return {k: v for k, v in _extract_optimization_fields(opt).items() if k in _SUMMARY_FIELDS}
+
+
 def optimization_to_summary_response(opt: Optimization) -> HistorySummaryResponse:
     """Convert an Optimization ORM object to a lightweight HistorySummaryResponse."""
-    return HistorySummaryResponse(
-        id=opt.id,
-        created_at=opt.created_at,
-        raw_prompt=opt.raw_prompt,
-        title=opt.title,
-        task_type=opt.task_type,
-        project=opt.project,
-        tags=deserialize_json_field(opt.tags),
-        overall_score=opt.overall_score,
-        status=opt.status,
-        error_message=opt.error_message,
-    )
+    fields = _extract_summary_fields(opt)
+    fields["created_at"] = opt.created_at
+    return HistorySummaryResponse(**fields)
 
 
 def optimization_to_summary(opt: Optimization) -> dict:
-    """Convert an Optimization ORM object to a summary dict (for list views)."""
+    """Convert an Optimization ORM object to a summary dict (for MCP list views)."""
+    fields = _extract_summary_fields(opt)
+    fields["created_at"] = opt.created_at.isoformat() if opt.created_at else None
+    fields["overall_score"] = score_to_display(fields.get("overall_score"))
     raw = opt.raw_prompt or ""
-    return {
-        "id": opt.id,
-        "created_at": opt.created_at.isoformat() if opt.created_at else None,
-        "raw_prompt_preview": raw[:100] + ("..." if len(raw) > 100 else ""),
-        "task_type": opt.task_type,
-        "complexity": opt.complexity,
-        "overall_score": score_to_display(opt.overall_score),
-        "status": opt.status,
-        "project": opt.project,
-        "tags": deserialize_json_field(opt.tags),
-        "title": opt.title,
-    }
+    fields["raw_prompt_preview"] = raw[:100] + ("..." if len(raw) > 100 else "")
+    del fields["raw_prompt"]
+    return fields
 
 
 _SCORE_FIELDS = ("clarity_score", "specificity_score", "structure_score", "faithfulness_score", "overall_score")
