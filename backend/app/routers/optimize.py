@@ -4,7 +4,7 @@ import json
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +15,7 @@ from app.database import get_db
 from app.models.optimization import Optimization
 from app.repositories.optimization import OptimizationRepository
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
-from app.services.pipeline import run_pipeline_streaming
+from app.services.pipeline import PipelineComplete, run_pipeline_streaming
 
 router = APIRouter(tags=["optimize"])
 
@@ -37,13 +37,9 @@ def _create_streaming_response(
         final_data = {}
         try:
             async for event in run_pipeline_streaming(raw_prompt, complete_metadata=complete_metadata):
-                # Capture complete event data for DB persistence
-                if event.startswith("event: complete"):
-                    lines = event.split("\n")
-                    for line in lines:
-                        if line.startswith("data: "):
-                            final_data = json.loads(line[6:])
-                            break
+                if isinstance(event, PipelineComplete):
+                    final_data = event.data
+                    continue
                 yield event
         except Exception as e:
             error_data = {"status": OptimizationStatus.ERROR, "error": str(e)}
@@ -106,6 +102,7 @@ async def optimize_prompt(
 @router.get("/api/optimize/{optimization_id}", response_model=OptimizationResponse)
 async def get_optimization(
     optimization_id: str,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve a single optimization by its ID."""
@@ -115,6 +112,7 @@ async def get_optimization(
     if not optimization:
         raise HTTPException(status_code=404, detail="Optimization not found")
 
+    response.headers["Cache-Control"] = "max-age=3600, immutable"
     return optimization_to_response(optimization)
 
 

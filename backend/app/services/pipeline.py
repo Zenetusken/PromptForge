@@ -29,6 +29,13 @@ class StageResult:
 
 
 @dataclass
+class PipelineComplete:
+    """Yielded after the final SSE event so callers can capture pipeline data without re-parsing SSE."""
+
+    data: dict
+
+
+@dataclass
 class PipelineResult:
     """Complete result from running the optimization pipeline."""
 
@@ -207,7 +214,7 @@ async def run_pipeline_streaming(
     raw_prompt: str,
     claude_client: ClaudeClient | None = None,
     complete_metadata: dict | None = None,
-) -> AsyncIterator[str]:
+) -> AsyncIterator[str | PipelineComplete]:
     """Run the pipeline and yield SSE events for each stage.
 
     Args:
@@ -217,7 +224,8 @@ async def run_pipeline_streaming(
                            (e.g. id, title, project, tags).
 
     Yields:
-        SSE-formatted strings for each pipeline stage and the final result.
+        SSE-formatted strings for each pipeline stage, then a PipelineComplete
+        with the final result data.
     """
     pipeline_start = time.time()
     client = claude_client or ClaudeClient()
@@ -275,3 +283,4 @@ async def run_pipeline_streaming(
     if complete_metadata:
         complete_data.update(complete_metadata)
     yield _sse_event("complete", complete_data)
+    yield PipelineComplete(data=complete_data)
