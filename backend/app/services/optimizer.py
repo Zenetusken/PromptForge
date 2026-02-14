@@ -25,7 +25,7 @@ class PromptOptimizer:
     with documented changes and reasoning.
     """
 
-    def __init__(self, claude_client: ClaudeClient | None = None):
+    def __init__(self, claude_client: ClaudeClient | None = None) -> None:
         self.claude_client = claude_client or ClaudeClient()
 
     async def optimize(

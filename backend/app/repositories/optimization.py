@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import ColumnElement, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from app.constants import ALLOWED_SORT_FIELDS, OptimizationStatus
 from app.converters import deserialize_json_field
@@ -35,6 +37,10 @@ class Pagination:
     order: str = "desc"
     offset: int = 0
     limit: int = 20
+
+
+_UNSET: Any = object()
+"""Sentinel indicating a keyword argument was not provided."""
 
 
 class OptimizationRepository:
@@ -67,7 +73,7 @@ class OptimizationRepository:
 
     # --- List with filters ---
 
-    def _build_search_filter(self, search_text: str):
+    def _build_search_filter(self, search_text: str) -> ColumnElement[bool]:
         """Build a search filter across text columns."""
         return (
             Optimization.raw_prompt.ilike(f"%{search_text}%")
@@ -77,7 +83,9 @@ class OptimizationRepository:
             | Optimization.project.ilike(f"%{search_text}%")
         )
 
-    def _apply_filters(self, query, count_query, filters: ListFilters):
+    def _apply_filters(
+        self, query: Select, count_query: Select, filters: ListFilters,
+    ) -> tuple[Select, Select]:
         """Apply filter conditions to both the data and count queries."""
         conditions = []
 
@@ -101,7 +109,7 @@ class OptimizationRepository:
 
         return query, count_query
 
-    def _apply_sort_and_paginate(self, query, pagination: Pagination):
+    def _apply_sort_and_paginate(self, query: Select, pagination: Pagination) -> Select:
         """Apply sorting and pagination to a query."""
         sort_field = pagination.sort
         if sort_field not in ALLOWED_SORT_FIELDS:
@@ -160,12 +168,13 @@ class OptimizationRepository:
         optimization_id: str,
         add_tags: list[str] | None = None,
         remove_tags: list[str] | None = None,
-        project: str | None = ...,
-        title: str | None = ...,
-    ) -> dict | None:
+        project: str | None = _UNSET,
+        title: str | None = _UNSET,
+    ) -> dict[str, Any] | None:
         """Update tags and metadata. Returns updated info dict, or None if not found.
 
-        Pass `project=None` or `title=None` to clear; omit (sentinel ...) to skip.
+        Pass ``project=None`` or ``title=None`` to clear the field.
+        Omit the argument entirely to leave it unchanged.
         """
         opt = await self.get_by_id(optimization_id)
         if not opt:
@@ -183,10 +192,10 @@ class OptimizationRepository:
 
         opt.tags = json.dumps(current_tags) if current_tags else None
 
-        if project is not ...:
+        if project is not _UNSET:
             opt.project = project if project else None
 
-        if title is not ...:
+        if title is not _UNSET:
             opt.title = title if title else None
 
         return {
@@ -199,7 +208,7 @@ class OptimizationRepository:
 
     # --- Statistics ---
 
-    async def get_stats(self, project: str | None = None) -> dict:
+    async def get_stats(self, project: str | None = None) -> dict[str, Any]:
         """Get usage statistics in a single aggregation query.
 
         Returns a dict suitable for both the web API (StatsResponse)

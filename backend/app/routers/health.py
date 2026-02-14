@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
@@ -16,7 +17,7 @@ async def _health_response(db: AsyncSession):
     try:
         result = await db.execute(text("SELECT 1"))
         db_connected = result.scalar() == 1
-    except Exception:
+    except SQLAlchemyError:
         db_connected = False
 
     # SDK uses CLI auth (MAX subscription), no API key needed

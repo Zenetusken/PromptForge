@@ -3,6 +3,7 @@
 import json
 import time
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
@@ -28,7 +29,7 @@ def _create_streaming_response(
     opt_id: str,
     raw_prompt: str,
     start_time: float,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> StreamingResponse:
     """Create a StreamingResponse wrapping the pipeline with DB persistence."""
 

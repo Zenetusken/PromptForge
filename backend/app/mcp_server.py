@@ -31,8 +31,22 @@ from app.converters import (
     with_display_scores,
 )
 from app.database import async_session_factory, init_db
-from app.repositories.optimization import ListFilters, OptimizationRepository, Pagination
+from app.repositories.optimization import (
+    _UNSET,
+    ListFilters,
+    OptimizationRepository,
+    Pagination,
+)
 from app.services.pipeline import run_pipeline
+
+# --- Helpers ---
+
+@asynccontextmanager
+async def _repo_session():
+    """Provide an OptimizationRepository bound to a fresh async session."""
+    async with async_session_factory() as session:
+        yield OptimizationRepository(session), session
+
 
 # --- Lifespan ---
 
@@ -76,7 +90,7 @@ async def promptforge_optimize(
     project: str | None = None,
     tags: list[str] | None = None,
     title: str | None = None,
-) -> dict:
+) -> dict[str, object]:
     """Run the full optimization pipeline on a prompt.
 
     Args:
@@ -89,8 +103,7 @@ async def promptforge_optimize(
     optimization_id = str(uuid.uuid4())
 
     # Create initial DB record
-    async with async_session_factory() as session:
-        repo = OptimizationRepository(session)
+    async with _repo_session() as (repo, session):
         await repo.create(
             id=optimization_id,
             raw_prompt=prompt,
@@ -137,14 +150,13 @@ async def promptforge_optimize(
         idempotentHint=True,
     ),
 )
-async def promptforge_get(optimization_id: str) -> dict:
+async def promptforge_get(optimization_id: str) -> dict[str, object]:
     """Get a single optimization by ID.
 
     Args:
         optimization_id: The UUID of the optimization to retrieve.
     """
-    async with async_session_factory() as session:
-        repo = OptimizationRepository(session)
+    async with _repo_session() as (repo, _session):
         opt = await repo.get_by_id(optimization_id)
 
         if not opt:
@@ -177,7 +189,7 @@ async def promptforge_list(
     offset: int = 0,
     sort: str = "created_at",
     order: str = "desc",
-) -> dict:
+) -> dict[str, object]:
     """List optimizations with optional filters.
 
     Args:
@@ -193,8 +205,7 @@ async def promptforge_list(
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
 
-    async with async_session_factory() as session:
-        repo = OptimizationRepository(session)
+    async with _repo_session() as (repo, _session):
         filters = ListFilters(
             project=project,
             task_type=task_type,
@@ -239,7 +250,7 @@ async def promptforge_get_by_project(
     project: str,
     include_prompts: bool = True,
     limit: int = 50,
-) -> dict:
+) -> dict[str, object]:
     """Get all optimizations for a project.
 
     Args:
@@ -247,8 +258,7 @@ async def promptforge_get_by_project(
         include_prompts: Whether to include full prompt text (default True).
         limit: Maximum number of results (default 50).
     """
-    async with async_session_factory() as session:
-        repo = OptimizationRepository(session)
+    async with _repo_session() as (repo, _session):
         filters = ListFilters(project=project, completed_only=True)
         pagination = Pagination(sort="created_at", order="desc", limit=limit)
 
@@ -283,7 +293,7 @@ async def promptforge_get_by_project(
 async def promptforge_search(
     query: str,
     limit: int = 20,
-) -> dict:
+) -> dict[str, object]:
     """Search for optimizations by text.
 
     Args:
@@ -293,8 +303,7 @@ async def promptforge_search(
     if len(query) < 2:
         return {"error": "Search query must be at least 2 characters", "items": [], "total": 0}
 
-    async with async_session_factory() as session:
-        repo = OptimizationRepository(session)
+    async with _repo_session() as (repo, _session):
         filters = ListFilters(search=query)
         pagination = Pagination(sort="created_at", order="desc", limit=limit)
 
@@ -328,7 +337,7 @@ async def promptforge_tag(
     remove_tags: list[str] | None = None,
     project: str | None = None,
     title: str | None = None,
-) -> dict:
+) -> dict[str, object]:
     """Update tags and metadata on an optimization.
 
     Args:
@@ -338,14 +347,13 @@ async def promptforge_tag(
         project: Set the project name (use empty string to clear).
         title: Set the title (use empty string to clear).
     """
-    async with async_session_factory() as session:
-        repo = OptimizationRepository(session)
+    async with _repo_session() as (repo, session):
         result = await repo.update_tags(
             optimization_id,
             add_tags=add_tags,
             remove_tags=remove_tags,
-            project=project if project is not None else ...,
-            title=title if title is not None else ...,
+            project=project if project is not None else _UNSET,
+            title=title if title is not None else _UNSET,
         )
 
         if result is None:
@@ -370,14 +378,13 @@ async def promptforge_tag(
         idempotentHint=True,
     ),
 )
-async def promptforge_stats(project: str | None = None) -> dict:
+async def promptforge_stats(project: str | None = None) -> dict[str, object]:
     """Get usage statistics.
 
     Args:
         project: Optional project name to scope statistics to.
     """
-    async with async_session_factory() as session:
-        repo = OptimizationRepository(session)
+    async with _repo_session() as (repo, _session):
         return await repo.get_stats(project=project)
 
 
@@ -395,14 +402,13 @@ async def promptforge_stats(project: str | None = None) -> dict:
         idempotentHint=True,
     ),
 )
-async def promptforge_delete(optimization_id: str) -> dict:
+async def promptforge_delete(optimization_id: str) -> dict[str, object]:
     """Delete an optimization by ID.
 
     Args:
         optimization_id: The UUID of the optimization to delete.
     """
-    async with async_session_factory() as session:
-        repo = OptimizationRepository(session)
+    async with _repo_session() as (repo, session):
         deleted = await repo.delete_by_id(optimization_id)
 
         if not deleted:

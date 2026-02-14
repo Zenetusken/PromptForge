@@ -3,8 +3,10 @@
 import json
 import logging
 import time
+from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import OptimizationStatus
@@ -17,16 +19,23 @@ logger = logging.getLogger(__name__)
 
 
 def deserialize_json_field(value: str | None) -> list[str] | None:
-    """Deserialize a JSON string field to a list, or return None."""
+    """Deserialize a JSON string field to a list of strings, or return None.
+
+    Returns None if the value is not valid JSON or not a list.
+    Non-string items within the list are coerced to strings.
+    """
     if value is None:
         return None
     try:
-        return json.loads(value)
+        parsed = json.loads(value)
     except (json.JSONDecodeError, TypeError):
         return None
+    if not isinstance(parsed, list):
+        return None
+    return [str(item) for item in parsed]
 
 
-def _extract_optimization_fields(opt: Optimization) -> dict:
+def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
     """Extract the common field set from an Optimization ORM object.
 
     Returns a dict with all shared fields (JSON list fields already deserialized).
@@ -69,7 +78,7 @@ def optimization_to_response(opt: Optimization) -> OptimizationResponse:
     return OptimizationResponse(**fields)
 
 
-def optimization_to_dict(opt: Optimization) -> dict:
+def optimization_to_dict(opt: Optimization) -> dict[str, Any]:
     """Convert an Optimization ORM object to a serializable dict."""
     fields = _extract_optimization_fields(opt)
     fields["created_at"] = opt.created_at.isoformat() if opt.created_at else None
@@ -82,7 +91,7 @@ _SUMMARY_FIELDS = frozenset({
 })
 
 
-def _extract_summary_fields(opt: Optimization) -> dict:
+def _extract_summary_fields(opt: Optimization) -> dict[str, Any]:
     """Extract the lightweight summary field set from _extract_optimization_fields."""
     return {k: v for k, v in _extract_optimization_fields(opt).items() if k in _SUMMARY_FIELDS}
 
@@ -94,7 +103,7 @@ def optimization_to_summary_response(opt: Optimization) -> HistorySummaryRespons
     return HistorySummaryResponse(**fields)
 
 
-def optimization_to_summary(opt: Optimization) -> dict:
+def optimization_to_summary(opt: Optimization) -> dict[str, Any]:
     """Convert an Optimization ORM object to a summary dict (for MCP list views)."""
     fields = _extract_summary_fields(opt)
     fields["created_at"] = opt.created_at.isoformat() if opt.created_at else None
@@ -111,7 +120,7 @@ _SCORE_FIELDS = (
 )
 
 
-def with_display_scores(fields: dict) -> dict:
+def with_display_scores(fields: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of *fields* with score values converted to 1-10 integers.
 
     Used by MCP-facing converters so all MCP tools return scores on the same
@@ -125,7 +134,7 @@ def with_display_scores(fields: dict) -> dict:
 
 
 def apply_pipeline_result_to_orm(
-    opt: Optimization, data: dict, elapsed_ms: int
+    opt: Optimization, data: dict[str, Any], elapsed_ms: int
 ) -> None:
     """Apply pipeline result data to an ORM Optimization object.
 
@@ -156,7 +165,7 @@ def apply_pipeline_result_to_orm(
 async def update_optimization_status(
     optimization_id: str,
     *,
-    result_data: dict | None = None,
+    result_data: dict[str, Any] | None = None,
     start_time: float | None = None,
     error: str | None = None,
     model_fallback: str | None = None,
@@ -198,6 +207,6 @@ async def update_optimization_status(
             try:
                 await _do_update(new_session)
                 await new_session.commit()
-            except Exception as e:
+            except SQLAlchemyError as e:
                 await new_session.rollback()
                 logger.error("Error updating optimization %s: %s", optimization_id, e)

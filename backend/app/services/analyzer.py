@@ -22,7 +22,7 @@ class PromptAnalyzer:
     Uses Claude to perform deep analysis of prompt structure, intent, and quality.
     """
 
-    def __init__(self, claude_client: ClaudeClient | None = None):
+    def __init__(self, claude_client: ClaudeClient | None = None) -> None:
         self.claude_client = claude_client or ClaudeClient()
 
     async def analyze(self, raw_prompt: str) -> AnalysisResult:

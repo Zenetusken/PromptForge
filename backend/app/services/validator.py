@@ -27,7 +27,7 @@ class PromptValidator:
     whether it is a genuine improvement over the original.
     """
 
-    def __init__(self, claude_client: ClaudeClient | None = None):
+    def __init__(self, claude_client: ClaudeClient | None = None) -> None:
         self.claude_client = claude_client or ClaudeClient()
 
     async def validate(
