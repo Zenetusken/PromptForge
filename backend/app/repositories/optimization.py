@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import ALLOWED_SORT_FIELDS, OptimizationStatus
 from app.converters import deserialize_json_field
 from app.models.optimization import Optimization
-from app.utils.scores import score_threshold_to_db, score_to_display
+from app.utils.scores import score_threshold_to_db
 
 
 @dataclass
@@ -200,80 +200,75 @@ class OptimizationRepository:
     # --- Statistics ---
 
     async def get_stats(self, project: str | None = None) -> dict:
-        """Get usage statistics, optionally scoped to a project."""
-        base_filter = Optimization.status == OptimizationStatus.COMPLETED
-        if project:
-            base_filter = base_filter & (Optimization.project == project)
+        """Get usage statistics in a single aggregation query.
 
-        total_result = await self._session.execute(
-            select(func.count(Optimization.id)).where(base_filter)
-        )
-        total_optimizations = total_result.scalar() or 0
-
-        if total_optimizations == 0:
-            return {
-                "total_optimizations": 0,
-                "avg_overall_score": 0,
-                "projects": {},
-                "task_types": {},
-                "top_frameworks": {},
-                "optimizations_today": 0,
-                "optimizations_this_week": 0,
-            }
-
-        avg_result = await self._session.execute(
-            select(func.avg(Optimization.overall_score)).where(
-                base_filter & Optimization.overall_score.isnot(None)
-            )
-        )
-        avg_raw = avg_result.scalar()
-        avg_overall = score_to_display(avg_raw) if avg_raw is not None else 0
-
-        projects_result = await self._session.execute(
-            select(Optimization.project, func.count(Optimization.id))
-            .where(base_filter & Optimization.project.isnot(None))
-            .group_by(Optimization.project)
-        )
-        projects = {row[0]: row[1] for row in projects_result.all()}
-
-        task_types_result = await self._session.execute(
-            select(Optimization.task_type, func.count(Optimization.id))
-            .where(base_filter & Optimization.task_type.isnot(None))
-            .group_by(Optimization.task_type)
-        )
-        task_types = {row[0]: row[1] for row in task_types_result.all()}
-
-        frameworks_result = await self._session.execute(
-            select(Optimization.framework_applied, func.count(Optimization.id))
-            .where(base_filter & Optimization.framework_applied.isnot(None))
-            .group_by(Optimization.framework_applied)
-        )
-        top_frameworks = {row[0]: row[1] for row in frameworks_result.all()}
+        Returns a dict suitable for both the web API (StatsResponse) and MCP.
+        Optionally scoped to a project.
+        """
+        O = Optimization
 
         today_start = datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        today_result = await self._session.execute(
-            select(func.count(Optimization.id)).where(
-                base_filter & (Optimization.created_at >= today_start)
-            )
-        )
-        optimizations_today = today_result.scalar() or 0
 
-        week_start = datetime.now(timezone.utc) - timedelta(days=7)
-        week_result = await self._session.execute(
-            select(func.count(Optimization.id)).where(
-                base_filter & (Optimization.created_at >= week_start)
-            )
+        most_common_subq = (
+            select(O.task_type)
+            .where(O.task_type.isnot(None))
+            .group_by(O.task_type)
+            .order_by(desc(func.count(O.id)))
+            .limit(1)
+            .correlate(None)
+            .scalar_subquery()
         )
-        optimizations_this_week = week_result.scalar() or 0
+
+        base_query = select(
+            func.count(O.id).label("total"),
+            func.avg(O.overall_score).label("avg_overall"),
+            func.avg(O.clarity_score).label("avg_clarity"),
+            func.avg(O.specificity_score).label("avg_specificity"),
+            func.avg(O.structure_score).label("avg_structure"),
+            func.avg(O.faithfulness_score).label("avg_faithfulness"),
+            func.count(O.id).filter(O.is_improvement == True).label("improved"),
+            func.count(O.id).filter(O.is_improvement.isnot(None)).label("validated"),
+            func.count(func.distinct(O.project)).filter(O.project.isnot(None)).label("projects"),
+            func.count(O.id).filter(O.created_at >= today_start).label("today"),
+            most_common_subq.label("most_common_task"),
+        )
+
+        if project:
+            base_query = base_query.where(
+                (O.status == OptimizationStatus.COMPLETED) & (O.project == project)
+            )
+
+        result = await self._session.execute(base_query)
+        row = result.one()
+
+        total = row.total or 0
+        if total == 0:
+            return {
+                "total_optimizations": 0,
+                "average_overall_score": None,
+                "average_clarity_score": None,
+                "average_specificity_score": None,
+                "average_structure_score": None,
+                "average_faithfulness_score": None,
+                "improvement_rate": None,
+                "total_projects": 0,
+                "most_common_task_type": None,
+                "optimizations_today": 0,
+            }
+
+        improvement_rate = (row.improved / row.validated) if row.validated else None
 
         return {
-            "total_optimizations": total_optimizations,
-            "avg_overall_score": avg_overall,
-            "projects": projects,
-            "task_types": task_types,
-            "top_frameworks": top_frameworks,
-            "optimizations_today": optimizations_today,
-            "optimizations_this_week": optimizations_this_week,
+            "total_optimizations": total,
+            "average_overall_score": round(row.avg_overall, 4) if row.avg_overall is not None else None,
+            "average_clarity_score": round(row.avg_clarity, 4) if row.avg_clarity is not None else None,
+            "average_specificity_score": round(row.avg_specificity, 4) if row.avg_specificity is not None else None,
+            "average_structure_score": round(row.avg_structure, 4) if row.avg_structure is not None else None,
+            "average_faithfulness_score": round(row.avg_faithfulness, 4) if row.avg_faithfulness is not None else None,
+            "improvement_rate": round(improvement_rate, 4) if improvement_rate is not None else None,
+            "total_projects": row.projects or 0,
+            "most_common_task_type": row.most_common_task,
+            "optimizations_today": row.today or 0,
         }

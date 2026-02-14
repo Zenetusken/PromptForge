@@ -1,18 +1,14 @@
 """History endpoints for browsing and managing past optimizations."""
 
-from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.converters import optimization_to_summary_response
 from app.database import get_db
-from app.models.optimization import Optimization
 from app.repositories.optimization import ListFilters, OptimizationRepository, Pagination
 from app.schemas.optimization import HistoryResponse, StatsResponse
-from app.utils.scores import round_score
 
 router = APIRouter(tags=["history"])
 
@@ -96,61 +92,8 @@ async def get_stats(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Retrieve aggregated statistics across all optimizations.
-
-    Returns averages for all scores, improvement rate, total counts,
-    and the most common task type — all in a single query.
-    """
-    today_start = datetime.now(timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-
-    O = Optimization
-
-    # Scalar subquery for most common task type, merged into the main aggregation
-    most_common_subq = (
-        select(O.task_type)
-        .where(O.task_type.isnot(None))
-        .group_by(O.task_type)
-        .order_by(desc(func.count(O.id)))
-        .limit(1)
-        .correlate(None)
-        .scalar_subquery()
-    )
-
-    agg_result = await db.execute(
-        select(
-            func.count(O.id).label("total"),
-            func.avg(O.overall_score).label("avg_overall"),
-            func.avg(O.clarity_score).label("avg_clarity"),
-            func.avg(O.specificity_score).label("avg_specificity"),
-            func.avg(O.structure_score).label("avg_structure"),
-            func.avg(O.faithfulness_score).label("avg_faithfulness"),
-            func.count(O.id).filter(O.is_improvement == True).label("improved"),
-            func.count(O.id).filter(O.is_improvement.isnot(None)).label("validated"),
-            func.count(func.distinct(O.project)).filter(O.project.isnot(None)).label("projects"),
-            func.count(O.id).filter(O.created_at >= today_start).label("today"),
-            most_common_subq.label("most_common_task"),
-        )
-    )
-    row = agg_result.one()
-
+    """Retrieve aggregated statistics across all optimizations."""
+    repo = OptimizationRepository(db)
+    stats = await repo.get_stats()
     response.headers["Cache-Control"] = "max-age=30"
-
-    if not row.total:
-        return StatsResponse()
-
-    improvement_rate = (row.improved / row.validated) if row.validated else None
-
-    return StatsResponse(
-        total_optimizations=row.total,
-        average_overall_score=round_score(row.avg_overall),
-        average_clarity_score=round_score(row.avg_clarity),
-        average_specificity_score=round_score(row.avg_specificity),
-        average_structure_score=round_score(row.avg_structure),
-        average_faithfulness_score=round_score(row.avg_faithfulness),
-        improvement_rate=round(improvement_rate, 4) if improvement_rate is not None else None,
-        total_projects=row.projects or 0,
-        most_common_task_type=row.most_common_task,
-        optimizations_today=row.today or 0,
-    )
+    return StatsResponse(**stats)
