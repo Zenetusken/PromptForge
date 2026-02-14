@@ -79,32 +79,25 @@ class OptimizationRepository:
 
     def _apply_filters(self, query, count_query, filters: ListFilters):
         """Apply filter conditions to both the data and count queries."""
+        conditions = []
+
         if filters.completed_only:
-            cond = Optimization.status == OptimizationStatus.COMPLETED
-            query = query.where(cond)
-            count_query = count_query.where(cond)
-
+            conditions.append(Optimization.status == OptimizationStatus.COMPLETED)
         if filters.project:
-            query = query.where(Optimization.project == filters.project)
-            count_query = count_query.where(Optimization.project == filters.project)
-
+            conditions.append(Optimization.project == filters.project)
         if filters.task_type:
-            query = query.where(Optimization.task_type == filters.task_type)
-            count_query = count_query.where(Optimization.task_type == filters.task_type)
-
+            conditions.append(Optimization.task_type == filters.task_type)
         if filters.status:
-            query = query.where(Optimization.status == filters.status)
-            count_query = count_query.where(Optimization.status == filters.status)
-
+            conditions.append(Optimization.status == filters.status)
         if filters.min_score is not None:
             threshold = score_threshold_to_db(filters.min_score)
-            query = query.where(Optimization.overall_score >= threshold)
-            count_query = count_query.where(Optimization.overall_score >= threshold)
-
+            conditions.append(Optimization.overall_score >= threshold)
         if filters.search:
-            sf = self._build_search_filter(filters.search)
-            query = query.where(sf)
-            count_query = count_query.where(sf)
+            conditions.append(self._build_search_filter(filters.search))
+
+        for cond in conditions:
+            query = query.where(cond)
+            count_query = count_query.where(cond)
 
         return query, count_query
 
