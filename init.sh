@@ -39,6 +39,15 @@ fi
 PYTHON_VERSION=$(python3 --version | awk '{print $2}')
 NODE_VERSION=$(node --version)
 success "Python $PYTHON_VERSION detected"
+
+# Enforce minimum Python version 3.14
+PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 14 ]; }; then
+    error "Python >= 3.14 is required (found $PYTHON_VERSION)"
+    exit 1
+fi
+
 success "Node.js $NODE_VERSION detected"
 
 # ─── 2. Create Data Directory ──────────────────────────────────────
