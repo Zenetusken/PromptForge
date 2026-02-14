@@ -3,11 +3,11 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.converters import optimization_to_response
+from app.converters import optimization_to_summary_response
 from app.database import get_db
 from app.models.optimization import Optimization
 from app.repositories.optimization import ListFilters, OptimizationRepository, Pagination
@@ -19,6 +19,7 @@ router = APIRouter(tags=["history"])
 
 @router.api_route("/api/history", methods=["GET", "HEAD"], response_model=HistoryResponse)
 async def get_history(
+    response: Response,
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     search: str | None = Query(None, description="Search in prompt text and title"),
@@ -49,9 +50,10 @@ async def get_history(
     pagination = Pagination(sort=sort, order=order, offset=offset, limit=per_page)
 
     items, total = await repo.list(filters=filters, pagination=pagination)
+    response.headers["Cache-Control"] = "max-age=0, must-revalidate"
 
     return HistoryResponse(
-        items=[optimization_to_response(opt) for opt in items],
+        items=[optimization_to_summary_response(opt) for opt in items],
         total=total,
         page=page,
         per_page=per_page,
@@ -91,101 +93,64 @@ async def delete_optimization(
 
 @router.api_route("/api/history/stats", methods=["GET", "HEAD"], response_model=StatsResponse)
 async def get_stats(
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve aggregated statistics across all optimizations.
 
     Returns averages for all scores, improvement rate, total counts,
-    and the most common task type.
+    and the most common task type — all in a single query.
     """
-    # Total optimizations
-    total_result = await db.execute(select(func.count(Optimization.id)))
-    total_optimizations = total_result.scalar() or 0
-
-    if total_optimizations == 0:
-        return StatsResponse()
-
-    # Average scores
-    avg_overall = await db.execute(
-        select(func.avg(Optimization.overall_score)).where(
-            Optimization.overall_score.isnot(None)
-        )
-    )
-    avg_clarity = await db.execute(
-        select(func.avg(Optimization.clarity_score)).where(
-            Optimization.clarity_score.isnot(None)
-        )
-    )
-    avg_specificity = await db.execute(
-        select(func.avg(Optimization.specificity_score)).where(
-            Optimization.specificity_score.isnot(None)
-        )
-    )
-    avg_structure = await db.execute(
-        select(func.avg(Optimization.structure_score)).where(
-            Optimization.structure_score.isnot(None)
-        )
-    )
-    avg_faithfulness = await db.execute(
-        select(func.avg(Optimization.faithfulness_score)).where(
-            Optimization.faithfulness_score.isnot(None)
-        )
-    )
-
-    # Improvement rate
-    improved_count_result = await db.execute(
-        select(func.count(Optimization.id)).where(Optimization.is_improvement == True)
-    )
-    validated_count_result = await db.execute(
-        select(func.count(Optimization.id)).where(
-            Optimization.is_improvement.isnot(None)
-        )
-    )
-    improved_count = improved_count_result.scalar() or 0
-    validated_count = validated_count_result.scalar() or 0
-    improvement_rate = (
-        (improved_count / validated_count) if validated_count > 0 else None
-    )
-
-    # Total distinct projects
-    projects_result = await db.execute(
-        select(func.count(func.distinct(Optimization.project))).where(
-            Optimization.project.isnot(None)
-        )
-    )
-    total_projects = projects_result.scalar() or 0
-
-    # Most common task type
-    task_type_result = await db.execute(
-        select(Optimization.task_type, func.count(Optimization.id).label("cnt"))
-        .where(Optimization.task_type.isnot(None))
-        .group_by(Optimization.task_type)
-        .order_by(desc("cnt"))
-        .limit(1)
-    )
-    most_common_row = task_type_result.first()
-    most_common_task_type = most_common_row[0] if most_common_row else None
-
-    # Optimizations today
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    today_result = await db.execute(
-        select(func.count(Optimization.id)).where(
-            Optimization.created_at >= today_start
+
+    O = Optimization
+
+    # Scalar subquery for most common task type, merged into the main aggregation
+    most_common_subq = (
+        select(O.task_type)
+        .where(O.task_type.isnot(None))
+        .group_by(O.task_type)
+        .order_by(desc(func.count(O.id)))
+        .limit(1)
+        .correlate(None)
+        .scalar_subquery()
+    )
+
+    agg_result = await db.execute(
+        select(
+            func.count(O.id).label("total"),
+            func.avg(O.overall_score).label("avg_overall"),
+            func.avg(O.clarity_score).label("avg_clarity"),
+            func.avg(O.specificity_score).label("avg_specificity"),
+            func.avg(O.structure_score).label("avg_structure"),
+            func.avg(O.faithfulness_score).label("avg_faithfulness"),
+            func.count(O.id).filter(O.is_improvement == True).label("improved"),
+            func.count(O.id).filter(O.is_improvement.isnot(None)).label("validated"),
+            func.count(func.distinct(O.project)).filter(O.project.isnot(None)).label("projects"),
+            func.count(O.id).filter(O.created_at >= today_start).label("today"),
+            most_common_subq.label("most_common_task"),
         )
     )
-    optimizations_today = today_result.scalar() or 0
+    row = agg_result.one()
+
+    response.headers["Cache-Control"] = "max-age=30"
+
+    if not row.total:
+        return StatsResponse()
+
+    improvement_rate = (row.improved / row.validated) if row.validated else None
 
     return StatsResponse(
-        total_optimizations=total_optimizations,
-        average_overall_score=round_score(avg_overall.scalar()),
-        average_clarity_score=round_score(avg_clarity.scalar()),
-        average_specificity_score=round_score(avg_specificity.scalar()),
-        average_structure_score=round_score(avg_structure.scalar()),
-        average_faithfulness_score=round_score(avg_faithfulness.scalar()),
+        total_optimizations=row.total,
+        average_overall_score=round_score(row.avg_overall),
+        average_clarity_score=round_score(row.avg_clarity),
+        average_specificity_score=round_score(row.avg_specificity),
+        average_structure_score=round_score(row.avg_structure),
+        average_faithfulness_score=round_score(row.avg_faithfulness),
         improvement_rate=round(improvement_rate, 4) if improvement_rate is not None else None,
-        total_projects=total_projects,
-        most_common_task_type=most_common_task_type,
-        optimizations_today=optimizations_today,
+        total_projects=row.projects or 0,
+        most_common_task_type=row.most_common_task,
+        optimizations_today=row.today or 0,
     )
