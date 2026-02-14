@@ -159,7 +159,7 @@ async def _run_with_progress_stream(
                     "progress": compute_progress(msg_index),
                 })
                 msg_index += 1
-        except Exception:
+        except asyncio.CancelledError:
             break
 
     result = await task

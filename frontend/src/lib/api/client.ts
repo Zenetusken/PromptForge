@@ -204,7 +204,7 @@ function openSSEStream(
 			}
 		})
 		.catch((err) => {
-			if (err.name !== 'AbortError') {
+			if (!(err instanceof DOMException && err.name === 'AbortError')) {
 				onError?.(err);
 			}
 		});

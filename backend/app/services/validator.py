@@ -52,12 +52,19 @@ class PromptValidator:
             system_prompt=VALIDATOR_SYSTEM_PROMPT,
             user_message=user_message,
         )
+        def _clamp_score(key: str) -> float:
+            try:
+                val = float(response.get(key, 0.5))
+            except (TypeError, ValueError):
+                val = 0.5
+            return max(0.0, min(1.0, val))
+
         return ValidationResult(
-            clarity_score=float(response.get("clarity_score", 0.5)),
-            specificity_score=float(response.get("specificity_score", 0.5)),
-            structure_score=float(response.get("structure_score", 0.5)),
-            faithfulness_score=float(response.get("faithfulness_score", 0.5)),
-            overall_score=float(response.get("overall_score", 0.5)),
+            clarity_score=_clamp_score("clarity_score"),
+            specificity_score=_clamp_score("specificity_score"),
+            structure_score=_clamp_score("structure_score"),
+            faithfulness_score=_clamp_score("faithfulness_score"),
+            overall_score=_clamp_score("overall_score"),
             is_improvement=bool(response.get("is_improvement", False)),
             verdict=response.get("verdict", "No verdict available."),
         )

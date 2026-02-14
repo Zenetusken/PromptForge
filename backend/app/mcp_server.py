@@ -190,6 +190,9 @@ async def promptforge_list(
         sort: Field to sort by ('created_at', 'overall_score', 'task_type'). Default 'created_at'.
         order: Sort order ('asc' or 'desc'). Default 'desc'.
     """
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+
     async with async_session_factory() as session:
         repo = OptimizationRepository(session)
         filters = ListFilters(

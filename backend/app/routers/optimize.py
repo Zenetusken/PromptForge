@@ -52,12 +52,15 @@ def _create_streaming_response(
             await update_optimization_status(opt_id, error=str(e))
             return
 
-        await update_optimization_status(
-            opt_id,
-            result_data=final_data,
-            start_time=start_time,
-            model_fallback=config.CLAUDE_MODEL,
-        )
+        try:
+            await update_optimization_status(
+                opt_id,
+                result_data=final_data,
+                start_time=start_time,
+                model_fallback=config.CLAUDE_MODEL,
+            )
+        except Exception:
+            pass  # SSE already delivered; DB write failure is non-fatal
 
     return StreamingResponse(
         event_stream(),

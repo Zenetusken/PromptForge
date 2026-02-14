@@ -57,6 +57,7 @@ class HistoryState {
 			if (e instanceof DOMException && e.name === 'AbortError') return;
 		} finally {
 			this.isLoading = false;
+			this.controller = null;
 		}
 	}
 
