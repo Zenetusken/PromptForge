@@ -9,9 +9,19 @@ class OptimizeRequest(BaseModel):
     """Request body for the optimize endpoint."""
 
     prompt: str = Field(..., min_length=1, description="The raw prompt to optimize")
-    project: str | None = Field(None, description="Optional project name for organization")
+    project: str | None = Field(None, max_length=100, description="Optional project name for organization")
     tags: list[str] | None = Field(None, description="Optional tags for categorization")
-    title: str | None = Field(None, description="Optional title for the optimization")
+    title: str | None = Field(None, max_length=200, description="Optional title for the optimization")
+
+    @field_validator("tags")
+    @classmethod
+    def tag_items_max_length(cls, v: list[str] | None) -> list[str] | None:
+        """Validate that each tag is no longer than 50 characters."""
+        if v is not None:
+            for tag in v:
+                if len(tag) > 50:
+                    raise ValueError(f"Tag must be 50 characters or fewer, got {len(tag)}")
+        return v
 
     @field_validator("prompt")
     @classmethod
@@ -36,6 +46,7 @@ class OptimizationResponse(BaseModel):
     changes_made: list[str] | None = None
     framework_applied: str | None = None
     optimization_notes: str | None = None
+    strategy_reasoning: str | None = None
     clarity_score: float | None = None
     specificity_score: float | None = None
     structure_score: float | None = None
@@ -54,10 +65,27 @@ class OptimizationResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class HistorySummaryResponse(BaseModel):
+    """Lightweight summary for history list views (omits large text fields)."""
+
+    id: str
+    created_at: datetime
+    raw_prompt: str
+    title: str | None = None
+    task_type: str | None = None
+    project: str | None = None
+    tags: list[str] | None = None
+    overall_score: float | None = None
+    status: str = "pending"
+    error_message: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class HistoryResponse(BaseModel):
     """Paginated response for optimization history."""
 
-    items: list[OptimizationResponse]
+    items: list[HistorySummaryResponse]
     total: int
     page: int
     per_page: int
