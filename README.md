@@ -23,7 +23,7 @@ This will:
 1. Install Python and Node.js dependencies
 2. Create the SQLite database
 3. Start the backend on http://localhost:8000
-4. Start the frontend on http://localhost:5173
+4. Start the frontend on http://localhost:5199
 5. Wait for both services to be healthy
 
 ## Development
@@ -35,7 +35,7 @@ source venv/bin/activate
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend (port 5173)
+### Frontend (port 5199)
 ```bash
 cd frontend
 npm run dev

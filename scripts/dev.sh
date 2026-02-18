@@ -40,7 +40,7 @@ sleep 2
 
 # Start frontend (if it exists)
 if [ -d "$PROJECT_DIR/frontend" ] && [ -f "$PROJECT_DIR/frontend/package.json" ]; then
-    echo -e "${GREEN}Starting frontend on http://localhost:5173...${NC}"
+    echo -e "${GREEN}Starting frontend on http://localhost:5199...${NC}"
     cd "$PROJECT_DIR/frontend"
     npm run dev &
     FRONTEND_PID=$!
@@ -52,7 +52,7 @@ fi
 echo -e "${GREEN}PromptForge is running!${NC}"
 echo -e "  Backend API:  http://localhost:8000"
 echo -e "  API Docs:     http://localhost:8000/docs"
-echo -e "  Frontend:     http://localhost:5173"
+echo -e "  Frontend:     http://localhost:5199"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop all servers.${NC}"
 

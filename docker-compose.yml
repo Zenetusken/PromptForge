@@ -12,7 +12,7 @@ services:
       - ./backend/app:/app/app
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///./data/promptforge.db
-      - FRONTEND_URL=http://localhost:5173
+      - FRONTEND_URL=http://localhost:5199
     depends_on: []
 
   frontend:
@@ -20,7 +20,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
+      - "5199:5199"
     environment:
       - VITE_API_URL=http://localhost:8000
     depends_on:

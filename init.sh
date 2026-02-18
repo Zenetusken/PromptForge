@@ -1,216 +1,574 @@
 #!/usr/bin/env bash
 # PromptForge Development Environment Setup
 # This script is idempotent — safe to run multiple times.
+#
+# Usage:
+#   ./init.sh              Setup deps + start services (default)
+#   ./init.sh stop         Stop all running services
+#   ./init.sh restart      Stop then start
+#   ./init.sh status       Show running/stopped state + health details
+#   ./init.sh test         Install test extras, run backend + frontend tests
+#   ./init.sh seed         Populate example optimization data
+#   ./init.sh mcp          Print MCP server config snippet for Claude Code
+#   ./init.sh help         Show this usage message
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Colors for output
+# ─── Colors & Logging ────────────────────────────────────────────
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-log() { echo -e "${CYAN}[PromptForge]${NC} $1"; }
+log()     { echo -e "${CYAN}[PromptForge]${NC} $1"; }
 success() { echo -e "${GREEN}[✓]${NC} $1"; }
-warn() { echo -e "${YELLOW}[!]${NC} $1"; }
-error() { echo -e "${RED}[✗]${NC} $1"; }
+warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
+error()   { echo -e "${RED}[✗]${NC} $1"; }
 
-# ─── 1. Check Prerequisites ────────────────────────────────────────
-log "Checking prerequisites..."
+# ─── Port Configuration ──────────────────────────────────────────
+BACKEND_PORT=8000
+FRONTEND_PORT=5199
+LOGS_DIR="$SCRIPT_DIR/logs"
+BACKEND_PID_FILE="$LOGS_DIR/backend.pid"
+FRONTEND_PID_FILE="$LOGS_DIR/frontend.pid"
 
-if ! command -v python3 &>/dev/null; then
-    error "Python 3 is required but not found"
-    exit 1
-fi
-
-if ! command -v node &>/dev/null; then
-    error "Node.js is required but not found"
-    exit 1
-fi
-
-if ! command -v npm &>/dev/null; then
-    error "npm is required but not found"
-    exit 1
-fi
-
-PYTHON_VERSION=$(python3 --version | awk '{print $2}')
-NODE_VERSION=$(node --version)
-success "Python $PYTHON_VERSION detected"
-
-# Enforce minimum Python version 3.14
-PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
-PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
-if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 14 ]; }; then
-    error "Python >= 3.14 is required (found $PYTHON_VERSION)"
-    exit 1
-fi
-
-success "Node.js $NODE_VERSION detected"
-
-# ─── 2. Create Data Directory ──────────────────────────────────────
-mkdir -p "$SCRIPT_DIR/data"
-success "Data directory ready"
-
-# ─── 3. Backend Setup ──────────────────────────────────────────────
-log "Setting up backend..."
-
-cd "$SCRIPT_DIR/backend"
-
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-    log "Creating Python virtual environment..."
-    python3 -m venv venv
-    success "Virtual environment created"
-else
-    success "Virtual environment already exists"
-fi
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Install/update dependencies
-log "Installing Python dependencies..."
-pip install -q --upgrade pip
-pip install -q -r requirements.txt
-success "Python dependencies installed"
-
-cd "$SCRIPT_DIR"
-
-# ─── 4. Frontend Setup ─────────────────────────────────────────────
-log "Setting up frontend..."
-
-cd "$SCRIPT_DIR/frontend"
-
-if [ ! -d "node_modules" ]; then
-    log "Installing Node.js dependencies..."
-    npm install
-    success "Node.js dependencies installed"
-else
-    success "Node.js dependencies already installed"
-    # Still run install in case package.json changed
-    npm install --prefer-offline 2>/dev/null || true
-fi
-
-cd "$SCRIPT_DIR"
-
-# ─── 5. Environment File ───────────────────────────────────────────
-if [ ! -f "$SCRIPT_DIR/.env" ]; then
-    if [ -f "$SCRIPT_DIR/.env.example" ]; then
-        cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
-        success "Created .env from .env.example"
+# read_env_ports — update BACKEND_PORT from .env if set.
+read_env_ports() {
+    if [ -f "$SCRIPT_DIR/.env" ]; then
+        local port
+        port=$(grep -E '^\s*BACKEND_PORT\s*=' "$SCRIPT_DIR/.env" 2>/dev/null \
+            | tail -1 | cut -d= -f2 | tr -d '[:space:]"'"'" || true)
+        [ -n "$port" ] && BACKEND_PORT="$port"
     fi
-else
-    success ".env file already exists"
-fi
+}
 
-# ─── 6. Kill Existing Processes ────────────────────────────────────
-log "Stopping any existing PromptForge processes..."
+# Read once at startup (covers stop/status/mcp without do_setup)
+read_env_ports
 
-# Kill any existing backend on port 8000
-if lsof -ti:8000 &>/dev/null; then
-    kill $(lsof -ti:8000) 2>/dev/null || true
-    sleep 1
-    warn "Killed existing process on port 8000"
-fi
+# ─── Portable Helpers ─────────────────────────────────────────────
 
-# Kill any existing frontend on port 5173
-if lsof -ti:5173 &>/dev/null; then
-    kill $(lsof -ti:5173) 2>/dev/null || true
-    sleep 1
-    warn "Killed existing process on port 5173"
-fi
+# find_port_pid PORT — return the PID listening on PORT (empty if none).
+# Falls back through lsof → fuser → ss for portability.
+find_port_pid() {
+    local port=$1
+    local pid=""
 
-# ─── 7. Start Backend ──────────────────────────────────────────────
-log "Starting backend server..."
-
-cd "$SCRIPT_DIR/backend"
-source venv/bin/activate
-
-# Start uvicorn in background
-nohup python3 -m uvicorn app.main:app \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --reload \
-    > "$SCRIPT_DIR/logs/backend.log" 2>&1 &
-
-BACKEND_PID=$!
-echo $BACKEND_PID > "$SCRIPT_DIR/logs/backend.pid"
-success "Backend starting (PID: $BACKEND_PID)"
-
-cd "$SCRIPT_DIR"
-
-# ─── 8. Start Frontend ─────────────────────────────────────────────
-log "Starting frontend dev server..."
-
-cd "$SCRIPT_DIR/frontend"
-
-nohup npm run dev -- --host 0.0.0.0 \
-    > "$SCRIPT_DIR/logs/frontend.log" 2>&1 &
-
-FRONTEND_PID=$!
-echo $FRONTEND_PID > "$SCRIPT_DIR/logs/frontend.pid"
-success "Frontend starting (PID: $FRONTEND_PID)"
-
-cd "$SCRIPT_DIR"
-
-# ─── 9. Wait for Health ────────────────────────────────────────────
-log "Waiting for services to be healthy..."
-
-# Wait for backend
-BACKEND_READY=false
-for i in $(seq 1 30); do
-    if curl -sf http://localhost:8000/api/health > /dev/null 2>&1; then
-        BACKEND_READY=true
-        break
+    if command -v lsof &>/dev/null; then
+        pid=$(lsof -ti:"$port" 2>/dev/null | head -1 || true)
     fi
-    sleep 1
-done
 
-if $BACKEND_READY; then
-    success "Backend is healthy at http://localhost:8000"
-else
-    warn "Backend not responding yet (check logs/backend.log)"
-fi
-
-# Wait for frontend
-FRONTEND_READY=false
-for i in $(seq 1 30); do
-    if curl -sf http://localhost:5173 > /dev/null 2>&1; then
-        FRONTEND_READY=true
-        break
+    if [ -z "$pid" ] && command -v fuser &>/dev/null; then
+        # fuser sends PIDs to stderr — redirect to capture them
+        pid=$(fuser "$port/tcp" 2>&1 | grep -oE '[0-9]+' | head -1 || true)
     fi
-    sleep 1
-done
 
-if $FRONTEND_READY; then
-    success "Frontend is healthy at http://localhost:5173"
-else
-    warn "Frontend not responding yet (check logs/frontend.log)"
-fi
+    if [ -z "$pid" ] && command -v ss &>/dev/null; then
+        pid=$(ss -tlnp "sport = :$port" 2>/dev/null \
+            | grep -oE 'pid=[0-9]+' | head -1 | grep -oE '[0-9]+' || true)
+    fi
 
-# ─── 10. Summary ───────────────────────────────────────────────────
-echo ""
-echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-echo -e "${CYAN}  PromptForge Development Environment${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-echo -e "  Backend API:    ${GREEN}http://localhost:8000${NC}"
-echo -e "  API Docs:       ${GREEN}http://localhost:8000/docs${NC}"
-echo -e "  Frontend:       ${GREEN}http://localhost:5173${NC}"
-echo -e "  Health Check:   ${GREEN}http://localhost:8000/api/health${NC}"
-echo ""
-echo -e "  Backend PID:    $BACKEND_PID"
-echo -e "  Frontend PID:   $FRONTEND_PID"
-echo ""
-echo -e "  Backend logs:   ${YELLOW}logs/backend.log${NC}"
-echo -e "  Frontend logs:  ${YELLOW}logs/frontend.log${NC}"
-echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-echo ""
+    echo "$pid"
+}
 
-if $BACKEND_READY && $FRONTEND_READY; then
-    success "All services running! Ready for development."
-else
-    warn "Some services may still be starting. Check logs."
-fi
+# kill_port PORT — kill the process listening on PORT, if any.
+kill_port() {
+    local port=$1
+    local pid
+    pid=$(find_port_pid "$port")
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+        return 0
+    fi
+    return 1
+}
+
+# wait_for_url URL NAME TIMEOUT — poll URL until 2xx or timeout.
+wait_for_url() {
+    local url=$1 name=$2 timeout=${3:-30}
+    for _ in $(seq 1 "$timeout"); do
+        if curl -sf "$url" > /dev/null 2>&1; then
+            success "$name is healthy at $url"
+            return 0
+        fi
+        sleep 1
+    done
+    warn "$name not responding yet (check logs/)"
+    return 1
+}
+
+# read_pid_file FILE — echo PID if file exists and process is alive, else clean up.
+read_pid_file() {
+    local file=$1
+    if [ -f "$file" ]; then
+        local pid
+        pid=$(cat "$file" 2>/dev/null || true)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "$pid"
+            return 0
+        fi
+        rm -f "$file"
+    fi
+    return 1
+}
+
+# stop_service NAME PID_FILE PORT VERBOSE — stop one service via PID file + port fallback.
+# VERBOSE=1 prints status messages; 0 is silent.
+stop_service() {
+    local name=$1 pid_file=$2 port=$3 verbose=${4:-1}
+
+    local pid
+    if pid=$(read_pid_file "$pid_file"); then
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+        rm -f "$pid_file"
+        [ "$verbose" = "1" ] && success "$name stopped (PID: $pid)"
+        return 0
+    elif kill_port "$port" 2>/dev/null; then
+        [ "$verbose" = "1" ] && success "$name stopped (port $port)"
+        return 0
+    fi
+
+    return 1
+}
+
+# ─── Prerequisites ────────────────────────────────────────────────
+# PYTHON — resolved once by check_prerequisites, used everywhere.
+PYTHON=""
+
+check_prerequisites() {
+    log "Checking prerequisites..."
+
+    # Prefer python3.14, fall back to python3
+    if command -v python3.14 &>/dev/null; then
+        PYTHON="python3.14"
+    elif command -v python3 &>/dev/null; then
+        PYTHON="python3"
+    else
+        error "Python 3 is required but not found"
+        exit 1
+    fi
+
+    if ! command -v node &>/dev/null; then
+        error "Node.js is required but not found"
+        exit 1
+    fi
+
+    if ! command -v npm &>/dev/null; then
+        error "npm is required but not found"
+        exit 1
+    fi
+
+    PYTHON_VERSION=$($PYTHON --version | awk '{print $2}')
+    NODE_VERSION=$(node --version)
+    success "Python $PYTHON_VERSION detected ($(command -v $PYTHON))"
+
+    PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+    PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+    if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 14 ]; }; then
+        error "Python >= 3.14 is required (found $PYTHON_VERSION)"
+        exit 1
+    fi
+
+    success "Node.js $NODE_VERSION detected"
+}
+
+# ─── Provider Config Advisory ─────────────────────────────────────
+check_provider_config() {
+    [ ! -f "$SCRIPT_DIR/.env" ] && return
+
+    local has_key=false
+    for key in ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY; do
+        if grep -qE "^\s*${key}\s*=\s*.+" "$SCRIPT_DIR/.env" 2>/dev/null; then
+            has_key=true
+            break
+        fi
+    done
+
+    if ! $has_key; then
+        log "No API keys configured in .env — using Claude CLI (requires MAX subscription)"
+        log "To use other providers, add keys to .env (see .env.example)"
+    fi
+}
+
+# ─── Setup ────────────────────────────────────────────────────────
+do_setup() {
+    check_prerequisites
+
+    mkdir -p "$SCRIPT_DIR/data"
+    mkdir -p "$LOGS_DIR"
+    success "Data and logs directories ready"
+
+    # Backend
+    log "Setting up backend..."
+    cd "$SCRIPT_DIR/backend"
+
+    if [ ! -d "venv" ]; then
+        log "Creating Python virtual environment..."
+        $PYTHON -m venv venv
+        success "Virtual environment created"
+    else
+        success "Virtual environment already exists"
+    fi
+
+    source venv/bin/activate
+
+    log "Installing Python dependencies..."
+    pip install -q --upgrade pip
+    pip install -q -e .
+    success "Python dependencies installed"
+
+    cd "$SCRIPT_DIR"
+
+    # Frontend
+    log "Setting up frontend..."
+    cd "$SCRIPT_DIR/frontend"
+
+    if [ ! -d "node_modules" ]; then
+        log "Installing Node.js dependencies..."
+        npm install
+        success "Node.js dependencies installed"
+    else
+        success "Node.js dependencies already installed"
+        npm install --prefer-offline 2>/dev/null || true
+    fi
+
+    cd "$SCRIPT_DIR"
+
+    # Environment file
+    if [ ! -f "$SCRIPT_DIR/.env" ]; then
+        if [ -f "$SCRIPT_DIR/.env.example" ]; then
+            cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+            success "Created .env from .env.example"
+        fi
+    else
+        success ".env file already exists"
+    fi
+
+    # Re-read ports in case .env was just created
+    read_env_ports
+
+    check_provider_config
+}
+
+# ─── Start Services ───────────────────────────────────────────────
+do_start() {
+    log "Stopping any existing PromptForge processes..."
+    stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 0 || true
+    stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 0 || true
+
+    mkdir -p "$LOGS_DIR"
+
+    # Guard: venv must exist
+    if [ ! -d "$SCRIPT_DIR/backend/venv" ]; then
+        error "Backend not set up yet. Run ./init.sh first."
+        exit 1
+    fi
+
+    # Start backend
+    log "Starting backend server on port $BACKEND_PORT..."
+    cd "$SCRIPT_DIR/backend"
+    source venv/bin/activate
+
+    nohup $PYTHON -m uvicorn app.main:app \
+        --host 0.0.0.0 \
+        --port "$BACKEND_PORT" \
+        --reload \
+        > "$LOGS_DIR/backend.log" 2>&1 &
+
+    local backend_pid=$!
+    echo $backend_pid > "$BACKEND_PID_FILE"
+    success "Backend starting (PID: $backend_pid)"
+
+    cd "$SCRIPT_DIR"
+
+    # Start frontend
+    log "Starting frontend dev server on port $FRONTEND_PORT..."
+    cd "$SCRIPT_DIR/frontend"
+
+    nohup npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT" \
+        > "$LOGS_DIR/frontend.log" 2>&1 &
+
+    local frontend_pid=$!
+    echo $frontend_pid > "$FRONTEND_PID_FILE"
+    success "Frontend starting (PID: $frontend_pid)"
+
+    cd "$SCRIPT_DIR"
+
+    # Wait for health
+    log "Waiting for services to be healthy..."
+    local backend_ok=false frontend_ok=false
+
+    if wait_for_url "http://localhost:$BACKEND_PORT/api/health" "Backend" 30; then
+        backend_ok=true
+    fi
+
+    if wait_for_url "http://localhost:$FRONTEND_PORT" "Frontend" 30; then
+        frontend_ok=true
+    fi
+
+    # Fetch provider info from health endpoint
+    local provider_info=""
+    if $backend_ok; then
+        provider_info=$(curl -sf "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null \
+            | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    p = d.get('llm_provider', d.get('provider', ''))
+    if p: print(p)
+except Exception: pass
+" 2>/dev/null || true)
+    fi
+
+    # Summary banner
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  PromptForge Development Environment${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "  Backend API:    ${GREEN}http://localhost:$BACKEND_PORT${NC}"
+    echo -e "  API Docs:       ${GREEN}http://localhost:$BACKEND_PORT/docs${NC}"
+    echo -e "  Frontend:       ${GREEN}http://localhost:$FRONTEND_PORT${NC}"
+    echo -e "  Health Check:   ${GREEN}http://localhost:$BACKEND_PORT/api/health${NC}"
+    if [ -n "$provider_info" ]; then
+        echo -e "  LLM Provider:   ${GREEN}$provider_info${NC}"
+    fi
+    echo ""
+    echo -e "  Backend PID:    $backend_pid"
+    echo -e "  Frontend PID:   $frontend_pid"
+    echo ""
+    echo -e "  Backend logs:   ${YELLOW}logs/backend.log${NC}"
+    echo -e "  Frontend logs:  ${YELLOW}logs/frontend.log${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    if $backend_ok && $frontend_ok; then
+        success "All services running! Ready for development."
+    else
+        warn "Some services may still be starting. Check logs."
+    fi
+}
+
+# ─── Stop ─────────────────────────────────────────────────────────
+do_stop() {
+    log "Stopping PromptForge services..."
+
+    local anything_stopped=false
+
+    if stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 1; then
+        anything_stopped=true
+    fi
+
+    if stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 1; then
+        anything_stopped=true
+    fi
+
+    if $anything_stopped; then
+        success "All services stopped."
+    else
+        log "No running services found."
+    fi
+}
+
+# ─── Status ───────────────────────────────────────────────────────
+do_status() {
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  PromptForge Service Status${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+
+    # Backend
+    local backend_status="${RED}stopped${NC}"
+    local backend_pid
+    if backend_pid=$(read_pid_file "$BACKEND_PID_FILE" 2>/dev/null); then
+        backend_status="${GREEN}running${NC} (PID: $backend_pid)"
+    else
+        local port_pid
+        port_pid=$(find_port_pid "$BACKEND_PORT")
+        if [ -n "$port_pid" ]; then
+            backend_status="${GREEN}running${NC} (PID: $port_pid, no PID file)"
+        fi
+    fi
+    echo -e "  Backend:   $backend_status"
+
+    # Frontend
+    local frontend_status="${RED}stopped${NC}"
+    local frontend_pid
+    if frontend_pid=$(read_pid_file "$FRONTEND_PID_FILE" 2>/dev/null); then
+        frontend_status="${GREEN}running${NC} (PID: $frontend_pid)"
+    else
+        local port_pid
+        port_pid=$(find_port_pid "$FRONTEND_PORT")
+        if [ -n "$port_pid" ]; then
+            frontend_status="${GREEN}running${NC} (PID: $port_pid, no PID file)"
+        fi
+    fi
+    echo -e "  Frontend:  $frontend_status"
+
+    # Health details (single curl call)
+    echo ""
+    local health_json
+    health_json=$(curl -sf "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null || true)
+    if [ -n "$health_json" ]; then
+        echo -e "  ${BOLD}Health endpoint:${NC}"
+        echo "$health_json" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    for k, v in d.items():
+        print(f'    {k}: {v}')
+except Exception:
+    print('    (could not parse response)')
+" 2>/dev/null || echo -e "    $health_json"
+    else
+        echo -e "  Health endpoint: ${YELLOW}not reachable${NC}"
+    fi
+
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+}
+
+# ─── Test ─────────────────────────────────────────────────────────
+do_test() {
+    check_prerequisites
+
+    # Backend tests
+    log "Installing backend test dependencies..."
+    cd "$SCRIPT_DIR/backend"
+
+    if [ ! -d "venv" ]; then
+        error "Backend not set up yet. Run ./init.sh first."
+        exit 1
+    fi
+
+    source venv/bin/activate
+    pip install -q -e ".[test]"
+    success "Test dependencies installed"
+
+    log "Running backend tests..."
+    $PYTHON -m pytest tests/ -v
+    success "Backend tests complete"
+
+    cd "$SCRIPT_DIR"
+
+    # Frontend tests
+    log "Running frontend tests..."
+    cd "$SCRIPT_DIR/frontend"
+
+    if [ ! -d "node_modules" ]; then
+        error "Frontend not set up yet. Run ./init.sh first."
+        exit 1
+    fi
+
+    npm run test
+    success "Frontend tests complete"
+
+    log "Running svelte-check..."
+    npm run check
+    success "Type checking complete"
+
+    cd "$SCRIPT_DIR"
+    success "All tests passed!"
+}
+
+# ─── Seed ─────────────────────────────────────────────────────────
+do_seed() {
+    log "Seeding example data..."
+    cd "$SCRIPT_DIR/backend"
+
+    if [ ! -d "venv" ]; then
+        error "Backend not set up yet. Run ./init.sh first."
+        exit 1
+    fi
+
+    source venv/bin/activate
+    $PYTHON "$SCRIPT_DIR/scripts/seed_examples.py"
+    success "Example data seeded"
+    cd "$SCRIPT_DIR"
+}
+
+# ─── MCP Config ───────────────────────────────────────────────────
+do_mcp() {
+    echo -e "${CYAN}Add the following to your Claude Code MCP config:${NC}"
+    echo ""
+    cat <<EOF
+{
+  "mcpServers": {
+    "promptforge": {
+      "command": "$SCRIPT_DIR/backend/venv/bin/python3",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "$SCRIPT_DIR/backend"
+    }
+  }
+}
+EOF
+    echo ""
+    log "The MCP server uses stdio transport — it runs on demand, not as a daemon."
+}
+
+# ─── Help ─────────────────────────────────────────────────────────
+do_help() {
+    echo -e "${CYAN}${BOLD}PromptForge${NC} — AI-powered prompt optimization"
+    echo ""
+    echo "Usage: ./init.sh [command]"
+    echo ""
+    echo "Commands:"
+    echo "  (none)      Setup dependencies and start services (default)"
+    echo "  stop        Stop all running services"
+    echo "  restart     Stop then start services"
+    echo "  status      Show running/stopped state and health details"
+    echo "  test        Install test extras, run backend + frontend tests"
+    echo "  seed        Populate example optimization data"
+    echo "  mcp         Print MCP server config snippet for Claude Code"
+    echo "  help        Show this message"
+    echo ""
+    echo "Environment:"
+    echo "  BACKEND_PORT   Backend port (default: 8000, set in .env)"
+    echo "  LLM_PROVIDER   LLM provider (auto-detect when empty)"
+    echo "  See .env.example for all options."
+}
+
+# ─── Command Dispatcher ──────────────────────────────────────────
+case "${1:-}" in
+    stop)
+        do_stop
+        ;;
+    restart)
+        do_stop
+        do_setup
+        do_start
+        ;;
+    status)
+        do_status
+        ;;
+    test)
+        do_test
+        ;;
+    seed)
+        do_seed
+        ;;
+    mcp)
+        do_mcp
+        ;;
+    help|--help|-h)
+        do_help
+        ;;
+    "")
+        do_setup
+        do_start
+        ;;
+    *)
+        error "Unknown command: $1"
+        echo ""
+        do_help
+        exit 1
+        ;;
+esac
