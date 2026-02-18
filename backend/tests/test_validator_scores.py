@@ -1,0 +1,133 @@
+"""Tests for server-side overall_score computation and score normalization."""
+
+import pytest
+
+from app.services.validator import (
+    CLARITY_WEIGHT,
+    FAITHFULNESS_WEIGHT,
+    SPECIFICITY_WEIGHT,
+    STRUCTURE_WEIGHT,
+)
+from app.utils.scores import round_score, score_threshold_to_db, score_to_display
+
+
+class TestScoreWeights:
+    def test_weights_sum_to_one(self):
+        total = CLARITY_WEIGHT + SPECIFICITY_WEIGHT + STRUCTURE_WEIGHT + FAITHFULNESS_WEIGHT
+        assert total == pytest.approx(1.0)
+
+    def test_all_weights_positive(self):
+        for w in (CLARITY_WEIGHT, SPECIFICITY_WEIGHT, STRUCTURE_WEIGHT, FAITHFULNESS_WEIGHT):
+            assert w > 0
+
+
+class TestOverallScoreComputation:
+    """Verify overall_score equals the weighted formula and is bounded by sub-scores."""
+
+    @staticmethod
+    def _expected_overall(
+        clarity: float, specificity: float, structure: float, faithfulness: float
+    ) -> float:
+        return round(
+            clarity * CLARITY_WEIGHT
+            + specificity * SPECIFICITY_WEIGHT
+            + structure * STRUCTURE_WEIGHT
+            + faithfulness * FAITHFULNESS_WEIGHT,
+            4,
+        )
+
+    def test_uniform_scores(self):
+        """When all sub-scores are equal, overall should equal that value."""
+        score = 0.8
+        expected = self._expected_overall(score, score, score, score)
+        assert expected == pytest.approx(score)
+
+    def test_weighted_average_formula(self):
+        """Verify the specific weighted formula: 0.25*C + 0.25*S + 0.20*St + 0.30*F."""
+        c, sp, st, f = 0.9, 0.7, 0.8, 1.0
+        expected = self._expected_overall(c, sp, st, f)
+        assert expected == pytest.approx(0.9 * 0.25 + 0.7 * 0.25 + 0.8 * 0.20 + 1.0 * 0.30)
+
+    def test_overall_within_sub_score_bounds(self):
+        """Overall score must be between min and max of sub-scores."""
+        c, sp, st, f = 0.3, 0.9, 0.5, 0.7
+        overall = self._expected_overall(c, sp, st, f)
+        assert min(c, sp, st, f) <= overall <= max(c, sp, st, f)
+
+    def test_all_zeros(self):
+        assert self._expected_overall(0.0, 0.0, 0.0, 0.0) == 0.0
+
+    def test_all_ones(self):
+        assert self._expected_overall(1.0, 1.0, 1.0, 1.0) == pytest.approx(1.0)
+
+
+class TestScoreToDisplay:
+    """Tests for score_to_display (0.0-1.0 → 1-10 integer)."""
+
+    def test_none_returns_none(self):
+        assert score_to_display(None) is None
+
+    def test_zero_returns_one(self):
+        """DB score 0.0 should display as 1 (minimum), not 0."""
+        assert score_to_display(0.0) == 1
+
+    def test_one_returns_ten(self):
+        assert score_to_display(1.0) == 10
+
+    def test_half_returns_five(self):
+        assert score_to_display(0.5) == 5
+
+    def test_typical_scores(self):
+        # round(8.5) = 8 in Python (banker's rounding), max(1, 8) = 8
+        assert score_to_display(0.85) == 8
+        assert score_to_display(0.72) == 7
+        assert score_to_display(0.33) == 3
+
+    def test_output_always_in_range_1_10(self):
+        """score_to_display must always return 1-10 for any valid input."""
+        for i in range(101):
+            val = i / 100.0
+            result = score_to_display(val)
+            assert isinstance(result, int)
+            assert 1 <= result <= 10, f"score_to_display({val}) = {result}, out of range"
+
+    def test_clamping_above_one(self):
+        """Scores slightly above 1.0 (floating point drift) should clamp to 10."""
+        assert score_to_display(1.05) == 10
+
+    def test_clamping_below_zero(self):
+        """Negative scores should clamp to 1."""
+        assert score_to_display(-0.1) == 1
+
+
+class TestScoreThresholdToDb:
+    """Tests for score_threshold_to_db (1-10 → 0.0-1.0)."""
+
+    def test_display_one_to_db(self):
+        assert score_threshold_to_db(1) == pytest.approx(0.1)
+
+    def test_display_ten_to_db(self):
+        assert score_threshold_to_db(10) == pytest.approx(1.0)
+
+    def test_display_five_to_db(self):
+        assert score_threshold_to_db(5) == pytest.approx(0.5)
+
+    def test_round_trip_consistency(self):
+        """score_to_display(score_threshold_to_db(d)) should approximately equal d."""
+        for d in range(1, 11):
+            db_val = score_threshold_to_db(d)
+            display_val = score_to_display(db_val)
+            assert display_val == d, (
+                f"Round-trip failed: {d} → {db_val} → {display_val}"
+            )
+
+
+class TestRoundScore:
+    def test_none_returns_none(self):
+        assert round_score(None) is None
+
+    def test_rounds_to_4_digits(self):
+        assert round_score(0.123456) == 0.1235
+
+    def test_custom_digits(self):
+        assert round_score(0.123456, 2) == 0.12

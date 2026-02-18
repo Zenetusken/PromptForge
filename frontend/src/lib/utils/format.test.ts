@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatRelativeTime, truncateText, normalizeScore, formatScore, getScoreColorClass } from './format';
+import { formatRelativeTime, truncateText, normalizeScore, formatScore, getScoreColorClass, getScoreTierLabel, getScoreBadgeClass, formatModelShort, maskApiKey, formatComplexityDots, formatMetadataSummary } from './format';
 
 describe('formatRelativeTime', () => {
 	it('returns "just now" for recent timestamps', () => {
@@ -110,5 +110,180 @@ describe('getScoreColorClass', () => {
 
 	it('returns neon-red for null', () => {
 		expect(getScoreColorClass(null)).toBe('neon-red');
+	});
+});
+
+describe('getScoreTierLabel', () => {
+	it('returns "Good" for high scores', () => {
+		expect(getScoreTierLabel(0.85)).toBe('Good');
+		expect(getScoreTierLabel(70)).toBe('Good');
+	});
+
+	it('returns "Fair" for medium scores', () => {
+		expect(getScoreTierLabel(0.5)).toBe('Fair');
+		expect(getScoreTierLabel(40)).toBe('Fair');
+	});
+
+	it('returns "Low" for low scores', () => {
+		expect(getScoreTierLabel(0.2)).toBe('Low');
+		expect(getScoreTierLabel(30)).toBe('Low');
+	});
+
+	it('returns empty string for null', () => {
+		expect(getScoreTierLabel(null)).toBe('');
+	});
+
+	it('returns empty string for undefined', () => {
+		expect(getScoreTierLabel(undefined)).toBe('');
+	});
+
+	it('returns "Good" for exact boundary at 70', () => {
+		expect(getScoreTierLabel(0.70)).toBe('Good');
+	});
+
+	it('returns "Fair" for exact boundary at 40', () => {
+		expect(getScoreTierLabel(0.40)).toBe('Fair');
+	});
+
+	it('returns "Low" for zero', () => {
+		expect(getScoreTierLabel(0)).toBe('Low');
+	});
+});
+
+describe('getScoreBadgeClass', () => {
+	it('returns green classes for high scores', () => {
+		expect(getScoreBadgeClass(0.85)).toBe('bg-neon-green/10 text-neon-green');
+	});
+
+	it('returns yellow classes for medium scores', () => {
+		expect(getScoreBadgeClass(0.5)).toBe('bg-neon-yellow/10 text-neon-yellow');
+	});
+
+	it('returns red classes for low scores', () => {
+		expect(getScoreBadgeClass(0.2)).toBe('bg-neon-red/10 text-neon-red');
+	});
+
+	it('returns dim classes for null', () => {
+		expect(getScoreBadgeClass(null)).toBe('bg-text-dim/10 text-text-dim');
+	});
+
+	it('returns dim classes for undefined', () => {
+		expect(getScoreBadgeClass(undefined)).toBe('bg-text-dim/10 text-text-dim');
+	});
+});
+
+describe('maskApiKey', () => {
+	it('masks a long key showing first 4 and last 4 chars', () => {
+		expect(maskApiKey('sk-ant-api03-abcdefghijklmnop')).toBe('sk-a...mnop');
+	});
+
+	it('fully masks short keys (8 chars or fewer)', () => {
+		expect(maskApiKey('12345678')).toBe('********');
+		expect(maskApiKey('short')).toBe('********');
+	});
+
+	it('masks a 9-character key', () => {
+		expect(maskApiKey('123456789')).toBe('1234...6789');
+	});
+
+	it('handles empty string', () => {
+		expect(maskApiKey('')).toBe('********');
+	});
+});
+
+describe('formatModelShort', () => {
+	it('strips claude- prefix', () => {
+		expect(formatModelShort('claude-opus-4-6')).toBe('opus-4-6');
+	});
+
+	it('strips claude- prefix for sonnet', () => {
+		expect(formatModelShort('claude-sonnet-4-5-20250929')).toBe('sonnet-4-5-20250929');
+	});
+
+	it('passes through non-Claude models unchanged', () => {
+		expect(formatModelShort('gpt-4o')).toBe('gpt-4o');
+		expect(formatModelShort('gemini-2.5-pro')).toBe('gemini-2.5-pro');
+	});
+
+	it('handles empty string', () => {
+		expect(formatModelShort('')).toBe('');
+	});
+});
+
+describe('formatComplexityDots', () => {
+	it('returns 1 filled for simple', () => {
+		expect(formatComplexityDots('simple')).toEqual({ filled: 1, total: 3 });
+	});
+
+	it('returns 2 filled for moderate', () => {
+		expect(formatComplexityDots('moderate')).toEqual({ filled: 2, total: 3 });
+	});
+
+	it('returns 3 filled for complex', () => {
+		expect(formatComplexityDots('complex')).toEqual({ filled: 3, total: 3 });
+	});
+
+	it('is case-insensitive', () => {
+		expect(formatComplexityDots('Simple')).toEqual({ filled: 1, total: 3 });
+		expect(formatComplexityDots('COMPLEX')).toEqual({ filled: 3, total: 3 });
+	});
+
+	it('defaults to 1 for unknown values', () => {
+		expect(formatComplexityDots('unknown')).toEqual({ filled: 1, total: 3 });
+	});
+});
+
+describe('formatMetadataSummary', () => {
+	it('returns empty array when no fields provided', () => {
+		expect(formatMetadataSummary({})).toEqual([]);
+	});
+
+	it('includes identity segment for taskType', () => {
+		const result = formatMetadataSummary({ taskType: 'code-review' });
+		expect(result).toHaveLength(1);
+		expect(result[0]).toEqual({ type: 'identity', value: 'code-review' });
+	});
+
+	it('includes process segment for framework', () => {
+		const result = formatMetadataSummary({ framework: 'chain-of-thought' });
+		expect(result).toHaveLength(1);
+		expect(result[0]).toEqual({ type: 'process', value: 'chain-of-thought' });
+	});
+
+	it('strips claude- prefix from model', () => {
+		const result = formatMetadataSummary({ model: 'claude-opus-4-6' });
+		expect(result).toHaveLength(1);
+		expect(result[0]).toEqual({ type: 'technical', value: 'opus-4-6' });
+	});
+
+	it('builds full segment array in correct order', () => {
+		const result = formatMetadataSummary({
+			taskType: 'creative-writing',
+			framework: 'few-shot',
+			model: 'gpt-4o',
+		});
+		expect(result).toHaveLength(3);
+		expect(result[0].type).toBe('identity');
+		expect(result[1].type).toBe('process');
+		expect(result[2].type).toBe('technical');
+	});
+
+	it('skips undefined fields', () => {
+		const result = formatMetadataSummary({ taskType: 'analysis', model: 'claude-sonnet-4-6' });
+		expect(result).toHaveLength(2);
+		expect(result[0].value).toBe('analysis');
+		expect(result[1].value).toBe('sonnet-4-6');
+	});
+
+	it('skips empty string fields', () => {
+		const result = formatMetadataSummary({ taskType: '', framework: 'role-based' });
+		expect(result).toHaveLength(1);
+		expect(result[0].value).toBe('role-based');
+	});
+
+	it('skips null fields', () => {
+		const result = formatMetadataSummary({ taskType: null, framework: null, model: 'claude-opus-4-6' });
+		expect(result).toHaveLength(1);
+		expect(result[0]).toEqual({ type: 'technical', value: 'opus-4-6' });
 	});
 });
