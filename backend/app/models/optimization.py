@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, Index, Integer, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.constants import OptimizationStatus
@@ -59,11 +59,16 @@ class Optimization(Base):
     verdict: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Strategy
+    strategy: Mapped[str | None] = mapped_column(Text, nullable=True)
     strategy_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    strategy_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    secondary_frameworks: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
 
     # Execution metadata
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_used: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default=OptimizationStatus.PENDING)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -71,6 +76,11 @@ class Optimization(Base):
     project: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string list
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Link to originating project prompt (nullable for legacy/home-page optimizations)
+    prompt_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("prompts.id", ondelete="SET NULL"), nullable=True,
+    )
 
     __table_args__ = (
         Index("ix_optimizations_project", "project"),
@@ -80,6 +90,7 @@ class Optimization(Base):
         Index("ix_optimizations_overall_score", "overall_score"),
         Index("ix_optimizations_status_created_at", "status", "created_at"),
         Index("ix_optimizations_task_type_project", "task_type", "project"),
+        Index("ix_optimizations_prompt_id", "prompt_id"),
     )
 
     def __repr__(self) -> str:
