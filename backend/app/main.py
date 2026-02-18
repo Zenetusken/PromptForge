@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import config
 from app.database import init_db
-from app.routers import health, history, optimize
+from app.routers import health, history, optimize, projects, providers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,10 +16,26 @@ logging.basicConfig(
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler - initializes database on startup."""
     await init_db()
+    # Validate configured LLM provider early so operators get immediate feedback
+    env_provider = config.LLM_PROVIDER
+    if env_provider:
+        try:
+            from app.providers import get_provider
+            from app.providers.errors import ProviderError
+            get_provider(env_provider)
+            logger.info("Startup: LLM_PROVIDER=%r is valid and available", env_provider)
+        except (ValueError, RuntimeError, ImportError, ProviderError) as exc:
+            logger.warning(
+                "Startup: LLM_PROVIDER=%r is invalid or unavailable: %s",
+                env_provider, exc,
+            )
     yield
 
 
@@ -33,7 +49,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in config.FRONTEND_URL.split(",")],
+    allow_origins=[o.strip() for o in config.FRONTEND_URL.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,6 +59,8 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(optimize.router)
 app.include_router(history.router)
+app.include_router(projects.router)
+app.include_router(providers.router)
 
 
 @app.get("/")
