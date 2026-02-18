@@ -17,7 +17,7 @@ DATABASE_URL = os.getenv(
 )
 
 # Frontend
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5199")
 
 # Server
 HOST = os.getenv("HOST", "0.0.0.0")
@@ -28,6 +28,11 @@ APP_VERSION = "0.1.0"
 APP_TITLE = "PromptForge API"
 APP_DESCRIPTION = "AI-powered prompt optimization pipeline"
 
-# Claude API
+# LLM Provider
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")  # auto-detect when empty
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-4-6")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
