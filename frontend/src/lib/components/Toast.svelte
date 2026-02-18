@@ -17,7 +17,6 @@
 			role="alert"
 			data-testid="toast-notification"
 			class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm shadow-2xl {toastClasses(toast.type)} {toast.dismissing ? 'animate-slide-out-right' : 'animate-slide-in-right'}"
-			style="backdrop-filter: blur(16px);"
 		>
 			{#if toast.type === 'success'}
 				<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neon-green/15">

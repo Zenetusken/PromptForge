@@ -1,5 +1,7 @@
 import { fetchOptimize, fetchRetry, type PipelineEvent, type HistoryItem, type OptimizeMetadata } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
+import { projectsState } from '$lib/stores/projects.svelte';
+import { providerState } from '$lib/stores/provider.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 import { safeString, safeNumber, safeArray } from '$lib/utils/safe';
 
@@ -32,6 +34,14 @@ export interface ValidationStepData {
 
 export type StepData = AnalysisStepData | OptimizationStepData | ValidationStepData;
 
+export interface StrategyData {
+	strategy: string;
+	reasoning: string;
+	confidence: number;
+	task_type: string;
+	secondary_frameworks: string[];
+}
+
 export interface StepState {
 	name: string;
 	label: string;
@@ -45,6 +55,7 @@ export interface StepState {
 
 export interface RunState {
 	steps: StepState[];
+	strategyData?: StrategyData;
 }
 
 export interface OptimizationResultState {
@@ -69,23 +80,49 @@ export interface OptimizationResultState {
 	verdict: string;
 	duration_ms: number;
 	model_used: string;
+	input_tokens: number;
+	output_tokens: number;
 	title: string;
 	project: string;
+	project_id: string;
+	project_status: string;
 	tags: string[];
+	strategy: string;
 	strategy_reasoning: string;
+	strategy_confidence: number;
+	secondary_frameworks: string[];
+}
+
+/** Translate raw error messages to user-friendly text. */
+function friendlyError(msg: string): string {
+	const lower = msg.toLowerCase();
+	if (lower.includes('failed to fetch') || lower.includes('networkerror'))
+		return 'Cannot reach the server. Check your connection and try again.';
+	if (lower.includes('502') || lower.includes('bad gateway'))
+		return 'The server is temporarily unavailable. Please try again in a moment.';
+	if (lower.includes('503') || lower.includes('service unavailable'))
+		return 'The service is under heavy load. Please try again shortly.';
+	if (lower.includes('504') || lower.includes('gateway timeout'))
+		return 'The request timed out. The server may be busy — try again.';
+	if (lower.includes('401') || lower.includes('unauthorized'))
+		return 'Authentication failed. Check your API key and try again.';
+	if (lower.includes('429'))
+		return 'Rate limit reached. Please wait before trying again.';
+	return msg;
 }
 
 const INITIAL_PIPELINE_STEPS: StepState[] = [
 	{ name: 'analyze', label: 'ANALYZE', status: 'pending', description: 'Analyzing prompt structure and intent' },
+	{ name: 'strategy', label: 'STRATEGY', status: 'pending', description: 'Selecting optimization approach' },
 	{ name: 'optimize', label: 'OPTIMIZE', status: 'pending', description: 'Rewriting for clarity and effectiveness' },
 	{ name: 'validate', label: 'VALIDATE', status: 'pending', description: 'Scoring and quality assessment' }
 ];
 
 /**
  * Map a data source (SSE result or HistoryItem) to an OptimizationResultState.
- * Shared by handleEvent('result') and loadFromHistory().
+ * Used by handleEvent('result'), loadFromHistory(), and bulk project export.
  */
-function mapToResultState(
+export function mapToResultState(
 	source: Record<string, unknown>,
 	originalPrompt: string
 ): OptimizationResultState {
@@ -107,14 +144,21 @@ function mapToResultState(
 			faithfulness: safeNumber(source.faithfulness_score),
 			overall: safeNumber(source.overall_score),
 		},
-		is_improvement: typeof source.is_improvement === 'boolean' ? source.is_improvement : true,
+		is_improvement: typeof source.is_improvement === 'boolean' ? source.is_improvement : false,
 		verdict: safeString(source.verdict),
 		duration_ms: safeNumber(source.duration_ms),
 		model_used: safeString(source.model_used),
+		input_tokens: safeNumber(source.input_tokens),
+		output_tokens: safeNumber(source.output_tokens),
 		title: safeString(source.title),
 		project: safeString(source.project),
+		project_id: safeString(source.project_id),
+		project_status: safeString(source.project_status),
 		tags: safeArray(source.tags),
+		strategy: safeString(source.strategy),
 		strategy_reasoning: safeString(source.strategy_reasoning),
+		strategy_confidence: safeNumber(source.strategy_confidence),
+		secondary_frameworks: safeArray(source.secondary_frameworks),
 	};
 }
 
@@ -123,6 +167,8 @@ class OptimizationState {
 	result: OptimizationResultState | null = $state(null);
 	isRunning: boolean = $state(false);
 	error: string | null = $state(null);
+	errorType: string | null = $state(null);
+	retryAfter: number | null = $state(null);
 	pendingNavigation: string | null = $state(null);
 
 	private abortController: AbortController | null = null;
@@ -137,16 +183,30 @@ class OptimizationState {
 		this.cancel();
 		this.isRunning = true;
 		this.error = null;
+		this.errorType = null;
+		this.retryAfter = null;
 		this.result = null;
 		this.currentRun = {
 			steps: INITIAL_PIPELINE_STEPS.map(s => ({ ...s }))
 		};
 	}
 
-	private _onStreamError = (err: Error) => {
-		this.error = err.message;
+	private _failWithError(message: string, errorType?: string, retryAfter?: number) {
+		this.error = friendlyError(message);
+		this.errorType = errorType ?? null;
+		this.retryAfter = retryAfter ?? null;
 		this.isRunning = false;
-		toastState.show(err.message, 'error');
+		if (this.currentRun) {
+			this.currentRun.steps = this.currentRun.steps.map((s) => ({
+				...s,
+				status: s.status === 'running' ? ('error' as const) : s.status
+			}));
+		}
+		toastState.show(this.error, 'error');
+	}
+
+	private _onStreamError = (err: Error) => {
+		this._failWithError(err.message);
 	};
 
 	startOptimization(prompt: string, metadata?: OptimizeMetadata) {
@@ -156,7 +216,8 @@ class OptimizationState {
 			prompt,
 			(event) => this.handleEvent(event, prompt),
 			this._onStreamError,
-			metadata
+			metadata,
+			providerState.getLLMHeaders()
 		);
 	}
 
@@ -166,7 +227,8 @@ class OptimizationState {
 		this.abortController = fetchRetry(
 			id,
 			(event) => this.handleEvent(event, originalPrompt),
-			this._onStreamError
+			this._onStreamError,
+			providerState.getLLMHeaders()
 		);
 	}
 
@@ -185,7 +247,11 @@ class OptimizationState {
 
 		switch (event.type) {
 			case 'step_start':
-				this.updateStep(event.step || '', { status: 'running' as const, startTime: Date.now(), streamingContent: '' });
+				this.updateStep(event.step || '', (s) => ({
+					status: 'running' as const,
+					startTime: Date.now(),
+					streamingContent: s.streamingContent || '',
+				}));
 				break;
 
 			case 'step_progress': {
@@ -193,6 +259,25 @@ class OptimizationState {
 				this.updateStep(event.step || '', (s) => ({
 					streamingContent: s.streamingContent ? s.streamingContent + '\n' + content : content
 				}));
+				break;
+			}
+
+			case 'strategy_selected': {
+				const data = event.data || {};
+				const strategyData: StrategyData = {
+					strategy: safeString(data.strategy),
+					reasoning: safeString(data.reasoning),
+					confidence: safeNumber(data.confidence),
+					task_type: safeString(data.task_type),
+					secondary_frameworks: safeArray(data.secondary_frameworks),
+				};
+				this.currentRun.strategyData = strategyData;
+				this.updateStep('strategy', {
+					status: 'complete' as const,
+					data: data,
+					durationMs: safeNumber(data.step_duration_ms),
+					streamingContent: undefined,
+				});
 				break;
 			}
 
@@ -225,13 +310,14 @@ class OptimizationState {
 					this.pendingNavigation = `/optimize/${this.result.id}`;
 				}
 				historyState.loadHistory();
+				if (this.result?.project) {
+					projectsState.loadProjects();
+				}
 				break;
 			}
 
 			case 'error': {
-				this.error = event.error || 'Unknown error';
-				this.isRunning = false;
-				toastState.show(this.error, 'error');
+				this._failWithError(event.error || 'Unknown error', event.errorType, event.retryAfter);
 				break;
 			}
 		}

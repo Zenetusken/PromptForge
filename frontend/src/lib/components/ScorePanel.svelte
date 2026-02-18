@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
-	import { normalizeScore, getScoreColorClass } from '$lib/utils/format';
+	import { normalizeScore, getScoreColorClass, getScoreTierLabel } from '$lib/utils/format';
 
 	type Scores = OptimizationResultState['scores'];
 
@@ -31,6 +31,7 @@
 			{@const rawScore = scores[key]}
 			{@const pct = normalizeScore(rawScore)}
 			{@const color = getScoreColorClass(rawScore)}
+			{@const tier = getScoreTierLabel(rawScore)}
 			<div
 				class="group/score relative rounded-xl bg-bg-input/60 p-4"
 				class:sm:col-span-2={key === 'overall'}
@@ -45,13 +46,25 @@
 					<span class="text-sm text-text-primary" class:font-semibold={key === 'overall'}>
 						{label}
 					</span>
-					<span
-						class="font-mono text-sm font-bold tabular-nums"
-						class:text-neon-green={color === 'neon-green'}
-						class:text-neon-yellow={color === 'neon-yellow'}
-						class:text-neon-red={color === 'neon-red'}
-					>
-						{pct}
+					<span class="flex items-center gap-1.5">
+						{#if tier}
+							<span
+								class="text-[10px] font-medium"
+								class:text-neon-green={color === 'neon-green'}
+								class:text-neon-yellow={color === 'neon-yellow'}
+								class:text-neon-red={color === 'neon-red'}
+							>
+								{tier}
+							</span>
+						{/if}
+						<span
+							class="font-mono text-sm font-bold tabular-nums"
+							class:text-neon-green={color === 'neon-green'}
+							class:text-neon-yellow={color === 'neon-yellow'}
+							class:text-neon-red={color === 'neon-red'}
+						>
+							{pct}
+						</span>
 					</span>
 				</div>
 				<div class="h-1.5 w-full overflow-hidden rounded-full bg-bg-primary/80" class:h-2={key === 'overall'}>

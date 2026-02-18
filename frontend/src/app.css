@@ -82,11 +82,6 @@ body {
 	animation: fade-in 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes fade-in-up {
-	from { opacity: 0; transform: translateY(20px); }
-	to { opacity: 1; transform: translateY(0); }
-}
-
 @keyframes shimmer {
 	0% { background-position: -200px 0; }
 	100% { background-position: calc(200px + 100%) 0; }
@@ -97,7 +92,6 @@ body {
 	background-size: 200px 100%;
 	animation: shimmer 1.5s infinite ease-in-out;
 	border-radius: 6px;
-	will-change: background-position;
 }
 
 @keyframes slide-in-right {
@@ -124,12 +118,37 @@ body {
 	animation: scale-in 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes dropdown-enter {
+	from { opacity: 0; transform: scale(0.96) translateY(4px); }
+	to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.dropdown-enter {
+	animation: dropdown-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dropdown-enter-up {
+	from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+	to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.dropdown-enter-up {
+	animation: dropdown-enter-up 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes status-pulse {
+	0%, 100% { box-shadow: 0 0 0 0 rgba(34, 255, 136, 0.3); }
+	50% { box-shadow: 0 0 5px 2px rgba(34, 255, 136, 0.12); }
+}
+
+.status-dot-pulse {
+	animation: status-pulse 3s ease-in-out 3;
+}
+
 /* ─── Glass effect utility ────────────────────────── */
 
 .glass {
-	background: var(--color-bg-glass);
-	backdrop-filter: blur(16px) saturate(180%);
-	-webkit-backdrop-filter: blur(16px) saturate(180%);
+	background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
 }
 
 /* ─── Gradient text utility ───────────────────────── */
@@ -174,17 +193,14 @@ body {
 
 .btn-primary {
 	background: linear-gradient(135deg, #00e5ff 0%, #7c3aed 50%, #a855f7 100%);
-	background-size: 200% 200%;
 	color: #06060c;
 	font-weight: 700;
 	border-radius: 10px;
-	transition: box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-size 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+	transition: box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 	box-shadow: 0 0 20px rgba(0, 229, 255, 0.15), 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
-	background-size: 300% 300%;
-	background-position: 100% 50%;
 	box-shadow: 0 0 30px rgba(0, 229, 255, 0.25), 0 6px 20px rgba(0, 0, 0, 0.4);
 	transform: translateY(-1px);
 }
@@ -220,6 +236,43 @@ body {
 	background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%);
 }
 
+/* ─── Accessibility ──────────────────────────────── */
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border-width: 0;
+}
+
+.skip-link {
+	position: absolute;
+	top: -100%;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 9999;
+	padding: 8px 16px;
+	background: var(--color-bg-card);
+	color: var(--color-neon-cyan);
+	border: 1px solid rgba(0, 229, 255, 0.4);
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	text-decoration: none;
+	transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+	top: 8px;
+	outline: 2px solid rgba(0, 229, 255, 0.6);
+	outline-offset: 2px;
+}
+
 /* ─── Reusable utilities ─────────────────────────── */
 /* Wrapped in @layer components so Tailwind utilities can override */
 
@@ -247,6 +300,13 @@ body {
 		padding: 2px 8px;
 		font-family: var(--font-mono);
 		font-size: 10px;
+	}
+
+	.badge-sm {
+		border-radius: 9999px;
+		padding: 1px 6px;
+		font-family: var(--font-mono);
+		font-size: 9px;
 	}
 
 	.input-field {
@@ -299,6 +359,60 @@ body {
 		transition: background-color 0.15s, color 0.15s;
 	}
 
+	.btn-outline-primary {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		border-radius: 8px;
+		padding: 4px 10px;
+		font-size: 12px;
+		border: 1px solid rgba(0, 229, 255, 0.2);
+		background: rgba(0, 229, 255, 0.05);
+		color: var(--color-neon-cyan);
+		transition: background-color 0.15s, border-color 0.15s;
+	}
+
+	.btn-outline-primary:hover {
+		background: rgba(0, 229, 255, 0.1);
+		border-color: rgba(0, 229, 255, 0.3);
+	}
+
+	.btn-outline-secondary {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		border-radius: 8px;
+		padding: 4px 10px;
+		font-size: 12px;
+		border: 1px solid var(--color-border-subtle);
+		background: transparent;
+		color: var(--color-text-secondary);
+		transition: background-color 0.15s, border-color 0.15s;
+	}
+
+	.btn-outline-secondary:hover {
+		background: var(--color-bg-hover);
+		border-color: rgba(0, 229, 255, 0.15);
+	}
+
+	.btn-outline-danger {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		border-radius: 8px;
+		padding: 4px 10px;
+		font-size: 12px;
+		border: 1px solid rgba(255, 51, 102, 0.2);
+		background: rgba(255, 51, 102, 0.05);
+		color: var(--color-neon-red);
+		transition: background-color 0.15s, border-color 0.15s;
+	}
+
+	.btn-outline-danger:hover {
+		background: rgba(255, 51, 102, 0.1);
+		border-color: rgba(255, 51, 102, 0.3);
+	}
+
 	.btn-icon {
 		border-radius: 8px;
 		padding: 6px;
@@ -310,19 +424,121 @@ body {
 		background: var(--color-bg-hover);
 		color: var(--color-text-primary);
 	}
-}
 
-/* ─── Staggered fade-in-up ───────────────────────── */
+	/* Sidebar card – shared overlay behavior (HistoryEntry + ProjectItem) */
+	.sidebar-card {
+		overflow: hidden;
+	}
 
-@keyframes fade-in-up-delay {
-	from { opacity: 0; transform: translateY(20px); }
-	to { opacity: 1; transform: translateY(0); }
-}
+	/* Symmetric spacers for consistent card breathing room.
+	   Added as content (not padding) so they aren't absorbed by min-h + border-box. */
+	.sidebar-card::before,
+	.sidebar-card::after {
+		content: '';
+		display: block;
+		height: 6px;
+	}
 
-.animate-fade-in-up {
-	opacity: 0;
-	animation: fade-in-up-delay 800ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-	animation-delay: var(--delay, 0ms);
+	/* ─── Metadata summary line ─────────────────────── */
+
+	.metadata-line {
+		display: flex;
+		align-items: center;
+		gap: 0;
+		font-size: 10px;
+		line-height: 1;
+		flex-wrap: wrap;
+		row-gap: 4px;
+	}
+
+	.metadata-separator {
+		width: 1px;
+		height: 10px;
+		margin: 0 8px;
+		background: var(--color-border-subtle);
+		flex-shrink: 0;
+	}
+
+	.metadata-identity {
+		font-family: var(--font-mono);
+		font-weight: 600;
+		color: var(--color-neon-cyan);
+	}
+
+	.metadata-process {
+		color: var(--color-neon-purple);
+	}
+
+	.metadata-technical {
+		font-family: var(--font-mono);
+		color: var(--color-text-dim);
+	}
+
+	.tag-chip {
+		color: color-mix(in srgb, var(--color-neon-green) 60%, transparent);
+		font-family: var(--font-mono);
+		font-size: 10px;
+		text-decoration: none;
+		transition: color 0.15s;
+	}
+
+	.tag-chip:hover {
+		color: var(--color-neon-green);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	.complexity-dots {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+	}
+
+	.complexity-dots .dot {
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		background: var(--color-text-dim);
+		opacity: 0.25;
+	}
+
+	.complexity-dots .dot.filled {
+		background: var(--color-neon-purple);
+		opacity: 1;
+	}
+
+	.score-circle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 700;
+		flex-shrink: 0;
+	}
+
+	.score-circle-sm {
+		width: 22px;
+		height: 22px;
+		font-size: 9px;
+	}
+
+	.sidebar-card-overlay {
+		visibility: hidden;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 150ms, visibility 150ms;
+	}
+
+	.sidebar-card:hover .sidebar-card-overlay,
+	.sidebar-card:focus-within .sidebar-card-overlay {
+		visibility: visible;
+		pointer-events: auto;
+		opacity: 1;
+	}
 }
 
 /* ─── Slide-out for toast exit ───────────────────── */

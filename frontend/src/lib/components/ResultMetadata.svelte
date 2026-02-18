@@ -1,60 +1,101 @@
 <script lang="ts">
 	import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
+	import { normalizeScore, getScoreBadgeClass, formatMetadataSummary } from '$lib/utils/format';
+	import MetadataSummaryLine from './MetadataSummaryLine.svelte';
+	import Icon from './Icon.svelte';
 
 	let { result }: { result: OptimizationResultState } = $props();
+	let hasTokens = $derived(result.input_tokens > 0 || result.output_tokens > 0);
+	let lowConfidence = $derived(result.strategy_confidence > 0 && result.strategy_confidence < 0.70);
+
+	let segments = $derived(formatMetadataSummary({
+		taskType: result.task_type,
+		framework: result.framework_applied,
+		model: result.model_used,
+	}));
+
+	let secondaryFrameworks = $derived(
+		result.secondary_frameworks.length > 0 ? result.secondary_frameworks : null
+	);
+
+	let score = $derived(normalizeScore(result.scores.overall));
 </script>
 
-{#if result.title}
-	<div class="border-b border-border-subtle px-5 py-4">
-		<h3 class="font-display text-base font-bold text-text-primary" data-testid="result-title">{result.title}</h3>
+<!-- Row 1: Title + Score circle + Improvement arrow -->
+{#if result.title || score !== null}
+	<div class="flex items-center gap-3 border-b border-border-subtle px-5 py-4">
+		{#if result.title}
+			<h3 class="min-w-0 flex-1 font-display text-base font-bold text-text-primary" data-testid="result-title">{result.title}</h3>
+		{:else}
+			<div class="flex-1"></div>
+		{/if}
+		<div class="flex shrink-0 items-center gap-1.5">
+			{#if result.is_improvement}
+				<Icon name="arrow-up" size={14} class="text-neon-green" />
+			{/if}
+			{#if score !== null}
+				<span class="score-circle {getScoreBadgeClass(result.scores.overall)}" data-testid="result-score-circle">
+					{score}
+				</span>
+			{/if}
+		</div>
 	</div>
 {/if}
 
-<div class="flex flex-wrap items-center gap-2 border-b border-border-subtle px-5 py-3" data-testid="result-metadata">
-	{#if result.task_type}
-		<span class="badge rounded-full bg-neon-cyan/10 text-xs text-neon-cyan" data-testid="task-type-badge">
-			{result.task_type}
-		</span>
+<!-- Row 2: Classification summary line + Row 3: Project / Tags / Technical -->
+<div class="flex flex-col gap-2 border-b border-border-subtle px-5 py-3" data-testid="result-metadata">
+	<!-- Classification line -->
+	{#if segments.length > 0 || result.complexity}
+		<div class="flex flex-wrap items-center gap-1.5">
+			<MetadataSummaryLine
+				{segments}
+				complexity={result.complexity}
+				{lowConfidence}
+				confidenceValue={result.strategy_confidence}
+			/>
+			{#if secondaryFrameworks}
+				{#each secondaryFrameworks as sf}
+					<span class="rounded-full bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-cyan" data-testid="secondary-framework-badge">+{sf}</span>
+				{/each}
+			{/if}
+		</div>
 	{/if}
-	{#if result.complexity}
-		<span class="badge rounded-full bg-neon-purple/10 text-xs text-neon-purple" data-testid="complexity-badge">
-			{result.complexity}
-		</span>
-	{/if}
-	{#if result.framework_applied}
-		<span class="badge rounded-full bg-bg-hover text-xs text-text-secondary" data-testid="framework-badge">
-			{result.framework_applied}
-		</span>
-	{/if}
-	{#if result.model_used}
-		<span class="badge rounded-full bg-bg-hover text-xs text-text-dim" data-testid="model-badge">
-			{result.model_used}
-		</span>
-	{/if}
-	{#if result.project}
-		<span class="badge rounded-full bg-neon-yellow/10 text-xs text-neon-yellow" data-testid="project-badge">
-			{result.project}
-		</span>
-	{/if}
-	{#if result.tags.length > 0}
-		{#each result.tags as tag}
-			<span class="badge rounded-full bg-neon-purple/10 text-neon-purple" data-testid="tag-badge">
-				#{tag}
-			</span>
-		{/each}
-	{/if}
-	{#if result.is_improvement}
-		<span class="badge rounded-full bg-neon-green/10 text-xs text-neon-green" data-testid="improvement-badge">
-			Improved
-		</span>
-	{:else}
-		<span class="badge rounded-full bg-neon-yellow/10 text-xs text-neon-yellow">
-			No improvement
-		</span>
-	{/if}
-	{#if result.duration_ms > 0}
-		<span class="ml-auto font-mono text-xs tabular-nums text-text-dim" data-testid="duration">
-			{(result.duration_ms / 1000).toFixed(1)}s
-		</span>
-	{/if}
+
+	<!-- Project + Tags + Technical stats -->
+	<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+		{#if result.project}
+			{#if result.project_id}
+				<a
+					href="/projects/{result.project_id}"
+					class="text-[11px] font-medium text-neon-yellow transition-colors hover:text-neon-yellow/80 hover:underline"
+					data-testid="project-badge"
+				>
+					{result.project}
+				</a>
+			{:else}
+				<span class="text-[11px] font-medium text-neon-yellow" data-testid="project-badge">
+					{result.project}
+				</span>
+			{/if}
+		{/if}
+		{#if result.tags.length > 0}
+			<div class="flex items-center gap-2">
+				{#each result.tags as tag}
+					<span class="tag-chip" data-testid="tag-badge">#{tag}</span>
+				{/each}
+			</div>
+		{/if}
+		{#if hasTokens || result.duration_ms > 0}
+			<div class="ml-auto flex items-center gap-2 font-mono text-[10px] tabular-nums text-text-dim">
+				{#if hasTokens}
+					<span data-testid="token-usage">
+						{result.input_tokens.toLocaleString()} in / {result.output_tokens.toLocaleString()} out
+					</span>
+				{/if}
+				{#if result.duration_ms > 0}
+					<span data-testid="duration">{(result.duration_ms / 1000).toFixed(1)}s</span>
+				{/if}
+			</div>
+		{/if}
+	</div>
 </div>

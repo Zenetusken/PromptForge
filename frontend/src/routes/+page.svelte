@@ -1,15 +1,114 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import PromptInput from '$lib/components/PromptInput.svelte';
 	import PipelineProgress from '$lib/components/PipelineProgress.svelte';
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { promptState } from '$lib/stores/prompt.svelte';
-	import type { OptimizeMetadata } from '$lib/api/client';
+	import { historyState } from '$lib/stores/history.svelte';
+	import { toastState } from '$lib/stores/toast.svelte';
+	import { truncateText, formatRelativeTime, normalizeScore, formatScore, formatRate, getScoreBadgeClass } from '$lib/utils/format';
+	import { fetchStats } from '$lib/api/client';
+	import type { OptimizeMetadata, StatsResponse } from '$lib/api/client';
+
+	const QUICK_START_TEMPLATES = [
+		{
+			label: 'Code Review',
+			icon: 'terminal' as const,
+			color: 'cyan',
+			prompt: 'Review this Python function for correctness, performance issues, and adherence to best practices. Suggest specific refactors with code examples and explain the reasoning behind each change.'
+		},
+		{
+			label: 'Marketing Email',
+			icon: 'edit' as const,
+			color: 'purple',
+			prompt: 'Write a compelling product launch email for a B2B SaaS audience. Include a subject line, preview text, hero section, three benefit-driven paragraphs, social proof, and a clear call-to-action.'
+		},
+		{
+			label: 'Technical Docs',
+			icon: 'layers' as const,
+			color: 'green',
+			prompt: 'Create comprehensive API documentation for a REST endpoint including description, authentication requirements, request/response schemas with examples, error codes, and rate limiting details.'
+		},
+		{
+			label: 'Error Messages',
+			icon: 'alert-circle' as const,
+			color: 'red',
+			prompt: 'Design user-friendly error messages for a web application covering validation failures, network errors, authentication issues, and permission denials. Each message should explain what went wrong and how to fix it.'
+		}
+	] as const;
+
+	const COLOR_CLASSES = {
+		cyan: {
+			text: 'text-neon-cyan',
+			bgLight: 'bg-neon-cyan/10',
+			bgHover: 'hover:bg-neon-cyan/15',
+			border: 'border-neon-cyan/20',
+			shadow: 'hover:shadow-[0_0_20px_rgba(0,229,255,0.08)]'
+		},
+		purple: {
+			text: 'text-neon-purple',
+			bgLight: 'bg-neon-purple/10',
+			bgHover: 'hover:bg-neon-purple/15',
+			border: 'border-neon-purple/20',
+			shadow: 'hover:shadow-[0_0_20px_rgba(168,85,247,0.08)]'
+		},
+		green: {
+			text: 'text-neon-green',
+			bgLight: 'bg-neon-green/10',
+			bgHover: 'hover:bg-neon-green/15',
+			border: 'border-neon-green/20',
+			shadow: 'hover:shadow-[0_0_20px_rgba(34,255,136,0.08)]'
+		},
+		red: {
+			text: 'text-neon-red',
+			bgLight: 'bg-neon-red/10',
+			bgHover: 'hover:bg-neon-red/15',
+			border: 'border-neon-red/20',
+			shadow: 'hover:shadow-[0_0_20px_rgba(255,51,102,0.08)]'
+		}
+	} as const;
+
+	const STRATEGY_COLORS = ['bg-neon-cyan', 'bg-neon-purple', 'bg-neon-green', 'bg-neon-red'] as const;
+	const STRATEGY_TEXT_COLORS = ['text-neon-cyan', 'text-neon-purple', 'text-neon-green', 'text-neon-red'] as const;
+
+	// Clear stale optimization state when navigating to home
+	// (e.g., after viewing a detail page via logo click)
+	if (!optimizationState.isRunning) {
+		optimizationState.result = null;
+		optimizationState.currentRun = null;
+		optimizationState.error = null;
+	}
+
+	let stats = $state<StatsResponse | null>(null);
+	let lastStatsTotal = $state<number | null>(null);
+
+	$effect(() => {
+		if (historyState.hasLoaded && historyState.total > 0) {
+			if (!stats || lastStatsTotal !== historyState.total) {
+				lastStatsTotal = historyState.total;
+				fetchStats().then((res) => { stats = res; });
+			}
+		}
+	});
+
+	const strategyEntries: [string, number][] = $derived(
+		stats?.strategy_distribution
+			? (Object.entries(stats.strategy_distribution) as [string, number][]).sort((a, b) => b[1] - a[1])
+			: []
+	);
+	const strategyTotal = $derived(strategyEntries.reduce((sum, [, count]) => sum + count, 0));
 
 	function handleOptimize(prompt: string, metadata?: OptimizeMetadata) {
 		promptState.set(prompt);
 		optimizationState.startOptimization(prompt, metadata);
+	}
+
+	function handleCancel() {
+		optimizationState.cancel();
+		optimizationState.currentRun = null;
+		toastState.show('Optimization cancelled', 'info');
 	}
 
 	function handleRetry() {
@@ -18,72 +117,172 @@
 			optimizationState.startOptimization(promptState.text);
 		}
 	}
+
+	// Rate limit retry countdown
+	let retryCountdown = $state(0);
+	let retryInterval: ReturnType<typeof setInterval> | null = null;
+
+	$effect(() => {
+		const retryAfter = optimizationState.retryAfter;
+		if (retryInterval) {
+			clearInterval(retryInterval);
+			retryInterval = null;
+		}
+		if (retryAfter && retryAfter > 0) {
+			retryCountdown = retryAfter;
+			retryInterval = setInterval(() => {
+				retryCountdown--;
+				if (retryCountdown <= 0 && retryInterval) {
+					clearInterval(retryInterval);
+					retryInterval = null;
+				}
+			}, 1000);
+		} else {
+			retryCountdown = 0;
+		}
+		return () => {
+			if (retryInterval) {
+				clearInterval(retryInterval);
+				retryInterval = null;
+			}
+		};
+	});
 </script>
 
-<div class="flex flex-col gap-5">
-	{#if !optimizationState.currentRun && !optimizationState.result && !optimizationState.error}
-		<div class="hero-section flex flex-col items-center pt-4">
-			<!-- Title -->
-			<h1
-				class="animate-fade-in-up text-center text-gradient-forge font-display text-3xl font-extrabold leading-normal tracking-tight sm:text-4xl"
-			>
-				Forge Better Prompts
-			</h1>
-			<p
-				class="animate-fade-in-up mt-2 max-w-lg text-center text-sm leading-relaxed text-text-secondary"
-				style="--delay: 150ms;"
-			>
-				Analyze, optimize, and validate your prompts through a multi-stage AI pipeline.
-			</p>
+<div class="flex flex-col gap-4">
+	<PromptInput onsubmit={handleOptimize} oncancel={handleCancel} disabled={optimizationState.isRunning} />
 
-			<!-- Pipeline cards -->
-			<div
-				class="animate-fade-in-up mt-5 grid w-full max-w-2xl grid-cols-3 gap-3"
-				style="--delay: 300ms;"
-			>
-				<div class="card-glow group relative overflow-hidden rounded-lg border border-neon-cyan/10 bg-bg-card/60 px-3 py-2.5">
-					<div class="absolute -right-4 -top-4 h-14 w-14 rounded-full bg-neon-cyan/5 blur-2xl transition-[background-color] duration-500 group-hover:bg-neon-cyan/10"></div>
-					<div class="relative flex items-center gap-2.5">
-						<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neon-cyan/10">
-							<Icon name="info" size={13} class="text-neon-cyan" />
-						</div>
-						<div>
-							<div class="font-display text-xs font-bold text-text-primary">Analyze</div>
-							<div class="text-[10px] leading-tight text-text-dim">Structure & intent</div>
-						</div>
-					</div>
-				</div>
-
-				<div class="card-glow group relative overflow-hidden rounded-lg border border-neon-purple/10 bg-bg-card/60 px-3 py-2.5">
-					<div class="absolute -right-4 -top-4 h-14 w-14 rounded-full bg-neon-purple/5 blur-2xl transition-[background-color] duration-500 group-hover:bg-neon-purple/10"></div>
-					<div class="relative flex items-center gap-2.5">
-						<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neon-purple/10">
-							<Icon name="sparkles" size={13} class="text-neon-purple" />
-						</div>
-						<div>
-							<div class="font-display text-xs font-bold text-text-primary">Optimize</div>
-							<div class="text-[10px] leading-tight text-text-dim">AI-powered rewriting</div>
-						</div>
-					</div>
-				</div>
-
-				<div class="card-glow group relative overflow-hidden rounded-lg border border-neon-green/10 bg-bg-card/60 px-3 py-2.5">
-					<div class="absolute -right-4 -top-4 h-14 w-14 rounded-full bg-neon-green/5 blur-2xl transition-[background-color] duration-500 group-hover:bg-neon-green/10"></div>
-					<div class="relative flex items-center gap-2.5">
-						<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-neon-green/10">
-							<Icon name="check" size={13} class="text-neon-green" />
-						</div>
-						<div>
-							<div class="font-display text-xs font-bold text-text-primary">Validate</div>
-							<div class="text-[10px] leading-tight text-text-dim">Scoring & comparison</div>
-						</div>
-					</div>
+	<!-- Template cards (new users) or recent history (returning users) -->
+	{#if !optimizationState.currentRun && !optimizationState.result && !optimizationState.error && historyState.hasLoaded}
+		{#if historyState.total === 0}
+			<div class="mt-2">
+				<p class="section-heading-dim mb-3 px-1">Try a template</p>
+				<div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+					{#each QUICK_START_TEMPLATES as template, i}
+						{@const colors = COLOR_CLASSES[template.color]}
+						<button
+							type="button"
+							onclick={() => promptState.set(template.prompt)}
+							class="group flex flex-col items-center gap-2.5 rounded-xl border {colors.border} bg-bg-card/50 p-4 text-center transition-all duration-200 {colors.bgHover} {colors.shadow} hover:border-opacity-40 animate-fade-in"
+							style="animation-delay: {200 + i * 75}ms; animation-fill-mode: backwards;"
+						>
+							<div class="flex h-9 w-9 items-center justify-center rounded-full {colors.bgLight} transition-transform duration-200 group-hover:scale-110">
+								<Icon name={template.icon} size={16} class={colors.text} />
+							</div>
+							<span class="text-xs font-medium text-text-secondary group-hover:text-text-primary transition-colors">{template.label}</span>
+						</button>
+					{/each}
 				</div>
 			</div>
-		</div>
-	{/if}
+		{:else if historyState.items.length > 0}
+			<div class="mt-2">
+				<p class="section-heading-dim mb-3 px-1">Recent</p>
+				<div class="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+					{#each historyState.items.slice(0, 3) as entry, i}
+						{@const score = normalizeScore(entry.overall_score)}
+						{@const entryArchived = entry.project_status === 'archived'}
+						<button
+							type="button"
+							onclick={() => goto(`/optimize/${entry.id}`)}
+							class="group flex flex-col gap-2 rounded-xl border border-border-subtle bg-bg-card/50 p-3.5 text-left transition-all duration-200 hover:bg-bg-hover hover:border-neon-cyan/15 hover:shadow-[0_0_20px_rgba(0,229,255,0.06)] animate-fade-in"
+							style="animation-delay: {200 + i * 75}ms; animation-fill-mode: backwards;"
+						>
+							<p class="text-sm text-text-secondary group-hover:text-text-primary transition-colors line-clamp-2 leading-snug">
+								{truncateText(entry.title || entry.raw_prompt, 80)}
+							</p>
+							<div class="flex items-center gap-2 mt-auto">
+								{#if score !== null}
+									<span class="score-circle score-circle-sm {getScoreBadgeClass(entry.overall_score)}">
+										{score}
+									</span>
+								{/if}
+								{#if entry.framework_applied}
+									<span class="text-[10px] text-neon-purple">{entry.framework_applied}</span>
+								{/if}
+								{#if entry.project && entryArchived}
+									<span class="text-[10px] text-neon-yellow/50">
+										{entry.project} (archived)
+									</span>
+								{/if}
+								<span class="ml-auto text-[10px] text-text-dim">{formatRelativeTime(entry.created_at)}</span>
+							</div>
+						</button>
+					{/each}
+				</div>
 
-	<PromptInput onsubmit={handleOptimize} disabled={optimizationState.isRunning} />
+				{#if stats}
+					<div class="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 animate-fade-in" style="animation-delay: 425ms; animation-fill-mode: backwards;">
+						<div class="rounded-xl border border-border-subtle bg-bg-card/50 p-3">
+							<p class="text-[10px] font-medium uppercase tracking-wider text-neon-cyan">Total Forged</p>
+							<p class="mt-1 font-mono text-xl font-semibold text-text-primary">{stats.total_optimizations}</p>
+						</div>
+						<div class="rounded-xl border border-border-subtle bg-bg-card/50 p-3">
+							<p class="text-[10px] font-medium uppercase tracking-wider {getScoreBadgeClass(stats.average_overall_score).split(' ').pop() ?? 'text-text-dim'}">Avg Score</p>
+							<p class="mt-1 font-mono text-xl font-semibold text-text-primary">{normalizeScore(stats.average_overall_score) ?? '—'}</p>
+						</div>
+						<div class="rounded-xl border border-border-subtle bg-bg-card/50 p-3">
+							<p class="text-[10px] font-medium uppercase tracking-wider text-neon-green">Improved</p>
+							<p class="mt-1 font-mono text-xl font-semibold text-text-primary">{formatRate(stats.improvement_rate)}</p>
+						</div>
+						<div class="rounded-xl border border-border-subtle bg-bg-card/50 p-3">
+							<p class="text-[10px] font-medium uppercase tracking-wider text-neon-purple">Today</p>
+							<p class="mt-1 font-mono text-xl font-semibold text-text-primary">{stats.optimizations_today}</p>
+						</div>
+					</div>
+
+					{#if stats.average_clarity_score != null || stats.most_common_task_type}
+						<div class="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 animate-fade-in" style="animation-delay: 475ms; animation-fill-mode: backwards;">
+							<div class="flex items-baseline gap-1">
+								<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_clarity_score)}</span>
+								<span class="text-[9px] tracking-wider text-text-dim">CLR</span>
+							</div>
+							<div class="flex items-baseline gap-1">
+								<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_specificity_score)}</span>
+								<span class="text-[9px] tracking-wider text-text-dim">SPC</span>
+							</div>
+							<div class="flex items-baseline gap-1">
+								<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_structure_score)}</span>
+								<span class="text-[9px] tracking-wider text-text-dim">STR</span>
+							</div>
+							<div class="flex items-baseline gap-1">
+								<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_faithfulness_score)}</span>
+								<span class="text-[9px] tracking-wider text-text-dim">FTH</span>
+							</div>
+							{#if stats.most_common_task_type}
+								<div class="hidden h-3.5 w-px bg-border-subtle sm:block" aria-hidden="true"></div>
+								<div class="flex items-baseline gap-1.5">
+									<span class="truncate font-mono text-xs font-semibold text-neon-cyan">{stats.most_common_task_type}</span>
+									<span class="text-[9px] tracking-wider text-text-dim">TOP TASK</span>
+								</div>
+							{/if}
+						</div>
+					{/if}
+
+					{#if strategyEntries.length > 0}
+						<div class="mt-3 animate-fade-in" style="animation-delay: 500ms; animation-fill-mode: backwards;">
+							<div class="flex h-2 overflow-hidden rounded-full">
+								{#each strategyEntries as [, count], i}
+									<div
+										class="{STRATEGY_COLORS[i % STRATEGY_COLORS.length]} opacity-70"
+										style="width: {(count / strategyTotal) * 100}%"
+									></div>
+								{/each}
+							</div>
+							<div class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+								{#each strategyEntries as [name, count], i}
+									<span class="flex items-center gap-1.5 text-[10px] text-text-secondary">
+										<span class="inline-block h-1.5 w-1.5 rounded-full {STRATEGY_COLORS[i % STRATEGY_COLORS.length]}"></span>
+										<span class="{STRATEGY_TEXT_COLORS[i % STRATEGY_TEXT_COLORS.length]}">{name}</span>
+										<span class="text-text-dim">{count}</span>
+									</span>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				{/if}
+			</div>
+		{/if}
+	{/if}
 
 	{#if optimizationState.error}
 		<div class="animate-fade-in rounded-xl border border-neon-red/20 bg-neon-red/5 p-4" role="alert" data-testid="error-display">
@@ -92,13 +291,21 @@
 					<Icon name="alert-circle" size={16} class="text-neon-red" />
 				</div>
 				<div class="flex-1">
-					<p class="text-sm font-medium text-neon-red">Optimization failed</p>
+					<p class="text-sm font-medium text-neon-red">
+						{optimizationState.errorType === 'rate_limit' ? 'Rate limit reached' : 'Optimization failed'}
+					</p>
 					<p class="mt-0.5 text-sm text-text-secondary">{optimizationState.error}</p>
+					{#if optimizationState.errorType === 'rate_limit' && retryCountdown > 0}
+						<p class="mt-1 font-mono text-xs text-neon-yellow" data-testid="retry-countdown">
+							Try again in {retryCountdown}s
+						</p>
+					{/if}
 				</div>
 				{#if promptState.text}
 					<button
 						onclick={handleRetry}
-						class="shrink-0 rounded-lg border border-neon-cyan/20 bg-neon-cyan/5 px-4 py-1.5 font-mono text-xs text-neon-cyan transition-[background-color] hover:bg-neon-cyan/10"
+						disabled={optimizationState.errorType === 'rate_limit' && retryCountdown > 0}
+						class="shrink-0 rounded-lg border border-neon-cyan/20 bg-neon-cyan/5 px-4 py-1.5 font-mono text-xs text-neon-cyan transition-[background-color] hover:bg-neon-cyan/10 disabled:opacity-40 disabled:cursor-not-allowed"
 						data-testid="retry-button"
 					>
 						Retry

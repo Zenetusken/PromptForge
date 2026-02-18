@@ -1,12 +1,28 @@
 <script lang="ts">
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+	import ForgeSiblings from '$lib/components/ForgeSiblings.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
+	import { navigationState, projectLabel } from '$lib/stores/navigation.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	let isError = $derived(data.item?.status === 'error');
+
+	let backDest = $derived(navigationState.getBackForOptimize(data.item));
+	let breadcrumbs = $derived.by(() => {
+		const segments: { label: string; href?: string }[] = [{ label: 'Home', href: '/' }];
+		if (data.item?.project && data.item?.project_id) {
+			segments.push({
+				label: projectLabel(data.item.project, data.item.project_status),
+				href: `/projects/${data.item.project_id}`,
+			});
+		}
+		segments.push({ label: data.item?.title || 'Forge Detail' });
+		return segments;
+	});
 
 	// Load the item into the optimization store so ResultPanel can work with it
 	$effect(() => {
@@ -24,17 +40,26 @@
 <div class="flex flex-col gap-6">
 	<div class="flex items-center gap-3">
 		<a
-			href="/"
+			href={backDest.url}
 			class="flex items-center gap-1.5 rounded-lg bg-bg-card/60 px-3 py-1.5 text-xs text-text-dim transition-colors hover:text-neon-cyan"
 			data-testid="back-link"
 		>
 			<Icon name="chevron-left" size={12} />
-			Back to Forge
+			{backDest.label}
 		</a>
-		{#if data.item?.title}
-			<span class="text-sm text-text-primary" data-testid="detail-title">{data.item.title}</span>
-		{/if}
+		<span class="text-text-dim/30">|</span>
+		<Breadcrumbs segments={breadcrumbs} />
 	</div>
+
+	{#if data.item?.project_id && data.item?.prompt_id}
+		{#key data.item.prompt_id}
+			<ForgeSiblings
+				currentForgeId={data.item.id}
+				projectId={data.item.project_id}
+				promptId={data.item.prompt_id}
+			/>
+		{/key}
+	{/if}
 
 	{#if isError}
 		<div class="rounded-2xl border border-neon-red/15 bg-bg-card/60 p-6" data-testid="error-state">

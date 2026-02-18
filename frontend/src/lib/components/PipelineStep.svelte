@@ -4,12 +4,26 @@
 	import { safeStringOrUndefined, safeNumberOrUndefined, safeArrayOrUndefined } from '$lib/utils/safe';
 	import Icon from './Icon.svelte';
 
-	let { step, index, isLatestActive = false }: { step: StepState; index: number; isLatestActive?: boolean } = $props();
+	let { step, index, isLatestActive = false, mobile = false }: { step: StepState; index: number; isLatestActive?: boolean; mobile?: boolean } = $props();
 
 	let isActive = $derived(step.status === 'running' || step.status === 'complete');
 
+	// Click-to-expand override for completed steps
+	let expandedOverride: boolean | null = $state(null);
+
 	// Auto-collapse: show expanded only when running or when it's the latest completed and active
-	let isExpanded = $derived(step.status === 'running' || isLatestActive);
+	// expandedOverride takes precedence for completed steps
+	let isExpanded = $derived.by(() => {
+		if (step.status === 'running') return true;
+		if (step.status === 'complete' && expandedOverride !== null) return expandedOverride;
+		return isLatestActive;
+	});
+
+	function toggleExpand() {
+		if (step.status === 'complete') {
+			expandedOverride = expandedOverride === null ? !isLatestActive : !expandedOverride;
+		}
+	}
 
 	// ARIA status label for screen readers
 	let ariaStatusLabel = $derived(
@@ -18,6 +32,7 @@
 
 	// Extract useful data from completed steps
 	let taskType = $derived(safeStringOrUndefined(step.data?.task_type));
+	let complexity = $derived(safeStringOrUndefined(step.data?.complexity));
 	let weaknesses = $derived(safeArrayOrUndefined(step.data?.weaknesses));
 	let strengths = $derived(safeArrayOrUndefined(step.data?.strengths));
 	let hasStepData = $derived(step.status === 'complete' && step.data && Object.keys(step.data).length > 0);
@@ -30,9 +45,37 @@
 	let verdict = $derived(safeStringOrUndefined(step.data?.verdict));
 	let isValidateStep = $derived(step.name === 'validate');
 
-	// Optimized prompt preview for optimize step
+	// Optimized prompt preview and strategy badge for optimize step
 	let optimizedPrompt = $derived(safeStringOrUndefined(step.data?.optimized_prompt));
+	let frameworkApplied = $derived(safeStringOrUndefined(step.data?.framework_applied));
 	let isOptimizeStep = $derived(step.name === 'optimize');
+
+	// Strategy step data
+	let isStrategyStep = $derived(step.name === 'strategy');
+	let strategyName = $derived(safeStringOrUndefined(step.data?.strategy));
+	let strategyReasoning = $derived(safeStringOrUndefined(step.data?.reasoning));
+	let strategyConfidence = $derived(safeNumberOrUndefined(step.data?.confidence));
+	let strategyTaskType = $derived(safeStringOrUndefined(step.data?.task_type));
+	let isManualOverride = $derived(step.data?.is_override === true || (strategyReasoning?.startsWith('User-specified') ?? false));
+	let secondaryFrameworks = $derived(safeArrayOrUndefined(step.data?.secondary_frameworks));
+	let isAnalyzeStep = $derived(step.name === 'analyze');
+
+	// Confidence color: green >= 0.80, yellow 0.60-0.79, orange < 0.60
+	let confidenceColor = $derived.by(() => {
+		if (strategyConfidence === undefined) return 'text-text-dim';
+		if (strategyConfidence >= 0.80) return 'text-neon-green';
+		if (strategyConfidence >= 0.60) return 'text-neon-yellow';
+		return 'text-neon-red';
+	});
+
+	// Step color scheme: analyze=cyan, strategy=yellow, optimize=purple, validate=green
+	const stepColors: Record<string, string> = {
+		analyze: 'neon-cyan',
+		strategy: 'neon-yellow',
+		optimize: 'neon-purple',
+		validate: 'neon-green',
+	};
+	let stepColor = $derived(stepColors[step.name] || 'neon-cyan');
 
 	// Duration formatting
 	let durationDisplay = $derived.by(() => {
@@ -70,41 +113,172 @@
 	});
 </script>
 
+{#if mobile}
+<!-- Mobile: horizontal row layout -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 <div
-	class="flex flex-1 flex-col items-center gap-2 rounded-xl p-3 text-center transition-[background-color] duration-300 {isExpanded ? 'bg-bg-hover/30' : ''}"
+	class="flex items-start gap-3 rounded-xl p-3 transition-[background-color] duration-300 {isExpanded ? 'bg-bg-hover/30' : ''} {step.status === 'complete' ? 'cursor-pointer' : ''}"
 	data-testid="pipeline-step-{step.name}"
 	aria-label={ariaStatusLabel}
-	role="group"
+	role={step.status === 'complete' ? 'button' : 'group'}
+	onclick={toggleExpand}
+	onkeydown={(e) => { if (step.status === 'complete' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleExpand(); } }}
+	tabindex={step.status === 'complete' ? 0 : -1}
+>
+	<!-- Left: icon -->
+	<div class="relative flex h-9 w-9 shrink-0 items-center justify-center">
+		{#if step.status === 'running'}
+			<div class="absolute inset-0 animate-ping rounded-full opacity-15" style="background-color: var(--color-{stepColor})"></div>
+			<div class="flex h-9 w-9 items-center justify-center rounded-full border-2" style="border-color: var(--color-{stepColor})">
+				<Icon name="spinner" size={14} class="animate-spin" style="color: var(--color-{stepColor})" />
+			</div>
+		{:else if step.status === 'complete'}
+			<div class="flex h-9 w-9 items-center justify-center rounded-full" style="background-color: color-mix(in srgb, var(--color-{stepColor}) 15%, transparent)">
+				<Icon name="check" size={14} style="color: var(--color-{stepColor})" />
+			</div>
+		{:else if step.status === 'error'}
+			<div class="flex h-9 w-9 items-center justify-center rounded-full bg-neon-red/15">
+				<Icon name="x" size={14} class="text-neon-red" />
+			</div>
+		{:else}
+			<div class="flex h-9 w-9 items-center justify-center rounded-full border border-text-dim/20">
+				<span class="font-mono text-xs text-text-dim">{String(index + 1).padStart(2, '0')}</span>
+			</div>
+		{/if}
+	</div>
+
+	<!-- Right: label + content -->
+	<div class="min-w-0 flex-1">
+		<div class="flex items-center gap-2">
+			<span
+				class="font-display text-xs font-bold tracking-widest"
+				class:text-text-dim={step.status === 'pending'}
+				class:text-neon-red={step.status === 'error'}
+				style={isActive && step.status !== 'error' ? `color: var(--color-${stepColor})` : ''}
+			>
+				{step.label}
+			</span>
+			{#if step.status === 'running' && liveTimer}
+				<span class="font-mono text-[10px] tabular-nums text-text-secondary">{liveTimer}</span>
+			{:else if step.status === 'complete' && durationDisplay}
+				<span class="font-mono text-[10px] tabular-nums text-text-dim">{durationDisplay}</span>
+			{/if}
+		</div>
+
+		{#if step.description && (step.status === 'pending' || step.status === 'running')}
+			<div class="mt-0.5 text-[11px] text-text-dim">{step.description}</div>
+		{/if}
+
+		{#if step.status === 'running' && step.streamingContent}
+			<div class="mt-1.5 w-full max-w-sm rounded-lg border border-border-subtle bg-bg-primary/60 p-2 text-left" style="border-left: 2px solid color-mix(in srgb, var(--color-{stepColor}) 40%, transparent)">
+				<p class="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-text-secondary">
+					{step.streamingContent.trim()}
+				</p>
+				<span class="mt-1 inline-block h-3 w-0.5 animate-pulse bg-neon-cyan"></span>
+			</div>
+		{/if}
+
+		<!-- Collapsed summary badges on mobile -->
+		{#if step.status === 'complete' && !isExpanded}
+			<div class="mt-1 flex flex-wrap items-center gap-1">
+				{#if isAnalyzeStep && taskType}
+					<span class="inline-block rounded-full bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-cyan">{taskType}</span>
+				{/if}
+				{#if isStrategyStep && strategyName}
+					<span class="inline-block rounded-full bg-neon-yellow/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-yellow">{strategyName}</span>
+					{#if secondaryFrameworks && secondaryFrameworks.length > 0}
+						{#each secondaryFrameworks as sf}
+							<span class="inline-block rounded-full bg-neon-yellow/5 px-1.5 py-0.5 font-mono text-[9px] text-neon-yellow/60">+{sf}</span>
+						{/each}
+					{/if}
+				{/if}
+				{#if isOptimizeStep && frameworkApplied}
+					<span class="inline-block rounded-full bg-neon-purple/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-purple">{frameworkApplied}</span>
+				{/if}
+				{#if isValidateStep && overallScore !== undefined}
+					<span class="rounded-full bg-neon-green/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green">{formatScore(overallScore)}</span>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Expanded data on mobile -->
+		{#if hasStepData && isExpanded}
+			<div class="mt-1.5 flex flex-wrap items-center gap-1">
+				{#if isAnalyzeStep && taskType}
+					<span class="inline-block rounded-full bg-neon-cyan/10 px-2 py-0.5 font-mono text-[10px] text-neon-cyan">{taskType}</span>
+					{#if complexity}
+						<span class="inline-block rounded-full bg-neon-purple/10 px-2 py-0.5 font-mono text-[10px] text-neon-purple">{complexity}</span>
+					{/if}
+				{/if}
+				{#if isAnalyzeStep && weaknesses && weaknesses.length > 0}
+					{#each weaknesses.slice(0, 2) as weakness}
+						<span class="inline-block max-w-[200px] truncate rounded-md bg-neon-red/8 px-1.5 py-0.5 text-[10px] text-neon-red">{weakness}</span>
+					{/each}
+				{/if}
+				{#if isStrategyStep && strategyName}
+					<span class="inline-block rounded-full bg-neon-yellow/10 px-2 py-0.5 font-mono text-[10px] text-neon-yellow">{strategyName}</span>
+					{#if secondaryFrameworks && secondaryFrameworks.length > 0}
+						{#each secondaryFrameworks as sf}
+							<span class="inline-block rounded-full bg-neon-yellow/5 px-1.5 py-0.5 font-mono text-[9px] text-neon-yellow/60">+{sf}</span>
+						{/each}
+					{/if}
+					{#if strategyConfidence !== undefined}
+						<span class="font-mono text-[10px] {confidenceColor}">{Math.round(strategyConfidence * 100)}%</span>
+					{/if}
+				{/if}
+				{#if isOptimizeStep && frameworkApplied}
+					<span class="inline-block rounded-full bg-neon-purple/10 px-2 py-0.5 font-mono text-[10px] text-neon-purple">{frameworkApplied}</span>
+				{/if}
+				{#if isValidateStep && overallScore !== undefined}
+					<span class="rounded-full bg-neon-green/15 px-2 py-0.5 font-mono text-sm font-bold text-neon-green">{formatScore(overallScore)}</span>
+					<span class="text-[10px] text-text-dim">overall</span>
+				{/if}
+			</div>
+			{#if isStrategyStep && strategyReasoning}
+				<p class="mt-1 max-w-sm text-[10px] leading-relaxed text-text-secondary">{strategyReasoning}</p>
+			{/if}
+		{/if}
+	</div>
+</div>
+{:else}
+<!-- Desktop: vertical column layout -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
+<div
+	class="flex flex-1 flex-col items-center gap-2 rounded-xl p-3 text-center transition-[background-color] duration-300 {isExpanded ? 'bg-bg-hover/30' : ''} {step.status === 'complete' ? 'cursor-pointer' : ''}"
+	data-testid="pipeline-step-{step.name}"
+	aria-label={ariaStatusLabel}
+	role={step.status === 'complete' ? 'button' : 'group'}
+	onclick={toggleExpand}
+	onkeydown={(e) => { if (step.status === 'complete' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleExpand(); } }}
+	tabindex={step.status === 'complete' ? 0 : -1}
 >
 	<!-- Status indicator -->
 	<div class="relative flex h-11 w-11 items-center justify-center">
 		{#if step.status === 'running'}
 			<div
 				class="absolute inset-0 animate-ping rounded-full opacity-15"
-				class:bg-neon-cyan={index === 0}
-				class:bg-neon-purple={index === 1}
-				class:bg-neon-green={index === 2}
+				style="background-color: var(--color-{stepColor})"
 			></div>
 			<div
 				class="flex h-10 w-10 items-center justify-center rounded-full border-2"
-				class:border-neon-cyan={index === 0}
-				class:border-neon-purple={index === 1}
-				class:border-neon-green={index === 2}
+				style="border-color: var(--color-{stepColor})"
 			>
 				<Icon
 					name="spinner"
 					size={16}
-					class="animate-spin {index === 0 ? 'text-neon-cyan' : index === 1 ? 'text-neon-purple' : 'text-neon-green'}"
+					class="animate-spin"
+					style="color: var(--color-{stepColor})"
 				/>
 			</div>
 		{:else if step.status === 'complete'}
 			<div
-				class="flex h-10 w-10 items-center justify-center rounded-full {index === 0 ? 'bg-neon-cyan/15' : index === 1 ? 'bg-neon-purple/15' : 'bg-neon-green/15'}"
+				class="flex h-10 w-10 items-center justify-center rounded-full"
+				style="background-color: color-mix(in srgb, var(--color-{stepColor}) 15%, transparent)"
 			>
 				<Icon
 					name="check"
 					size={16}
-					class={index === 0 ? 'text-neon-cyan' : index === 1 ? 'text-neon-purple' : 'text-neon-green'}
+					style="color: var(--color-{stepColor})"
 				/>
 			</div>
 		{:else if step.status === 'error'}
@@ -121,11 +295,9 @@
 	<!-- Step label -->
 	<div
 		class="font-display text-xs font-bold tracking-widest"
-		class:text-neon-cyan={index === 0 && isActive}
-		class:text-neon-purple={index === 1 && isActive}
-		class:text-neon-green={index === 2 && isActive}
 		class:text-text-dim={step.status === 'pending'}
 		class:text-neon-red={step.status === 'error'}
+		style={isActive && step.status !== 'error' ? `color: var(--color-${stepColor})` : ''}
 	>
 		{step.label}
 	</div>
@@ -148,8 +320,12 @@
 
 	<!-- Streaming content (shown while running) -->
 	{#if step.status === 'running' && step.streamingContent}
-		<div class="mt-1 w-full max-w-[200px] rounded-lg border border-border-subtle bg-bg-primary/60 p-2 text-left" aria-live="polite" data-testid="streaming-content-{step.name}">
-			<p class="whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-text-secondary">
+		<div
+			class="mt-1 w-full max-w-[280px] rounded-lg border border-border-subtle bg-bg-primary/60 p-2 text-left"
+			style="border-left: 2px solid color-mix(in srgb, var(--color-{stepColor}) 40%, transparent)"
+			data-testid="streaming-content-{step.name}"
+		>
+			<p class="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-text-secondary">
 				{step.streamingContent.trim()}
 			</p>
 			<span class="mt-1 inline-block h-3 w-0.5 animate-pulse bg-neon-cyan"></span>
@@ -159,12 +335,19 @@
 	<!-- Step data details (shown when complete and expanded) -->
 	{#if hasStepData && isExpanded}
 		<div class="mt-1 flex flex-col items-center gap-1">
-			{#if taskType}
-				<span class="inline-block rounded-full bg-neon-cyan/10 px-2 py-0.5 font-mono text-[10px] text-neon-cyan">
-					{taskType}
-				</span>
+			{#if isAnalyzeStep && taskType}
+				<div class="flex items-center gap-1">
+					<span class="inline-block rounded-full bg-neon-cyan/10 px-2 py-0.5 font-mono text-[10px] text-neon-cyan">
+						{taskType}
+					</span>
+					{#if complexity}
+						<span class="inline-block rounded-full bg-neon-purple/10 px-2 py-0.5 font-mono text-[10px] text-neon-purple" data-testid="complexity-badge">
+							{complexity}
+						</span>
+					{/if}
+				</div>
 			{/if}
-			{#if weaknesses && weaknesses.length > 0}
+			{#if isAnalyzeStep && weaknesses && weaknesses.length > 0}
 				<div class="flex flex-wrap justify-center gap-1">
 					{#each weaknesses.slice(0, 2) as weakness}
 						<span class="inline-block max-w-[140px] truncate rounded-md bg-neon-red/8 px-1.5 py-0.5 text-[10px] text-neon-red">
@@ -173,7 +356,7 @@
 					{/each}
 				</div>
 			{/if}
-			{#if strengths && strengths.length > 0}
+			{#if isAnalyzeStep && strengths && strengths.length > 0}
 				<div class="flex flex-wrap justify-center gap-1">
 					{#each strengths.slice(0, 2) as strength}
 						<span class="inline-block max-w-[140px] truncate rounded-md bg-neon-green/8 px-1.5 py-0.5 text-[10px] text-neon-green">
@@ -181,6 +364,53 @@
 						</span>
 					{/each}
 				</div>
+			{/if}
+			{#if isStrategyStep && strategyName}
+				<div class="flex items-center gap-1">
+					<span class="inline-block rounded-full bg-neon-yellow/10 px-2 py-0.5 font-mono text-[10px] text-neon-yellow" data-testid="strategy-badge">
+						{strategyName}
+					</span>
+					<span
+						class="inline-block rounded-full px-1.5 py-0.5 font-mono text-[9px] {isManualOverride ? 'bg-neon-purple/10 text-neon-purple' : 'bg-neon-cyan/10 text-neon-cyan'}"
+						data-testid="strategy-mode-badge"
+					>
+						{isManualOverride ? 'manual' : 'auto'}
+					</span>
+				</div>
+				{#if secondaryFrameworks && secondaryFrameworks.length > 0}
+					<div class="flex items-center gap-1">
+						{#each secondaryFrameworks as sf}
+							<span class="inline-block rounded-full bg-neon-yellow/5 px-1.5 py-0.5 font-mono text-[9px] text-neon-yellow/60" data-testid="secondary-badge">
+								+ {sf}
+							</span>
+						{/each}
+					</div>
+				{/if}
+				{#if strategyTaskType}
+					<span class="inline-block rounded-full bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-cyan" data-testid="strategy-task-type">
+						{strategyTaskType}
+					</span>
+				{/if}
+				{#if strategyConfidence !== undefined}
+					<span class="font-mono text-[10px] {confidenceColor}" data-testid="strategy-confidence">
+						{Math.round(strategyConfidence * 100)}% confidence
+					</span>
+				{/if}
+				{#if strategyReasoning}
+					<p class="max-w-[200px] text-center text-[10px] leading-relaxed text-text-secondary">
+						{strategyReasoning}
+					</p>
+				{/if}
+				{#if strategyConfidence !== undefined && strategyConfidence < 0.70}
+					<p class="max-w-[200px] text-center text-[9px] text-neon-yellow" data-testid="low-confidence-warning">
+						Low confidence — consider selecting a strategy manually
+					</p>
+				{/if}
+			{/if}
+			{#if isOptimizeStep && frameworkApplied}
+				<span class="inline-block rounded-full bg-neon-purple/10 px-2 py-0.5 font-mono text-[10px] text-neon-purple" data-testid="framework-badge">
+					{frameworkApplied}
+				</span>
 			{/if}
 			{#if isOptimizeStep && optimizedPrompt}
 				<div class="mt-1 max-w-[200px] rounded-lg border border-neon-purple/15 bg-neon-purple/5 p-1.5 text-left">
@@ -199,17 +429,17 @@
 					</div>
 					<div class="flex flex-wrap justify-center gap-1">
 						{#if clarityScore !== undefined}
-							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
-								CLA {formatScore(clarityScore)}
+							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary" title="Clarity">
+								CLR {formatScore(clarityScore)}
 							</span>
 						{/if}
 						{#if specificityScore !== undefined}
-							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
-								SPE {formatScore(specificityScore)}
+							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary" title="Specificity">
+								SPC {formatScore(specificityScore)}
 							</span>
 						{/if}
 						{#if structureScore !== undefined}
-							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
+							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary" title="Structure">
 								STR {formatScore(structureScore)}
 							</span>
 						{/if}
@@ -224,10 +454,53 @@
 		</div>
 	{:else if step.status === 'complete' && !isExpanded}
 		<!-- Collapsed completed step: just show summary -->
-		<div class="mt-1 flex items-center gap-1">
-			{#if taskType}
+		<div class="mt-1 flex flex-wrap items-center justify-center gap-1">
+			{#if isAnalyzeStep && taskType}
 				<span class="inline-block rounded-full bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-cyan">
 					{taskType}
+				</span>
+				{#if complexity}
+					<span class="inline-block rounded-full bg-neon-purple/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-purple">
+						{complexity}
+					</span>
+				{/if}
+			{/if}
+			{#if isStrategyStep && strategyName}
+				<span class="inline-block rounded-full bg-neon-yellow/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-yellow" data-testid="collapsed-strategy-badge">
+					{strategyName}
+				</span>
+				{#if secondaryFrameworks && secondaryFrameworks.length > 0}
+					{#each secondaryFrameworks as sf}
+						<span class="inline-block rounded-full bg-neon-yellow/5 px-1 py-0.5 font-mono text-[8px] text-neon-yellow/60" data-testid="collapsed-secondary-badge">
+							+{sf}
+						</span>
+					{/each}
+				{/if}
+				<span
+					class="inline-block rounded-full px-1 py-0.5 font-mono text-[8px] {isManualOverride ? 'bg-neon-purple/10 text-neon-purple' : 'bg-neon-cyan/10 text-neon-cyan'}"
+					data-testid="collapsed-strategy-mode-badge"
+				>
+					{isManualOverride ? 'manual' : 'auto'}
+				</span>
+				{#if strategyTaskType}
+					<span class="inline-block rounded-full bg-neon-cyan/10 px-1 py-0.5 font-mono text-[8px] text-neon-cyan" data-testid="collapsed-strategy-task-type">
+						{strategyTaskType}
+					</span>
+				{/if}
+				{#if strategyConfidence !== undefined}
+					<span class="font-mono text-[8px] {confidenceColor}" data-testid="collapsed-strategy-confidence">
+						{Math.round(strategyConfidence * 100)}%
+					</span>
+				{/if}
+				{#if strategyReasoning && !isManualOverride}
+					<span class="inline-block max-w-[120px] truncate text-[8px] text-text-dim" title={strategyReasoning} data-testid="collapsed-strategy-reasoning">
+						{strategyReasoning}
+					</span>
+				{/if}
+			{/if}
+			{#if isOptimizeStep && frameworkApplied}
+				<span class="inline-block rounded-full bg-neon-purple/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-purple" data-testid="collapsed-framework-badge">
+					{frameworkApplied}
 				</span>
 			{/if}
 			{#if isValidateStep && overallScore !== undefined}
@@ -243,3 +516,4 @@
 		</div>
 	{/if}
 </div>
+{/if}

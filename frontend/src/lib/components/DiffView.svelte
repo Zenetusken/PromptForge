@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { computeDiff, computeLineDiff, type DiffSegment } from '$lib/utils/diff';
+	import { onMount } from 'svelte';
+	import { computeDiff, computeLineDiff } from '$lib/utils/diff';
 
 	let {
 		original,
@@ -12,6 +13,11 @@
 	let viewMode = $state<'unified' | 'side-by-side'>('side-by-side');
 	let segments = $derived(computeDiff(original, optimized));
 	let lineDiff = $derived(computeLineDiff(original, optimized));
+
+	// Default to unified on mobile after hydration to avoid SSR mismatch
+	onMount(() => {
+		if (window.innerWidth < 640) viewMode = 'unified';
+	});
 
 	// Refs for synchronized scrolling
 	let leftPanel: HTMLDivElement | undefined = $state(undefined);

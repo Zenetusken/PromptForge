@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { historyState } from '$lib/stores/history.svelte';
+	import { projectsState } from '$lib/stores/projects.svelte';
 	import Icon from './Icon.svelte';
 	import Dropdown from './Dropdown.svelte';
 
@@ -39,8 +40,23 @@
 
 	let projectOptions = $derived([
 		{ value: '', label: 'All projects' },
-		...historyState.availableProjects.map((p) => ({ value: p, label: p }))
+		...projectsState.allItems.map((p) => ({ value: p.id, label: p.name })),
 	]);
+
+	// Ensure all projects (active + archived) are loaded for the filter dropdown
+	$effect(() => {
+		if (!projectsState.allItemsLoaded) {
+			projectsState.loadAllProjects();
+		}
+	});
+
+	let isFilteredByArchivedProject = $derived(
+		historyState.filterProjectId
+			? projectsState.allItems.some(
+				(p) => p.id === historyState.filterProjectId && p.status === 'archived'
+			)
+			: false
+	);
 </script>
 
 <div class="space-y-2 p-3">
@@ -73,7 +89,7 @@
 			Clear
 		</button>
 	</div>
-	{#if historyState.availableTaskTypes.length > 0 || historyState.availableProjects.length > 0}
+	{#if historyState.availableTaskTypes.length > 0 || projectsState.allItems.length > 0}
 		<div class="flex items-center gap-1.5">
 			{#if historyState.availableTaskTypes.length > 0}
 				<Dropdown
@@ -84,15 +100,30 @@
 					testid="filter-task-type"
 				/>
 			{/if}
-			{#if historyState.availableProjects.length > 0}
+			{#if projectsState.allItems.length > 0}
 				<Dropdown
-					value={historyState.filterProject}
+					value={historyState.filterProjectId}
 					options={projectOptions}
 					label="Filter by project"
-					onchange={(v) => historyState.setFilterProject(v)}
+					onchange={(v) => historyState.setFilterProjectId(v)}
 					testid="filter-project"
 				/>
 			{/if}
 		</div>
 	{/if}
+	{#if isFilteredByArchivedProject}
+		<div class="rounded-lg bg-neon-yellow/5 border border-neon-yellow/10 px-3 py-1.5 text-[11px] text-neon-yellow/70">
+			Showing results for archived project
+		</div>
+	{/if}
+	<label class="flex cursor-pointer items-center gap-2 px-0.5 py-0.5">
+		<input
+			type="checkbox"
+			checked={historyState.hideArchived}
+			onchange={(e) => historyState.setHideArchived(e.currentTarget.checked)}
+			class="h-3.5 w-3.5 rounded border-border-subtle accent-neon-yellow"
+			data-testid="hide-archived-toggle"
+		/>
+		<span class="text-[11px] text-text-dim select-none">Hide archived</span>
+	</label>
 </div>

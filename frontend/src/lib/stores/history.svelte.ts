@@ -1,5 +1,29 @@
 import { fetchHistory, deleteOptimization, clearAllHistory, type HistorySummaryItem, type HistoryResponse } from '$lib/api/client';
 
+const HIDE_ARCHIVED_KEY = 'promptforge:hideArchived';
+
+function loadHideArchived(): boolean {
+	if (typeof window === 'undefined') return false;
+	try {
+		return localStorage.getItem(HIDE_ARCHIVED_KEY) === 'true';
+	} catch {
+		return false;
+	}
+}
+
+function persistHideArchived(value: boolean): void {
+	if (typeof window === 'undefined') return;
+	try {
+		if (value) {
+			localStorage.setItem(HIDE_ARCHIVED_KEY, 'true');
+		} else {
+			localStorage.removeItem(HIDE_ARCHIVED_KEY);
+		}
+	} catch {
+		// Ignore storage errors
+	}
+}
+
 class HistoryState {
 	items: HistorySummaryItem[] = $state([]);
 	total: number = $state(0);
@@ -12,8 +36,9 @@ class HistoryState {
 	searchQuery: string = $state('');
 	filterTaskType: string = $state('');
 	filterProject: string = $state('');
+	filterProjectId: string = $state('');
+	hideArchived: boolean = $state(loadHideArchived());
 	availableTaskTypes: string[] = $state([]);
-	availableProjects: string[] = $state([]);
 
 	private controller: AbortController | null = null;
 
@@ -35,6 +60,8 @@ class HistoryState {
 				order: params?.order ?? this.sortOrder,
 				task_type: this.filterTaskType || undefined,
 				project: this.filterProject || undefined,
+				project_id: this.filterProjectId || undefined,
+				include_archived: this.hideArchived ? false : undefined,
 				signal
 			});
 
@@ -79,8 +106,8 @@ class HistoryState {
 			this.searchQuery = '';
 			this.filterTaskType = '';
 			this.filterProject = '';
+			this.filterProjectId = '';
 			this.availableTaskTypes = [];
-			this.availableProjects = [];
 		}
 		return success;
 	}
@@ -103,6 +130,19 @@ class HistoryState {
 
 	setFilterProject(project: string) {
 		this.filterProject = project;
+		this.filterProjectId = '';
+		this.loadHistory();
+	}
+
+	setFilterProjectId(projectId: string) {
+		this.filterProjectId = projectId;
+		this.filterProject = '';
+		this.loadHistory();
+	}
+
+	setHideArchived(value: boolean) {
+		this.hideArchived = value;
+		persistHideArchived(value);
 		this.loadHistory();
 	}
 
@@ -114,25 +154,16 @@ class HistoryState {
 
 	private updateAvailableFilters() {
 		const taskTypes = new Set<string>();
-		const projects = new Set<string>();
 		for (const item of this.items) {
 			if (item.task_type) taskTypes.add(item.task_type);
-			if (item.project) projects.add(item.project);
 		}
 		const newTaskTypes = [...taskTypes].sort();
-		const newProjects = [...projects].sort();
 
 		if (
 			newTaskTypes.length !== this.availableTaskTypes.length ||
 			newTaskTypes.some((v, i) => v !== this.availableTaskTypes[i])
 		) {
 			this.availableTaskTypes = newTaskTypes;
-		}
-		if (
-			newProjects.length !== this.availableProjects.length ||
-			newProjects.some((v, i) => v !== this.availableProjects[i])
-		) {
-			this.availableProjects = newProjects;
 		}
 	}
 }
