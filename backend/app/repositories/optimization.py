@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import ColumnElement, delete, desc, func, select
+from sqlalchemy import ColumnElement, and_, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
 from app.constants import ALLOWED_SORT_FIELDS, OptimizationStatus
 from app.converters import deserialize_json_field
 from app.models.optimization import Optimization
+from app.models.project import Prompt, Project
 from app.utils.scores import round_score, score_threshold_to_db
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ class ListFilters:
     min_score: float | None = None
     search: str | None = None
     completed_only: bool = False
+    project_id: str | None = None
+    include_archived: bool = True
 
 
 @dataclass
@@ -55,9 +58,33 @@ class OptimizationRepository:
     # --- Single-record operations ---
 
     async def get_by_id(self, optimization_id: str) -> Optimization | None:
-        stmt = select(Optimization).where(Optimization.id == optimization_id)
+        # Alias for the FK-based project join (via prompt.project_id → projects)
+        fk_project = Project.__table__.alias("fk_project")
+        stmt = (
+            select(
+                Optimization,
+                Prompt.project_id.label("fk_project_id"),
+                Project.id.label("legacy_project_id"),
+                func.coalesce(
+                    fk_project.c.status, Project.status,
+                ).label("project_status"),
+            )
+            .outerjoin(Prompt, Optimization.prompt_id == Prompt.id)
+            .outerjoin(fk_project, Prompt.project_id == fk_project.c.id)
+            .outerjoin(
+                Project,
+                and_(Optimization.prompt_id.is_(None), Optimization.project == Project.name),
+            )
+            .where(Optimization.id == optimization_id)
+        )
         result = await self._session.execute(stmt)
-        return result.scalar_one_or_none()
+        row = result.one_or_none()
+        if row is None:
+            return None
+        opt = row[0]
+        opt._resolved_project_id = row[1] or row[2]  # type: ignore[attr-defined]
+        opt._resolved_project_status = row.project_status  # type: ignore[attr-defined]
+        return opt
 
     async def create(self, **kwargs) -> Optimization:
         opt = Optimization(**kwargs)
@@ -66,24 +93,229 @@ class OptimizationRepository:
         return opt
 
     async def delete_by_id(self, optimization_id: str) -> bool:
-        opt = await self.get_by_id(optimization_id)
-        if not opt:
+        exists = await self._session.execute(
+            select(Optimization.id).where(Optimization.id == optimization_id)
+        )
+        if not exists.scalar_one_or_none():
             return False
         await self._session.execute(
             delete(Optimization).where(Optimization.id == optimization_id)
         )
         return True
 
+    async def get_by_prompt_id(
+        self,
+        prompt_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        *,
+        prompt_content: str | None = None,
+        project_name: str | None = None,
+    ) -> tuple[list[Optimization], int]:
+        """Return paginated optimizations linked to a prompt, newest-first.
+
+        Matches by FK (prompt_id) first; also matches by raw_prompt content
+        within the same project as a fallback for un-linked legacy records.
+        """
+        condition = Optimization.prompt_id == prompt_id
+        if prompt_content and project_name:
+            condition = or_(
+                condition,
+                and_(
+                    Optimization.prompt_id.is_(None),
+                    Optimization.raw_prompt == prompt_content,
+                    Optimization.project == project_name,
+                ),
+            )
+
+        count_stmt = select(func.count(Optimization.id)).where(condition)
+        total_result = await self._session.execute(count_stmt)
+        total = total_result.scalar() or 0
+
+        query = (
+            select(Optimization)
+            .where(condition)
+            .order_by(desc(Optimization.created_at))
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self._session.execute(query)
+        items = list(result.scalars().all())
+        return items, total
+
+    async def get_forge_counts(
+        self,
+        prompt_ids: list[str],
+        *,
+        content_map: dict[str, tuple[str, str]] | None = None,
+    ) -> dict[str, int]:
+        """Return {prompt_id: count} for optimizations linked to the given prompt IDs.
+
+        Args:
+            prompt_ids: Prompt IDs to count forges for.
+            content_map: Optional ``{prompt_id: (content, project_name)}`` for
+                content-based matching of un-linked legacy optimizations.
+        """
+        if not prompt_ids:
+            return {}
+        # FK-based counts
+        stmt = (
+            select(Optimization.prompt_id, func.count(Optimization.id))
+            .where(Optimization.prompt_id.in_(prompt_ids))
+            .group_by(Optimization.prompt_id)
+        )
+        result = await self._session.execute(stmt)
+        counts: dict[str, int] = dict(result.all())
+
+        # Content-based fallback: single batched query for un-linked optimizations
+        if content_map:
+            # Build reverse lookup: (content, project) → prompt_id
+            content_to_pid: dict[tuple[str, str], str] = {
+                (content, pname): pid for pid, (content, pname) in content_map.items()
+            }
+            contents = [content for content, _ in content_to_pid]
+            projects = list({pname for _, pname in content_to_pid})
+
+            content_stmt = (
+                select(Optimization.raw_prompt, Optimization.project, func.count(Optimization.id))
+                .where(
+                    and_(
+                        Optimization.prompt_id.is_(None),
+                        Optimization.raw_prompt.in_(contents),
+                        Optimization.project.in_(projects),
+                    )
+                )
+                .group_by(Optimization.raw_prompt, Optimization.project)
+            )
+            content_result = await self._session.execute(content_stmt)
+            for raw_prompt, proj, cnt in content_result.all():
+                pid = content_to_pid.get((raw_prompt, proj))
+                if pid and cnt:
+                    counts[pid] = counts.get(pid, 0) + cnt
+
+        return counts
+
+    async def get_latest_forge_metadata(
+        self,
+        prompt_ids: list[str],
+        *,
+        content_map: dict[str, tuple[str, str]] | None = None,
+    ) -> dict[str, Optimization]:
+        """Return {prompt_id: Optimization} for the newest completed forge per prompt.
+
+        Args:
+            prompt_ids: Prompt IDs to look up.
+            content_map: Optional ``{prompt_id: (content, project_name)}`` for
+                content-based matching of un-linked legacy optimizations.
+        """
+        if not prompt_ids:
+            return {}
+
+        completed = OptimizationStatus.COMPLETED
+
+        # FK-based: newest completed optimization per prompt_id
+        newest_sub = (
+            select(
+                Optimization.prompt_id,
+                func.max(Optimization.created_at).label("max_ts"),
+            )
+            .where(
+                Optimization.prompt_id.in_(prompt_ids),
+                Optimization.status == completed,
+            )
+            .group_by(Optimization.prompt_id)
+            .subquery()
+        )
+        stmt = (
+            select(Optimization)
+            .join(
+                newest_sub,
+                and_(
+                    Optimization.prompt_id == newest_sub.c.prompt_id,
+                    Optimization.created_at == newest_sub.c.max_ts,
+                ),
+            )
+            .where(Optimization.status == completed)
+        )
+        result = await self._session.execute(stmt)
+        # Deterministic tiebreaker: if two rows share the same max timestamp,
+        # keep the one with the lexicographically greatest id.
+        latest: dict[str, Optimization] = {}
+        for opt in result.scalars().all():
+            if not opt.prompt_id:
+                continue
+            existing = latest.get(opt.prompt_id)
+            if existing is None or opt.id > existing.id:
+                latest[opt.prompt_id] = opt
+
+        # Content-based fallback for un-linked legacy records
+        if content_map:
+            missing_pids = [pid for pid in prompt_ids if pid not in latest]
+            if missing_pids:
+                content_to_pid: dict[tuple[str, str], str] = {
+                    (content, pname): pid
+                    for pid, (content, pname) in content_map.items()
+                    if pid in missing_pids
+                }
+                if content_to_pid:
+                    contents = [content for content, _ in content_to_pid]
+                    projects = list({pname for _, pname in content_to_pid})
+
+                    # Subquery: newest timestamp per (raw_prompt, project)
+                    leg_sub = (
+                        select(
+                            Optimization.raw_prompt,
+                            Optimization.project,
+                            func.max(Optimization.created_at).label("max_ts"),
+                        )
+                        .where(
+                            Optimization.prompt_id.is_(None),
+                            Optimization.status == completed,
+                            Optimization.raw_prompt.in_(contents),
+                            Optimization.project.in_(projects),
+                        )
+                        .group_by(Optimization.raw_prompt, Optimization.project)
+                        .subquery()
+                    )
+                    leg_stmt = (
+                        select(Optimization)
+                        .join(
+                            leg_sub,
+                            and_(
+                                Optimization.raw_prompt == leg_sub.c.raw_prompt,
+                                Optimization.project == leg_sub.c.project,
+                                Optimization.created_at == leg_sub.c.max_ts,
+                            ),
+                        )
+                        .where(
+                            Optimization.prompt_id.is_(None),
+                            Optimization.status == completed,
+                        )
+                    )
+                    leg_result = await self._session.execute(leg_stmt)
+                    for opt in leg_result.scalars().all():
+                        pid = content_to_pid.get((opt.raw_prompt, opt.project))
+                        if not pid:
+                            continue
+                        # Deterministic tiebreaker: keep greatest id on ties
+                        existing = latest.get(pid)
+                        if existing is None or opt.id > existing.id:
+                            latest[pid] = opt
+
+        return latest
+
     # --- List with filters ---
 
     def _build_search_filter(self, search_text: str) -> ColumnElement[bool]:
         """Build a search filter across text columns."""
+        escaped = search_text.replace("%", r"\%").replace("_", r"\_")
+        pattern = f"%{escaped}%"
         return (
-            Optimization.raw_prompt.ilike(f"%{search_text}%")
-            | Optimization.optimized_prompt.ilike(f"%{search_text}%")
-            | Optimization.title.ilike(f"%{search_text}%")
-            | Optimization.tags.ilike(f"%{search_text}%")
-            | Optimization.project.ilike(f"%{search_text}%")
+            Optimization.raw_prompt.ilike(pattern)
+            | Optimization.optimized_prompt.ilike(pattern)
+            | Optimization.title.ilike(pattern)
+            | Optimization.tags.ilike(pattern)
+            | Optimization.project.ilike(pattern)
         )
 
     def _apply_filters(
@@ -105,6 +337,50 @@ class OptimizationRepository:
             conditions.append(Optimization.overall_score >= threshold)
         if filters.search:
             conditions.append(self._build_search_filter(filters.search))
+        if filters.project_id:
+            # Match via FK chain (prompt.project_id) or legacy name match
+            pid_alias = Prompt.__table__.alias("pid_filter")
+            proj_alias = Project.__table__.alias("proj_filter")
+            fk_match = Optimization.prompt_id.in_(
+                select(pid_alias.c.id).where(pid_alias.c.project_id == filters.project_id)
+            )
+            legacy_match = and_(
+                Optimization.prompt_id.is_(None),
+                Optimization.project.in_(
+                    select(proj_alias.c.name).where(proj_alias.c.id == filters.project_id)
+                ),
+            )
+            conditions.append(or_(fk_match, legacy_match))
+
+        if not filters.include_archived:
+            # Exclude optimizations linked to archived projects (both FK and legacy paths).
+            # Use NOT IN on optimization IDs to avoid SQL NULL logic issues.
+            arch_prompt = Prompt.__table__.alias("arch_prompt")
+            arch_proj_fk = Project.__table__.alias("arch_proj_fk")
+            arch_proj_leg = Project.__table__.alias("arch_proj_leg")
+            # IDs linked via FK to archived projects
+            exclude_fk = (
+                select(Optimization.id)
+                .join(arch_prompt, Optimization.prompt_id == arch_prompt.c.id)
+                .join(arch_proj_fk, arch_prompt.c.project_id == arch_proj_fk.c.id)
+                .where(arch_proj_fk.c.status == "archived")
+            )
+            # IDs linked via legacy project name to archived projects
+            exclude_legacy = (
+                select(Optimization.id)
+                .where(
+                    and_(
+                        Optimization.prompt_id.is_(None),
+                        Optimization.project.in_(
+                            select(arch_proj_leg.c.name)
+                            .where(arch_proj_leg.c.status == "archived")
+                        ),
+                    )
+                )
+            )
+            conditions.append(
+                Optimization.id.notin_(exclude_fk.union(exclude_legacy))
+            )
 
         for cond in conditions:
             query = query.where(cond)
@@ -139,7 +415,23 @@ class OptimizationRepository:
         filters = filters or ListFilters()
         pagination = pagination or Pagination()
 
-        query = select(Optimization)
+        # Alias for the FK-based project join (via prompt.project_id → projects)
+        fk_project = Project.__table__.alias("fk_project")
+        query = select(
+            Optimization,
+            Prompt.project_id.label("fk_project_id"),
+            Project.id.label("legacy_project_id"),
+            func.coalesce(
+                fk_project.c.status, Project.status,
+            ).label("project_status"),
+        ).outerjoin(
+            Prompt, Optimization.prompt_id == Prompt.id
+        ).outerjoin(
+            fk_project, Prompt.project_id == fk_project.c.id,
+        ).outerjoin(
+            Project,
+            and_(Optimization.prompt_id.is_(None), Optimization.project == Project.name),
+        )
         count_query = select(func.count(Optimization.id))
 
         query, count_query = self._apply_filters(query, count_query, filters)
@@ -150,7 +442,12 @@ class OptimizationRepository:
         query = self._apply_sort_and_paginate(query, pagination)
 
         result = await self._session.execute(query)
-        items = list(result.scalars().all())
+        items: list[Optimization] = []
+        for row in result.all():
+            opt = row[0]
+            opt._resolved_project_id = row[1] or row[2]  # type: ignore[attr-defined]
+            opt._resolved_project_status = row.project_status  # type: ignore[attr-defined]
+            items.append(opt)
 
         return items, total
 
@@ -281,6 +578,34 @@ class OptimizationRepository:
 
         imp = row.improved / row.validated if row.validated else None
 
+        # Per-strategy distribution and score averages.
+        # Prefer the dedicated `strategy` column; fall back to `framework_applied`
+        # for legacy rows that predate the column addition.
+        strategy_col = func.coalesce(Opt.strategy, Opt.framework_applied)
+        strategy_query = (
+            select(
+                strategy_col.label("strategy_name"),
+                func.count(Opt.id).label("count"),
+                func.avg(Opt.overall_score).label("avg_score"),
+            )
+            .where(completed)
+            .where(strategy_col.isnot(None))
+            .group_by(strategy_col)
+        )
+        if project:
+            strategy_query = strategy_query.where(Opt.project == project)
+
+        strategy_result = await self._session.execute(strategy_query)
+        strategy_rows = strategy_result.all()
+
+        strategy_distribution: dict[str, int] = {}
+        score_by_strategy: dict[str, float] = {}
+        for srow in strategy_rows:
+            name = srow.strategy_name
+            strategy_distribution[name] = srow.count
+            if srow.avg_score is not None:
+                score_by_strategy[name] = round(srow.avg_score, 4)
+
         return {
             "total_optimizations": total,
             "average_overall_score": round_score(row.avg_overall),
@@ -292,4 +617,6 @@ class OptimizationRepository:
             "total_projects": row.projects or 0,
             "most_common_task_type": row.most_common_task,
             "optimizations_today": row.today or 0,
+            "strategy_distribution": strategy_distribution or None,
+            "score_by_strategy": score_by_strategy or None,
         }

@@ -22,9 +22,11 @@ async def get_history(
     sort: str = Query("created_at", description="Field to sort by"),
     sort_by: str | None = Query(None, description="Alias for sort (field to sort by)"),
     order: Literal["asc", "desc"] = Query("desc", description="Sort order"),
-    project: str | None = Query(None, description="Filter by project"),
+    project: str | None = Query(None, description="Filter by project name"),
+    project_id: str | None = Query(None, description="Filter by project ID"),
     task_type: str | None = Query(None, description="Filter by task type"),
     status: str | None = Query(None, description="Filter by status"),
+    include_archived: bool = Query(True, description="Include items from archived projects"),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve paginated optimization history with filtering and sorting.
@@ -42,6 +44,8 @@ async def get_history(
         task_type=task_type,
         status=status,
         search=search,
+        project_id=project_id,
+        include_archived=include_archived,
     )
     pagination = Pagination(sort=sort, order=order, offset=offset, limit=per_page)
 
@@ -67,7 +71,6 @@ async def clear_all_history(
     if count == 0:
         return {"message": "No records to delete", "deleted_count": 0}
 
-    await db.commit()
     return {"message": f"Deleted {count} records", "deleted_count": count}
 
 
@@ -83,7 +86,6 @@ async def delete_optimization(
     if not deleted:
         raise HTTPException(status_code=404, detail="Optimization not found")
 
-    await db.commit()
     return {"message": "Optimization deleted", "id": optimization_id}
 
 

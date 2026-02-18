@@ -1,46 +1,214 @@
 """Strategy selector service - chooses the best optimization strategy for a prompt."""
 
-from dataclasses import dataclass
+import json
+import logging
+import re
+from dataclasses import asdict, dataclass, field
 
+from app.constants import LEGACY_STRATEGY_ALIASES, Strategy
+from app.prompts.strategy_prompt import STRATEGY_SYSTEM_PROMPT
+from app.providers import LLMProvider, get_provider
+from app.providers.types import CompletionRequest, TokenUsage
 from app.services.analyzer import AnalysisResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class StrategySelection:
     """The selected optimization strategy and reasoning."""
 
-    strategy: str
+    strategy: Strategy
     reasoning: str
+    confidence: float = 0.75
+    task_type: str = ""
+    is_override: bool = False
+    secondary_frameworks: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(
+                f"confidence must be between 0.0 and 1.0, got {self.confidence}"
+            )
 
 
-# Maps each analyzer task_type to its default strategy.
-# Unknown task types fall through to structured-enhancement.
-TASK_TYPE_STRATEGY_MAP: dict[str, str] = {
-    "reasoning": "chain-of-thought",
-    "analysis": "chain-of-thought",
-    "math": "chain-of-thought",
-    "classification": "few-shot",
-    "formatting": "few-shot",
-    "extraction": "few-shot",
-    "coding": "role-based",
-    "writing": "role-based",
-    "creative": "role-based",
-    "medical": "role-based",
-    "legal": "role-based",
-    "general": "structured-enhancement",
-    "education": "structured-enhancement",
-    "other": "structured-enhancement",
+# ---------------------------------------------------------------------------
+# Framework combination model
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class FrameworkCombo:
+    """A primary framework + up to 2 secondary frameworks."""
+
+    primary: Strategy
+    secondary: tuple[Strategy, ...] = ()
+
+
+# Maps each analyzer task_type to its spec-defined 3-framework combo.
+TASK_TYPE_FRAMEWORK_MAP: dict[str, FrameworkCombo] = {
+    "coding": FrameworkCombo(
+        Strategy.STRUCTURED_OUTPUT,
+        (Strategy.CONSTRAINT_INJECTION, Strategy.STEP_BY_STEP),
+    ),
+    "writing": FrameworkCombo(
+        Strategy.PERSONA_ASSIGNMENT,
+        (Strategy.CONTEXT_ENRICHMENT, Strategy.CO_STAR),
+    ),
+    "creative": FrameworkCombo(
+        Strategy.PERSONA_ASSIGNMENT,
+        (Strategy.CONTEXT_ENRICHMENT, Strategy.CO_STAR),
+    ),
+    "reasoning": FrameworkCombo(
+        Strategy.CHAIN_OF_THOUGHT,
+        (Strategy.STRUCTURED_OUTPUT, Strategy.CO_STAR),
+    ),
+    "analysis": FrameworkCombo(
+        Strategy.CHAIN_OF_THOUGHT,
+        (Strategy.STRUCTURED_OUTPUT, Strategy.CO_STAR),
+    ),
+    "math": FrameworkCombo(
+        Strategy.CHAIN_OF_THOUGHT,
+        (Strategy.STEP_BY_STEP, Strategy.CONSTRAINT_INJECTION),
+    ),
+    "extraction": FrameworkCombo(
+        Strategy.STRUCTURED_OUTPUT,
+        (Strategy.CONSTRAINT_INJECTION, Strategy.FEW_SHOT_SCAFFOLDING),
+    ),
+    "classification": FrameworkCombo(
+        Strategy.FEW_SHOT_SCAFFOLDING,
+        (Strategy.STRUCTURED_OUTPUT, Strategy.CONSTRAINT_INJECTION),
+    ),
+    "formatting": FrameworkCombo(
+        Strategy.STRUCTURED_OUTPUT,
+        (Strategy.FEW_SHOT_SCAFFOLDING, Strategy.CONSTRAINT_INJECTION),
+    ),
+    "medical": FrameworkCombo(
+        Strategy.PERSONA_ASSIGNMENT,
+        (Strategy.CONSTRAINT_INJECTION, Strategy.CONTEXT_ENRICHMENT),
+    ),
+    "legal": FrameworkCombo(
+        Strategy.PERSONA_ASSIGNMENT,
+        (Strategy.CONSTRAINT_INJECTION, Strategy.CONTEXT_ENRICHMENT),
+    ),
+    "education": FrameworkCombo(
+        Strategy.STEP_BY_STEP,
+        (Strategy.CONTEXT_ENRICHMENT, Strategy.ROLE_TASK_FORMAT),
+    ),
+    "general": FrameworkCombo(
+        Strategy.ROLE_TASK_FORMAT,
+        (Strategy.CONTEXT_ENRICHMENT, Strategy.STRUCTURED_OUTPUT),
+    ),
+    "other": FrameworkCombo(
+        Strategy.ROLE_TASK_FORMAT,
+        (Strategy.CONTEXT_ENRICHMENT, Strategy.STRUCTURED_OUTPUT),
+    ),
 }
 
-_DEFAULT_STRATEGY = "structured-enhancement"
+_DEFAULT_COMBO = FrameworkCombo(
+    Strategy.ROLE_TASK_FORMAT,
+    (Strategy.CONTEXT_ENRICHMENT, Strategy.STRUCTURED_OUTPUT),
+)
+
+
+# Task types where chain-of-thought is the natural strategy.  Priority 1
+# (high-complexity override) only fires for these — other task types fall
+# through to Priorities 2/3 for strategy diversity even at high complexity.
+_COT_NATURAL_TASK_TYPES: frozenset[str] = frozenset({"reasoning", "analysis", "math"})
+
+_SPECIFICITY_PATTERNS = (
+    "lacks specific", "not specific", "vague", "unspecific", "lack of detail",
+    "ambiguous", "unclear", "underspecified", "too broad", "too general",
+    "needs more detail", "insufficiently detailed", "broad scope",
+)
+
+# Compiled regex for faster specificity matching (Issue 4.2).
+# Word boundaries (\b) prevent false matches inside longer words
+# (e.g. "vague" inside "extravagant", "broad" inside "abroad").
+_SPECIFICITY_RE = re.compile(
+    "|".join(r"\b" + re.escape(p) + r"\b" for p in _SPECIFICITY_PATTERNS),
+    re.IGNORECASE,
+)
+
+# Task types whose natural strategy (CHAIN_OF_THOUGHT) already addresses
+# the same concerns as CONSTRAINT_INJECTION, so the specificity override
+# should not eclipse them (Issue 2.1).
+_SPECIFICITY_EXEMPT_STRATEGIES: frozenset[Strategy] = frozenset({
+    Strategy.CHAIN_OF_THOUGHT,
+})
+
+# Strengths that make a strategy redundant — if the prompt already has
+# what a strategy would add, fall back instead.
+# Raw patterns kept for test introspection; compiled regex for matching.
+_STRENGTH_REDUNDANCY_PATTERNS: dict[Strategy, tuple[str, ...]] = {
+    Strategy.CO_STAR: (
+        "clear context", "well-defined audience", "specifies tone", "context and objective",
+    ),
+    Strategy.RISEN: (
+        "clear role and instructions", "end-goal defined", "narrowing constraints",
+    ),
+    Strategy.CHAIN_OF_THOUGHT: (
+        "step-by-step", "numbered steps", "sequential reasoning", "chain of thought",
+    ),
+    Strategy.FEW_SHOT_SCAFFOLDING: (
+        "includes examples", "provides examples", "has examples", "example-driven",
+    ),
+    Strategy.ROLE_TASK_FORMAT: (
+        "clear role definition", "task and format specified", "role-task structure",
+    ),
+    Strategy.STRUCTURED_OUTPUT: (
+        "well-structured", "clear format", "good organization",
+        "well-organized", "clear structure", "good formatting",
+    ),
+    Strategy.STEP_BY_STEP: (
+        "numbered steps", "sequential instructions", "ordered steps",
+    ),
+    Strategy.CONSTRAINT_INJECTION: (
+        "explicit constraints", "clear constraints",
+        "well-defined boundaries", "specific requirements",
+    ),
+    Strategy.CONTEXT_ENRICHMENT: (
+        "rich context", "background provided", "domain context included",
+    ),
+    Strategy.PERSONA_ASSIGNMENT: (
+        "expert persona", "assigns a role", "defines a role", "clear role definition",
+    ),
+}
+
+# Compiled regex with word boundaries to prevent false positives.
+_STRENGTH_REDUNDANCY_RE: dict[Strategy, re.Pattern[str]] = {
+    strategy: re.compile(
+        "|".join(r"\b" + re.escape(p) + r"\b" for p in patterns),
+        re.IGNORECASE,
+    )
+    for strategy, patterns in _STRENGTH_REDUNDANCY_PATTERNS.items()
+}
 
 # Maps each strategy to its human-readable reasoning suffix.
-_STRATEGY_REASON_MAP: dict[str, str] = {
-    "chain-of-thought": "enables step-by-step reasoning.",
-    "few-shot": "provides concrete examples for pattern-based tasks.",
-    "role-based": "leverages domain-specific expert persona.",
-    "constraint-focused": "addresses identified specificity weaknesses with explicit constraints.",
-    "structured-enhancement": "applies general structural improvements.",
+_STRATEGY_REASON_MAP: dict[Strategy, str] = {
+    Strategy.CO_STAR: "structures prompt with Context, Objective, Style, Tone, Audience, Response format.",
+    Strategy.RISEN: "organizes prompt with Role, Instructions, Steps, End-goal, Narrowing constraints.",
+    Strategy.CHAIN_OF_THOUGHT: "enables step-by-step reasoning.",
+    Strategy.FEW_SHOT_SCAFFOLDING: "provides concrete examples for pattern-based tasks.",
+    Strategy.ROLE_TASK_FORMAT: "structures prompt with role, task description, and output format.",
+    Strategy.STRUCTURED_OUTPUT: "specifies structured output format (JSON, tables, etc.).",
+    Strategy.STEP_BY_STEP: "breaks task into ordered sequential instructions.",
+    Strategy.CONSTRAINT_INJECTION: "addresses identified specificity weaknesses with explicit constraints.",
+    Strategy.CONTEXT_ENRICHMENT: "enriches prompt with background information and domain context.",
+    Strategy.PERSONA_ASSIGNMENT: "leverages domain-specific expert persona.",
+}
+
+# Short descriptions for each strategy, sent to the LLM in the user message.
+_STRATEGY_DESCRIPTIONS: dict[Strategy, str] = {
+    Strategy.CO_STAR: "Context, Objective, Style, Tone, Audience, Response format",
+    Strategy.RISEN: "Role, Instructions, Steps, End-goal, Narrowing constraints",
+    Strategy.CHAIN_OF_THOUGHT: "Adds step-by-step reasoning structure",
+    Strategy.FEW_SHOT_SCAFFOLDING: "Adds concrete input/output examples",
+    Strategy.ROLE_TASK_FORMAT: "Assigns role, states task, specifies output format",
+    Strategy.STRUCTURED_OUTPUT: "Specifies JSON, table, or parseable output format",
+    Strategy.STEP_BY_STEP: "Breaks tasks into ordered sequential instructions",
+    Strategy.CONSTRAINT_INJECTION: "Adds explicit constraints, boundaries, and rules",
+    Strategy.CONTEXT_ENRICHMENT: "Supplies background info, definitions, references",
+    Strategy.PERSONA_ASSIGNMENT: "Assigns specific professional identity and expertise",
 }
 
 
@@ -49,59 +217,358 @@ def _build_reasoning(strategy: str, task_type: str, reason: str) -> str:
     return f"Selected {strategy} for {task_type} task: {reason}"
 
 
-class StrategySelector:
+class HeuristicStrategySelector:
     """Selects the most appropriate optimization strategy based on prompt analysis.
 
     Uses task type, complexity, and identified weaknesses to choose
     the best optimization approach.
 
     Priority order:
-      1. High complexity → chain-of-thought (always)
-      2. Specificity weakness → constraint-focused (before task-type lookup)
-      3. Task-type map → lookup with structured-enhancement fallback
+      1. High complexity + CoT-natural task type (reasoning, analysis, math)
+         → chain-of-thought.  Non-CoT task types fall through even at high
+         complexity, preserving strategy diversity.
+      2. Specificity weakness → constraint-injection, UNLESS the task-type's
+         natural strategy is already exempt (e.g. chain-of-thought for math)
+      3. Task-type map → lookup with role-task-format fallback,
+         with a strengths-based redundancy check: if the prompt already
+         has what the candidate strategy would add, tries the combo's first
+         secondary as primary instead.
+         High complexity adds a +0.10 confidence boost (capped at 0.95).
     """
 
-    def select(self, analysis: AnalysisResult) -> StrategySelection:
+    # Very short prompts are harder to classify accurately; apply a small
+    # confidence penalty to signal uncertainty.
+    _SHORT_PROMPT_THRESHOLD = 50
+    _SHORT_PROMPT_PENALTY = 0.05
+
+    def select(
+        self,
+        analysis: AnalysisResult,
+        prompt_length: int = 0,
+    ) -> StrategySelection:
         """Select the best optimization strategy given an analysis result.
 
         Args:
             analysis: The analysis result from PromptAnalyzer.
+            prompt_length: Length of the raw prompt in characters. When < 50,
+                a small confidence penalty is applied.
 
         Returns:
             A StrategySelection with the chosen strategy name and reasoning.
         """
-        # Priority 1: High complexity always gets chain-of-thought
-        if analysis.complexity == "high":
+        result = self._select_core(analysis)
+
+        # Short-prompt penalty: very short prompts are harder to classify
+        # accurately, so reduce confidence to reflect that uncertainty.
+        if 0 < prompt_length < self._SHORT_PROMPT_THRESHOLD:
+            adjusted = max(0.0, result.confidence - self._SHORT_PROMPT_PENALTY)
+            if adjusted != result.confidence:
+                logger.info(
+                    "Short-prompt penalty: length=%d < %d, confidence %.2f → %.2f",
+                    prompt_length, self._SHORT_PROMPT_THRESHOLD,
+                    result.confidence, adjusted,
+                )
+                result = StrategySelection(
+                    strategy=result.strategy,
+                    reasoning=result.reasoning,
+                    confidence=adjusted,
+                    secondary_frameworks=result.secondary_frameworks,
+                )
+
+        return result
+
+    def _select_core(self, analysis: AnalysisResult) -> StrategySelection:
+        """Core selection logic without prompt-length adjustments."""
+        task_key = analysis.task_type.lower()
+        combo = TASK_TYPE_FRAMEWORK_MAP.get(task_key, _DEFAULT_COMBO)
+        natural_strategy = combo.primary
+        is_high = analysis.complexity.lower() == "high"
+
+        # Priority 1: High complexity + CoT-natural task type → chain-of-thought
+        # BUT if the prompt already has what CoT adds (step-by-step etc.),
+        # redirect to the combo's first secondary instead (avoids redundancy).
+        if is_high and task_key in _COT_NATURAL_TASK_TYPES:
+            cot_redundancy_re = _STRENGTH_REDUNDANCY_RE.get(Strategy.CHAIN_OF_THOUGHT)
+            p1_is_redundant = cot_redundancy_re and any(
+                cot_redundancy_re.search(str(s)) for s in analysis.strengths
+            )
+            if p1_is_redundant:
+                # Use first secondary from the combo as fallback primary
+                fallback = combo.secondary[0] if combo.secondary else Strategy.ROLE_TASK_FORMAT
+                fallback_secondaries = [
+                    s.value for s in combo.secondary if s != fallback
+                ]
+                logger.info(
+                    "P1-redundancy: CoT redundant for high-complexity task_type=%s "
+                    "→ %s",
+                    task_key, fallback,
+                )
+                return StrategySelection(
+                    strategy=fallback,
+                    reasoning=_build_reasoning(
+                        fallback,
+                        analysis.task_type,
+                        "prompt already exhibits step-by-step reasoning; "
+                        f"{fallback} more useful than redundant CoT.",
+                    ),
+                    confidence=0.85,
+                    secondary_frameworks=fallback_secondaries,
+                )
+            logger.info(
+                "P1: high complexity + CoT-natural task_type=%s → chain-of-thought",
+                task_key,
+            )
             return StrategySelection(
-                strategy="chain-of-thought",
+                strategy=Strategy.CHAIN_OF_THOUGHT,
                 reasoning=_build_reasoning(
-                    "chain-of-thought",
+                    Strategy.CHAIN_OF_THOUGHT,
                     analysis.task_type,
                     "high complexity requires step-by-step reasoning.",
                 ),
+                confidence=0.95,
+                secondary_frameworks=[s.value for s in combo.secondary],
             )
 
-        # Priority 2: Specificity weakness → constraint-focused
-        # (checked BEFORE task-type lookup so e.g. a coding task with
-        # vague wording correctly gets constraint-focused, not role-based)
-        has_specificity_weakness = any(
-            "specific" in w.lower() for w in analysis.weaknesses
+        # Priority 2: Specificity weakness → constraint-injection
+        # Skip the override when the task-type's natural strategy is in
+        # _SPECIFICITY_EXEMPT_STRATEGIES (e.g. math→chain-of-thought),
+        # since those strategies already address vagueness better (Issue 2.1).
+
+        specificity_match_count = sum(
+            1 for w in analysis.weaknesses if _SPECIFICITY_RE.search(str(w))
         )
-        if has_specificity_weakness:
+        if specificity_match_count > 0 and natural_strategy not in _SPECIFICITY_EXEMPT_STRATEGIES:
+            # Scale confidence with severity: more matching weaknesses = higher confidence
+            if specificity_match_count >= 3:
+                p2_confidence = 0.90
+            elif specificity_match_count == 2:
+                p2_confidence = 0.85
+            else:
+                p2_confidence = 0.80
+
+            # Build secondaries: use combo's secondaries excluding constraint-injection
+            p2_secondaries = [
+                s.value for s in combo.secondary
+                if s != Strategy.CONSTRAINT_INJECTION
+            ][:2]
+
+            logger.info(
+                "P2: %d specificity weakness(es) for task_type=%s → constraint-injection "
+                "(confidence=%.2f)",
+                specificity_match_count, task_key, p2_confidence,
+            )
             return StrategySelection(
-                strategy="constraint-focused",
+                strategy=Strategy.CONSTRAINT_INJECTION,
                 reasoning=_build_reasoning(
-                    "constraint-focused",
+                    Strategy.CONSTRAINT_INJECTION,
                     analysis.task_type,
                     "addressing identified specificity weaknesses.",
                 ),
+                confidence=p2_confidence,
+                secondary_frameworks=p2_secondaries,
             )
 
-        # Priority 3: Task-type map with fallback
-        strategy = TASK_TYPE_STRATEGY_MAP.get(analysis.task_type, _DEFAULT_STRATEGY)
-        reason = _STRATEGY_REASON_MAP.get(strategy, "applies general structural improvements.")
+        # Priority 3: Task-type map → lookup, with strengths redundancy check
+        strategy = natural_strategy
 
+        # Before returning the task-type result, check whether the prompt
+        # already exhibits the strength that strategy would add.  If so,
+        # try the combo's first secondary as primary instead.
+        # Special case: if the fallback is also redundant, return it at lower confidence.
+        redundancy_re = _STRENGTH_REDUNDANCY_RE.get(strategy)
+        if redundancy_re:
+            is_redundant = any(
+                redundancy_re.search(str(s)) for s in analysis.strengths
+            )
+            if is_redundant:
+                # Try first secondary as fallback primary
+                if combo.secondary:
+                    fallback = combo.secondary[0]
+                    fallback_re = _STRENGTH_REDUNDANCY_RE.get(fallback)
+                    fallback_redundant = fallback_re and any(
+                        fallback_re.search(str(s)) for s in analysis.strengths
+                    )
+                    if fallback_redundant:
+                        # Both primary and first secondary are redundant
+                        logger.info(
+                            "P3-redundancy: %s and %s both redundant for task_type=%s "
+                            "→ %s at reduced confidence",
+                            strategy, fallback, task_key, fallback,
+                        )
+                        return StrategySelection(
+                            strategy=fallback,
+                            reasoning=_build_reasoning(
+                                fallback,
+                                analysis.task_type,
+                                "prompt is already well-structured; "
+                                "minor refinements may still help.",
+                            ),
+                            confidence=0.60,
+                            secondary_frameworks=[
+                                s.value for s in combo.secondary if s != fallback
+                            ][:2],
+                        )
+                    logger.info(
+                        "P3-redundancy: %s redundant for task_type=%s → %s",
+                        strategy, task_key, fallback,
+                    )
+                    return StrategySelection(
+                        strategy=fallback,
+                        reasoning=_build_reasoning(
+                            fallback,
+                            analysis.task_type,
+                            f"prompt already exhibits strengths that {strategy} would add.",
+                        ),
+                        confidence=0.70,
+                        secondary_frameworks=[
+                            s.value for s in combo.secondary if s != fallback
+                        ][:2],
+                    )
+                else:
+                    # No secondaries to fall back to
+                    logger.info(
+                        "P3-redundancy: %s redundant, no secondaries for task_type=%s",
+                        strategy, task_key,
+                    )
+                    return StrategySelection(
+                        strategy=strategy,
+                        reasoning=_build_reasoning(
+                            strategy,
+                            analysis.task_type,
+                            "prompt is already well-structured; "
+                            "minor refinements may still help.",
+                        ),
+                        confidence=0.60,
+                    )
+
+        reason = _STRATEGY_REASON_MAP.get(strategy, "applies general structural improvements.")
+        confidence = 0.75 if task_key in TASK_TYPE_FRAMEWORK_MAP else 0.50
+
+        # High-complexity boost: when P1 didn't fire (non-CoT task type),
+        # still reward the higher complexity with a confidence bump.
+        if is_high:
+            confidence = min(confidence + 0.10, 0.95)
+
+        logger.info(
+            "P3: task_type=%s → %s (confidence=%.2f, high_boost=%s)",
+            task_key, strategy, confidence, is_high,
+        )
         return StrategySelection(
             strategy=strategy,
             reasoning=_build_reasoning(strategy, analysis.task_type, reason),
+            confidence=confidence,
+            secondary_frameworks=[s.value for s in combo.secondary],
+        )
+
+
+_VALID_STRATEGIES: frozenset[str] = frozenset(s.value for s in Strategy)
+
+
+class StrategySelector:
+    """LLM-based strategy selector with heuristic fallback.
+
+    Sends the analysis and prompt to an LLM to select the best strategy.
+    Falls back to HeuristicStrategySelector on LLM errors.
+    """
+
+    def __init__(self, llm_provider: LLMProvider | None = None) -> None:
+        self.llm = llm_provider or get_provider()
+        self.last_usage: TokenUsage | None = None
+        self._heuristic = HeuristicStrategySelector()
+
+    async def select(
+        self,
+        analysis: AnalysisResult,
+        raw_prompt: str = "",
+        prompt_length: int = 0,
+    ) -> StrategySelection:
+        """Select strategy via LLM, falling back to heuristic on error."""
+        try:
+            result = await self._select_via_llm(analysis, raw_prompt)
+        except Exception:
+            logger.warning(
+                "LLM strategy selection failed, falling back to heuristic",
+                exc_info=True,
+            )
+            result = self._heuristic.select(analysis, prompt_length=prompt_length)
+
+        result.task_type = analysis.task_type
+        return result
+
+    async def _select_via_llm(
+        self,
+        analysis: AnalysisResult,
+        raw_prompt: str,
+    ) -> StrategySelection:
+        """Call the LLM to select a strategy."""
+        user_payload = {
+            "raw_prompt": raw_prompt,
+            "analysis": asdict(analysis),
+            "available_strategies": {
+                s.value: _STRATEGY_DESCRIPTIONS[s] for s in Strategy
+            },
+        }
+        request = CompletionRequest(
+            system_prompt=STRATEGY_SYSTEM_PROMPT,
+            user_message=json.dumps(user_payload),
+        )
+        response, completion = await self.llm.complete_json(request)
+        self.last_usage = completion.usage
+
+        return self._validate_response(response, analysis.task_type)
+
+    def _validate_response(
+        self,
+        response: dict,
+        task_type: str,
+    ) -> StrategySelection:
+        """Validate and normalize the LLM response into a StrategySelection."""
+        # Validate strategy
+        raw_strategy = str(response.get("strategy", "")).strip().lower()
+        # Handle legacy aliases from LLM
+        if raw_strategy in LEGACY_STRATEGY_ALIASES:
+            raw_strategy = LEGACY_STRATEGY_ALIASES[raw_strategy]
+        if raw_strategy in _VALID_STRATEGIES:
+            strategy = Strategy(raw_strategy)
+        else:
+            logger.warning(
+                "Unknown strategy %r from LLM, defaulting to role-task-format",
+                raw_strategy,
+            )
+            strategy = Strategy.ROLE_TASK_FORMAT
+
+        # Validate confidence
+        raw_confidence = response.get("confidence", 0.75)
+        try:
+            confidence = float(raw_confidence)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Non-numeric confidence %r from LLM, defaulting to 0.75",
+                raw_confidence,
+            )
+            confidence = 0.75
+        confidence = max(0.0, min(1.0, confidence))
+
+        # Validate reasoning
+        reasoning = str(response.get("reasoning", "")).strip()
+        if not reasoning:
+            reasoning = f"Selected {strategy} for {task_type} task."
+
+        # Validate secondary_frameworks
+        raw_secondary = response.get("secondary_frameworks", [])
+        secondary: list[str] = []
+        if isinstance(raw_secondary, list):
+            for fw in raw_secondary[:2]:
+                fw_str = str(fw).strip().lower()
+                # Handle legacy aliases
+                if fw_str in LEGACY_STRATEGY_ALIASES:
+                    fw_str = LEGACY_STRATEGY_ALIASES[fw_str]
+                if fw_str in _VALID_STRATEGIES and fw_str != strategy.value:
+                    secondary.append(fw_str)
+
+        return StrategySelection(
+            strategy=strategy,
+            reasoning=reasoning,
+            confidence=confidence,
+            secondary_frameworks=secondary,
         )

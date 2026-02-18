@@ -29,8 +29,12 @@ def deserialize_json_field(value: str | None) -> list[str] | None:
     try:
         parsed = json.loads(value)
     except (json.JSONDecodeError, TypeError):
+        logger.warning("deserialize_json_field: invalid JSON (%.80r)", value)
         return None
     if not isinstance(parsed, list):
+        logger.warning(
+            "deserialize_json_field: expected list, got %s", type(parsed).__name__
+        )
         return None
     return [str(item) for item in parsed]
 
@@ -61,7 +65,10 @@ def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
         "changes_made": deserialize_json_field(opt.changes_made),
         "framework_applied": opt.framework_applied,
         "optimization_notes": opt.optimization_notes,
+        "strategy": opt.strategy,
         "strategy_reasoning": opt.strategy_reasoning,
+        "strategy_confidence": opt.strategy_confidence,
+        "secondary_frameworks": deserialize_json_field(opt.secondary_frameworks),
         "clarity_score": opt.clarity_score,
         "specificity_score": opt.specificity_score,
         "structure_score": opt.structure_score,
@@ -71,11 +78,16 @@ def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
         "verdict": opt.verdict,
         "duration_ms": opt.duration_ms,
         "model_used": opt.model_used,
+        "input_tokens": opt.input_tokens,
+        "output_tokens": opt.output_tokens,
         "status": opt.status,
         "error_message": opt.error_message,
         "project": opt.project,
         "tags": deserialize_json_field(opt.tags),
         "title": opt.title,
+        "prompt_id": opt.prompt_id,
+        "project_id": getattr(opt, "_resolved_project_id", None),
+        "project_status": getattr(opt, "_resolved_project_status", None),
     }
 
 
@@ -95,7 +107,9 @@ def optimization_to_dict(opt: Optimization) -> dict[str, Any]:
 
 _SUMMARY_FIELDS = frozenset({
     "id", "raw_prompt", "task_type", "complexity", "overall_score",
-    "status", "error_message", "project", "tags", "title",
+    "strategy", "secondary_frameworks", "framework_applied", "model_used",
+    "status", "error_message", "project", "tags",
+    "title", "prompt_id", "project_id", "project_status",
 })
 
 
@@ -158,7 +172,10 @@ def apply_pipeline_result_to_orm(
     opt.changes_made = _serialize_json_list(data.get("changes_made"))
     opt.framework_applied = data.get("framework_applied")
     opt.optimization_notes = data.get("optimization_notes")
+    opt.strategy = data.get("strategy")
     opt.strategy_reasoning = data.get("strategy_reasoning")
+    opt.strategy_confidence = data.get("strategy_confidence")
+    opt.secondary_frameworks = _serialize_json_list(data.get("secondary_frameworks"))
     opt.clarity_score = data.get("clarity_score")
     opt.specificity_score = data.get("specificity_score")
     opt.structure_score = data.get("structure_score")
@@ -168,6 +185,8 @@ def apply_pipeline_result_to_orm(
     opt.verdict = data.get("verdict")
     opt.duration_ms = elapsed_ms
     opt.model_used = data.get("model_used")
+    opt.input_tokens = data.get("input_tokens")
+    opt.output_tokens = data.get("output_tokens")
 
 
 async def update_optimization_status(
@@ -205,6 +224,10 @@ async def update_optimization_status(
             elapsed_ms = int((time.time() - start_time) * 1000) if start_time else 0
             apply_pipeline_result_to_orm(opt, result_data, elapsed_ms)
             if not opt.model_used and model_fallback:
+                logger.info(
+                    "optimization %s: pipeline did not set model_used; recording fallback %r",
+                    optimization_id, model_fallback,
+                )
                 opt.model_used = model_fallback
 
     if session is not None:

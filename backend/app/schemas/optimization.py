@@ -4,6 +4,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.utils.datetime import UTCDatetime
+
+from app.constants import LEGACY_STRATEGY_ALIASES, Strategy
+
 
 class OptimizeRequest(BaseModel):
     """Request body for the optimize endpoint."""
@@ -18,6 +22,52 @@ class OptimizeRequest(BaseModel):
     title: str | None = Field(
         None, max_length=200, description="Optional title",
     )
+    provider: str | None = Field(
+        None, max_length=50,
+        description="Provider name (e.g. 'openai'). Auto-detected if omitted.",
+    )
+    strategy: str | None = Field(
+        None,
+        description="Override strategy selection (e.g. 'chain-of-thought'). "
+        "When provided, skips the automatic StrategySelector.",
+    )
+    secondary_frameworks: list[str] | None = Field(
+        None,
+        description="Optional secondary frameworks (0-2) to combine with primary strategy.",
+    )
+    prompt_id: str | None = Field(
+        None, description="Optional originating prompt ID (from a project)",
+    )
+
+    @field_validator("strategy")
+    @classmethod
+    def strategy_must_be_valid(cls, v: str | None) -> str | None:
+        """Validate that the strategy is a known Strategy value or legacy alias."""
+        if v is not None:
+            # Accept legacy aliases and map to new names
+            if v in LEGACY_STRATEGY_ALIASES:
+                return LEGACY_STRATEGY_ALIASES[v]
+            valid = {s.value for s in Strategy}
+            if v not in valid:
+                raise ValueError(f"Unknown strategy {v!r}. Valid: {', '.join(sorted(valid))}")
+        return v
+
+    @field_validator("secondary_frameworks")
+    @classmethod
+    def secondary_frameworks_must_be_valid(cls, v: list[str] | None) -> list[str] | None:
+        """Validate secondary frameworks are known Strategy values (max 2)."""
+        if v is None:
+            return v
+        if len(v) > 2:
+            raise ValueError("At most 2 secondary frameworks allowed")
+        valid = {s.value for s in Strategy}
+        result = []
+        for fw in v:
+            mapped = LEGACY_STRATEGY_ALIASES.get(fw, fw)
+            if mapped not in valid:
+                raise ValueError(f"Unknown secondary framework {fw!r}. Valid: {', '.join(sorted(valid))}")
+            result.append(mapped)
+        return result
 
     @field_validator("tags")
     @classmethod
@@ -42,7 +92,7 @@ class OptimizationResponse(BaseModel):
     """Full optimization result returned from the API."""
 
     id: str
-    created_at: datetime
+    created_at: UTCDatetime
     raw_prompt: str
     optimized_prompt: str | None = None
     task_type: str | None = None
@@ -52,7 +102,10 @@ class OptimizationResponse(BaseModel):
     changes_made: list[str] | None = None
     framework_applied: str | None = None
     optimization_notes: str | None = None
+    strategy: str | None = None
     strategy_reasoning: str | None = None
+    strategy_confidence: float | None = None
+    secondary_frameworks: list[str] | None = None
     clarity_score: float | None = None
     specificity_score: float | None = None
     structure_score: float | None = None
@@ -62,11 +115,16 @@ class OptimizationResponse(BaseModel):
     verdict: str | None = None
     duration_ms: int | None = None
     model_used: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     status: str = "pending"
     error_message: str | None = None
     project: str | None = None
     tags: list[str] | None = None
     title: str | None = None
+    prompt_id: str | None = None
+    project_id: str | None = None
+    project_status: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -75,7 +133,7 @@ class HistorySummaryResponse(BaseModel):
     """Lightweight summary for history list views (omits large text fields)."""
 
     id: str
-    created_at: datetime
+    created_at: UTCDatetime
     raw_prompt: str
     title: str | None = None
     task_type: str | None = None
@@ -83,8 +141,15 @@ class HistorySummaryResponse(BaseModel):
     project: str | None = None
     tags: list[str] | None = None
     overall_score: float | None = None
+    strategy: str | None = None
+    secondary_frameworks: list[str] | None = None
+    framework_applied: str | None = None
+    model_used: str | None = None
     status: str = "pending"
     error_message: str | None = None
+    prompt_id: str | None = None
+    project_id: str | None = None
+    project_status: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -111,3 +176,5 @@ class StatsResponse(BaseModel):
     total_projects: int = 0
     most_common_task_type: str | None = None
     optimizations_today: int = 0
+    strategy_distribution: dict[str, int] | None = None
+    score_by_strategy: dict[str, float] | None = None

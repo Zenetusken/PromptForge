@@ -1,10 +1,20 @@
 """Prompt validator service - validates optimization quality and faithfulness."""
 
 import json
+import logging
 from dataclasses import dataclass
 
 from app.prompts.validator_prompt import VALIDATOR_SYSTEM_PROMPT
-from app.services.claude_client import ClaudeClient
+from app.providers import LLMProvider, get_provider
+from app.providers.types import CompletionRequest, TokenUsage
+
+logger = logging.getLogger(__name__)
+
+# Weights for server-side overall_score computation
+CLARITY_WEIGHT = 0.25
+SPECIFICITY_WEIGHT = 0.25
+STRUCTURE_WEIGHT = 0.20
+FAITHFULNESS_WEIGHT = 0.30
 
 
 @dataclass
@@ -20,6 +30,12 @@ class ValidationResult:
     verdict: str
 
 
+def _fallback_verdict() -> str:
+    """Return a fallback verdict string and log a warning."""
+    logger.warning("LLM returned no verdict field; using fallback text")
+    return "No verdict available."
+
+
 class PromptValidator:
     """Validates optimized prompts against the original for quality assurance.
 
@@ -27,8 +43,9 @@ class PromptValidator:
     whether it is a genuine improvement over the original.
     """
 
-    def __init__(self, claude_client: ClaudeClient | None = None) -> None:
-        self.claude_client = claude_client or ClaudeClient()
+    def __init__(self, llm_provider: LLMProvider | None = None) -> None:
+        self.llm = llm_provider or get_provider()
+        self.last_usage: TokenUsage | None = None
 
     async def validate(
         self,
@@ -48,23 +65,62 @@ class PromptValidator:
             "raw_prompt": raw_prompt,
             "optimized_prompt": optimized_prompt,
         })
-        response = await self.claude_client.send_message_json(
+        request = CompletionRequest(
             system_prompt=VALIDATOR_SYSTEM_PROMPT,
             user_message=user_message,
         )
+        response, completion = await self.llm.complete_json(request)
+        self.last_usage = completion.usage
+
         def _clamp_score(key: str) -> float:
             try:
                 val = float(response.get(key, 0.5))
             except (TypeError, ValueError):
+                logger.warning("Non-numeric value for %r from LLM, defaulting to 0.5", key)
                 val = 0.5
             return max(0.0, min(1.0, val))
 
+        clarity = _clamp_score("clarity_score")
+        specificity = _clamp_score("specificity_score")
+        structure = _clamp_score("structure_score")
+        faithfulness = _clamp_score("faithfulness_score")
+
+        # Weighted average computed server-side (never trust LLM arithmetic)
+        overall = (
+            clarity * CLARITY_WEIGHT
+            + specificity * SPECIFICITY_WEIGHT
+            + structure * STRUCTURE_WEIGHT
+            + faithfulness * FAITHFULNESS_WEIGHT
+        )
+
+        # Cross-check is_improvement against computed overall_score.
+        # The LLM judges subjectively, but extreme mismatches indicate
+        # unreliable judgment — override to keep UI consistent with scores.
+        llm_is_improvement = bool(response.get("is_improvement", False))
+        overall_rounded = round(overall, 4)
+        if overall_rounded < 0.4 and llm_is_improvement:
+            logger.warning(
+                "is_improvement cross-check: LLM says improvement but overall_score=%.4f < 0.4; "
+                "overriding to False",
+                overall_rounded,
+            )
+            is_improvement = False
+        elif overall_rounded > 0.7 and not llm_is_improvement:
+            logger.warning(
+                "is_improvement cross-check: LLM says not improvement but overall_score=%.4f > 0.7; "
+                "overriding to True",
+                overall_rounded,
+            )
+            is_improvement = True
+        else:
+            is_improvement = llm_is_improvement
+
         return ValidationResult(
-            clarity_score=_clamp_score("clarity_score"),
-            specificity_score=_clamp_score("specificity_score"),
-            structure_score=_clamp_score("structure_score"),
-            faithfulness_score=_clamp_score("faithfulness_score"),
-            overall_score=_clamp_score("overall_score"),
-            is_improvement=bool(response.get("is_improvement", False)),
-            verdict=response.get("verdict", "No verdict available."),
+            clarity_score=clarity,
+            specificity_score=specificity,
+            structure_score=structure,
+            faithfulness_score=faithfulness,
+            overall_score=overall_rounded,
+            is_improvement=is_improvement,
+            verdict=response.get("verdict") or _fallback_verdict(),
         )

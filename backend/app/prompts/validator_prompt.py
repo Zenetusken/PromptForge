@@ -33,8 +33,6 @@ Evaluate the optimized prompt on these dimensions (each scored 0.0 to 1.0):
    - 0.7-0.8: Mostly faithful with minor additions
    - 0.9-1.0: Perfectly preserves and enhances original intent
 
-5. overall_score: Weighted average considering all dimensions.
-
 Also determine:
 - is_improvement: Boolean - is the optimized version genuinely better?
 - verdict: A 1-2 sentence summary of the evaluation.
@@ -47,7 +45,6 @@ Example response:
   "specificity_score": 0.78,
   "structure_score": 0.90,
   "faithfulness_score": 0.95,
-  "overall_score": 0.87,
   "is_improvement": true,
   "verdict": "The optimized prompt significantly improves structure and clarity \
 while faithfully preserving the original intent."

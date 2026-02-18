@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
 from app.database import get_db
+from app.providers import get_provider
 
 router = APIRouter(tags=["health"])
 
@@ -20,14 +21,22 @@ async def _health_response(db: AsyncSession):
     except SQLAlchemyError:
         db_connected = False
 
-    # SDK uses CLI auth (MAX subscription), no API key needed
-    from app.services.claude_client import ClaudeClient
-
-    claude_available = ClaudeClient().is_available()
+    try:
+        provider = get_provider()
+        llm_available = provider.is_available()
+        llm_provider = provider.provider_name
+        llm_model = provider.model_name
+    except Exception:
+        llm_available = False
+        llm_provider = "none"
+        llm_model = ""
 
     return {
         "status": "ok",
-        "claude_available": claude_available,
+        "claude_available": llm_available,  # backward compat
+        "llm_available": llm_available,
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
         "db_connected": db_connected,
         "version": config.APP_VERSION,
     }
@@ -35,7 +44,7 @@ async def _health_response(db: AsyncSession):
 
 @router.api_route("/api/health", methods=["GET", "HEAD"])
 async def health_check(db: AsyncSession = Depends(get_db)):
-    """Check the health of the API, database connection, and Claude availability.
+    """Check the health of the API, database connection, and LLM provider availability.
 
     Returns a JSON object with status information for each component.
     """

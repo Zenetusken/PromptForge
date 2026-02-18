@@ -1,4 +1,12 @@
-"""Score normalization. DB stores 0.0-1.0, API/display uses 1-10 integers."""
+"""Score normalization utilities.
+
+The application uses three score representations:
+
+- **DB / LLM layer**: 0.0–1.0 floats (stored in SQLite, returned by the validator).
+- **MCP tools**: 1–10 integers (``score_to_display``), suitable for quick textual summaries.
+- **Frontend**: 0–100 integers (``normalizeScore`` in ``frontend/src/lib/utils/format.ts``),
+  used in the web UI for user-facing score displays and color thresholds.
+"""
 
 
 def score_to_display(score: float | None) -> int | None:

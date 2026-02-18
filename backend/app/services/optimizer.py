@@ -1,11 +1,16 @@
 """Prompt optimizer service - applies optimization strategies to improve prompts."""
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 
+from app.constants import Strategy
 from app.prompts.optimizer_prompts import OPTIMIZER_SYSTEM_PROMPT
-from app.services.analyzer import AnalysisResult
-from app.services.claude_client import ClaudeClient
+from app.providers import LLMProvider, get_provider
+from app.providers.types import CompletionRequest, TokenUsage
+from app.services.analyzer import AnalysisResult, _ensure_string_list
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,37 +30,49 @@ class PromptOptimizer:
     with documented changes and reasoning.
     """
 
-    def __init__(self, claude_client: ClaudeClient | None = None) -> None:
-        self.claude_client = claude_client or ClaudeClient()
+    def __init__(self, llm_provider: LLMProvider | None = None) -> None:
+        self.llm = llm_provider or get_provider()
+        self.last_usage: TokenUsage | None = None
 
     async def optimize(
         self,
         raw_prompt: str,
         analysis: AnalysisResult,
-        strategy: str = "structured-enhancement",
+        strategy: str = Strategy.ROLE_TASK_FORMAT,
+        secondary_frameworks: list[str] | None = None,
     ) -> OptimizationResult:
         """Optimize a raw prompt based on its analysis and chosen strategy.
 
         Args:
             raw_prompt: The original prompt text.
             analysis: The analysis results from PromptAnalyzer.
-            strategy: The optimization strategy to apply.
+            strategy: The primary optimization strategy to apply.
+            secondary_frameworks: Optional 0-2 secondary frameworks to combine.
 
         Returns:
             An OptimizationResult with the optimized prompt and metadata.
         """
-        user_message = json.dumps({
+        payload: dict = {
             "raw_prompt": raw_prompt,
             "analysis": asdict(analysis),
             "strategy": strategy,
-        })
-        response = await self.claude_client.send_message_json(
+        }
+        if secondary_frameworks:
+            payload["secondary_frameworks"] = secondary_frameworks
+        user_message = json.dumps(payload)
+        request = CompletionRequest(
             system_prompt=OPTIMIZER_SYSTEM_PROMPT,
             user_message=user_message,
         )
+        response, completion = await self.llm.complete_json(request)
+        self.last_usage = completion.usage
+        optimized = response.get("optimized_prompt")
+        if not optimized:
+            logger.warning("LLM returned no optimized_prompt; falling back to raw prompt")
+            optimized = raw_prompt
         return OptimizationResult(
-            optimized_prompt=response.get("optimized_prompt", raw_prompt),
+            optimized_prompt=optimized,
             framework_applied=response.get("framework_applied", strategy),
-            changes_made=response.get("changes_made", []),
+            changes_made=_ensure_string_list(response.get("changes_made", [])),
             optimization_notes=response.get("optimization_notes", ""),
         )

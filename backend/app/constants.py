@@ -13,6 +13,42 @@ class OptimizationStatus(StrEnum):
     ERROR = "error"
 
 
+class Strategy(StrEnum):
+    """Optimization strategy names — single source of truth.
+
+    Each value corresponds to a prompt engineering framework.
+    """
+
+    CO_STAR = "co-star"
+    RISEN = "risen"
+    CHAIN_OF_THOUGHT = "chain-of-thought"
+    FEW_SHOT_SCAFFOLDING = "few-shot-scaffolding"
+    ROLE_TASK_FORMAT = "role-task-format"
+    STRUCTURED_OUTPUT = "structured-output"
+    STEP_BY_STEP = "step-by-step"
+    CONSTRAINT_INJECTION = "constraint-injection"
+    CONTEXT_ENRICHMENT = "context-enrichment"
+    PERSONA_ASSIGNMENT = "persona-assignment"
+
+
+# Maps old 5-strategy names to the new 10-framework equivalents.
+# Used by schema validation and LLM response normalization.
+LEGACY_STRATEGY_ALIASES: dict[str, str] = {
+    "few-shot": "few-shot-scaffolding",
+    "role-based": "persona-assignment",
+    "constraint-focused": "constraint-injection",
+    "structured-enhancement": "role-task-format",
+}
+
+
+class ProjectStatus(StrEnum):
+    """Status values for project records."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    DELETED = "deleted"
+
+
 ALLOWED_SORT_FIELDS: frozenset[str] = frozenset({
     "created_at",
     "overall_score",
@@ -22,6 +58,12 @@ ALLOWED_SORT_FIELDS: frozenset[str] = frozenset({
     "duration_ms",
     "title",
     "project",
+})
+
+ALLOWED_PROJECT_SORT_FIELDS: frozenset[str] = frozenset({
+    "created_at",
+    "updated_at",
+    "name",
 })
 
 
@@ -62,7 +104,31 @@ STAGE_ANALYZE = StageConfig(
         "Analyzing structural patterns...",
         "Identifying strengths and weaknesses...",
         "Compiling analysis results...",
+        "Assessing task type confidence...",
+        "Reviewing complexity indicators...",
+        "Cross-referencing analysis dimensions...",
+        "Finalizing prompt classification...",
+        "Wrapping up analysis...",
     ),
+)
+
+STAGE_STRATEGY = StageConfig(
+    name="strategy",
+    event_name="strategy",
+    stage_label="strategizing",
+    stage_message="Selecting optimization strategy...",
+    initial_messages=(
+        ("Evaluating prompt characteristics...", 0.1),
+        ("Matching task type to optimal approach...", 0.3),
+    ),
+    progress_messages=(
+        "Analyzing task type and complexity alignment...",
+        "Evaluating strategy-strength redundancy...",
+        "Assessing specificity and constraint needs...",
+        "Weighing strategy confidence levels...",
+        "Finalizing strategy selection...",
+    ),
+    progress_interval=1.0,
 )
 
 STAGE_OPTIMIZE = StageConfig(
@@ -80,6 +146,11 @@ STAGE_OPTIMIZE = StageConfig(
         "Refining language and tone...",
         "Incorporating best practices...",
         "Finalizing optimized prompt...",
+        "Polishing structural elements...",
+        "Verifying constraint alignment...",
+        "Enhancing prompt specificity...",
+        "Reviewing optimization quality...",
+        "Completing rewrite...",
     ),
 )
 
@@ -98,5 +169,10 @@ STAGE_VALIDATE = StageConfig(
         "Assessing specificity and structure...",
         "Checking faithfulness to intent...",
         "Generating final verdict...",
+        "Validating score consistency...",
+        "Cross-checking improvement indicators...",
+        "Computing weighted overall score...",
+        "Reviewing verdict rationale...",
+        "Completing quality assessment...",
     ),
 )

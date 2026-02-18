@@ -11,12 +11,23 @@ Analyze the following prompt and return a JSON object with these fields:
   "classification", "formatting", "extraction", "creative", "medical",
   "legal", "education", "other"
 - complexity: The complexity level. One of: "low", "medium", "high"
+  Calibration guidance:
+  - "low": Simple, single-step tasks — direct questions, basic formatting, \
+straightforward lookup or translation requests.
+  - "medium": Multi-step tasks requiring some reasoning or domain knowledge. \
+This is the DEFAULT — most prompts should be rated medium.
+  - "high": Reserved for deep multi-step reasoning chains, mathematical proofs, \
+complex system design, or problems requiring extended logical deduction. \
+Only ~10-15% of prompts qualify as high complexity.
+  When in doubt, choose "medium".
 - weaknesses: A list of strings describing specific weaknesses found in the prompt.
-  Examples: "Lacks specificity", "No output format specified", "Missing context",
-  "Ambiguous instructions", "No role definition", "Too broad scope"
+  Examples: "Lacks specific details", "No output format specified", \
+"Instructions are vague", "Ambiguous requirements", "No role definition", \
+"Too broad scope", "Underspecified constraints"
 - strengths: A list of strings describing specific strengths found in the prompt.
-  Examples: "Clear intent", "Good context", "Well-structured",
-  "Specific constraints", "Includes examples"
+  Examples: "Clear intent", "Includes examples of expected output", \
+"Clear role definition", "Step-by-step instructions provided", \
+"Explicit constraints and boundaries", "Well-structured"
 
 Return ONLY valid JSON. Do not include any other text or explanation.
 
