@@ -5,7 +5,7 @@
 # Usage:
 #   ./init.sh              Setup deps + start services (default)
 #   ./init.sh stop         Stop all running services
-#   ./init.sh restart      Stop then start
+#   ./init.sh restart      Stop then start (no reinstall)
 #   ./init.sh status       Show running/stopped state + health details
 #   ./init.sh test         Install test extras, run backend + frontend tests
 #   ./init.sh seed         Populate example optimization data
@@ -49,12 +49,12 @@ _read_env_var() {
 }
 
 read_env_config() {
-    [ -f "$SCRIPT_DIR/.env" ] || return
+    [ -f "$SCRIPT_DIR/.env" ] || return 0
     local val
-    val=$(_read_env_var BACKEND_PORT);        [ -n "$val" ] && BACKEND_PORT="$val"
-    val=$(_read_env_var AUTH_TOKEN);           [ -n "$val" ] && AUTH_TOKEN="$val"
-    val=$(_read_env_var RATE_LIMIT_RPM);      [ -n "$val" ] && RATE_LIMIT_RPM="$val"
-    val=$(_read_env_var RATE_LIMIT_OPTIMIZE_RPM); [ -n "$val" ] && RATE_LIMIT_OPTIMIZE_RPM="$val"
+    val=$(_read_env_var BACKEND_PORT);            if [ -n "$val" ]; then BACKEND_PORT="$val"; fi
+    val=$(_read_env_var AUTH_TOKEN);               if [ -n "$val" ]; then AUTH_TOKEN="$val"; fi
+    val=$(_read_env_var RATE_LIMIT_RPM);           if [ -n "$val" ]; then RATE_LIMIT_RPM="$val"; fi
+    val=$(_read_env_var RATE_LIMIT_OPTIMIZE_RPM);  if [ -n "$val" ]; then RATE_LIMIT_OPTIMIZE_RPM="$val"; fi
 }
 
 # Read once at startup (covers stop/status/mcp without do_setup)
@@ -85,19 +85,49 @@ find_port_pid() {
     echo "$pid"
 }
 
+# kill_pid_tree PID — kill a process and all its descendants.
+# Walks the process tree via /proc to ensure orphaned children are caught
+# (e.g. npm → node → vite, uvicorn parent → uvicorn worker).
+kill_pid_tree() {
+    local pid=$1 sig=${2:-TERM}
+    # Collect children before killing parent (parent death may reparent them)
+    local children
+    children=$(pgrep -P "$pid" 2>/dev/null || true)
+    for child in $children; do
+        kill_pid_tree "$child" "$sig"
+    done
+    kill "-$sig" "$pid" 2>/dev/null || true
+}
+
 # kill_port PORT — kill the process listening on PORT, if any.
 kill_port() {
     local port=$1
     local pid
     pid=$(find_port_pid "$port")
     if [ -n "$pid" ]; then
-        kill "$pid" 2>/dev/null || true
+        kill_pid_tree "$pid"
         sleep 1
+        # Force-kill if still alive
         if kill -0 "$pid" 2>/dev/null; then
-            kill -9 "$pid" 2>/dev/null || true
+            kill_pid_tree "$pid" 9
         fi
         return 0
     fi
+    return 1
+}
+
+# wait_for_port_free PORT TIMEOUT — block until PORT has no listener.
+wait_for_port_free() {
+    local port=$1 timeout=${2:-5}
+    local i
+    for i in $(seq 1 "$timeout"); do
+        local pid
+        pid=$(find_port_pid "$port")
+        if [ -z "$pid" ]; then
+            return 0
+        fi
+        sleep 1
+    done
     return 1
 }
 
@@ -130,23 +160,35 @@ read_pid_file() {
     return 1
 }
 
-# stop_service NAME PID_FILE PORT VERBOSE — stop one service via PID file + port fallback.
+# stop_service NAME PID_FILE PORT VERBOSE — stop one service reliably.
+# Kills by PID file first (tree-kill), then ensures port is free.
 # VERBOSE=1 prints status messages; 0 is silent.
 stop_service() {
     local name=$1 pid_file=$2 port=$3 verbose=${4:-1}
+    local stopped=false
 
+    # Try PID file first
     local pid
     if pid=$(read_pid_file "$pid_file"); then
-        kill "$pid" 2>/dev/null || true
+        kill_pid_tree "$pid"
         sleep 1
         if kill -0 "$pid" 2>/dev/null; then
-            kill -9 "$pid" 2>/dev/null || true
+            kill_pid_tree "$pid" 9
         fi
         rm -f "$pid_file"
-        [ "$verbose" = "1" ] && success "$name stopped (PID: $pid)"
-        return 0
-    elif kill_port "$port" 2>/dev/null; then
-        [ "$verbose" = "1" ] && success "$name stopped (port $port)"
+        stopped=true
+    fi
+
+    # Always check port — orphaned children may still hold it
+    # (e.g. npm dies but vite child survives, or uvicorn reload worker)
+    if kill_port "$port" 2>/dev/null; then
+        stopped=true
+    fi
+
+    if $stopped; then
+        if [ "$verbose" = "1" ]; then
+            success "$name stopped"
+        fi
         return 0
     fi
 
@@ -196,7 +238,7 @@ check_prerequisites() {
 
 # ─── Provider Config Advisory ─────────────────────────────────────
 check_provider_config() {
-    [ ! -f "$SCRIPT_DIR/.env" ] && return
+    if [ ! -f "$SCRIPT_DIR/.env" ]; then return 0; fi
 
     local has_key=false
     for key in ANTHROPIC_API_KEY OPENAI_API_KEY GEMINI_API_KEY; do
@@ -278,6 +320,10 @@ do_start() {
     stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 0 || true
     stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 0 || true
 
+    # Wait for ports to be fully released before binding
+    wait_for_port_free "$BACKEND_PORT" 5 || true
+    wait_for_port_free "$FRONTEND_PORT" 5 || true
+
     mkdir -p "$LOGS_DIR"
 
     # Guard: venv must exist
@@ -286,12 +332,18 @@ do_start() {
         exit 1
     fi
 
-    # Start backend
+    # Guard: node_modules must exist
+    if [ ! -d "$SCRIPT_DIR/frontend/node_modules" ]; then
+        error "Frontend not set up yet. Run ./init.sh first."
+        exit 1
+    fi
+
+    # Start backend — use venv python directly (no need for global $PYTHON)
     log "Starting backend server on port $BACKEND_PORT..."
     cd "$SCRIPT_DIR/backend"
     source venv/bin/activate
 
-    nohup $PYTHON -m uvicorn app.main:app \
+    nohup python -m uvicorn app.main:app \
         --host 0.0.0.0 \
         --port "$BACKEND_PORT" \
         --reload \
@@ -551,7 +603,7 @@ do_help() {
     echo "Commands:"
     echo "  (none)      Setup dependencies and start services (default)"
     echo "  stop        Stop all running services"
-    echo "  restart     Stop then start services"
+    echo "  restart     Stop then start services (no reinstall)"
     echo "  status      Show running/stopped state and health details"
     echo "  test        Install test extras, run backend + frontend tests"
     echo "  seed        Populate example optimization data"
@@ -574,7 +626,6 @@ case "${1:-}" in
         ;;
     restart)
         do_stop
-        do_setup
         do_start
         ;;
     status)
