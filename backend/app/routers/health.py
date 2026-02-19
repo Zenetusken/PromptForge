@@ -42,7 +42,7 @@ async def _health_response(db: AsyncSession):
     }
 
 
-@router.api_route("/api/health", methods=["GET", "HEAD"])
+@router.get("/api/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """Check the health of the API, database connection, and LLM provider availability.
 
@@ -51,10 +51,22 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     return await _health_response(db)
 
 
-@router.api_route("/health", methods=["GET", "HEAD"])
+@router.head("/api/health", include_in_schema=False)
+async def health_check_head(db: AsyncSession = Depends(get_db)):
+    """HEAD variant of the health check."""
+    return await _health_response(db)
+
+
+@router.get("/health", include_in_schema=False)
 async def health_check_alias(db: AsyncSession = Depends(get_db)):
     """Alias for /api/health at the root path.
 
     Some monitoring tools expect health checks at /health.
     """
+    return await _health_response(db)
+
+
+@router.head("/health", include_in_schema=False)
+async def health_check_alias_head(db: AsyncSession = Depends(get_db)):
+    """HEAD variant of the health alias."""
     return await _health_response(db)
