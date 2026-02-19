@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from app import config
 from app.providers.base import LLMProvider, classify_error, run_connection_test
 from app.providers.errors import ProviderError
-from app.providers.types import CompletionRequest, CompletionResponse, TokenUsage
+from app.providers.types import CompletionRequest, CompletionResponse, StreamChunk, TokenUsage
 
 
 @dataclass
@@ -104,6 +104,57 @@ class OpenAIProvider(LLMProvider):
             raise
         except Exception as exc:
             raise classify_error(exc, provider=self.provider_name) from exc
+
+    def supports_streaming(self) -> bool:
+        return True
+
+    async def stream(self, request: CompletionRequest):
+        """Stream text chunks via the OpenAI Chat Completions API."""
+        try:
+            client = self._get_client()
+            kwargs: dict = {
+                "model": self.model,
+                "max_tokens": request.max_tokens or self.max_tokens,
+                "messages": [
+                    {"role": "system", "content": request.system_prompt},
+                    {"role": "user", "content": request.user_message},
+                ],
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+            if request.temperature is not None:
+                kwargs["temperature"] = request.temperature
+
+            response = await client.chat.completions.create(**kwargs)
+            sent_done = False
+            async for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield StreamChunk(text=chunk.choices[0].delta.content)
+                if chunk.usage:
+                    sent_done = True
+                    yield StreamChunk(
+                        text="",
+                        done=True,
+                        usage=TokenUsage(
+                            input_tokens=chunk.usage.prompt_tokens,
+                            output_tokens=chunk.usage.completion_tokens,
+                        ),
+                    )
+            if not sent_done:
+                yield StreamChunk(text="", done=True)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise classify_error(exc, provider=self.provider_name) from exc
+
+    def count_tokens(self, text: str) -> int | None:
+        """Count tokens using tiktoken (if available)."""
+        try:
+            import tiktoken
+            enc = tiktoken.encoding_for_model(self.model)
+            return len(enc.encode(text))
+        except Exception:
+            return None
 
     @property
     def model_name(self) -> str:

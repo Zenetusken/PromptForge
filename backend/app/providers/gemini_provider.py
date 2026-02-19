@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from app import config
 from app.providers.base import LLMProvider, classify_error, run_connection_test
 from app.providers.errors import ProviderError
-from app.providers.types import CompletionRequest, CompletionResponse, TokenUsage
+from app.providers.types import CompletionRequest, CompletionResponse, StreamChunk, TokenUsage
 
 
 @dataclass
@@ -98,6 +98,46 @@ class GeminiProvider(LLMProvider):
                 provider=self.provider_name,
                 usage=usage,
             )
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise classify_error(exc, provider=self.provider_name) from exc
+
+    def supports_streaming(self) -> bool:
+        return True
+
+    async def stream(self, request: CompletionRequest):
+        """Stream text chunks via the Gemini API."""
+        from google.genai.types import GenerateContentConfig
+
+        try:
+            client = self._get_client()
+            config_kwargs: dict = {"system_instruction": request.system_prompt}
+            if request.temperature is not None:
+                config_kwargs["temperature"] = request.temperature
+
+            last_chunk = None
+            async for chunk in client.aio.models.generate_content_stream(
+                model=self.model,
+                contents=request.user_message,
+                config=GenerateContentConfig(**config_kwargs),
+            ):
+                last_chunk = chunk
+                if chunk.text:
+                    yield StreamChunk(text=chunk.text)
+
+            # Final chunk with usage if available
+            if last_chunk and last_chunk.usage_metadata:
+                yield StreamChunk(
+                    text="",
+                    done=True,
+                    usage=TokenUsage(
+                        input_tokens=last_chunk.usage_metadata.prompt_token_count,
+                        output_tokens=last_chunk.usage_metadata.candidates_token_count,
+                    ),
+                )
+            else:
+                yield StreamChunk(text="", done=True)
         except ProviderError:
             raise
         except Exception as exc:

@@ -9,7 +9,7 @@ import re
 import shutil
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TypeVar
 
 from app.providers.errors import (
@@ -20,7 +20,7 @@ from app.providers.errors import (
     ProviderPermissionError,
     RateLimitError,
 )
-from app.providers.types import CompletionRequest, CompletionResponse
+from app.providers.types import CompletionRequest, CompletionResponse, StreamChunk
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +372,36 @@ class LLMProvider(ABC):
             return parsed, response
 
         return await _retry_transient(_attempt)
+
+    # ------------------------------------------------------------------
+    # Concrete — streaming
+    # ------------------------------------------------------------------
+
+    def supports_streaming(self) -> bool:
+        """Return True if this provider supports the ``stream()`` method natively."""
+        return False
+
+    async def stream(
+        self, request: CompletionRequest,
+    ) -> AsyncIterator[StreamChunk]:
+        """Yield text chunks as they arrive from the LLM.
+
+        The default implementation calls ``complete()`` and yields a single
+        ``StreamChunk``.  Providers with native streaming override this.
+        """
+        response = await self.complete(request)
+        yield StreamChunk(text=response.text, done=True, usage=response.usage)
+
+    # ------------------------------------------------------------------
+    # Concrete — token counting
+    # ------------------------------------------------------------------
+
+    def count_tokens(self, text: str) -> int | None:
+        """Estimate token count for *text*.
+
+        Returns ``None`` if the provider does not support token counting.
+        """
+        return None
 
     # ------------------------------------------------------------------
     # Concrete — capability check

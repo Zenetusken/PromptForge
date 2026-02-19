@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from app import config
 from app.providers.base import LLMProvider, classify_error, run_connection_test
 from app.providers.errors import ProviderError
-from app.providers.types import CompletionRequest, CompletionResponse, TokenUsage
+from app.providers.types import CompletionRequest, CompletionResponse, StreamChunk, TokenUsage
 
 
 @dataclass
@@ -98,6 +98,48 @@ class AnthropicAPIProvider(LLMProvider):
             raise
         except Exception as exc:
             raise classify_error(exc, provider=self.provider_name) from exc
+
+    def supports_streaming(self) -> bool:
+        return True
+
+    async def stream(self, request: CompletionRequest):
+        """Stream text chunks via the Anthropic Messages API."""
+        try:
+            client = self._get_client()
+            kwargs: dict = {
+                "model": self.model,
+                "max_tokens": request.max_tokens or self.max_tokens,
+                "system": request.system_prompt,
+                "messages": [{"role": "user", "content": request.user_message}],
+            }
+            if request.temperature is not None:
+                kwargs["temperature"] = request.temperature
+
+            async with client.messages.stream(**kwargs) as stream:
+                async for text in stream.text_stream:
+                    yield StreamChunk(text=text)
+                # get_final_message() must be called inside the async with block
+                msg = await stream.get_final_message()
+            usage = TokenUsage(
+                input_tokens=msg.usage.input_tokens,
+                output_tokens=msg.usage.output_tokens,
+            )
+            yield StreamChunk(text="", done=True, usage=usage)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise classify_error(exc, provider=self.provider_name) from exc
+
+    def count_tokens(self, text: str) -> int | None:
+        """Estimate token count for Anthropic models.
+
+        Uses ~4 chars per token heuristic. The Anthropic SDK's count_tokens()
+        is async on AsyncAnthropic and cannot be called from a sync method.
+        """
+        try:
+            return len(text) // 4
+        except Exception:
+            return None
 
     @property
     def model_name(self) -> str:

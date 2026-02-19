@@ -37,3 +37,12 @@ class CompletionResponse:
     model: str
     provider: str
     usage: TokenUsage | None = None
+
+
+@dataclass(frozen=True)
+class StreamChunk:
+    """A single chunk from a streaming completion."""
+
+    text: str
+    done: bool = False
+    usage: TokenUsage | None = None
