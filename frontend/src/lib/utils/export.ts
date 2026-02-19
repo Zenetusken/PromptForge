@@ -102,6 +102,10 @@ export function buildMetadataTable(result: OptimizationResultState): string[] {
 		rows.push(`| Tokens | ${inTok} in / ${outTok} out |`);
 	}
 
+	if (result.version) {
+		rows.push(`| Version | ${result.version} |`);
+	}
+
 	if (result.project) {
 		const projectLabel = result.project_status === 'archived'
 			? `${result.project} (archived)`

@@ -3,6 +3,7 @@
 	import { normalizeScore, getScoreBadgeClass, formatMetadataSummary } from '$lib/utils/format';
 	import MetadataSummaryLine from './MetadataSummaryLine.svelte';
 	import Icon from './Icon.svelte';
+	import { EntryTitle, Tooltip } from './ui';
 
 	let { result }: { result: OptimizationResultState } = $props();
 	let hasTokens = $derived(result.input_tokens > 0 || result.output_tokens > 0);
@@ -24,19 +25,19 @@
 <!-- Row 1: Title + Score circle + Improvement arrow -->
 {#if result.title || score !== null}
 	<div class="flex items-center gap-3 border-b border-border-subtle px-5 py-4">
-		{#if result.title}
-			<h3 class="min-w-0 flex-1 font-display text-base font-bold text-text-primary" data-testid="result-title">{result.title}</h3>
-		{:else}
-			<div class="flex-1"></div>
-		{/if}
+		<h3 class="min-w-0 flex-1 font-display text-base font-bold" data-testid="result-title">
+			<EntryTitle title={result.title} />
+		</h3>
 		<div class="flex shrink-0 items-center gap-1.5">
 			{#if result.is_improvement}
-				<Icon name="arrow-up" size={14} class="text-neon-green" />
+				<Tooltip text="Improved over original"><Icon name="arrow-up" size={14} class="text-neon-green" /></Tooltip>
 			{/if}
 			{#if score !== null}
-				<span class="score-circle {getScoreBadgeClass(result.scores.overall)}" data-testid="result-score-circle">
-					{score}
-				</span>
+				<Tooltip text="Overall quality score">
+					<span class="score-circle {getScoreBadgeClass(result.scores.overall)}" data-testid="result-score-circle">
+						{score}
+					</span>
+				</Tooltip>
 			{/if}
 		</div>
 	</div>
@@ -55,7 +56,9 @@
 			/>
 			{#if secondaryFrameworks}
 				{#each secondaryFrameworks as sf}
-					<span class="rounded-full bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-cyan" data-testid="secondary-framework-badge">+{sf}</span>
+					<Tooltip text="Secondary framework: {sf}">
+						<span class="rounded-full bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-cyan" data-testid="secondary-framework-badge">+{sf}</span>
+					</Tooltip>
 				{/each}
 			{/if}
 		</div>
@@ -88,12 +91,16 @@
 		{#if hasTokens || result.duration_ms > 0}
 			<div class="ml-auto flex items-center gap-2 font-mono text-[10px] tabular-nums text-text-dim">
 				{#if hasTokens}
-					<span data-testid="token-usage">
-						{result.input_tokens.toLocaleString()} in / {result.output_tokens.toLocaleString()} out
-					</span>
+					<Tooltip text="Tokens used during optimization">
+						<span data-testid="token-usage">
+							{result.input_tokens.toLocaleString()} in / {result.output_tokens.toLocaleString()} out
+						</span>
+					</Tooltip>
 				{/if}
 				{#if result.duration_ms > 0}
-					<span data-testid="duration">{(result.duration_ms / 1000).toFixed(1)}s</span>
+					<Tooltip text="Total optimization time">
+						<span data-testid="duration">{(result.duration_ms / 1000).toFixed(1)}s</span>
+					</Tooltip>
 				{/if}
 			</div>
 		{/if}

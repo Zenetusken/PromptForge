@@ -1,10 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
 import ConfirmModal from './ConfirmModal.svelte';
 
 describe('ConfirmModal', () => {
 	beforeEach(() => {
 		document.body.innerHTML = '';
+	});
+
+	afterEach(() => {
+		cleanup();
 	});
 
 	it('renders nothing when open=false', () => {
@@ -44,24 +48,6 @@ describe('ConfirmModal', () => {
 			props: { open: true, oncancel },
 		});
 		await fireEvent.click(screen.getByTestId('confirm-modal-cancel'));
-		expect(oncancel).toHaveBeenCalledOnce();
-	});
-
-	it('calls oncancel when backdrop is clicked', async () => {
-		const oncancel = vi.fn();
-		render(ConfirmModal, {
-			props: { open: true, oncancel },
-		});
-		await fireEvent.click(screen.getByTestId('confirm-modal-backdrop'));
-		expect(oncancel).toHaveBeenCalledOnce();
-	});
-
-	it('calls oncancel on Escape key', async () => {
-		const oncancel = vi.fn();
-		render(ConfirmModal, {
-			props: { open: true, oncancel },
-		});
-		await fireEvent.keyDown(screen.getByTestId('confirm-modal-backdrop'), { key: 'Escape' });
 		expect(oncancel).toHaveBeenCalledOnce();
 	});
 

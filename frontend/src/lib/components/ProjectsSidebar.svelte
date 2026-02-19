@@ -3,6 +3,7 @@
 	import ProjectItem from './ProjectItem.svelte';
 	import CreateProjectDialog from './CreateProjectDialog.svelte';
 	import Icon from './Icon.svelte';
+	import { SidebarTabs, Tooltip } from './ui';
 
 	let searchQuery = $state('');
 	let showCreateForm = $state(false);
@@ -34,6 +35,7 @@
 </script>
 
 <div class="space-y-2 p-3">
+	<!-- Search + New Project -->
 	<div class="flex items-center gap-1.5">
 		<div class="relative flex-1">
 			<Icon name="search" size={13} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
@@ -48,46 +50,33 @@
 			/>
 		</div>
 		{#if !isArchived}
-			<button
-				onclick={() => { showCreateForm = !showCreateForm; }}
-				class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-neon-cyan/20 text-neon-cyan
-					transition-colors hover:bg-neon-cyan/8 active:bg-neon-cyan/15
-					focus-visible:outline-offset-0"
-				aria-label="New project"
-				data-testid="new-project-btn"
-			>
-				<Icon name="plus" size={14} />
-			</button>
+			<Tooltip text="Create new project" side="bottom" class="shrink-0">
+				<button
+					onclick={() => { showCreateForm = !showCreateForm; }}
+					class="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-neon-cyan/15 text-neon-cyan/60
+						transition-all hover:bg-neon-cyan/8 hover:text-neon-cyan hover:border-neon-cyan/25
+						hover:shadow-[0_0_8px_rgba(0,229,255,0.06)]
+						active:bg-neon-cyan/15
+						focus-visible:outline-offset-0"
+					aria-label="New project"
+					data-testid="new-project-btn"
+				>
+					<Icon name="plus" size={14} />
+				</button>
+			</Tooltip>
 		{/if}
 	</div>
 
 	<!-- Active / Archived toggle -->
-	<div class="flex gap-1 rounded-lg bg-bg-hover/40 p-0.5" role="tablist" aria-label="Project status filter">
-		<button
-			role="tab"
-			aria-selected={!isArchived}
-			class="flex-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors
-				{!isArchived
-					? 'bg-neon-cyan/15 text-neon-cyan shadow-sm'
-					: 'text-text-dim hover:text-text-secondary hover:bg-bg-hover/60'}"
-			onclick={() => setFilter('active')}
-			data-testid="filter-active"
-		>
-			Active
-		</button>
-		<button
-			role="tab"
-			aria-selected={isArchived}
-			class="flex-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors
-				{isArchived
-					? 'bg-neon-yellow/15 text-neon-yellow shadow-sm'
-					: 'text-text-dim hover:text-text-secondary hover:bg-bg-hover/60'}"
-			onclick={() => setFilter('archived')}
-			data-testid="filter-archived"
-		>
-			Archived
-		</button>
-	</div>
+	<SidebarTabs
+		value={projectsState.statusFilter}
+		onValueChange={(v) => setFilter(v as 'active' | 'archived')}
+		label="Project status filter"
+		tabs={[
+			{ value: 'active', label: 'Active', testid: 'filter-active' },
+			{ value: 'archived', label: 'Archived', testid: 'filter-archived', activeClass: 'text-neon-yellow bg-neon-yellow/8' },
+		]}
+	/>
 </div>
 
 {#if showCreateForm}
@@ -144,7 +133,7 @@
 		{#if projectsState.total > projectsState.items.length}
 			<div class="py-3 text-center">
 				<button
-					class="text-xs text-text-dim transition-colors hover:text-neon-cyan active:text-neon-cyan/70
+					class="text-xs text-text-dim transition-colors hover:text-neon-cyan hover:underline hover:underline-offset-2 active:text-neon-cyan/70
 						focus-visible:outline-offset-0"
 					onclick={() => projectsState.loadProjects({ page: projectsState.page + 1 })}
 					data-testid="projects-load-more"

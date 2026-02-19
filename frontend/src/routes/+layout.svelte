@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { goto, beforeNavigate } from '$app/navigation';
+	import { Tooltip } from 'bits-ui';
 	import Header from '$lib/components/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import HistorySidebar from '$lib/components/HistorySidebar.svelte';
@@ -55,22 +56,24 @@
 	});
 </script>
 
-<a href="#main-content" class="skip-link">Skip to main content</a>
+<Tooltip.Provider delayDuration={400} skipDelayDuration={300}>
+	<a href="#main-content" class="skip-link">Skip to main content</a>
 
-<div class="flex h-screen w-screen overflow-hidden bg-bg-primary">
-	<HistorySidebar bind:open={sidebarOpen} />
+	<div class="flex h-screen w-screen overflow-hidden bg-bg-primary">
+		<HistorySidebar bind:open={sidebarOpen} />
 
-	<div class="flex flex-1 flex-col overflow-hidden">
-		<Header bind:sidebarOpen />
+		<div class="flex flex-1 flex-col overflow-hidden">
+			<Header bind:sidebarOpen />
 
-		<main id="main-content" class="relative flex-1 overflow-y-auto" tabindex="-1">
-			<div class="mx-auto max-w-5xl px-6 pt-4 pb-8">
-				{@render children()}
-			</div>
-		</main>
+			<main id="main-content" class="relative flex-1 overflow-y-auto" tabindex="-1">
+				<div class="mx-auto max-w-5xl px-6 pt-4 pb-8">
+					{@render children()}
+				</div>
+			</main>
 
-		<Footer />
+			<Footer />
+		</div>
 	</div>
-</div>
 
-<Toast />
+	<Toast />
+</Tooltip.Provider>

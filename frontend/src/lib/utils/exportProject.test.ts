@@ -30,7 +30,9 @@ vi.mock('$lib/stores/optimization.svelte', () => ({
 		input_tokens: 0,
 		output_tokens: 0,
 		title: source.title ?? '',
+		version: source.version ?? '',
 		project: '',
+		prompt_id: '',
 		project_id: '',
 		project_status: '',
 		tags: [],
@@ -123,6 +125,7 @@ function makeHistoryItem(overrides: Partial<HistoryItem> = {}): HistoryItem {
 		project: 'Test Project',
 		tags: [],
 		title: 'Test Forge',
+		version: null,
 		prompt_id: 'prompt-1',
 		project_id: 'proj-1',
 		project_status: 'active',
@@ -185,7 +188,7 @@ describe('exportProjectAsZip', () => {
 			latest_forge: {
 				id: 'forge-1', title: 'Forge One', task_type: 'coding',
 				complexity: 'simple', framework_applied: 'role-based',
-				overall_score: 0.9, is_improvement: true, tags: [],
+				overall_score: 0.9, is_improvement: true, tags: [], version: null,
 			},
 		});
 		const prompt2 = makePrompt({
@@ -195,7 +198,7 @@ describe('exportProjectAsZip', () => {
 			latest_forge: {
 				id: 'forge-2', title: 'Forge Two', task_type: 'writing',
 				complexity: 'moderate', framework_applied: 'few-shot',
-				overall_score: 0.8, is_improvement: true, tags: [],
+				overall_score: 0.8, is_improvement: true, tags: [], version: null,
 			},
 		});
 
@@ -203,8 +206,8 @@ describe('exportProjectAsZip', () => {
 
 		vi.mocked(fetchPromptForges).mockResolvedValue({
 			items: [
-				{ id: 'forge-2', created_at: '2026-01-02T00:00:00Z', overall_score: 0.8, framework_applied: 'few-shot', is_improvement: true, status: 'completed', title: 'Forge Two', task_type: 'writing', complexity: 'moderate', tags: [] },
-				{ id: 'forge-3', created_at: '2026-01-01T00:00:00Z', overall_score: 0.7, framework_applied: 'role-based', is_improvement: false, status: 'completed', title: 'Forge Three', task_type: 'writing', complexity: 'simple', tags: [] },
+				{ id: 'forge-2', created_at: '2026-01-02T00:00:00Z', overall_score: 0.8, framework_applied: 'few-shot', is_improvement: true, status: 'completed', title: 'Forge Two', task_type: 'writing', complexity: 'moderate', tags: [], version: null },
+				{ id: 'forge-3', created_at: '2026-01-01T00:00:00Z', overall_score: 0.7, framework_applied: 'role-based', is_improvement: false, status: 'completed', title: 'Forge Three', task_type: 'writing', complexity: 'simple', tags: [], version: null },
 			],
 			total: 2,
 		});
@@ -232,7 +235,7 @@ describe('exportProjectAsZip', () => {
 			latest_forge: {
 				id: 'forge-1', title: 'F1', task_type: 'coding',
 				complexity: 'simple', framework_applied: 'cot',
-				overall_score: 0.9, is_improvement: true, tags: [],
+				overall_score: 0.9, is_improvement: true, tags: [], version: null,
 			},
 		});
 
@@ -258,7 +261,7 @@ describe('exportProjectAsZip', () => {
 			latest_forge: {
 				id: 'forge-1', title: 'F1', task_type: 'coding',
 				complexity: 'simple', framework_applied: 'cot',
-				overall_score: 0.9, is_improvement: true, tags: [],
+				overall_score: 0.9, is_improvement: true, tags: [], version: null,
 			},
 		});
 
@@ -266,8 +269,8 @@ describe('exportProjectAsZip', () => {
 
 		vi.mocked(fetchPromptForges).mockResolvedValue({
 			items: [
-				{ id: 'forge-1', created_at: '2026-01-01', overall_score: 0.9, framework_applied: 'cot', is_improvement: true, status: 'completed', title: 'F1', task_type: 'coding', complexity: 'simple', tags: [] },
-				{ id: 'forge-2', created_at: '2026-01-01', overall_score: 0.8, framework_applied: 'cot', is_improvement: true, status: 'completed', title: 'F2', task_type: 'coding', complexity: 'simple', tags: [] },
+				{ id: 'forge-1', created_at: '2026-01-01', overall_score: 0.9, framework_applied: 'cot', is_improvement: true, status: 'completed', title: 'F1', task_type: 'coding', complexity: 'simple', tags: [], version: null },
+				{ id: 'forge-2', created_at: '2026-01-01', overall_score: 0.8, framework_applied: 'cot', is_improvement: true, status: 'completed', title: 'F2', task_type: 'coding', complexity: 'simple', tags: [], version: null },
 			],
 			total: 2,
 		});
@@ -291,7 +294,7 @@ describe('exportProjectAsZip', () => {
 			latest_forge: {
 				id: 'forge-1', title: 'F1', task_type: 'coding',
 				complexity: 'simple', framework_applied: 'cot',
-				overall_score: 0.9, is_improvement: true, tags: [],
+				overall_score: 0.9, is_improvement: true, tags: [], version: null,
 			},
 		});
 
@@ -310,7 +313,7 @@ describe('exportProjectAsZip', () => {
 			latest_forge: {
 				id: 'forge-1', title: 'F1', task_type: 'coding',
 				complexity: 'simple', framework_applied: 'cot',
-				overall_score: 0.9, is_improvement: true, tags: [],
+				overall_score: 0.9, is_improvement: true, tags: [], version: null,
 			},
 		});
 

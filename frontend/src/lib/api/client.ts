@@ -34,6 +34,7 @@ export interface HistoryItem {
 	project: string | null;
 	tags: string[] | null;
 	title: string | null;
+	version: string | null;
 	prompt_id: string | null;
 	project_id: string | null;
 	project_status: string | null;
@@ -44,6 +45,7 @@ export interface HistorySummaryItem {
 	created_at: string;
 	raw_prompt: string;
 	title: string | null;
+	version: string | null;
 	task_type: string | null;
 	complexity: string | null;
 	project: string | null;
@@ -81,6 +83,7 @@ export interface OptimizeMetadata {
 	title?: string;
 	project?: string;
 	tags?: string[];
+	version?: string;
 	provider?: string;
 	strategy?: string;
 	secondary_frameworks?: string[];
@@ -506,6 +509,7 @@ export interface LatestForgeInfo {
 	overall_score: number | null;
 	is_improvement: boolean | null;
 	tags: string[];
+	version: string | null;
 }
 
 export interface ProjectPrompt {
@@ -680,6 +684,7 @@ export interface ForgeResultSummary {
 	task_type: string | null;
 	complexity: string | null;
 	tags: string[];
+	version: string | null;
 }
 
 export interface ForgeResultListResponse {
@@ -700,6 +705,17 @@ export async function fetchPromptVersions(
 		`${BASE_URL}/projects/${projectId}/prompts/${promptId}/versions${qs ? '?' + qs : ''}`,
 		{ items: [], total: 0 },
 	);
+}
+
+/** Check if an optimization with the given title already exists in the project. */
+export async function checkDuplicateTitle(title: string, project?: string): Promise<boolean> {
+	const params = new URLSearchParams({ title });
+	if (project) params.set('project', project);
+	const result = await apiFetch<{ duplicate: boolean }>(
+		`${BASE_URL}/optimize/check-duplicate?${params}`,
+		{ duplicate: false },
+	);
+	return result.duplicate;
 }
 
 export async function fetchPromptForges(

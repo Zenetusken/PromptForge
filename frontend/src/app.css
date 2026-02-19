@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import './lib/components/ui/bits-theme.css';
 
 @theme {
 	--color-bg-primary: #06060c;
@@ -94,6 +95,15 @@ body {
 	border-radius: 6px;
 }
 
+@keyframes stagger-fade-in {
+	from { opacity: 0; transform: translateY(8px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-stagger-fade-in {
+	animation: stagger-fade-in 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @keyframes slide-in-right {
 	from { opacity: 0; transform: translateX(20px); }
 	to { opacity: 1; transform: translateX(0); }
@@ -136,6 +146,33 @@ body {
 	animation: dropdown-enter-up 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes section-expand {
+	from { opacity: 0; max-height: 0; overflow: hidden; }
+	to { opacity: 1; max-height: 500px; overflow: visible; }
+}
+
+.animate-section-expand {
+	animation: section-expand 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes dropdown-exit {
+	from { opacity: 1; transform: scale(1) translateY(0); }
+	to { opacity: 0; transform: scale(0.96) translateY(4px); }
+}
+
+.dropdown-exit {
+	animation: dropdown-exit 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes dropdown-exit-up {
+	from { opacity: 1; transform: scale(1) translateY(0); }
+	to { opacity: 0; transform: scale(0.96) translateY(-4px); }
+}
+
+.dropdown-exit-up {
+	animation: dropdown-exit-up 150ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
 @keyframes status-pulse {
 	0%, 100% { box-shadow: 0 0 0 0 rgba(34, 255, 136, 0.3); }
 	50% { box-shadow: 0 0 5px 2px rgba(34, 255, 136, 0.12); }
@@ -162,12 +199,11 @@ body {
 	box-decoration-break: clone;
 }
 
-/* ─── Focus-visible ───────────────────────────────── */
+/* ─── Focus-visible (minimal fallback for a11y) ──── */
 
 :focus-visible {
-	outline: 2px solid rgba(0, 229, 255, 0.6);
+	outline: 1px solid rgba(0, 229, 255, 0.3);
 	outline-offset: 2px;
-	box-shadow: 0 0 0 4px rgba(0, 229, 255, 0.1);
 }
 
 /* ─── Selection ───────────────────────────────────── */
@@ -309,6 +345,57 @@ body {
 		font-size: 9px;
 	}
 
+	/* ─── Chip / pill utility ──────────────────────── */
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		border-radius: 9999px;
+		padding: 2px 8px;
+		font-family: var(--font-mono);
+		font-size: 10px;
+		font-weight: 500;
+		line-height: 1.4;
+		white-space: nowrap;
+		transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+	}
+	.chip-rect { border-radius: 6px; }
+	.chip-interactive { cursor: pointer; }
+	.chip-interactive:focus-visible {
+		outline: 1px solid rgba(0, 229, 255, 0.3);
+		outline-offset: 1px;
+	}
+
+	/* ─── Collapsible toggle utility ───────────────── */
+
+	.collapsible-toggle {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 16px;
+		font-family: var(--font-display);
+		font-size: 11px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-text-dim);
+		background: transparent;
+		border: none;
+		cursor: pointer;
+		transition: color 0.15s;
+	}
+	.collapsible-toggle:hover { color: var(--color-text-secondary); }
+	.collapsible-toggle[aria-expanded="true"] {
+		color: var(--toggle-accent, var(--color-text-secondary));
+	}
+	.collapsible-indicator {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
 	.input-field {
 		width: 100%;
 		border-radius: 8px;
@@ -335,8 +422,10 @@ body {
 		border-radius: 8px;
 		border: 1px solid var(--color-border-subtle);
 		background-color: color-mix(in srgb, var(--color-bg-input) 80%, transparent);
-		padding: 6px 28px 6px 8px;
-		font-size: 12px;
+		padding: 6px 28px 6px 10px;
+		font-size: 11px;
+		font-weight: 500;
+		min-height: 30px;
 		color: var(--color-text-secondary);
 		outline: none;
 		transition: border-color 0.15s, box-shadow 0.15s;
@@ -425,19 +514,65 @@ body {
 		color: var(--color-text-primary);
 	}
 
-	/* Sidebar card – shared overlay behavior (HistoryEntry + ProjectItem) */
-	.sidebar-card {
-		overflow: hidden;
+	/* ─── Sidebar tab bar (pill segment control) ──── */
+
+	.sidebar-tabs {
+		display: flex;
+		gap: 2px;
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--color-bg-hover) 40%, transparent);
+		padding: 2px;
 	}
 
-	/* Symmetric spacers for consistent card breathing room.
-	   Added as content (not padding) so they aren't absorbed by min-h + border-box. */
-	.sidebar-card::before,
-	.sidebar-card::after {
-		content: '';
-		display: block;
-		height: 6px;
+	.sidebar-tab {
+		flex: 1;
+		padding: 5px 10px;
+		border-radius: 6px;
+		font-size: 11px;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		color: var(--color-text-dim);
+		background: transparent;
+		transition: color 0.15s, background-color 0.15s, box-shadow 0.15s;
+		cursor: pointer;
+		text-align: center;
+		border: none;
+		outline: none;
+		position: relative;
 	}
+
+	.sidebar-tab:hover:not([data-state="active"]) {
+		color: var(--color-text-secondary);
+		background: color-mix(in srgb, var(--color-bg-hover) 60%, transparent);
+	}
+
+	/* ─── Danger icon button (sidebar delete-all) ──── */
+
+	.btn-icon-danger {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 34px;
+		height: 34px;
+		border-radius: 8px;
+		flex-shrink: 0;
+		color: color-mix(in srgb, var(--color-neon-red) 50%, transparent);
+		border: 1px solid rgba(255, 51, 102, 0.1);
+		background: transparent;
+		transition: color 0.15s, background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+		cursor: pointer;
+	}
+
+	.btn-icon-danger:hover {
+		color: var(--color-neon-red);
+		background: rgba(255, 51, 102, 0.08);
+		border-color: rgba(255, 51, 102, 0.2);
+		box-shadow: 0 0 10px rgba(255, 51, 102, 0.08);
+	}
+
+	/* Sidebar card – shared overlay behavior (HistoryEntry + ProjectItem)
+	   Cards size naturally from content + p-3. overflow:hidden on card clips overlay.
+	   Overlay uses inset-0 to fill card exactly. Accent bar on card border, not overlay. */
 
 	/* ─── Metadata summary line ─────────────────────── */
 
@@ -453,9 +588,9 @@ body {
 
 	.metadata-separator {
 		width: 1px;
-		height: 10px;
-		margin: 0 8px;
-		background: var(--color-border-subtle);
+		height: 8px;
+		margin: 0 6px;
+		background: color-mix(in srgb, var(--color-text-dim) 30%, transparent);
 		flex-shrink: 0;
 	}
 
@@ -479,13 +614,17 @@ body {
 		font-family: var(--font-mono);
 		font-size: 10px;
 		text-decoration: none;
-		transition: color 0.15s;
+		transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+		background: color-mix(in srgb, var(--color-neon-green) 6%, transparent);
+		border: 1px solid color-mix(in srgb, var(--color-neon-green) 12%, transparent);
+		border-radius: 9999px;
+		padding: 1px 7px;
 	}
 
 	.tag-chip:hover {
 		color: var(--color-neon-green);
-		text-decoration: underline;
-		text-underline-offset: 2px;
+		border-color: color-mix(in srgb, var(--color-neon-green) 22%, transparent);
+		background: color-mix(in srgb, var(--color-neon-green) 10%, transparent);
 	}
 
 	.complexity-dots {
@@ -518,26 +657,54 @@ body {
 		font-size: 11px;
 		font-weight: 700;
 		flex-shrink: 0;
+		box-shadow: inset 0 0 0 1.5px currentColor;
+		/* background set outside @layer with !important to beat Tailwind bg-* utilities */
 	}
 
 	.score-circle-sm {
-		width: 22px;
-		height: 22px;
-		font-size: 9px;
+		width: 24px;
+		height: 24px;
+		font-size: 10px;
 	}
 
 	.sidebar-card-overlay {
 		visibility: hidden;
 		pointer-events: none;
-		opacity: 0;
-		transition: opacity 150ms, visibility 150ms;
 	}
 
 	.sidebar-card:hover .sidebar-card-overlay,
 	.sidebar-card:focus-within .sidebar-card-overlay {
 		visibility: visible;
 		pointer-events: auto;
-		opacity: 1;
+	}
+
+	/* ─── Sidebar action button ─────────────────── */
+
+	.sidebar-action-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		min-height: 22px;
+		padding: 2px 6px;
+		border-radius: 6px;
+		font-size: 10px;
+		font-weight: 500;
+		border: 1px solid transparent;
+		cursor: pointer;
+		transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+	}
+
+	.sidebar-action-btn:focus-visible {
+		outline: 1px solid rgba(0, 229, 255, 0.3);
+		outline-offset: 0;
+	}
+
+	/* ─── Delete confirmation bar ────────────────── */
+
+	.delete-confirm-bar {
+		border-top: 1px solid rgba(255, 51, 102, 0.15);
+		background: color-mix(in srgb, var(--color-bg-card) 98%, var(--color-neon-red));
+		backdrop-filter: blur(8px);
 	}
 
 	/* ─── Pipeline Narrative ─────────────────────── */
@@ -595,6 +762,175 @@ body {
 		box-shadow: 0 0 0 1px color-mix(in srgb, var(--highlight-color, var(--color-neon-cyan)) 20%, transparent);
 		border-radius: 6px;
 	}
+
+	/* ─── Card top glow line (hover) ────────────── */
+
+	.card-top-glow {
+		position: relative;
+		overflow: hidden;
+	}
+
+	.card-top-glow::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 20%;
+		right: 20%;
+		height: 1px;
+		background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.3), transparent);
+		opacity: 0;
+		transition: opacity 0.3s ease;
+	}
+
+	.card-top-glow:hover::before {
+		opacity: 1;
+	}
+
+	/* ─── Project detail: header card ────────────── */
+
+	.project-header-card {
+		position: relative;
+		border-radius: 16px;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-bg-card);
+		padding: 24px;
+		overflow: hidden;
+	}
+
+	.project-header-card::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 10%;
+		right: 10%;
+		height: 2px;
+		background: linear-gradient(90deg, transparent, var(--color-neon-cyan), var(--color-neon-purple), transparent);
+		opacity: 0;
+		transition: opacity 0.3s ease;
+	}
+
+	.project-header-card:hover::before {
+		opacity: 1;
+	}
+
+	/* ─── Project detail: prompt card ────────────── */
+
+	.prompt-card {
+		border-radius: 16px;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-bg-card);
+		padding: 20px;
+		transition: border-color 0.2s, box-shadow 0.2s;
+	}
+
+	.prompt-card:hover {
+		border-color: rgba(0, 229, 255, 0.15);
+		box-shadow: 0 0 24px -8px rgba(0, 229, 255, 0.08);
+	}
+
+	/* ─── Project detail: prompt content well ───── */
+
+	.prompt-content-well {
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--color-bg-primary) 60%, var(--color-bg-card));
+		border: 1px solid var(--color-border-subtle);
+		padding: 12px 14px;
+	}
+
+	/* ─── Project detail: large score badge ──────── */
+
+	.score-badge-lg {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 36px;
+		height: 28px;
+		border-radius: 8px;
+		font-family: var(--font-mono);
+		font-size: 13px;
+		font-weight: 700;
+		flex-shrink: 0;
+		padding: 0 6px;
+	}
+
+	/* ─── Project detail: action group ───────────── */
+
+	.action-group {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		padding: 3px;
+		border-radius: 10px;
+		background: color-mix(in srgb, var(--color-bg-hover) 50%, transparent);
+	}
+
+	.action-group > button {
+		border-radius: 7px !important;
+		border: none !important;
+	}
+
+	/* ─── Project detail: filter bar ─────────────── */
+
+	.filter-bar {
+		border-radius: 12px;
+		background: color-mix(in srgb, var(--color-bg-card) 60%, transparent);
+		border: 1px solid var(--color-border-subtle);
+		padding: 8px;
+	}
+
+	/* ─── Project detail: iteration timeline ─────── */
+
+	.iteration-timeline-item {
+		border-radius: 10px;
+		padding: 8px 12px;
+		background: color-mix(in srgb, var(--color-bg-secondary) 30%, transparent);
+		transition: all 0.15s;
+	}
+
+	.iteration-timeline-item:hover {
+		background: color-mix(in srgb, var(--color-bg-secondary) 60%, transparent);
+	}
+
+	.iteration-timeline-item--active,
+	.iteration-timeline-item--active:hover {
+		background: rgba(0, 229, 255, 0.08);
+		box-shadow: inset 0 0 0 1px rgba(0, 229, 255, 0.25);
+	}
+
+	/* ─── Project detail: version history panel ──── */
+
+	.version-panel {
+		border-radius: 12px;
+		border: 1px solid rgba(168, 85, 247, 0.15);
+		background: rgba(168, 85, 247, 0.03);
+		padding: 14px;
+	}
+
+	.version-panel-entry {
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--color-bg-secondary) 40%, transparent);
+		padding: 10px 12px;
+		border-left: 2px solid rgba(168, 85, 247, 0.3);
+	}
+}
+
+/* ─── Overrides outside @layer (beat Tailwind utility classes) ──────────────── */
+
+/* Score circle HUD background */
+.score-circle {
+	background: color-mix(in srgb, currentColor 8%, transparent) !important;
+}
+
+/* Sidebar card: accent border + overflow containment + hover stacking */
+.sidebar-card {
+	border-left: 2px solid transparent !important;
+	overflow: hidden;
+}
+
+.sidebar-card:hover,
+.sidebar-card:focus-within {
+	border-left-color: var(--sidebar-accent, transparent) !important;
+	z-index: 1;
 }
 
 /* ─── Slide-out for toast exit ───────────────────── */
@@ -606,6 +942,15 @@ body {
 
 .animate-slide-out-right {
 	animation: slide-out-right 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slide-up-in {
+	from { opacity: 0; transform: translateY(6px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up-in {
+	animation: slide-up-in 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* ─── Reduced motion ─────────────────────────────── */

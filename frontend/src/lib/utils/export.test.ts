@@ -30,6 +30,7 @@ function makeResult(overrides: Partial<OptimizationResultState> = {}): Optimizat
 		input_tokens: 100,
 		output_tokens: 50,
 		title: '',
+		version: '',
 		project: '',
 		prompt_id: '',
 		project_id: '',
@@ -231,13 +232,24 @@ describe('buildMetadataTable', () => {
 		expect(rows.find(r => r.includes('| Tags |'))).toBeUndefined();
 	});
 
-	it('orders rows: Created, Model, Duration, Tokens, Project, Tags, ID', () => {
+	it('includes version when set', () => {
+		const rows = buildMetadataTable(makeResult({ version: 'v3' }));
+		expect(rows.find(r => r.includes('| Version |'))).toContain('v3');
+	});
+
+	it('omits version when empty', () => {
+		const rows = buildMetadataTable(makeResult({ version: '' }));
+		expect(rows.find(r => r.includes('| Version |'))).toBeUndefined();
+	});
+
+	it('orders rows: Created, Model, Duration, Tokens, Version, Project, Tags, ID', () => {
 		const rows = buildMetadataTable(makeResult({
 			created_at: '2026-02-18T14:32:00Z',
 			model_used: 'claude-opus-4-6',
 			duration_ms: 1500,
 			input_tokens: 100,
 			output_tokens: 50,
+			version: 'v2',
 			project: 'My Project',
 			tags: ['a'],
 		}));
@@ -246,9 +258,10 @@ describe('buildMetadataTable', () => {
 		expect(dataRows[1]).toContain('| Model |');
 		expect(dataRows[2]).toContain('| Duration |');
 		expect(dataRows[3]).toContain('| Tokens |');
-		expect(dataRows[4]).toContain('| Project |');
-		expect(dataRows[5]).toContain('| Tags |');
-		expect(dataRows[6]).toContain('| ID |');
+		expect(dataRows[4]).toContain('| Version |');
+		expect(dataRows[5]).toContain('| Project |');
+		expect(dataRows[6]).toContain('| Tags |');
+		expect(dataRows[7]).toContain('| ID |');
 	});
 });
 

@@ -246,6 +246,7 @@ describe('ProjectPrompt type', () => {
 			overall_score: 0.85,
 			is_improvement: true,
 			tags: ['tag1', 'tag2'],
+			version: null,
 		};
 		const prompt: ProjectPrompt = {
 			id: 'p-1',

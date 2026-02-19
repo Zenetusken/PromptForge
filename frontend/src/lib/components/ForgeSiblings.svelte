@@ -3,6 +3,7 @@
 	import { fetchPromptForges, type ForgeResultSummary } from '$lib/api/client';
 	import { normalizeScore, getScoreBadgeClass, formatRelativeTime } from '$lib/utils/format';
 	import Icon from './Icon.svelte';
+	import { Tooltip } from './ui';
 
 	let {
 		currentForgeId,
@@ -41,6 +42,7 @@
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-2">
 				{#if prevForge}
+					<Tooltip text="Previous forge result" side="bottom">
 					<a
 						href="/optimize/{prevForge.id}"
 						class="flex items-center gap-1 rounded-lg bg-bg-hover px-2 py-1 text-xs text-text-dim transition-colors hover:text-neon-cyan"
@@ -49,11 +51,14 @@
 						<Icon name="chevron-left" size={12} />
 						Prev
 					</a>
+					</Tooltip>
 				{:else}
+					<Tooltip text="No previous results">
 					<span class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-text-dim/30">
 						<Icon name="chevron-left" size={12} />
 						Prev
 					</span>
+					</Tooltip>
 				{/if}
 
 				<span class="text-xs font-medium text-text-secondary">
@@ -61,6 +66,7 @@
 				</span>
 
 				{#if nextForge}
+					<Tooltip text="Next forge result" side="bottom">
 					<a
 						href="/optimize/{nextForge.id}"
 						class="flex items-center gap-1 rounded-lg bg-bg-hover px-2 py-1 text-xs text-text-dim transition-colors hover:text-neon-cyan"
@@ -69,11 +75,14 @@
 						Next
 						<Icon name="chevron-right" size={12} />
 					</a>
+					</Tooltip>
 				{:else}
+					<Tooltip text="No more results">
 					<span class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-text-dim/30">
 						Next
 						<Icon name="chevron-right" size={12} />
 					</span>
+					</Tooltip>
 				{/if}
 			</div>
 		</div>
@@ -81,13 +90,13 @@
 		<!-- Score badges row -->
 		<div class="flex flex-wrap gap-1.5">
 			{#each forges as forge, i (forge.id)}
+				<Tooltip text="{forge.title ?? forge.framework_applied ?? `Forge ${i + 1}`} — {formatRelativeTime(forge.created_at)}">
 				<a
 					href="/optimize/{forge.id}"
 					class="inline-flex max-w-[240px] items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] transition-all duration-150
 						{forge.id === currentForgeId
 							? 'ring-2 ring-neon-cyan/40 bg-bg-secondary/80 shadow-[0_0_8px_rgba(0,240,255,0.08)]'
 							: 'bg-bg-secondary/40 hover:bg-bg-secondary/70'}"
-					title="{forge.title ?? forge.framework_applied ?? `Forge ${i + 1}`} — {formatRelativeTime(forge.created_at)}"
 					data-testid="forge-badge"
 				>
 					<span class="score-circle score-circle-sm shrink-0 {getScoreBadgeClass(forge.overall_score)}">
@@ -99,6 +108,7 @@
 						<span class="min-w-0 truncate text-text-dim">{forge.framework_applied}</span>
 					{/if}
 				</a>
+				</Tooltip>
 			{/each}
 		</div>
 	</div>

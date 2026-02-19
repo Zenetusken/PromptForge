@@ -29,6 +29,7 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "bits-ui": "^2.16.0",
     "diff": "^7.0.0",
     "jszip": "^3.10.1"
   },

@@ -1,0 +1,232 @@
+/* ─── Bits UI Theme (Cyberpunk Palette) ─────────────────── */
+/* Centralised styles via [data-*] attribute selectors       */
+/* using existing CSS custom properties from app.css         */
+
+/* ─── AlertDialog / Dialog Overlay ──────────────────────── */
+
+[data-alert-dialog-overlay],
+[data-dialog-overlay] {
+	position: fixed;
+	inset: 0;
+	z-index: 50;
+	background: rgba(0, 0, 0, 0.6);
+	backdrop-filter: blur(4px);
+	animation: fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── AlertDialog / Dialog Content ──────────────────────── */
+
+[data-alert-dialog-content],
+[data-dialog-content] {
+	position: fixed;
+	left: 50%;
+	top: 50%;
+	z-index: 50;
+	transform: translate(-50%, -50%);
+	width: 100%;
+	max-width: 24rem;
+	border-radius: 0.75rem;
+	border: 1px solid var(--color-border-subtle);
+	background: var(--color-bg-card);
+	padding: 1.25rem;
+	box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+	animation: scale-in 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+[data-dialog-content] {
+	max-width: 32rem;
+	max-height: 85vh;
+	overflow-y: auto;
+	padding: 1.5rem;
+	border-radius: 1rem;
+}
+
+/* ─── Select ────────────────────────────────────────────── */
+
+[data-select-content] {
+	z-index: 50;
+	max-height: 16rem;
+	overflow-y: auto;
+	border-radius: 0.625rem;
+	border: 1px solid color-mix(in srgb, var(--color-border-subtle) 80%, transparent);
+	background: var(--color-bg-card);
+	padding: 0.25rem 0;
+	box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2), 0 0 12px rgba(0, 229, 255, 0.03);
+	animation: dropdown-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+[data-select-item] {
+	width: calc(100% - 0.5rem);
+	margin: 0 0.25rem;
+	padding: 0.375rem 0.625rem;
+	text-align: left;
+	font-size: 0.6875rem;
+	color: var(--color-text-secondary);
+	cursor: pointer;
+	border-radius: 4px;
+	border-left: 2px solid transparent;
+	transition: background-color 0.1s, color 0.1s, border-left-color 0.1s;
+}
+
+[data-select-item][data-highlighted] {
+	background: var(--color-bg-hover);
+	border-left-color: rgba(0, 229, 255, 0.3);
+}
+
+[data-select-item][data-selected] {
+	color: var(--color-neon-cyan);
+	background: rgba(0, 229, 255, 0.05);
+	border-left-color: var(--color-neon-cyan);
+}
+
+[data-select-group-heading] {
+	padding: 0.375rem 0.625rem;
+	font-size: 0.625rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: color-mix(in srgb, var(--color-text-dim) 60%, transparent);
+}
+
+/* ─── Popover ───────────────────────────────────────────── */
+
+[data-popover-content] {
+	z-index: 100;
+	border-radius: 0.75rem;
+	border: 1px solid color-mix(in srgb, var(--color-border-subtle) 80%, transparent);
+	background: var(--color-bg-card);
+	box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 16px rgba(0, 229, 255, 0.03);
+	animation: dropdown-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Tabs ──────────────────────────────────────────────── */
+
+[data-tabs-trigger][data-state="active"] {
+	color: var(--color-neon-cyan);
+	background: rgba(0, 229, 255, 0.08);
+	box-shadow: 0 0 8px rgba(0, 229, 255, 0.06);
+}
+
+/* ─── Switch ────────────────────────────────────────────── */
+
+[data-switch-root] {
+	position: relative;
+	width: 28px;
+	height: 16px;
+	border-radius: 999px;
+	background: var(--color-bg-hover);
+	border: 1px solid var(--color-border-subtle);
+	cursor: pointer;
+	transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+	flex-shrink: 0;
+}
+
+[data-switch-root][data-state="checked"] {
+	background: rgba(0, 229, 255, 0.12);
+	border-color: rgba(0, 229, 255, 0.25);
+}
+
+[data-switch-thumb] {
+	display: block;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: var(--color-text-dim);
+	transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s;
+	transform: translateX(2px);
+}
+
+[data-switch-root][data-state="checked"] [data-switch-thumb] {
+	transform: translateX(14px);
+	background: var(--color-neon-cyan);
+	box-shadow: 0 0 6px rgba(0, 229, 255, 0.4);
+}
+
+/* ─── Tooltip ───────────────────────────────────────────── */
+
+[data-tooltip-content] {
+	z-index: 50;
+	border-radius: 0.5rem;
+	border: 1px solid var(--color-border-glow);
+	background: var(--color-bg-primary);
+	padding: 0.375rem 0.625rem;
+	max-width: 280px;
+	line-height: 1.4;
+	box-shadow:
+		0 10px 15px -3px rgba(0, 0, 0, 0.3),
+		0 4px 6px -4px rgba(0, 0, 0, 0.2),
+		0 0 12px rgba(0, 229, 255, 0.04);
+	font-size: 0.75rem;
+	color: var(--color-text-secondary);
+}
+
+/* Direction-aware entrance animations */
+[data-tooltip-content][data-side="top"] {
+	animation: tooltip-slide-top 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+[data-tooltip-content][data-side="bottom"] {
+	animation: tooltip-slide-bottom 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+[data-tooltip-content][data-side="left"] {
+	animation: tooltip-slide-left 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+[data-tooltip-content][data-side="right"] {
+	animation: tooltip-slide-right 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes tooltip-slide-top {
+	from { opacity: 0; transform: translateY(4px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+@keyframes tooltip-slide-bottom {
+	from { opacity: 0; transform: translateY(-4px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+@keyframes tooltip-slide-left {
+	from { opacity: 0; transform: translateX(4px); }
+	to { opacity: 1; transform: translateX(0); }
+}
+@keyframes tooltip-slide-right {
+	from { opacity: 0; transform: translateX(-4px); }
+	to { opacity: 1; transform: translateX(0); }
+}
+
+/* Arrow */
+[data-tooltip-content] [data-arrow] {
+	fill: var(--color-bg-primary);
+	stroke: var(--color-border-glow);
+	stroke-width: 1;
+}
+
+/* ─── Collapsible ───────────────────────────────────────── */
+
+[data-collapsible-content] {
+	overflow: hidden;
+}
+
+[data-collapsible-content][data-state="open"] {
+	animation: collapsible-expand 250ms ease-out;
+}
+
+[data-collapsible-content][data-state="closed"] {
+	animation: collapsible-collapse 200ms ease-out forwards;
+}
+
+@keyframes collapsible-expand {
+	from { height: 0; opacity: 0; }
+	to { height: var(--bits-collapsible-content-height); opacity: 1; }
+}
+
+@keyframes collapsible-collapse {
+	from { height: var(--bits-collapsible-content-height); opacity: 1; }
+	to { height: 0; opacity: 0; }
+}
+
+/* ─── Separator ─────────────────────────────────────────── */
+/* Separator inherits .divider-glow via class prop.          */
+/* This selector provides a fallback.                        */
+
+[data-separator-root] {
+	height: 1px;
+	background: linear-gradient(90deg, transparent, var(--color-border-glow), transparent);
+}

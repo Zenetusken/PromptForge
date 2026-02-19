@@ -2,6 +2,7 @@
 	import { providerState } from '$lib/stores/provider.svelte';
 	import MCPInfo from './MCPInfo.svelte';
 	import Icon from './Icon.svelte';
+	import { Tooltip } from './ui';
 
 	let showTooltip = $state(false);
 	let showMCPInfo = $state(false);
@@ -32,30 +33,35 @@
 <MCPInfo bind:open={showMCPInfo} />
 
 <footer
-	class="flex h-9 shrink-0 items-center justify-between border-t border-border-subtle bg-bg-secondary/80 px-4"
+	class="relative flex h-9 shrink-0 items-center justify-between bg-bg-secondary/80 px-4"
 	data-testid="footer"
 >
+	<div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border-glow to-transparent"></div>
 	<div class="flex items-center gap-4">
-		<span class="text-[10px] text-text-dim/60">
+		<span class="text-[10px] text-text-dim/80">
 			PromptForge &mdash; {health?.llm_provider ?? 'AI'}
 		</span>
-		<a
-			href={apiDocsUrl}
-			target="_blank"
-			rel="noopener noreferrer"
-			class="text-[10px] text-text-dim/50 transition-colors hover:text-neon-cyan"
-			data-testid="api-docs-link"
-		>
-			API
-		</a>
-		<button
-			class="flex items-center gap-1 text-[10px] text-text-dim/50 transition-colors hover:text-neon-cyan"
-			onclick={() => (showMCPInfo = true)}
-			data-testid="mcp-info-btn"
-		>
-			<Icon name="terminal" size={10} />
-			MCP
-		</button>
+		<Tooltip text="View API documentation (Swagger UI)" side="top">
+			<a
+				href={apiDocsUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="text-[10px] text-text-dim/70 transition-colors hover:text-neon-cyan hover:underline hover:underline-offset-2"
+				data-testid="api-docs-link"
+			>
+				API
+			</a>
+		</Tooltip>
+		<Tooltip text="Claude Code MCP integration" side="top">
+			<button
+				class="flex items-center gap-1 text-[10px] text-text-dim/70 transition-colors hover:text-neon-cyan hover:underline hover:underline-offset-2"
+				onclick={() => (showMCPInfo = true)}
+				data-testid="mcp-info-btn"
+			>
+				<Icon name="terminal" size={10} />
+				MCP
+			</button>
+		</Tooltip>
 	</div>
 
 	<button
@@ -69,8 +75,8 @@
 		aria-describedby={showTooltip && health ? 'health-tooltip' : undefined}
 		data-testid="health-indicator"
 	>
-		<div class="h-1.5 w-1.5 rounded-full {dotColor}"></div>
-		<span class="text-[10px] text-text-dim/60">{statusLabel}</span>
+		<div class="h-1.5 w-1.5 rounded-full {dotColor} {!checking && health && health.status === 'ok' && health.db_connected ? 'status-dot-pulse' : ''}"></div>
+		<span class="text-[10px] text-text-dim/80">{statusLabel}</span>
 
 		{#if showTooltip && health}
 			<div

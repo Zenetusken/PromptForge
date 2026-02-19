@@ -1,46 +1,14 @@
 <script lang="ts">
+	import { Popover } from 'bits-ui';
 	import { providerState } from '$lib/stores/provider.svelte';
 	import type { ModelInfo } from '$lib/api/client';
 	import Icon from './Icon.svelte';
 	import ApiKeyInput from './ApiKeyInput.svelte';
+	import { Switch, Separator, Tooltip } from './ui';
 
 	let open = $state(false);
-	let triggerEl: HTMLButtonElement | undefined = $state();
-	let listEl: HTMLDivElement | undefined = $state();
 	let focusIndex = $state(-1);
 	let hoverIndex = $state(-1);
-
-	// Fixed positioning to break out of overflow-hidden ancestors
-	let dropdownStyle = $state('');
-	let dropdownDirection: 'up' | 'down' = $state('up');
-
-	const DROPDOWN_MAX_HEIGHT = 448; // matches old max-h-[28rem]
-	const HEADER_HEIGHT = 56; // h-14
-	const GAP = 8;
-
-	function updateDropdownPosition() {
-		if (!triggerEl) return;
-		const rect = triggerEl.getBoundingClientRect();
-
-		const spaceBelow = window.innerHeight - rect.bottom - GAP;
-		const spaceAbove = rect.top - HEADER_HEIGHT - GAP;
-
-		if (spaceBelow >= DROPDOWN_MAX_HEIGHT || spaceBelow >= spaceAbove) {
-			// Open downward
-			dropdownDirection = 'down';
-			const maxH = Math.min(DROPDOWN_MAX_HEIGHT, spaceBelow);
-			dropdownStyle = `position:fixed;left:${rect.left}px;top:${rect.bottom + GAP}px;max-height:${maxH}px;`;
-		} else {
-			// Open upward
-			dropdownDirection = 'up';
-			const maxH = Math.min(DROPDOWN_MAX_HEIGHT, spaceAbove);
-			dropdownStyle = `position:fixed;left:${rect.left}px;bottom:${window.innerHeight - rect.top + GAP}px;max-height:${maxH}px;`;
-		}
-	}
-
-	function handleResize() {
-		if (open) updateDropdownPosition();
-	}
 
 	let detectedProvider = $derived(providerState.providers.find((p) => p.is_default) ?? null);
 
@@ -70,19 +38,9 @@
 		return models.find((m) => m.id === selectedId)?.description ?? '';
 	}
 
-	function toggle() {
-		open = !open;
-		if (open) {
-			focusIndex = -1;
-			hoverIndex = -1;
-			updateDropdownPosition();
-		}
-	}
-
 	function select(name: string | null) {
 		providerState.selectProvider(name);
 		open = false;
-		triggerEl?.focus();
 	}
 
 	function selectModel(providerName: string, modelId: string, e: MouseEvent) {
@@ -121,64 +79,42 @@
 			case 'Escape':
 				e.preventDefault();
 				open = false;
-				triggerEl?.focus();
 				break;
-		}
-	}
-
-	function handleClickOutside(e: MouseEvent) {
-		if (
-			open &&
-			triggerEl &&
-			!triggerEl.contains(e.target as Node) &&
-			listEl &&
-			!listEl.contains(e.target as Node)
-		) {
-			open = false;
 		}
 	}
 </script>
 
-<svelte:window onclick={handleClickOutside} onresize={handleResize} />
-
 <div data-testid="provider-selector">
-	<!-- Trigger button -->
-	<button
-		type="button"
-		bind:this={triggerEl}
-		onclick={toggle}
-		onkeydown={handleKeydown}
-		class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-all duration-200
-			{open
-			? 'border-neon-cyan/40 bg-bg-hover shadow-[0_0_12px_rgba(0,229,255,0.08)]'
-			: 'border-border-subtle bg-bg-card/50 hover:border-neon-purple/30 hover:bg-bg-hover'}"
-		aria-haspopup="listbox"
-		aria-expanded={open}
-		data-testid="provider-selector-trigger"
-	>
-		<span
-			class="block h-2 w-2 rounded-full {isAvailable
-				? 'bg-neon-green status-dot-pulse'
-				: 'bg-neon-red'}"
-		></span>
-		<span class="text-text-secondary">{triggerLabel}</span>
-		<Icon
-			name="chevron-down"
-			size={12}
-			class="text-text-dim transition-transform duration-200 {open ? 'rotate-180' : ''}"
-		/>
-	</button>
+	<Popover.Root bind:open onOpenChange={(o) => { if (o) { focusIndex = -1; hoverIndex = -1; } }}>
+		<Popover.Trigger
+			class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200
+				{open
+				? 'border-neon-cyan/40 bg-bg-hover shadow-[0_0_12px_rgba(0,229,255,0.08)]'
+				: 'border-border-subtle bg-bg-card/50 hover:border-neon-purple/30 hover:bg-bg-hover hover:shadow-[0_0_10px_rgba(168,85,247,0.06)]'}"
+			data-testid="provider-selector-trigger"
+		>
+			<Tooltip text={isAvailable ? 'Provider available' : 'Provider unavailable'} side="bottom">
+				<span
+					class="block h-1.5 w-1.5 rounded-full ring-2 {isAvailable
+						? 'bg-neon-green ring-neon-green/20 status-dot-pulse shadow-[0_0_6px_var(--color-neon-green)]'
+						: 'bg-neon-red ring-neon-red/20'}"
+				></span>
+			</Tooltip>
+			<span class="text-text-secondary">{triggerLabel}</span>
+			<Icon
+				name="chevron-down"
+				size={12}
+				class="text-text-dim transition-transform duration-200 {open ? 'rotate-180' : ''}"
+			/>
+		</Popover.Trigger>
 
-	<!-- Dropdown (direction-aware: opens up or down based on available space) -->
-	{#if open}
-		<div
-			bind:this={listEl}
-			role="listbox"
-			tabindex="-1"
-			aria-label="Select LLM provider"
+		<Popover.Portal>
+		<Popover.Content
+			side="bottom"
+			align="start"
+			sideOffset={8}
+			class="z-[100] min-w-72 overflow-y-auto border-t border-t-neon-cyan/10 p-1.5"
 			onkeydown={handleKeydown}
-			class="z-[100] min-w-72 overflow-y-auto rounded-xl border border-border-subtle bg-bg-card p-1.5 shadow-2xl {dropdownDirection === 'up' ? 'dropdown-enter-up' : 'dropdown-enter'}"
-			style={dropdownStyle}
 			data-testid="provider-selector-list"
 		>
 			<!-- Auto-detect option -->
@@ -197,7 +133,7 @@
 				data-testid="provider-option-auto"
 			>
 				<div
-					class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neon-purple/15"
+					class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-neon-purple/20 bg-neon-purple/8"
 				>
 					<Icon name="sparkles" size={13} class="text-neon-purple" />
 				</div>
@@ -214,7 +150,7 @@
 				{/if}
 			</button>
 
-			<div class="my-1 h-px bg-border-subtle"></div>
+			<Separator class="my-1.5 h-px bg-gradient-to-r from-transparent via-border-glow to-transparent" />
 
 			<!-- Provider options -->
 			{#each providerState.providers as provider, i}
@@ -224,13 +160,14 @@
 				{@const effectivelyAvailable = provider.available || providerState.hasKey(provider.name)}
 				{@const selectedModelId = getSelectedModel(provider.name, provider.models)}
 				{@const modelDesc = getModelDescription(provider.name, provider.models)}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					role="option"
 					tabindex="0"
 					aria-selected={isSelected}
 					aria-disabled={!effectivelyAvailable && !provider.requires_api_key}
-					class="flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors duration-150 hover:bg-bg-hover cursor-pointer
-						{!effectivelyAvailable && !provider.requires_api_key ? 'cursor-not-allowed opacity-35' : ''}
+					class="flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors duration-150 hover:bg-bg-hover
+						{!effectivelyAvailable && !provider.requires_api_key ? 'cursor-not-allowed opacity-35' : 'cursor-pointer'}
 						{activeIndex === i + 1 ? 'bg-bg-hover' : ''}"
 					onclick={() => effectivelyAvailable && select(provider.name)}
 					onkeydown={(e) => {
@@ -248,13 +185,13 @@
 				>
 					<!-- Status dot -->
 					<div
-						class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full mt-0.5
+						class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 mt-0.5
 							{effectivelyAvailable
-							? 'bg-neon-green/10'
-							: 'bg-neon-red/10'}"
+							? 'bg-neon-green/8 ring-neon-green/20'
+							: 'bg-neon-red/8 ring-neon-red/20'}"
 					>
 						<span
-							class="block h-2 w-2 rounded-full {effectivelyAvailable
+							class="block h-1.5 w-1.5 rounded-full {effectivelyAvailable
 								? 'bg-neon-green'
 								: 'bg-neon-red'}"
 						></span>
@@ -267,11 +204,11 @@
 								{provider.display_name}
 							</span>
 							{#if isAutoDefault}
-								<span
-									class="rounded bg-neon-cyan/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-neon-cyan"
-								>
-									Default
-								</span>
+								<Tooltip text="Auto-detected default provider" side="top">
+									<span class="chip chip-rect rounded-md ring-1 ring-neon-cyan/20 bg-neon-cyan/10 text-[9px] font-semibold uppercase tracking-wider text-neon-cyan">
+										Default
+									</span>
+								</Tooltip>
 							{/if}
 							{#if provider.requires_api_key}
 								<span class="ml-auto">
@@ -297,17 +234,19 @@
 							<div class="mt-1 flex flex-wrap gap-1">
 								{#each provider.models as model}
 									{@const isModelSelected = model.id === selectedModelId}
+									<Tooltip text={model.id} side="bottom">
 									<button
 										type="button"
 										onclick={(e) => selectModel(provider.name, model.id, e)}
-										class="rounded-md border px-2 py-0.5 text-[10px] font-medium transition-all duration-150
+										class="chip chip-rect chip-interactive border transition-all duration-150
 											{isModelSelected
-												? 'border-neon-cyan/50 bg-neon-cyan/10 text-neon-cyan'
-												: 'border-border-subtle bg-bg-primary/50 text-text-dim hover:border-neon-purple/30 hover:text-text-secondary'}"
+												? 'border-neon-cyan/50 bg-neon-cyan/10 text-neon-cyan shadow-[0_0_6px_rgba(0,229,255,0.15)]'
+												: 'border-border-subtle bg-bg-primary/50 text-text-dim hover:border-neon-purple/30 hover:text-text-secondary hover:bg-bg-hover/30'}"
 										aria-label="Select {model.name}"
 									>
 										{model.name}
 									</button>
+									</Tooltip>
 								{/each}
 							</div>
 						{/if}
@@ -327,18 +266,21 @@
 			{/each}
 
 			<!-- Remember keys toggle -->
-			<div class="my-1 h-px bg-border-subtle"></div>
-			<label
-				class="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-[11px] text-text-dim hover:bg-bg-hover cursor-pointer transition-colors"
+			<Separator class="my-1.5 h-px bg-gradient-to-r from-transparent via-border-glow to-transparent" />
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[11px] text-text-dim hover:bg-bg-hover cursor-pointer transition-colors"
+				onclick={() => providerState.setRememberKeys(!providerState.rememberKeys)}
 			>
-				<input
-					type="checkbox"
+				<Switch
 					checked={providerState.rememberKeys}
-					onchange={(e) => providerState.setRememberKeys((e.target as HTMLInputElement).checked)}
-					class="h-3 w-3 rounded border-border-subtle accent-neon-cyan"
+					onCheckedChange={(v) => providerState.setRememberKeys(v)}
+					label="Remember API keys across sessions"
 				/>
-				Remember API keys across sessions
-			</label>
-		</div>
-	{/if}
+				<Tooltip text="Keys stored in browser localStorage"><span>Remember API keys across sessions</span></Tooltip>
+			</div>
+		</Popover.Content>
+		</Popover.Portal>
+	</Popover.Root>
 </div>

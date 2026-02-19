@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ValidationResult } from '$lib/stores/provider.svelte';
 	import Icon from './Icon.svelte';
+	import { Tooltip } from './ui';
 
 	let {
 		maskedKey = '',
@@ -58,17 +59,18 @@
 
 {#if maskedKey && !editing}
 	<!-- Stored key display -->
-	<div class="flex items-center gap-1.5">
+	<div class="flex items-center gap-1.5 rounded-md bg-neon-green/4 ring-1 ring-neon-green/12 px-1.5 py-0.5">
 		{#if validating}
 			<Icon name="spinner" size={10} class="text-neon-cyan animate-spin" />
 		{:else if validationResult?.valid}
 			<Icon name="check" size={10} class="text-neon-green" />
 		{:else if validationResult && !validationResult.valid}
-			<span title={validationResult.error ?? 'Validation failed'}><Icon name="alert-circle" size={10} class="text-neon-red" /></span>
+			<Tooltip text={validationResult.error ?? 'Validation failed'}><span><Icon name="alert-circle" size={10} class="text-neon-red" /></span></Tooltip>
 		{:else}
 			<Icon name="key" size={10} class="text-neon-green" />
 		{/if}
-		<span class="font-mono text-[10px] text-neon-green">{maskedKey}</span>
+		<span class="font-mono text-[11px] text-neon-green">{maskedKey}</span>
+		<Tooltip text="Remove saved API key">
 		<button
 			type="button"
 			onclick={handleClear}
@@ -77,9 +79,10 @@
 		>
 			<Icon name="x" size={10} />
 		</button>
+		</Tooltip>
 	</div>
 	{#if validationResult && !validationResult.valid && validationResult.error}
-		<div class="text-[9px] text-neon-red mt-0.5">{validationResult.error}</div>
+		<div class="text-[11px] text-neon-red mt-0.5">{validationResult.error}</div>
 	{/if}
 {:else if editing}
 	<!-- Key input form -->
@@ -92,7 +95,7 @@
 				bind:value={inputValue}
 				onkeydown={handleKeydown}
 				placeholder="Paste API key..."
-				class="w-full rounded border border-border-subtle bg-bg-primary/80 px-2 py-1 pr-7 font-mono text-[10px] text-text-primary placeholder:text-text-dim focus:border-neon-cyan/40 focus:outline-none"
+				class="w-full rounded border border-border-subtle bg-bg-input/80 px-2 py-1 pr-7 font-mono text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-cyan/30 focus:shadow-[0_0_8px_rgba(0,229,255,0.15),0_0_16px_rgba(0,229,255,0.05)] focus:outline-none"
 			/>
 			<button
 				type="button"
@@ -107,7 +110,7 @@
 			type="button"
 			onclick={handleSubmit}
 			disabled={!inputValue.trim()}
-			class="rounded bg-neon-cyan/15 px-2 py-1 text-[10px] font-medium text-neon-cyan hover:bg-neon-cyan/25 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+			class="rounded bg-neon-cyan/15 px-2 py-1 text-[11px] font-medium text-neon-cyan hover:bg-neon-cyan/25 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
 		>
 			Set
 		</button>
@@ -125,7 +128,7 @@
 	<button
 		type="button"
 		onclick={(e) => { e.stopPropagation(); startEditing(); }}
-		class="flex items-center gap-1 text-[10px] text-neon-cyan/70 hover:text-neon-cyan transition-colors"
+		class="flex items-center gap-1 rounded-md bg-neon-cyan/5 ring-1 ring-neon-cyan/15 px-2 py-0.5 text-[11px] text-neon-cyan/70 hover:text-neon-cyan transition-colors"
 	>
 		<Icon name="key" size={10} />
 		<span>Add API key</span>

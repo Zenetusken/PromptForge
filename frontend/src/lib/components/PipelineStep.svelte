@@ -3,6 +3,7 @@
 	import { formatScore } from '$lib/utils/format';
 	import { safeStringOrUndefined, safeNumberOrUndefined, safeArrayOrUndefined } from '$lib/utils/safe';
 	import Icon from './Icon.svelte';
+	import { Tooltip } from './ui';
 
 	let { step, index, isLatestActive = false, mobile = false }: { step: StepState; index: number; isLatestActive?: boolean; mobile?: boolean } = $props();
 
@@ -341,27 +342,33 @@
 						{taskType}
 					</span>
 					{#if complexity}
-						<span class="inline-block rounded-full bg-neon-purple/10 px-2 py-0.5 font-mono text-[10px] text-neon-purple" data-testid="complexity-badge">
-							{complexity}
-						</span>
+						<Tooltip text="Prompt complexity level">
+							<span class="inline-block rounded-full bg-neon-purple/10 px-2 py-0.5 font-mono text-[10px] text-neon-purple" data-testid="complexity-badge">
+								{complexity}
+							</span>
+						</Tooltip>
 					{/if}
 				</div>
 			{/if}
 			{#if isAnalyzeStep && weaknesses && weaknesses.length > 0}
 				<div class="flex flex-wrap justify-center gap-1">
 					{#each weaknesses.slice(0, 2) as weakness}
-						<span class="inline-block max-w-[140px] truncate rounded-md bg-neon-red/8 px-1.5 py-0.5 text-[10px] text-neon-red">
-							{weakness}
-						</span>
+						<Tooltip text={weakness}>
+							<span class="inline-block max-w-[140px] truncate rounded-md bg-neon-red/8 px-1.5 py-0.5 text-[10px] text-neon-red">
+								{weakness}
+							</span>
+						</Tooltip>
 					{/each}
 				</div>
 			{/if}
 			{#if isAnalyzeStep && strengths && strengths.length > 0}
 				<div class="flex flex-wrap justify-center gap-1">
 					{#each strengths.slice(0, 2) as strength}
-						<span class="inline-block max-w-[140px] truncate rounded-md bg-neon-green/8 px-1.5 py-0.5 text-[10px] text-neon-green">
-							{strength}
-						</span>
+						<Tooltip text={strength}>
+							<span class="inline-block max-w-[140px] truncate rounded-md bg-neon-green/8 px-1.5 py-0.5 text-[10px] text-neon-green">
+								{strength}
+							</span>
+						</Tooltip>
 					{/each}
 				</div>
 			{/if}
@@ -370,31 +377,39 @@
 					<span class="inline-block rounded-full bg-neon-yellow/10 px-2 py-0.5 font-mono text-[10px] text-neon-yellow" data-testid="strategy-badge">
 						{strategyName}
 					</span>
-					<span
-						class="inline-block rounded-full px-1.5 py-0.5 font-mono text-[9px] {isManualOverride ? 'bg-neon-purple/10 text-neon-purple' : 'bg-neon-cyan/10 text-neon-cyan'}"
-						data-testid="strategy-mode-badge"
-					>
-						{isManualOverride ? 'manual' : 'auto'}
-					</span>
+					<Tooltip text={isManualOverride ? 'Strategy manually selected' : 'Strategy auto-selected by LLM'}>
+						<span
+							class="inline-block rounded-full px-1.5 py-0.5 font-mono text-[9px] {isManualOverride ? 'bg-neon-purple/10 text-neon-purple' : 'bg-neon-cyan/10 text-neon-cyan'}"
+							data-testid="strategy-mode-badge"
+						>
+							{isManualOverride ? 'manual' : 'auto'}
+						</span>
+					</Tooltip>
 				</div>
 				{#if secondaryFrameworks && secondaryFrameworks.length > 0}
 					<div class="flex items-center gap-1">
 						{#each secondaryFrameworks as sf}
-							<span class="inline-block rounded-full bg-neon-yellow/5 px-1.5 py-0.5 font-mono text-[9px] text-neon-yellow/60" data-testid="secondary-badge">
-								+ {sf}
-							</span>
+							<Tooltip text="Secondary framework: {sf}">
+								<span class="inline-block rounded-full bg-neon-yellow/5 px-1.5 py-0.5 font-mono text-[9px] text-neon-yellow/60" data-testid="secondary-badge">
+									+ {sf}
+								</span>
+							</Tooltip>
 						{/each}
 					</div>
 				{/if}
 				{#if strategyTaskType}
-					<span class="inline-block rounded-full bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-cyan" data-testid="strategy-task-type">
-						{strategyTaskType}
-					</span>
+					<Tooltip text="Detected task type">
+						<span class="inline-block rounded-full bg-neon-cyan/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-cyan" data-testid="strategy-task-type">
+							{strategyTaskType}
+						</span>
+					</Tooltip>
 				{/if}
 				{#if strategyConfidence !== undefined}
-					<span class="font-mono text-[10px] {confidenceColor}" data-testid="strategy-confidence">
-						{Math.round(strategyConfidence * 100)}% confidence
-					</span>
+					<Tooltip text="LLM confidence in this strategy selection">
+						<span class="font-mono text-[10px] {confidenceColor}" data-testid="strategy-confidence">
+							{Math.round(strategyConfidence * 100)}% confidence
+						</span>
+					</Tooltip>
 				{/if}
 				{#if strategyReasoning}
 					<p class="max-w-[200px] text-center text-[10px] leading-relaxed text-text-secondary">
@@ -429,19 +444,19 @@
 					</div>
 					<div class="flex flex-wrap justify-center gap-1">
 						{#if clarityScore !== undefined}
-							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary" title="Clarity">
+							<Tooltip text="Clarity"><span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
 								CLR {formatScore(clarityScore)}
-							</span>
+							</span></Tooltip>
 						{/if}
 						{#if specificityScore !== undefined}
-							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary" title="Specificity">
+							<Tooltip text="Specificity"><span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
 								SPC {formatScore(specificityScore)}
-							</span>
+							</span></Tooltip>
 						{/if}
 						{#if structureScore !== undefined}
-							<span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary" title="Structure">
+							<Tooltip text="Structure"><span class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary">
 								STR {formatScore(structureScore)}
-							</span>
+							</span></Tooltip>
 						{/if}
 					</div>
 					{#if verdict}
@@ -460,9 +475,11 @@
 					{taskType}
 				</span>
 				{#if complexity}
+					<Tooltip text="Prompt complexity level">
 					<span class="inline-block rounded-full bg-neon-purple/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-purple">
 						{complexity}
 					</span>
+					</Tooltip>
 				{/if}
 			{/if}
 			{#if isStrategyStep && strategyName}
@@ -471,42 +488,54 @@
 				</span>
 				{#if secondaryFrameworks && secondaryFrameworks.length > 0}
 					{#each secondaryFrameworks as sf}
-						<span class="inline-block rounded-full bg-neon-yellow/5 px-1 py-0.5 font-mono text-[8px] text-neon-yellow/60" data-testid="collapsed-secondary-badge">
-							+{sf}
-						</span>
+						<Tooltip text="Secondary framework: {sf}">
+							<span class="inline-block rounded-full bg-neon-yellow/5 px-1 py-0.5 font-mono text-[8px] text-neon-yellow/60" data-testid="collapsed-secondary-badge">
+								+{sf}
+							</span>
+						</Tooltip>
 					{/each}
 				{/if}
-				<span
-					class="inline-block rounded-full px-1 py-0.5 font-mono text-[8px] {isManualOverride ? 'bg-neon-purple/10 text-neon-purple' : 'bg-neon-cyan/10 text-neon-cyan'}"
-					data-testid="collapsed-strategy-mode-badge"
-				>
-					{isManualOverride ? 'manual' : 'auto'}
-				</span>
-				{#if strategyTaskType}
-					<span class="inline-block rounded-full bg-neon-cyan/10 px-1 py-0.5 font-mono text-[8px] text-neon-cyan" data-testid="collapsed-strategy-task-type">
-						{strategyTaskType}
+				<Tooltip text={isManualOverride ? 'Strategy manually selected' : 'Strategy auto-selected by LLM'}>
+					<span
+						class="inline-block rounded-full px-1 py-0.5 font-mono text-[8px] {isManualOverride ? 'bg-neon-purple/10 text-neon-purple' : 'bg-neon-cyan/10 text-neon-cyan'}"
+						data-testid="collapsed-strategy-mode-badge"
+					>
+						{isManualOverride ? 'manual' : 'auto'}
 					</span>
+				</Tooltip>
+				{#if strategyTaskType}
+					<Tooltip text="Detected task type">
+						<span class="inline-block rounded-full bg-neon-cyan/10 px-1 py-0.5 font-mono text-[8px] text-neon-cyan" data-testid="collapsed-strategy-task-type">
+							{strategyTaskType}
+						</span>
+					</Tooltip>
 				{/if}
 				{#if strategyConfidence !== undefined}
-					<span class="font-mono text-[8px] {confidenceColor}" data-testid="collapsed-strategy-confidence">
-						{Math.round(strategyConfidence * 100)}%
-					</span>
+					<Tooltip text="LLM confidence in this strategy selection">
+						<span class="font-mono text-[8px] {confidenceColor}" data-testid="collapsed-strategy-confidence">
+							{Math.round(strategyConfidence * 100)}%
+						</span>
+					</Tooltip>
 				{/if}
 				{#if strategyReasoning && !isManualOverride}
-					<span class="inline-block max-w-[120px] truncate text-[8px] text-text-dim" title={strategyReasoning} data-testid="collapsed-strategy-reasoning">
+					<Tooltip text={strategyReasoning}><span class="inline-block max-w-[120px] truncate text-[8px] text-text-dim" data-testid="collapsed-strategy-reasoning">
 						{strategyReasoning}
-					</span>
+					</span></Tooltip>
 				{/if}
 			{/if}
 			{#if isOptimizeStep && frameworkApplied}
+				<Tooltip text="Strategy applied">
 				<span class="inline-block rounded-full bg-neon-purple/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-purple" data-testid="collapsed-framework-badge">
 					{frameworkApplied}
 				</span>
+				</Tooltip>
 			{/if}
 			{#if isValidateStep && overallScore !== undefined}
+				<Tooltip text="Overall quality score">
 				<span class="rounded-full bg-neon-green/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green" data-testid="collapsed-score">
 					{formatScore(overallScore)}
 				</span>
+				</Tooltip>
 			{/if}
 			{#if durationDisplay}
 				<span class="font-mono text-[9px] tabular-nums text-text-dim" data-testid="step-duration-{step.name}">

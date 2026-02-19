@@ -6,7 +6,7 @@
 	import { toastState } from '$lib/stores/toast.svelte';
 	import { sidebarState } from '$lib/stores/sidebar.svelte';
 	import { historyState } from '$lib/stores/history.svelte';
-	import { formatRelativeTime, normalizeScore, getScoreBadgeClass, truncateText, formatMetadataSummary } from '$lib/utils/format';
+	import { formatRelativeTime, formatExactTime, normalizeScore, getScoreBadgeClass, truncateText, formatMetadataSummary } from '$lib/utils/format';
 	import MetadataSummaryLine from '$lib/components/MetadataSummaryLine.svelte';
 	import type {
 		ProjectDetail,
@@ -17,6 +17,7 @@
 	import { fetchPromptVersions, fetchPromptForges, deleteOptimization } from '$lib/api/client';
 	import Icon from '$lib/components/Icon.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import { Separator, Tooltip } from '$lib/components/ui';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import { navigationState } from '$lib/stores/navigation.svelte';
 	import { exportProjectAsZip, type ProjectExportProgress } from '$lib/utils/exportProject';
@@ -98,8 +99,8 @@
 	// Text truncation expand/collapse
 	let expandedPromptText: string | null = $state(null);
 
-	// Version history panel, lazy-loaded per prompt
-	let expandedVersions: string | null = $state(null);
+	// Content edit history panel, lazy-loaded per prompt
+	let expandedContentHistory: string | null = $state(null);
 	let versionData: Record<string, {
 		items: PromptVersionListResponse['items'];
 		total: number;
@@ -116,7 +117,7 @@
 	// Selected forge per prompt card (maps promptId → forgeId)
 	let selectedForgeId: Record<string, string> = $state({});
 
-	// Expand/collapse for iteration list "+N more"
+	// Badge toggle: show/hide iteration list per prompt
 	let expandedIterations: Record<string, boolean> = $state({});
 
 	function syncProject(updated: ProjectDetail) {
@@ -266,7 +267,7 @@
 						if (latestForge?.id === forgeId) {
 							const next = remainingItems[0];
 							latestForge = next
-								? { id: next.id, title: next.title, task_type: next.task_type, complexity: next.complexity, framework_applied: next.framework_applied, overall_score: next.overall_score, is_improvement: next.is_improvement, tags: next.tags }
+								? { id: next.id, title: next.title, task_type: next.task_type, complexity: next.complexity, framework_applied: next.framework_applied, overall_score: next.overall_score, is_improvement: next.is_improvement, tags: next.tags, version: next.version }
 								: null;
 						}
 						return { ...p, forge_count: newCount, latest_forge: latestForge };
@@ -290,12 +291,12 @@
 		}
 	}
 
-	async function toggleVersions(promptId: string) {
-		if (expandedVersions === promptId) {
-			expandedVersions = null;
+	async function toggleContentHistory(promptId: string) {
+		if (expandedContentHistory === promptId) {
+			expandedContentHistory = null;
 			return;
 		}
-		expandedVersions = promptId;
+		expandedContentHistory = promptId;
 		if (!versionData[promptId]) {
 			versionData[promptId] = { items: [], total: 0, loading: true };
 			const result = await fetchPromptVersions(project.id, promptId);
@@ -332,6 +333,7 @@
 		overall_score: number | null;
 		is_improvement: boolean | null;
 		tags: string[];
+		version: string | null;
 		created_at: string | null;
 	}
 
@@ -347,6 +349,7 @@
 				overall_score: f.overall_score,
 				is_improvement: f.is_improvement,
 				tags: f.tags,
+				version: f.version,
 				created_at: f.created_at,
 			}));
 		}
@@ -362,6 +365,7 @@
 				overall_score: lf.overall_score,
 				is_improvement: lf.is_improvement,
 				tags: lf.tags,
+				version: lf.version,
 				created_at: null,
 			}];
 		}
@@ -389,8 +393,50 @@
 		goto('/optimize/' + forgeId);
 	}
 
+	function generateDefaultTitle(content: string): string {
+		const firstLine = content.split('\n')[0];
+		return truncateText(firstLine, 60);
+	}
+
+	function computeNextVersion(p: ProjectPrompt): string {
+		const data = forgeData[p.id];
+		let maxVersion = 0;
+		if (data?.loaded && data.items.length > 0) {
+			for (const forge of data.items) {
+				if (forge.version) {
+					const match = forge.version.match(/^v(\d+)$/i);
+					if (match) {
+						maxVersion = Math.max(maxVersion, parseInt(match[1], 10));
+					}
+				}
+			}
+		}
+		if (maxVersion === 0) {
+			return `v${p.forge_count + 1}`;
+		}
+		return `v${maxVersion + 1}`;
+	}
+
 	function optimizePrompt(p: ProjectPrompt) {
-		promptState.set(p.content, project.name, p.id);
+		const latestForge = p.latest_forge;
+		promptState.set(p.content, project.name, p.id, {
+			title: latestForge?.title ?? generateDefaultTitle(p.content),
+			tags: latestForge?.tags ?? [],
+			version: latestForge?.version ?? '',
+			sourceAction: 'optimize',
+		});
+		goto('/');
+	}
+
+	function reiteratePrompt(p: ProjectPrompt) {
+		const latestForge = p.latest_forge;
+		const nextVersion = computeNextVersion(p);
+		promptState.set(p.content, project.name, p.id, {
+			title: latestForge?.title ?? generateDefaultTitle(p.content),
+			tags: latestForge?.tags ?? [],
+			version: nextVersion,
+			sourceAction: 'reiterate',
+		});
 		goto('/');
 	}
 
@@ -474,24 +520,27 @@
 		activeFilters = new Map();
 	}
 
+	const COMPLEXITY_CHIP_GREEN = {
+		active: 'bg-neon-green/20 text-neon-green ring-1 ring-neon-green/40 shadow-[0_0_6px_rgba(0,255,136,0.15)]',
+		inactive: 'border border-border-subtle/30 text-neon-green/40 hover:text-neon-green hover:border-neon-green/25',
+	};
+	const COMPLEXITY_CHIP_YELLOW = {
+		active: 'bg-neon-yellow/20 text-neon-yellow ring-1 ring-neon-yellow/40 shadow-[0_0_6px_rgba(255,204,0,0.15)]',
+		inactive: 'border border-border-subtle/30 text-neon-yellow/40 hover:text-neon-yellow hover:border-neon-yellow/25',
+	};
+	const COMPLEXITY_CHIP_RED = {
+		active: 'bg-neon-red/20 text-neon-red ring-1 ring-neon-red/40 shadow-[0_0_6px_rgba(255,0,85,0.15)]',
+		inactive: 'border border-border-subtle/30 text-neon-red/40 hover:text-neon-red hover:border-neon-red/25',
+	};
 	const COMPLEXITY_FILTER_CLASSES: Record<string, { active: string; inactive: string }> = {
-		simple: {
-			active: 'bg-neon-green/20 text-neon-green ring-1 ring-neon-green/40 shadow-[0_0_6px_rgba(0,255,136,0.15)]',
-			inactive: 'border border-border-subtle/30 text-neon-green/40 hover:text-neon-green hover:border-neon-green/25',
-		},
-		moderate: {
-			active: 'bg-neon-yellow/20 text-neon-yellow ring-1 ring-neon-yellow/40 shadow-[0_0_6px_rgba(255,204,0,0.15)]',
-			inactive: 'border border-border-subtle/30 text-neon-yellow/40 hover:text-neon-yellow hover:border-neon-yellow/25',
-		},
-		complex: {
-			active: 'bg-neon-red/20 text-neon-red ring-1 ring-neon-red/40 shadow-[0_0_6px_rgba(255,0,85,0.15)]',
-			inactive: 'border border-border-subtle/30 text-neon-red/40 hover:text-neon-red hover:border-neon-red/25',
-		},
+		simple: COMPLEXITY_CHIP_GREEN,
+		low: COMPLEXITY_CHIP_GREEN,
+		moderate: COMPLEXITY_CHIP_YELLOW,
+		medium: COMPLEXITY_CHIP_YELLOW,
+		complex: COMPLEXITY_CHIP_RED,
+		high: COMPLEXITY_CHIP_RED,
 	};
-	const COMPLEXITY_FILTER_DEFAULT = {
-		active: 'bg-neon-cyan/20 text-neon-cyan ring-1 ring-neon-cyan/40 shadow-[0_0_6px_rgba(0,240,255,0.15)]',
-		inactive: 'border border-border-subtle/30 text-text-dim/40 hover:text-neon-cyan hover:border-neon-cyan/25',
-	};
+	const COMPLEXITY_FILTER_DEFAULT = COMPLEXITY_CHIP_YELLOW;
 
 	function getComplexityFilterClass(cx: string, active: boolean): string {
 		const entry = COMPLEXITY_FILTER_CLASSES[cx] ?? COMPLEXITY_FILTER_DEFAULT;
@@ -505,27 +554,16 @@
 		return truncateText(firstLine, 60);
 	}
 
-	type LifecycleState = 'fresh' | 'forged' | 'edited' | 'evolved';
-
-	function getPromptLifecycle(p: ProjectPrompt): LifecycleState {
-		const hasEdits = p.version > 1;
-		const hasForges = p.forge_count > 0;
-		if (hasEdits && hasForges) return 'evolved';
-		if (hasEdits) return 'edited';
-		if (hasForges) return 'forged';
-		return 'fresh';
-	}
-
 	function getVersionBadgeClass(expanded: boolean): string {
-		return `badge inline-flex items-center gap-1 rounded-full transition-all duration-150 cursor-pointer select-none ${
+		return `badge inline-flex items-center gap-1.5 rounded-full transition-all duration-150 cursor-pointer select-none ${
 			expanded
-				? 'bg-neon-purple/20 text-neon-purple ring-1 ring-neon-purple/30'
-				: 'bg-neon-purple/10 text-neon-purple/80 hover:bg-neon-purple/20 hover:text-neon-purple'
+				? 'bg-neon-cyan/20 text-neon-cyan ring-1 ring-neon-cyan/30'
+				: 'bg-neon-cyan/10 text-neon-cyan/80 hover:bg-neon-cyan/20 hover:text-neon-cyan'
 		}`;
 	}
 </script>
 
-<div class="space-y-6">
+<div class="space-y-8">
 	<!-- Back link + breadcrumbs -->
 	<div class="flex items-center gap-3">
 		<a
@@ -541,7 +579,7 @@
 	</div>
 
 	<!-- Project header -->
-	<div class="rounded-xl border border-border-subtle bg-bg-card p-5">
+	<div class="project-header-card">
 		<div class="flex items-start justify-between gap-4">
 			<div class="min-w-0 flex-1">
 				{#if editingName && !isArchived}
@@ -550,7 +588,7 @@
 							type="text"
 							bind:value={nameInput}
 							onkeydown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') { editingName = false; } }}
-							class="input-field flex-1 py-1 text-xl font-display font-semibold"
+							class="input-field flex-1 py-1 text-2xl font-display font-bold tracking-tight"
 							data-testid="project-name-edit"
 						/>
 						<button
@@ -561,14 +599,14 @@
 						</button>
 					</div>
 				{:else if isArchived}
-					<span class="text-xl font-display font-semibold text-text-primary" data-testid="project-name">
+					<span class="text-2xl font-display font-bold tracking-tight text-text-primary" data-testid="project-name">
 						<Icon name="folder-open" size={20} class="mr-2 inline-block text-neon-yellow/60" />
 						{project.name}
 					</span>
 				{:else}
 					<button
 						type="button"
-						class="cursor-pointer text-left text-xl font-display font-semibold text-text-primary transition-colors hover:text-neon-cyan"
+						class="cursor-pointer text-left text-2xl font-display font-bold tracking-tight text-text-primary transition-colors hover:text-neon-cyan"
 						onclick={() => { editingName = true; nameInput = project.name; }}
 						data-testid="project-name"
 					>
@@ -594,13 +632,13 @@
 						</button>
 					</div>
 				{:else if isArchived}
-					<p class="mt-1 text-sm text-text-dim" data-testid="project-description">
+					<p class="mt-2 text-sm text-text-secondary/70" data-testid="project-description">
 						{project.description || 'No description'}
 					</p>
 				{:else}
 					<button
 						type="button"
-						class="mt-1 block cursor-pointer text-left text-sm text-text-dim transition-colors hover:text-text-secondary"
+						class="mt-2 block cursor-pointer text-left text-sm text-text-secondary/70 transition-colors hover:text-text-primary/80"
 						onclick={() => { editingDescription = true; descInput = project.description || ''; }}
 						data-testid="project-description"
 					>
@@ -608,20 +646,21 @@
 					</button>
 				{/if}
 
-				<div class="mt-2 flex items-center gap-3 text-[11px] text-text-dim">
-					<span>Created {formatRelativeTime(project.created_at)}</span>
-					<span>Updated {formatRelativeTime(project.updated_at)}</span>
+				<Separator class="divider-glow mt-3" />
+				<div class="mt-3 flex items-center gap-3 text-xs text-text-dim">
+					<Tooltip text={formatExactTime(project.created_at)}><span>Created {formatRelativeTime(project.created_at)}</span></Tooltip>
+					<Tooltip text={formatExactTime(project.updated_at)}><span>Updated {formatRelativeTime(project.updated_at)}</span></Tooltip>
 					{#if project.status === 'archived'}
-						<span class="badge rounded-full bg-neon-yellow/10 text-neon-yellow">archived</span>
+						<span class="badge rounded-full bg-neon-yellow/10 px-3 py-0.5 text-[11px] text-neon-yellow">archived</span>
 					{:else}
-						<span class="badge rounded-full bg-neon-green/10 text-neon-green">{project.status}</span>
+						<span class="badge rounded-full bg-neon-green/10 px-3 py-0.5 text-[11px] text-neon-green">{project.status}</span>
 					{/if}
 				</div>
 			</div>
 
-			<div class="flex shrink-0 items-center gap-1.5">
+			<div class="flex shrink-0 items-center gap-3">
 				{#if confirmDeleteProject}
-					<span class="text-[10px] text-neon-red">Delete project?</span>
+					<span class="text-[11px] text-neon-red">Delete project?</span>
 					<button
 						onclick={handleDeleteProject}
 						class="rounded-lg bg-neon-red/15 px-2.5 py-1 text-xs text-neon-red transition-colors hover:bg-neon-red/25"
@@ -636,62 +675,78 @@
 						Cancel
 					</button>
 				{:else}
-					<button
-						onclick={() => { sidebarState.setTab('history'); historyState.setFilterProjectId(project.id); }}
-						class="inline-flex items-center gap-1 rounded-lg border border-neon-cyan/15 px-2.5 py-1 text-xs text-neon-cyan/70 transition-colors hover:bg-neon-cyan/8 hover:text-neon-cyan"
-						data-testid="view-history-btn"
-					>
-						<Icon name="clock" size={12} />
-						View history
-					</button>
-					<button
-						onclick={handleExportProject}
-						disabled={isExporting}
-						class="inline-flex items-center gap-1 rounded-lg border border-neon-cyan/15 px-2.5 py-1 text-xs text-neon-cyan/70 transition-colors hover:bg-neon-cyan/8 hover:text-neon-cyan disabled:opacity-40"
-						data-testid="export-project-btn"
-					>
-						{#if isExporting}
-							<Icon name="spinner" size={12} class="animate-spin" />
-							Exporting{exportProgress ? ` (${exportProgress.fetched}/${exportProgress.total})` : '...'}
+					<!-- Cyan group: View history + Export -->
+					<div class="action-group">
+						<Tooltip text="View forge history in sidebar" side="bottom">
+							<button
+								onclick={() => { sidebarState.setTab('history'); historyState.setFilterProjectId(project.id); }}
+								class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-neon-cyan/70 transition-colors hover:bg-neon-cyan/10 hover:text-neon-cyan"
+								data-testid="view-history-btn"
+							>
+								<Icon name="clock" size={12} />
+								History
+							</button>
+						</Tooltip>
+						<Tooltip text="Export all forge results as Markdown" side="bottom">
+							<button
+								onclick={handleExportProject}
+								disabled={isExporting}
+								class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-neon-cyan/70 transition-colors hover:bg-neon-cyan/10 hover:text-neon-cyan disabled:opacity-40"
+								data-testid="export-project-btn"
+							>
+								{#if isExporting}
+									<Icon name="spinner" size={12} class="animate-spin" />
+									{exportProgress ? `${exportProgress.fetched}/${exportProgress.total}` : '...'}
+								{:else}
+									<Icon name="download" size={12} />
+									Export
+								{/if}
+							</button>
+						</Tooltip>
+					</div>
+					<!-- Warm group: Archive/Restore + Delete -->
+					<div class="action-group">
+						{#if project.status === 'archived'}
+							<Tooltip text="Restore project to active" side="bottom">
+								<button
+									onclick={handleArchiveToggle}
+									class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-neon-green/70 transition-colors hover:bg-neon-green/10 hover:text-neon-green"
+									data-testid="restore-project-btn"
+								>
+									<Icon name="refresh" size={12} />
+									Restore
+								</button>
+							</Tooltip>
 						{:else}
-							<Icon name="download" size={12} />
-							Export
+							<Tooltip text="Archive project (read-only, keeps data)" side="bottom">
+								<button
+									onclick={handleArchiveToggle}
+									class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-neon-yellow/70 transition-colors hover:bg-neon-yellow/10 hover:text-neon-yellow"
+									data-testid="archive-project-btn"
+								>
+									<Icon name="archive" size={12} />
+									Archive
+								</button>
+							</Tooltip>
 						{/if}
-					</button>
-					{#if project.status === 'archived'}
-						<button
-							onclick={handleArchiveToggle}
-							class="inline-flex items-center gap-1 rounded-lg border border-neon-green/15 px-2.5 py-1 text-xs text-neon-green/70 transition-colors hover:bg-neon-green/8 hover:text-neon-green"
-							data-testid="restore-project-btn"
-						>
-							<Icon name="refresh" size={12} />
-							Restore
-						</button>
-					{:else}
-						<button
-							onclick={handleArchiveToggle}
-							class="inline-flex items-center gap-1 rounded-lg border border-neon-yellow/15 px-2.5 py-1 text-xs text-neon-yellow/70 transition-colors hover:bg-neon-yellow/8 hover:text-neon-yellow"
-							data-testid="archive-project-btn"
-						>
-							<Icon name="archive" size={12} />
-							Archive
-						</button>
-					{/if}
-					<button
-						onclick={() => { confirmDeleteProject = true; }}
-						class="inline-flex items-center gap-1 rounded-lg border border-neon-red/15 px-2.5 py-1 text-xs text-neon-red/70 transition-colors hover:bg-neon-red/8 hover:text-neon-red"
-						data-testid="delete-project-btn"
-					>
-						<Icon name="trash-2" size={12} />
-						Delete
-					</button>
+						<Tooltip text="Permanently delete project and all data" side="bottom">
+							<button
+								onclick={() => { confirmDeleteProject = true; }}
+								class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-neon-red/40 transition-colors hover:bg-neon-red/10 hover:text-neon-red"
+								data-testid="delete-project-btn"
+							>
+								<Icon name="trash-2" size={12} />
+								Delete
+							</button>
+						</Tooltip>
+					</div>
 				{/if}
 			</div>
 		</div>
 	</div>
 
 	{#if isArchived}
-		<div class="flex items-center gap-3 rounded-xl border border-neon-yellow/20 bg-neon-yellow/5 px-4 py-3">
+		<div class="flex items-center gap-3 rounded-2xl border border-neon-yellow/20 bg-neon-yellow/5 px-5 py-4">
 			<Icon name="archive" size={16} class="text-neon-yellow" />
 			<span class="text-sm text-neon-yellow">This project is archived and read-only.</span>
 		</div>
@@ -699,8 +754,8 @@
 
 	<!-- Prompts section -->
 	<div>
-		<div class="mb-3 flex items-center justify-between">
-			<h2 class="text-sm font-medium text-text-secondary">
+		<div class="mb-4 flex items-center justify-between">
+			<h2 class="font-display text-xs font-bold uppercase tracking-widest text-text-dim">
 				{#if hasActiveFilters}
 					Prompts ({filteredPrompts.length}/{project.prompts.length})
 				{:else}
@@ -708,14 +763,16 @@
 				{/if}
 			</h2>
 			{#if !isArchived}
-				<button
-					onclick={() => { showAddPrompt = !showAddPrompt; }}
-					class="inline-flex items-center gap-1 rounded-lg border border-neon-cyan/20 px-2.5 py-1 text-xs text-neon-cyan transition-colors hover:bg-neon-cyan/8"
-					data-testid="add-prompt-btn"
-				>
-					<Icon name="plus" size={12} />
-					Add Prompt
-				</button>
+				<Tooltip text="Add a new prompt card" side="bottom">
+					<button
+						onclick={() => { showAddPrompt = !showAddPrompt; }}
+						class="inline-flex items-center gap-1 rounded-lg border border-neon-cyan/20 px-2.5 py-1 text-xs text-neon-cyan transition-colors hover:bg-neon-cyan/8"
+						data-testid="add-prompt-btn"
+					>
+						<Icon name="plus" size={12} />
+						Add Prompt
+					</button>
+				</Tooltip>
 			{/if}
 		</div>
 
@@ -724,26 +781,26 @@
 			{@const allTags = [...allMetadata.tags]}
 			{@const visibleTags = showAllFilterTags ? allTags : allTags.slice(0, MAX_VISIBLE_FILTER_TAGS)}
 			{@const hiddenTagCount = allTags.length - MAX_VISIBLE_FILTER_TAGS}
-			<div class="relative mb-3 rounded-lg border border-border-subtle/50 bg-bg-card/40 py-2 pl-2 pr-12" data-testid="filter-bar">
+			<div class="filter-bar relative mb-4" data-testid="filter-bar">
 				{#if hasActiveFilters}
 					<button
 						onclick={clearAllFilters}
-						class="absolute right-2.5 top-2 rounded-full bg-bg-hover px-2 py-0.5 text-[10px] text-text-dim transition-colors hover:bg-bg-hover/80 hover:text-text-secondary"
+						class="absolute right-2.5 top-2.5 z-10 rounded-full border border-border-subtle bg-bg-hover px-2.5 py-0.5 text-[11px] text-text-dim transition-colors hover:bg-bg-hover/80 hover:text-text-secondary"
 						data-testid="clear-filters"
 					>
 						Clear
 					</button>
 				{/if}
-				<div class="flex flex-col gap-1">
+				<div class="flex flex-col gap-1.5">
 					<!-- Task type row -->
 					{#if allMetadata.task_types.size > 0}
-						<div class="flex items-baseline gap-2.5 rounded-md border-l-2 border-l-neon-cyan bg-neon-cyan/[0.03] py-1.5 pl-2.5 pr-2">
-							<span class="w-[52px] shrink-0 select-none text-[9px] font-medium uppercase tracking-wider text-text-dim/70">Type</span>
+						<div class="flex items-baseline gap-2.5 rounded-lg border-l-2 border-l-neon-cyan bg-neon-cyan/[0.03] py-2 pl-3 pr-2">
+							<span class="w-[52px] shrink-0 select-none text-[10px] font-semibold uppercase tracking-wider text-text-dim/70">Type</span>
 							<div class="flex flex-wrap items-center gap-1.5">
 								{#each [...allMetadata.task_types] as tt}
 									<button
 										onclick={() => toggleFilter('task_type', tt)}
-										class="rounded-full px-2 py-0.5 text-[10px] font-medium transition-all duration-150
+										class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-150
 											{isFilterActive('task_type', tt)
 												? 'bg-neon-cyan/20 text-neon-cyan ring-1 ring-neon-cyan/40 shadow-[0_0_6px_rgba(0,240,255,0.15)]'
 												: 'border border-border-subtle/30 text-neon-cyan/40 hover:text-neon-cyan hover:border-neon-cyan/25'}"
@@ -757,13 +814,13 @@
 					{/if}
 					<!-- Complexity row -->
 					{#if allMetadata.complexities.size > 0}
-						<div class="flex items-baseline gap-2.5 rounded-md border-l-2 border-l-neon-yellow bg-neon-yellow/[0.02] py-1.5 pl-2.5 pr-2">
-							<span class="w-[52px] shrink-0 select-none text-[9px] font-medium uppercase tracking-wider text-text-dim/70">Level</span>
+						<div class="flex items-baseline gap-2.5 rounded-lg border-l-2 border-l-neon-yellow bg-neon-yellow/[0.02] py-2 pl-3 pr-2">
+							<span class="w-[52px] shrink-0 select-none text-[10px] font-semibold uppercase tracking-wider text-text-dim/70">Level</span>
 							<div class="flex flex-wrap items-center gap-1.5">
 								{#each [...allMetadata.complexities] as cx}
 									<button
 										onclick={() => toggleFilter('complexity', cx)}
-										class="rounded-full px-2 py-0.5 text-[10px] font-medium transition-all duration-150
+										class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-150
 											{getComplexityFilterClass(cx, isFilterActive('complexity', cx))}"
 										data-testid="filter-complexity"
 									>
@@ -775,13 +832,13 @@
 					{/if}
 					<!-- Framework/strategy row -->
 					{#if allMetadata.frameworks.size > 0}
-						<div class="flex items-baseline gap-2.5 rounded-md border-l-2 border-l-neon-purple bg-neon-purple/[0.03] py-1.5 pl-2.5 pr-2">
-							<span class="w-[52px] shrink-0 select-none text-[9px] font-medium uppercase tracking-wider text-text-dim/70">Strategy</span>
+						<div class="flex items-baseline gap-2.5 rounded-lg border-l-2 border-l-neon-purple bg-neon-purple/[0.03] py-2 pl-3 pr-2">
+							<span class="w-[52px] shrink-0 select-none text-[10px] font-semibold uppercase tracking-wider text-text-dim/70">Strategy</span>
 							<div class="flex flex-wrap items-center gap-1.5">
 								{#each [...allMetadata.frameworks] as fw}
 									<button
 										onclick={() => toggleFilter('framework', fw)}
-										class="rounded-full px-2 py-0.5 text-[10px] font-medium transition-all duration-150
+										class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-150
 											{isFilterActive('framework', fw)
 												? 'bg-neon-purple/20 text-neon-purple ring-1 ring-neon-purple/40 shadow-[0_0_6px_rgba(176,0,255,0.15)]'
 												: 'border border-border-subtle/30 text-neon-purple/40 hover:text-neon-purple hover:border-neon-purple/25'}"
@@ -795,16 +852,16 @@
 					{/if}
 					<!-- Tags row (collapsible) -->
 					{#if allTags.length > 0}
-						<div class="flex items-baseline gap-2.5 rounded-md border-l-2 border-l-neon-green bg-neon-green/[0.03] py-1.5 pl-2.5 pr-2">
-							<span class="w-[52px] shrink-0 select-none text-[9px] font-medium uppercase tracking-wider text-text-dim/70">Tags</span>
+						<div class="flex items-baseline gap-2.5 rounded-lg border-l-2 border-l-neon-green bg-neon-green/[0.03] py-2 pl-3 pr-2">
+							<span class="w-[52px] shrink-0 select-none text-[10px] font-semibold uppercase tracking-wider text-text-dim/70">Tags</span>
 							<div class="flex flex-wrap items-center gap-1.5">
 								{#each visibleTags as tag}
 									<button
 										onclick={() => toggleFilter('tag', tag)}
 										class="transition-all duration-150
 											{isFilterActive('tag', tag)
-												? 'rounded-full bg-neon-green/20 px-2 py-0.5 text-[10px] font-medium text-neon-green ring-1 ring-neon-green/40 shadow-[0_0_6px_rgba(34,255,136,0.15)]'
-												: 'tag-chip hover:text-neon-green'}"
+												? 'rounded-full bg-neon-green/20 px-2.5 py-1 text-[11px] font-medium text-neon-green ring-1 ring-neon-green/40 shadow-[0_0_6px_rgba(34,255,136,0.15)]'
+												: 'tag-chip text-[11px] hover:text-neon-green'}"
 										data-testid="filter-tag"
 									>
 										#{tag}
@@ -813,7 +870,7 @@
 								{#if hiddenTagCount > 0}
 									<button
 										onclick={() => { showAllFilterTags = !showAllFilterTags; }}
-										class="text-[10px] text-text-dim transition-colors hover:text-text-secondary"
+										class="text-[11px] text-text-dim transition-colors hover:text-text-secondary"
 										data-testid="toggle-filter-tags"
 									>
 										{showAllFilterTags ? 'Show less' : `+${hiddenTagCount} more`}
@@ -827,26 +884,26 @@
 		{/if}
 
 		{#if showAddPrompt && !isArchived}
-			<div class="animate-fade-in mb-3 rounded-xl border border-neon-cyan/15 bg-bg-card p-4" data-testid="add-prompt-form">
+			<div class="animate-fade-in mb-4 rounded-2xl border border-neon-cyan/15 bg-bg-card p-5" data-testid="add-prompt-form">
 				<textarea
 					bind:value={newPromptContent}
 					placeholder="Enter prompt content..."
 					rows="3"
-					class="input-field w-full resize-y py-2 text-sm"
+					class="input-field w-full resize-y rounded-xl py-2 text-[13px]"
 					data-testid="new-prompt-textarea"
 				></textarea>
-				<div class="mt-2 flex gap-2">
+				<div class="mt-3 flex gap-2">
 					<button
 						onclick={handleAddPrompt}
 						disabled={!newPromptContent.trim() || isAddingPrompt}
-						class="rounded-lg bg-neon-cyan/15 px-4 py-1.5 text-xs font-medium text-neon-cyan transition-colors hover:bg-neon-cyan/25 disabled:opacity-40"
+						class="rounded-lg bg-neon-cyan/15 px-4 py-1.5 text-[11px] font-medium text-neon-cyan transition-colors hover:bg-neon-cyan/25 disabled:opacity-40"
 						data-testid="save-new-prompt"
 					>
 						{isAddingPrompt ? 'Adding...' : 'Add'}
 					</button>
 					<button
 						onclick={() => { showAddPrompt = false; newPromptContent = ''; }}
-						class="rounded-lg bg-bg-hover px-4 py-1.5 text-xs text-text-dim transition-colors hover:bg-bg-hover/80"
+						class="rounded-lg bg-bg-hover px-4 py-1.5 text-[11px] text-text-dim transition-colors hover:bg-bg-hover/80"
 					>
 						Cancel
 					</button>
@@ -855,14 +912,18 @@
 		{/if}
 
 		{#if project.prompts.length === 0 && !showAddPrompt}
-			<div class="flex flex-col items-center justify-center rounded-xl border border-border-subtle bg-bg-card px-6 py-12 text-center" data-testid="prompts-empty">
-				<Icon name="edit" size={28} class="mb-3 text-text-dim/40" />
+			<div class="flex flex-col items-center justify-center rounded-2xl border border-border-subtle bg-bg-card px-6 py-16 text-center" data-testid="prompts-empty">
+				<div class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-bg-hover/60">
+					<Icon name="edit" size={24} class="text-text-dim/40" />
+				</div>
 				<p class="text-sm text-text-dim">No prompts yet</p>
 				<p class="mt-1 text-[11px] text-text-dim/60">{isArchived ? 'This archived project has no prompts' : 'Add prompts to this project to start optimizing'}</p>
 			</div>
 		{:else if filteredPrompts.length === 0 && hasActiveFilters}
-			<div class="flex flex-col items-center justify-center rounded-xl border border-border-subtle bg-bg-card px-6 py-8 text-center" data-testid="prompts-empty-filtered">
-				<Icon name="search" size={24} class="mb-2 text-text-dim/40" />
+			<div class="flex flex-col items-center justify-center rounded-2xl border border-border-subtle bg-bg-card px-6 py-12 text-center" data-testid="prompts-empty-filtered">
+				<div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-bg-hover/60">
+					<Icon name="search" size={20} class="text-text-dim/40" />
+				</div>
 				<p class="text-sm text-text-dim">No prompts match the active filters</p>
 				<button
 					onclick={clearAllFilters}
@@ -872,15 +933,15 @@
 				</button>
 			</div>
 		{:else}
-			<div class="space-y-2">
+			<div class="space-y-4">
 				{#each filteredPrompts as prompt, index (prompt.id)}
 					{@const timeline = getForgeTimeline(prompt)}
 					{@const activeForge = getActiveForge(prompt, timeline)}
-					{@const lifecycle = getPromptLifecycle(prompt)}
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
-						class="group rounded-xl border border-border-subtle bg-bg-card p-4 transition-[border-color] duration-200 hover:border-border-glow {activeForge ? 'cursor-pointer' : ''}"
+						class="prompt-card group animate-stagger-fade-in {activeForge ? 'cursor-pointer' : ''}"
+						style="animation-delay: {index * 60}ms"
 						onclick={(e) => { if (activeForge) handleCardClick(e, activeForge.id); }}
 						data-testid="prompt-card"
 					>
@@ -888,22 +949,26 @@
 							<!-- Reorder controls (hidden when filters active to avoid index mismatch) -->
 							{#if !isArchived && !hasActiveFilters}
 								<div class="flex shrink-0 flex-col gap-0.5 pt-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100" data-no-navigate>
-									<button
-										onclick={() => movePrompt(index, -1)}
-										disabled={index === 0}
-										class="rounded p-0.5 text-text-dim transition-colors hover:text-neon-cyan disabled:opacity-20"
-										aria-label="Move up"
-									>
-										<Icon name="chevron-up" size={12} />
-									</button>
-									<button
-										onclick={() => movePrompt(index, 1)}
-										disabled={index === project.prompts.length - 1}
-										class="rounded p-0.5 text-text-dim transition-colors hover:text-neon-cyan disabled:opacity-20"
-										aria-label="Move down"
-									>
-										<Icon name="chevron-down" size={12} />
-									</button>
+									<Tooltip text="Move up" side="left">
+										<button
+											onclick={() => movePrompt(index, -1)}
+											disabled={index === 0}
+											class="rounded p-0.5 text-text-dim transition-colors hover:text-neon-cyan disabled:opacity-20"
+											aria-label="Move up"
+										>
+											<Icon name="chevron-up" size={12} />
+										</button>
+									</Tooltip>
+									<Tooltip text="Move down" side="left">
+										<button
+											onclick={() => movePrompt(index, 1)}
+											disabled={index === project.prompts.length - 1}
+											class="rounded p-0.5 text-text-dim transition-colors hover:text-neon-cyan disabled:opacity-20"
+											aria-label="Move down"
+										>
+											<Icon name="chevron-down" size={12} />
+										</button>
+									</Tooltip>
 								</div>
 							{/if}
 
@@ -911,14 +976,16 @@
 							<div class="min-w-0 flex-1">
 								<!-- Title row with score (reads from activeForge) -->
 								{#if activeForge}
-									<div class="mb-1.5 flex items-center gap-2">
-										<span class="truncate text-xs font-medium text-text-secondary" data-testid="prompt-title">
+									<div class="mb-3 flex items-center gap-3">
+										<span class="truncate text-sm font-semibold text-text-primary font-display" data-testid="prompt-title">
 											{getPromptTitle(prompt, activeForge)}
 										</span>
 										{#if activeForge.overall_score != null}
-											<span class="score-circle score-circle-sm shrink-0 {getScoreBadgeClass(activeForge.overall_score)}" data-testid="prompt-score">
-												{normalizeScore(activeForge.overall_score)}
-											</span>
+											<Tooltip text="Overall quality score" class="shrink-0">
+												<span class="score-badge-lg {getScoreBadgeClass(activeForge.overall_score)}" data-testid="prompt-score">
+													{normalizeScore(activeForge.overall_score)}
+												</span>
+											</Tooltip>
 										{/if}
 									</div>
 								{/if}
@@ -946,15 +1013,17 @@
 										</button>
 									</div>
 								{:else}
-									<button
-										type="button"
-										onclick={() => { expandedPromptText = expandedPromptText === prompt.id ? null : prompt.id; }}
-										aria-expanded={expandedPromptText === prompt.id}
-										class="w-full whitespace-pre-wrap text-left text-sm leading-relaxed text-text-primary transition-colors hover:text-text-primary/80 {expandedPromptText === prompt.id ? '' : 'line-clamp-3'}"
-										data-testid="prompt-content"
-									>
-										{prompt.content}
-									</button>
+									<div class="prompt-content-well">
+										<button
+											type="button"
+											onclick={() => { expandedPromptText = expandedPromptText === prompt.id ? null : prompt.id; }}
+											aria-expanded={expandedPromptText === prompt.id}
+											class="w-full whitespace-pre-wrap text-left text-[13px] leading-relaxed text-text-secondary transition-colors hover:text-text-primary {expandedPromptText === prompt.id ? '' : 'line-clamp-3'}"
+											data-testid="prompt-content"
+										>
+											{prompt.content}
+										</button>
+									</div>
 								{/if}
 
 								<!-- Metadata summary (reads from activeForge) -->
@@ -963,63 +1032,61 @@
 										taskType: activeForge.task_type,
 										framework: activeForge.framework_applied,
 									})}
-									<div class="mt-2 flex flex-col gap-1.5" data-testid="prompt-metadata">
+									<div class="mt-3 flex flex-col gap-2" data-testid="prompt-metadata">
 										{#if forgeMeta.length > 0 || activeForge.complexity}
 											<div class="flex items-center gap-2">
-												<MetadataSummaryLine segments={forgeMeta} complexity={activeForge.complexity} size="sm" />
+												<MetadataSummaryLine segments={forgeMeta} complexity={activeForge.complexity} size="md" />
 												{#if activeForge.is_improvement === true}
-													<Icon name="arrow-up" size={12} class="text-neon-green" />
+													<Tooltip text="Improved over original"><Icon name="arrow-up" size={12} class="text-neon-green" /></Tooltip>
 												{/if}
 											</div>
 										{/if}
 										{#if activeForge.tags.length > 0}
 											<div class="flex items-center gap-2">
 												{#each activeForge.tags.slice(0, 3) as tag}
-													<span class="tag-chip">#{tag}</span>
+													<span class="tag-chip text-[11px]">#{tag}</span>
 												{/each}
 												{#if activeForge.tags.length > 3}
-													<span class="text-[10px] text-text-dim">+{activeForge.tags.length - 3}</span>
+													<Tooltip text="{activeForge.tags.length - 3} more tags">
+														<span class="text-[11px] text-text-dim">+{activeForge.tags.length - 3}</span>
+													</Tooltip>
 												{/if}
 											</div>
 										{/if}
 									</div>
 								{/if}
 
-								<!-- Iteration selector (replaces horizontal forge strip) -->
-								{#if prompt.forge_count > 1}
-									<div class="mt-2.5" data-no-navigate data-testid="forge-iterations">
+								<!-- Iteration selector (gated by badge toggle) -->
+								{#if prompt.forge_count > 1 && (expandedIterations[prompt.id] ?? false)}
+									<div class="mt-3" data-no-navigate data-testid="forge-iterations">
 										{#if !forgeData[prompt.id]?.loaded}
 											<!-- Loading state: show spinner while forge data arrives -->
 											<div class="flex items-center gap-2">
-												<span class="text-[10px] font-medium text-text-dim">Iterations</span>
+												<span class="text-[11px] font-semibold uppercase tracking-wide text-text-dim">Iterations</span>
 												<Icon name="spinner" size={12} class="animate-spin text-text-dim/40" />
 											</div>
 										{:else if timeline.length > 1}
-											{@const maxVisible = 3}
-											{@const isExpanded = expandedIterations[prompt.id] ?? false}
-											{@const visibleForges = isExpanded ? timeline : timeline.slice(0, maxVisible)}
-											{@const hiddenCount = timeline.length - maxVisible}
-											<div class="flex items-center gap-2 mb-1.5">
-												<span class="text-[10px] font-medium text-text-dim">Iterations ({timeline.length})</span>
+											<div class="flex items-center gap-2 mb-2">
+												<span class="text-[11px] font-semibold uppercase tracking-wide text-text-dim">Iterations ({timeline.length})</span>
 											</div>
-											<div class="flex flex-col gap-1">
-												{#each visibleForges as forge, i (forge.id)}
+											<div class="flex flex-col gap-1.5">
+												{#each timeline as forge, i (forge.id)}
 													{@const isSelected = activeForge?.id === forge.id}
 													{@const isConfirmingDelete = confirmDeleteForgeId === forge.id}
 													{@const isDeleting = deletingForgeId === forge.id}
 													<div class="group/iter relative flex items-center gap-0.5">
 														<button
 															onclick={() => selectForge(prompt.id, forge.id)}
-															class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] transition-all duration-150
+															class="iteration-timeline-item flex min-w-0 flex-1 items-center gap-2 text-left text-[11px]
 																{isSelected
-																	? 'bg-neon-cyan/10 ring-1 ring-neon-cyan/30 text-text-primary'
-																	: 'bg-bg-secondary/30 text-text-secondary hover:bg-bg-secondary/60'}"
+																	? 'iteration-timeline-item--active text-text-primary'
+																	: 'text-text-secondary'}"
 															data-testid="forge-iteration"
 														>
 															{#if forge.overall_score != null}
-																<span class="score-circle score-circle-sm shrink-0 {getScoreBadgeClass(forge.overall_score)}">
+																<Tooltip text="Overall score"><span class="score-circle score-circle-sm shrink-0 {getScoreBadgeClass(forge.overall_score)}">
 																	{normalizeScore(forge.overall_score)}
-																</span>
+																</span></Tooltip>
 															{:else}
 																<span class="score-circle score-circle-sm shrink-0 bg-bg-hover text-text-dim">-</span>
 															{/if}
@@ -1052,143 +1119,156 @@
 																	<Icon name="x" size={12} />
 																</button>
 															{:else}
-																<button
-																	onclick={() => { confirmDeleteForgeId = forge.id; }}
-																	class="shrink-0 rounded p-1 text-text-dim opacity-0 transition-all hover:text-neon-red group-hover/iter:opacity-100"
-																	aria-label="Delete iteration"
-																	data-testid="delete-forge-btn"
-																>
-																	<Icon name="x" size={12} />
-																</button>
+																<Tooltip text="Delete this iteration" side="left">
+																	<button
+																		onclick={() => { confirmDeleteForgeId = forge.id; }}
+																		class="shrink-0 rounded p-1 text-text-dim opacity-0 transition-all hover:text-neon-red group-hover/iter:opacity-100"
+																		aria-label="Delete iteration"
+																		data-testid="delete-forge-btn"
+																	>
+																		<Icon name="x" size={12} />
+																	</button>
+																</Tooltip>
 															{/if}
 														{/if}
 													</div>
 												{/each}
-												{#if !isExpanded && hiddenCount > 0}
-													<button
-														onclick={() => { expandedIterations = { ...expandedIterations, [prompt.id]: true }; }}
-														class="rounded-lg px-2.5 py-1 text-[10px] text-text-dim transition-colors hover:text-neon-cyan"
-													>
-														+{hiddenCount} more
-													</button>
-												{:else if isExpanded && hiddenCount > 0}
-													<button
-														onclick={() => { expandedIterations = { ...expandedIterations, [prompt.id]: false }; }}
-														class="rounded-lg px-2.5 py-1 text-[10px] text-text-dim transition-colors hover:text-neon-cyan"
-													>
-														Show less
-													</button>
-												{/if}
 											</div>
 										{/if}
 									</div>
 								{/if}
 
 								<!-- Footer: lifecycle badge + timestamp + actions -->
-								<div class="mt-3 flex items-center gap-3 border-t border-border-subtle pt-2.5">
-									{#if lifecycle === 'fresh'}
-										<span class="badge inline-flex items-center rounded-full bg-bg-hover/60 text-text-dim/50" data-testid="prompt-lifecycle-badge">
-											v1
-										</span>
-									{:else if lifecycle === 'forged'}
-										<span
-											class="badge inline-flex items-center gap-1 rounded-full bg-neon-cyan/10 text-neon-cyan/70"
-											title="Forged {prompt.forge_count} time{prompt.forge_count === 1 ? '' : 's'}"
-											data-testid="prompt-lifecycle-badge"
-										>
-											<Icon name="bolt" size={10} />
-											v1
-											{#if prompt.forge_count > 1}
-												<span class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-neon-cyan/20 text-[8px] font-bold leading-none">
-													{prompt.forge_count}
-												</span>
-											{/if}
-										</span>
-									{:else if lifecycle === 'edited'}
-										{@const expanded = expandedVersions === prompt.id}
-										<button
-											onclick={() => toggleVersions(prompt.id)}
-											class={getVersionBadgeClass(expanded)}
-											data-testid="prompt-lifecycle-badge"
-										>
-											<Icon name="chevron-right" size={10} class="transition-all duration-200 {expanded ? 'rotate-90' : ''}" />
-											v{prompt.version}
-										</button>
-									{:else}
-										<!-- evolved: v>1 + forges -->
-										{@const expanded = expandedVersions === prompt.id}
-										<button
-											onclick={() => toggleVersions(prompt.id)}
-											class={getVersionBadgeClass(expanded)}
-											title="Forged {prompt.forge_count} time{prompt.forge_count === 1 ? '' : 's'}"
-											data-testid="prompt-lifecycle-badge"
-										>
-											<Icon name="chevron-right" size={10} class="transition-all duration-200 {expanded ? 'rotate-90' : ''}" />
-											v{prompt.version}
-											<span class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-neon-cyan/20 text-neon-cyan text-[8px] font-bold leading-none">
-												{prompt.forge_count}
+								<Separator class="divider-glow mt-4" />
+								<div class="mt-3 flex items-center gap-3">
+									{#if prompt.forge_count === 0}
+										<Tooltip text="Not yet optimized">
+											<span class="badge inline-flex items-center gap-1.5 rounded-full bg-bg-hover/60 text-[11px] text-text-dim/50" data-testid="prompt-lifecycle-badge">
+												new
 											</span>
-										</button>
-									{/if}
-									<span class="text-[11px] text-text-dim">{formatRelativeTime(prompt.updated_at)}</span>
-									{#if editingPromptId !== prompt.id && !isArchived}
-										<div class="ml-auto flex items-center gap-1.5">
+										</Tooltip>
+									{:else}
+										{@const badgeVersion = activeForge?.version ?? prompt.latest_forge?.version ?? `v${prompt.forge_count}`}
+										{#if prompt.forge_count === 1}
+											<Tooltip text="Forged — click to view">
 											<button
-												onclick={() => optimizePrompt(prompt)}
-												class="inline-flex items-center gap-1 rounded-lg bg-neon-cyan/8 px-2 py-1 text-[10px] text-neon-cyan transition-colors hover:bg-neon-cyan/15"
-												data-testid="optimize-prompt-btn"
+												onclick={() => { if (activeForge) goto('/optimize/' + activeForge.id); }}
+												class="{getVersionBadgeClass(false)} text-[11px]"
+												data-testid="prompt-lifecycle-badge"
 											>
 												<Icon name="bolt" size={10} />
-												Optimize
+												{badgeVersion}
 											</button>
+										</Tooltip>
+										{:else}
+											{@const iterExpanded = expandedIterations[prompt.id] ?? false}
+											<Tooltip text="Forged {prompt.forge_count} times — click to expand iterations">
 											<button
-												onclick={() => startEditPrompt(prompt)}
-												class="inline-flex items-center gap-1 rounded-lg bg-neon-green/8 px-2 py-1 text-[10px] text-neon-green transition-colors hover:bg-neon-green/15"
-												aria-label="Edit prompt"
-												data-testid="edit-prompt-btn"
+												onclick={() => { expandedIterations = { ...expandedIterations, [prompt.id]: !iterExpanded }; }}
+												class="{getVersionBadgeClass(iterExpanded)} text-[11px]"
+												data-testid="prompt-lifecycle-badge"
 											>
-												<Icon name="edit" size={10} />
-												Edit
+												<Icon name="bolt" size={10} />
+												{badgeVersion}
+												<Icon name={iterExpanded ? 'chevron-down' : 'chevron-right'} size={10} class="transition-all duration-200" />
 											</button>
-											<button
-												onclick={() => { deletePromptModalId = prompt.id; }}
-												class="inline-flex items-center gap-1 rounded-lg bg-neon-red/8 px-2 py-1 text-[10px] text-neon-red transition-colors hover:bg-neon-red/15"
-												aria-label="Delete prompt card"
-												data-testid="delete-prompt-btn"
-											>
-												<Icon name="trash-2" size={10} />
-											</button>
+										</Tooltip>
+										{/if}
+									{/if}
+									<Tooltip text={formatExactTime(prompt.updated_at)}><span class="text-xs text-text-dim">{formatRelativeTime(prompt.updated_at)}</span></Tooltip>
+									{#if editingPromptId !== prompt.id && !isArchived}
+										<div class="ml-auto flex items-center gap-3">
+											<!-- Optimize stands alone (primary action) -->
+											<Tooltip text="Start new optimization with this prompt" side="bottom">
+												<button
+													onclick={() => optimizePrompt(prompt)}
+													class="inline-flex items-center gap-1.5 rounded-lg bg-neon-cyan/10 px-3 py-1.5 text-[11px] font-medium text-neon-cyan transition-all hover:bg-neon-cyan/18 hover:shadow-[0_0_12px_rgba(0,229,255,0.12)]"
+													data-testid="optimize-prompt-btn"
+												>
+													<Icon name="bolt" size={12} />
+													Optimize
+												</button>
+											</Tooltip>
+											<!-- Grouped: Re-iterate + Edit + Version -->
+											<div class="action-group">
+												{#if prompt.forge_count > 0}
+													<Tooltip text="Re-optimize using latest result as input" side="bottom">
+														<button
+															onclick={() => reiteratePrompt(prompt)}
+															class="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-neon-purple transition-colors hover:bg-neon-purple/12"
+															data-testid="reiterate-prompt-btn"
+														>
+															<Icon name="refresh" size={11} />
+															Re-iterate
+														</button>
+													</Tooltip>
+												{/if}
+												<Tooltip text="Edit prompt content" side="bottom">
+													<button
+														onclick={() => startEditPrompt(prompt)}
+														class="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+														aria-label="Edit prompt"
+														data-testid="edit-prompt-btn"
+													>
+														<Icon name="edit" size={11} />
+														Edit
+													</button>
+												</Tooltip>
+												{#if prompt.version > 1}
+													<Tooltip text="View content edit history" side="bottom">
+														<button
+															onclick={() => toggleContentHistory(prompt.id)}
+															class="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-neon-purple transition-colors hover:bg-neon-purple/12"
+															data-testid="version-history-btn"
+														>
+															<Icon name="clock" size={11} />
+															v{prompt.version}
+														</button>
+													</Tooltip>
+												{/if}
+											</div>
+											<!-- Delete: icon-only, very dim -->
+											<Tooltip text="Delete prompt card" side="top">
+												<button
+													onclick={() => { deletePromptModalId = prompt.id; }}
+													class="rounded-lg p-1.5 text-text-dim/30 transition-colors hover:bg-neon-red/10 hover:text-neon-red"
+													aria-label="Delete prompt card"
+													data-testid="delete-prompt-btn"
+												>
+													<Icon name="trash-2" size={12} />
+												</button>
+											</Tooltip>
 										</div>
 									{/if}
 								</div>
 
 								<!-- Version history panel (only for v2+) -->
-								{#if expandedVersions === prompt.id && prompt.version > 1}
-									<div class="animate-fade-in mt-3 rounded-lg border border-border-subtle/50 bg-bg-primary/30 p-3" data-testid="versions-panel">
+								{#if expandedContentHistory === prompt.id && prompt.version > 1}
+									<div class="animate-fade-in mt-3 version-panel" data-testid="versions-panel">
 										{#if versionData[prompt.id]?.loading}
 											<div class="flex items-center gap-2 py-2">
 												<Icon name="spinner" size={14} class="animate-spin text-neon-purple/60" />
 												<span class="text-xs text-text-dim">Loading versions...</span>
 											</div>
 										{:else if !versionData[prompt.id]?.items.length}
-											<p class="text-[11px] text-text-dim">No snapshots yet — edits before versioning was deployed aren't captured</p>
+											<p class="text-xs text-text-dim">No snapshots yet — edits before versioning was deployed aren't captured</p>
 										{:else}
-											<div class="space-y-2">
+											<div class="space-y-2.5">
 												{#each versionData[prompt.id].items as ver}
-													<div class="rounded-md bg-bg-secondary/40 p-2">
+													<div class="version-panel-entry">
 														<div class="flex items-center gap-2">
-															<span class="badge rounded-full bg-neon-purple/10 text-neon-purple text-[9px]">v{ver.version}</span>
-															<span class="text-[10px] text-text-dim">{formatRelativeTime(ver.created_at)}</span>
+															<span class="badge rounded-full bg-neon-purple/10 text-neon-purple text-[10px]">v{ver.version}</span>
+															<span class="text-[11px] text-text-dim">{formatRelativeTime(ver.created_at)}</span>
 															{#if ver.optimization_id}
 																<a
 																	href="/optimize/{ver.optimization_id}"
-																	class="text-[10px] text-neon-cyan/70 transition-colors hover:text-neon-cyan"
+																	class="text-[11px] text-neon-cyan/70 transition-colors hover:text-neon-cyan"
 																>
 																	via forge
 																</a>
 															{/if}
 														</div>
-														<p class="mt-1 line-clamp-3 text-[11px] leading-relaxed text-text-secondary">{ver.content}</p>
+														<p class="mt-1.5 line-clamp-3 text-xs leading-relaxed text-text-secondary">{ver.content}</p>
 													</div>
 												{/each}
 											</div>

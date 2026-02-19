@@ -4,6 +4,7 @@
 	import { SCORE_WEIGHTS, DIMENSION_LABELS, computeContribution, type ScoreDimension } from '$lib/utils/scoreDimensions';
 	import { generateScoreExplanation } from '$lib/utils/scoreExplanation';
 	import Icon from './Icon.svelte';
+	import { Separator, Tooltip } from './ui';
 
 	type Scores = OptimizationResultState['scores'];
 
@@ -28,6 +29,13 @@
 	} = $props();
 
 	const dimensions: ScoreDimension[] = ['faithfulness', 'clarity', 'specificity', 'structure'];
+
+	const DIMENSION_TOOLTIPS: Record<ScoreDimension, string> = {
+		clarity: 'How clearly the prompt communicates intent',
+		specificity: 'How concrete and detailed the instructions are',
+		structure: 'How well-organized the prompt layout is',
+		faithfulness: 'How well the original intent is preserved',
+	};
 
 	let animated = $state(false);
 	$effect(() => {
@@ -73,7 +81,7 @@
 					>{overallTier}</span>
 				{/if}
 				{#if isImprovement}
-					<span class="text-neon-green" title="Improvement over original">&#10003;</span>
+					<Tooltip text="Improvement over original"><span class="text-neon-green">&#10003;</span></Tooltip>
 				{/if}
 			</span>
 		{/if}
@@ -113,7 +121,7 @@
 						data-testid="score-bar-{dim}"
 					>
 						<div class="mb-1.5 flex items-center justify-between text-sm">
-							<span class="text-text-primary">{DIMENSION_LABELS[dim]}</span>
+							<Tooltip text={DIMENSION_TOOLTIPS[dim]} side="right"><span class="text-text-primary">{DIMENSION_LABELS[dim]}</span></Tooltip>
 							<span class="flex items-center gap-2 font-mono text-xs tabular-nums">
 								<span
 									class="font-bold"
@@ -121,7 +129,7 @@
 									class:text-neon-yellow={color === 'neon-yellow'}
 									class:text-neon-red={color === 'neon-red'}
 								>{pct}</span>
-								<span class="text-text-dim">&times; {weight}%</span>
+								<Tooltip text="Score contribution weight"><span class="text-text-dim">&times; {weight}%</span></Tooltip>
 								<span class="text-text-dim">=</span>
 								<span class="text-text-secondary">{contribution.toFixed(1)} pts</span>
 							</span>
@@ -146,7 +154,7 @@
 				{/each}
 
 				<!-- Separator -->
-				<div class="divider-glow my-1"></div>
+				<Separator class="divider-glow my-1" />
 
 				<!-- Overall -->
 				<div class="rounded-lg p-2.5" data-testid="score-bar-overall">

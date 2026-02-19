@@ -8,9 +8,10 @@
 	import { promptState } from '$lib/stores/prompt.svelte';
 	import { historyState } from '$lib/stores/history.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
-	import { truncateText, formatRelativeTime, normalizeScore, formatScore, formatRate, getScoreBadgeClass } from '$lib/utils/format';
+	import { formatRelativeTime, formatExactTime, normalizeScore, formatScore, formatRate, getScoreBadgeClass, getScoreColorClass } from '$lib/utils/format';
 	import { fetchStats } from '$lib/api/client';
 	import type { OptimizeMetadata, StatsResponse } from '$lib/api/client';
+	import { EntryTitle, Tooltip } from '$lib/components/ui';
 
 	const QUICK_START_TEMPLATES = [
 		{
@@ -73,6 +74,13 @@
 	const STRATEGY_COLORS = ['bg-neon-cyan', 'bg-neon-purple', 'bg-neon-green', 'bg-neon-red'] as const;
 	const STRATEGY_TEXT_COLORS = ['text-neon-cyan', 'text-neon-purple', 'text-neon-green', 'text-neon-red'] as const;
 
+	const SCORE_DIMENSIONS = [
+		{ key: 'average_clarity_score' as const, label: 'CLR', fullLabel: 'Clarity', color: 'bg-neon-cyan/50', textColor: 'text-neon-cyan' },
+		{ key: 'average_specificity_score' as const, label: 'SPC', fullLabel: 'Specificity', color: 'bg-neon-purple/50', textColor: 'text-neon-purple' },
+		{ key: 'average_structure_score' as const, label: 'STR', fullLabel: 'Structure', color: 'bg-neon-green/50', textColor: 'text-neon-green' },
+		{ key: 'average_faithfulness_score' as const, label: 'FTH', fullLabel: 'Faithfulness', color: 'bg-neon-yellow/50', textColor: 'text-neon-yellow' },
+	] as const;
+
 	// Clear stale optimization state when navigating to home
 	// (e.g., after viewing a detail page via logo click)
 	if (!optimizationState.isRunning) {
@@ -99,6 +107,56 @@
 			: []
 	);
 	const strategyTotal = $derived(strategyEntries.reduce((sum, [, count]) => sum + count, 0));
+
+	// Static lookup so all class strings are visible to Tailwind's scanner
+	const SCORE_CARD_STYLES: Record<string, { text: string; border: string; shadow: string }> = {
+		'neon-green': { text: 'text-neon-green', border: 'border-l-neon-green', shadow: 'hover:shadow-[inset_0_0_20px_rgba(34,255,136,0.04)]' },
+		'neon-yellow': { text: 'text-neon-yellow', border: 'border-l-neon-yellow', shadow: 'hover:shadow-[inset_0_0_20px_rgba(251,191,36,0.04)]' },
+		'neon-red': { text: 'text-neon-red', border: 'border-l-neon-red', shadow: 'hover:shadow-[inset_0_0_20px_rgba(255,51,102,0.04)]' },
+	};
+
+	const statsCards = $derived.by(() => {
+		if (!stats) return [];
+		const scoreStyle = SCORE_CARD_STYLES[getScoreColorClass(stats.average_overall_score)];
+		return [
+			{
+				label: 'Total Forged',
+				description: 'Total prompt optimizations performed',
+				value: stats.total_optimizations,
+				labelColor: 'text-neon-cyan',
+				valueColor: 'text-neon-cyan',
+				border: 'border-l-neon-cyan',
+				shadow: 'hover:shadow-[inset_0_0_20px_rgba(0,229,255,0.04)]',
+			},
+			{
+				label: 'Avg Score',
+				description: 'Weighted average quality score (1\u2013100)',
+				value: normalizeScore(stats.average_overall_score) ?? '—',
+				labelColor: scoreStyle.text,
+				valueColor: scoreStyle.text,
+				border: scoreStyle.border,
+				shadow: scoreStyle.shadow,
+			},
+			{
+				label: 'Improved',
+				description: 'Percentage scoring higher than the original',
+				value: formatRate(stats.improvement_rate),
+				labelColor: 'text-neon-green',
+				valueColor: 'text-neon-green',
+				border: 'border-l-neon-green',
+				shadow: 'hover:shadow-[inset_0_0_20px_rgba(34,255,136,0.04)]',
+			},
+			{
+				label: 'Today',
+				description: 'Optimizations completed today',
+				value: stats.optimizations_today,
+				labelColor: 'text-neon-purple',
+				valueColor: 'text-neon-purple',
+				border: 'border-l-neon-purple',
+				shadow: 'hover:shadow-[inset_0_0_20px_rgba(168,85,247,0.04)]',
+			},
+		];
+	});
 
 	function handleOptimize(prompt: string, metadata?: OptimizeMetadata) {
 		promptState.set(prompt);
@@ -184,96 +242,91 @@
 						<button
 							type="button"
 							onclick={() => goto(`/optimize/${entry.id}`)}
-							class="group flex flex-col gap-2 rounded-xl border border-border-subtle bg-bg-card/50 p-3.5 text-left transition-all duration-200 hover:bg-bg-hover hover:border-neon-cyan/15 hover:shadow-[0_0_20px_rgba(0,229,255,0.06)] animate-fade-in"
+							class="card-top-glow group flex flex-col gap-2 rounded-xl border border-border-subtle bg-bg-card/50 p-3.5 text-left transition-all duration-200 hover:bg-bg-hover hover:border-neon-cyan/15 hover:shadow-[0_0_20px_rgba(0,229,255,0.06)] animate-fade-in"
 							style="animation-delay: {200 + i * 75}ms; animation-fill-mode: backwards;"
 						>
-							<p class="text-sm text-text-secondary group-hover:text-text-primary transition-colors line-clamp-2 leading-snug">
-								{truncateText(entry.title || entry.raw_prompt, 80)}
+							<p class="text-sm font-medium text-text-secondary group-hover:text-text-primary transition-colors line-clamp-2 leading-snug">
+								<EntryTitle title={entry.title} maxLength={80} />
 							</p>
+							<div class="h-px w-full bg-gradient-to-r from-transparent via-border-glow to-transparent"></div>
 							<div class="flex items-center gap-2 mt-auto">
 								{#if score !== null}
-									<span class="score-circle score-circle-sm {getScoreBadgeClass(entry.overall_score)}">
+									<Tooltip text="Overall score">
+									<span class="score-circle {getScoreBadgeClass(entry.overall_score)}">
 										{score}
 									</span>
+									</Tooltip>
 								{/if}
 								{#if entry.framework_applied}
-									<span class="text-[10px] text-neon-purple">{entry.framework_applied}</span>
+									<Tooltip text="Strategy: {entry.framework_applied}">
+									<span class="rounded-full bg-neon-purple/8 px-1.5 py-0.5 font-mono text-[10px] text-neon-purple">{entry.framework_applied}</span>
+									</Tooltip>
 								{/if}
 								{#if entry.project && entryArchived}
 									<span class="text-[10px] text-neon-yellow/50">
 										{entry.project} (archived)
 									</span>
 								{/if}
-								<span class="ml-auto text-[10px] text-text-dim">{formatRelativeTime(entry.created_at)}</span>
+								<Tooltip text={formatExactTime(entry.created_at)} class="ml-auto"><span class="text-[10px] text-text-dim">{formatRelativeTime(entry.created_at)}</span></Tooltip>
 							</div>
 						</button>
 					{/each}
 				</div>
 
 				{#if stats}
-					<div class="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4 animate-fade-in" style="animation-delay: 425ms; animation-fill-mode: backwards;">
-						<div class="rounded-xl border border-border-subtle bg-bg-card/50 p-3">
-							<p class="text-[10px] font-medium uppercase tracking-wider text-neon-cyan">Total Forged</p>
-							<p class="mt-1 font-mono text-xl font-semibold text-text-primary">{stats.total_optimizations}</p>
-						</div>
-						<div class="rounded-xl border border-border-subtle bg-bg-card/50 p-3">
-							<p class="text-[10px] font-medium uppercase tracking-wider {getScoreBadgeClass(stats.average_overall_score).split(' ').pop() ?? 'text-text-dim'}">Avg Score</p>
-							<p class="mt-1 font-mono text-xl font-semibold text-text-primary">{normalizeScore(stats.average_overall_score) ?? '—'}</p>
-						</div>
-						<div class="rounded-xl border border-border-subtle bg-bg-card/50 p-3">
-							<p class="text-[10px] font-medium uppercase tracking-wider text-neon-green">Improved</p>
-							<p class="mt-1 font-mono text-xl font-semibold text-text-primary">{formatRate(stats.improvement_rate)}</p>
-						</div>
-						<div class="rounded-xl border border-border-subtle bg-bg-card/50 p-3">
-							<p class="text-[10px] font-medium uppercase tracking-wider text-neon-purple">Today</p>
-							<p class="mt-1 font-mono text-xl font-semibold text-text-primary">{stats.optimizations_today}</p>
-						</div>
+					<div class="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+						{#each statsCards as card, i}
+							<Tooltip text={card.description}>
+								<div
+									class="w-full rounded-xl border border-border-subtle border-l-2 {card.border} bg-bg-card/50 p-3 transition-all duration-200 hover:bg-bg-hover/30 {card.shadow} animate-fade-in"
+									style="animation-delay: {425 + i * 50}ms; animation-fill-mode: backwards;"
+								>
+									<p class="text-[10px] font-medium uppercase tracking-wider {card.labelColor}">{card.label}</p>
+									<p class="mt-1 font-mono text-xl font-semibold {card.valueColor}">{card.value}</p>
+								</div>
+							</Tooltip>
+						{/each}
 					</div>
 
 					{#if stats.average_clarity_score != null || stats.most_common_task_type}
 						<div class="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 animate-fade-in" style="animation-delay: 475ms; animation-fill-mode: backwards;">
-							<div class="flex items-baseline gap-1">
-								<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_clarity_score)}</span>
-								<span class="text-[9px] tracking-wider text-text-dim">CLR</span>
-							</div>
-							<div class="flex items-baseline gap-1">
-								<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_specificity_score)}</span>
-								<span class="text-[9px] tracking-wider text-text-dim">SPC</span>
-							</div>
-							<div class="flex items-baseline gap-1">
-								<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_structure_score)}</span>
-								<span class="text-[9px] tracking-wider text-text-dim">STR</span>
-							</div>
-							<div class="flex items-baseline gap-1">
-								<span class="font-mono text-xs font-semibold text-text-secondary">{formatScore(stats.average_faithfulness_score)}</span>
-								<span class="text-[9px] tracking-wider text-text-dim">FTH</span>
-							</div>
+							{#each SCORE_DIMENSIONS as dim}
+								{@const rawScore = stats[dim.key]}
+								<Tooltip text="{dim.fullLabel}: {formatScore(rawScore)}/10">
+									<div class="flex items-center gap-1.5">
+										<span class="font-mono text-xs font-semibold {dim.textColor}">{formatScore(rawScore)}</span>
+										<span class="text-[9px] tracking-wider text-text-dim">{dim.label}</span>
+										<div class="h-1 w-8 overflow-hidden rounded-full bg-bg-hover">
+											<div class="{dim.color} h-full rounded-full transition-all" style="width: {rawScore != null ? rawScore * 100 : 0}%"></div>
+										</div>
+									</div>
+								</Tooltip>
+							{/each}
 							{#if stats.most_common_task_type}
 								<div class="hidden h-3.5 w-px bg-border-subtle sm:block" aria-hidden="true"></div>
-								<div class="flex items-baseline gap-1.5">
-									<span class="truncate font-mono text-xs font-semibold text-neon-cyan">{stats.most_common_task_type}</span>
-									<span class="text-[9px] tracking-wider text-text-dim">TOP TASK</span>
-								</div>
+								<span class="rounded-full bg-neon-cyan/8 px-2 py-0.5 font-mono text-xs font-semibold text-neon-cyan">{stats.most_common_task_type}</span>
+								<span class="text-[9px] tracking-wider text-text-dim">TOP TASK</span>
 							{/if}
 						</div>
 					{/if}
 
 					{#if strategyEntries.length > 0}
 						<div class="mt-3 animate-fade-in" style="animation-delay: 500ms; animation-fill-mode: backwards;">
-							<div class="flex h-2 overflow-hidden rounded-full">
-								{#each strategyEntries as [, count], i}
+							<div class="flex h-3 gap-px overflow-hidden rounded-full bg-bg-primary/40">
+								{#each strategyEntries as [name, count], i}
 									<div
 										class="{STRATEGY_COLORS[i % STRATEGY_COLORS.length]} opacity-70"
 										style="width: {(count / strategyTotal) * 100}%"
+										title="{name}: {count} ({Math.round((count / strategyTotal) * 100)}%)"
 									></div>
 								{/each}
 							</div>
 							<div class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
 								{#each strategyEntries as [name, count], i}
 									<span class="flex items-center gap-1.5 text-[10px] text-text-secondary">
-										<span class="inline-block h-1.5 w-1.5 rounded-full {STRATEGY_COLORS[i % STRATEGY_COLORS.length]}"></span>
+										<span class="inline-block h-2 w-2 rounded-full {STRATEGY_COLORS[i % STRATEGY_COLORS.length]}"></span>
 										<span class="{STRATEGY_TEXT_COLORS[i % STRATEGY_TEXT_COLORS.length]}">{name}</span>
-										<span class="text-text-dim">{count}</span>
+										<span class="font-mono text-text-dim">{count}</span>
 									</span>
 								{/each}
 							</div>

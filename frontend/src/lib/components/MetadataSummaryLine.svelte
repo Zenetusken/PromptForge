@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { MetadataSegment } from '$lib/utils/format';
 	import { formatComplexityDots } from '$lib/utils/format';
+	import { Tooltip } from './ui';
 
 	let {
 		segments,
@@ -21,6 +22,17 @@
 
 	// Index of the framework segment (first process-type) for the low-confidence asterisk
 	let frameworkIndex = $derived(segments.findIndex(s => s.type === 'process'));
+
+	function getSegmentTooltip(segment: MetadataSegment, i: number): string | null {
+		const hasConfidence = lowConfidence && i === frameworkIndex;
+		const confText = hasConfidence
+			? `Low confidence (${confidenceValue != null ? Math.round(confidenceValue * 100) : '?'}%)`
+			: null;
+		if (segment.tooltip && confText) return `${segment.tooltip} · ${confText}`;
+		if (segment.tooltip) return segment.tooltip;
+		if (confText) return confText;
+		return null;
+	}
 </script>
 
 <div class="metadata-line {sizeClass}" data-testid="metadata-summary-line">
@@ -28,22 +40,29 @@
 		{#if i > 0}
 			<span class="metadata-separator" aria-hidden="true"></span>
 		{/if}
-		<span
-			class="metadata-{segment.type}"
-			title={segment.tooltip ?? undefined}
-		>
-			{segment.value}{#if lowConfidence && i === frameworkIndex}<span class="text-neon-yellow" title="Low confidence ({confidenceValue != null ? Math.round(confidenceValue * 100) : '?'}%)">*</span>{/if}
-		</span>
+		{@const tooltip = getSegmentTooltip(segment, i)}
+		{@const hasConfidence = lowConfidence && i === frameworkIndex}
+		{#if tooltip}
+			<Tooltip text={tooltip}>
+				<span class="metadata-{segment.type}">
+					{segment.value}{#if hasConfidence}<span class="text-neon-yellow">*</span>{/if}
+				</span>
+			</Tooltip>
+		{:else}
+			<span class="metadata-{segment.type}">
+				{segment.value}{#if hasConfidence}<span class="text-neon-yellow">*</span>{/if}
+			</span>
+		{/if}
 	{/each}
 
 	{#if dots}
 		{#if segments.length > 0}
 			<span class="metadata-separator" aria-hidden="true"></span>
 		{/if}
-		<span class="complexity-dots" title="Complexity: {complexity}">
+		<Tooltip text="Complexity: {complexity}"><span class="complexity-dots">
 			{#each Array(dots.total) as _, i}
 				<span class="dot {i < dots.filled ? 'filled' : ''}"></span>
 			{/each}
-		</span>
+		</span></Tooltip>
 	{/if}
 </div>

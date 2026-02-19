@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatRelativeTime, truncateText, normalizeScore, formatScore, getScoreColorClass, getScoreTierLabel, getScoreBadgeClass, formatModelShort, maskApiKey, formatComplexityDots, formatMetadataSummary } from './format';
+import { formatRelativeTime, formatExactTime, truncateText, normalizeScore, formatScore, getScoreColorClass, getScoreTierLabel, getScoreBadgeClass, formatModelShort, maskApiKey, formatComplexityDots, formatMetadataSummary } from './format';
 
 describe('formatRelativeTime', () => {
 	it('returns "just now" for recent timestamps', () => {
@@ -27,6 +27,30 @@ describe('formatRelativeTime', () => {
 		const result = formatRelativeTime(date);
 		// Should be a formatted date like "Jan 14" (not relative)
 		expect(result).not.toContain('ago');
+	});
+});
+
+describe('formatExactTime', () => {
+	it('returns a human-readable date with weekday, month, day, year, and time', () => {
+		// Use a fixed UTC date and check that key components are present
+		const result = formatExactTime('2025-03-15T14:30:00Z');
+		// Should contain the month and day at minimum
+		expect(result).toContain('Mar');
+		expect(result).toContain('15');
+		expect(result).toContain('2025');
+	});
+
+	it('includes the weekday abbreviation', () => {
+		// 2025-03-15 is a Saturday
+		const result = formatExactTime('2025-03-15T14:30:00Z');
+		expect(result).toContain('Sat');
+	});
+
+	it('handles ISO date strings', () => {
+		const result = formatExactTime('2024-12-25T09:00:00.000Z');
+		expect(result).toContain('Dec');
+		expect(result).toContain('25');
+		expect(result).toContain('2024');
 	});
 });
 

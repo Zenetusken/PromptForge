@@ -23,6 +23,21 @@ export function formatRelativeTime(dateStr: string): string {
 }
 
 /**
+ * Format a date string into a full, human-readable timestamp.
+ */
+export function formatExactTime(dateStr: string): string {
+	const date = new Date(dateStr);
+	return date.toLocaleString('en-US', {
+		weekday: 'short',
+		month: 'short',
+		day: 'numeric',
+		year: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit',
+	});
+}
+
+/**
  * Truncate text to a maximum length, adding ellipsis if needed.
  */
 export function truncateText(text: string, maxLength: number): string {

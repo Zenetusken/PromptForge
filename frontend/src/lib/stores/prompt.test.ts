@@ -52,4 +52,44 @@ describe('PromptState', () => {
 		expect(promptState.promptId).toBe('');
 		expect(promptState.projectName).toBe('');
 	});
+
+	it('set() stores metadata fields when provided', () => {
+		promptState.set('text', 'proj', 'pid', {
+			title: 'My Title',
+			tags: ['tag1', 'tag2'],
+			version: 'v3',
+			sourceAction: 'optimize',
+		});
+		expect(promptState.title).toBe('My Title');
+		expect(promptState.tags).toEqual(['tag1', 'tag2']);
+		expect(promptState.version).toBe('v3');
+		expect(promptState.sourceAction).toBe('optimize');
+	});
+
+	it('set() defaults metadata fields when not provided', () => {
+		promptState.set('text', 'proj', 'pid');
+		expect(promptState.title).toBe('');
+		expect(promptState.tags).toEqual([]);
+		expect(promptState.version).toBe('');
+		expect(promptState.sourceAction).toBeNull();
+	});
+
+	it('set() accepts reiterate sourceAction', () => {
+		promptState.set('text', 'proj', 'pid', { sourceAction: 'reiterate' });
+		expect(promptState.sourceAction).toBe('reiterate');
+	});
+
+	it('clear() resets all metadata fields', () => {
+		promptState.set('text', 'proj', 'pid', {
+			title: 'Title',
+			tags: ['tag'],
+			version: 'v1',
+			sourceAction: 'reiterate',
+		});
+		promptState.clear();
+		expect(promptState.title).toBe('');
+		expect(promptState.tags).toEqual([]);
+		expect(promptState.version).toBe('');
+		expect(promptState.sourceAction).toBeNull();
+	});
 });

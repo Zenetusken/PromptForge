@@ -7,6 +7,7 @@
 	import HistoryEmptyState from './HistoryEmptyState.svelte';
 	import ProjectsSidebar from './ProjectsSidebar.svelte';
 	import Icon from './Icon.svelte';
+	import { SidebarTabs, Tooltip } from './ui';
 
 	let { open = $bindable(true) }: { open: boolean } = $props();
 
@@ -43,48 +44,50 @@
 	class:overflow-hidden={!open}
 	data-testid="history-sidebar"
 >
-	<div class="flex h-14 items-center justify-between border-b border-border-subtle px-4">
-		<div class="flex gap-1">
-			<button
-				onclick={() => sidebarState.setTab('history')}
-				class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors {sidebarState.activeTab === 'history' ? 'bg-neon-cyan/8 text-neon-cyan' : 'text-text-dim hover:text-text-secondary'}"
-				data-testid="tab-history"
-			>
-				History
-			</button>
-			<button
-				onclick={() => sidebarState.setTab('projects')}
-				class="rounded-lg px-2.5 py-1 text-xs font-medium transition-colors {sidebarState.activeTab === 'projects' ? 'bg-neon-cyan/8 text-neon-cyan' : 'text-text-dim hover:text-text-secondary'}"
-				data-testid="tab-projects"
-			>
-				Projects
-			</button>
+	<div class="flex h-12 items-center gap-2 border-b border-border-subtle px-3">
+		<div class="flex-1">
+			<SidebarTabs
+				value={sidebarState.activeTab}
+				onValueChange={(v) => sidebarState.setTab(v as 'history' | 'projects')}
+				label="Sidebar navigation"
+				tabs={[
+					{ value: 'history', label: 'History', testid: 'tab-history' },
+					{ value: 'projects', label: 'Projects', testid: 'tab-projects' },
+				]}
+			/>
 		</div>
-		<button
-			onclick={() => (open = false)}
-			class="flex h-7 w-7 items-center justify-center rounded-lg text-text-dim transition-[background-color,color] duration-200 hover:bg-bg-hover hover:text-neon-cyan"
-			aria-label="Close sidebar"
-			data-testid="sidebar-collapse"
-		>
-			<Icon name="sidebar" size={14} />
-		</button>
+		<Tooltip text="Close sidebar" side="left">
+			<button
+				onclick={() => (open = false)}
+				class="flex h-7 w-7 items-center justify-center rounded-lg text-text-dim transition-[background-color,color] duration-200 hover:bg-bg-hover hover:text-neon-cyan"
+				aria-label="Close sidebar"
+				data-testid="sidebar-collapse"
+			>
+				<Icon name="sidebar" size={14} />
+			</button>
+		</Tooltip>
 	</div>
 
 	{#if sidebarState.activeTab === 'history'}
 		<HistorySearch bind:searchQuery bind:showClearConfirm />
 
-		<!-- Clear History Confirmation Dialog -->
+		<!-- Delete All Confirmation Dialog -->
 		{#if showClearConfirm}
-			<div class="animate-fade-in mx-3 mb-2 rounded-xl border border-neon-red/20 bg-neon-red/5 p-3" data-testid="clear-confirm-dialog">
-				<p class="mb-1.5 text-xs font-medium text-neon-red">Clear all history?</p>
-				<p class="mb-3 text-[11px] leading-relaxed text-text-dim">This will permanently delete all optimization records.</p>
+			<div class="animate-fade-in mx-3 mb-2 rounded-xl border border-neon-red/15 bg-bg-card p-3" data-testid="clear-confirm-dialog">
+				<div class="mb-2 flex items-center gap-2">
+					<div class="flex h-6 w-6 items-center justify-center rounded-lg bg-neon-red/10">
+						<Icon name="trash-2" size={12} class="text-neon-red" />
+					</div>
+					<p class="text-xs font-semibold text-neon-red">Delete all history?</p>
+				</div>
+				<p class="mb-3 text-[11px] leading-relaxed text-text-dim">This permanently removes all optimization records. This action cannot be undone.</p>
 				<div class="flex gap-2">
 					<button
 						class="flex-1 rounded-lg bg-neon-red/15 py-1.5 text-xs font-medium text-neon-red transition-colors hover:bg-neon-red/25"
 						onclick={confirmClearHistory}
 						data-testid="confirm-clear-btn"
 					>
-						Confirm
+						Delete All
 					</button>
 					<button
 						class="flex-1 rounded-lg bg-bg-hover py-1.5 text-xs text-text-dim transition-colors hover:bg-bg-hover/80"

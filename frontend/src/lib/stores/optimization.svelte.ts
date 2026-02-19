@@ -83,6 +83,7 @@ export interface OptimizationResultState {
 	input_tokens: number;
 	output_tokens: number;
 	title: string;
+	version: string;
 	project: string;
 	prompt_id: string;
 	project_id: string;
@@ -153,6 +154,7 @@ export function mapToResultState(
 		input_tokens: safeNumber(source.input_tokens),
 		output_tokens: safeNumber(source.output_tokens),
 		title: safeString(source.title),
+		version: safeString(source.version),
 		project: safeString(source.project),
 		prompt_id: safeString(source.prompt_id),
 		project_id: safeString(source.project_id),

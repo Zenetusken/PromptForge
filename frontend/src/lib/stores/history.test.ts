@@ -28,7 +28,7 @@ describe('HistoryState', () => {
         it('fetches history and updates state', async () => {
             vi.mocked(fetchHistory).mockResolvedValue({
                 items: [
-                    { id: '1', created_at: '2024-01-01', raw_prompt: 'test', title: null, task_type: 'coding', complexity: null, project: null, tags: null, overall_score: 0.8, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null },
+                    { id: '1', created_at: '2024-01-01', raw_prompt: 'test', title: null, task_type: 'coding', complexity: null, project: null, tags: null, overall_score: 0.8, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null, version: null },
                 ],
                 total: 1,
                 page: 1,
@@ -45,13 +45,13 @@ describe('HistoryState', () => {
 
         it('deduplicates items when loading page > 1', async () => {
             historyState.items = [
-                { id: '1', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null },
+                { id: '1', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null, version: null },
             ];
 
             vi.mocked(fetchHistory).mockResolvedValue({
                 items: [
-                    { id: '1', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null },
-                    { id: '2', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null },
+                    { id: '1', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null, version: null },
+                    { id: '2', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null, version: null },
                 ],
                 total: 2,
                 page: 2,
@@ -68,8 +68,8 @@ describe('HistoryState', () => {
     describe('removeEntry', () => {
         it('removes item and decrements total on success', async () => {
             historyState.items = [
-                { id: '1', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null },
-                { id: '2', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null },
+                { id: '1', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null, version: null },
+                { id: '2', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null, version: null },
             ];
             historyState.total = 2;
 
@@ -85,7 +85,7 @@ describe('HistoryState', () => {
 
         it('does not remove on failure', async () => {
             historyState.items = [
-                { id: '1', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null },
+                { id: '1', created_at: '', raw_prompt: '', title: null, task_type: null, complexity: null, project: null, tags: null, overall_score: null, framework_applied: null, model_used: null, status: 'completed', error_message: null, prompt_id: null, project_id: null, project_status: null, strategy: null, secondary_frameworks: null, version: null },
             ];
             historyState.total = 1;
 

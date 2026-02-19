@@ -3,6 +3,7 @@
 	import { projectsState } from '$lib/stores/projects.svelte';
 	import Icon from './Icon.svelte';
 	import Dropdown from './Dropdown.svelte';
+	import { Switch, Tooltip } from './ui';
 
 	let {
 		searchQuery = $bindable(''),
@@ -57,21 +58,41 @@
 			)
 			: false
 	);
+
+	let hasFilters = $derived(
+		historyState.availableTaskTypes.length > 0 || projectsState.allItems.length > 0
+	);
+
 </script>
 
 <div class="space-y-2 p-3">
-	<div class="relative">
-		<Icon name="search" size={13} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
-		<input
-			type="text"
-			bind:value={searchQuery}
-			oninput={handleSearch}
-			placeholder="Search..."
-			aria-label="Search optimization history"
-			data-testid="history-search"
-			class="input-field py-2 pl-9 pr-3 text-sm"
-		/>
+	<!-- Search + Delete All -->
+	<div class="flex items-center gap-1.5">
+		<div class="relative flex-1">
+			<Icon name="search" size={13} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-dim" />
+			<input
+				type="text"
+				bind:value={searchQuery}
+				oninput={handleSearch}
+				placeholder="Search..."
+				aria-label="Search optimization history"
+				data-testid="history-search"
+				class="input-field py-2 pl-9 pr-3 text-sm"
+			/>
+		</div>
+		<Tooltip text="Delete all history">
+			<button
+				class="btn-icon-danger"
+				onclick={() => { showClearConfirm = true; }}
+				aria-label="Delete all history"
+				data-testid="clear-history-btn"
+			>
+				<Icon name="trash-2" size={14} />
+			</button>
+		</Tooltip>
 	</div>
+
+	<!-- Sort -->
 	<div class="flex items-center gap-1.5">
 		<Dropdown
 			value={historyState.sortBy}
@@ -80,16 +101,10 @@
 			onchange={(v) => historyState.setSortBy(v)}
 			testid="history-sort"
 		/>
-		<button
-			class="rounded-lg border border-neon-red/15 px-2.5 py-1.5 text-xs text-neon-red/70 transition-colors hover:bg-neon-red/8 hover:text-neon-red"
-			onclick={() => { showClearConfirm = true; }}
-			aria-label="Clear all history"
-			data-testid="clear-history-btn"
-		>
-			Clear
-		</button>
 	</div>
-	{#if historyState.availableTaskTypes.length > 0 || projectsState.allItems.length > 0}
+
+	<!-- Type + Project filters -->
+	{#if hasFilters}
 		<div class="flex items-center gap-1.5">
 			{#if historyState.availableTaskTypes.length > 0}
 				<Dropdown
@@ -111,19 +126,21 @@
 			{/if}
 		</div>
 	{/if}
+
+	<!-- Archived project indicator -->
 	{#if isFilteredByArchivedProject}
-		<div class="rounded-lg bg-neon-yellow/5 border border-neon-yellow/10 px-3 py-1.5 text-[11px] text-neon-yellow/70">
+		<div class="rounded-lg border-l-2 border-l-neon-yellow/30 bg-neon-yellow/5 border border-neon-yellow/10 px-3 py-1.5 text-[11px] text-neon-yellow/70">
 			Showing results for archived project
 		</div>
 	{/if}
-	<label class="flex cursor-pointer items-center gap-2 px-0.5 py-0.5">
-		<input
-			type="checkbox"
+
+	<!-- Hide archived toggle -->
+	<div class="flex items-center justify-between px-0.5">
+		<Tooltip text="Hide results from archived projects"><span class="text-[11px] text-text-dim select-none">Hide archived</span></Tooltip>
+		<Switch
 			checked={historyState.hideArchived}
-			onchange={(e) => historyState.setHideArchived(e.currentTarget.checked)}
-			class="h-3.5 w-3.5 rounded border-border-subtle accent-neon-yellow"
-			data-testid="hide-archived-toggle"
+			onCheckedChange={(v) => historyState.setHideArchived(v)}
+			label="Hide archived projects"
 		/>
-		<span class="text-[11px] text-text-dim select-none">Hide archived</span>
-	</label>
+	</div>
 </div>
