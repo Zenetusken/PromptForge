@@ -146,12 +146,12 @@ Run all tests: `./init.sh test`
 
 ### Frontend (vitest, Svelte 5)
 
-- **Config**: `vite.config.ts` — `test.include: ['src/**/*.test.ts']`
+- **Config**: `vite.config.ts` — `test.include: ['src/**/*.test.ts']`, `environment: 'jsdom'`, `svelteTesting()` plugin
 - **File naming**: Co-located `{module}.test.ts` next to source file
 - **Structure**: `describe`/`it` blocks. Use `vi.mock()` for module mocking, `vi.fn()` for stubs.
 - **Store tests**: Import the store, set state in `beforeEach`, assert reactive properties.
+- **Component tests**: Use `@testing-library/svelte` (`render`, `screen`, `fireEvent`). Clear `document.body` in `beforeEach`. Add `data-testid` attributes for querying.
 - **Browser APIs**: Stub `sessionStorage`/`localStorage` with in-memory objects when testing in Node.
-- **No component rendering tests**: Current tests cover stores, utils, and API client logic only.
 
 ## Linting
 
