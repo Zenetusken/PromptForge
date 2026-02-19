@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Data and logs
+data/
+logs/
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+backend/venv
+backend/.venv
+
+# Node
+frontend/node_modules
+frontend/.svelte-kit
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment
+.env
+
+# Documentation (not needed in images)
+*.md
+LICENSE
+CONTRIBUTING.md
+ARCHITECTURE.md
+
+# Build artifacts
+feature_list.json
+agent_scratchpad*.json
+orchestrator.log
