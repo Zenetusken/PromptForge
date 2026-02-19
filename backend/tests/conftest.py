@@ -4,8 +4,16 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app import config
 from app.database import Base, get_db
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def _high_rate_limit(monkeypatch):
+    """Disable rate limiting for all tests unless explicitly overridden."""
+    monkeypatch.setattr(config, "RATE_LIMIT_RPM", 100_000)
+    monkeypatch.setattr(config, "RATE_LIMIT_OPTIMIZE_RPM", 100_000)
 
 
 @pytest.fixture()

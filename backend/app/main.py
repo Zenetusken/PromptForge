@@ -8,6 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import config
 from app.database import init_db
+from app.middleware.audit import AuditMiddleware
+from app.middleware.auth import AuthMiddleware
+from app.middleware.csrf import CSRFMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import health, history, optimize, projects, providers
 
 logging.basicConfig(
@@ -46,14 +51,42 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# ---------------------------------------------------------------------------
+# Middleware stack (outermost → innermost)
+# Order: SecurityHeaders → CORS → CSRF → RateLimit → Auth → Audit → Router
+# ---------------------------------------------------------------------------
+
+# Audit (innermost — logs after route handling)
+app.add_middleware(AuditMiddleware)
+
+# Auth
+app.add_middleware(AuthMiddleware)
+
+# Rate limiting
+app.add_middleware(RateLimitMiddleware)
+
+# CSRF — Origin-based validation for state-changing requests
+app.add_middleware(CSRFMiddleware)
+
+# CORS — explicit methods and headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in config.FRONTEND_URL.split(",") if o.strip()],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-LLM-API-Key",
+        "X-LLM-Model",
+        "X-LLM-Provider",
+        "X-Confirm-Delete",
+        "If-Unmodified-Since",
+    ],
 )
+
+# Security headers (outermost — always applied)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Include routers
 app.include_router(health.router)

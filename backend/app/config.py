@@ -24,9 +24,14 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("BACKEND_PORT", "8000"))
 
 # Application
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 APP_TITLE = "PromptForge API"
 APP_DESCRIPTION = "AI-powered prompt optimization pipeline"
+
+# Security
+AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")  # empty = auth disabled
+RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "60"))
+RATE_LIMIT_OPTIMIZE_RPM = int(os.getenv("RATE_LIMIT_OPTIMIZE_RPM", "10"))
 
 # LLM Provider
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")  # auto-detect when empty

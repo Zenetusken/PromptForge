@@ -28,6 +28,7 @@ from app.repositories.project import (
     ensure_prompt_in_project,
 )
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
+from app.middleware.sanitize import sanitize_text
 from app.services.pipeline import PipelineComplete, run_pipeline_streaming
 
 logger = logging.getLogger(__name__)
@@ -178,13 +179,16 @@ async def optimize_prompt(
         except (ValueError, RuntimeError, ImportError, ProviderError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Sanitize input (warn-only — never blocks)
+    sanitized_prompt, _sanitize_warnings = sanitize_text(request.prompt)
+
     start_time = time.time()
     optimization_id = str(uuid.uuid4())
 
     # Create the initial optimization record
     optimization = Optimization(
         id=optimization_id,
-        raw_prompt=request.prompt,
+        raw_prompt=sanitized_prompt,
         status=OptimizationStatus.RUNNING,
         project=request.project,
         tags=json.dumps(request.tags) if request.tags else None,
@@ -212,7 +216,7 @@ async def optimize_prompt(
         if not request.prompt_id and project_id_from_name:
             if not await _is_project_archived(db, project_id_from_name):
                 auto_prompt_id = await ensure_prompt_in_project(
-                    db, project_id_from_name, request.prompt,
+                    db, project_id_from_name, sanitized_prompt,
                 )
                 if auto_prompt_id:
                     optimization.prompt_id = auto_prompt_id
@@ -227,7 +231,7 @@ async def optimize_prompt(
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id
     return _create_streaming_response(
-        optimization_id, request.prompt, start_time, metadata,
+        optimization_id, sanitized_prompt, start_time, metadata,
         llm_provider=llm_provider, strategy_override=request.strategy,
         secondary_frameworks_override=request.secondary_frameworks,
     )

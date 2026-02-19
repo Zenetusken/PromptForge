@@ -36,18 +36,29 @@ LOGS_DIR="$SCRIPT_DIR/logs"
 BACKEND_PID_FILE="$LOGS_DIR/backend.pid"
 FRONTEND_PID_FILE="$LOGS_DIR/frontend.pid"
 
-# read_env_ports — update BACKEND_PORT from .env if set.
-read_env_ports() {
-    if [ -f "$SCRIPT_DIR/.env" ]; then
-        local port
-        port=$(grep -E '^\s*BACKEND_PORT\s*=' "$SCRIPT_DIR/.env" 2>/dev/null \
-            | tail -1 | cut -d= -f2 | tr -d '[:space:]"'"'" || true)
-        [ -n "$port" ] && BACKEND_PORT="$port"
-    fi
+# Security / rate-limit defaults (overridden by .env below)
+AUTH_TOKEN=""
+RATE_LIMIT_RPM=60
+RATE_LIMIT_OPTIMIZE_RPM=10
+
+# read_env_config — load BACKEND_PORT and security vars from .env if set.
+_read_env_var() {
+    # Usage: _read_env_var VARNAME — prints the value from .env or empty string
+    grep -E "^\s*$1\s*=" "$SCRIPT_DIR/.env" 2>/dev/null \
+        | tail -1 | cut -d= -f2 | tr -d '[:space:]"'"'" || true
+}
+
+read_env_config() {
+    [ -f "$SCRIPT_DIR/.env" ] || return
+    local val
+    val=$(_read_env_var BACKEND_PORT);        [ -n "$val" ] && BACKEND_PORT="$val"
+    val=$(_read_env_var AUTH_TOKEN);           [ -n "$val" ] && AUTH_TOKEN="$val"
+    val=$(_read_env_var RATE_LIMIT_RPM);      [ -n "$val" ] && RATE_LIMIT_RPM="$val"
+    val=$(_read_env_var RATE_LIMIT_OPTIMIZE_RPM); [ -n "$val" ] && RATE_LIMIT_OPTIMIZE_RPM="$val"
 }
 
 # Read once at startup (covers stop/status/mcp without do_setup)
-read_env_ports
+read_env_config
 
 # ─── Portable Helpers ─────────────────────────────────────────────
 
@@ -255,8 +266,8 @@ do_setup() {
         success ".env file already exists"
     fi
 
-    # Re-read ports in case .env was just created
-    read_env_ports
+    # Re-read config in case .env was just created
+    read_env_config
 
     check_provider_config
 }
@@ -296,6 +307,7 @@ do_start() {
     log "Starting frontend dev server on port $FRONTEND_PORT..."
     cd "$SCRIPT_DIR/frontend"
 
+    VITE_AUTH_TOKEN="$AUTH_TOKEN" BACKEND_PORT="$BACKEND_PORT" \
     nohup npm run dev -- --host 0.0.0.0 --port "$FRONTEND_PORT" \
         > "$LOGS_DIR/frontend.log" 2>&1 &
 
@@ -343,6 +355,13 @@ except Exception: pass
     if [ -n "$provider_info" ]; then
         echo -e "  LLM Provider:   ${GREEN}$provider_info${NC}"
     fi
+    echo ""
+    if [ -n "$AUTH_TOKEN" ]; then
+        echo -e "  Auth:           ${GREEN}enabled${NC} (Bearer token)"
+    else
+        echo -e "  Auth:           ${YELLOW}disabled${NC} (set AUTH_TOKEN to enable)"
+    fi
+    echo -e "  Rate limits:    ${GREEN}${RATE_LIMIT_RPM} rpm${NC} general, ${GREEN}${RATE_LIMIT_OPTIMIZE_RPM} rpm${NC} optimize"
     echo ""
     echo -e "  Backend PID:    $backend_pid"
     echo -e "  Frontend PID:   $frontend_pid"
@@ -413,6 +432,15 @@ do_status() {
         fi
     fi
     echo -e "  Frontend:  $frontend_status"
+
+    # Security config
+    echo ""
+    if [ -n "$AUTH_TOKEN" ]; then
+        echo -e "  Auth:          ${GREEN}enabled${NC} (Bearer token)"
+    else
+        echo -e "  Auth:          ${YELLOW}disabled${NC}"
+    fi
+    echo -e "  Rate limits:   ${RATE_LIMIT_RPM} rpm general, ${RATE_LIMIT_OPTIMIZE_RPM} rpm optimize"
 
     # Health details (single curl call)
     echo ""
@@ -530,9 +558,12 @@ do_help() {
     echo "  mcp         Print MCP server config snippet for Claude Code"
     echo "  help        Show this message"
     echo ""
-    echo "Environment:"
-    echo "  BACKEND_PORT   Backend port (default: 8000, set in .env)"
-    echo "  LLM_PROVIDER   LLM provider (auto-detect when empty)"
+    echo "Environment (set in .env):"
+    echo "  BACKEND_PORT              Backend port (default: 8000)"
+    echo "  AUTH_TOKEN                Bearer token for API auth (empty = disabled)"
+    echo "  RATE_LIMIT_RPM            General rate limit (default: 60)"
+    echo "  RATE_LIMIT_OPTIMIZE_RPM   Optimize endpoint limit (default: 10)"
+    echo "  LLM_PROVIDER              LLM provider (auto-detect when empty)"
     echo "  See .env.example for all options."
 }
 

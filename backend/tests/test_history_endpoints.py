@@ -138,17 +138,30 @@ class TestHistoryDeletion:
     async def test_clear_all(self, client):
         await _seed(client, id="a")
         await _seed(client, id="b")
-        response = await client.delete("/api/history/all")
+        response = await client.delete(
+            "/api/history/all",
+            headers={"X-Confirm-Delete": "yes"},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["deleted_count"] == 2
 
     @pytest.mark.asyncio
     async def test_clear_all_empty(self, client):
-        response = await client.delete("/api/history/all")
+        response = await client.delete(
+            "/api/history/all",
+            headers={"X-Confirm-Delete": "yes"},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["deleted_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_clear_all_requires_confirm_header(self, client):
+        await _seed(client, id="a")
+        response = await client.delete("/api/history/all")
+        assert response.status_code == 400
+        assert "X-Confirm-Delete" in response.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

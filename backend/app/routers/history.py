@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.converters import optimization_to_summary_response
@@ -63,8 +63,17 @@ async def get_history(
 @router.delete("/api/history/all")
 async def clear_all_history(
     db: AsyncSession = Depends(get_db),
+    x_confirm_delete: str | None = Header(None, alias="X-Confirm-Delete"),
 ):
-    """Delete all optimization records from the database."""
+    """Delete all optimization records from the database.
+
+    Requires ``X-Confirm-Delete: yes`` header as a safety guard.
+    """
+    if x_confirm_delete != "yes":
+        raise HTTPException(
+            status_code=400,
+            detail="Bulk delete requires X-Confirm-Delete: yes header",
+        )
     repo = OptimizationRepository(db)
     count = await repo.clear_all()
 
