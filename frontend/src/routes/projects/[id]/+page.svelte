@@ -14,8 +14,9 @@
 		PromptVersionListResponse,
 		ForgeResultListResponse,
 	} from '$lib/api/client';
-	import { fetchPromptVersions, fetchPromptForges } from '$lib/api/client';
+	import { fetchPromptVersions, fetchPromptForges, deleteOptimization } from '$lib/api/client';
 	import Icon from '$lib/components/Icon.svelte';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import { navigationState } from '$lib/stores/navigation.svelte';
 	import { exportProjectAsZip, type ProjectExportProgress } from '$lib/utils/exportProject';
@@ -62,8 +63,12 @@
 	const MAX_VISIBLE_FILTER_TAGS = 6;
 
 	// Delete confirmation
-	let confirmDeletePromptId: string | null = $state(null);
+	let deletePromptModalId: string | null = $state(null);
 	let confirmDeleteProject = $state(false);
+
+	// Per-iteration delete
+	let confirmDeleteForgeId: string | null = $state(null);
+	let deletingForgeId: string | null = $state(null);
 
 	// Export state
 	let isExporting = $state(false);
@@ -217,7 +222,7 @@
 	}
 
 	async function handleDeletePrompt(promptId: string) {
-		confirmDeletePromptId = null;
+		deletePromptModalId = null;
 		const success = await projectsState.removePrompt(project.id, promptId);
 		if (success) {
 			syncProject({ ...project, prompts: project.prompts.filter((p) => p.id !== promptId) });
@@ -225,6 +230,63 @@
 			delete versionData[promptId];
 			delete selectedForgeId[promptId];
 			delete expandedIterations[promptId];
+			toastState.show('Prompt card deleted', 'success');
+			historyState.loadHistory();
+		} else {
+			toastState.show('Failed to delete prompt card', 'error');
+		}
+	}
+
+	async function handleDeleteForge(promptId: string, forgeId: string) {
+		confirmDeleteForgeId = null;
+		deletingForgeId = forgeId;
+		try {
+			const success = await deleteOptimization(forgeId);
+			if (success) {
+				// Update local forge data
+				const data = forgeData[promptId];
+				const remainingItems = data
+					? data.items.filter((f) => f.id !== forgeId)
+					: [];
+				if (data) {
+					forgeData[promptId] = {
+						...data,
+						items: remainingItems,
+						total: data.total - 1,
+					};
+				}
+				// Update prompt forge count and latest_forge in local state
+				syncProject({
+					...project,
+					prompts: project.prompts.map((p) => {
+						if (p.id !== promptId) return p;
+						const newCount = Math.max(0, p.forge_count - 1);
+						// If deleted forge was the latest_forge, fall back to next remaining
+						let latestForge = p.latest_forge;
+						if (latestForge?.id === forgeId) {
+							const next = remainingItems[0];
+							latestForge = next
+								? { id: next.id, title: next.title, task_type: next.task_type, complexity: next.complexity, framework_applied: next.framework_applied, overall_score: next.overall_score, is_improvement: next.is_improvement, tags: next.tags }
+								: null;
+						}
+						return { ...p, forge_count: newCount, latest_forge: latestForge };
+					}),
+				});
+				// Clear selected forge if it was the deleted one
+				if (selectedForgeId[promptId] === forgeId) {
+					if (remainingItems.length > 0) {
+						selectedForgeId = { ...selectedForgeId, [promptId]: remainingItems[0].id };
+					} else {
+						delete selectedForgeId[promptId];
+					}
+				}
+				toastState.show('Forge iteration deleted', 'success');
+				historyState.loadHistory();
+			} else {
+				toastState.show('Failed to delete iteration', 'error');
+			}
+		} finally {
+			deletingForgeId = null;
 		}
 	}
 
@@ -943,28 +1005,64 @@
 											<div class="flex flex-col gap-1">
 												{#each visibleForges as forge, i (forge.id)}
 													{@const isSelected = activeForge?.id === forge.id}
-													<button
-														onclick={() => selectForge(prompt.id, forge.id)}
-														class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] transition-all duration-150
-															{isSelected
-																? 'bg-neon-cyan/10 ring-1 ring-neon-cyan/30 text-text-primary'
-																: 'bg-bg-secondary/30 text-text-secondary hover:bg-bg-secondary/60'}"
-														data-testid="forge-iteration"
-													>
-														{#if forge.overall_score != null}
-															<span class="score-circle score-circle-sm shrink-0 {getScoreBadgeClass(forge.overall_score)}">
-																{normalizeScore(forge.overall_score)}
+													{@const isConfirmingDelete = confirmDeleteForgeId === forge.id}
+													{@const isDeleting = deletingForgeId === forge.id}
+													<div class="group/iter relative flex items-center gap-0.5">
+														<button
+															onclick={() => selectForge(prompt.id, forge.id)}
+															class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[11px] transition-all duration-150
+																{isSelected
+																	? 'bg-neon-cyan/10 ring-1 ring-neon-cyan/30 text-text-primary'
+																	: 'bg-bg-secondary/30 text-text-secondary hover:bg-bg-secondary/60'}"
+															data-testid="forge-iteration"
+														>
+															{#if forge.overall_score != null}
+																<span class="score-circle score-circle-sm shrink-0 {getScoreBadgeClass(forge.overall_score)}">
+																	{normalizeScore(forge.overall_score)}
+																</span>
+															{:else}
+																<span class="score-circle score-circle-sm shrink-0 bg-bg-hover text-text-dim">-</span>
+															{/if}
+															<span class="truncate">
+																{forge.title ?? forge.framework_applied ?? `Forge #${timeline.length - i}`}
 															</span>
-														{:else}
-															<span class="score-circle score-circle-sm shrink-0 bg-bg-hover text-text-dim">-</span>
+															{#if isSelected}
+																<Icon name="chevron-right" size={10} class="ml-auto shrink-0 text-neon-cyan/60" />
+															{/if}
+														</button>
+														{#if !isArchived}
+															{#if isDeleting}
+																<span class="shrink-0 p-1">
+																	<Icon name="spinner" size={12} class="animate-spin text-text-dim" />
+																</span>
+															{:else if isConfirmingDelete}
+																<button
+																	onclick={() => handleDeleteForge(prompt.id, forge.id)}
+																	class="shrink-0 rounded p-1 text-neon-green transition-colors hover:bg-neon-green/10"
+																	aria-label="Confirm delete iteration"
+																	data-testid="confirm-delete-forge"
+																>
+																	<Icon name="check" size={12} />
+																</button>
+																<button
+																	onclick={() => { confirmDeleteForgeId = null; }}
+																	class="shrink-0 rounded p-1 text-text-dim transition-colors hover:bg-bg-hover"
+																	aria-label="Cancel delete iteration"
+																>
+																	<Icon name="x" size={12} />
+																</button>
+															{:else}
+																<button
+																	onclick={() => { confirmDeleteForgeId = forge.id; }}
+																	class="shrink-0 rounded p-1 text-text-dim opacity-0 transition-all hover:text-neon-red group-hover/iter:opacity-100"
+																	aria-label="Delete iteration"
+																	data-testid="delete-forge-btn"
+																>
+																	<Icon name="x" size={12} />
+																</button>
+															{/if}
 														{/if}
-														<span class="truncate">
-															{forge.title ?? forge.framework_applied ?? `Forge #${timeline.length - i}`}
-														</span>
-														{#if isSelected}
-															<Icon name="chevron-right" size={10} class="ml-auto shrink-0 text-neon-cyan/60" />
-														{/if}
-													</button>
+													</div>
 												{/each}
 												{#if !isExpanded && hiddenCount > 0}
 													<button
@@ -1052,30 +1150,14 @@
 												<Icon name="edit" size={10} />
 												Edit
 											</button>
-											{#if confirmDeletePromptId === prompt.id}
-												<button
-													onclick={() => handleDeletePrompt(prompt.id)}
-													class="rounded-lg bg-neon-red/15 px-2 py-1 text-[10px] text-neon-red transition-colors hover:bg-neon-red/25"
-													data-testid="confirm-delete-prompt"
-												>
-													Delete?
-												</button>
-												<button
-													onclick={() => { confirmDeletePromptId = null; }}
-													class="rounded-lg bg-bg-hover px-2 py-1 text-[10px] text-text-dim transition-colors hover:bg-bg-hover/80"
-												>
-													No
-												</button>
-											{:else}
-												<button
-													onclick={() => { confirmDeletePromptId = prompt.id; }}
-													class="inline-flex items-center rounded-lg bg-neon-red/8 px-2 py-1 text-[10px] text-neon-red transition-colors hover:bg-neon-red/15"
-													aria-label="Delete prompt"
-													data-testid="delete-prompt-btn"
-												>
-													<Icon name="x" size={10} />
-												</button>
-											{/if}
+											<button
+												onclick={() => { deletePromptModalId = prompt.id; }}
+												class="inline-flex items-center gap-1 rounded-lg bg-neon-red/8 px-2 py-1 text-[10px] text-neon-red transition-colors hover:bg-neon-red/15"
+												aria-label="Delete prompt card"
+												data-testid="delete-prompt-btn"
+											>
+												<Icon name="trash-2" size={10} />
+											</button>
 										</div>
 									{/if}
 								</div>
@@ -1121,3 +1203,19 @@
 		{/if}
 	</div>
 </div>
+
+<!-- Delete prompt card confirmation modal -->
+{#if deletePromptModalId}
+	{@const deletePrompt = project.prompts.find((p) => p.id === deletePromptModalId)}
+	<ConfirmModal
+		open={true}
+		title="Delete prompt card"
+		message={deletePrompt
+			? `This will permanently delete this prompt and ${deletePrompt.forge_count > 0 ? `all ${deletePrompt.forge_count} forge iteration${deletePrompt.forge_count === 1 ? '' : 's'}` : 'its data'}. This action cannot be undone.`
+			: ''}
+		confirmLabel="Delete"
+		variant="danger"
+		onconfirm={() => { if (deletePromptModalId) handleDeletePrompt(deletePromptModalId); }}
+		oncancel={() => { deletePromptModalId = null; }}
+	/>
+{/if}

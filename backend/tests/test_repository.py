@@ -14,7 +14,7 @@ from app.repositories.optimization import (
     OptimizationRepository,
     Pagination,
 )
-from app.repositories.project import ensure_prompt_in_project
+from app.repositories.project import ProjectRepository, ensure_prompt_in_project
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +570,30 @@ class TestEnsurePromptInProject:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_fuzzy_whitespace_match(self, db_session):
+        """Trailing/leading whitespace and extra internal spaces should match."""
+        proj = await _seed_project(db_session, "proj")
+        id1 = await ensure_prompt_in_project(db_session, proj.id, "hello   world")
+        id2 = await ensure_prompt_in_project(db_session, proj.id, "hello world")
+        assert id1 == id2
+
+    @pytest.mark.asyncio
+    async def test_fuzzy_whitespace_newlines(self, db_session):
+        """Content with newlines should match collapsed version."""
+        proj = await _seed_project(db_session, "proj")
+        id1 = await ensure_prompt_in_project(db_session, proj.id, "line one\nline two")
+        id2 = await ensure_prompt_in_project(db_session, proj.id, "line one line two")
+        assert id1 == id2
+
+    @pytest.mark.asyncio
+    async def test_fuzzy_whitespace_trailing(self, db_session):
+        """Trailing whitespace should match stripped version."""
+        proj = await _seed_project(db_session, "proj")
+        id1 = await ensure_prompt_in_project(db_session, proj.id, "hello world  ")
+        id2 = await ensure_prompt_in_project(db_session, proj.id, "hello world")
+        assert id1 == id2
+
+    @pytest.mark.asyncio
     async def test_order_index_increments(self, db_session):
         proj = await _seed_project(db_session, "proj")
         id1 = await ensure_prompt_in_project(db_session, proj.id, "first")
@@ -651,3 +675,64 @@ class TestGetLatestForgeMetadata:
         assert prompt.id in result
         assert result[prompt.id].id == "leg-forge"
         assert result[prompt.id].framework_applied == "persona-assignment"
+
+
+# ---------------------------------------------------------------------------
+# TestDeletePrompt — cascade-delete linked optimizations
+# ---------------------------------------------------------------------------
+
+
+class TestDeletePrompt:
+    @pytest.mark.asyncio
+    async def test_cascade_deletes_linked_optimizations(self, db_session):
+        """Deleting a prompt should also delete all linked optimizations."""
+        repo = ProjectRepository(db_session)
+        opt_repo = OptimizationRepository(db_session)
+        proj = await _seed_project(db_session)
+        prompt = await _seed_prompt(db_session, proj, "cascade test")
+        await _seed(db_session, id="linked-opt-1", prompt_id=prompt.id)
+        await _seed(db_session, id="linked-opt-2", prompt_id=prompt.id)
+
+        await repo.delete_prompt(prompt)
+
+        assert await opt_repo.get_by_id("linked-opt-1") is None
+        assert await opt_repo.get_by_id("linked-opt-2") is None
+
+    @pytest.mark.asyncio
+    async def test_unlinked_optimizations_unaffected(self, db_session):
+        """Optimizations linked to a different prompt should survive."""
+        repo = ProjectRepository(db_session)
+        opt_repo = OptimizationRepository(db_session)
+        proj = await _seed_project(db_session)
+        prompt_a = await _seed_prompt(db_session, proj, "prompt A")
+        prompt_b = await _seed_prompt(db_session, proj, "prompt B")
+        await _seed(db_session, id="opt-a", prompt_id=prompt_a.id)
+        await _seed(db_session, id="opt-b", prompt_id=prompt_b.id)
+
+        await repo.delete_prompt(prompt_a)
+
+        assert await opt_repo.get_by_id("opt-a") is None
+        assert await opt_repo.get_by_id("opt-b") is not None
+
+    @pytest.mark.asyncio
+    async def test_returns_deleted_count(self, db_session):
+        """Return value should match the count of deleted optimizations."""
+        repo = ProjectRepository(db_session)
+        proj = await _seed_project(db_session)
+        prompt = await _seed_prompt(db_session, proj, "count test")
+        await _seed(db_session, id="c1", prompt_id=prompt.id)
+        await _seed(db_session, id="c2", prompt_id=prompt.id)
+        await _seed(db_session, id="c3", prompt_id=prompt.id)
+
+        deleted = await repo.delete_prompt(prompt)
+        assert deleted == 3
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_linked(self, db_session):
+        """A prompt with no linked optimizations should return 0."""
+        repo = ProjectRepository(db_session)
+        proj = await _seed_project(db_session)
+        prompt = await _seed_prompt(db_session, proj, "no links")
+
+        deleted = await repo.delete_prompt(prompt)
+        assert deleted == 0

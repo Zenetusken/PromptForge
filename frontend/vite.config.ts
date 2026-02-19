@@ -1,26 +1,31 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
+const backendPort = process.env['BACKEND_PORT'] || '8000';
+const backendTarget = `http://localhost:${backendPort}`;
+
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [tailwindcss(), sveltekit(), svelteTesting()],
 	server: {
 		proxy: {
 			'/api': {
-				target: 'http://localhost:8000',
+				target: backendTarget,
 				changeOrigin: true
 			},
 			'/docs': {
-				target: 'http://localhost:8000',
+				target: backendTarget,
 				changeOrigin: true
 			},
 			'/openapi.json': {
-				target: 'http://localhost:8000',
+				target: backendTarget,
 				changeOrigin: true
 			}
 		}
 	},
 	test: {
-		include: ['src/**/*.test.ts']
+		include: ['src/**/*.test.ts'],
+		environment: 'jsdom'
 	}
 });

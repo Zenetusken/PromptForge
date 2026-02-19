@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -75,6 +75,7 @@ async def ensure_prompt_in_project(
     """
     if not project_id or not content:
         return None
+    # Fast path: exact match
     stmt = select(Prompt.id).where(
         Prompt.project_id == project_id,
         Prompt.content == content,
@@ -83,6 +84,16 @@ async def ensure_prompt_in_project(
     existing_id = result.scalar_one_or_none()
     if existing_id:
         return existing_id
+    # Fuzzy path: strip edges + collapse internal whitespace
+    normalized = " ".join(content.split())
+    all_stmt = select(Prompt.id, Prompt.content).where(
+        Prompt.project_id == project_id,
+    )
+    all_result = await session.execute(all_stmt)
+    for pid, pcontent in all_result.all():
+        if " ".join(pcontent.split()) == normalized:
+            return pid
+    # No match — create new prompt
     max_stmt = select(func.max(Prompt.order_index)).where(
         Prompt.project_id == project_id,
     )
@@ -264,21 +275,23 @@ class ProjectRepository:
         await self._session.flush()
         return prompt
 
-    async def delete_prompt(self, prompt: Prompt) -> None:
-        # Log FK nullification: ON DELETE SET NULL will sever optimization→prompt links
-        count_stmt = select(func.count(Optimization.id)).where(
-            Optimization.prompt_id == prompt.id
-        )
-        result = await self._session.execute(count_stmt)
-        linked_count = result.scalar() or 0
-        if linked_count > 0:
+    async def delete_prompt(self, prompt: Prompt) -> int:
+        """Delete a prompt and cascade-delete all linked optimizations.
+
+        Returns the number of optimizations that were deleted.
+        """
+        del_stmt = delete(Optimization).where(Optimization.prompt_id == prompt.id)
+        result = await self._session.execute(del_stmt)
+        deleted_count = result.rowcount or 0
+        if deleted_count > 0:
             logger.info(
-                "Deleting prompt %s will SET NULL on %d linked optimization(s)",
+                "Deleted %d optimization(s) linked to prompt %s",
+                deleted_count,
                 prompt.id,
-                linked_count,
             )
         await self._session.delete(prompt)
         await self._session.flush()
+        return deleted_count
 
     async def reorder_prompts(
         self, project_id: str, prompt_ids: list[str],

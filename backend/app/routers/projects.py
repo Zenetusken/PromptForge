@@ -455,5 +455,5 @@ async def delete_prompt(
         raise HTTPException(status_code=404, detail="Prompt not found")
     await _get_mutable_project(repo, project_id)
 
-    await repo.delete_prompt(prompt)
-    return {"message": "Prompt deleted", "id": prompt_id}
+    deleted_optimizations = await repo.delete_prompt(prompt)
+    return {"message": "Prompt deleted", "id": prompt_id, "deleted_optimizations": deleted_optimizations}
