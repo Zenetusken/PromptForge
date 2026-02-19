@@ -37,6 +37,8 @@ vi.mock('$lib/stores/optimization.svelte', () => ({
 		strategy: '',
 		strategy_reasoning: '',
 		strategy_confidence: 0,
+		secondary_frameworks: [],
+		created_at: source.created_at ?? '',
 	})),
 }));
 

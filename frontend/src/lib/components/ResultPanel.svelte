@@ -1,30 +1,14 @@
 <script lang="ts">
 	import DiffView from './DiffView.svelte';
-	import ScorePanel from './ScorePanel.svelte';
 	import CopyButton from './CopyButton.svelte';
 	import ResultMetadata from './ResultMetadata.svelte';
 	import ResultActions from './ResultActions.svelte';
-	import ResultAnalysis from './ResultAnalysis.svelte';
-	import ResultChanges from './ResultChanges.svelte';
-	import Icon from './Icon.svelte';
+	import PipelineNarrative from './PipelineNarrative.svelte';
 	import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
-	import { normalizeScore } from '$lib/utils/format';
 
 	let { result }: { result: OptimizationResultState } = $props();
 
 	let activeTab = $state<'optimized' | 'diff' | 'original'>('optimized');
-
-	let hasScores = $derived(
-		result.scores.clarity > 0 ||
-		result.scores.specificity > 0 ||
-		result.scores.structure > 0 ||
-		result.scores.faithfulness > 0 ||
-		result.scores.overall > 0
-	);
-
-	let showLowScoreGuidance = $derived(
-		hasScores && (!result.is_improvement || (normalizeScore(result.scores.overall) ?? 0) < 50)
-	);
 
 	const tabs = [
 		{ key: 'optimized' as const, label: 'Optimized', color: 'neon-cyan' },
@@ -78,30 +62,5 @@
 	</div>
 
 	<ResultActions {result} />
-	<ResultAnalysis {result} />
-	<ResultChanges {result} />
-
-	<!-- Scores -->
-	{#if hasScores}
-		<div class="border-t border-border-subtle p-5">
-			<ScorePanel scores={result.scores} />
-		</div>
-	{/if}
-
-	<!-- Low score / no improvement guidance -->
-	{#if showLowScoreGuidance}
-		<div class="border-t border-border-subtle px-5 py-4" data-testid="low-score-guidance">
-			<div class="flex items-start gap-3 rounded-xl border border-neon-yellow/15 bg-neon-yellow/5 p-3.5">
-				<Icon name="info" size={16} class="mt-0.5 shrink-0 text-neon-yellow" />
-				<div class="text-sm leading-relaxed text-text-secondary">
-					{#if !result.is_improvement}
-						<span class="font-medium text-neon-yellow">No improvement detected.</span>
-					{:else}
-						<span class="font-medium text-neon-yellow">Score is below average.</span>
-					{/if}
-					Try selecting a different strategy, making your prompt more specific, or adding context before re-forging.
-				</div>
-			</div>
-		</div>
-	{/if}
+	<PipelineNarrative {result} />
 </div>

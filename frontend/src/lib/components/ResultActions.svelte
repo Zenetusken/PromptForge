@@ -28,7 +28,7 @@
 	}
 
 	function handleEditReforge() {
-		promptState.set(result.optimized);
+		promptState.set(result.optimized, result.project || '', result.prompt_id || '');
 		if (window.location.pathname !== '/') {
 			goto('/');
 		} else {

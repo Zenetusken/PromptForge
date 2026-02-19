@@ -83,7 +83,6 @@
 		if (selectedSecondary.length > 0) meta.secondary_frameworks = selectedSecondary;
 		if (promptId) {
 			meta.prompt_id = promptId;
-			promptId = '';  // consume once
 		}
 		return Object.keys(meta).length > 0 ? meta : undefined;
 	}

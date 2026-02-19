@@ -84,6 +84,7 @@ export interface OptimizationResultState {
 	output_tokens: number;
 	title: string;
 	project: string;
+	prompt_id: string;
 	project_id: string;
 	project_status: string;
 	tags: string[];
@@ -91,6 +92,7 @@ export interface OptimizationResultState {
 	strategy_reasoning: string;
 	strategy_confidence: number;
 	secondary_frameworks: string[];
+	created_at: string;
 }
 
 /** Translate raw error messages to user-friendly text. */
@@ -152,6 +154,7 @@ export function mapToResultState(
 		output_tokens: safeNumber(source.output_tokens),
 		title: safeString(source.title),
 		project: safeString(source.project),
+		prompt_id: safeString(source.prompt_id),
 		project_id: safeString(source.project_id),
 		project_status: safeString(source.project_status),
 		tags: safeArray(source.tags),
@@ -159,6 +162,7 @@ export function mapToResultState(
 		strategy_reasoning: safeString(source.strategy_reasoning),
 		strategy_confidence: safeNumber(source.strategy_confidence),
 		secondary_frameworks: safeArray(source.secondary_frameworks),
+		created_at: safeString(source.created_at),
 	};
 }
 

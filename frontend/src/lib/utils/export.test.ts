@@ -6,6 +6,7 @@ import {
 	buildScoreTable,
 	buildMetadataTable,
 	buildFooter,
+	formatCreatedAt,
 } from './export';
 import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
 
@@ -30,6 +31,7 @@ function makeResult(overrides: Partial<OptimizationResultState> = {}): Optimizat
 		output_tokens: 50,
 		title: '',
 		project: '',
+		prompt_id: '',
 		project_id: '',
 		project_status: '',
 		tags: [],
@@ -37,6 +39,7 @@ function makeResult(overrides: Partial<OptimizationResultState> = {}): Optimizat
 		strategy_reasoning: '',
 		strategy_confidence: 0.9,
 		secondary_frameworks: [],
+		created_at: '',
 		...overrides,
 	};
 }
@@ -87,39 +90,72 @@ describe('codeFence', () => {
 });
 
 describe('buildScoreTable', () => {
-	it('produces a markdown table with header and 5 data rows', () => {
+	it('produces a markdown table with header, 4 dimension rows, and 1 overall row', () => {
 		const scores = { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, overall: 0.81 };
 		const rows = buildScoreTable(scores);
-		expect(rows).toHaveLength(7); // header + separator + 5 data
-		expect(rows[0]).toBe('| Metric | Score | Rating |');
+		expect(rows).toHaveLength(7); // header + separator + 4 dimensions + 1 overall
+		expect(rows[0]).toBe('| Metric | Score | Weight | Rating |');
 		expect(rows[1]).toContain('---');
 	});
 
-	it('bolds the Overall row', () => {
+	it('lists dimensions first with weights, then bold Overall last', () => {
 		const scores = { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, overall: 0.81 };
 		const rows = buildScoreTable(scores);
-		expect(rows[2]).toContain('**Overall**');
-		expect(rows[2]).toContain('81/100');
-		expect(rows[2]).toContain('Good');
+		// Dimensions in order: clarity, specificity, structure, faithfulness
+		expect(rows[2]).toContain('Clarity');
+		expect(rows[2]).toContain('90/100');
+		expect(rows[2]).toContain('25%');
+		expect(rows[3]).toContain('Specificity');
+		expect(rows[3]).toContain('25%');
+		expect(rows[4]).toContain('Structure');
+		expect(rows[4]).toContain('20%');
+		expect(rows[5]).toContain('Faithfulness');
+		expect(rows[5]).toContain('30%');
+		// Overall is last and bold
+		expect(rows[6]).toContain('**Overall**');
+		expect(rows[6]).toContain('**81/100**');
+		expect(rows[6]).toContain('**Good**');
 	});
 
 	it('includes Rating column with tier labels', () => {
 		const scores = { clarity: 0.3, specificity: 0.5, structure: 0.8, faithfulness: 0.0, overall: 0.45 };
 		const rows = buildScoreTable(scores);
-		// Overall 45 => Fair
-		expect(rows[2]).toContain('Fair');
 		// Clarity 30 => Low
-		expect(rows[3]).toContain('Low');
+		expect(rows[2]).toContain('Low');
 		// Specificity 50 => Fair
-		expect(rows[4]).toContain('Fair');
+		expect(rows[3]).toContain('Fair');
 		// Structure 80 => Good
-		expect(rows[5]).toContain('Good');
+		expect(rows[4]).toContain('Good');
+		// Overall 45 => Fair
+		expect(rows[6]).toContain('**Fair**');
 	});
 
 	it('handles zero scores', () => {
 		const scores = { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, overall: 0 };
 		const rows = buildScoreTable(scores);
-		expect(rows[2]).toContain('0/100');
+		expect(rows[6]).toContain('**0/100**');
+	});
+});
+
+describe('formatCreatedAt', () => {
+	it('formats a valid ISO string as YYYY-MM-DD HH:MM UTC', () => {
+		expect(formatCreatedAt('2026-02-18T14:32:00Z')).toBe('2026-02-18 14:32 UTC');
+	});
+
+	it('handles ISO without trailing Z (assumes UTC)', () => {
+		expect(formatCreatedAt('2026-02-18T14:32:00')).toBe('2026-02-18 14:32 UTC');
+	});
+
+	it('returns null for empty string', () => {
+		expect(formatCreatedAt('')).toBeNull();
+	});
+
+	it('returns null for unparseable string', () => {
+		expect(formatCreatedAt('not-a-date')).toBeNull();
+	});
+
+	it('zero-pads hours and minutes', () => {
+		expect(formatCreatedAt('2026-01-05T03:07:00Z')).toBe('2026-01-05 03:07 UTC');
 	});
 });
 
@@ -128,6 +164,17 @@ describe('buildMetadataTable', () => {
 		const rows = buildMetadataTable(makeResult());
 		const idRow = rows.find(r => r.includes('| ID |'));
 		expect(idRow).toContain('test-id-abc123');
+	});
+
+	it('includes created_at when present', () => {
+		const rows = buildMetadataTable(makeResult({ created_at: '2026-02-18T14:32:00Z' }));
+		const row = rows.find(r => r.includes('| Created |'));
+		expect(row).toContain('2026-02-18 14:32 UTC');
+	});
+
+	it('omits created_at when empty', () => {
+		const rows = buildMetadataTable(makeResult({ created_at: '' }));
+		expect(rows.find(r => r.includes('| Created |'))).toBeUndefined();
 	});
 
 	it('includes model when present', () => {
@@ -182,6 +229,26 @@ describe('buildMetadataTable', () => {
 	it('omits tags when empty', () => {
 		const rows = buildMetadataTable(makeResult({ tags: [] }));
 		expect(rows.find(r => r.includes('| Tags |'))).toBeUndefined();
+	});
+
+	it('orders rows: Created, Model, Duration, Tokens, Project, Tags, ID', () => {
+		const rows = buildMetadataTable(makeResult({
+			created_at: '2026-02-18T14:32:00Z',
+			model_used: 'claude-opus-4-6',
+			duration_ms: 1500,
+			input_tokens: 100,
+			output_tokens: 50,
+			project: 'My Project',
+			tags: ['a'],
+		}));
+		const dataRows = rows.slice(2); // skip header + separator
+		expect(dataRows[0]).toContain('| Created |');
+		expect(dataRows[1]).toContain('| Model |');
+		expect(dataRows[2]).toContain('| Duration |');
+		expect(dataRows[3]).toContain('| Tokens |');
+		expect(dataRows[4]).toContain('| Project |');
+		expect(dataRows[5]).toContain('| Tags |');
+		expect(dataRows[6]).toContain('| ID |');
 	});
 });
 
@@ -247,15 +314,25 @@ describe('generateExportMarkdown', () => {
 		expect(md).not.toContain('## Changes Made');
 	});
 
-	it('includes Scores section with markdown table', () => {
+	it('includes Scores section with weighted markdown table', () => {
 		const md = generateExportMarkdown(makeResult());
 		expect(md).toContain('## Scores');
-		expect(md).toContain('| Metric | Score | Rating |');
-		expect(md).toContain('| **Overall** | 81/100 | Good |');
-		expect(md).toContain('| Clarity | 90/100 | Good |');
-		expect(md).toContain('| Specificity | 80/100 | Good |');
-		expect(md).toContain('| Structure | 70/100 | Good |');
-		expect(md).toContain('| Faithfulness | 85/100 | Good |');
+		expect(md).toContain('| Metric | Score | Weight | Rating |');
+		expect(md).toContain('| Clarity | 90/100 | 25% | Good |');
+		expect(md).toContain('| Specificity | 80/100 | 25% | Good |');
+		expect(md).toContain('| Structure | 70/100 | 20% | Good |');
+		expect(md).toContain('| Faithfulness | 85/100 | 30% | Good |');
+		expect(md).toContain('| **Overall** | **81/100** | | **Good** |');
+	});
+
+	it('includes score explanation narrative after scores', () => {
+		const md = generateExportMarkdown(makeResult());
+		expect(md).toContain('primarily driven by');
+		expect(md).toContain('lowest contribution');
+		// Explanation should appear after scores table
+		const scoresIdx = md.indexOf('## Scores');
+		const explanationIdx = md.indexOf('primarily driven by');
+		expect(explanationIdx).toBeGreaterThan(scoresIdx);
 	});
 
 	it('includes verdict right after scores table when present', () => {
@@ -346,8 +423,9 @@ describe('generateExportMarkdown', () => {
 		expect(md).not.toContain('## Notes');
 	});
 
-	it('includes Metadata section with table', () => {
+	it('includes Metadata section with table including created_at', () => {
 		const md = generateExportMarkdown(makeResult({
+			created_at: '2026-02-18T14:32:00Z',
 			model_used: 'claude-opus-4-6',
 			duration_ms: 12300,
 			input_tokens: 1247,
@@ -356,6 +434,7 @@ describe('generateExportMarkdown', () => {
 			tags: ['api', 'refactoring'],
 		}));
 		expect(md).toContain('## Metadata');
+		expect(md).toContain('| Created | 2026-02-18 14:32 UTC |');
 		expect(md).toContain('| Model | claude-opus-4-6 |');
 		expect(md).toContain('| Duration | 12.3s |');
 		expect(md).toContain('| Tokens | 1,247 in / 892 out |');
@@ -374,7 +453,7 @@ describe('generateExportMarkdown', () => {
 		const result = makeResult();
 		result.scores = { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, overall: 0 };
 		const md = generateExportMarkdown(result);
-		expect(md).toContain('| **Overall** | 0/100 |');
+		expect(md).toContain('| **Overall** | **0/100** |');
 	});
 
 	it('includes all optional sections in a full result', () => {
@@ -392,6 +471,7 @@ describe('generateExportMarkdown', () => {
 			changes_made: ['c1'],
 			optimization_notes: 'notes',
 			is_improvement: true,
+			created_at: '2026-02-18T14:32:00Z',
 		}));
 		expect(md).toContain('# Full Test');
 		expect(md).toContain('## Optimized Prompt');
@@ -399,12 +479,14 @@ describe('generateExportMarkdown', () => {
 		expect(md).toContain('## Changes Made');
 		expect(md).toContain('## Scores');
 		expect(md).toContain('**Verdict:** Great');
+		expect(md).toContain('primarily driven by');
 		expect(md).toContain('## Strategy');
 		expect(md).toContain('## Analysis');
 		expect(md).toContain('### Strengths');
 		expect(md).toContain('### Weaknesses');
 		expect(md).toContain('## Notes');
 		expect(md).toContain('## Metadata');
+		expect(md).toContain('| Created | 2026-02-18 14:32 UTC |');
 		expect(md).toContain('*Exported from PromptForge on');
 	});
 
@@ -424,6 +506,7 @@ describe('generateExportMarkdown', () => {
 			'## Changes Made',
 			'## Scores',
 			'**Verdict:**',
+			'primarily driven by',
 			'## Strategy',
 			'## Analysis',
 			'### Strengths',

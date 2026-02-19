@@ -220,7 +220,7 @@ function openSSEStream(
 	const controller = new AbortController();
 	let readTimer: ReturnType<typeof setTimeout> | undefined;
 
-	fetch(url, { ...init, signal: controller.signal })
+	fetch(url, { ...init, signal: controller.signal, headers: { ...buildAuthHeaders(), ...init.headers } })
 		.then(async (response) => {
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -274,8 +274,9 @@ function openSSEStream(
 }
 
 /**
- * Build HTTP headers for LLM runtime overrides (API key, model, provider).
- * Keys are sent via headers to keep them out of request bodies and logs.
+ * Build HTTP headers for LLM runtime overrides (API key, model, provider)
+ * and optional authentication. Keys are sent via headers to keep them out
+ * of request bodies and logs.
  */
 function buildLLMHeaders(llm?: LLMHeaders): Record<string, string> {
 	const headers: Record<string, string> = {};
@@ -283,6 +284,16 @@ function buildLLMHeaders(llm?: LLMHeaders): Record<string, string> {
 	if (llm?.model) headers['X-LLM-Model'] = llm.model;
 	if (llm?.provider) headers['X-LLM-Provider'] = llm.provider;
 	return headers;
+}
+
+/**
+ * Return an Authorization header if AUTH_TOKEN is configured.
+ * The token is read from the VITE_AUTH_TOKEN env var at build time.
+ */
+function buildAuthHeaders(): Record<string, string> {
+	const token = import.meta.env.VITE_AUTH_TOKEN;
+	if (token) return { Authorization: `Bearer ${token}` };
+	return {};
 }
 
 /**
@@ -337,7 +348,8 @@ async function apiFetch<T>(
 	try {
 		const fetchFn = options?.fetchFn ?? fetch;
 		const { fetchFn: _, signal, ...init } = options ?? {};
-		const response = await fetchFn(url, { ...init, signal });
+		const headers = { ...buildAuthHeaders(), ...(init.headers as Record<string, string>) };
+		const response = await fetchFn(url, { ...init, headers, signal });
 		if (!response.ok) return fallback;
 		return await response.json();
 	} catch (err) {
@@ -349,7 +361,8 @@ async function apiFetch<T>(
 
 async function apiFetchOk(url: string, options?: RequestInit): Promise<boolean> {
 	try {
-		const response = await fetch(url, options);
+		const headers = { ...buildAuthHeaders(), ...(options?.headers as Record<string, string>) };
+		const response = await fetch(url, { ...options, headers });
 		return response.ok;
 	} catch (err) {
 		if (err instanceof DOMException && err.name === 'AbortError') return false;
@@ -409,7 +422,10 @@ export async function deleteOptimization(id: string): Promise<boolean> {
 
 /** Clear all history entries */
 export async function clearAllHistory(): Promise<boolean> {
-	return apiFetchOk(`${BASE_URL}/history/all`, { method: 'DELETE' });
+	return apiFetchOk(`${BASE_URL}/history/all`, {
+		method: 'DELETE',
+		headers: { 'X-Confirm-Delete': 'yes' },
+	});
 }
 
 /** Fetch usage statistics. */

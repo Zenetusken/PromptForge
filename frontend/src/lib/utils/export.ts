@@ -1,4 +1,6 @@
 import { normalizeScore, getScoreTierLabel } from '$lib/utils/format';
+import { SCORE_WEIGHTS, type ScoreDimension } from '$lib/utils/scoreDimensions';
+import { generateScoreExplanation } from '$lib/utils/scoreExplanation';
 import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
 
 /**
@@ -23,30 +25,51 @@ export function codeFence(content: string): string {
 
 /**
  * Build markdown table rows for the scores section.
- * Returns the full table including header. Overall row is bold.
+ * Dimensions listed first with their weights, Overall (bold) last.
  */
 export function buildScoreTable(scores: OptimizationResultState['scores']): string[] {
 	const rows: string[] = [
-		'| Metric | Score | Rating |',
-		'|--------|-------|--------|',
+		'| Metric | Score | Weight | Rating |',
+		'|--------|-------|--------|--------|',
 	];
 
-	const metrics: { label: string; key: keyof typeof scores; bold: boolean }[] = [
-		{ label: 'Overall', key: 'overall', bold: true },
-		{ label: 'Clarity', key: 'clarity', bold: false },
-		{ label: 'Specificity', key: 'specificity', bold: false },
-		{ label: 'Structure', key: 'structure', bold: false },
-		{ label: 'Faithfulness', key: 'faithfulness', bold: false },
+	const dimensions: { label: string; key: ScoreDimension }[] = [
+		{ label: 'Clarity', key: 'clarity' },
+		{ label: 'Specificity', key: 'specificity' },
+		{ label: 'Structure', key: 'structure' },
+		{ label: 'Faithfulness', key: 'faithfulness' },
 	];
 
-	for (const m of metrics) {
-		const score = normalizeScore(scores[m.key]) ?? 0;
-		const rating = getScoreTierLabel(scores[m.key]);
-		const label = m.bold ? `**${m.label}**` : m.label;
-		rows.push(`| ${label} | ${score}/100 | ${rating} |`);
+	for (const dim of dimensions) {
+		const score = normalizeScore(scores[dim.key]) ?? 0;
+		const rating = getScoreTierLabel(scores[dim.key]);
+		const weight = `${Math.round(SCORE_WEIGHTS[dim.key] * 100)}%`;
+		rows.push(`| ${dim.label} | ${score}/100 | ${weight} | ${rating} |`);
 	}
 
+	// Overall row (bold, no individual weight — it's the weighted sum)
+	const overall = normalizeScore(scores.overall) ?? 0;
+	const overallRating = getScoreTierLabel(scores.overall);
+	rows.push(`| **Overall** | **${overall}/100** | | **${overallRating}** |`);
+
 	return rows;
+}
+
+/**
+ * Format an ISO date string as "YYYY-MM-DD HH:MM UTC".
+ * Timestamps without timezone suffix are treated as UTC (matching backend convention).
+ * Returns null if the input is empty or unparseable.
+ */
+export function formatCreatedAt(iso: string): string | null {
+	if (!iso) return null;
+	// Ensure UTC interpretation — timestamps without timezone suffix are UTC from the server
+	const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : iso + 'Z';
+	const d = new Date(normalized);
+	if (isNaN(d.getTime())) return null;
+	const date = d.toISOString().slice(0, 10);
+	const hours = String(d.getUTCHours()).padStart(2, '0');
+	const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+	return `${date} ${hours}:${minutes} UTC`;
 }
 
 /**
@@ -58,6 +81,11 @@ export function buildMetadataTable(result: OptimizationResultState): string[] {
 		'| Field | Value |',
 		'|-------|-------|',
 	];
+
+	const created = formatCreatedAt(result.created_at);
+	if (created) {
+		rows.push(`| Created | ${created} |`);
+	}
 
 	if (result.model_used) {
 		rows.push(`| Model | ${result.model_used} |`);
@@ -127,6 +155,9 @@ export function generateExportMarkdown(result: OptimizationResultState): string 
 	if (result.verdict) {
 		lines.push(`**Verdict:** ${result.verdict}`, '');
 	}
+	// Score explanation (weighted formula narrative)
+	const explanation = generateScoreExplanation(result.scores);
+	lines.push(explanation, '');
 
 	// Strategy (omitted if no meaningful data)
 	if (result.strategy || result.strategy_reasoning || result.strategy_confidence > 0) {

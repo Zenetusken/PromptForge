@@ -539,6 +539,62 @@ body {
 		pointer-events: auto;
 		opacity: 1;
 	}
+
+	/* ─── Pipeline Narrative ─────────────────────── */
+
+	.pipeline-timeline {
+		position: relative;
+	}
+
+	.pipeline-entry {
+		display: flex;
+		align-items: flex-start;
+		gap: 16px;
+		position: relative;
+		padding-bottom: 24px;
+	}
+
+	/* Last entry in the timeline has no bottom spacing */
+	.pipeline-entry:last-child {
+		padding-bottom: 0;
+	}
+
+	/* Connecting line from this node down to the next node.
+	   Uses ::after so it spans the full entry height automatically. */
+	.pipeline-entry--connected::after {
+		content: '';
+		position: absolute;
+		left: 5px; /* center of 12px node: (12 - 2) / 2 */
+		top: 14px; /* below node: 2px margin-top + 12px height */
+		bottom: -2px; /* extend 2px into next entry to meet its node (covers margin-top gap) */
+		width: 2px;
+		background: linear-gradient(
+			to bottom,
+			var(--pipeline-color-from),
+			var(--pipeline-color-to)
+		);
+	}
+
+	.pipeline-node {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		flex-shrink: 0;
+		margin-top: 2px;
+		position: relative;
+		z-index: 1; /* node sits above the connecting line */
+	}
+
+	.pipeline-content {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.finding-highlight {
+		background: color-mix(in srgb, var(--highlight-color, var(--color-neon-cyan)) 5%, transparent);
+		box-shadow: 0 0 0 1px color-mix(in srgb, var(--highlight-color, var(--color-neon-cyan)) 20%, transparent);
+		border-radius: 6px;
+	}
 }
 
 /* ─── Slide-out for toast exit ───────────────────── */
