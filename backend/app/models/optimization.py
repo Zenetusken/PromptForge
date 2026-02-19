@@ -76,6 +76,7 @@ class Optimization(Base):
     project: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string list
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Link to originating project prompt (nullable for legacy/home-page optimizations)
     prompt_id: Mapped[str | None] = mapped_column(

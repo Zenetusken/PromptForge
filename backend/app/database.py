@@ -101,6 +101,8 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE optimizations ADD COLUMN strategy TEXT",
     # --- Secondary frameworks for multi-framework combinations ---
     "ALTER TABLE optimizations ADD COLUMN secondary_frameworks TEXT",
+    # --- Version label for forge iterations ---
+    "ALTER TABLE optimizations ADD COLUMN version TEXT",
 ]
 
 
@@ -230,22 +232,25 @@ async def _backfill_prompt_ids(conn) -> None:
 
 
 async def _backfill_missing_prompts(conn) -> None:
-    """Create Prompt records for optimizations whose raw_prompt has no match.
+    """Create Prompt records for truly orphaned optimizations.
 
-    Covers the gap where an optimization was added to an existing project
-    (e.g. before auto-linking was implemented, or via direct DB insert)
-    and no Prompt record was ever created for its content.
+    Only considers optimizations with ``prompt_id IS NULL`` — these are
+    records that were never linked to a prompt (e.g. legacy data, seed data,
+    or direct DB inserts).  Optimizations that *had* a prompt_id but whose
+    prompt was deleted are cleaned up by ``delete_prompt()`` instead,
+    preventing this function from resurrecting intentionally deleted prompts.
 
     Idempotent: only creates prompts for content not already present.
     """
-    # Find distinct (project_id, raw_prompt) pairs that have no matching
-    # Prompt record in the corresponding project.
+    # Find distinct (project_id, raw_prompt) pairs from truly orphaned
+    # optimizations (prompt_id IS NULL) that have no matching Prompt record.
     result = await conn.execute(
         text(
             "SELECT DISTINCT p.id, o.raw_prompt "
             "FROM optimizations o "
             "JOIN projects p ON p.name = o.project AND p.status != 'deleted' "
-            "WHERE o.project IS NOT NULL AND o.project != '' "
+            "WHERE o.prompt_id IS NULL "
+            "AND o.project IS NOT NULL AND o.project != '' "
             "AND o.raw_prompt IS NOT NULL AND o.raw_prompt != '' "
             "AND NOT EXISTS ("
             "  SELECT 1 FROM prompts pr "

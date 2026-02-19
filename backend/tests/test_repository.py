@@ -736,3 +736,24 @@ class TestDeletePrompt:
 
         deleted = await repo.delete_prompt(prompt)
         assert deleted == 0
+
+    @pytest.mark.asyncio
+    async def test_deletes_unlinked_orphan_optimizations(self, db_session):
+        """Deleting a prompt should also delete unlinked optimizations with
+        matching project + raw_prompt (prevents startup backfill resurrection)."""
+        repo = ProjectRepository(db_session)
+        opt_repo = OptimizationRepository(db_session)
+        proj = await _seed_project(db_session, name="orphan-proj")
+        prompt = await _seed_prompt(db_session, proj, "orphan content")
+        # Linked optimization (has prompt_id)
+        await _seed(db_session, id="linked", prompt_id=prompt.id, project="orphan-proj", raw_prompt="orphan content")
+        # Unlinked optimization (prompt_id=None, same project + content)
+        await _seed(db_session, id="orphan", project="orphan-proj", raw_prompt="orphan content")
+        # Unrelated optimization (different content, same project)
+        await _seed(db_session, id="unrelated", project="orphan-proj", raw_prompt="different content")
+
+        deleted = await repo.delete_prompt(prompt)
+        assert deleted == 2  # linked + orphan
+        assert await opt_repo.get_by_id("linked") is None
+        assert await opt_repo.get_by_id("orphan") is None
+        assert await opt_repo.get_by_id("unrelated") is not None

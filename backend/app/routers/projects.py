@@ -89,6 +89,7 @@ async def _build_prompt_responses(
                 overall_score=opt.overall_score,
                 is_improvement=opt.is_improvement,
                 tags=deserialize_json_field(opt.tags) or [],
+                version=opt.version,
             )
         responses.append(
             PromptResponse(
@@ -414,6 +415,7 @@ async def get_prompt_forges(
                 task_type=opt.task_type,
                 complexity=opt.complexity,
                 tags=deserialize_json_field(opt.tags) or [],
+                version=opt.version,
             )
             for opt in items
         ],

@@ -80,6 +80,7 @@ class LatestForgeInfo(BaseModel):
     overall_score: float | None = None
     is_improvement: bool | None = None
     tags: list[str] = []
+    version: str | None = None
 
 
 class PromptResponse(BaseModel):
@@ -166,6 +167,7 @@ class ForgeResultSummary(BaseModel):
     task_type: str | None = None
     complexity: str | None = None
     tags: list[str] = []
+    version: str | None = None
 
 
 class ForgeResultListResponse(BaseModel):

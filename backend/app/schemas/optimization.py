@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+import re
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.utils.datetime import UTCDatetime
@@ -35,9 +37,21 @@ class OptimizeRequest(BaseModel):
         None,
         description="Optional secondary frameworks (0-2) to combine with primary strategy.",
     )
+    version: str | None = Field(
+        None, max_length=20, description="Optional version label (e.g. 'v1', 'v2')",
+    )
     prompt_id: str | None = Field(
         None, description="Optional originating prompt ID (from a project)",
     )
+
+    @field_validator("version")
+    @classmethod
+    def version_format(cls, v: str | None) -> str | None:
+        """Validate version matches v<number> pattern when non-empty."""
+        if v is not None and v.strip():
+            if not re.match(r"^v\d+$", v.strip(), re.IGNORECASE):
+                raise ValueError("Version must be in 'v<number>' format (e.g. 'v1', 'v2')")
+        return v
 
     @field_validator("strategy")
     @classmethod
@@ -122,6 +136,7 @@ class OptimizationResponse(BaseModel):
     project: str | None = None
     tags: list[str] | None = None
     title: str | None = None
+    version: str | None = None
     prompt_id: str | None = None
     project_id: str | None = None
     project_status: str | None = None
@@ -136,6 +151,7 @@ class HistorySummaryResponse(BaseModel):
     created_at: UTCDatetime
     raw_prompt: str
     title: str | None = None
+    version: str | None = None
     task_type: str | None = None
     complexity: str | None = None
     project: str | None = None

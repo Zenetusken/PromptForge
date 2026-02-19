@@ -193,6 +193,7 @@ async def optimize_prompt(
         project=request.project,
         tags=json.dumps(request.tags) if request.tags else None,
         title=request.title,
+        version=request.version,
         prompt_id=request.prompt_id,
     )
     db.add(optimization)
@@ -227,6 +228,7 @@ async def optimize_prompt(
         "title": request.title or "",
         "project": request.project or "",
         "tags": request.tags or [],
+        "version": request.version or "",
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id
@@ -235,6 +237,18 @@ async def optimize_prompt(
         llm_provider=llm_provider, strategy_override=request.strategy,
         secondary_frameworks_override=request.secondary_frameworks,
     )
+
+
+@router.get("/api/optimize/check-duplicate")
+async def check_duplicate_title(
+    title: str,
+    project: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Check if an optimization with the given title already exists in the project."""
+    repo = OptimizationRepository(db)
+    duplicate = await repo.title_exists(title, project)
+    return {"duplicate": duplicate}
 
 
 @router.get("/api/optimize/{optimization_id}", response_model=OptimizationResponse)
@@ -302,6 +316,7 @@ async def retry_optimization(
         project=original.project,
         tags=json.dumps(retry_tags) if retry_tags else None,
         title=retry_title,
+        version=original.version,
         prompt_id=original.prompt_id,
     )
     db.add(new_optimization)
@@ -326,6 +341,7 @@ async def retry_optimization(
         "title": retry_title,
         "project": original.project or "",
         "tags": retry_tags,
+        "version": original.version or "",
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id

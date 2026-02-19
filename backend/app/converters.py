@@ -85,6 +85,7 @@ def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
         "project": opt.project,
         "tags": deserialize_json_field(opt.tags),
         "title": opt.title,
+        "version": opt.version,
         "prompt_id": opt.prompt_id,
         "project_id": getattr(opt, "_resolved_project_id", None),
         "project_status": getattr(opt, "_resolved_project_status", None),
@@ -109,7 +110,7 @@ _SUMMARY_FIELDS = frozenset({
     "id", "raw_prompt", "task_type", "complexity", "overall_score",
     "strategy", "secondary_frameworks", "framework_applied", "model_used",
     "status", "error_message", "project", "tags",
-    "title", "prompt_id", "project_id", "project_status",
+    "title", "version", "prompt_id", "project_id", "project_status",
 })
 
 

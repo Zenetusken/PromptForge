@@ -276,16 +276,39 @@ class ProjectRepository:
         return prompt
 
     async def delete_prompt(self, prompt: Prompt) -> int:
-        """Delete a prompt and cascade-delete all linked optimizations.
+        """Delete a prompt and cascade-delete all related optimizations.
+
+        Deletes optimizations linked via prompt_id FK, plus any unlinked
+        optimizations in the same project whose raw_prompt matches the
+        prompt content (prevents startup backfill from resurrecting the
+        deleted prompt).
 
         Returns the number of optimizations that were deleted.
         """
-        del_stmt = delete(Optimization).where(Optimization.prompt_id == prompt.id)
-        result = await self._session.execute(del_stmt)
-        deleted_count = result.rowcount or 0
+        # 1. Delete optimizations linked via FK
+        del_linked = delete(Optimization).where(Optimization.prompt_id == prompt.id)
+        result_linked = await self._session.execute(del_linked)
+        deleted_count = result_linked.rowcount or 0
+
+        # 2. Delete unlinked optimizations with matching content in same project
+        project_name_stmt = select(Project.name).where(Project.id == prompt.project_id)
+        project_name_result = await self._session.execute(project_name_stmt)
+        project_name = project_name_result.scalar_one_or_none()
+        if project_name:
+            del_orphans = (
+                delete(Optimization)
+                .where(
+                    Optimization.prompt_id.is_(None),
+                    Optimization.project == project_name,
+                    Optimization.raw_prompt == prompt.content,
+                )
+            )
+            result_orphans = await self._session.execute(del_orphans)
+            deleted_count += result_orphans.rowcount or 0
+
         if deleted_count > 0:
             logger.info(
-                "Deleted %d optimization(s) linked to prompt %s",
+                "Deleted %d optimization(s) for prompt %s",
                 deleted_count,
                 prompt.id,
             )

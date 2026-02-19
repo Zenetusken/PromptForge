@@ -304,6 +304,25 @@ class OptimizationRepository:
 
         return latest
 
+    async def title_exists(
+        self,
+        title: str,
+        project: str | None = None,
+        exclude_id: str | None = None,
+    ) -> bool:
+        """Check if an optimization with the given title exists (case-insensitive).
+
+        Optionally scoped to a project name.
+        """
+        conditions = [func.lower(Optimization.title) == title.lower()]
+        if project:
+            conditions.append(Optimization.project == project)
+        if exclude_id:
+            conditions.append(Optimization.id != exclude_id)
+        stmt = select(func.count(Optimization.id)).where(and_(*conditions))
+        result = await self._session.execute(stmt)
+        return (result.scalar() or 0) > 0
+
     # --- List with filters ---
 
     def _build_search_filter(self, search_text: str) -> ColumnElement[bool]:

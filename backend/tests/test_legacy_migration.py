@@ -338,6 +338,36 @@ class TestBackfillMissingPrompts:
             result = await conn.execute(text("SELECT COUNT(*) FROM prompts"))
             assert result.scalar() == 0
 
+    @pytest.mark.asyncio
+    async def test_skips_linked_optimizations(self, db_engine):
+        """Backfill should not create prompts for optimizations that already
+        have prompt_id set (even if raw_prompt differs from prompt content)."""
+        async with db_engine.begin() as conn:
+            # Set up project + prompt with edited content
+            params = _opt("proj", "original content")
+            cols = ", ".join(params.keys())
+            vals = ", ".join(f":{k}" for k in params)
+            await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
+            await _migrate_legacy_projects(conn)
+            await _backfill_prompt_ids(conn)
+
+            # Simulate editing the prompt content (diverges from raw_prompt)
+            await conn.execute(
+                text("UPDATE prompts SET content = 'edited content' WHERE content = 'original content'")
+            )
+
+        # Now raw_prompt='original content' doesn't match any prompt content,
+        # but the optimization has prompt_id set — backfill should skip it
+        async with db_engine.begin() as conn:
+            await _backfill_missing_prompts(conn)
+
+        # Should NOT create a new prompt for the old raw_prompt
+        async with db_engine.begin() as conn:
+            result = await conn.execute(text("SELECT COUNT(*) FROM prompts"))
+            assert result.scalar() == 1
+            result2 = await conn.execute(text("SELECT content FROM prompts"))
+            assert result2.scalar() == "edited content"
+
 
 # ---------------------------------------------------------------------------
 # Auto-create via optimize endpoint
