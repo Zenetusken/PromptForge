@@ -626,6 +626,8 @@ export async function deleteProject(id: string): Promise<boolean> {
 }
 
 export interface ArchiveResponse {
+	message: string;
+	id: string;
 	status: string;
 	updated_at: string;
 }

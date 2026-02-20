@@ -378,6 +378,47 @@ class ProjectRepository:
         items = list(result.scalars().all())
         return items, total
 
+    # --- Cascade deletion ---
+
+    async def delete_project_data(self, project: Project) -> int:
+        """Delete all prompts and associated optimizations for a project.
+
+        Reuses ``delete_prompt()`` for each prompt (handles FK-linked and
+        content-matched optimizations plus cascade-deleting PromptVersions).
+        Then sweeps any remaining legacy optimizations that reference the
+        project by name but weren't matched to a prompt.
+
+        Returns the total number of optimizations deleted.
+        """
+        deleted_total = 0
+
+        # 1. Delete each prompt (cascades its optimizations + versions)
+        if project.prompts:
+            for prompt in list(project.prompts):
+                deleted_total += await self.delete_prompt(prompt)
+
+        # 2. Catch-all: legacy optimizations referencing this project by name
+        #    that weren't linked to any prompt (prompt_id IS NULL)
+        del_legacy = (
+            delete(Optimization)
+            .where(
+                Optimization.prompt_id.is_(None),
+                Optimization.project == project.name,
+            )
+        )
+        result = await self._session.execute(del_legacy)
+        deleted_total += result.rowcount or 0
+
+        if deleted_total > 0:
+            logger.info(
+                "Cascade-deleted %d optimization(s) for project %s (%s)",
+                deleted_total,
+                project.id,
+                project.name,
+            )
+
+        return deleted_total
+
     # --- Helpers ---
 
     async def _get_max_order(self, project_id: str) -> int | None:

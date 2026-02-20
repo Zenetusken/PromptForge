@@ -155,7 +155,7 @@ async def _migrate_legacy_projects(conn) -> None:
             "SELECT DISTINCT o.project FROM optimizations o "
             "WHERE o.project IS NOT NULL AND o.project != '' "
             "AND NOT EXISTS ("
-            "  SELECT 1 FROM projects p WHERE p.name = o.project AND p.status != 'deleted'"
+            "  SELECT 1 FROM projects p WHERE p.name = o.project"
             ")"
         )
     )

@@ -15,6 +15,7 @@ import {
 	type ProjectListResponse,
 	type ArchiveResponse,
 } from '$lib/api/client';
+import { historyState } from '$lib/stores/history.svelte';
 
 class ProjectsState {
 	items: ProjectSummary[] = $state([]);
@@ -146,6 +147,8 @@ class ProjectsState {
 			if (this.activeProject?.id === id) {
 				this.activeProject = null;
 			}
+			// Refresh history to remove orphaned entries from deleted project
+			historyState.loadHistory();
 		}
 		return success;
 	}

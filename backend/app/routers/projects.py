@@ -154,13 +154,23 @@ async def create_project(
     body: ProjectCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new project. Returns 409 if name already exists."""
+    """Create a new project. Returns 409 if name already exists.
+
+    If a soft-deleted project with the same name exists, it is reactivated
+    with the new description instead of creating a duplicate (UNIQUE constraint).
+    """
     repo = _repo(db)
     existing = await repo.get_by_name(body.name)
     if existing and existing.status != ProjectStatus.DELETED:
         raise HTTPException(status_code=409, detail="A project with this name already exists")
 
-    project = await repo.create(name=body.name, description=body.description)
+    if existing and existing.status == ProjectStatus.DELETED:
+        # Reactivate the soft-deleted project
+        project = await repo.update(existing, name=body.name, description=body.description)
+        await repo.unarchive(project)  # Sets status to ACTIVE
+    else:
+        project = await repo.create(name=body.name, description=body.description)
+
     return ProjectDetailResponse(
         id=project.id,
         name=project.name,
@@ -257,14 +267,19 @@ async def delete_project(
     project_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Soft-delete a project."""
+    """Soft-delete a project and cascade-delete all associated prompts and optimizations."""
     repo = _repo(db)
-    project = await repo.get_by_id(project_id, load_prompts=False)
+    project = await repo.get_by_id(project_id, load_prompts=True)
     if not project or project.status == ProjectStatus.DELETED:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    deleted_optimizations = await repo.delete_project_data(project)
     await repo.soft_delete(project)
-    return {"message": "Project deleted", "id": project_id}
+    return {
+        "message": "Project deleted",
+        "id": project_id,
+        "deleted_optimizations": deleted_optimizations,
+    }
 
 
 @router.post("/api/projects/{project_id}/archive")
