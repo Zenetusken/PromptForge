@@ -151,6 +151,162 @@ describe('HistoryState', () => {
         });
     });
 
+    describe('setFilterProjectId', () => {
+        it('passes project_id to fetchHistory', async () => {
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setFilterProjectId('proj-123');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.filterProjectId).toBe('proj-123');
+            expect(historyState.filterProject).toBe('');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ project_id: 'proj-123', project: undefined })
+            );
+        });
+
+        it('clears project_id filter with empty string', async () => {
+            historyState.filterProjectId = 'proj-123';
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setFilterProjectId('');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.filterProjectId).toBe('');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ project_id: undefined })
+            );
+        });
+
+        it('clears filterProject when setting filterProjectId', async () => {
+            historyState.filterProject = 'My Project';
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setFilterProjectId('proj-456');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.filterProject).toBe('');
+            expect(historyState.filterProjectId).toBe('proj-456');
+        });
+    });
+
+    describe('setFilterProject', () => {
+        it('passes project name to fetchHistory', async () => {
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setFilterProject('My Project');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.filterProject).toBe('My Project');
+            expect(historyState.filterProjectId).toBe('');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ project: 'My Project', project_id: undefined })
+            );
+        });
+
+        it('clears project filter with empty string', async () => {
+            historyState.filterProject = 'Old Project';
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setFilterProject('');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.filterProject).toBe('');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ project: undefined })
+            );
+        });
+    });
+
+    describe('setFilterTaskType', () => {
+        it('passes task_type to fetchHistory', async () => {
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setFilterTaskType('coding');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.filterTaskType).toBe('coding');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ task_type: 'coding' })
+            );
+        });
+
+        it('clears task_type filter with empty string', async () => {
+            historyState.filterTaskType = 'coding';
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setFilterTaskType('');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.filterTaskType).toBe('');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ task_type: undefined })
+            );
+        });
+    });
+
+    describe('setSearch', () => {
+        it('passes search query to fetchHistory', async () => {
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setSearch('hello world');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.searchQuery).toBe('hello world');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ search: 'hello world' })
+            );
+        });
+
+        it('clears search with empty string', async () => {
+            historyState.searchQuery = 'old query';
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setSearch('');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.searchQuery).toBe('');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ search: undefined })
+            );
+        });
+    });
+
+    describe('setSortBy', () => {
+        it('updates sort field and reloads with desc order', async () => {
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setSortBy('overall_score');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.sortBy).toBe('overall_score');
+            expect(historyState.sortOrder).toBe('desc');
+            expect(fetchHistory).toHaveBeenCalledWith(
+                expect.objectContaining({ sort: 'overall_score', order: 'desc' })
+            );
+        });
+    });
+
     describe('addEntry', () => {
         it('prepends item and increments total', () => {
             historyState.items = [{ id: '1' } as any];

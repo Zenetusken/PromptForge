@@ -77,7 +77,7 @@
 	<Select.Root
 		type="single"
 		{value}
-		onValueChange={(v) => { if (v) onchange(v); }}
+		onValueChange={(v) => { if (v !== undefined) onchange(v); }}
 		{open}
 		onOpenChange={handleOpenChange}
 	>
