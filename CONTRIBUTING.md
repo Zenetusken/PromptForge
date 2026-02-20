@@ -19,7 +19,7 @@ chmod +x init.sh
 ./init.sh
 ```
 
-This installs all dependencies and starts both backend (port 8000) and frontend (port 5199).
+This installs all dependencies and starts backend (port 8000), frontend (port 5199), and MCP server (port 8001).
 
 ### Manual Setup
 

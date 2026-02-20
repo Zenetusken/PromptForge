@@ -83,7 +83,7 @@ Results stream to the frontend as named SSE events (`stage`, `analysis`, `strate
 
 | Command | Description |
 |---------|-------------|
-| `./init.sh` | Install dependencies and start both servers (default) |
+| `./init.sh` | Install dependencies and start all services (default) |
 | `./init.sh stop` | Stop all running services |
 | `./init.sh restart` | Stop then start (no reinstall) |
 | `./init.sh status` | Show running/stopped state and health details |

@@ -11,12 +11,12 @@ An AI-powered prompt optimization web app. Users submit a raw prompt, and a 4-st
 - **Backend**: Python 3.14+ / FastAPI / SQLAlchemy 2.0 async ORM / SQLite (aiosqlite) / Pydantic v2
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
 - **LLM access**: Provider-agnostic via `backend/app/providers/` — supports Claude CLI (default), Anthropic API, OpenAI, and Google Gemini. Auto-detects available provider or set `LLM_PROVIDER` explicitly.
-- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 16 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`). Auto-discoverable via `.mcp.json`.
+- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 16 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`). Runs as SSE HTTP transport on port 8001 with uvicorn `--reload` for hot-reload. Managed by `init.sh` alongside backend/frontend. Auto-discoverable via `.mcp.json` (URL transport).
 
 ## Commands
 
 ```bash
-# Full dev setup (installs deps, starts both servers)
+# Full dev setup (installs deps, starts all services)
 ./init.sh
 
 # Backend only (from project root)
@@ -37,11 +37,12 @@ cd frontend
 npm run test          # vitest run
 npm run check         # svelte-check type checking
 
-# MCP server
-cd backend && python -m app.mcp_server
+# MCP server (standalone, for testing — normally managed by init.sh)
+cd backend && source venv/bin/activate
+python -m uvicorn app.mcp_server:app --reload --port 8001
 
 # Docker
-docker-compose up     # starts backend (8000) + frontend (5199)
+docker-compose up     # starts backend (8000) + frontend (5199) + MCP (8001)
 ```
 
 ## Architecture
@@ -75,6 +76,7 @@ Frontend consumes SSE via `fetch` + `ReadableStream` reader (not native `EventSo
 - **Prompt version history**: `PromptVersion` table (`models/project.py`) stores immutable snapshots of prior prompt content. Created automatically by `update_prompt()` when content changes. Current version lives in `prompts.content`; only superseded versions are snapshotted.
 - **Forge result linking**: `Optimization.prompt_id` FK links an optimization to the project prompt that triggered it. Set when forging from a project prompt card. Nullable for legacy/home-page optimizations. DB constraint is `ON DELETE SET NULL`, but application-level `delete_prompt()` explicitly removes linked optimizations before deleting the prompt.
 - **Project deletion cascade**: `delete_project_data()` in `ProjectRepository` deletes all prompts (reusing `delete_prompt()` per prompt) then sweeps remaining legacy optimizations by project name. The router calls this before soft-deleting the project record.
+- **Extended analytics** (`get_stats()` in `OptimizationRepository`): Beyond basic strategy distribution and score averages, the stats endpoint computes 10 additional DB-driven analytics: score matrix (strategy × task-type avg scores), score variance (min/max/stddev per strategy), confidence averages, combo effectiveness (primary+secondary pair scores), complexity performance, improvement rates per strategy, error rates (includes non-completed records), time trends (7d/30d), token economics (avg input/output tokens and duration), and win rates (best strategy per task type). All respect project-scope filters and legacy alias normalization. Nullable fields default to `None` on empty DB for backward compatibility.
 
 ### Frontend State
 
@@ -88,11 +90,12 @@ Svelte 5 runes-based stores (`.svelte.ts` files in `frontend/src/lib/stores/`):
 - `toast.svelte.ts` — toast notifications
 
 Shared utilities (`frontend/src/lib/utils/`):
-- `strategies.ts` — canonical list of all 10 strategy names, display labels, descriptions, extended details (`STRATEGY_DETAILS`: bestFor task types + motivation blurbs), and fixed per-strategy colors (`STRATEGY_FIXED_COLORS`). Single source of truth imported by `PromptInput` (strategy picker) and `StrategyInsights` (Strategy Explorer).
+- `strategies.ts` — canonical list of all 10 strategy names, display labels, descriptions, extended details (`STRATEGY_DETAILS`: bestFor task types + motivation blurbs), and 10 unique per-strategy colors (`STRATEGY_COLOR_META`). `getStrategyColor(name)` is the single lookup function all consumers import — returns `StrategyColorMeta` with `bar`, `text`, `border`, `btnBg`, `rawRgba` fields, cyan fallback for unknown/null. Single source of truth imported by `PromptInput` (strategy picker), `StrategyInsights` (Strategy Explorer), `HistoryEntry`, `PipelineStep`, and project detail pages.
+- `recommendation.ts` — multi-signal composite recommendation engine for the Strategy Explorer. Scores untried strategies using 4 weighted signals plus a multiplicative dampener. Base signals: task-type affinity (0.50), performance gap analysis (0.25), diversity bonus (0.25). Secondary composite (0.20): a blended score from 5 sub-signals (frequency, reach, synergy, familiarity, tag affinity) processed by `computeSecondaryComposite` with configurable internal weights (`SecondaryProcessorWeights`), plus a combo effectiveness bonus (~10% weight from `computeComboScore`). Data confidence is a multiplicative dampener. Formula: `(affinity×0.50 + gap×0.25 + diversity×0.25 + secondaryComposite×0.20) × confidence`. When backend analytics are available (score matrix, score variance, combo effectiveness), the engine upgrades scoring precision: `computeAffinityScore` uses need-weighted factors from per-task-type performance gaps, `computeGapScore` uses per-task-type scores instead of strategy-wide averages, and `selectTopPerformer` breaks score ties by lower variance (more consistent). All enhancements are optional — the engine falls back to pure-frequency scoring when analytics are unavailable. Shared analytics types (`ScoreMatrixEntry`, `ScoreVarianceEntry`, `ComboEntry`, `ImprovementEntry`) are defined in `client.ts` and re-exported from `recommendation.ts`. Exports pure functions (`computeRecommendations`, `selectTopPerformer`, `computeComboScore`, `computeSecondaryComposite`, `computeFrequencyScore`, `computeReachScore`, `computeSynergyScore`, `computeSecondaryFamiliarityScore`, `computeTagAffinityBoost`, `buildTaskFrequency`, `buildGlobalTags`, `generateSecondaryInsights`, and other individual signal scorers) and types (`RecommendationResult`, `ScoredStrategy`, `RecommendationConfidence`, `SecondaryInsight`, `SecondaryProcessorWeights`). Weights configurable via `RecommendationWeights` interface. Includes confidence tier classification (high/moderate/exploratory) with secondary-aware text, insight generation (0–3 insights per recommendation), and improved top performer selection (min 3 uses, significance flag at 5+, variance-aware tie-breaking).
 
 Key components:
 - `PromptInput.svelte` — prompt textarea with three collapsible sections: Metadata (title/project/tags/version), Context (codebase context fields for grounded optimization), and Strategy (override selection with secondary frameworks). Context section sends `codebase_context` in the optimize request body.
-- `StrategyInsights.svelte` — interactive Strategy Explorer with clickable distribution bars, expandable detail panels (description, task type badges, action buttons), data-driven recommendation engine (scores untried strategies by overlap with user's task type frequency), and interactive untried strategy pills. Accepts `onStrategySelect` callback to pre-fill strategy in PromptInput.
+- `StrategyInsights.svelte` — interactive Strategy Explorer with section heading (`section-heading-dim` + "X/10 used" counter), badge column (fixed `w-4` between label and bar — ✳ for recommended strategy, ♛ crown for top performer; mutually exclusive since recommended = untried, top performer = tried), column headers (#, 2nd, Avg), clickable distribution bars with relative-to-leader normalization (leader fills ~100%, others proportional; tooltips still show share-of-total percentages), stagger entrance animation (primary bars have premium glass-depth effect, secondary bars use flat opacity fills), expandable detail panels (`animate-section-expand`, `.chip` task type badges, `.tag-chip` tag badges, `font-display` micro-headings, primary/secondary micro-bars, single contextual action button). Enhanced recommendation card: headline summary (derived from top scoring signal), signal breakdown (top 3 signals with mini `neon-yellow` progress bars and mono scores via `SIGNAL_META` lookup), confidence badge + conversational rationale (uses total optimizations and tried strategy count instead of internal scores), rich multi-category insights (8 categories: task_match, coverage_gap, new_territory, familiar_pick, tag_alignment, usage_pattern, signal_synergy, data_profile — 3–6 per recommendation sorted by signal priority, with conversational messages referencing concrete user data), collapsible runner-ups (up to 3 cards with rank badge, composite %, confidence tier mini-badge, motivation, and "Try it" button). Primary/secondary legend with toggle. Accepts `onStrategySelect` callback to pre-fill strategy in PromptInput.
 
 Routes: `/` (home with PromptInput + ResultPanel + StrategyInsights), `/optimize/[id]` (detail page with SSR data loading), and `/projects/[id]` (project detail with prompts).
 
@@ -131,6 +134,7 @@ Environment defaults (set in `backend/app/config.py`, overridable via `.env`):
 - `FRONTEND_URL` — default `http://localhost:5199`
 - `BACKEND_PORT` — default `8000`
 - `HOST` — default `0.0.0.0`
+- `MCP_PORT` — default `8001` (managed by `init.sh`, not config.py)
 - `DATABASE_URL` — default `sqlite+aiosqlite:///<project>/data/promptforge.db`
 - `LLM_PROVIDER` — auto-detect when empty; explicit: `claude-cli`, `anthropic`, `openai`, `gemini`
 - `CLAUDE_MODEL` — default `claude-opus-4-6` (used by Claude CLI and Anthropic API providers)
