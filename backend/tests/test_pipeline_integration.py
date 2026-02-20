@@ -267,6 +267,60 @@ class TestPipelineStreamingIntegration:
         assert "strategy_reasoning" in complete_data
 
     @pytest.mark.asyncio
+    async def test_streaming_with_strategy_override_skips_strategy_stage(self):
+        """Strategy override should emit strategy event without a stage start for strategy."""
+        provider = _make_mock_provider(skip_strategy=True)
+        events = []
+        async for event in run_pipeline_streaming(
+            "Test prompt",
+            llm_provider=provider,
+            strategy_override="chain-of-thought",
+        ):
+            if isinstance(event, str):
+                events.append(event)
+
+        event_text = "".join(events)
+
+        # Strategy event should still be emitted (instant, not streamed)
+        strategy_events = [e for e in events if "event: strategy" in e]
+        assert len(strategy_events) == 1
+        assert '"chain-of-thought"' in strategy_events[0]
+        assert '"confidence": 1.0' in strategy_events[0]
+        assert '"is_override": true' in strategy_events[0]
+
+        # Should NOT have a strategy stage start (the "strategizing" label)
+        stage_events = [e for e in events if "event: stage" in e]
+        stage_labels = [e for e in stage_events if '"strategizing"' in e]
+        assert len(stage_labels) == 0, "Override should skip the strategy stage start"
+
+        # But should still have analyze, optimize, validate stage starts
+        assert any('"analyzing"' in e for e in stage_events)
+        assert any('"optimizing"' in e for e in stage_events)
+        assert any('"validating"' in e for e in stage_events)
+
+        # Complete event should still be present
+        assert "event: complete" in event_text
+
+    @pytest.mark.asyncio
+    async def test_streaming_override_with_secondary_frameworks(self):
+        """Strategy override with secondary frameworks should include them in complete event."""
+        provider = _make_mock_provider(skip_strategy=True)
+        complete_data = None
+        async for event in run_pipeline_streaming(
+            "Test prompt",
+            llm_provider=provider,
+            strategy_override="risen",
+            secondary_frameworks_override=["constraint-injection", "step-by-step"],
+        ):
+            if isinstance(event, PipelineComplete):
+                complete_data = event.data
+
+        assert complete_data is not None
+        assert complete_data["strategy"] == "risen"
+        assert complete_data["strategy_confidence"] == 1.0
+        assert complete_data["secondary_frameworks"] == ["constraint-injection", "step-by-step"]
+
+    @pytest.mark.asyncio
     async def test_streaming_emits_all_stage_events(self):
         """Streaming pipeline should emit stage events for all 4 stages."""
         provider = _make_mock_provider()

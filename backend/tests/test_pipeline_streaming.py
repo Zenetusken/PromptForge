@@ -115,6 +115,69 @@ class TestRunWithProgressStream:
         assert "persona-assignment" in sse_events[0]
 
 
+    @pytest.mark.asyncio
+    async def test_format_map_applied_to_stage_message(self):
+        """Format placeholders in stage_message are interpolated in the start event."""
+        stage = StageConfig(
+            name="test",
+            stage_label="testing",
+            stage_message="Optimizing with {strategy}",
+            event_name="test_result",
+            progress_interval=0.05,
+            progress_messages=[],
+            initial_messages=[],
+        )
+
+        async def fast():
+            return "done"
+
+        events = []
+        async for event in _run_with_progress_stream(fast(), stage, {"strategy": "co-star"}):
+            events.append(event)
+
+        # _run_with_progress_stream doesn't emit the stage_message directly,
+        # but _stream_stage does. Verify via _stream_stage below.
+        assert isinstance(events[-1], StageResult)
+
+
+class TestStreamStageFormatMap:
+    @pytest.mark.asyncio
+    async def test_stage_start_event_has_format_placeholders_filled(self):
+        """The stage start event should have {strategy} replaced in stage_message."""
+        stage = StageConfig(
+            name="optimize",
+            stage_label="optimizing",
+            stage_message="Applying {strategy} framework",
+            event_name="optimization",
+            progress_interval=0.5,
+            progress_messages=["Rewriting with {strategy}..."],
+            initial_messages=[("Starting {strategy}...", 0.1)],
+        )
+
+        @dataclass
+        class FakeResult:
+            optimized_prompt: str
+
+        async def fast():
+            return FakeResult(optimized_prompt="done")
+
+        events = []
+        async for event in _stream_stage(fast(), stage, {"strategy": "persona-assignment"}):
+            events.append(event)
+
+        sse_events = [e for e in events if isinstance(e, str)]
+        # Stage start event should contain the interpolated strategy
+        stage_start = sse_events[0]
+        assert "event: stage" in stage_start
+        assert "persona-assignment" in stage_start
+        assert "{strategy}" not in stage_start  # No raw placeholder
+
+        # Initial message should also be interpolated
+        initial_msg = sse_events[1]
+        assert "persona-assignment" in initial_msg
+        assert "{strategy}" not in initial_msg
+
+
 class TestStreamStage:
     @pytest.mark.asyncio
     async def test_emits_stage_start_and_complete(self):
