@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { fetchPromptForges, type ForgeResultSummary } from '$lib/api/client';
 	import { normalizeScore, getScoreBadgeClass, formatRelativeTime } from '$lib/utils/format';
+	import { toastState } from '$lib/stores/toast.svelte';
 	import Icon from './Icon.svelte';
 	import { Tooltip } from './ui';
 
@@ -26,8 +27,8 @@
 		try {
 			const result = await fetchPromptForges(projectId, promptId);
 			forges = result.items;
-		} catch {
-			// Silently fail — page works fine without this
+		} catch (err) {
+			toastState.show('Could not load forge history', 'error', 3000);
 		}
 		loaded = true;
 	});

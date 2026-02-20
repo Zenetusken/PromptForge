@@ -131,7 +131,7 @@
 					<a
 						href="/projects/{item.project_id}"
 						onclick={(e) => e.stopPropagation()}
-						class="relative z-[1] shrink-0 font-medium transition-colors hover:underline
+						class="relative z-[1] max-w-[12ch] truncate font-medium transition-colors hover:underline
 							{isProjectArchived ? 'text-neon-yellow/50' : 'text-neon-yellow'}"
 						data-testid="history-entry-project"
 					>
@@ -139,9 +139,11 @@
 					</a>
 					</Tooltip>
 				{:else}
-					<span class="shrink-0 font-medium text-neon-yellow" data-testid="history-entry-project">
+					<Tooltip text={item.project}>
+					<span class="max-w-[12ch] truncate font-medium text-neon-yellow" data-testid="history-entry-project">
 						{item.project}
 					</span>
+					</Tooltip>
 				{/if}
 			{/if}
 			{#if item.tags && item.tags.length > 0}
