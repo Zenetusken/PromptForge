@@ -5,21 +5,21 @@
 	let { open = $bindable(false) }: { open: boolean } = $props();
 
 	const tools = [
-		{ name: 'promptforge_optimize', desc: 'Run the full optimization pipeline on a prompt' },
-		{ name: 'promptforge_retry', desc: 'Re-run an optimization, optionally with a different strategy' },
-		{ name: 'promptforge_get', desc: 'Retrieve an optimization by ID' },
-		{ name: 'promptforge_list', desc: 'List optimizations with filtering, sorting, pagination' },
-		{ name: 'promptforge_get_by_project', desc: 'Get all optimizations for a project' },
-		{ name: 'promptforge_search', desc: 'Full-text search across prompts' },
-		{ name: 'promptforge_tag', desc: 'Add/remove tags, set project on an optimization' },
-		{ name: 'promptforge_stats', desc: 'Get usage statistics' },
-		{ name: 'promptforge_delete', desc: 'Delete an optimization record' },
-		{ name: 'promptforge_list_projects', desc: 'List projects with filtering and pagination' },
-		{ name: 'promptforge_get_project', desc: 'Retrieve a project with its prompts' },
-		{ name: 'promptforge_strategies', desc: 'List all available optimization strategies' },
-		{ name: 'promptforge_create_project', desc: 'Create a new project' },
-		{ name: 'promptforge_add_prompt', desc: 'Add a prompt to a project' },
-		{ name: 'promptforge_update_prompt', desc: 'Update prompt content with auto-versioning' },
+		{ name: 'optimize', desc: 'Run the full optimization pipeline on a prompt' },
+		{ name: 'retry', desc: 'Re-run an optimization, optionally with a different strategy' },
+		{ name: 'get', desc: 'Retrieve an optimization by ID' },
+		{ name: 'list', desc: 'List optimizations with filtering, sorting, pagination' },
+		{ name: 'get_by_project', desc: 'Get all optimizations for a project' },
+		{ name: 'search', desc: 'Full-text search across prompts' },
+		{ name: 'tag', desc: 'Add/remove tags, set project on an optimization' },
+		{ name: 'stats', desc: 'Get usage statistics' },
+		{ name: 'delete', desc: 'Delete an optimization record' },
+		{ name: 'list_projects', desc: 'List projects with filtering and pagination' },
+		{ name: 'get_project', desc: 'Retrieve a project with its prompts' },
+		{ name: 'strategies', desc: 'List all available optimization strategies' },
+		{ name: 'create_project', desc: 'Create a new project' },
+		{ name: 'add_prompt', desc: 'Add a prompt to a project' },
+		{ name: 'update_prompt', desc: 'Update prompt content with auto-versioning' },
 	];
 
 	const configSnippet = `{

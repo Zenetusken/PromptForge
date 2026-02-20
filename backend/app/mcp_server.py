@@ -4,21 +4,21 @@ Exposes prompt optimization capabilities as MCP tools that can be used
 by Claude and other MCP-compatible clients.
 
 Tools:
-  - promptforge_optimize: Run the full optimization pipeline on a prompt
-  - promptforge_retry: Re-run an existing optimization (with optional strategy override)
-  - promptforge_get: Retrieve an optimization by ID
-  - promptforge_list: List optimizations with filtering, sorting, pagination
-  - promptforge_get_by_project: Get all optimizations for a project
-  - promptforge_search: Full-text search across prompts
-  - promptforge_tag: Add/remove tags, set project on an optimization
-  - promptforge_stats: Get usage statistics
-  - promptforge_delete: Delete an optimization record
-  - promptforge_list_projects: List projects with filtering and pagination
-  - promptforge_get_project: Retrieve a project by ID with its prompts
-  - promptforge_strategies: List all available optimization strategies
-  - promptforge_create_project: Create a new project
-  - promptforge_add_prompt: Add a prompt to a project
-  - promptforge_update_prompt: Update prompt content (auto-versions)
+  - optimize: Run the full optimization pipeline on a prompt
+  - retry: Re-run an existing optimization (with optional strategy override)
+  - get: Retrieve an optimization by ID
+  - list: List optimizations with filtering, sorting, pagination
+  - get_by_project: Get all optimizations for a project
+  - search: Full-text search across prompts
+  - tag: Add/remove tags, set project on an optimization
+  - stats: Get usage statistics
+  - delete: Delete an optimization record
+  - list_projects: List projects with filtering and pagination
+  - get_project: Retrieve a project by ID with its prompts
+  - strategies: List all available optimization strategies
+  - create_project: Create a new project
+  - add_prompt: Add a prompt to a project
+  - update_prompt: Update prompt content (auto-versions)
 """
 
 import json
@@ -159,22 +159,22 @@ mcp = FastMCP(
         "(Analyze → Strategy → Optimize → Validate). "
         "Scores are 1-10 integers; strategy_confidence is 0.0-1.0 probability.\n\n"
         "Common workflows:\n"
-        "- Quick: promptforge_optimize(prompt='...')\n"
-        "- Project-based: promptforge_create_project → promptforge_add_prompt → "
-        "promptforge_optimize with prompt_id\n"
-        "- Iterate: promptforge_retry with strategy override, or optimize again "
+        "- Quick: optimize(prompt='...')\n"
+        "- Project-based: create_project → add_prompt → "
+        "optimize with prompt_id\n"
+        "- Iterate: retry with strategy override, or optimize again "
         "with different strategy\n"
-        "- Browse: promptforge_list/promptforge_search, then promptforge_get for full details\n"
-        "- Discover strategies: promptforge_strategies lists all 10 valid strategy names"
+        "- Browse: list/search, then get for full details\n"
+        "- Discover strategies: strategies lists all 10 valid strategy names"
     ),
     lifespan=lifespan,
 )
 
 
-# --- Tool 1: promptforge_optimize ---
+# --- Tool 1: optimize ---
 
 @mcp.tool(
-    name="promptforge_optimize",
+    name="optimize",
     description=(
         "Optimize a raw prompt using the PromptForge 4-stage pipeline "
         "(Analyze → Strategy → Optimize → Validate). Returns the optimized prompt, "
@@ -194,8 +194,8 @@ async def promptforge_optimize(
     project: Annotated[str | None, Field(description="Project name to associate (max 100 chars). Auto-creates if new.")] = None,
     tags: Annotated[list[str] | None, Field(description="Tags to attach (each max 50 chars)")] = None,
     title: Annotated[str | None, Field(description="Title for the optimization (max 200 chars)")] = None,
-    strategy: Annotated[str | None, Field(description="Strategy override — skips auto-selection. Use promptforge_strategies to see valid values.")] = None,
-    secondary_frameworks: Annotated[list[str] | None, Field(description="Secondary frameworks (max 2) to combine with strategy. Use promptforge_strategies for valid values.")] = None,
+    strategy: Annotated[str | None, Field(description="Strategy override — skips auto-selection. Use the strategies tool to see valid values.")] = None,
+    secondary_frameworks: Annotated[list[str] | None, Field(description="Secondary frameworks (max 2) to combine with strategy. Use the strategies tool for valid values.")] = None,
     prompt_id: Annotated[str | None, Field(description="UUID of an existing project prompt to link this optimization to")] = None,
     version: Annotated[str | None, Field(description="Version label in 'v<number>' format (e.g. 'v1', 'v2')")] = None,
 ) -> dict[str, object]:
@@ -309,10 +309,10 @@ async def promptforge_optimize(
         raise ToolError("Optimization pipeline failed. Check server logs for details.")
 
 
-# --- Tool 2: promptforge_retry ---
+# --- Tool 2: retry ---
 
 @mcp.tool(
-    name="promptforge_retry",
+    name="retry",
     description=(
         "Re-run an existing optimization with its original parameters. "
         "Optionally override the strategy or secondary_frameworks to try "
@@ -329,8 +329,8 @@ async def promptforge_optimize(
 async def promptforge_retry(
     optimization_id: Annotated[str, Field(description="UUID of the optimization to retry")],
     ctx: Context,
-    strategy: Annotated[str | None, Field(description="Override strategy for the retry. Use promptforge_strategies for valid values.")] = None,
-    secondary_frameworks: Annotated[list[str] | None, Field(description="Override secondary frameworks (max 2). Use promptforge_strategies for valid values.")] = None,
+    strategy: Annotated[str | None, Field(description="Override strategy for the retry. Use the strategies tool for valid values.")] = None,
+    secondary_frameworks: Annotated[list[str] | None, Field(description="Override secondary frameworks (max 2). Use the strategies tool for valid values.")] = None,
 ) -> dict[str, object]:
     """Re-run an optimization, optionally with a different strategy.
 
@@ -365,10 +365,10 @@ async def promptforge_retry(
     )
 
 
-# --- Tool 3: promptforge_get ---
+# --- Tool 3: get ---
 
 @mcp.tool(
-    name="promptforge_get",
+    name="get",
     description=(
         "Retrieve a specific optimization record by its UUID. "
         "Returns the complete record with all fields including prompts, "
@@ -401,10 +401,10 @@ async def promptforge_get(
         return with_display_scores(optimization_to_dict(opt))
 
 
-# --- Tool 4: promptforge_list ---
+# --- Tool 4: list ---
 
 @mcp.tool(
-    name="promptforge_list",
+    name="list",
     description=(
         "List optimization records with filtering, sorting, and pagination. "
         "Supports filtering by project name, project_id, task_type, min_score (1-10), "
@@ -467,10 +467,10 @@ async def promptforge_list(
         }
 
 
-# --- Tool 5: promptforge_get_by_project ---
+# --- Tool 5: get_by_project ---
 
 @mcp.tool(
-    name="promptforge_get_by_project",
+    name="get_by_project",
     description=(
         "Retrieve optimizations for a specific project by name, "
         "sorted by most recent first. Supports pagination."
@@ -521,10 +521,10 @@ async def promptforge_get_by_project(
         }
 
 
-# --- Tool 6: promptforge_search ---
+# --- Tool 6: search ---
 
 @mcp.tool(
-    name="promptforge_search",
+    name="search",
     description=(
         "Full-text search across both original and optimized prompt content, "
         "titles, tags, and project names. Returns matching optimization summaries "
@@ -575,10 +575,10 @@ async def promptforge_search(
         }
 
 
-# --- Tool 7: promptforge_tag ---
+# --- Tool 7: tag ---
 
 @mcp.tool(
-    name="promptforge_tag",
+    name="tag",
     description=(
         "Add or remove tags from an optimization, and/or set its project name. "
         "Can add new tags, remove existing tags, and change the project "
@@ -641,10 +641,10 @@ async def promptforge_tag(
         return result
 
 
-# --- Tool 8: promptforge_stats ---
+# --- Tool 8: stats ---
 
 @mcp.tool(
-    name="promptforge_stats",
+    name="stats",
     description=(
         "Get usage statistics for PromptForge, including total optimizations, "
         "average scores (1-10 scale), task type breakdown, project counts, "
@@ -679,10 +679,10 @@ async def promptforge_stats(
         return stats
 
 
-# --- Tool 9: promptforge_delete ---
+# --- Tool 9: delete ---
 
 @mcp.tool(
-    name="promptforge_delete",
+    name="delete",
     description=(
         "Permanently delete an optimization record from the database. "
         "This action cannot be undone."
@@ -710,10 +710,10 @@ async def promptforge_delete(
         return {"deleted": True, "id": optimization_id}
 
 
-# --- Tool 10: promptforge_list_projects ---
+# --- Tool 10: list_projects ---
 
 @mcp.tool(
-    name="promptforge_list_projects",
+    name="list_projects",
     description=(
         "List projects with optional filtering and pagination. "
         "Returns project records with prompt counts. "
@@ -774,10 +774,10 @@ async def promptforge_list_projects(
         }
 
 
-# --- Tool 11: promptforge_get_project ---
+# --- Tool 11: get_project ---
 
 @mcp.tool(
-    name="promptforge_get_project",
+    name="get_project",
     description=(
         "Retrieve a single project by its UUID, including its prompts. "
         "Returns the project record with all associated prompt entries."
@@ -810,14 +810,14 @@ async def promptforge_get_project(
         return result
 
 
-# --- Tool 12: promptforge_strategies ---
+# --- Tool 12: strategies ---
 
 @mcp.tool(
-    name="promptforge_strategies",
+    name="strategies",
     description=(
         "List all available optimization strategies with descriptions. "
         "Use this to discover valid strategy names before calling "
-        "promptforge_optimize or promptforge_retry with a strategy override."
+        "optimize or retry with a strategy override."
     ),
     annotations=ToolAnnotations(
         readOnlyHint=True,
@@ -846,10 +846,10 @@ async def promptforge_strategies() -> dict[str, object]:
     }
 
 
-# --- Tool 13: promptforge_create_project ---
+# --- Tool 13: create_project ---
 
 @mcp.tool(
-    name="promptforge_create_project",
+    name="create_project",
     description=(
         "Create a new project. Projects group related prompts and optimizations. "
         "If a soft-deleted project with the same name exists, it is reactivated."
@@ -898,10 +898,10 @@ async def promptforge_create_project(
         return _project_to_dict(project)
 
 
-# --- Tool 14: promptforge_add_prompt ---
+# --- Tool 14: add_prompt ---
 
 @mcp.tool(
-    name="promptforge_add_prompt",
+    name="add_prompt",
     description=(
         "Add a prompt to an existing project. The prompt is appended "
         "at the next available order index."
@@ -941,10 +941,10 @@ async def promptforge_add_prompt(
         return _prompt_to_dict(prompt)
 
 
-# --- Tool 15: promptforge_update_prompt ---
+# --- Tool 15: update_prompt ---
 
 @mcp.tool(
-    name="promptforge_update_prompt",
+    name="update_prompt",
     description=(
         "Update the content of an existing prompt. Automatically creates "
         "a version snapshot of the previous content before overwriting."
