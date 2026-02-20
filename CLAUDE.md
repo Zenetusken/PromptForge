@@ -11,7 +11,7 @@ An AI-powered prompt optimization web app. Users submit a raw prompt, and a 4-st
 - **Backend**: Python 3.14+ / FastAPI / SQLAlchemy 2.0 async ORM / SQLite (aiosqlite) / Pydantic v2
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
 - **LLM access**: Provider-agnostic via `backend/app/providers/` — supports Claude CLI (default), Anthropic API, OpenAI, and Google Gemini. Auto-detects available provider or set `LLM_PROVIDER` explicitly.
-- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 15 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`). Auto-discoverable via `.mcp.json`.
+- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 16 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`). Auto-discoverable via `.mcp.json`.
 
 ## Commands
 
@@ -55,6 +55,8 @@ Four LLM-calling stages, orchestrated as an async generator that yields SSE even
 3. **Optimize** (`PromptOptimizer`) — rewrites the prompt using the selected strategy
 4. **Validate** (`PromptValidator`) — scores clarity/specificity/structure/faithfulness (0.0–1.0), generates verdict
 
+All 4 stages accept an optional `codebase_context` parameter (`CodebaseContext` dataclass from `backend/app/schemas/context.py`). When provided, each stage injects the rendered context into its LLM user message so the optimizer produces prompts grounded in actual codebase patterns, conventions, and architecture. Context is caller-provided (e.g. from Claude Code's Plan agent), transient (not persisted to DB), and adds zero extra LLM calls. Accepted via the `codebase_context` dict parameter on both the MCP `optimize` tool and the `POST /api/optimize` HTTP endpoint. Fields: `language`, `framework`, `description`, `conventions`, `patterns`, `code_snippets`, `documentation`, `test_framework`, `test_patterns` — all optional, unknown keys silently ignored.
+
 LLM calls go through the provider abstraction (`backend/app/providers/`). `LLMProvider` is the abstract base with `send_message` and `send_message_json` (4-strategy JSON extraction: direct parse → json fence → generic fence → brace match). Concrete providers: `ClaudeCLIProvider` (default, MAX subscription), `AnthropicAPIProvider`, `OpenAIProvider`, `GeminiProvider`. `get_provider()` auto-detects or uses explicit `LLM_PROVIDER` env var. Runtime API key and model overrides are passed via `X-LLM-API-Key` and `X-LLM-Model` HTTP headers (never in request bodies or logs). Model catalog (`backend/app/providers/models.py`) defines 2 models per provider (performance + cost-effective tier).
 
 ### SSE Streaming
@@ -95,6 +97,7 @@ Routes: `/` (home with PromptInput + ResultPanel), `/optimize/[id]` (detail page
 | POST | `/api/optimize/{id}/retry` | Yes |
 | GET/HEAD | `/api/history` | No |
 | DELETE | `/api/history/{id}` | No |
+| POST | `/api/history/bulk-delete` | No |
 | DELETE | `/api/history/all` | No |
 | GET/HEAD | `/api/history/stats` | No |
 | GET/HEAD | `/api/health` | No |

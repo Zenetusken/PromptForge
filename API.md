@@ -82,6 +82,7 @@ Creates a new optimization using the original prompt. Returns an SSE stream like
 |--------|------|-------------|
 | GET/HEAD | `/api/history` | List optimizations (paginated, filterable) |
 | DELETE | `/api/history/{id}` | Delete a single optimization |
+| POST | `/api/history/bulk-delete` | Delete multiple optimizations by ID |
 | DELETE | `/api/history/all` | Clear all history |
 | GET/HEAD | `/api/history/stats` | Aggregated statistics |
 
@@ -101,6 +102,26 @@ Creates a new optimization using the original prompt. Returns an SSE stream like
 | `task_type` | | Filter by task type |
 | `status` | | Filter by status |
 | `include_archived` | `true` | Include items from archived projects |
+
+#### `POST /api/history/bulk-delete`
+
+Delete multiple optimization records in a single call.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ids` | string[] | Yes | UUIDs to delete (1–100) |
+
+**Response:**
+
+```json
+{
+  "deleted_count": 3,
+  "deleted_ids": ["uuid-1", "uuid-2", "uuid-3"],
+  "not_found_ids": ["uuid-4"]
+}
+```
 
 #### `DELETE /api/history/all`
 

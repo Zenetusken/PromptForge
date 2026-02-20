@@ -4,6 +4,12 @@ All notable changes to PromptForge will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Bulk-delete endpoint (`POST /api/history/bulk-delete`) — delete 1–100 records in a single call
+- `bulk_delete` MCP tool
+
 ## [0.2.0] - 2026-02-18
 
 ### Added

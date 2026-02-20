@@ -29,7 +29,7 @@ A self-adaptive prompt optimization web app that transforms raw, unstructured pr
 - **4-stage optimization pipeline** — Analyze, Strategy, Optimize, Validate — streamed to the browser in real time via SSE
 - **Provider-agnostic** — Claude CLI, Anthropic API, OpenAI, and Google Gemini with auto-detection
 - **Project management** — organize prompts into projects with full version history and forge-result linking
-- **MCP server** — 8 tools for Claude Code integration (`promptforge_optimize`, `promptforge_list`, `promptforge_search`, etc.)
+- **MCP server** — 16 tools for Claude Code integration (`optimize`, `retry`, `search`, `bulk_delete`, etc.)
 - **Security stack** — optional bearer-token auth, per-endpoint rate limiting, CSRF protection, security headers, input sanitization, and audit logging
 - **Docker-ready** — multi-stage builds, healthchecks, non-root containers, and compose orchestration
 
@@ -130,7 +130,7 @@ Interactive API documentation is available when the backend is running:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-For the full endpoint reference (24 endpoints across optimize, history, projects, prompts, providers, and health), see [API.md](API.md).
+For the full endpoint reference (25 endpoints across optimize, history, projects, prompts, providers, and health), see [API.md](API.md).
 
 ## MCP Integration
 
@@ -144,7 +144,7 @@ PromptForge exposes its engine as an MCP server for Claude Code integration:
 cd backend && python -m app.mcp_server
 ```
 
-**Available tools:** `promptforge_optimize`, `promptforge_get`, `promptforge_list`, `promptforge_get_by_project`, `promptforge_search`, `promptforge_tag`, `promptforge_stats`, `promptforge_delete`
+**Available tools:** `optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`
 
 ## Configuration
 
@@ -182,7 +182,7 @@ See [`.env.example`](.env.example) for the full list.
 │   │   ├── config.py        # Environment configuration
 │   │   ├── database.py      # Async SQLAlchemy setup
 │   │   ├── main.py          # FastAPI application entry point
-│   │   └── mcp_server.py    # FastMCP server (8 tools)
+│   │   └── mcp_server.py    # FastMCP server (16 tools)
 │   └── tests/
 ├── frontend/
 │   └── src/
