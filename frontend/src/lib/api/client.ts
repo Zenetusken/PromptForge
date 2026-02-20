@@ -431,6 +431,21 @@ export async function clearAllHistory(): Promise<boolean> {
 	});
 }
 
+export interface BulkDeleteResponse {
+	deleted_count: number;
+	deleted_ids: string[];
+	not_found_ids: string[];
+}
+
+/** Delete multiple optimization records by ID */
+export async function bulkDeleteOptimizations(ids: string[]): Promise<BulkDeleteResponse> {
+	return apiFetch(`${BASE_URL}/history/bulk-delete`, { deleted_count: 0, deleted_ids: [], not_found_ids: [] }, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ ids }),
+	});
+}
+
 /** Fetch usage statistics. */
 export async function fetchStats(): Promise<StatsResponse | null> {
 	return apiFetch(`${BASE_URL}/history/stats`, null);

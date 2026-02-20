@@ -14,6 +14,7 @@
 		{ name: 'tag', desc: 'Add/remove tags, set project on an optimization' },
 		{ name: 'stats', desc: 'Get usage statistics' },
 		{ name: 'delete', desc: 'Delete an optimization record' },
+		{ name: 'bulk_delete', desc: 'Delete multiple optimization records by ID' },
 		{ name: 'list_projects', desc: 'List projects with filtering and pagination' },
 		{ name: 'get_project', desc: 'Retrieve a project with its prompts' },
 		{ name: 'strategies', desc: 'List all available optimization strategies' },
