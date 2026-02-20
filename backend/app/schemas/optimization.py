@@ -203,6 +203,20 @@ class StatsResponse(BaseModel):
     strategy_distribution: dict[str, int] | None = None
     score_by_strategy: dict[str, float] | None = None
     task_types_by_strategy: dict[str, dict[str, int]] | None = None
+    secondary_strategy_distribution: dict[str, int] | None = None
+    tags_by_strategy: dict[str, dict[str, int]] | None = None
+    # --- Extended analytics (all nullable for backward compatibility) ---
+    score_matrix: dict[str, dict[str, dict[str, float | int]]] | None = None
+    score_variance: dict[str, dict[str, float | int]] | None = None
+    confidence_by_strategy: dict[str, float] | None = None
+    combo_effectiveness: dict[str, dict[str, dict[str, float | int]]] | None = None
+    complexity_performance: dict[str, dict[str, dict[str, float | int]]] | None = None
+    improvement_by_strategy: dict[str, dict[str, float | int | None]] | None = None
+    error_rates: dict[str, dict[str, float | int]] | None = None
+    trend_7d: dict[str, float | int | None] | None = None
+    trend_30d: dict[str, float | int | None] | None = None
+    token_economics: dict[str, dict[str, int | None]] | None = None
+    win_rates: dict[str, dict[str, str | float | int]] | None = None
 
 
 class BulkDeleteRequest(BaseModel):

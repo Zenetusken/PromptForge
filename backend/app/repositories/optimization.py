@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import ColumnElement, and_, delete, desc, func, or_, select
@@ -618,19 +619,50 @@ class OptimizationRepository:
                 "strategy_distribution": None,
                 "score_by_strategy": None,
                 "task_types_by_strategy": None,
+                "secondary_strategy_distribution": None,
+                "tags_by_strategy": None,
+                "score_matrix": None,
+                "score_variance": None,
+                "confidence_by_strategy": None,
+                "combo_effectiveness": None,
+                "complexity_performance": None,
+                "improvement_by_strategy": None,
+                "error_rates": None,
+                "trend_7d": {"count": 0, "avg_score": None},
+                "trend_30d": {"count": 0, "avg_score": None},
+                "token_economics": None,
+                "win_rates": None,
             }
 
         imp = row.improved / row.validated if row.validated else None
 
-        # Per-strategy distribution and score averages.
+        # Per-strategy distribution, score averages, and extended analytics.
         # Prefer the dedicated `strategy` column; fall back to `framework_applied`
         # for legacy rows that predate the column addition.
         strategy_col = func.coalesce(Opt.strategy, Opt.framework_applied)
+
+        # --- Merged Strategy Query (A) ---
+        # Single query returning count, avg_score, min_score, max_score,
+        # avg(score^2) for variance, avg_confidence, improved/validated counts,
+        # avg tokens, avg duration. Grouped by strategy.
         strategy_query = (
             select(
                 strategy_col.label("strategy_name"),
                 func.count(Opt.id).label("count"),
                 func.avg(Opt.overall_score).label("avg_score"),
+                func.min(Opt.overall_score).label("min_score"),
+                func.max(Opt.overall_score).label("max_score"),
+                func.avg(Opt.overall_score * Opt.overall_score).label("avg_score_sq"),
+                func.avg(Opt.strategy_confidence).label("avg_confidence"),
+                func.count(Opt.id).filter(
+                    Opt.is_improvement.is_(True),
+                ).label("improved_count"),
+                func.count(Opt.id).filter(
+                    Opt.is_improvement.isnot(None),
+                ).label("validated_count"),
+                func.avg(Opt.input_tokens).label("avg_input_tokens"),
+                func.avg(Opt.output_tokens).label("avg_output_tokens"),
+                func.avg(Opt.duration_ms).label("avg_duration_ms"),
             )
             .where(completed)
             .where(strategy_col.isnot(None))
@@ -646,6 +678,17 @@ class OptimizationRepository:
         score_by_strategy: dict[str, float] = {}
         # Track raw counts for weighted score averaging when merging aliases.
         _score_weights: dict[str, tuple[float, int]] = {}  # name -> (sum, count)
+
+        # Extended analytics accumulators
+        # score_variance: {strategy: {min, max, avg, stddev, count}}
+        _var_accum: dict[str, dict[str, float | int]] = {}
+        # confidence_by_strategy: {strategy: avg_confidence}
+        _conf_accum: dict[str, tuple[float, int]] = {}  # name -> (weighted_sum, count)
+        # improvement_by_strategy: {strategy: {improved, validated, rate}}
+        _imp_accum: dict[str, dict[str, int]] = {}
+        # token_economics: {strategy: {avg_input_tokens, avg_output_tokens, avg_duration_ms}}
+        _tok_accum: dict[str, dict[str, float | int]] = {}
+
         for srow in strategy_rows:
             name = LEGACY_STRATEGY_ALIASES.get(srow.strategy_name, srow.strategy_name)
             strategy_distribution[name] = strategy_distribution.get(name, 0) + srow.count
@@ -655,15 +698,110 @@ class OptimizationRepository:
                     prev_sum + srow.avg_score * srow.count,
                     prev_n + srow.count,
                 )
+
+            # Variance accumulator (merge aliases via weighted stats)
+            if srow.avg_score is not None:
+                prev = _var_accum.get(name)
+                if prev is None:
+                    # SQLite variance workaround: stddev = sqrt(max(0, E[X^2] - E[X]^2))
+                    avg_sq = srow.avg_score_sq if srow.avg_score_sq is not None else 0
+                    variance = max(0, avg_sq - srow.avg_score ** 2)
+                    _var_accum[name] = {
+                        "min": srow.min_score,
+                        "max": srow.max_score,
+                        "avg": srow.avg_score,
+                        "count": srow.count,
+                        "_sum": srow.avg_score * srow.count,
+                        "_sum_sq": avg_sq * srow.count,
+                    }
+                else:
+                    prev["min"] = min(prev["min"], srow.min_score)
+                    prev["max"] = max(prev["max"], srow.max_score)
+                    prev["count"] += srow.count
+                    prev["_sum"] += srow.avg_score * srow.count
+                    avg_sq = srow.avg_score_sq if srow.avg_score_sq is not None else 0
+                    prev["_sum_sq"] += avg_sq * srow.count
+
+            # Confidence accumulator
+            if srow.avg_confidence is not None:
+                prev_csum, prev_cn = _conf_accum.get(name, (0.0, 0))
+                _conf_accum[name] = (
+                    prev_csum + srow.avg_confidence * srow.count,
+                    prev_cn + srow.count,
+                )
+
+            # Improvement accumulator
+            imp_entry = _imp_accum.get(name, {"improved": 0, "validated": 0})
+            imp_entry["improved"] += srow.improved_count or 0
+            imp_entry["validated"] += srow.validated_count or 0
+            _imp_accum[name] = imp_entry
+
+            # Token accumulator (merge weighted)
+            tok = _tok_accum.get(name)
+            if tok is None:
+                _tok_accum[name] = {
+                    "_count": srow.count,
+                    "_input_sum": (srow.avg_input_tokens or 0) * srow.count,
+                    "_output_sum": (srow.avg_output_tokens or 0) * srow.count,
+                    "_dur_sum": (srow.avg_duration_ms or 0) * srow.count,
+                }
+            else:
+                tok["_count"] += srow.count
+                tok["_input_sum"] += (srow.avg_input_tokens or 0) * srow.count
+                tok["_output_sum"] += (srow.avg_output_tokens or 0) * srow.count
+                tok["_dur_sum"] += (srow.avg_duration_ms or 0) * srow.count
+
         for name, (total_score, total_n) in _score_weights.items():
             score_by_strategy[name] = round(total_score / total_n, 4)
 
-        # Per-strategy task type breakdown.
+        # Finalize score variance
+        score_variance: dict[str, dict[str, float | int]] = {}
+        for name, v in _var_accum.items():
+            n = v["count"]
+            avg = v["_sum"] / n
+            avg_sq = v["_sum_sq"] / n
+            stddev = math.sqrt(max(0, avg_sq - avg ** 2))
+            score_variance[name] = {
+                "min": round_score(v["min"]),
+                "max": round_score(v["max"]),
+                "avg": round_score(avg),
+                "stddev": round(stddev, 4),
+                "count": int(n),
+            }
+
+        # Finalize confidence by strategy
+        confidence_by_strategy: dict[str, float] = {}
+        for name, (csum, cn) in _conf_accum.items():
+            confidence_by_strategy[name] = round(csum / cn, 4)
+
+        # Finalize improvement by strategy
+        improvement_by_strategy: dict[str, dict[str, float | int | None]] = {}
+        for name, imp_data in _imp_accum.items():
+            rate = imp_data["improved"] / imp_data["validated"] if imp_data["validated"] > 0 else None
+            improvement_by_strategy[name] = {
+                "improved": imp_data["improved"],
+                "validated": imp_data["validated"],
+                "rate": round_score(rate),
+            }
+
+        # Finalize token economics
+        token_economics: dict[str, dict[str, int | None]] = {}
+        for name, tok in _tok_accum.items():
+            n = tok["_count"]
+            token_economics[name] = {
+                "avg_input_tokens": round(tok["_input_sum"] / n) if n else None,
+                "avg_output_tokens": round(tok["_output_sum"] / n) if n else None,
+                "avg_duration_ms": round(tok["_dur_sum"] / n) if n else None,
+            }
+
+        # --- Merged Score Matrix Query (B) ---
+        # Per-strategy task type breakdown with avg_score for the score matrix.
         task_by_strategy_query = (
             select(
                 strategy_col.label("strategy_name"),
                 Opt.task_type.label("task_type"),
                 func.count(Opt.id).label("count"),
+                func.avg(Opt.overall_score).label("avg_score"),
             )
             .where(completed)
             .where(strategy_col.isnot(None))
@@ -677,10 +815,233 @@ class OptimizationRepository:
         tbs_rows = tbs_result.all()
 
         task_types_by_strategy: dict[str, dict[str, int]] = {}
+        # score_matrix: {strategy: {task_type: {count, avg_score}}}
+        score_matrix: dict[str, dict[str, dict[str, float | int]]] = {}
         for trow in tbs_rows:
             name = LEGACY_STRATEGY_ALIASES.get(trow.strategy_name, trow.strategy_name)
             bucket = task_types_by_strategy.setdefault(name, {})
             bucket[trow.task_type] = bucket.get(trow.task_type, 0) + trow.count
+
+            # Score matrix accumulator (handle alias merges via weighted average)
+            strat_matrix = score_matrix.setdefault(name, {})
+            if trow.task_type in strat_matrix:
+                prev = strat_matrix[trow.task_type]
+                prev_count = prev["count"]
+                new_count = prev_count + trow.count
+                if trow.avg_score is not None and prev.get("avg_score") is not None:
+                    prev["avg_score"] = round_score(
+                        (prev["avg_score"] * prev_count + trow.avg_score * trow.count)
+                        / new_count,
+                    )
+                elif trow.avg_score is not None:
+                    prev["avg_score"] = round_score(trow.avg_score)
+                prev["count"] = new_count
+            else:
+                strat_matrix[trow.task_type] = {
+                    "count": trow.count,
+                    "avg_score": round_score(trow.avg_score),
+                }
+
+        # Derive win_rates from score_matrix: best strategy per task type
+        win_rates: dict[str, dict[str, str | float | int]] = {}
+        # Invert matrix: task_type → [(strategy, avg_score, count)]
+        _task_candidates: dict[str, list[tuple[str, float, int]]] = {}
+        for strat_name, type_map in score_matrix.items():
+            for task_type, data in type_map.items():
+                if data.get("avg_score") is not None:
+                    _task_candidates.setdefault(task_type, []).append(
+                        (strat_name, data["avg_score"], data["count"]),
+                    )
+        for task_type, candidates in _task_candidates.items():
+            # Best = highest avg_score, tie-break by count, then name
+            best = max(candidates, key=lambda c: (c[1], c[2], c[0]))
+            win_rates[task_type] = {
+                "strategy": best[0],
+                "avg_score": best[1],
+                "count": best[2],
+            }
+
+        # --- Extended Secondary Query (C) ---
+        # Secondary strategy distribution, per-strategy tags, and combo effectiveness.
+        # Also fetch overall_score to track (primary, secondary) pair performance.
+        sec_query = select(
+            strategy_col.label("strategy_name"),
+            Opt.secondary_frameworks,
+            Opt.tags,
+            Opt.overall_score,
+        ).where(completed)
+        if project:
+            sec_query = sec_query.where(Opt.project == project)
+
+        sec_result = await self._session.execute(sec_query)
+        sec_rows = sec_result.all()
+
+        secondary_distribution: dict[str, int] = {}
+        tags_by_strategy_raw: dict[str, dict[str, int]] = {}
+        # combo_effectiveness: {primary: {secondary: {count, total_score}}}
+        _combo_accum: dict[str, dict[str, dict[str, float | int]]] = {}
+        for srow in sec_rows:
+            primary_name = LEGACY_STRATEGY_ALIASES.get(
+                srow.strategy_name, srow.strategy_name,
+            ) if srow.strategy_name else None
+
+            # Count secondary framework usage and track combo scores
+            if srow.secondary_frameworks:
+                try:
+                    secondaries = json.loads(srow.secondary_frameworks)
+                except (json.JSONDecodeError, TypeError):
+                    secondaries = []
+                for fw in secondaries:
+                    if isinstance(fw, str) and fw:
+                        sec_name = LEGACY_STRATEGY_ALIASES.get(fw, fw)
+                        secondary_distribution[sec_name] = (
+                            secondary_distribution.get(sec_name, 0) + 1
+                        )
+                        # Track combo effectiveness
+                        if primary_name:
+                            combo_primary = _combo_accum.setdefault(primary_name, {})
+                            combo = combo_primary.get(sec_name, {"count": 0, "total_score": 0.0})
+                            combo["count"] += 1
+                            if srow.overall_score is not None:
+                                combo["total_score"] += srow.overall_score
+                            combo_primary[sec_name] = combo
+
+            # Bucket tags by primary strategy
+            if primary_name and srow.tags:
+                try:
+                    tag_list = json.loads(srow.tags)
+                except (json.JSONDecodeError, TypeError):
+                    tag_list = []
+                bucket = tags_by_strategy_raw.setdefault(primary_name, {})
+                for tag in tag_list:
+                    if isinstance(tag, str) and tag:
+                        bucket[tag] = bucket.get(tag, 0) + 1
+
+        # Keep only top 4 tags per strategy (by count desc, then alphabetical)
+        tags_by_strategy: dict[str, dict[str, int]] = {}
+        for strat_name, tag_counts in tags_by_strategy_raw.items():
+            sorted_tags = sorted(tag_counts.items(), key=lambda t: (-t[1], t[0]))[:4]
+            tags_by_strategy[strat_name] = dict(sorted_tags)
+
+        # Finalize combo effectiveness
+        combo_effectiveness: dict[str, dict[str, dict[str, float | int]]] = {}
+        for primary, secondaries in _combo_accum.items():
+            combo_effectiveness[primary] = {}
+            for sec_name, data in secondaries.items():
+                avg = data["total_score"] / data["count"] if data["count"] > 0 else None
+                combo_effectiveness[primary][sec_name] = {
+                    "count": data["count"],
+                    "avg_score": round_score(avg),
+                }
+
+        # --- New Complexity Query (D) ---
+        complexity_query = (
+            select(
+                strategy_col.label("strategy_name"),
+                Opt.complexity.label("complexity"),
+                func.count(Opt.id).label("count"),
+                func.avg(Opt.overall_score).label("avg_score"),
+            )
+            .where(completed)
+            .where(strategy_col.isnot(None))
+            .where(Opt.complexity.isnot(None))
+            .group_by(strategy_col, Opt.complexity)
+        )
+        if project:
+            complexity_query = complexity_query.where(Opt.project == project)
+
+        complexity_result = await self._session.execute(complexity_query)
+        complexity_rows = complexity_result.all()
+
+        complexity_performance: dict[str, dict[str, dict[str, float | int]]] = {}
+        for crow in complexity_rows:
+            name = LEGACY_STRATEGY_ALIASES.get(crow.strategy_name, crow.strategy_name)
+            strat_map = complexity_performance.setdefault(name, {})
+            if crow.complexity in strat_map:
+                prev = strat_map[crow.complexity]
+                prev_count = prev["count"]
+                new_count = prev_count + crow.count
+                if crow.avg_score is not None and prev.get("avg_score") is not None:
+                    prev["avg_score"] = round_score(
+                        (prev["avg_score"] * prev_count + crow.avg_score * crow.count)
+                        / new_count,
+                    )
+                elif crow.avg_score is not None:
+                    prev["avg_score"] = round_score(crow.avg_score)
+                prev["count"] = new_count
+            else:
+                strat_map[crow.complexity] = {
+                    "count": crow.count,
+                    "avg_score": round_score(crow.avg_score),
+                }
+
+        # --- New Error Rate Query (E) ---
+        # Includes ALL statuses (not just completed) so we can compute error rates.
+        error_query = (
+            select(
+                strategy_col.label("strategy_name"),
+                func.count(Opt.id).label("total_count"),
+                func.count(Opt.id).filter(
+                    Opt.status == OptimizationStatus.ERROR,
+                ).label("error_count"),
+            )
+            .where(strategy_col.isnot(None))
+            .group_by(strategy_col)
+        )
+        if project:
+            error_query = error_query.where(Opt.project == project)
+
+        error_result = await self._session.execute(error_query)
+        error_rows = error_result.all()
+
+        error_rates: dict[str, dict[str, float | int]] = {}
+        for erow in error_rows:
+            name = LEGACY_STRATEGY_ALIASES.get(erow.strategy_name, erow.strategy_name)
+            if name in error_rates:
+                prev = error_rates[name]
+                prev["total"] += erow.total_count
+                prev["errors"] += erow.error_count
+            else:
+                error_rates[name] = {
+                    "total": erow.total_count,
+                    "errors": erow.error_count,
+                }
+        for name, data in error_rates.items():
+            data["rate"] = round(data["errors"] / data["total"], 4) if data["total"] > 0 else 0
+
+        # --- New Time-Trend Query (F) ---
+        now = datetime.now(timezone.utc)
+        seven_days_ago = now - timedelta(days=7)
+        thirty_days_ago = now - timedelta(days=30)
+
+        trend_query = select(
+            func.count(Opt.id).filter(
+                Opt.created_at >= seven_days_ago,
+            ).label("count_7d"),
+            func.avg(Opt.overall_score).filter(
+                Opt.created_at >= seven_days_ago,
+            ).label("avg_score_7d"),
+            func.count(Opt.id).filter(
+                Opt.created_at >= thirty_days_ago,
+            ).label("count_30d"),
+            func.avg(Opt.overall_score).filter(
+                Opt.created_at >= thirty_days_ago,
+            ).label("avg_score_30d"),
+        ).where(completed)
+        if project:
+            trend_query = trend_query.where(Opt.project == project)
+
+        trend_result = await self._session.execute(trend_query)
+        trend_row = trend_result.one()
+
+        trend_7d = {
+            "count": trend_row.count_7d or 0,
+            "avg_score": round_score(trend_row.avg_score_7d),
+        }
+        trend_30d = {
+            "count": trend_row.count_30d or 0,
+            "avg_score": round_score(trend_row.avg_score_30d),
+        }
 
         return {
             "total_optimizations": total,
@@ -696,4 +1057,18 @@ class OptimizationRepository:
             "strategy_distribution": strategy_distribution or None,
             "score_by_strategy": score_by_strategy or None,
             "task_types_by_strategy": task_types_by_strategy or None,
+            "secondary_strategy_distribution": secondary_distribution or None,
+            "tags_by_strategy": tags_by_strategy or None,
+            # --- New analytics ---
+            "score_matrix": score_matrix or None,
+            "score_variance": score_variance or None,
+            "confidence_by_strategy": confidence_by_strategy or None,
+            "combo_effectiveness": combo_effectiveness or None,
+            "complexity_performance": complexity_performance or None,
+            "improvement_by_strategy": improvement_by_strategy or None,
+            "error_rates": error_rates or None,
+            "trend_7d": trend_7d,
+            "trend_30d": trend_30d,
+            "token_economics": token_economics or None,
+            "win_rates": win_rates or None,
         }

@@ -41,7 +41,7 @@ Best for coding, extraction, and data formatting tasks. \
 Less beneficial when free-form text output is desired.
 
 7. **step-by-step**: Numbered sequential instructions. \
-Best for procedural tasks and tutorials. \
+Best for coding tasks with sequential operations, analytical breakdowns, and procedural instructions. \
 Less beneficial when task is inherently non-sequential.
 
 8. **constraint-injection**: Explicit do/don't rules and boundaries. \
@@ -54,7 +54,7 @@ Best when prompt LACKS background info or domain definitions. \
 Less beneficial when comprehensive context is already provided.
 
 10. **persona-assignment**: Expert role with domain expertise. \
-Best for coding, writing, creative, medical, and legal tasks. \
+Best for writing, creative, medical, and legal tasks. \
 Less beneficial when prompt already assigns a clear expert role.
 
 ## Recommended Per-Task-Type Combinations

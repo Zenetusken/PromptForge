@@ -416,6 +416,106 @@ class TestGetStats:
         for legacy in ("few-shot", "role-based", "constraint-focused", "structured-enhancement"):
             assert legacy not in dist
 
+    @pytest.mark.asyncio
+    async def test_secondary_strategy_distribution(self, db_session):
+        """Secondary frameworks are counted across all completed optimizations."""
+        repo = OptimizationRepository(db_session)
+        await _seed(
+            db_session, id="a", strategy="chain-of-thought",
+            secondary_frameworks=json.dumps(["few-shot-scaffolding", "constraint-injection"]),
+        )
+        await _seed(
+            db_session, id="b", strategy="persona-assignment",
+            secondary_frameworks=json.dumps(["constraint-injection"]),
+        )
+        await _seed(
+            db_session, id="c", strategy="co-star",
+            secondary_frameworks=None,
+        )
+        stats = await repo.get_stats()
+        sec = stats["secondary_strategy_distribution"]
+        assert sec is not None
+        assert sec["constraint-injection"] == 2
+        assert sec["few-shot-scaffolding"] == 1
+        assert "co-star" not in sec
+
+    @pytest.mark.asyncio
+    async def test_tags_by_strategy(self, db_session):
+        """Tags are bucketed under the primary strategy name."""
+        repo = OptimizationRepository(db_session)
+        await _seed(
+            db_session, id="a", strategy="chain-of-thought",
+            tags=json.dumps(["sql", "backend"]),
+        )
+        await _seed(
+            db_session, id="b", strategy="chain-of-thought",
+            tags=json.dumps(["sql", "api"]),
+        )
+        await _seed(
+            db_session, id="c", strategy="persona-assignment",
+            tags=json.dumps(["frontend"]),
+        )
+        stats = await repo.get_stats()
+        tbs = stats["tags_by_strategy"]
+        assert tbs is not None
+        assert tbs["chain-of-thought"]["sql"] == 2
+        assert tbs["chain-of-thought"]["backend"] == 1
+        assert tbs["chain-of-thought"]["api"] == 1
+        assert tbs["persona-assignment"]["frontend"] == 1
+
+    @pytest.mark.asyncio
+    async def test_tags_by_strategy_top4_limit(self, db_session):
+        """Only the top 4 tags (by count) are kept per strategy."""
+        repo = OptimizationRepository(db_session)
+        # Create optimizations with 6 different tags, varying counts
+        await _seed(
+            db_session, id="a", strategy="co-star",
+            tags=json.dumps(["t1", "t2", "t3", "t4", "t5", "t6"]),
+        )
+        await _seed(
+            db_session, id="b", strategy="co-star",
+            tags=json.dumps(["t1", "t2", "t3", "t4"]),
+        )
+        await _seed(
+            db_session, id="c", strategy="co-star",
+            tags=json.dumps(["t1", "t2"]),
+        )
+        stats = await repo.get_stats()
+        tbs = stats["tags_by_strategy"]
+        assert tbs is not None
+        co_star_tags = tbs["co-star"]
+        assert len(co_star_tags) == 4
+        # t1(3), t2(3), t3(2), t4(2) should be kept; t5(1), t6(1) dropped
+        assert "t1" in co_star_tags
+        assert "t2" in co_star_tags
+        assert "t3" in co_star_tags
+        assert "t4" in co_star_tags
+        assert "t5" not in co_star_tags
+        assert "t6" not in co_star_tags
+
+    @pytest.mark.asyncio
+    async def test_secondary_distribution_legacy_aliases(self, db_session):
+        """Legacy aliases in secondary_frameworks are normalized to canonical names."""
+        repo = OptimizationRepository(db_session)
+        await _seed(
+            db_session, id="a", strategy="co-star",
+            secondary_frameworks=json.dumps(["constraint-focused", "few-shot"]),
+        )
+        await _seed(
+            db_session, id="b", strategy="co-star",
+            secondary_frameworks=json.dumps(["constraint-injection"]),
+        )
+        stats = await repo.get_stats()
+        sec = stats["secondary_strategy_distribution"]
+        assert sec is not None
+        # "constraint-focused" → "constraint-injection", plus one explicit "constraint-injection"
+        assert sec["constraint-injection"] == 2
+        # "few-shot" → "few-shot-scaffolding"
+        assert sec["few-shot-scaffolding"] == 1
+        # Legacy names should not appear
+        assert "constraint-focused" not in sec
+        assert "few-shot" not in sec
+
 
 # ---------------------------------------------------------------------------
 # Forge linking helpers
@@ -800,3 +900,224 @@ class TestDeletePrompt:
         assert await opt_repo.get_by_id("linked") is None
         assert await opt_repo.get_by_id("orphan") is None
         assert await opt_repo.get_by_id("unrelated") is not None
+
+
+# ---------------------------------------------------------------------------
+# TestGetStatsAnalytics — Extended analytics (10 new metrics)
+# ---------------------------------------------------------------------------
+
+
+class TestGetStatsAnalytics:
+    @pytest.mark.asyncio
+    async def test_score_matrix(self, db_session):
+        """score_matrix returns avg_score per strategy per task type."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", strategy="chain-of-thought", task_type="coding", overall_score=0.8)
+        await _seed(db_session, id="b", strategy="chain-of-thought", task_type="coding", overall_score=0.6)
+        await _seed(db_session, id="c", strategy="chain-of-thought", task_type="writing", overall_score=0.9)
+        await _seed(db_session, id="d", strategy="co-star", task_type="coding", overall_score=0.7)
+        stats = await repo.get_stats()
+        matrix = stats["score_matrix"]
+        assert matrix is not None
+        assert matrix["chain-of-thought"]["coding"]["count"] == 2
+        assert abs(matrix["chain-of-thought"]["coding"]["avg_score"] - 0.7) < 0.01
+        assert matrix["chain-of-thought"]["writing"]["count"] == 1
+        assert matrix["co-star"]["coding"]["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_score_variance(self, db_session):
+        """score_variance returns min, max, avg, stddev per strategy."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", strategy="chain-of-thought", overall_score=0.6)
+        await _seed(db_session, id="b", strategy="chain-of-thought", overall_score=0.8)
+        await _seed(db_session, id="c", strategy="chain-of-thought", overall_score=1.0)
+        stats = await repo.get_stats()
+        var = stats["score_variance"]
+        assert var is not None
+        cot = var["chain-of-thought"]
+        assert cot["min"] == 0.6
+        assert cot["max"] == 1.0
+        assert abs(cot["avg"] - 0.8) < 0.01
+        assert cot["stddev"] > 0  # scores differ, so stddev > 0
+        assert cot["count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_confidence_by_strategy(self, db_session):
+        """confidence_by_strategy returns avg strategy_confidence per strategy."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", strategy="chain-of-thought", strategy_confidence=0.9)
+        await _seed(db_session, id="b", strategy="chain-of-thought", strategy_confidence=0.7)
+        await _seed(db_session, id="c", strategy="co-star", strategy_confidence=0.5)
+        stats = await repo.get_stats()
+        conf = stats["confidence_by_strategy"]
+        assert conf is not None
+        assert abs(conf["chain-of-thought"] - 0.8) < 0.01
+        assert abs(conf["co-star"] - 0.5) < 0.01
+
+    @pytest.mark.asyncio
+    async def test_combo_effectiveness(self, db_session):
+        """combo_effectiveness tracks (primary, secondary) pair avg_score."""
+        repo = OptimizationRepository(db_session)
+        await _seed(
+            db_session, id="a", strategy="chain-of-thought",
+            secondary_frameworks=json.dumps(["step-by-step"]),
+            overall_score=0.9,
+        )
+        await _seed(
+            db_session, id="b", strategy="chain-of-thought",
+            secondary_frameworks=json.dumps(["step-by-step"]),
+            overall_score=0.7,
+        )
+        await _seed(
+            db_session, id="c", strategy="co-star",
+            secondary_frameworks=json.dumps(["step-by-step"]),
+            overall_score=0.6,
+        )
+        stats = await repo.get_stats()
+        combo = stats["combo_effectiveness"]
+        assert combo is not None
+        assert combo["chain-of-thought"]["step-by-step"]["count"] == 2
+        assert abs(combo["chain-of-thought"]["step-by-step"]["avg_score"] - 0.8) < 0.01
+        assert combo["co-star"]["step-by-step"]["count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_complexity_performance(self, db_session):
+        """complexity_performance groups by strategy × complexity."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", strategy="chain-of-thought", complexity="high", overall_score=0.7)
+        await _seed(db_session, id="b", strategy="chain-of-thought", complexity="low", overall_score=0.9)
+        await _seed(db_session, id="c", strategy="chain-of-thought", complexity="high", overall_score=0.5)
+        stats = await repo.get_stats()
+        comp = stats["complexity_performance"]
+        assert comp is not None
+        assert comp["chain-of-thought"]["high"]["count"] == 2
+        assert abs(comp["chain-of-thought"]["high"]["avg_score"] - 0.6) < 0.01
+        assert comp["chain-of-thought"]["low"]["count"] == 1
+        assert abs(comp["chain-of-thought"]["low"]["avg_score"] - 0.9) < 0.01
+
+    @pytest.mark.asyncio
+    async def test_improvement_by_strategy(self, db_session):
+        """improvement_by_strategy tracks per-strategy improvement rate."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", strategy="chain-of-thought", is_improvement=True)
+        await _seed(db_session, id="b", strategy="chain-of-thought", is_improvement=False)
+        await _seed(db_session, id="c", strategy="chain-of-thought", is_improvement=True)
+        await _seed(db_session, id="d", strategy="co-star", is_improvement=None)
+        stats = await repo.get_stats()
+        imp = stats["improvement_by_strategy"]
+        assert imp is not None
+        assert imp["chain-of-thought"]["improved"] == 2
+        assert imp["chain-of-thought"]["validated"] == 3
+        assert abs(imp["chain-of-thought"]["rate"] - 2 / 3) < 0.01
+        # co-star: is_improvement=None → validated=0, rate=None
+        assert imp["co-star"]["validated"] == 0
+        assert imp["co-star"]["rate"] is None
+
+    @pytest.mark.asyncio
+    async def test_error_rates(self, db_session):
+        """error_rates includes non-completed records for error rate computation."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", strategy="chain-of-thought", status=OptimizationStatus.COMPLETED)
+        await _seed(db_session, id="b", strategy="chain-of-thought", status=OptimizationStatus.ERROR, overall_score=None)
+        await _seed(db_session, id="c", strategy="chain-of-thought", status=OptimizationStatus.ERROR, overall_score=None)
+        stats = await repo.get_stats()
+        err = stats["error_rates"]
+        assert err is not None
+        assert err["chain-of-thought"]["total"] == 3
+        assert err["chain-of-thought"]["errors"] == 2
+        assert abs(err["chain-of-thought"]["rate"] - 2 / 3) < 0.01
+
+    @pytest.mark.asyncio
+    async def test_time_trends(self, db_session):
+        """trend_7d and trend_30d return recent counts and avg scores."""
+        repo = OptimizationRepository(db_session)
+        # Recent record (within 7d)
+        await _seed(db_session, id="recent", overall_score=0.8)
+        # Old record (outside 30d)
+        from datetime import timedelta
+        old_date = datetime.now(timezone.utc) - timedelta(days=60)
+        await _seed(db_session, id="old", overall_score=0.5, created_at=old_date)
+        stats = await repo.get_stats()
+        assert stats["trend_7d"]["count"] >= 1  # at least the recent one
+        assert stats["trend_7d"]["avg_score"] is not None
+        assert stats["trend_30d"]["count"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_token_economics(self, db_session):
+        """token_economics returns avg token counts per strategy."""
+        repo = OptimizationRepository(db_session)
+        await _seed(
+            db_session, id="a", strategy="chain-of-thought",
+            input_tokens=100, output_tokens=200, duration_ms=1000,
+        )
+        await _seed(
+            db_session, id="b", strategy="chain-of-thought",
+            input_tokens=200, output_tokens=400, duration_ms=2000,
+        )
+        stats = await repo.get_stats()
+        tok = stats["token_economics"]
+        assert tok is not None
+        assert tok["chain-of-thought"]["avg_input_tokens"] == 150
+        assert tok["chain-of-thought"]["avg_output_tokens"] == 300
+        assert tok["chain-of-thought"]["avg_duration_ms"] == 1500
+
+    @pytest.mark.asyncio
+    async def test_win_rates(self, db_session):
+        """win_rates identifies the best strategy per task type."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", strategy="chain-of-thought", task_type="coding", overall_score=0.9)
+        await _seed(db_session, id="b", strategy="co-star", task_type="coding", overall_score=0.6)
+        await _seed(db_session, id="c", strategy="co-star", task_type="writing", overall_score=0.8)
+        stats = await repo.get_stats()
+        wins = stats["win_rates"]
+        assert wins is not None
+        assert wins["coding"]["strategy"] == "chain-of-thought"
+        assert wins["coding"]["avg_score"] == 0.9
+        assert wins["writing"]["strategy"] == "co-star"
+
+    @pytest.mark.asyncio
+    async def test_empty_db_returns_none_analytics(self, db_session):
+        """All new analytics fields default to None on empty DB."""
+        repo = OptimizationRepository(db_session)
+        stats = await repo.get_stats()
+        assert stats["score_matrix"] is None
+        assert stats["score_variance"] is None
+        assert stats["confidence_by_strategy"] is None
+        assert stats["combo_effectiveness"] is None
+        assert stats["complexity_performance"] is None
+        assert stats["improvement_by_strategy"] is None
+        assert stats["error_rates"] is None
+        assert stats["trend_7d"] == {"count": 0, "avg_score": None}
+        assert stats["trend_30d"] == {"count": 0, "avg_score": None}
+        assert stats["token_economics"] is None
+        assert stats["win_rates"] is None
+
+    @pytest.mark.asyncio
+    async def test_analytics_with_project_filter(self, db_session):
+        """New analytics respect the project filter."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", project="alpha", strategy="chain-of-thought",
+                    task_type="coding", overall_score=0.9, strategy_confidence=0.8)
+        await _seed(db_session, id="b", project="beta", strategy="co-star",
+                    task_type="writing", overall_score=0.7, strategy_confidence=0.6)
+        stats = await repo.get_stats(project="alpha")
+        # Only alpha data should be present
+        assert stats["score_matrix"] is not None
+        assert "chain-of-thought" in stats["score_matrix"]
+        assert "co-star" not in (stats["score_matrix"] or {})
+        assert "chain-of-thought" in (stats["confidence_by_strategy"] or {})
+        assert "co-star" not in (stats["confidence_by_strategy"] or {})
+
+    @pytest.mark.asyncio
+    async def test_legacy_alias_in_score_matrix(self, db_session):
+        """Legacy strategy aliases are normalized in score_matrix."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", framework_applied="role-based", task_type="coding", overall_score=0.7)
+        await _seed(db_session, id="b", strategy="persona-assignment", task_type="coding", overall_score=0.9)
+        stats = await repo.get_stats()
+        matrix = stats["score_matrix"]
+        assert matrix is not None
+        assert "persona-assignment" in matrix
+        assert "role-based" not in matrix
+        # Both merged under persona-assignment for coding
+        assert matrix["persona-assignment"]["coding"]["count"] == 2
