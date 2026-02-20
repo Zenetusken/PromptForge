@@ -91,13 +91,13 @@ class TestStrategySelector:
         result = self.selector.select(_make_analysis(task_type="general"))
         assert result.strategy == "role-task-format"
 
-    def test_education_task_selects_step_by_step(self):
+    def test_education_task_selects_risen(self):
         result = self.selector.select(_make_analysis(task_type="education"))
-        assert result.strategy == "step-by-step"
+        assert result.strategy == "risen"
 
-    def test_other_task_selects_role_task_format(self):
+    def test_other_task_selects_risen(self):
         result = self.selector.select(_make_analysis(task_type="other"))
-        assert result.strategy == "role-task-format"
+        assert result.strategy == "risen"
 
     # --- Unknown task type fallback ---
 
@@ -155,11 +155,12 @@ class TestStrategySelector:
         )
         assert result.strategy == "constraint-injection"
 
-    def test_lack_of_detail_triggers_constraint_focused(self):
+    def test_lack_of_detail_writing_keeps_persona(self):
+        """Writing's persona-assignment is exempt from P2 specificity override."""
         result = self.selector.select(
             _make_analysis(task_type="writing", weaknesses=["Suffers from lack of detail"])
         )
-        assert result.strategy == "constraint-injection"
+        assert result.strategy == "persona-assignment"
 
     # --- Expanded specificity patterns ---
 
@@ -181,11 +182,12 @@ class TestStrategySelector:
         )
         assert result.strategy == "constraint-injection"
 
-    def test_too_broad_triggers_constraint_focused(self):
+    def test_too_broad_writing_keeps_persona(self):
+        """Writing's persona-assignment is exempt from P2 specificity override."""
         result = self.selector.select(
             _make_analysis(task_type="writing", weaknesses=["Scope is too broad"])
         )
-        assert result.strategy == "constraint-injection"
+        assert result.strategy == "persona-assignment"
 
     def test_too_general_triggers_constraint_focused(self):
         result = self.selector.select(
@@ -199,11 +201,12 @@ class TestStrategySelector:
         )
         assert result.strategy == "constraint-injection"
 
-    def test_insufficiently_detailed_triggers_constraint_focused(self):
+    def test_insufficiently_detailed_writing_keeps_persona(self):
+        """Writing's persona-assignment is exempt from P2 specificity override."""
         result = self.selector.select(
             _make_analysis(task_type="writing", weaknesses=["Insufficiently detailed requirements"])
         )
-        assert result.strategy == "constraint-injection"
+        assert result.strategy == "persona-assignment"
 
     def test_broad_scope_triggers_constraint_focused(self):
         result = self.selector.select(
@@ -489,7 +492,7 @@ class TestStrategySelector:
     def test_high_complexity_boost_capped_at_095(self):
         """High complexity boost for known task types: 0.75 + 0.10 = 0.85 (under cap)."""
         result = self.selector.select(_make_analysis(complexity="high", task_type="education"))
-        assert result.strategy == "step-by-step"
+        assert result.strategy == "risen"
         assert result.confidence == 0.85
 
     def test_high_complexity_boost_unknown_task(self):
@@ -599,16 +602,26 @@ class TestSpecificityPatterns:
 
 
 class TestSpecificityExemptStrategies:
-    def test_exempt_strategies_only_chain_of_thought(self):
-        assert _SPECIFICITY_EXEMPT_STRATEGIES == {Strategy.CHAIN_OF_THOUGHT}
+    def test_exempt_strategies_include_expected_set(self):
+        assert _SPECIFICITY_EXEMPT_STRATEGIES == {
+            Strategy.CHAIN_OF_THOUGHT,
+            Strategy.PERSONA_ASSIGNMENT,
+            Strategy.FEW_SHOT_SCAFFOLDING,
+            Strategy.RISEN,
+        }
 
-    def test_exempt_task_types_are_chain_of_thought_mapped(self):
-        """All task types whose primary is an exempt strategy should be the CoT group."""
+    def test_exempt_task_types_cover_expected_set(self):
+        """Task types whose primary is an exempt strategy — P2 skips these."""
         exempt_tasks = {
             k for k, v in TASK_TYPE_FRAMEWORK_MAP.items()
             if v.primary in _SPECIFICITY_EXEMPT_STRATEGIES
         }
-        assert exempt_tasks == {"reasoning", "analysis", "math"}
+        assert exempt_tasks == {
+            "reasoning", "analysis", "math",          # chain-of-thought
+            "writing", "creative", "medical", "legal", # persona-assignment
+            "classification",                          # few-shot-scaffolding
+            "education", "other",                      # risen
+        }
 
 
 class TestStrategyReasonMap:
@@ -836,8 +849,8 @@ class TestP1RedundancyCheck:
             task_type="analysis",
             strengths=["Uses chain of thought approach"],
         ))
-        # analysis combo: CoT + (structured-output, co-star)
-        assert result.strategy == "structured-output"
+        # analysis combo: CoT + (co-star, structured-output)
+        assert result.strategy == "co-star"
         assert result.confidence == 0.85
 
     def test_high_cot_with_numbered_steps_redirects(self):
@@ -994,3 +1007,158 @@ class TestPromptLengthPenalty:
             prompt_length=5,
         )
         assert result.confidence >= 0.0
+
+
+class TestStrategyUtilizationCoverage:
+    """Tests verifying all 10 strategies are reachable as primary selection.
+
+    Addresses the strategy utilization gap where 5 strategies had zero primary
+    selections: co-star, few-shot-scaffolding, step-by-step, context-enrichment,
+    structured-output (the last via non-redundancy paths).
+    """
+
+    def setup_method(self):
+        self.selector = HeuristicStrategySelector()
+
+    # --- RISEN reachability (new primary for education/other) ---
+
+    def test_risen_selected_for_education(self):
+        """Education task type now maps to risen as primary."""
+        result = self.selector.select(_make_analysis(task_type="education"))
+        assert result.strategy == "risen"
+        assert result.confidence == 0.75
+        assert "step-by-step" in result.secondary_frameworks
+
+    def test_risen_selected_for_other(self):
+        """Other task type now maps to risen as primary."""
+        result = self.selector.select(_make_analysis(task_type="other"))
+        assert result.strategy == "risen"
+        assert result.confidence == 0.75
+
+    # --- co-star via redundancy fallback (now at secondary[0]) ---
+
+    def test_co_star_via_analysis_redundancy(self):
+        """Analysis: CoT redundant → falls back to co-star (first secondary)."""
+        result = self.selector.select(_make_analysis(
+            task_type="analysis",
+            strengths=["Already uses chain of thought reasoning"],
+        ))
+        # analysis combo: CoT + (co-star, structured-output)
+        assert result.strategy == "co-star"
+        assert result.confidence == 0.70
+
+    def test_co_star_via_creative_redundancy(self):
+        """Creative: persona-assignment redundant → falls back to co-star (first secondary)."""
+        result = self.selector.select(_make_analysis(
+            task_type="creative",
+            strengths=["Already assigns a role as expert storyteller"],
+        ))
+        # creative combo: persona-assignment + (co-star, context-enrichment)
+        assert result.strategy == "co-star"
+        assert result.confidence == 0.70
+
+    # --- context-enrichment via writing redundancy ---
+
+    def test_context_enrichment_via_writing_redundancy(self):
+        """Writing: persona-assignment redundant → falls back to context-enrichment."""
+        result = self.selector.select(_make_analysis(
+            task_type="writing",
+            strengths=["Defines a role as professional copywriter"],
+        ))
+        # writing combo: persona-assignment + (context-enrichment, co-star)
+        assert result.strategy == "context-enrichment"
+        assert result.confidence == 0.70
+
+    # --- few-shot-scaffolding via extraction redundancy ---
+
+    def test_few_shot_via_extraction_redundancy(self):
+        """Extraction: structured-output redundant → falls back to few-shot-scaffolding."""
+        result = self.selector.select(_make_analysis(
+            task_type="extraction",
+            strengths=["Well-structured with clear format for output"],
+        ))
+        # extraction combo: structured-output + (few-shot-scaffolding, constraint-injection)
+        assert result.strategy == "few-shot-scaffolding"
+        assert result.confidence == 0.70
+
+    # --- step-by-step via education redundancy ---
+
+    def test_step_by_step_via_education_redundancy(self):
+        """Education: risen redundant → falls back to step-by-step."""
+        result = self.selector.select(_make_analysis(
+            task_type="education",
+            strengths=["Has clear role and instructions with end-goal defined"],
+        ))
+        # education combo: risen + (step-by-step, context-enrichment)
+        assert result.strategy == "step-by-step"
+        assert result.confidence == 0.70
+
+    # --- Exempt strategies keep their natural selection under P2 ---
+
+    def test_writing_with_vague_keeps_persona(self):
+        """Writing task with vague weakness keeps persona-assignment (exempt from P2)."""
+        result = self.selector.select(
+            _make_analysis(task_type="writing", weaknesses=["Instructions are vague"])
+        )
+        assert result.strategy == "persona-assignment"
+
+    def test_classification_vague_keeps_few_shot(self):
+        """Classification task with vague weakness keeps few-shot-scaffolding (exempt from P2)."""
+        result = self.selector.select(
+            _make_analysis(task_type="classification", weaknesses=["Requirements are vague"])
+        )
+        assert result.strategy == "few-shot-scaffolding"
+
+    def test_education_vague_keeps_risen(self):
+        """Education task with vague weakness keeps risen (exempt from P2)."""
+        result = self.selector.select(
+            _make_analysis(task_type="education", weaknesses=["Too broad scope"])
+        )
+        assert result.strategy == "risen"
+
+    # --- Meta-test: all 10 strategies reachable as primary ---
+
+    def test_all_10_strategies_reachable_as_primary(self):
+        """Every one of the 10 strategies must be reachable as a primary selection.
+
+        This test constructs specific analysis scenarios for each strategy and
+        verifies the heuristic selector can produce it as primary output.
+        """
+        scenarios: dict[Strategy, AnalysisResult] = {
+            # Direct task-type mappings (P3)
+            Strategy.CHAIN_OF_THOUGHT: _make_analysis(task_type="reasoning"),
+            Strategy.PERSONA_ASSIGNMENT: _make_analysis(task_type="writing"),
+            Strategy.STRUCTURED_OUTPUT: _make_analysis(task_type="coding"),
+            Strategy.FEW_SHOT_SCAFFOLDING: _make_analysis(task_type="classification"),
+            Strategy.ROLE_TASK_FORMAT: _make_analysis(task_type="general"),
+            Strategy.RISEN: _make_analysis(task_type="education"),
+            # P2 specificity override (only fires for non-exempt task types)
+            Strategy.CONSTRAINT_INJECTION: _make_analysis(
+                task_type="coding", weaknesses=["Instructions are vague"],
+            ),
+            # Redundancy fallback paths
+            Strategy.CO_STAR: _make_analysis(
+                task_type="analysis",
+                strengths=["Already uses chain of thought reasoning"],
+            ),
+            Strategy.CONTEXT_ENRICHMENT: _make_analysis(
+                task_type="writing",
+                strengths=["Defines a role as professional writer"],
+            ),
+            Strategy.STEP_BY_STEP: _make_analysis(
+                task_type="education",
+                strengths=["Has clear role and instructions with end-goal defined"],
+            ),
+        }
+        reached = set()
+        for expected_strategy, analysis in scenarios.items():
+            result = self.selector.select(analysis)
+            assert result.strategy == expected_strategy, (
+                f"Expected {expected_strategy} but got {result.strategy} "
+                f"for task_type={analysis.task_type}"
+            )
+            reached.add(result.strategy)
+
+        assert reached == set(Strategy), (
+            f"Not all strategies reachable. Missing: {set(Strategy) - reached}"
+        )

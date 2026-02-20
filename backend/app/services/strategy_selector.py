@@ -56,7 +56,7 @@ TASK_TYPE_FRAMEWORK_MAP: dict[str, FrameworkCombo] = {
     ),
     "creative": FrameworkCombo(
         Strategy.PERSONA_ASSIGNMENT,
-        (Strategy.CONTEXT_ENRICHMENT, Strategy.CO_STAR),
+        (Strategy.CO_STAR, Strategy.CONTEXT_ENRICHMENT),
     ),
     "reasoning": FrameworkCombo(
         Strategy.CHAIN_OF_THOUGHT,
@@ -64,7 +64,7 @@ TASK_TYPE_FRAMEWORK_MAP: dict[str, FrameworkCombo] = {
     ),
     "analysis": FrameworkCombo(
         Strategy.CHAIN_OF_THOUGHT,
-        (Strategy.STRUCTURED_OUTPUT, Strategy.CO_STAR),
+        (Strategy.CO_STAR, Strategy.STRUCTURED_OUTPUT),
     ),
     "math": FrameworkCombo(
         Strategy.CHAIN_OF_THOUGHT,
@@ -72,7 +72,7 @@ TASK_TYPE_FRAMEWORK_MAP: dict[str, FrameworkCombo] = {
     ),
     "extraction": FrameworkCombo(
         Strategy.STRUCTURED_OUTPUT,
-        (Strategy.CONSTRAINT_INJECTION, Strategy.FEW_SHOT_SCAFFOLDING),
+        (Strategy.FEW_SHOT_SCAFFOLDING, Strategy.CONSTRAINT_INJECTION),
     ),
     "classification": FrameworkCombo(
         Strategy.FEW_SHOT_SCAFFOLDING,
@@ -91,16 +91,16 @@ TASK_TYPE_FRAMEWORK_MAP: dict[str, FrameworkCombo] = {
         (Strategy.CONSTRAINT_INJECTION, Strategy.CONTEXT_ENRICHMENT),
     ),
     "education": FrameworkCombo(
-        Strategy.STEP_BY_STEP,
-        (Strategy.CONTEXT_ENRICHMENT, Strategy.ROLE_TASK_FORMAT),
+        Strategy.RISEN,
+        (Strategy.STEP_BY_STEP, Strategy.CONTEXT_ENRICHMENT),
     ),
     "general": FrameworkCombo(
         Strategy.ROLE_TASK_FORMAT,
         (Strategy.CONTEXT_ENRICHMENT, Strategy.STRUCTURED_OUTPUT),
     ),
     "other": FrameworkCombo(
-        Strategy.ROLE_TASK_FORMAT,
-        (Strategy.CONTEXT_ENRICHMENT, Strategy.STRUCTURED_OUTPUT),
+        Strategy.RISEN,
+        (Strategy.ROLE_TASK_FORMAT, Strategy.CONTEXT_ENRICHMENT),
     ),
 }
 
@@ -129,11 +129,15 @@ _SPECIFICITY_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Task types whose natural strategy (CHAIN_OF_THOUGHT) already addresses
-# the same concerns as CONSTRAINT_INJECTION, so the specificity override
-# should not eclipse them (Issue 2.1).
+# Strategies that already address vagueness through their own structure,
+# so the P2 specificity override (→ constraint-injection) should not
+# eclipse them.  P2 only fires for non-exempt task types like coding,
+# formatting, extraction, general, and unknowns.
 _SPECIFICITY_EXEMPT_STRATEGIES: frozenset[Strategy] = frozenset({
-    Strategy.CHAIN_OF_THOUGHT,
+    Strategy.CHAIN_OF_THOUGHT,       # step-by-step reasoning addresses vagueness naturally
+    Strategy.PERSONA_ASSIGNMENT,     # domain expertise addresses vagueness
+    Strategy.FEW_SHOT_SCAFFOLDING,   # examples define expectations better than constraints
+    Strategy.RISEN,                  # RISEN's "Narrowing constraints" subsumes constraint-injection
 })
 
 # Strengths that make a strategy redundant — if the prompt already has
@@ -228,7 +232,9 @@ class HeuristicStrategySelector:
          → chain-of-thought.  Non-CoT task types fall through even at high
          complexity, preserving strategy diversity.
       2. Specificity weakness → constraint-injection, UNLESS the task-type's
-         natural strategy is already exempt (e.g. chain-of-thought for math)
+         natural strategy is exempt (chain-of-thought, persona-assignment,
+         few-shot-scaffolding, risen).  P2 only fires for coding, formatting,
+         extraction, general, and unknown task types.
       3. Task-type map → lookup with role-task-format fallback,
          with a strengths-based redundancy check: if the prompt already
          has what the candidate strategy would add, tries the combo's first

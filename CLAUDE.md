@@ -51,7 +51,7 @@ docker-compose up     # starts backend (8000) + frontend (5199)
 Four LLM-calling stages, orchestrated as an async generator that yields SSE events:
 
 1. **Analyze** (`PromptAnalyzer`) — classifies task type, complexity, weaknesses, strengths
-2. **Strategy Selection** (`StrategySelector`) — LLM-based strategy selection with heuristic fallback. Sends analysis and prompt to the LLM to pick from: chain-of-thought, few-shot, role-based, constraint-focused, structured-enhancement. Returns strategy name, reasoning, and confidence (0.0–1.0). Falls back to `HeuristicStrategySelector` (3-tier priority system with specificity exemptions and redundancy detection) on LLM errors. Users can override strategy via the UI or API (bypasses LLM call).
+2. **Strategy Selection** (`StrategySelector`) — LLM-based strategy selection with heuristic fallback. Sends analysis and prompt to the LLM to pick from 10 frameworks: co-star, risen, chain-of-thought, few-shot-scaffolding, role-task-format, structured-output, step-by-step, constraint-injection, context-enrichment, persona-assignment. Returns strategy name, reasoning, and confidence (0.0–1.0). Falls back to `HeuristicStrategySelector` (3-tier priority system with specificity exemptions and redundancy detection) on LLM errors. Users can override strategy via the UI or API (bypasses LLM call).
 3. **Optimize** (`PromptOptimizer`) — rewrites the prompt using the selected strategy
 4. **Validate** (`PromptValidator`) — scores clarity/specificity/structure/faithfulness (0.0–1.0), generates verdict
 

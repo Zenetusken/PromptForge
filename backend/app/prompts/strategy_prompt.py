@@ -12,44 +12,45 @@ You will receive a JSON object with:
 ## Available Frameworks
 
 1. **co-star**: Context, Objective, Style, Tone, Audience, Response format. \
-Best for research, analysis, and content creation. \
-AVOID when prompt already defines audience and context clearly.
+Best when prompt LACKS structured context, audience, or response format. \
+Less beneficial when all are well-defined.
 
 2. **risen**: Role, Instructions, Steps, End-goal, Narrowing constraints. \
-Best for procedural and multi-step tasks. \
-AVOID when task is simple or single-step.
+Best for education, procedural, and multi-step tasks where structured goal-framing helps. \
+Less beneficial when task is simple or single-step.
 
 3. **chain-of-thought**: Step-by-step reasoning scaffolding. \
-Best for complex reasoning, analysis, and math tasks. \
-AVOID when prompt already contains step-by-step instructions.
+ONLY for complex reasoning, analysis, and math tasks where multi-step deduction is core. \
+Less beneficial when prompt already contains step-by-step instructions.
 
 4. **few-shot-scaffolding**: Input/output example pairs. \
-Best for classification, formatting, and extraction tasks. \
-AVOID when prompt already includes examples.
+Best when prompt LACKS concrete input/output examples. \
+Less beneficial when examples are already provided.
 
 5. **role-task-format**: Role + task description + output format. \
-Best for general/education tasks and as a versatile default. \
-AVOID when task requires deep domain expertise (use persona-assignment).
+Best for general tasks and as a versatile default. \
+Less beneficial when task requires deep domain expertise (use persona-assignment).
 
 6. **structured-output**: JSON, markdown, table, or parseable format spec. \
 Best for coding, extraction, and data formatting tasks. \
-AVOID when free-form text output is desired.
+Less beneficial when free-form text output is desired.
 
 7. **step-by-step**: Numbered sequential instructions. \
-Best for education, procedural tasks, and tutorials. \
-AVOID when task is inherently non-sequential.
+Best for procedural tasks and tutorials. \
+Less beneficial when task is inherently non-sequential.
 
 8. **constraint-injection**: Explicit do/don't rules and boundaries. \
-Best for prompts with specificity weaknesses (vague, ambiguous, too broad). \
-AVOID when prompt already has explicit constraints.
+Best for prompts with specificity weaknesses (vague, ambiguous, too broad) when the task type \
+does not already have a natural strategy that addresses vagueness (e.g., coding, formatting, general). \
+Less beneficial when prompt already has explicit constraints.
 
 9. **context-enrichment**: Background info, domain context, references. \
-Best for creative, medical/legal, and education tasks. \
-AVOID when the prompt already provides rich context.
+Best when prompt LACKS background info or domain definitions. \
+Less beneficial when comprehensive context is already provided.
 
 10. **persona-assignment**: Expert role with domain expertise. \
 Best for coding, writing, creative, medical, and legal tasks. \
-AVOID when prompt already assigns a clear expert role.
+Less beneficial when prompt already assigns a clear expert role.
 
 ## Recommended Per-Task-Type Combinations
 
@@ -58,31 +59,36 @@ Use these as reference — you may deviate when analysis indicates a better fit:
 | Task Type | Primary | Secondary 1 | Secondary 2 |
 |-----------|---------|-------------|-------------|
 | coding | structured-output | constraint-injection | step-by-step |
-| creative/writing | persona-assignment | context-enrichment | co-star |
-| analysis/reasoning | chain-of-thought | structured-output | co-star |
+| writing | persona-assignment | context-enrichment | co-star |
+| creative | persona-assignment | co-star | context-enrichment |
+| reasoning | chain-of-thought | structured-output | co-star |
+| analysis | chain-of-thought | co-star | structured-output |
 | math | chain-of-thought | step-by-step | constraint-injection |
-| extraction | structured-output | constraint-injection | few-shot-scaffolding |
+| extraction | structured-output | few-shot-scaffolding | constraint-injection |
 | classification | few-shot-scaffolding | structured-output | constraint-injection |
 | formatting | structured-output | few-shot-scaffolding | constraint-injection |
 | medical/legal | persona-assignment | constraint-injection | context-enrichment |
-| education | step-by-step | context-enrichment | role-task-format |
-| general/other | role-task-format | context-enrichment | structured-output |
+| education | risen | step-by-step | context-enrichment |
+| general | role-task-format | context-enrichment | structured-output |
+| other | risen | role-task-format | context-enrichment |
 
 ## Selection Priorities
 
 Apply these priorities in order:
 
-1. **High complexity + reasoning tasks**: For high-complexity reasoning, analysis, or math \
-tasks, chain-of-thought is strongly preferred as primary (confidence 0.85-0.95) — unless \
-the prompt already has step-by-step structure.
+1. **High complexity + reasoning tasks**: ONLY for high-complexity reasoning, analysis, or math \
+tasks where multi-step deduction is the core need, chain-of-thought is strongly preferred \
+as primary (confidence 0.85-0.95) — unless the prompt already has step-by-step structure.
 
 2. **Specificity weaknesses**: When the analysis identifies specificity weaknesses (vague, \
-ambiguous, lacks detail, too broad, unclear), strongly prefer constraint-injection as primary \
-(confidence 0.80-0.90). Exception: reasoning/analysis/math tasks already benefit from \
-chain-of-thought which addresses vagueness naturally.
+ambiguous, lacks detail, too broad, unclear), prefer constraint-injection as primary \
+(confidence 0.80-0.90) — but ONLY when the task type does not have a natural strategy that \
+already addresses vagueness. Task types with natural strategies like persona-assignment, \
+few-shot-scaffolding, or risen already handle vagueness through their own structure.
 
-3. **Task-type affinity**: Match primary framework to the task type per the table above. \
-Confidence 0.70-0.80 for clear matches.
+3. **Task-type affinity (DEFAULT selection path)**: Match primary framework to the task type \
+per the table above. This is the most common and expected selection path. \
+Confidence 0.75-0.85 for clear matches.
 
 4. **Redundancy check**: If the prompt's strengths already provide what a framework would \
 add (e.g., prompt already has examples → don't pick few-shot-scaffolding), fall back to \
@@ -105,11 +111,11 @@ Return ONLY valid JSON with these exact fields:
 
 Example response:
 {
-  "strategy": "constraint-injection",
-  "secondary_frameworks": ["structured-output", "step-by-step"],
-  "reasoning": "The prompt has multiple specificity weaknesses including vague instructions \
-and broad scope. Constraint injection addresses these directly, while structured output \
-ensures clear formatting and step-by-step provides ordering.",
-  "confidence": 0.85
+  "strategy": "risen",
+  "secondary_frameworks": ["step-by-step", "context-enrichment"],
+  "reasoning": "This education task needs structured goal-framing with clear role, instructions, \
+and end-goal. RISEN organizes the prompt effectively, while step-by-step provides sequential \
+ordering and context-enrichment adds background information.",
+  "confidence": 0.80
 }
 """
