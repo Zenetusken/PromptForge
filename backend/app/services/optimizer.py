@@ -3,12 +3,16 @@
 import json
 import logging
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 from app.constants import Strategy
 from app.prompts.optimizer_prompts import OPTIMIZER_SYSTEM_PROMPT
 from app.providers import LLMProvider, get_provider
 from app.providers.types import CompletionRequest, TokenUsage
 from app.services.analyzer import AnalysisResult, _ensure_string_list
+
+if TYPE_CHECKING:
+    from app.schemas.context import CodebaseContext
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,8 @@ class PromptOptimizer:
         analysis: AnalysisResult,
         strategy: str = Strategy.ROLE_TASK_FORMAT,
         secondary_frameworks: list[str] | None = None,
+        *,
+        codebase_context: CodebaseContext | None = None,
     ) -> OptimizationResult:
         """Optimize a raw prompt based on its analysis and chosen strategy.
 
@@ -48,6 +54,7 @@ class PromptOptimizer:
             analysis: The analysis results from PromptAnalyzer.
             strategy: The primary optimization strategy to apply.
             secondary_frameworks: Optional 0-2 secondary frameworks to combine.
+            codebase_context: Optional codebase context to ground the optimization.
 
         Returns:
             An OptimizationResult with the optimized prompt and metadata.
@@ -59,6 +66,10 @@ class PromptOptimizer:
         }
         if secondary_frameworks:
             payload["secondary_frameworks"] = secondary_frameworks
+        if codebase_context:
+            rendered = codebase_context.render()
+            if rendered:
+                payload["codebase_context"] = rendered
         user_message = json.dumps(payload)
         request = CompletionRequest(
             system_prompt=OPTIMIZER_SYSTEM_PROMPT,

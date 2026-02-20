@@ -13,6 +13,7 @@ Tools:
   - tag: Add/remove tags, set project on an optimization
   - stats: Get usage statistics
   - delete: Delete an optimization record
+  - bulk_delete: Delete multiple optimization records by ID
   - list_projects: List projects with filtering and pagination
   - get_project: Retrieve a project by ID with its prompts
   - strategies: List all available optimization strategies
@@ -60,6 +61,7 @@ from app.repositories.optimization import (
     OptimizationRepository,
     Pagination,
 )
+from app.schemas.context import codebase_context_from_dict
 from app.services.pipeline import run_pipeline
 from app.services.strategy_selector import _STRATEGY_DESCRIPTIONS, _STRATEGY_REASON_MAP
 from app.utils.scores import score_to_display
@@ -198,6 +200,7 @@ async def promptforge_optimize(
     secondary_frameworks: Annotated[list[str] | None, Field(description="Secondary frameworks (max 2) to combine with strategy. Use the strategies tool for valid values.")] = None,
     prompt_id: Annotated[str | None, Field(description="UUID of an existing project prompt to link this optimization to")] = None,
     version: Annotated[str | None, Field(description="Version label in 'v<number>' format (e.g. 'v1', 'v2')")] = None,
+    codebase_context: Annotated[dict | None, Field(description="Optional codebase context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in a real project.")] = None,
 ) -> dict[str, object]:
     """Run the full optimization pipeline on a prompt.
 
@@ -275,12 +278,16 @@ async def promptforge_optimize(
 
     await ctx.report_progress(0.1, 1.0, "Running optimization pipeline")
 
+    # Resolve codebase context from dict
+    resolved_context = codebase_context_from_dict(codebase_context)
+
     # Run pipeline
     try:
         result = await run_pipeline(
             prompt,
             strategy_override=strategy,
             secondary_frameworks_override=secondary_frameworks,
+            codebase_context=resolved_context,
         )
         elapsed_ms = int((time.time() - start_time) * 1000)
 
@@ -710,7 +717,45 @@ async def promptforge_delete(
         return {"deleted": True, "id": optimization_id}
 
 
-# --- Tool 10: list_projects ---
+# --- Tool 10: bulk_delete ---
+
+@mcp.tool(
+    name="bulk_delete",
+    description=(
+        "Delete multiple optimization records by ID in a single call. "
+        "Returns which IDs were deleted and which were not found. "
+        "Accepts 1-100 IDs. This action cannot be undone."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+async def promptforge_bulk_delete(
+    ids: Annotated[list[str], Field(description="List of optimization UUIDs to delete (1-100)")],
+) -> dict[str, object]:
+    """Delete multiple optimization records by ID.
+
+    Returns deleted_count, deleted_ids, and not_found_ids.
+    """
+    if not ids:
+        raise ToolError("ids list must not be empty")
+    if len(ids) > 100:
+        raise ToolError("ids list must contain 100 or fewer entries")
+
+    async with _repo_session() as (repo, session):
+        deleted_ids, not_found_ids = await repo.delete_by_ids(ids)
+        await session.commit()
+        return {
+            "deleted_count": len(deleted_ids),
+            "deleted_ids": deleted_ids,
+            "not_found_ids": not_found_ids,
+        }
+
+
+# --- Tool 11: list_projects ---
 
 @mcp.tool(
     name="list_projects",
@@ -774,7 +819,7 @@ async def promptforge_list_projects(
         }
 
 
-# --- Tool 11: get_project ---
+# --- Tool 12: get_project ---
 
 @mcp.tool(
     name="get_project",
@@ -810,7 +855,7 @@ async def promptforge_get_project(
         return result
 
 
-# --- Tool 12: strategies ---
+# --- Tool 13: strategies ---
 
 @mcp.tool(
     name="strategies",
@@ -846,7 +891,7 @@ async def promptforge_strategies() -> dict[str, object]:
     }
 
 
-# --- Tool 13: create_project ---
+# --- Tool 14: create_project ---
 
 @mcp.tool(
     name="create_project",
@@ -898,7 +943,7 @@ async def promptforge_create_project(
         return _project_to_dict(project)
 
 
-# --- Tool 14: add_prompt ---
+# --- Tool 15: add_prompt ---
 
 @mcp.tool(
     name="add_prompt",
@@ -941,7 +986,7 @@ async def promptforge_add_prompt(
         return _prompt_to_dict(prompt)
 
 
-# --- Tool 15: update_prompt ---
+# --- Tool 16: update_prompt ---
 
 @mcp.tool(
     name="update_prompt",

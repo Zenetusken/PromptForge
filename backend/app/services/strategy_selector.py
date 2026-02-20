@@ -4,12 +4,16 @@ import json
 import logging
 import re
 from dataclasses import asdict, dataclass, field
+from typing import TYPE_CHECKING
 
 from app.constants import LEGACY_STRATEGY_ALIASES, Strategy
 from app.prompts.strategy_prompt import STRATEGY_SYSTEM_PROMPT
 from app.providers import LLMProvider, get_provider
 from app.providers.types import CompletionRequest, TokenUsage
 from app.services.analyzer import AnalysisResult
+
+if TYPE_CHECKING:
+    from app.schemas.context import CodebaseContext
 
 logger = logging.getLogger(__name__)
 
@@ -487,10 +491,14 @@ class StrategySelector:
         analysis: AnalysisResult,
         raw_prompt: str = "",
         prompt_length: int = 0,
+        *,
+        codebase_context: CodebaseContext | None = None,
     ) -> StrategySelection:
         """Select strategy via LLM, falling back to heuristic on error."""
         try:
-            result = await self._select_via_llm(analysis, raw_prompt)
+            result = await self._select_via_llm(
+                analysis, raw_prompt, codebase_context=codebase_context,
+            )
         except Exception:
             logger.warning(
                 "LLM strategy selection failed, falling back to heuristic",
@@ -505,15 +513,21 @@ class StrategySelector:
         self,
         analysis: AnalysisResult,
         raw_prompt: str,
+        *,
+        codebase_context: CodebaseContext | None = None,
     ) -> StrategySelection:
         """Call the LLM to select a strategy."""
-        user_payload = {
+        user_payload: dict = {
             "raw_prompt": raw_prompt,
             "analysis": asdict(analysis),
             "available_strategies": {
                 s.value: _STRATEGY_DESCRIPTIONS[s] for s in Strategy
             },
         }
+        if codebase_context:
+            rendered = codebase_context.render()
+            if rendered:
+                user_payload["codebase_context"] = rendered
         request = CompletionRequest(
             system_prompt=STRATEGY_SYSTEM_PROMPT,
             user_message=json.dumps(user_payload),

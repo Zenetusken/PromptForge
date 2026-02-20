@@ -67,6 +67,26 @@ Assign a specific professional identity with relevant expertise and credentials.
 Describe the persona's experience level and specialization. Best combined with \
 constraint-injection (professional standards) or context-enrichment (domain background).
 
+## Codebase Context Integration
+
+When a `codebase_context` field is present in the input, use it to ground the optimized prompt \
+in the caller's actual project:
+
+- **Reference actual patterns**: If the context mentions "repository pattern" or "async ORM", \
+the optimized prompt should reference these patterns by name rather than using generic phrasing.
+- **Include relevant types/imports**: If code snippets show function signatures or class \
+definitions, incorporate them into the prompt so the LLM receiving the prompt knows the \
+exact interfaces to work with.
+- **Match conventions**: If the context specifies "PEP 8", "Google docstrings", or "pytest", \
+include these as explicit requirements in the optimized prompt.
+- **Match testing conventions**: If test_framework or test_patterns are provided, reference \
+them when the prompt involves writing or modifying tests.
+- **Synthesize naturally**: Weave context details into the prompt structure — don't copy-paste \
+the raw context block. The optimized prompt should read as a self-contained instruction that \
+happens to be grounded in real project details.
+- **Ignore irrelevant context**: If the codebase context is unrelated to the prompt's intent \
+(e.g., Python context for a SQL query prompt), focus on the prompt itself and disregard the context.
+
 ## Combining Frameworks
 
 When secondary_frameworks are provided, layer them into the primary framework's structure:

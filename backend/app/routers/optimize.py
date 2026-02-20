@@ -27,6 +27,7 @@ from app.repositories.project import (
     ensure_project_by_name,
     ensure_prompt_in_project,
 )
+from app.schemas.context import CodebaseContext, codebase_context_from_dict
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
 from app.middleware.sanitize import sanitize_text
 from app.services.pipeline import PipelineComplete, run_pipeline_streaming
@@ -61,6 +62,7 @@ def _create_streaming_response(
     llm_provider: LLMProvider | None = None,
     strategy_override: str | None = None,
     secondary_frameworks_override: list[str] | None = None,
+    codebase_context: CodebaseContext | None = None,
 ) -> StreamingResponse:
     """Create a StreamingResponse wrapping the pipeline with DB persistence."""
 
@@ -89,6 +91,7 @@ def _create_streaming_response(
                 complete_metadata=complete_metadata,
                 strategy_override=strategy_override,
                 secondary_frameworks_override=secondary_frameworks_override,
+                codebase_context=codebase_context,
             )
             async for event in stream:
                 if isinstance(event, PipelineComplete):
@@ -232,10 +235,12 @@ async def optimize_prompt(
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id
+    resolved_context = codebase_context_from_dict(request.codebase_context)
     return _create_streaming_response(
         optimization_id, sanitized_prompt, start_time, metadata,
         llm_provider=llm_provider, strategy_override=request.strategy,
         secondary_frameworks_override=request.secondary_frameworks,
+        codebase_context=resolved_context,
     )
 
 

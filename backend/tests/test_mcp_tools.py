@@ -331,6 +331,93 @@ class TestPromptforgeOptimize:
             with pytest.raises(ToolError, match="Rate limit exceeded"):
                 await promptforge_optimize(prompt="test prompt", ctx=ctx)
 
+    @pytest.mark.asyncio
+    async def test_codebase_context_passed_to_pipeline(self, mcp_session):
+        """codebase_context dict should be converted and passed to run_pipeline."""
+        from app.mcp_server import promptforge_optimize
+        from app.services.pipeline import PipelineResult
+
+        mock_result = PipelineResult(
+            task_type="coding",
+            complexity="medium",
+            weaknesses=[],
+            strengths=[],
+            optimized_prompt="Better",
+            framework_applied="chain-of-thought",
+            changes_made=[],
+            optimization_notes="",
+            clarity_score=0.8,
+            specificity_score=0.7,
+            structure_score=0.6,
+            faithfulness_score=0.8,
+            overall_score=0.75,
+            is_improvement=True,
+            verdict="OK",
+            duration_ms=500,
+            model_used="m",
+            strategy_reasoning="r",
+            strategy_confidence=0.9,
+        )
+
+        ctx = _make_mock_context()
+        with patch(
+            "app.mcp_server.run_pipeline", new_callable=AsyncMock, return_value=mock_result,
+        ) as mock_run:
+            result = await promptforge_optimize(
+                prompt="Write a function",
+                ctx=ctx,
+                codebase_context={
+                    "language": "Python 3.14",
+                    "framework": "FastAPI",
+                    "conventions": ["PEP 8"],
+                },
+            )
+
+        assert "error" not in result
+        _, kwargs = mock_run.call_args
+        resolved_ctx = kwargs.get("codebase_context")
+        assert resolved_ctx is not None
+        assert resolved_ctx.language == "Python 3.14"
+        assert resolved_ctx.framework == "FastAPI"
+        assert resolved_ctx.conventions == ["PEP 8"]
+
+    @pytest.mark.asyncio
+    async def test_codebase_context_none_when_omitted(self, mcp_session):
+        """When codebase_context is not provided, run_pipeline receives None."""
+        from app.mcp_server import promptforge_optimize
+        from app.services.pipeline import PipelineResult
+
+        mock_result = PipelineResult(
+            task_type="general",
+            complexity="low",
+            weaknesses=[],
+            strengths=[],
+            optimized_prompt="Better",
+            framework_applied="role-task-format",
+            changes_made=[],
+            optimization_notes="",
+            clarity_score=0.8,
+            specificity_score=0.7,
+            structure_score=0.6,
+            faithfulness_score=0.8,
+            overall_score=0.75,
+            is_improvement=True,
+            verdict="OK",
+            duration_ms=500,
+            model_used="m",
+            strategy_reasoning="r",
+            strategy_confidence=0.9,
+        )
+
+        ctx = _make_mock_context()
+        with patch(
+            "app.mcp_server.run_pipeline", new_callable=AsyncMock, return_value=mock_result,
+        ) as mock_run:
+            await promptforge_optimize(prompt="test", ctx=ctx)
+
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("codebase_context") is None
+
 
 # ---------------------------------------------------------------------------
 # TestPromptforgeRetry
@@ -778,6 +865,61 @@ class TestPromptforgeDelete:
         from app.mcp_server import promptforge_delete
         with pytest.raises(ToolError, match="Invalid"):
             await promptforge_delete("nonexistent")
+
+
+# ---------------------------------------------------------------------------
+# TestPromptforgeBulkDelete
+# ---------------------------------------------------------------------------
+
+class TestPromptforgeBulkDelete:
+    @pytest.mark.asyncio
+    async def test_bulk_delete_existing(self, mcp_session):
+        await _seed(mcp_session, id=_UUID_1)
+        await _seed(mcp_session, id=_UUID_2)
+        from app.mcp_server import promptforge_bulk_delete
+        result = await promptforge_bulk_delete([_UUID_1, _UUID_2])
+        assert result["deleted_count"] == 2
+        assert set(result["deleted_ids"]) == {_UUID_1, _UUID_2}
+        assert result["not_found_ids"] == []
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_mixed(self, mcp_session):
+        await _seed(mcp_session, id=_UUID_1)
+        from app.mcp_server import promptforge_bulk_delete
+        result = await promptforge_bulk_delete([_UUID_1, _UUID_2])
+        assert result["deleted_count"] == 1
+        assert result["deleted_ids"] == [_UUID_1]
+        assert result["not_found_ids"] == [_UUID_2]
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_all_missing(self, mcp_session):
+        from app.mcp_server import promptforge_bulk_delete
+        result = await promptforge_bulk_delete([_UUID_1, _UUID_2])
+        assert result["deleted_count"] == 0
+        assert result["deleted_ids"] == []
+        assert set(result["not_found_ids"]) == {_UUID_1, _UUID_2}
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_empty_raises(self, mcp_session):
+        from app.mcp_server import promptforge_bulk_delete
+        with pytest.raises(ToolError, match="empty"):
+            await promptforge_bulk_delete([])
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_over_limit_raises(self, mcp_session):
+        from app.mcp_server import promptforge_bulk_delete
+        ids = [f"00000000-0000-4000-8000-{i:012d}" for i in range(101)]
+        with pytest.raises(ToolError, match="100"):
+            await promptforge_bulk_delete(ids)
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_actually_removes(self, mcp_session):
+        """Verify deleted records are no longer retrievable."""
+        await _seed(mcp_session, id=_UUID_1)
+        from app.mcp_server import promptforge_bulk_delete, promptforge_get
+        await promptforge_bulk_delete([_UUID_1])
+        with pytest.raises(ToolError, match="not found"):
+            await promptforge_get(_UUID_1)
 
 
 # ---------------------------------------------------------------------------

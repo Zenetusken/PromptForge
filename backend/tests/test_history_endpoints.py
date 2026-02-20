@@ -297,3 +297,85 @@ class TestArchiveFiltering:
         response = await client.get("/api/optimize/opt-det")
         data = response.json()
         assert data["project_status"] == "archived"
+
+
+# ---------------------------------------------------------------------------
+# TestBulkDelete
+# ---------------------------------------------------------------------------
+
+class TestBulkDelete:
+    @pytest.mark.asyncio
+    async def test_bulk_delete_existing(self, client):
+        """All IDs exist — all deleted."""
+        await _seed(client, id="bd-1")
+        await _seed(client, id="bd-2")
+        await _seed(client, id="bd-3")
+        response = await client.post(
+            "/api/history/bulk-delete",
+            json={"ids": ["bd-1", "bd-2", "bd-3"]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deleted_count"] == 3
+        assert set(data["deleted_ids"]) == {"bd-1", "bd-2", "bd-3"}
+        assert data["not_found_ids"] == []
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_mixed(self, client):
+        """Mix of existing and non-existent IDs."""
+        await _seed(client, id="bd-a")
+        await _seed(client, id="bd-b")
+        response = await client.post(
+            "/api/history/bulk-delete",
+            json={"ids": ["bd-a", "bd-b", "no-such-id"]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deleted_count"] == 2
+        assert set(data["deleted_ids"]) == {"bd-a", "bd-b"}
+        assert data["not_found_ids"] == ["no-such-id"]
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_all_missing(self, client):
+        """All IDs are non-existent — none deleted."""
+        response = await client.post(
+            "/api/history/bulk-delete",
+            json={"ids": ["ghost-1", "ghost-2"]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deleted_count"] == 0
+        assert data["deleted_ids"] == []
+        assert set(data["not_found_ids"]) == {"ghost-1", "ghost-2"}
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_empty_ids_rejected(self, client):
+        """Empty ids list triggers 422 validation error."""
+        response = await client.post(
+            "/api/history/bulk-delete",
+            json={"ids": []},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_over_limit_rejected(self, client):
+        """More than 100 IDs triggers 422 validation error."""
+        ids = [f"id-{i}" for i in range(101)]
+        response = await client.post(
+            "/api/history/bulk-delete",
+            json={"ids": ids},
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_bulk_delete_records_actually_gone(self, client):
+        """Deleted records are no longer retrievable."""
+        await _seed(client, id="bd-gone")
+        response = await client.post(
+            "/api/history/bulk-delete",
+            json={"ids": ["bd-gone"]},
+        )
+        assert response.status_code == 200
+        # Verify the record is actually gone
+        get_response = await client.get("/api/optimize/bd-gone")
+        assert get_response.status_code == 404

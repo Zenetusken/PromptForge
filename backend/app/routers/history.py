@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.converters import optimization_to_summary_response
 from app.database import get_db
 from app.repositories.optimization import ListFilters, OptimizationRepository, Pagination
-from app.schemas.optimization import HistoryResponse, StatsResponse
+from app.schemas.optimization import (
+    BulkDeleteRequest,
+    BulkDeleteResponse,
+    HistoryResponse,
+    StatsResponse,
+)
 
 router = APIRouter(tags=["history"])
 
@@ -126,6 +131,21 @@ async def clear_all_history(
         return {"message": "No records to delete", "deleted_count": 0}
 
     return {"message": f"Deleted {count} records", "deleted_count": count}
+
+
+@router.post("/api/history/bulk-delete", response_model=BulkDeleteResponse)
+async def bulk_delete_optimizations(
+    payload: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete multiple optimization records by ID."""
+    repo = OptimizationRepository(db)
+    deleted_ids, not_found_ids = await repo.delete_by_ids(payload.ids)
+    return BulkDeleteResponse(
+        deleted_count=len(deleted_ids),
+        deleted_ids=deleted_ids,
+        not_found_ids=not_found_ids,
+    )
 
 
 @router.delete("/api/history/{optimization_id}")

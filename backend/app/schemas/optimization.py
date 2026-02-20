@@ -43,6 +43,14 @@ class OptimizeRequest(BaseModel):
     prompt_id: str | None = Field(
         None, description="Optional originating prompt ID (from a project)",
     )
+    codebase_context: dict | None = Field(
+        None,
+        description=(
+            "Optional codebase context for grounding the optimization in a real project. "
+            "Accepted keys: language, framework, description, conventions, patterns, "
+            "code_snippets, documentation, test_framework, test_patterns."
+        ),
+    )
 
     @field_validator("version")
     @classmethod
@@ -194,3 +202,22 @@ class StatsResponse(BaseModel):
     optimizations_today: int = 0
     strategy_distribution: dict[str, int] | None = None
     score_by_strategy: dict[str, float] | None = None
+
+
+class BulkDeleteRequest(BaseModel):
+    """Request body for bulk-deleting optimization records."""
+
+    ids: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="List of optimization record IDs to delete (1-100).",
+    )
+
+
+class BulkDeleteResponse(BaseModel):
+    """Response for a bulk-delete operation."""
+
+    deleted_count: int = Field(description="Number of records successfully deleted.")
+    deleted_ids: list[str] = Field(description="IDs of records that were deleted.")
+    not_found_ids: list[str] = Field(description="IDs that did not match any existing record.")

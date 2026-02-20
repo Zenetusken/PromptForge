@@ -3,10 +3,14 @@
 import json
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.prompts.validator_prompt import VALIDATOR_SYSTEM_PROMPT
 from app.providers import LLMProvider, get_provider
 from app.providers.types import CompletionRequest, TokenUsage
+
+if TYPE_CHECKING:
+    from app.schemas.context import CodebaseContext
 
 logger = logging.getLogger(__name__)
 
@@ -51,20 +55,28 @@ class PromptValidator:
         self,
         raw_prompt: str,
         optimized_prompt: str,
+        *,
+        codebase_context: CodebaseContext | None = None,
     ) -> ValidationResult:
         """Validate the quality of an optimized prompt against the original.
 
         Args:
             raw_prompt: The original prompt text.
             optimized_prompt: The optimized prompt text to validate.
+            codebase_context: Optional codebase context for scoring calibration.
 
         Returns:
             A ValidationResult with scores and improvement verdict.
         """
-        user_message = json.dumps({
+        payload: dict = {
             "raw_prompt": raw_prompt,
             "optimized_prompt": optimized_prompt,
-        })
+        }
+        if codebase_context:
+            rendered = codebase_context.render()
+            if rendered:
+                payload["codebase_context"] = rendered
+        user_message = json.dumps(payload)
         request = CompletionRequest(
             system_prompt=VALIDATOR_SYSTEM_PROMPT,
             user_message=user_message,

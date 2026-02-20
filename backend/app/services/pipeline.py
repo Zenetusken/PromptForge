@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from dataclasses import asdict, dataclass, field
-from typing import AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterator
 
 from app.constants import (
     STAGE_ANALYZE,
@@ -23,6 +23,9 @@ from app.services.analyzer import AnalysisResult, PromptAnalyzer
 from app.services.optimizer import OptimizationResult, PromptOptimizer
 from app.services.strategy_selector import StrategySelection, StrategySelector
 from app.services.validator import PromptValidator, ValidationResult
+
+if TYPE_CHECKING:
+    from app.schemas.context import CodebaseContext
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +87,7 @@ async def _select_strategy(
     prompt_length: int = 0,
     llm_provider: LLMProvider | None = None,
     secondary_frameworks_override: list[str] | None = None,
+    codebase_context: CodebaseContext | None = None,
 ) -> tuple[StrategySelection, TokenUsage | None]:
     """Select a strategy — either from an explicit override or the LLM selector."""
     if strategy_override:
@@ -102,7 +106,10 @@ async def _select_strategy(
             secondary_frameworks=secondary_frameworks_override or [],
         ), None
     selector = StrategySelector(llm_provider)
-    result = await selector.select(analysis, raw_prompt=raw_prompt, prompt_length=prompt_length)
+    result = await selector.select(
+        analysis, raw_prompt=raw_prompt, prompt_length=prompt_length,
+        codebase_context=codebase_context,
+    )
     return result, selector.last_usage
 
 
@@ -160,6 +167,7 @@ async def run_pipeline(
     llm_provider: LLMProvider | None = None,
     strategy_override: str | None = None,
     secondary_frameworks_override: list[str] | None = None,
+    codebase_context: CodebaseContext | None = None,
 ) -> PipelineResult:
     """Run the full optimization pipeline: analyze, select strategy, optimize, validate."""
     start_time = time.time()
@@ -167,7 +175,7 @@ async def run_pipeline(
     total_usage: TokenUsage | None = None
 
     analyzer = PromptAnalyzer(client)
-    analysis = await analyzer.analyze(raw_prompt)
+    analysis = await analyzer.analyze(raw_prompt, codebase_context=codebase_context)
     total_usage = _add_usage(total_usage, analyzer.last_usage)
     logger.info(
         "Analysis: task_type=%s complexity=%s weaknesses=%s strengths=%s",
@@ -178,6 +186,7 @@ async def run_pipeline(
         analysis, strategy_override,
         raw_prompt=raw_prompt, prompt_length=len(raw_prompt), llm_provider=client,
         secondary_frameworks_override=secondary_frameworks_override,
+        codebase_context=codebase_context,
     )
     total_usage = _add_usage(total_usage, strategy_usage)
     logger.info(
@@ -189,11 +198,14 @@ async def run_pipeline(
     optimization = await optimizer.optimize(
         raw_prompt, analysis, strategy_selection.strategy,
         secondary_frameworks=strategy_selection.secondary_frameworks or None,
+        codebase_context=codebase_context,
     )
     total_usage = _add_usage(total_usage, optimizer.last_usage)
 
     validator = PromptValidator(client)
-    validation = await validator.validate(raw_prompt, optimization.optimized_prompt)
+    validation = await validator.validate(
+        raw_prompt, optimization.optimized_prompt, codebase_context=codebase_context,
+    )
     total_usage = _add_usage(total_usage, validator.last_usage)
 
     elapsed_ms = int((time.time() - start_time) * 1000)
@@ -306,6 +318,7 @@ async def run_pipeline_streaming(
     complete_metadata: dict | None = None,
     strategy_override: str | None = None,
     secondary_frameworks_override: list[str] | None = None,
+    codebase_context: CodebaseContext | None = None,
 ) -> AsyncIterator[str | PipelineComplete]:
     """Run the pipeline and yield SSE events for each stage.
 
@@ -317,6 +330,7 @@ async def run_pipeline_streaming(
         strategy_override: When set, skip StrategySelector and use this strategy.
         secondary_frameworks_override: When set with strategy_override, these
             secondary frameworks are passed to the optimizer.
+        codebase_context: Optional codebase context to thread through all stages.
 
     Yields:
         SSE-formatted strings for each pipeline stage, then a PipelineComplete
@@ -329,7 +343,9 @@ async def run_pipeline_streaming(
     # Stage 1: Analyze
     analyzer = PromptAnalyzer(client)
     analysis = None
-    async for event in _stream_stage(analyzer.analyze(raw_prompt), STAGE_ANALYZE):
+    async for event in _stream_stage(
+        analyzer.analyze(raw_prompt, codebase_context=codebase_context), STAGE_ANALYZE,
+    ):
         if isinstance(event, StageResult):
             analysis = event.value
         else:
@@ -350,6 +366,7 @@ async def run_pipeline_streaming(
             analysis, strategy_override,
             raw_prompt=raw_prompt, prompt_length=len(raw_prompt), llm_provider=client,
             secondary_frameworks_override=secondary_frameworks_override,
+            codebase_context=codebase_context,
         )
         strategy = strategy_selection
         yield _sse_event("strategy", asdict(strategy))
@@ -357,7 +374,10 @@ async def run_pipeline_streaming(
         # LLM path: stream with progress like other stages
         selector = StrategySelector(client)
         async for event in _stream_stage(
-            selector.select(analysis, raw_prompt=raw_prompt, prompt_length=len(raw_prompt)),
+            selector.select(
+                analysis, raw_prompt=raw_prompt, prompt_length=len(raw_prompt),
+                codebase_context=codebase_context,
+            ),
             STAGE_STRATEGY,
         ):
             if isinstance(event, StageResult):
@@ -381,6 +401,7 @@ async def run_pipeline_streaming(
         optimizer.optimize(
             raw_prompt, analysis, strategy.strategy,
             secondary_frameworks=strategy.secondary_frameworks or None,
+            codebase_context=codebase_context,
         ),
         STAGE_OPTIMIZE,
         fmt,
@@ -397,7 +418,9 @@ async def run_pipeline_streaming(
     validator = PromptValidator(client)
     validation = None
     async for event in _stream_stage(
-        validator.validate(raw_prompt, optimization.optimized_prompt),
+        validator.validate(
+            raw_prompt, optimization.optimized_prompt, codebase_context=codebase_context,
+        ),
         STAGE_VALIDATE,
     ):
         if isinstance(event, StageResult):

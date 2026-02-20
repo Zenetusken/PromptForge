@@ -570,3 +570,115 @@ class TestStrategyPropagation:
         result = await run_pipeline("Classify items", llm_provider=provider)
         optimizer_strategy = _get_optimizer_strategy(captured)
         assert result.strategy == optimizer_strategy
+
+
+# ---------------------------------------------------------------------------
+# Codebase context threading — verify context reaches all pipeline stages
+# ---------------------------------------------------------------------------
+
+class TestCodebaseContextThreading:
+    """Verify codebase_context is threaded through all 4 pipeline stages."""
+
+    @pytest.mark.asyncio
+    async def test_context_reaches_all_stages_via_run_pipeline(self):
+        """When codebase_context is provided, all 4 stages should see it in their request."""
+        from app.schemas.context import CodebaseContext
+
+        provider, captured = _make_capturing_provider(
+            {"task_type": "coding", "complexity": "medium",
+             "weaknesses": [], "strengths": []},
+        )
+        ctx = CodebaseContext(language="Python 3.14", framework="FastAPI")
+        await run_pipeline(
+            "Write a function",
+            llm_provider=provider,
+            codebase_context=ctx,
+        )
+
+        # All 4 stages should have received the context
+        assert len(captured) == 4
+        for stage_name, request in captured:
+            msg = request.user_message
+            # Analyzer uses plain text injection; others use JSON payload
+            if stage_name == "analyzer":
+                assert "Python 3.14" in msg, f"{stage_name} missing context"
+            else:
+                parsed = json.loads(msg)
+                assert "codebase_context" in parsed, f"{stage_name} missing context field"
+                assert "Python 3.14" in parsed["codebase_context"]
+
+    @pytest.mark.asyncio
+    async def test_no_context_means_no_injection(self):
+        """Without codebase_context, no stage should have context in the request."""
+        provider, captured = _make_capturing_provider(
+            {"task_type": "coding", "complexity": "medium",
+             "weaknesses": [], "strengths": []},
+        )
+        await run_pipeline("Write a function", llm_provider=provider)
+
+        assert len(captured) == 4
+        for stage_name, request in captured:
+            msg = request.user_message
+            if stage_name == "analyzer":
+                assert "codebase environment" not in msg
+            else:
+                parsed = json.loads(msg)
+                assert "codebase_context" not in parsed
+
+    @pytest.mark.asyncio
+    async def test_context_reaches_stages_via_streaming_pipeline(self):
+        """Streaming pipeline should also thread context through all stages."""
+        from app.schemas.context import CodebaseContext
+
+        provider, captured = _make_capturing_provider(
+            {"task_type": "coding", "complexity": "medium",
+             "weaknesses": [], "strengths": []},
+        )
+        ctx = CodebaseContext(language="Rust", framework="Axum")
+
+        events = []
+        async for event in run_pipeline_streaming(
+            "Write a handler",
+            llm_provider=provider,
+            codebase_context=ctx,
+        ):
+            if isinstance(event, str):
+                events.append(event)
+
+        # All 4 stages should have received the context
+        assert len(captured) == 4
+        for stage_name, request in captured:
+            msg = request.user_message
+            if stage_name == "analyzer":
+                assert "Rust" in msg, f"streaming {stage_name} missing context"
+            else:
+                parsed = json.loads(msg)
+                assert "codebase_context" in parsed, f"streaming {stage_name} missing context"
+
+    @pytest.mark.asyncio
+    async def test_context_with_strategy_override(self):
+        """Context should thread through even when strategy_override bypasses the selector."""
+        from app.schemas.context import CodebaseContext
+
+        provider, captured = _make_capturing_provider(
+            {"task_type": "coding", "complexity": "medium",
+             "weaknesses": [], "strengths": []},
+            skip_strategy=True,
+        )
+        ctx = CodebaseContext(language="Go", patterns=["clean architecture"])
+        await run_pipeline(
+            "Write a handler",
+            llm_provider=provider,
+            strategy_override="chain-of-thought",
+            codebase_context=ctx,
+        )
+
+        # 3 stages (strategy skipped): analyzer, optimizer, validator
+        assert len(captured) == 3
+        for stage_name, request in captured:
+            msg = request.user_message
+            if stage_name == "analyzer":
+                assert "Go" in msg
+            else:
+                parsed = json.loads(msg)
+                assert "codebase_context" in parsed

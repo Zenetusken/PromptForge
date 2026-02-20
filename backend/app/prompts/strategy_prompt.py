@@ -8,6 +8,11 @@ You will receive a JSON object with:
 - raw_prompt: The original prompt text to be optimized
 - analysis: The analysis result containing task_type, complexity, weaknesses, and strengths
 - available_strategies: The frameworks you may choose from
+- codebase_context (optional): Details about the caller's codebase (language, framework, \
+conventions, patterns, code snippets). When present, prefer strategies that can leverage \
+this context — e.g., structured-output for codebases with strict type systems, \
+persona-assignment for domain-specific projects, or context-enrichment when the codebase \
+context provides rich background info to weave in.
 
 ## Available Frameworks
 

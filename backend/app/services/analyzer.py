@@ -2,10 +2,14 @@
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.prompts.analyzer_prompt import ANALYZER_SYSTEM_PROMPT
 from app.providers import LLMProvider, get_provider
 from app.providers.types import CompletionRequest, TokenUsage
+
+if TYPE_CHECKING:
+    from app.schemas.context import CodebaseContext
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +68,17 @@ class PromptAnalyzer:
         self.llm = llm_provider or get_provider()
         self.last_usage: TokenUsage | None = None
 
-    async def analyze(self, raw_prompt: str) -> AnalysisResult:
+    async def analyze(
+        self,
+        raw_prompt: str,
+        *,
+        codebase_context: CodebaseContext | None = None,
+    ) -> AnalysisResult:
         """Analyze a raw prompt and return structured analysis.
 
         Args:
             raw_prompt: The original prompt text to analyze.
+            codebase_context: Optional codebase context to enrich analysis.
 
         Returns:
             An AnalysisResult with task_type, complexity, weaknesses, and strengths.
@@ -77,6 +87,13 @@ class PromptAnalyzer:
             f"Analyze the following prompt and return your analysis as JSON:\n\n"
             f"---\n{raw_prompt}\n---"
         )
+        if codebase_context:
+            rendered = codebase_context.render()
+            if rendered:
+                user_message += (
+                    "\n\nThis prompt will be used within the following "
+                    "codebase environment:\n\n" + rendered
+                )
         request = CompletionRequest(
             system_prompt=ANALYZER_SYSTEM_PROMPT,
             user_message=user_message,

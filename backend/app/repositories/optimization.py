@@ -481,6 +481,26 @@ class OptimizationRepository:
             await self._session.execute(delete(Optimization))
         return count
 
+    async def delete_by_ids(self, ids: list[str]) -> tuple[list[str], list[str]]:
+        """Delete multiple optimization records by ID.
+
+        Returns (deleted_ids, not_found_ids).
+        """
+        result = await self._session.execute(
+            select(Optimization.id).where(Optimization.id.in_(ids))
+        )
+        existing_ids = {row[0] for row in result.all()}
+
+        deleted_ids = [i for i in ids if i in existing_ids]
+        not_found_ids = [i for i in ids if i not in existing_ids]
+
+        if deleted_ids:
+            await self._session.execute(
+                delete(Optimization).where(Optimization.id.in_(deleted_ids))
+            )
+
+        return deleted_ids, not_found_ids
+
     # --- Tags / metadata ---
 
     async def update_tags(

@@ -234,3 +234,47 @@ class TestOptimizerChangesMadeValidation:
         provider = _make_provider({})
         result = await PromptOptimizer(provider).optimize("raw", _default_analysis())
         assert result.changes_made == []
+
+
+# ---------------------------------------------------------------------------
+# TestOptimizerCodebaseContext
+# ---------------------------------------------------------------------------
+
+class TestOptimizerCodebaseContext:
+    """Verify codebase_context is injected into the user message when provided."""
+
+    @pytest.mark.asyncio
+    async def test_context_included_in_user_message(self):
+        from app.schemas.context import CodebaseContext
+
+        provider = _make_provider({})
+        ctx = CodebaseContext(language="Python 3.14", framework="FastAPI")
+        await PromptOptimizer(provider).optimize(
+            "raw", _default_analysis(), codebase_context=ctx,
+        )
+        call_args = provider.complete_json.call_args[0][0]
+        parsed = json.loads(call_args.user_message)
+        assert "codebase_context" in parsed
+        assert "Python 3.14" in parsed["codebase_context"]
+        assert "FastAPI" in parsed["codebase_context"]
+
+    @pytest.mark.asyncio
+    async def test_no_context_means_no_field(self):
+        provider = _make_provider({})
+        await PromptOptimizer(provider).optimize("raw", _default_analysis())
+        call_args = provider.complete_json.call_args[0][0]
+        parsed = json.loads(call_args.user_message)
+        assert "codebase_context" not in parsed
+
+    @pytest.mark.asyncio
+    async def test_empty_context_means_no_field(self):
+        from app.schemas.context import CodebaseContext
+
+        provider = _make_provider({})
+        ctx = CodebaseContext()  # all defaults — render() returns None
+        await PromptOptimizer(provider).optimize(
+            "raw", _default_analysis(), codebase_context=ctx,
+        )
+        call_args = provider.complete_json.call_args[0][0]
+        parsed = json.loads(call_args.user_message)
+        assert "codebase_context" not in parsed

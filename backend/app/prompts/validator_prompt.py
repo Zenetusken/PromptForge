@@ -6,6 +6,10 @@ an original prompt with its optimized version and score the optimization quality
 You will receive a JSON object with:
 - raw_prompt: The original prompt text
 - optimized_prompt: The optimized version to evaluate
+- codebase_context (optional): Details about the caller's codebase. When present, factor \
+it into scoring: score faithfulness higher when the optimized prompt correctly references \
+codebase patterns, conventions, and architecture from the context; score specificity higher \
+when the prompt uses codebase-specific terminology, types, or interfaces rather than generic phrasing.
 
 Evaluate the optimized prompt on these dimensions (each scored 0.0 to 1.0):
 
