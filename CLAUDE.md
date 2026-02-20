@@ -73,20 +73,28 @@ Frontend consumes SSE via `fetch` + `ReadableStream` reader (not native `EventSo
 - **Legacy migration**: On startup, `_migrate_legacy_projects()` in `database.py` seeds the `projects` table from distinct `optimization.project` string values and imports unique `raw_prompt` values as `Prompt` entries. Idempotent (safe on every restart).
 - **Auto-create projects**: When an optimization is created/retried with a `project` name (via API or MCP), a matching `Project` record is auto-created if it doesn't exist (`ensure_project_by_name` in `repositories/project.py`). Reactivates soft-deleted projects.
 - **Prompt version history**: `PromptVersion` table (`models/project.py`) stores immutable snapshots of prior prompt content. Created automatically by `update_prompt()` when content changes. Current version lives in `prompts.content`; only superseded versions are snapshotted.
-- **Forge result linking**: `Optimization.prompt_id` FK links an optimization to the project prompt that triggered it. Set when forging from a project prompt card. Nullable for legacy/home-page optimizations. `ON DELETE SET NULL` preserves optimization records when prompts are deleted.
+- **Forge result linking**: `Optimization.prompt_id` FK links an optimization to the project prompt that triggered it. Set when forging from a project prompt card. Nullable for legacy/home-page optimizations. DB constraint is `ON DELETE SET NULL`, but application-level `delete_prompt()` explicitly removes linked optimizations before deleting the prompt.
+- **Project deletion cascade**: `delete_project_data()` in `ProjectRepository` deletes all prompts (reusing `delete_prompt()` per prompt) then sweeps remaining legacy optimizations by project name. The router calls this before soft-deleting the project record.
 
 ### Frontend State
 
 Svelte 5 runes-based stores (`.svelte.ts` files in `frontend/src/lib/stores/`):
 - `optimization.svelte.ts` — current pipeline run state (isRunning, result, steps, strategyData, error). Pipeline has 4 steps: analyze, strategy, optimize, validate.
 - `history.svelte.ts` — history list with pagination/filtering
-- `prompt.svelte.ts` — last prompt text, project name, and prompt ID (for cross-route pre-fill from project detail)
+- `prompt.svelte.ts` — last prompt text, project name, prompt ID, and strategy override (for cross-route pre-fill from project detail and Strategy Explorer)
 - `provider.svelte.ts` — provider selection, API key management (sessionStorage/localStorage), model selection, LLM header building
 - `projects.svelte.ts` — project CRUD, prompt management, sidebar list with active-only filter
 - `sidebar.svelte.ts` — sidebar tab state (history/projects), persisted to localStorage
 - `toast.svelte.ts` — toast notifications
 
-Routes: `/` (home with PromptInput + ResultPanel), `/optimize/[id]` (detail page with SSR data loading), and `/projects/[id]` (project detail with prompts).
+Shared utilities (`frontend/src/lib/utils/`):
+- `strategies.ts` — canonical list of all 10 strategy names, display labels, descriptions, extended details (`STRATEGY_DETAILS`: bestFor task types + motivation blurbs), and fixed per-strategy colors (`STRATEGY_FIXED_COLORS`). Single source of truth imported by `PromptInput` (strategy picker) and `StrategyInsights` (Strategy Explorer).
+
+Key components:
+- `PromptInput.svelte` — prompt textarea with three collapsible sections: Metadata (title/project/tags/version), Context (codebase context fields for grounded optimization), and Strategy (override selection with secondary frameworks). Context section sends `codebase_context` in the optimize request body.
+- `StrategyInsights.svelte` — interactive Strategy Explorer with clickable distribution bars, expandable detail panels (description, task type badges, action buttons), data-driven recommendation engine (scores untried strategies by overlap with user's task type frequency), and interactive untried strategy pills. Accepts `onStrategySelect` callback to pre-fill strategy in PromptInput.
+
+Routes: `/` (home with PromptInput + ResultPanel + StrategyInsights), `/optimize/[id]` (detail page with SSR data loading), and `/projects/[id]` (project detail with prompts).
 
 ## API Endpoints
 
