@@ -592,6 +592,8 @@ do_mcp() {
 EOF
     echo ""
     log "The MCP server uses stdio transport — it runs on demand, not as a daemon."
+    echo ""
+    log "Auto-discovery: Claude Code detects .mcp.json at the project root automatically."
 }
 
 # ─── Help ─────────────────────────────────────────────────────────

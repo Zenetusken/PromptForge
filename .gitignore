@@ -43,3 +43,6 @@ Thumbs.db
 # Claude
 .claude_settings.json
 agent_scratchpad.json
+
+# Audit / working docs
+MCP_AUDIT.md

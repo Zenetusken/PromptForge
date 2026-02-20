@@ -11,7 +11,7 @@ An AI-powered prompt optimization web app. Users submit a raw prompt, and a 4-st
 - **Backend**: Python 3.14+ / FastAPI / SQLAlchemy 2.0 async ORM / SQLite (aiosqlite) / Pydantic v2
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
 - **LLM access**: Provider-agnostic via `backend/app/providers/` — supports Claude CLI (default), Anthropic API, OpenAI, and Google Gemini. Auto-detects available provider or set `LLM_PROVIDER` explicitly.
-- **MCP server**: FastMCP-based, exposes 8 tools for Claude Code integration (`promptforge_optimize`, `promptforge_get`, `promptforge_list`, `promptforge_get_by_project`, `promptforge_search`, `promptforge_tag`, `promptforge_stats`, `promptforge_delete`)
+- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 15 tools for Claude Code integration (`promptforge_optimize`, `promptforge_retry`, `promptforge_get`, `promptforge_list`, `promptforge_get_by_project`, `promptforge_search`, `promptforge_tag`, `promptforge_stats`, `promptforge_delete`, `promptforge_list_projects`, `promptforge_get_project`, `promptforge_strategies`, `promptforge_create_project`, `promptforge_add_prompt`, `promptforge_update_prompt`). Auto-discoverable via `.mcp.json`.
 
 ## Commands
 
