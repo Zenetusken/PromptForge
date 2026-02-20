@@ -101,24 +101,38 @@ class TestScoreToDisplay:
 
 
 class TestScoreThresholdToDb:
-    """Tests for score_threshold_to_db (1-10 → 0.0-1.0)."""
+    """Tests for score_threshold_to_db (1-10 → 0.0-1.0).
+
+    The threshold is the lower bound of DB values that display as the given
+    score.  E.g. display 10 maps to DB >= 0.95 (since round(0.95*10) = 10).
+    """
 
     def test_display_one_to_db(self):
-        assert score_threshold_to_db(1) == pytest.approx(0.1)
+        assert score_threshold_to_db(1) == pytest.approx(0.05)
 
     def test_display_ten_to_db(self):
-        assert score_threshold_to_db(10) == pytest.approx(1.0)
+        assert score_threshold_to_db(10) == pytest.approx(0.95)
 
     def test_display_five_to_db(self):
-        assert score_threshold_to_db(5) == pytest.approx(0.5)
+        assert score_threshold_to_db(5) == pytest.approx(0.45)
 
-    def test_round_trip_consistency(self):
-        """score_to_display(score_threshold_to_db(d)) should approximately equal d."""
+    def test_threshold_captures_display_value(self):
+        """A DB value at the threshold should display as >= the requested score."""
         for d in range(1, 11):
-            db_val = score_threshold_to_db(d)
-            display_val = score_to_display(db_val)
-            assert display_val == d, (
-                f"Round-trip failed: {d} → {db_val} → {display_val}"
+            threshold = score_threshold_to_db(d)
+            # A value slightly above the threshold must display as >= d
+            display_val = score_to_display(threshold + 0.001)
+            assert display_val >= d, (
+                f"Threshold miss: display {d} → db {threshold:.4f} + 0.001 → {display_val}"
+            )
+
+    def test_threshold_excludes_below(self):
+        """A DB value well below the threshold should display as < the requested score."""
+        for d in range(2, 11):
+            threshold = score_threshold_to_db(d)
+            display_val = score_to_display(threshold - 0.01)
+            assert display_val < d, (
+                f"Threshold leak: display {d} → db {threshold:.4f} - 0.01 → {display_val}"
             )
 
 

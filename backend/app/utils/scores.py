@@ -17,8 +17,13 @@ def score_to_display(score: float | None) -> int | None:
 
 
 def score_threshold_to_db(display_score: float) -> float:
-    """Convert display score (1-10) to DB threshold (0.0-1.0)."""
-    return display_score / 10.0
+    """Convert display score (1-10) to DB threshold (0.0-1.0).
+
+    Uses the lower bound that rounds up to the requested display score.
+    E.g. display 10 → DB 0.95 (since round(0.95 * 10) = 10),
+    display 9 → DB 0.85, display 8 → DB 0.75, etc.
+    """
+    return (display_score - 0.5) / 10.0
 
 
 def round_score(value: float | None, digits: int = 4) -> float | None:

@@ -157,7 +157,7 @@ class TestList:
         repo = OptimizationRepository(db_session)
         await _seed(db_session, id="a", overall_score=0.9)
         await _seed(db_session, id="b", overall_score=0.3)
-        # min_score=7 on 1-10 scale → score_threshold_to_db converts to 0.65
+        # min_score=7 on 1-10 scale → score_threshold_to_db converts to 0.65 threshold
         items, total = await repo.list(filters=ListFilters(min_score=7))
         assert total == 1
         assert items[0].id == "a"
