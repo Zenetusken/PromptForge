@@ -30,7 +30,7 @@
 	background: var(--color-bg-card);
 	padding: 1.25rem;
 	box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-	animation: scale-in 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	animation: dialog-in 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 [data-dialog-content] {
