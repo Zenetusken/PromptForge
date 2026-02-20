@@ -7,6 +7,7 @@
 	import { sidebarState } from '$lib/stores/sidebar.svelte';
 	import { historyState } from '$lib/stores/history.svelte';
 	import { formatRelativeTime, formatExactTime, normalizeScore, getScoreBadgeClass, truncateText, formatMetadataSummary } from '$lib/utils/format';
+	import { getStrategyColor } from '$lib/utils/strategies';
 	import MetadataSummaryLine from '$lib/components/MetadataSummaryLine.svelte';
 	import type {
 		ProjectDetail,
@@ -521,7 +522,7 @@
 	}
 
 	const COMPLEXITY_CHIP_GREEN = {
-		active: 'bg-neon-green/20 text-neon-green ring-1 ring-neon-green/40 shadow-[0_0_6px_rgba(0,255,136,0.15)]',
+		active: 'bg-neon-green/20 text-neon-green ring-1 ring-neon-green/40 shadow-[0_0_6px_rgba(34,255,136,0.15)]',
 		inactive: 'border border-border-subtle/30 text-neon-green/40 hover:text-neon-green hover:border-neon-green/25',
 	};
 	const COMPLEXITY_CHIP_YELLOW = {
@@ -529,7 +530,7 @@
 		inactive: 'border border-border-subtle/30 text-neon-yellow/40 hover:text-neon-yellow hover:border-neon-yellow/25',
 	};
 	const COMPLEXITY_CHIP_RED = {
-		active: 'bg-neon-red/20 text-neon-red ring-1 ring-neon-red/40 shadow-[0_0_6px_rgba(255,0,85,0.15)]',
+		active: 'bg-neon-red/20 text-neon-red ring-1 ring-neon-red/40 shadow-[0_0_6px_rgba(255,51,102,0.15)]',
 		inactive: 'border border-border-subtle/30 text-neon-red/40 hover:text-neon-red hover:border-neon-red/25',
 	};
 	const COMPLEXITY_FILTER_CLASSES: Record<string, { active: string; inactive: string }> = {
@@ -802,7 +803,7 @@
 										onclick={() => toggleFilter('task_type', tt)}
 										class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-150
 											{isFilterActive('task_type', tt)
-												? 'bg-neon-cyan/20 text-neon-cyan ring-1 ring-neon-cyan/40 shadow-[0_0_6px_rgba(0,240,255,0.15)]'
+												? 'bg-neon-cyan/20 text-neon-cyan ring-1 ring-neon-cyan/40 shadow-[0_0_6px_rgba(0,229,255,0.15)]'
 												: 'border border-border-subtle/30 text-neon-cyan/40 hover:text-neon-cyan hover:border-neon-cyan/25'}"
 										data-testid="filter-task-type"
 									>
@@ -836,12 +837,15 @@
 							<span class="w-[52px] shrink-0 select-none text-[10px] font-semibold uppercase tracking-wider text-text-dim/70">Strategy</span>
 							<div class="flex flex-wrap items-center gap-1.5">
 								{#each [...allMetadata.frameworks] as fw}
+									{@const fwc = getStrategyColor(fw)}
+									{@const active = isFilterActive('framework', fw)}
 									<button
 										onclick={() => toggleFilter('framework', fw)}
-										class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-150
-											{isFilterActive('framework', fw)
-												? 'bg-neon-purple/20 text-neon-purple ring-1 ring-neon-purple/40 shadow-[0_0_6px_rgba(176,0,255,0.15)]'
-												: 'border border-border-subtle/30 text-neon-purple/40 hover:text-neon-purple hover:border-neon-purple/25'}"
+										class="rounded-full px-2.5 py-1 text-[11px] font-medium transition-all duration-150 {fwc.text}
+											{active
+												? 'ring-1 ring-current/40 shadow-[0_0_6px_rgba(0,0,0,0.15)]'
+												: 'border border-border-subtle/30 opacity-40 hover:opacity-100'}"
+										style={active ? 'background: color-mix(in srgb, currentColor 20%, transparent)' : ''}
 										data-testid="filter-framework"
 									>
 										{fw}

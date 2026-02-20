@@ -96,7 +96,7 @@
 					href="/optimize/{forge.id}"
 					class="inline-flex max-w-[240px] items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] transition-all duration-150
 						{forge.id === currentForgeId
-							? 'ring-2 ring-neon-cyan/40 bg-bg-secondary/80 shadow-[0_0_8px_rgba(0,240,255,0.08)]'
+							? 'ring-2 ring-neon-cyan/40 bg-bg-secondary/80 shadow-[0_0_8px_rgba(0,229,255,0.08)]'
 							: 'bg-bg-secondary/40 hover:bg-bg-secondary/70'}"
 					data-testid="forge-badge"
 				>

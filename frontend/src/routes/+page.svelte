@@ -10,6 +10,7 @@
 	import { historyState } from '$lib/stores/history.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
 	import { formatRelativeTime, formatExactTime, normalizeScore, formatScore, formatRate, getScoreBadgeClass, getScoreColorClass } from '$lib/utils/format';
+	import { getStrategyColor } from '$lib/utils/strategies';
 	import { fetchStats } from '$lib/api/client';
 	import type { OptimizeMetadata, StatsResponse } from '$lib/api/client';
 	import { EntryTitle, Tooltip } from '$lib/components/ui';
@@ -259,8 +260,9 @@
 									</Tooltip>
 								{/if}
 								{#if entry.framework_applied}
+									{@const fwc = getStrategyColor(entry.framework_applied)}
 									<Tooltip text="Strategy: {entry.framework_applied}">
-									<span class="rounded-full bg-neon-purple/8 px-1.5 py-0.5 font-mono text-[10px] text-neon-purple">{entry.framework_applied}</span>
+									<span class="rounded-full px-1.5 py-0.5 font-mono text-[10px] {fwc.text}" style="background: color-mix(in srgb, currentColor 8%, transparent)">{entry.framework_applied}</span>
 									</Tooltip>
 								{/if}
 								{#if entry.project && entryArchived}

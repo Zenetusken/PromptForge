@@ -5,6 +5,7 @@
 	import { historyState } from '$lib/stores/history.svelte';
 	import { truncateText, formatRelativeTime, formatExactTime, normalizeScore, getScoreBadgeClass } from '$lib/utils/format';
 	import type { HistorySummaryItem } from '$lib/api/client';
+	import { getStrategyColor } from '$lib/utils/strategies';
 	import Icon from './Icon.svelte';
 	import { EntryTitle, Tooltip } from './ui';
 
@@ -108,8 +109,9 @@
 				</span></Tooltip>
 			{/if}
 			{#if item.framework_applied}
+				{@const sc = getStrategyColor(item.framework_applied)}
 				<span class="metadata-separator" aria-hidden="true"></span>
-				<Tooltip text="Strategy applied"><span class="shrink-0 text-[11px] text-neon-purple" data-testid="history-entry-strategy">
+				<Tooltip text="Strategy applied"><span class="shrink-0 text-[11px] {sc.text}" data-testid="history-entry-strategy">
 					{item.framework_applied}
 				</span></Tooltip>
 			{/if}

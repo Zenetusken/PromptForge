@@ -2,6 +2,7 @@
 	import type { StepState } from '$lib/stores/optimization.svelte';
 	import { formatScore } from '$lib/utils/format';
 	import { safeStringOrUndefined, safeNumberOrUndefined, safeArrayOrUndefined } from '$lib/utils/safe';
+	import { getStrategyColor } from '$lib/utils/strategies';
 	import Icon from './Icon.svelte';
 	import { Tooltip } from './ui';
 
@@ -194,7 +195,8 @@
 					{/if}
 				{/if}
 				{#if isOptimizeStep && frameworkApplied}
-					<span class="inline-block rounded-full bg-neon-purple/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-purple">{frameworkApplied}</span>
+					{@const fwc = getStrategyColor(frameworkApplied)}
+					<span class="inline-block rounded-full px-1.5 py-0.5 font-mono text-[9px] {fwc.text}" style="background: color-mix(in srgb, currentColor 10%, transparent)">{frameworkApplied}</span>
 				{/if}
 				{#if isValidateStep && overallScore !== undefined}
 					<span class="rounded-full bg-neon-green/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neon-green">{formatScore(overallScore)}</span>
@@ -228,7 +230,8 @@
 					{/if}
 				{/if}
 				{#if isOptimizeStep && frameworkApplied}
-					<span class="inline-block rounded-full bg-neon-purple/10 px-2 py-0.5 font-mono text-[10px] text-neon-purple">{frameworkApplied}</span>
+					{@const fwc = getStrategyColor(frameworkApplied)}
+					<span class="inline-block rounded-full px-2 py-0.5 font-mono text-[10px] {fwc.text}" style="background: color-mix(in srgb, currentColor 10%, transparent)">{frameworkApplied}</span>
 				{/if}
 				{#if isValidateStep && overallScore !== undefined}
 					<span class="rounded-full bg-neon-green/15 px-2 py-0.5 font-mono text-sm font-bold text-neon-green">{formatScore(overallScore)}</span>
@@ -423,7 +426,8 @@
 				{/if}
 			{/if}
 			{#if isOptimizeStep && frameworkApplied}
-				<span class="inline-block rounded-full bg-neon-purple/10 px-2 py-0.5 font-mono text-[10px] text-neon-purple" data-testid="framework-badge">
+				{@const fwc = getStrategyColor(frameworkApplied)}
+				<span class="inline-block rounded-full px-2 py-0.5 font-mono text-[10px] {fwc.text}" style="background: color-mix(in srgb, currentColor 10%, transparent)" data-testid="framework-badge">
 					{frameworkApplied}
 				</span>
 			{/if}
@@ -524,8 +528,9 @@
 				{/if}
 			{/if}
 			{#if isOptimizeStep && frameworkApplied}
+				{@const fwc = getStrategyColor(frameworkApplied)}
 				<Tooltip text="Strategy applied">
-				<span class="inline-block rounded-full bg-neon-purple/10 px-1.5 py-0.5 font-mono text-[9px] text-neon-purple" data-testid="collapsed-framework-badge">
+				<span class="inline-block rounded-full px-1.5 py-0.5 font-mono text-[9px] {fwc.text}" style="background: color-mix(in srgb, currentColor 10%, transparent)" data-testid="collapsed-framework-badge">
 					{frameworkApplied}
 				</span>
 				</Tooltip>

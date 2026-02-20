@@ -103,6 +103,53 @@ export interface OptimizeMetadata {
 	codebase_context?: CodebaseContext;
 }
 
+export interface ScoreMatrixEntry {
+	count: number;
+	avg_score: number | null;
+}
+
+export interface ScoreVarianceEntry {
+	min: number;
+	max: number;
+	avg: number;
+	stddev: number;
+	count: number;
+}
+
+export interface ComboEntry {
+	count: number;
+	avg_score: number | null;
+}
+
+export interface ImprovementEntry {
+	improved: number;
+	validated: number;
+	rate: number | null;
+}
+
+export interface ErrorRateEntry {
+	total: number;
+	errors: number;
+	rate: number;
+}
+
+export interface TrendEntry {
+	count: number;
+	avg_score: number | null;
+}
+
+export interface TokenEntry {
+	avg_input_tokens: number | null;
+	avg_output_tokens: number | null;
+	avg_duration_ms: number | null;
+}
+
+export interface WinRateEntry {
+	strategy: string;
+	avg_score: number;
+	count: number;
+}
+
 export interface StatsResponse {
 	total_optimizations: number;
 	average_overall_score: number | null;
@@ -117,6 +164,20 @@ export interface StatsResponse {
 	strategy_distribution: Record<string, number> | null;
 	score_by_strategy: Record<string, number> | null;
 	task_types_by_strategy: Record<string, Record<string, number>> | null;
+	secondary_strategy_distribution: Record<string, number> | null;
+	tags_by_strategy: Record<string, Record<string, number>> | null;
+	// Extended analytics
+	score_matrix: Record<string, Record<string, ScoreMatrixEntry>> | null;
+	score_variance: Record<string, ScoreVarianceEntry> | null;
+	confidence_by_strategy: Record<string, number> | null;
+	combo_effectiveness: Record<string, Record<string, ComboEntry>> | null;
+	complexity_performance: Record<string, Record<string, ScoreMatrixEntry>> | null;
+	improvement_by_strategy: Record<string, ImprovementEntry> | null;
+	error_rates: Record<string, ErrorRateEntry> | null;
+	trend_7d: TrendEntry | null;
+	trend_30d: TrendEntry | null;
+	token_economics: Record<string, TokenEntry> | null;
+	win_rates: Record<string, WinRateEntry> | null;
 }
 
 /**
