@@ -7,7 +7,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.constants import OptimizationStatus
-from app.database import Base, _backfill_prompt_ids, _cleanup_stale_running, _run_migrations
+from app.database import (
+    Base,
+    _backfill_prompt_ids,
+    _cleanup_stale_running,
+    _migrate_legacy_strategies,
+    _run_migrations,
+)
 from app.models.optimization import Optimization
 from app.models.project import Project, Prompt
 
@@ -214,3 +220,119 @@ class TestBackfillPromptIds:
                 text("SELECT prompt_id FROM optimizations WHERE id = 'opt-noproject'")
             )).one()
             assert row.prompt_id is None
+
+
+class TestMigrateLegacyStrategies:
+    @pytest.mark.asyncio
+    async def test_normalizes_framework_applied(self, fresh_engine):
+        """Legacy names in framework_applied are updated to canonical values."""
+        factory = async_sessionmaker(
+            fresh_engine, class_=AsyncSession, expire_on_commit=False,
+        )
+        async with factory() as session:
+            session.add(Optimization(
+                id="leg-1", raw_prompt="test",
+                status=OptimizationStatus.COMPLETED,
+                framework_applied="few-shot",
+            ))
+            session.add(Optimization(
+                id="leg-2", raw_prompt="test",
+                status=OptimizationStatus.COMPLETED,
+                framework_applied="constraint-focused",
+            ))
+            await session.commit()
+
+        async with fresh_engine.begin() as conn:
+            await _migrate_legacy_strategies(conn)
+
+        async with factory() as session:
+            row1 = (await session.execute(
+                text("SELECT framework_applied FROM optimizations WHERE id = 'leg-1'")
+            )).one()
+            assert row1.framework_applied == "few-shot-scaffolding"
+            row2 = (await session.execute(
+                text("SELECT framework_applied FROM optimizations WHERE id = 'leg-2'")
+            )).one()
+            assert row2.framework_applied == "constraint-injection"
+
+    @pytest.mark.asyncio
+    async def test_normalizes_strategy_column(self, fresh_engine):
+        """Legacy names in strategy column are updated to canonical values."""
+        factory = async_sessionmaker(
+            fresh_engine, class_=AsyncSession, expire_on_commit=False,
+        )
+        async with factory() as session:
+            session.add(Optimization(
+                id="leg-3", raw_prompt="test",
+                status=OptimizationStatus.COMPLETED,
+                strategy="role-based",
+            ))
+            session.add(Optimization(
+                id="leg-4", raw_prompt="test",
+                status=OptimizationStatus.COMPLETED,
+                strategy="structured-enhancement",
+            ))
+            await session.commit()
+
+        async with fresh_engine.begin() as conn:
+            await _migrate_legacy_strategies(conn)
+
+        async with factory() as session:
+            row3 = (await session.execute(
+                text("SELECT strategy FROM optimizations WHERE id = 'leg-3'")
+            )).one()
+            assert row3.strategy == "persona-assignment"
+            row4 = (await session.execute(
+                text("SELECT strategy FROM optimizations WHERE id = 'leg-4'")
+            )).one()
+            assert row4.strategy == "role-task-format"
+
+    @pytest.mark.asyncio
+    async def test_idempotent(self, fresh_engine):
+        """Running migration twice is safe and produces the same result."""
+        factory = async_sessionmaker(
+            fresh_engine, class_=AsyncSession, expire_on_commit=False,
+        )
+        async with factory() as session:
+            session.add(Optimization(
+                id="leg-5", raw_prompt="test",
+                status=OptimizationStatus.COMPLETED,
+                framework_applied="few-shot",
+            ))
+            await session.commit()
+
+        async with fresh_engine.begin() as conn:
+            await _migrate_legacy_strategies(conn)
+        async with fresh_engine.begin() as conn:
+            await _migrate_legacy_strategies(conn)
+
+        async with factory() as session:
+            row = (await session.execute(
+                text("SELECT framework_applied FROM optimizations WHERE id = 'leg-5'")
+            )).one()
+            assert row.framework_applied == "few-shot-scaffolding"
+
+    @pytest.mark.asyncio
+    async def test_canonical_names_untouched(self, fresh_engine):
+        """Records already using canonical names are not modified."""
+        factory = async_sessionmaker(
+            fresh_engine, class_=AsyncSession, expire_on_commit=False,
+        )
+        async with factory() as session:
+            session.add(Optimization(
+                id="can-1", raw_prompt="test",
+                status=OptimizationStatus.COMPLETED,
+                framework_applied="chain-of-thought",
+                strategy="persona-assignment",
+            ))
+            await session.commit()
+
+        async with fresh_engine.begin() as conn:
+            await _migrate_legacy_strategies(conn)
+
+        async with factory() as session:
+            row = (await session.execute(
+                text("SELECT framework_applied, strategy FROM optimizations WHERE id = 'can-1'")
+            )).one()
+            assert row.framework_applied == "chain-of-thought"
+            assert row.strategy == "persona-assignment"

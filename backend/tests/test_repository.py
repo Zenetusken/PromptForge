@@ -373,6 +373,49 @@ class TestGetStats:
         assert stats["strategy_distribution"]["persona-assignment"] == 2
         assert stats["strategy_distribution"]["few-shot-scaffolding"] == 1
 
+    @pytest.mark.asyncio
+    async def test_legacy_alias_normalization(self, db_session):
+        """Legacy strategy names are merged under their canonical name."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", framework_applied="constraint-focused", overall_score=0.8)
+        await _seed(db_session, id="b", framework_applied="constraint-injection", overall_score=0.6)
+        stats = await repo.get_stats()
+        dist = stats["strategy_distribution"]
+        assert "constraint-injection" in dist
+        assert dist["constraint-injection"] == 2
+        assert "constraint-focused" not in dist
+
+    @pytest.mark.asyncio
+    async def test_legacy_alias_score_averaging(self, db_session):
+        """Scores are correctly weighted when merging legacy + canonical buckets."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", framework_applied="role-based", overall_score=0.8)
+        await _seed(db_session, id="b", framework_applied="persona-assignment", overall_score=0.6)
+        stats = await repo.get_stats()
+        scores = stats["score_by_strategy"]
+        assert "persona-assignment" in scores
+        assert "role-based" not in scores
+        # Weighted average: (0.8 + 0.6) / 2 = 0.7
+        assert scores["persona-assignment"] == 0.7
+
+    @pytest.mark.asyncio
+    async def test_legacy_alias_all_four_aliases(self, db_session):
+        """All four legacy aliases normalize to canonical names."""
+        repo = OptimizationRepository(db_session)
+        await _seed(db_session, id="a", framework_applied="few-shot")
+        await _seed(db_session, id="b", framework_applied="role-based")
+        await _seed(db_session, id="c", framework_applied="constraint-focused")
+        await _seed(db_session, id="d", framework_applied="structured-enhancement")
+        stats = await repo.get_stats()
+        dist = stats["strategy_distribution"]
+        assert "few-shot-scaffolding" in dist
+        assert "persona-assignment" in dist
+        assert "constraint-injection" in dist
+        assert "role-task-format" in dist
+        # No legacy names should appear
+        for legacy in ("few-shot", "role-based", "constraint-focused", "structured-enhancement"):
+            assert legacy not in dist
+
 
 # ---------------------------------------------------------------------------
 # Forge linking helpers

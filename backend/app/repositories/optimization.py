@@ -12,7 +12,7 @@ from sqlalchemy import ColumnElement, and_, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-from app.constants import ALLOWED_SORT_FIELDS, OptimizationStatus
+from app.constants import ALLOWED_SORT_FIELDS, LEGACY_STRATEGY_ALIASES, OptimizationStatus
 from app.converters import deserialize_json_field
 from app.models.optimization import Optimization
 from app.models.project import Prompt, Project
@@ -619,11 +619,19 @@ class OptimizationRepository:
 
         strategy_distribution: dict[str, int] = {}
         score_by_strategy: dict[str, float] = {}
+        # Track raw counts for weighted score averaging when merging aliases.
+        _score_weights: dict[str, tuple[float, int]] = {}  # name -> (sum, count)
         for srow in strategy_rows:
-            name = srow.strategy_name
-            strategy_distribution[name] = srow.count
+            name = LEGACY_STRATEGY_ALIASES.get(srow.strategy_name, srow.strategy_name)
+            strategy_distribution[name] = strategy_distribution.get(name, 0) + srow.count
             if srow.avg_score is not None:
-                score_by_strategy[name] = round(srow.avg_score, 4)
+                prev_sum, prev_n = _score_weights.get(name, (0.0, 0))
+                _score_weights[name] = (
+                    prev_sum + srow.avg_score * srow.count,
+                    prev_n + srow.count,
+                )
+        for name, (total_score, total_n) in _score_weights.items():
+            score_by_strategy[name] = round(total_score / total_n, 4)
 
         return {
             "total_optimizations": total,

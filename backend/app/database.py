@@ -116,6 +116,30 @@ async def _run_migrations(conn) -> None:
             logger.debug("Migration skipped (already applied): %s", stmt[:60])
 
 
+async def _migrate_legacy_strategies(conn) -> None:
+    """Normalize legacy strategy names in historical optimization records.
+
+    Updates both ``framework_applied`` and ``strategy`` columns from legacy
+    alias names to their canonical Strategy enum values using the
+    ``LEGACY_STRATEGY_ALIASES`` mapping.
+
+    Idempotent: only touches rows where the column value is a known alias.
+    """
+    from app.constants import LEGACY_STRATEGY_ALIASES
+
+    total = 0
+    for old_name, new_name in LEGACY_STRATEGY_ALIASES.items():
+        for col in ("framework_applied", "strategy"):
+            result = await conn.execute(
+                text(f"UPDATE optimizations SET {col} = :new WHERE {col} = :old"),
+                {"old": old_name, "new": new_name},
+            )
+            total += result.rowcount
+
+    if total:
+        logger.info("Migrated %d legacy strategy name(s) to canonical values", total)
+
+
 async def _migrate_legacy_projects(conn) -> None:
     """Seed the projects table from legacy optimization.project string values.
 
@@ -315,6 +339,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _run_migrations(conn)
+        await _migrate_legacy_strategies(conn)
         await _migrate_legacy_projects(conn)
         await _backfill_prompt_ids(conn)
         await _backfill_missing_prompts(conn)
