@@ -683,6 +683,35 @@ async def promptforge_stats(
                 name: score_to_display(val)
                 for name, val in stats["score_by_strategy"].items()
             }
+        # Convert new analytics score fields
+        if stats.get("score_matrix"):
+            for strat_data in stats["score_matrix"].values():
+                for entry in strat_data.values():
+                    if "avg_score" in entry:
+                        entry["avg_score"] = score_to_display(entry["avg_score"])
+        if stats.get("score_variance"):
+            for entry in stats["score_variance"].values():
+                for key in ("min", "max", "avg"):
+                    if key in entry:
+                        entry[key] = score_to_display(entry[key])
+        if stats.get("combo_effectiveness"):
+            for sec_data in stats["combo_effectiveness"].values():
+                for entry in sec_data.values():
+                    if "avg_score" in entry:
+                        entry["avg_score"] = score_to_display(entry["avg_score"])
+        if stats.get("complexity_performance"):
+            for comp_data in stats["complexity_performance"].values():
+                for entry in comp_data.values():
+                    if "avg_score" in entry:
+                        entry["avg_score"] = score_to_display(entry["avg_score"])
+        if stats.get("win_rates"):
+            for entry in stats["win_rates"].values():
+                if "avg_score" in entry:
+                    entry["avg_score"] = score_to_display(entry["avg_score"])
+        if stats.get("trend_7d") and stats["trend_7d"].get("avg_score") is not None:
+            stats["trend_7d"]["avg_score"] = score_to_display(stats["trend_7d"]["avg_score"])
+        if stats.get("trend_30d") and stats["trend_30d"].get("avg_score") is not None:
+            stats["trend_30d"]["avg_score"] = score_to_display(stats["trend_30d"]["avg_score"])
         return stats
 
 
@@ -1038,6 +1067,12 @@ async def promptforge_update_prompt(
         )
         await session.commit()
         return _prompt_to_dict(prompt)
+
+
+# --- ASGI app for HTTP transport (SSE) ---
+# Used by: uvicorn app.mcp_server:app --reload --port 8001
+# Provides hot-reload in dev, unlike stdio which loads code once.
+app = mcp.sse_app()
 
 
 # --- Main entry point ---

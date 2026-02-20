@@ -32,16 +32,18 @@ error()   { echo -e "${RED}[✗]${NC} $1"; }
 # ─── Port Configuration ──────────────────────────────────────────
 BACKEND_PORT=8000
 FRONTEND_PORT=5199
+MCP_PORT=8001
 LOGS_DIR="$SCRIPT_DIR/logs"
 BACKEND_PID_FILE="$LOGS_DIR/backend.pid"
 FRONTEND_PID_FILE="$LOGS_DIR/frontend.pid"
+MCP_PID_FILE="$LOGS_DIR/mcp.pid"
 
 # Security / rate-limit defaults (overridden by .env below)
 AUTH_TOKEN=""
 RATE_LIMIT_RPM=60
 RATE_LIMIT_OPTIMIZE_RPM=10
 
-# read_env_config — load BACKEND_PORT and security vars from .env if set.
+# read_env_config — load port config and security vars from .env if set.
 _read_env_var() {
     # Usage: _read_env_var VARNAME — prints the value from .env or empty string
     grep -E "^\s*$1\s*=" "$SCRIPT_DIR/.env" 2>/dev/null \
@@ -52,6 +54,7 @@ read_env_config() {
     [ -f "$SCRIPT_DIR/.env" ] || return 0
     local val
     val=$(_read_env_var BACKEND_PORT);            if [ -n "$val" ]; then BACKEND_PORT="$val"; fi
+    val=$(_read_env_var MCP_PORT);                 if [ -n "$val" ]; then MCP_PORT="$val"; fi
     val=$(_read_env_var AUTH_TOKEN);               if [ -n "$val" ]; then AUTH_TOKEN="$val"; fi
     val=$(_read_env_var RATE_LIMIT_RPM);           if [ -n "$val" ]; then RATE_LIMIT_RPM="$val"; fi
     val=$(_read_env_var RATE_LIMIT_OPTIMIZE_RPM);  if [ -n "$val" ]; then RATE_LIMIT_OPTIMIZE_RPM="$val"; fi
@@ -135,7 +138,11 @@ wait_for_port_free() {
 wait_for_url() {
     local url=$1 name=$2 timeout=${3:-30}
     for _ in $(seq 1 "$timeout"); do
-        if curl -sf "$url" > /dev/null 2>&1; then
+        # --max-time 2: prevents blocking on SSE/streaming endpoints
+        # Use -o /dev/null -w to check HTTP status (SSE returns 200 but never closes)
+        local http_code
+        http_code=$(curl -o /dev/null -s -w '%{http_code}' --max-time 2 "$url" 2>/dev/null || true)
+        if [ "$http_code" = "200" ]; then
             success "$name is healthy at $url"
             return 0
         fi
@@ -319,10 +326,12 @@ do_start() {
     log "Stopping any existing PromptForge processes..."
     stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 0 || true
     stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 0 || true
+    stop_service "MCP" "$MCP_PID_FILE" "$MCP_PORT" 0 || true
 
     # Wait for ports to be fully released before binding
     wait_for_port_free "$BACKEND_PORT" 5 || true
     wait_for_port_free "$FRONTEND_PORT" 5 || true
+    wait_for_port_free "$MCP_PORT" 5 || true
 
     mkdir -p "$LOGS_DIR"
 
@@ -369,9 +378,26 @@ do_start() {
 
     cd "$SCRIPT_DIR"
 
+    # Start MCP server (SSE transport with hot-reload)
+    log "Starting MCP server on port $MCP_PORT..."
+    cd "$SCRIPT_DIR/backend"
+    source venv/bin/activate
+
+    nohup python -m uvicorn app.mcp_server:app \
+        --host 0.0.0.0 \
+        --port "$MCP_PORT" \
+        --reload \
+        > "$LOGS_DIR/mcp.log" 2>&1 &
+
+    local mcp_pid=$!
+    echo $mcp_pid > "$MCP_PID_FILE"
+    success "MCP server starting (PID: $mcp_pid)"
+
+    cd "$SCRIPT_DIR"
+
     # Wait for health
     log "Waiting for services to be healthy..."
-    local backend_ok=false frontend_ok=false
+    local backend_ok=false frontend_ok=false mcp_ok=false
 
     if wait_for_url "http://localhost:$BACKEND_PORT/api/health" "Backend" 30; then
         backend_ok=true
@@ -379,6 +405,10 @@ do_start() {
 
     if wait_for_url "http://localhost:$FRONTEND_PORT" "Frontend" 30; then
         frontend_ok=true
+    fi
+
+    if wait_for_url "http://localhost:$MCP_PORT/sse" "MCP" 15; then
+        mcp_ok=true
     fi
 
     # Fetch provider info from health endpoint
@@ -403,6 +433,7 @@ except Exception: pass
     echo -e "  Backend API:    ${GREEN}http://localhost:$BACKEND_PORT${NC}"
     echo -e "  API Docs:       ${GREEN}http://localhost:$BACKEND_PORT/docs${NC}"
     echo -e "  Frontend:       ${GREEN}http://localhost:$FRONTEND_PORT${NC}"
+    echo -e "  MCP Server:     ${GREEN}http://localhost:$MCP_PORT/sse${NC}"
     echo -e "  Health Check:   ${GREEN}http://localhost:$BACKEND_PORT/api/health${NC}"
     if [ -n "$provider_info" ]; then
         echo -e "  LLM Provider:   ${GREEN}$provider_info${NC}"
@@ -417,13 +448,15 @@ except Exception: pass
     echo ""
     echo -e "  Backend PID:    $backend_pid"
     echo -e "  Frontend PID:   $frontend_pid"
+    echo -e "  MCP PID:        $mcp_pid"
     echo ""
     echo -e "  Backend logs:   ${YELLOW}logs/backend.log${NC}"
     echo -e "  Frontend logs:  ${YELLOW}logs/frontend.log${NC}"
+    echo -e "  MCP logs:       ${YELLOW}logs/mcp.log${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
     echo ""
 
-    if $backend_ok && $frontend_ok; then
+    if $backend_ok && $frontend_ok && $mcp_ok; then
         success "All services running! Ready for development."
     else
         warn "Some services may still be starting. Check logs."
@@ -441,6 +474,10 @@ do_stop() {
     fi
 
     if stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 1; then
+        anything_stopped=true
+    fi
+
+    if stop_service "MCP" "$MCP_PID_FILE" "$MCP_PORT" 1; then
         anything_stopped=true
     fi
 
@@ -484,6 +521,20 @@ do_status() {
         fi
     fi
     echo -e "  Frontend:  $frontend_status"
+
+    # MCP
+    local mcp_status="${RED}stopped${NC}"
+    local mcp_pid
+    if mcp_pid=$(read_pid_file "$MCP_PID_FILE" 2>/dev/null); then
+        mcp_status="${GREEN}running${NC} (PID: $mcp_pid)"
+    else
+        local port_pid
+        port_pid=$(find_port_pid "$MCP_PORT")
+        if [ -n "$port_pid" ]; then
+            mcp_status="${GREEN}running${NC} (PID: $port_pid, no PID file)"
+        fi
+    fi
+    echo -e "  MCP:       $mcp_status"
 
     # Security config
     echo ""
@@ -577,21 +628,20 @@ do_seed() {
 
 # ─── MCP Config ───────────────────────────────────────────────────
 do_mcp() {
-    echo -e "${CYAN}Add the following to your Claude Code MCP config:${NC}"
+    echo -e "${CYAN}MCP server configuration (SSE transport):${NC}"
     echo ""
     cat <<EOF
 {
   "mcpServers": {
     "promptforge": {
-      "command": "$SCRIPT_DIR/backend/venv/bin/python3",
-      "args": ["-m", "app.mcp_server"],
-      "cwd": "$SCRIPT_DIR/backend"
+      "url": "http://localhost:$MCP_PORT/sse"
     }
   }
 }
 EOF
     echo ""
-    log "The MCP server uses stdio transport — it runs on demand, not as a daemon."
+    log "The MCP server runs as a managed service on port $MCP_PORT with hot-reload."
+    log "Start it with: ./init.sh  (starts all services including MCP)"
     echo ""
     log "Auto-discovery: Claude Code detects .mcp.json at the project root automatically."
 }
@@ -614,6 +664,7 @@ do_help() {
     echo ""
     echo "Environment (set in .env):"
     echo "  BACKEND_PORT              Backend port (default: 8000)"
+    echo "  MCP_PORT                  MCP server port (default: 8001)"
     echo "  AUTH_TOKEN                Bearer token for API auth (empty = disabled)"
     echo "  RATE_LIMIT_RPM            General rate limit (default: 60)"
     echo "  RATE_LIMIT_OPTIMIZE_RPM   Optimize endpoint limit (default: 10)"

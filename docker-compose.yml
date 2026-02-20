@@ -64,5 +64,38 @@ services:
       retries: 3
       start_period: 10s
 
+  mcp:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - promptforge-data:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/promptforge.db
+      - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-6}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-pro}
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -o /dev/null -s -w '%{http_code}' --max-time 2 http://localhost:8001/sse | grep -q 200"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    command: ["python", "-m", "uvicorn", "app.mcp_server:app", "--host", "0.0.0.0", "--port", "8001"]
+
 volumes:
   promptforge-data:

@@ -1,9 +1,7 @@
 {
   "mcpServers": {
     "promptforge": {
-      "command": "backend/venv/bin/python3",
-      "args": ["-m", "app.mcp_server"],
-      "cwd": "backend"
+      "url": "http://localhost:8001/sse"
     }
   }
 }

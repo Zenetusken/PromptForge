@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # PromptForge Development Script
-# Starts both the backend API server and the frontend dev server.
+# Starts the backend API server and the frontend dev server.
+# Note: For full service management (including MCP server), use ./init.sh instead.
 
 set -euo pipefail
 
