@@ -79,6 +79,18 @@ export interface PipelineEvent {
 	message?: string;
 }
 
+export interface CodebaseContext {
+	language?: string;
+	framework?: string;
+	description?: string;
+	conventions?: string[];
+	patterns?: string[];
+	code_snippets?: string[];
+	documentation?: string;
+	test_framework?: string;
+	test_patterns?: string[];
+}
+
 export interface OptimizeMetadata {
 	title?: string;
 	project?: string;
@@ -88,6 +100,7 @@ export interface OptimizeMetadata {
 	strategy?: string;
 	secondary_frameworks?: string[];
 	prompt_id?: string;
+	codebase_context?: CodebaseContext;
 }
 
 export interface StatsResponse {
@@ -103,6 +116,7 @@ export interface StatsResponse {
 	optimizations_today: number;
 	strategy_distribution: Record<string, number> | null;
 	score_by_strategy: Record<string, number> | null;
+	task_types_by_strategy: Record<string, Record<string, number>> | null;
 }
 
 /**

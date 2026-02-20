@@ -59,11 +59,13 @@ describe('PromptState', () => {
 			tags: ['tag1', 'tag2'],
 			version: 'v3',
 			sourceAction: 'optimize',
+			strategy: 'chain-of-thought',
 		});
 		expect(promptState.title).toBe('My Title');
 		expect(promptState.tags).toEqual(['tag1', 'tag2']);
 		expect(promptState.version).toBe('v3');
 		expect(promptState.sourceAction).toBe('optimize');
+		expect(promptState.strategy).toBe('chain-of-thought');
 	});
 
 	it('set() defaults metadata fields when not provided', () => {
@@ -72,6 +74,7 @@ describe('PromptState', () => {
 		expect(promptState.tags).toEqual([]);
 		expect(promptState.version).toBe('');
 		expect(promptState.sourceAction).toBeNull();
+		expect(promptState.strategy).toBe('');
 	});
 
 	it('set() accepts reiterate sourceAction', () => {
@@ -85,11 +88,20 @@ describe('PromptState', () => {
 			tags: ['tag'],
 			version: 'v1',
 			sourceAction: 'reiterate',
+			strategy: 'risen',
 		});
 		promptState.clear();
 		expect(promptState.title).toBe('');
 		expect(promptState.tags).toEqual([]);
 		expect(promptState.version).toBe('');
 		expect(promptState.sourceAction).toBeNull();
+		expect(promptState.strategy).toBe('');
+	});
+
+	it('strategy can be set independently', () => {
+		promptState.clear();
+		promptState.strategy = 'co-star';
+		expect(promptState.strategy).toBe('co-star');
+		expect(promptState.text).toBe('');
 	});
 });

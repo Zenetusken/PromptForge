@@ -8,12 +8,14 @@ class PromptState {
 	tags: string[] = $state([]);
 	version: string = $state('');
 	sourceAction: SourceAction = $state(null);
+	strategy: string = $state('');
 
 	set(value: string, projectName?: string, promptId?: string, metadata?: {
 		title?: string;
 		tags?: string[];
 		version?: string;
 		sourceAction?: SourceAction;
+		strategy?: string;
 	}) {
 		this.text = value;
 		this.projectName = projectName ?? '';
@@ -22,6 +24,7 @@ class PromptState {
 		this.tags = metadata?.tags ?? [];
 		this.version = metadata?.version ?? '';
 		this.sourceAction = metadata?.sourceAction ?? null;
+		this.strategy = metadata?.strategy ?? '';
 	}
 
 	clear() {
@@ -32,6 +35,7 @@ class PromptState {
 		this.tags = [];
 		this.version = '';
 		this.sourceAction = null;
+		this.strategy = '';
 	}
 }
 

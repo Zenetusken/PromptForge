@@ -372,19 +372,21 @@ class OptimizationRepository:
             conditions.append(or_(fk_match, legacy_match))
 
         if not filters.include_archived:
-            # Exclude optimizations linked to archived projects (both FK and legacy paths).
-            # Use NOT IN on optimization IDs to avoid SQL NULL logic issues.
+            # Exclude optimizations linked to archived or deleted projects
+            # (both FK and legacy paths). Uses NOT IN on optimization IDs to
+            # avoid SQL NULL logic issues.
             arch_prompt = Prompt.__table__.alias("arch_prompt")
             arch_proj_fk = Project.__table__.alias("arch_proj_fk")
             arch_proj_leg = Project.__table__.alias("arch_proj_leg")
-            # IDs linked via FK to archived projects
+            hidden_statuses = ["archived", "deleted"]
+            # IDs linked via FK to archived/deleted projects
             exclude_fk = (
                 select(Optimization.id)
                 .join(arch_prompt, Optimization.prompt_id == arch_prompt.c.id)
                 .join(arch_proj_fk, arch_prompt.c.project_id == arch_proj_fk.c.id)
-                .where(arch_proj_fk.c.status == "archived")
+                .where(arch_proj_fk.c.status.in_(hidden_statuses))
             )
-            # IDs linked via legacy project name to archived projects
+            # IDs linked via legacy project name to archived/deleted projects
             exclude_legacy = (
                 select(Optimization.id)
                 .where(
@@ -392,7 +394,7 @@ class OptimizationRepository:
                         Optimization.prompt_id.is_(None),
                         Optimization.project.in_(
                             select(arch_proj_leg.c.name)
-                            .where(arch_proj_leg.c.status == "archived")
+                            .where(arch_proj_leg.c.status.in_(hidden_statuses))
                         ),
                     )
                 )
@@ -613,6 +615,9 @@ class OptimizationRepository:
                 "total_projects": 0,
                 "most_common_task_type": None,
                 "optimizations_today": 0,
+                "strategy_distribution": None,
+                "score_by_strategy": None,
+                "task_types_by_strategy": None,
             }
 
         imp = row.improved / row.validated if row.validated else None
@@ -653,6 +658,30 @@ class OptimizationRepository:
         for name, (total_score, total_n) in _score_weights.items():
             score_by_strategy[name] = round(total_score / total_n, 4)
 
+        # Per-strategy task type breakdown.
+        task_by_strategy_query = (
+            select(
+                strategy_col.label("strategy_name"),
+                Opt.task_type.label("task_type"),
+                func.count(Opt.id).label("count"),
+            )
+            .where(completed)
+            .where(strategy_col.isnot(None))
+            .where(Opt.task_type.isnot(None))
+            .group_by(strategy_col, Opt.task_type)
+        )
+        if project:
+            task_by_strategy_query = task_by_strategy_query.where(Opt.project == project)
+
+        tbs_result = await self._session.execute(task_by_strategy_query)
+        tbs_rows = tbs_result.all()
+
+        task_types_by_strategy: dict[str, dict[str, int]] = {}
+        for trow in tbs_rows:
+            name = LEGACY_STRATEGY_ALIASES.get(trow.strategy_name, trow.strategy_name)
+            bucket = task_types_by_strategy.setdefault(name, {})
+            bucket[trow.task_type] = bucket.get(trow.task_type, 0) + trow.count
+
         return {
             "total_optimizations": total,
             "average_overall_score": round_score(row.avg_overall),
@@ -666,4 +695,5 @@ class OptimizationRepository:
             "optimizations_today": row.today or 0,
             "strategy_distribution": strategy_distribution or None,
             "score_by_strategy": score_by_strategy or None,
+            "task_types_by_strategy": task_types_by_strategy or None,
         }

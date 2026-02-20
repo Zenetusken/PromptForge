@@ -202,6 +202,7 @@ class StatsResponse(BaseModel):
     optimizations_today: int = 0
     strategy_distribution: dict[str, int] | None = None
     score_by_strategy: dict[str, float] | None = None
+    task_types_by_strategy: dict[str, dict[str, int]] | None = None
 
 
 class BulkDeleteRequest(BaseModel):

@@ -3,6 +3,7 @@
 	import PromptInput from '$lib/components/PromptInput.svelte';
 	import PipelineProgress from '$lib/components/PipelineProgress.svelte';
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
+	import StrategyInsights from '$lib/components/StrategyInsights.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { promptState } from '$lib/stores/prompt.svelte';
@@ -71,9 +72,6 @@
 		}
 	} as const;
 
-	const STRATEGY_COLORS = ['bg-neon-cyan', 'bg-neon-purple', 'bg-neon-green', 'bg-neon-red'] as const;
-	const STRATEGY_TEXT_COLORS = ['text-neon-cyan', 'text-neon-purple', 'text-neon-green', 'text-neon-red'] as const;
-
 	const SCORE_DIMENSIONS = [
 		{ key: 'average_clarity_score' as const, label: 'CLR', fullLabel: 'Clarity', color: 'bg-neon-cyan/50', textColor: 'text-neon-cyan' },
 		{ key: 'average_specificity_score' as const, label: 'SPC', fullLabel: 'Specificity', color: 'bg-neon-purple/50', textColor: 'text-neon-purple' },
@@ -100,13 +98,6 @@
 			}
 		}
 	});
-
-	const strategyEntries: [string, number][] = $derived(
-		stats?.strategy_distribution
-			? (Object.entries(stats.strategy_distribution) as [string, number][]).sort((a, b) => b[1] - a[1])
-			: []
-	);
-	const strategyTotal = $derived(strategyEntries.reduce((sum, [, count]) => sum + count, 0));
 
 	// Static lookup so all class strings are visible to Tailwind's scanner
 	const SCORE_CARD_STYLES: Record<string, { text: string; border: string; shadow: string }> = {
@@ -174,6 +165,16 @@
 			optimizationState.error = null;
 			optimizationState.startOptimization(promptState.text);
 		}
+	}
+
+	function handleStrategySelect(strategy: string) {
+		promptState.strategy = strategy;
+		// Defer scroll/focus until after Svelte processes the strategy $effect
+		queueMicrotask(() => {
+			const textarea = document.querySelector('[data-testid="prompt-textarea"]') as HTMLTextAreaElement;
+			textarea?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			textarea?.focus();
+		});
 	}
 
 	// Rate limit retry countdown
@@ -310,28 +311,7 @@
 						</div>
 					{/if}
 
-					{#if strategyEntries.length > 0}
-						<div class="mt-3 animate-fade-in" style="animation-delay: 500ms; animation-fill-mode: backwards;">
-							<div class="flex h-3 gap-px overflow-hidden rounded-full bg-bg-primary/40">
-								{#each strategyEntries as [name, count], i}
-									<div
-										class="{STRATEGY_COLORS[i % STRATEGY_COLORS.length]} opacity-70"
-										style="width: {(count / strategyTotal) * 100}%"
-										title="{name}: {count} ({Math.round((count / strategyTotal) * 100)}%)"
-									></div>
-								{/each}
-							</div>
-							<div class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-								{#each strategyEntries as [name, count], i}
-									<span class="flex items-center gap-1.5 text-[10px] text-text-secondary">
-										<span class="inline-block h-2 w-2 rounded-full {STRATEGY_COLORS[i % STRATEGY_COLORS.length]}"></span>
-										<span class="{STRATEGY_TEXT_COLORS[i % STRATEGY_TEXT_COLORS.length]}">{name}</span>
-										<span class="font-mono text-text-dim">{count}</span>
-									</span>
-								{/each}
-							</div>
-						</div>
-					{/if}
+					<StrategyInsights {stats} lastPrompt={promptState.text} onStrategySelect={handleStrategySelect} />
 				{/if}
 			</div>
 		{/if}

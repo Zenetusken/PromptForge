@@ -3,8 +3,10 @@
 	import { providerState } from '$lib/stores/provider.svelte';
 	import { projectsState } from '$lib/stores/projects.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
-	import type { OptimizeMetadata } from '$lib/api/client';
+	import type { OptimizeMetadata, CodebaseContext } from '$lib/api/client';
 	import { checkDuplicateTitle } from '$lib/api/client';
+	import { ALL_STRATEGIES, STRATEGY_LABELS, STRATEGY_DESCRIPTIONS } from '$lib/utils/strategies';
+	import type { StrategyName } from '$lib/utils/strategies';
 	import Icon from './Icon.svelte';
 	import ProviderSelector from './ProviderSelector.svelte';
 	import { Collapsible } from 'bits-ui';
@@ -47,23 +49,48 @@
 	let duplicateTitleWarning = $state(false);
 	let duplicateCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
+	// Codebase context fields
+	let showContext = $state(false);
+	let ctxLanguage = $state('');
+	let ctxFramework = $state('');
+	let ctxDescription = $state('');
+	let ctxConventions = $state('');
+	let ctxPatterns = $state('');
+	let ctxCodeSnippets = $state('');
+	let ctxTestFramework = $state('');
+	let ctxTestPatterns = $state('');
+	let ctxDocumentation = $state('');
+	let hasContextData = $derived(
+		!!(ctxLanguage || ctxFramework || ctxDescription || ctxConventions ||
+		   ctxPatterns || ctxCodeSnippets || ctxTestFramework || ctxTestPatterns || ctxDocumentation)
+	);
+
 	// Strategy override
 	let showAdvanced = $state(false);
 	let selectedStrategy = $state('auto');
 	let selectedSecondary = $state<string[]>([]);
 
+	const STRATEGY_CATEGORIES: Record<StrategyName, string> = {
+		'co-star': 'Frameworks',
+		'risen': 'Frameworks',
+		'role-task-format': 'Frameworks',
+		'chain-of-thought': 'Techniques',
+		'few-shot-scaffolding': 'Techniques',
+		'step-by-step': 'Techniques',
+		'structured-output': 'Techniques',
+		'constraint-injection': 'Techniques',
+		'context-enrichment': 'Techniques',
+		'persona-assignment': 'Techniques',
+	};
+
 	const STRATEGY_OPTIONS: { value: string; label: string; description: string; category?: string }[] = [
 		{ value: 'auto', label: 'Auto', description: 'AI selects the best framework combination' },
-		{ value: 'co-star', label: 'CO-STAR', description: 'Context, Objective, Style, Tone, Audience, Response', category: 'Frameworks' },
-		{ value: 'risen', label: 'RISEN', description: 'Role, Instructions, Steps, End-goal, Narrowing', category: 'Frameworks' },
-		{ value: 'role-task-format', label: 'Role-Task-Format', description: 'Role + task description + output format', category: 'Frameworks' },
-		{ value: 'chain-of-thought', label: 'Chain of Thought', description: 'Step-by-step reasoning scaffolding', category: 'Techniques' },
-		{ value: 'few-shot-scaffolding', label: 'Few-Shot', description: 'Input/output example pairs', category: 'Techniques' },
-		{ value: 'step-by-step', label: 'Step by Step', description: 'Numbered sequential instructions', category: 'Techniques' },
-		{ value: 'structured-output', label: 'Structured Output', description: 'JSON, markdown, table format spec', category: 'Techniques' },
-		{ value: 'constraint-injection', label: 'Constraint Injection', description: 'Explicit do/don\'t rules and boundaries', category: 'Techniques' },
-		{ value: 'context-enrichment', label: 'Context Enrichment', description: 'Background info, domain context', category: 'Techniques' },
-		{ value: 'persona-assignment', label: 'Persona Assignment', description: 'Expert role with domain expertise', category: 'Techniques' },
+		...ALL_STRATEGIES.map(s => ({
+			value: s,
+			label: STRATEGY_LABELS[s],
+			description: STRATEGY_DESCRIPTIONS[s],
+			category: STRATEGY_CATEGORIES[s],
+		})),
 	];
 
 	// Group strategies by category for rendering (static — STRATEGY_OPTIONS is const)
@@ -90,9 +117,11 @@
 		}
 	}
 
-	// Clear secondaries that match the new primary when it changes
+	// Clear secondaries that match the new primary when it changes.
+	// Guard with .includes() to avoid writing a new array ref when nothing changed,
+	// which would re-trigger this effect in a cycle (filter() always returns a new ref).
 	$effect(() => {
-		if (selectedStrategy !== 'auto') {
+		if (selectedStrategy !== 'auto' && selectedSecondary.includes(selectedStrategy)) {
 			selectedSecondary = selectedSecondary.filter(v => v !== selectedStrategy);
 		}
 	});
@@ -150,6 +179,31 @@
 		if (selectedSecondary.length > 0) meta.secondary_frameworks = selectedSecondary;
 		if (promptId) {
 			meta.prompt_id = promptId;
+		}
+		if (hasContextData) {
+			const ctx: CodebaseContext = {};
+			if (ctxLanguage.trim()) ctx.language = ctxLanguage.trim();
+			if (ctxFramework.trim()) ctx.framework = ctxFramework.trim();
+			if (ctxDescription.trim()) ctx.description = ctxDescription.trim();
+			if (ctxConventions.trim()) {
+				const items = ctxConventions.split('\n').map(s => s.trim()).filter(Boolean);
+				if (items.length > 0) ctx.conventions = items;
+			}
+			if (ctxPatterns.trim()) {
+				const items = ctxPatterns.split('\n').map(s => s.trim()).filter(Boolean);
+				if (items.length > 0) ctx.patterns = items;
+			}
+			if (ctxCodeSnippets.trim()) {
+				const items = ctxCodeSnippets.split('\n').map(s => s.trim()).filter(Boolean);
+				if (items.length > 0) ctx.code_snippets = items;
+			}
+			if (ctxDocumentation.trim()) ctx.documentation = ctxDocumentation.trim();
+			if (ctxTestFramework.trim()) ctx.test_framework = ctxTestFramework.trim();
+			if (ctxTestPatterns.trim()) {
+				const items = ctxTestPatterns.split('\n').map(s => s.trim()).filter(Boolean);
+				if (items.length > 0) ctx.test_patterns = items;
+			}
+			meta.codebase_context = ctx;
 		}
 		return Object.keys(meta).length > 0 ? meta : undefined;
 	}
@@ -243,6 +297,16 @@
 			if (storeText && textareaEl) {
 				textareaEl.focus();
 			}
+		}
+	});
+
+	// Standalone effect for strategy override from Strategy Explorer.
+	// Separate from text-sync because strategy can change without text changing.
+	$effect(() => {
+		if (promptState.strategy) {
+			selectedStrategy = promptState.strategy;
+			promptState.strategy = '';
+			showAdvanced = true;
 		}
 	});
 </script>
@@ -348,6 +412,130 @@
 		</Collapsible.Content>
 	</Collapsible.Root>
 
+	<!-- Codebase Context Section -->
+	<Separator />
+	<Collapsible.Root bind:open={showContext}>
+		<Collapsible.Trigger
+			class="collapsible-toggle"
+			style="--toggle-accent: var(--color-neon-green)"
+			data-testid="context-toggle"
+		>
+			<Icon
+				name="chevron-right"
+				size={12}
+				class="transition-transform duration-200 {showContext ? 'rotate-90' : ''}"
+			/>
+			<Tooltip text="Provide codebase metadata for grounded optimization"><span>Context</span></Tooltip>
+			{#if hasContextData}
+				<span class="collapsible-indicator bg-neon-green"></span>
+			{/if}
+		</Collapsible.Trigger>
+		<Collapsible.Content>
+			<div class="px-4 pt-1 pb-3" data-testid="context-fields">
+				<p class="mb-2 text-[10px] text-text-dim">All fields optional. Providing context grounds the optimization in your actual codebase.</p>
+				<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+					<div>
+						<input
+							type="text"
+							bind:value={ctxLanguage}
+							placeholder="Language"
+							aria-label="Programming language"
+							list="ctx-languages"
+							data-testid="ctx-language"
+							class="input-field w-full py-2 text-sm"
+						/>
+						<datalist id="ctx-languages">
+							<option value="Python"></option>
+							<option value="TypeScript"></option>
+							<option value="JavaScript"></option>
+							<option value="Rust"></option>
+							<option value="Go"></option>
+							<option value="Java"></option>
+							<option value="C#"></option>
+							<option value="C++"></option>
+							<option value="Ruby"></option>
+							<option value="PHP"></option>
+							<option value="Swift"></option>
+							<option value="Kotlin"></option>
+						</datalist>
+					</div>
+					<input
+						type="text"
+						bind:value={ctxFramework}
+						placeholder="Framework"
+						aria-label="Framework"
+						data-testid="ctx-framework"
+						class="input-field w-full py-2 text-sm"
+					/>
+					<input
+						type="text"
+						bind:value={ctxTestFramework}
+						placeholder="Test Framework"
+						aria-label="Test framework"
+						data-testid="ctx-test-framework"
+						class="input-field w-full py-2 text-sm"
+					/>
+				</div>
+				<div class="mt-2">
+					<textarea
+						bind:value={ctxDescription}
+						placeholder="Project description"
+						aria-label="Project description"
+						rows="2"
+						data-testid="ctx-description"
+						class="input-field w-full resize-none py-2 text-sm"
+					></textarea>
+				</div>
+				<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+					<textarea
+						bind:value={ctxConventions}
+						placeholder="Conventions (one per line)"
+						aria-label="Coding conventions"
+						rows="3"
+						data-testid="ctx-conventions"
+						class="input-field w-full resize-none py-2 text-sm"
+					></textarea>
+					<textarea
+						bind:value={ctxPatterns}
+						placeholder="Patterns (one per line)"
+						aria-label="Design patterns"
+						rows="3"
+						data-testid="ctx-patterns"
+						class="input-field w-full resize-none py-2 text-sm"
+					></textarea>
+				</div>
+				<div class="mt-2">
+					<textarea
+						bind:value={ctxCodeSnippets}
+						placeholder="Code snippets (one per line)"
+						aria-label="Code snippets"
+						rows="4"
+						data-testid="ctx-code-snippets"
+						class="input-field w-full resize-none py-2 font-mono text-xs"
+					></textarea>
+				</div>
+				<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+					<textarea
+						bind:value={ctxTestPatterns}
+						placeholder="Test patterns (one per line)"
+						aria-label="Test patterns"
+						rows="2"
+						data-testid="ctx-test-patterns"
+						class="input-field w-full resize-none py-2 text-sm"
+					></textarea>
+					<textarea
+						bind:value={ctxDocumentation}
+						placeholder="Documentation notes"
+						aria-label="Documentation"
+						rows="2"
+						data-testid="ctx-documentation"
+						class="input-field w-full resize-none py-2 text-sm"
+					></textarea>
+				</div>
+			</div>
+		</Collapsible.Content>
+	</Collapsible.Root>
+
 	<!-- Advanced Section (Strategy Override) -->
 	<Separator />
 	<Collapsible.Root bind:open={showAdvanced}>
@@ -377,7 +565,7 @@
 			{/if}
 		</Collapsible.Trigger>
 		<Collapsible.Content>
-			<div class="px-4 pb-3" data-testid="advanced-fields">
+			<div class="px-4 pt-1 pb-3" data-testid="advanced-fields">
 				<!-- Ungrouped (Auto) -->
 				{#each strategyCategories.ungrouped as option}
 					<label
