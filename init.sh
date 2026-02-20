@@ -634,6 +634,7 @@ do_mcp() {
 {
   "mcpServers": {
     "promptforge": {
+      "type": "sse",
       "url": "http://localhost:$MCP_PORT/sse"
     }
   }
