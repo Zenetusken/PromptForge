@@ -139,6 +139,8 @@ class OptimizationResponse(BaseModel):
     model_used: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
     status: str = "pending"
     error_message: str | None = None
     project: str | None = None
@@ -148,6 +150,7 @@ class OptimizationResponse(BaseModel):
     prompt_id: str | None = None
     project_id: str | None = None
     project_status: str | None = None
+    codebase_context_snapshot: dict | None = None
 
     model_config = {"from_attributes": True}
 

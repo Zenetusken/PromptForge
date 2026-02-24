@@ -22,6 +22,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5199")
 # Server
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("BACKEND_PORT", "8000"))
+MCP_PORT = int(os.getenv("MCP_PORT", "8001"))
 
 # Application
 APP_VERSION = "0.2.0"

@@ -1,6 +1,7 @@
 """Codebase context schema for enriching prompt optimization with project awareness."""
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
 
 MAX_CONTEXT_CHARS = 50_000
 
@@ -64,10 +65,62 @@ class CodebaseContext:
         return rendered
 
 
+def merge_contexts(
+    base: CodebaseContext | None, override: CodebaseContext | None,
+) -> CodebaseContext | None:
+    """Merge two CodebaseContext objects with field-level replacement.
+
+    Override's non-empty scalar fields replace base's; override's non-empty
+    list fields replace base's entirely (no concatenation — avoids duplicates).
+    Returns None if both inputs are None.
+    """
+    if base is None and override is None:
+        return None
+    if base is None:
+        return override
+    if override is None:
+        return base
+
+    merged_kwargs = {}
+    for f in CodebaseContext.__dataclass_fields__.values():
+        base_val = getattr(base, f.name)
+        override_val = getattr(override, f.name)
+        # For lists: override replaces if non-empty
+        if isinstance(override_val, list):
+            merged_kwargs[f.name] = override_val if override_val else base_val
+        else:
+            # For scalars: override replaces if truthy (non-None, non-empty)
+            merged_kwargs[f.name] = override_val if override_val else base_val
+    return CodebaseContext(**merged_kwargs)
+
+
+def context_to_dict(ctx: CodebaseContext | None) -> dict | None:
+    """Convert a CodebaseContext to a dict, filtering out empty/None fields."""
+    if ctx is None:
+        return None
+    raw = asdict(ctx)
+    return {k: v for k, v in raw.items() if v} or None
+
+
+def context_from_json(json_str: str | None) -> CodebaseContext | None:
+    """Parse a JSON string back to a CodebaseContext.
+
+    Returns None if the string is None, empty, or invalid JSON.
+    """
+    if not json_str:
+        return None
+    try:
+        data = json.loads(json_str)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return codebase_context_from_dict(data)
+
+
 def codebase_context_from_dict(data: dict | None) -> CodebaseContext | None:
     """Convert a raw dict (from MCP/API) to a CodebaseContext, or None.
 
     Unknown keys are silently ignored so callers can evolve freely.
+    Strings are coerced to single-element lists for list fields.
     """
     if not data:
         return None
@@ -75,4 +128,9 @@ def codebase_context_from_dict(data: dict | None) -> CodebaseContext | None:
     filtered = {k: v for k, v in data.items() if k in known_fields}
     if not filtered:
         return None
+    # Coerce string → list for list-typed fields (MCP clients may send strings)
+    _list_fields = {"conventions", "patterns", "code_snippets", "test_patterns"}
+    for k in _list_fields:
+        if k in filtered and isinstance(filtered[k], str):
+            filtered[k] = [filtered[k]]
     return CodebaseContext(**filtered)

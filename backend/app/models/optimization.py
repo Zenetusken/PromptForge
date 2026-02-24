@@ -69,6 +69,8 @@ class Optimization(Base):
     model_used: Mapped[str | None] = mapped_column(Text, nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_creation_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_read_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default=OptimizationStatus.PENDING)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -82,6 +84,9 @@ class Optimization(Base):
     prompt_id: Mapped[str | None] = mapped_column(
         Text, ForeignKey("prompts.id", ondelete="SET NULL"), nullable=True,
     )
+
+    # Snapshot of resolved codebase context used for this optimization run (JSON)
+    codebase_context_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_optimizations_project", "project"),

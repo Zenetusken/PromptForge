@@ -103,6 +103,12 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE optimizations ADD COLUMN secondary_frameworks TEXT",
     # --- Version label for forge iterations ---
     "ALTER TABLE optimizations ADD COLUMN version TEXT",
+    # --- Context profiles on projects, context snapshots on optimizations ---
+    "ALTER TABLE projects ADD COLUMN context_profile TEXT",
+    "ALTER TABLE optimizations ADD COLUMN codebase_context_snapshot TEXT",
+    # --- Prompt caching token tracking ---
+    "ALTER TABLE optimizations ADD COLUMN cache_creation_input_tokens INTEGER",
+    "ALTER TABLE optimizations ADD COLUMN cache_read_input_tokens INTEGER",
 ]
 
 

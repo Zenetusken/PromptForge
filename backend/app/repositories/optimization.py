@@ -563,17 +563,24 @@ class OptimizationRepository:
             hour=0, minute=0, second=0, microsecond=0
         )
 
-        most_common_subq = (
+        completed = Opt.status == OptimizationStatus.COMPLETED
+
+        # Build most-common-task subquery with project + completed filters
+        most_common_q = (
             select(Opt.task_type)
             .where(Opt.task_type.isnot(None))
+            .where(completed)
+        )
+        if project:
+            most_common_q = most_common_q.where(Opt.project == project)
+        most_common_subq = (
+            most_common_q
             .group_by(Opt.task_type)
             .order_by(desc(func.count(Opt.id)))
             .limit(1)
             .correlate(None)
             .scalar_subquery()
         )
-
-        completed = Opt.status == OptimizationStatus.COMPLETED
 
         base_query = select(
             func.count(Opt.id).label("total"),
@@ -588,9 +595,6 @@ class OptimizationRepository:
             func.count(Opt.id).filter(
                 Opt.is_improvement.isnot(None),
             ).label("validated"),
-            func.count(func.distinct(Opt.project)).filter(
-                Opt.project.isnot(None),
-            ).label("projects"),
             func.count(Opt.id).filter(
                 Opt.created_at >= today_start,
             ).label("today"),
@@ -602,6 +606,17 @@ class OptimizationRepository:
 
         result = await self._session.execute(base_query)
         row = result.one()
+
+        # Count active projects from the projects table (not from optimizations)
+        # When scoped to a project, just use 1 (or 0 if no results).
+        if project:
+            total_active_projects = 1 if (row.total or 0) > 0 else 0
+        else:
+            proj_count_query = select(func.count(Project.id)).where(
+                Project.status == "active"
+            )
+            proj_count_result = await self._session.execute(proj_count_query)
+            total_active_projects = proj_count_result.scalar() or 0
 
         total = row.total or 0
         if total == 0:
@@ -1051,7 +1066,7 @@ class OptimizationRepository:
             "average_structure_score": round_score(row.avg_structure),
             "average_faithfulness_score": round_score(row.avg_faithfulness),
             "improvement_rate": round_score(imp),
-            "total_projects": row.projects or 0,
+            "total_projects": total_active_projects,
             "most_common_task_type": row.most_common_task,
             "optimizations_today": row.today or 0,
             "strategy_distribution": strategy_distribution or None,

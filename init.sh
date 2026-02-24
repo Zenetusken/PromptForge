@@ -13,6 +13,7 @@
 #   ./init.sh help         Show this usage message
 set -euo pipefail
 
+START_TIME=$(date +%s.%N)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -109,7 +110,7 @@ kill_port() {
     pid=$(find_port_pid "$port")
     if [ -n "$pid" ]; then
         kill_pid_tree "$pid"
-        sleep 1
+        sleep 0.2
         # Force-kill if still alive
         if kill -0 "$pid" 2>/dev/null; then
             kill_pid_tree "$pid" 9
@@ -123,13 +124,14 @@ kill_port() {
 wait_for_port_free() {
     local port=$1 timeout=${2:-5}
     local i
-    for i in $(seq 1 "$timeout"); do
+    local max_iters=$((timeout * 5))
+    for i in $(seq 1 "$max_iters"); do
         local pid
         pid=$(find_port_pid "$port")
         if [ -z "$pid" ]; then
             return 0
         fi
-        sleep 1
+        sleep 0.2
     done
     return 1
 }
@@ -137,7 +139,8 @@ wait_for_port_free() {
 # wait_for_url URL NAME TIMEOUT — poll URL until 2xx or timeout.
 wait_for_url() {
     local url=$1 name=$2 timeout=${3:-30}
-    for _ in $(seq 1 "$timeout"); do
+    local max_iters=$((timeout * 5))
+    for _ in $(seq 1 "$max_iters"); do
         # --max-time 2: prevents blocking on SSE/streaming endpoints
         # Use -o /dev/null -w to check HTTP status (SSE returns 200 but never closes)
         local http_code
@@ -146,7 +149,7 @@ wait_for_url() {
             success "$name is healthy at $url"
             return 0
         fi
-        sleep 1
+        sleep 0.2
     done
     warn "$name not responding yet (check logs/)"
     return 1
@@ -178,7 +181,7 @@ stop_service() {
     local pid
     if pid=$(read_pid_file "$pid_file"); then
         kill_pid_tree "$pid"
-        sleep 1
+        sleep 0.2
         if kill -0 "$pid" 2>/dev/null; then
             kill_pid_tree "$pid" 9
         fi
@@ -324,14 +327,28 @@ do_setup() {
 # ─── Start Services ───────────────────────────────────────────────
 do_start() {
     log "Stopping any existing PromptForge processes..."
-    stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 0 || true
-    stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 0 || true
-    stop_service "MCP" "$MCP_PID_FILE" "$MCP_PORT" 0 || true
+    stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 0 &
+    local stop_bg=$!
+    stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 0 &
+    local stop_fg=$!
+    stop_service "MCP" "$MCP_PID_FILE" "$MCP_PORT" 0 &
+    local stop_mcp=$!
+    
+    wait $stop_bg || true
+    wait $stop_fg || true
+    wait $stop_mcp || true
 
     # Wait for ports to be fully released before binding
-    wait_for_port_free "$BACKEND_PORT" 5 || true
-    wait_for_port_free "$FRONTEND_PORT" 5 || true
-    wait_for_port_free "$MCP_PORT" 5 || true
+    wait_for_port_free "$BACKEND_PORT" 5 &
+    local wait_bg=$!
+    wait_for_port_free "$FRONTEND_PORT" 5 &
+    local wait_fg=$!
+    wait_for_port_free "$MCP_PORT" 5 &
+    local wait_mcp=$!
+    
+    wait $wait_bg || true
+    wait $wait_fg || true
+    wait $wait_mcp || true
 
     mkdir -p "$LOGS_DIR"
 
@@ -399,17 +416,18 @@ do_start() {
     log "Waiting for services to be healthy..."
     local backend_ok=false frontend_ok=false mcp_ok=false
 
-    if wait_for_url "http://localhost:$BACKEND_PORT/api/health" "Backend" 30; then
-        backend_ok=true
-    fi
+    (wait_for_url "http://localhost:$BACKEND_PORT/api/health" "Backend" 30) &
+    local hc_bg=$!
+    
+    (wait_for_url "http://localhost:$FRONTEND_PORT" "Frontend" 30) &
+    local hc_fg=$!
+    
+    (wait_for_url "http://localhost:$MCP_PORT/health" "MCP" 15) &
+    local hc_mcp=$!
 
-    if wait_for_url "http://localhost:$FRONTEND_PORT" "Frontend" 30; then
-        frontend_ok=true
-    fi
-
-    if wait_for_url "http://localhost:$MCP_PORT/sse" "MCP" 15; then
-        mcp_ok=true
-    fi
+    if wait $hc_bg; then backend_ok=true; fi
+    if wait $hc_fg; then frontend_ok=true; fi
+    if wait $hc_mcp; then mcp_ok=true; fi
 
     # Fetch provider info from health endpoint
     local provider_info=""
@@ -426,9 +444,12 @@ except Exception: pass
     fi
 
     # Summary banner
+    local end_time=$(date +%s.%N)
+    local startup_time=$(awk "BEGIN {printf \"%.2f\", $end_time - $START_TIME}")
+
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}  PromptForge Development Environment${NC}"
+    echo -e "${CYAN}  PromptForge Development Environment${NC}   [Ready in ${startup_time}s]"
     echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
     echo -e "  Backend API:    ${GREEN}http://localhost:$BACKEND_PORT${NC}"
     echo -e "  API Docs:       ${GREEN}http://localhost:$BACKEND_PORT/docs${NC}"
@@ -469,17 +490,18 @@ do_stop() {
 
     local anything_stopped=false
 
-    if stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 1; then
-        anything_stopped=true
-    fi
+    (stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 1) &
+    local st_bg=$!
+    
+    (stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 1) &
+    local st_fg=$!
+    
+    (stop_service "MCP" "$MCP_PID_FILE" "$MCP_PORT" 1) &
+    local st_mcp=$!
 
-    if stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 1; then
-        anything_stopped=true
-    fi
-
-    if stop_service "MCP" "$MCP_PID_FILE" "$MCP_PORT" 1; then
-        anything_stopped=true
-    fi
+    wait $st_bg && anything_stopped=true
+    wait $st_fg && anything_stopped=true
+    wait $st_mcp && anything_stopped=true
 
     if $anything_stopped; then
         success "All services stopped."

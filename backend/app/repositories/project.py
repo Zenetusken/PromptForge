@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.constants import ALLOWED_PROJECT_SORT_FIELDS, ProjectStatus
 from app.models.optimization import Optimization
 from app.models.project import Project, Prompt, PromptVersion
+from app.schemas.context import CodebaseContext, context_from_json
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +138,43 @@ class ProjectRepository:
         project: Project,
         name: str | None = None,
         description: str | None = _UNSET,
+        context_profile: str | None = _UNSET,
     ) -> Project:
         if name is not None:
             project.name = name
         if description is not _UNSET:
             project.description = description
+        if context_profile is not _UNSET:
+            project.context_profile = context_profile
         project.updated_at = datetime.now(timezone.utc)
         await self._session.flush()
         return project
+
+    async def get_context_by_name(self, name: str) -> CodebaseContext | None:
+        """Fetch a project's context profile by name (lightweight, no joins).
+
+        Injects ``Project.description`` as a fallback for
+        ``CodebaseContext.description`` when the context profile doesn't
+        already provide one, so the LLM knows what the project is about
+        without requiring users to duplicate their description into the
+        context profile.
+        """
+        stmt = select(Project.context_profile, Project.description).where(
+            Project.name == name,
+        )
+        result = await self._session.execute(stmt)
+        row = result.one_or_none()
+        if row is None:
+            return None
+        ctx_json, project_description = row
+        ctx = context_from_json(ctx_json)
+        # Inject project description as fallback for CodebaseContext.description
+        if project_description:
+            if ctx is None:
+                ctx = CodebaseContext(description=project_description)
+            elif not ctx.description:
+                ctx.description = project_description
+        return ctx
 
     async def archive(self, project: Project) -> Project:
         project.status = ProjectStatus.ARCHIVED
