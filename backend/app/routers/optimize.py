@@ -1,5 +1,6 @@
 """Optimization endpoints for running the prompt optimization pipeline."""
 
+import dataclasses
 import json
 import logging
 import time
@@ -27,7 +28,12 @@ from app.repositories.project import (
     ensure_project_by_name,
     ensure_prompt_in_project,
 )
-from app.schemas.context import CodebaseContext, codebase_context_from_dict
+from app.schemas.context import (
+    CodebaseContext,
+    codebase_context_from_dict,
+    context_to_dict,
+    merge_contexts,
+)
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
 from app.middleware.sanitize import sanitize_text
 from app.services.pipeline import PipelineComplete, run_pipeline_streaming
@@ -225,6 +231,19 @@ async def optimize_prompt(
                 if auto_prompt_id:
                     optimization.prompt_id = auto_prompt_id
 
+    # Context resolution: project profile + explicit context
+    explicit_context = codebase_context_from_dict(request.codebase_context)
+    project_context = None
+    if request.project:
+        project_context = await ProjectRepository(db).get_context_by_name(request.project)
+    resolved_context = merge_contexts(project_context, explicit_context)
+
+    # Snapshot on optimization record
+    if resolved_context:
+        ctx_dict = context_to_dict(resolved_context)
+        if ctx_dict:
+            optimization.codebase_context_snapshot = json.dumps(ctx_dict)
+
     await db.commit()
 
     metadata: dict[str, Any] = {
@@ -235,13 +254,165 @@ async def optimize_prompt(
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id
-    resolved_context = codebase_context_from_dict(request.codebase_context)
     return _create_streaming_response(
         optimization_id, sanitized_prompt, start_time, metadata,
         llm_provider=llm_provider, strategy_override=request.strategy,
         secondary_frameworks_override=request.secondary_frameworks,
         codebase_context=resolved_context,
     )
+
+# ---------------------------------------------------------------------------
+# Modular Orchestration Endpoints
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel
+
+class AnalyzeRequest(BaseModel):
+    prompt: str
+    codebase_context: dict[str, Any] | None = None
+
+class StrategyRequest(BaseModel):
+    prompt: str
+    analysis: dict[str, Any]
+    codebase_context: dict[str, Any] | None = None
+
+class OptimizeGenerateRequest(BaseModel):
+    prompt: str
+    analysis: dict[str, Any]
+    strategy: str
+    secondary_frameworks: list[str] | None = None
+    codebase_context: dict[str, Any] | None = None
+
+class ValidateRequest(BaseModel):
+    original_prompt: str
+    optimized_prompt: str
+    codebase_context: dict[str, Any] | None = None
+
+def _timed_result(result: object, start: float) -> dict[str, Any]:
+    """Convert a dataclass result to a dict with step_duration_ms timing."""
+    d = dataclasses.asdict(result) if dataclasses.is_dataclass(result) else dict(result)  # type: ignore[arg-type]
+    d["step_duration_ms"] = round((time.time() - start) * 1000)
+    return d
+
+
+def _resolve_orchestration_provider(
+    x_llm_provider: str | None,
+    x_llm_api_key: str | None,
+    x_llm_model: str | None,
+) -> LLMProvider:
+    """Resolve provider for orchestration endpoints with proper error handling."""
+    try:
+        return _resolve_provider(x_llm_provider, x_llm_api_key, x_llm_model) or get_provider()
+    except (ValueError, RuntimeError, ImportError, ProviderError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/orchestrate/analyze")
+async def orchestrate_analyze(
+    request: AnalyzeRequest,
+    x_llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
+    x_llm_model: str | None = Header(None, alias="X-LLM-Model"),
+    x_llm_provider: str | None = Header(None, alias="X-LLM-Provider"),
+):
+    from app.services.analyzer import PromptAnalyzer
+
+    provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
+    sanitized_prompt, _ = sanitize_text(request.prompt)
+    context = codebase_context_from_dict(request.codebase_context)
+    start = time.time()
+    try:
+        result = await PromptAnalyzer(provider).analyze(sanitized_prompt, codebase_context=context)
+    except (ProviderError, Exception) as exc:
+        logger.exception("Orchestrate analyze failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return _timed_result(result, start)
+
+
+@router.post("/api/orchestrate/strategy")
+async def orchestrate_strategy(
+    request: StrategyRequest,
+    x_llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
+    x_llm_model: str | None = Header(None, alias="X-LLM-Model"),
+    x_llm_provider: str | None = Header(None, alias="X-LLM-Provider"),
+):
+    from app.services.analyzer import AnalysisResult
+    from app.services.strategy_selector import StrategySelector
+
+    provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
+    sanitized_prompt, _ = sanitize_text(request.prompt)
+    context = codebase_context_from_dict(request.codebase_context)
+    try:
+        analysis = AnalysisResult(**request.analysis)
+    except TypeError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid analysis data: {exc}") from exc
+    start = time.time()
+    try:
+        result = await StrategySelector(provider).select(
+            analysis,
+            raw_prompt=sanitized_prompt,
+            prompt_length=len(sanitized_prompt),
+            codebase_context=context,
+        )
+    except (ProviderError, Exception) as exc:
+        logger.exception("Orchestrate strategy failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return _timed_result(result, start)
+
+
+@router.post("/api/orchestrate/optimize")
+async def orchestrate_optimize(
+    request: OptimizeGenerateRequest,
+    x_llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
+    x_llm_model: str | None = Header(None, alias="X-LLM-Model"),
+    x_llm_provider: str | None = Header(None, alias="X-LLM-Provider"),
+):
+    from app.services.analyzer import AnalysisResult
+    from app.services.optimizer import PromptOptimizer
+
+    provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
+    sanitized_prompt, _ = sanitize_text(request.prompt)
+    context = codebase_context_from_dict(request.codebase_context)
+    try:
+        analysis = AnalysisResult(**request.analysis)
+    except TypeError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid analysis data: {exc}") from exc
+    start = time.time()
+    try:
+        result = await PromptOptimizer(provider).optimize(
+            sanitized_prompt,
+            analysis,
+            request.strategy,
+            secondary_frameworks=request.secondary_frameworks,
+            codebase_context=context,
+        )
+    except (ProviderError, Exception) as exc:
+        logger.exception("Orchestrate optimize failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return _timed_result(result, start)
+
+
+@router.post("/api/orchestrate/validate")
+async def orchestrate_validate(
+    request: ValidateRequest,
+    x_llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
+    x_llm_model: str | None = Header(None, alias="X-LLM-Model"),
+    x_llm_provider: str | None = Header(None, alias="X-LLM-Provider"),
+):
+    from app.services.validator import PromptValidator
+
+    provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
+    sanitized_orig, _ = sanitize_text(request.original_prompt)
+    sanitized_opt, _ = sanitize_text(request.optimized_prompt)
+    context = codebase_context_from_dict(request.codebase_context)
+    start = time.time()
+    try:
+        result = await PromptValidator(provider).validate(
+            sanitized_orig, sanitized_opt, codebase_context=context,
+        )
+    except (ProviderError, Exception) as exc:
+        logger.exception("Orchestrate validate failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return _timed_result(result, start)
 
 
 @router.get("/api/optimize/check-duplicate")
@@ -340,6 +511,16 @@ async def retry_optimization(
                 if auto_prompt_id:
                     new_optimization.prompt_id = auto_prompt_id
 
+    # Re-resolve context from current project profile (picks up profile updates)
+    resolved_context = None
+    if original.project:
+        resolved_context = await ProjectRepository(db).get_context_by_name(original.project)
+
+    if resolved_context:
+        ctx_dict = context_to_dict(resolved_context)
+        if ctx_dict:
+            new_optimization.codebase_context_snapshot = json.dumps(ctx_dict)
+
     await db.commit()
 
     metadata: dict[str, Any] = {
@@ -352,4 +533,5 @@ async def retry_optimization(
         metadata["project_id"] = resolved_project_id
     return _create_streaming_response(
         new_id, raw_prompt, start_time, metadata, llm_provider=llm_provider,
+        codebase_context=resolved_context,
     )

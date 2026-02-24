@@ -1,5 +1,6 @@
 """Project and prompt management endpoints."""
 
+import json
 import logging
 from datetime import timezone
 from email.utils import parsedate_to_datetime
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import ProjectStatus
 from app.converters import deserialize_json_field
 from app.database import get_db
+from app.schemas.context import codebase_context_from_dict, context_to_dict
 from app.repositories.optimization import OptimizationRepository
 from app.repositories.project import ProjectFilters, ProjectPagination, ProjectRepository
 from app.schemas.project import (
@@ -140,6 +142,7 @@ async def list_projects(
             description=p.description,
             status=p.status,
             prompt_count=prompt_counts.get(p.id, 0),
+            has_context=bool(p.context_profile),
             created_at=p.created_at,
             updated_at=p.updated_at,
         )
@@ -164,17 +167,36 @@ async def create_project(
     if existing and existing.status != ProjectStatus.DELETED:
         raise HTTPException(status_code=409, detail="A project with this name already exists")
 
+    # Serialize context profile if provided
+    ctx_json = None
+    if body.context_profile:
+        ctx = codebase_context_from_dict(body.context_profile)
+        ctx_dict = context_to_dict(ctx)
+        ctx_json = json.dumps(ctx_dict) if ctx_dict else None
+
     if existing and existing.status == ProjectStatus.DELETED:
         # Reactivate the soft-deleted project
-        project = await repo.update(existing, name=body.name, description=body.description)
+        project = await repo.update(
+            existing, name=body.name, description=body.description, context_profile=ctx_json,
+        )
         await repo.unarchive(project)  # Sets status to ACTIVE
     else:
-        project = await repo.create(name=body.name, description=body.description)
+        project = await repo.create(
+            name=body.name, description=body.description, context_profile=ctx_json,
+        )
+
+    ctx_dict = None
+    if project.context_profile:
+        try:
+            ctx_dict = json.loads(project.context_profile)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     return ProjectDetailResponse(
         id=project.id,
         name=project.name,
         description=project.description,
+        context_profile=ctx_dict,
         status=project.status,
         created_at=project.created_at,
         updated_at=project.updated_at,
@@ -193,10 +215,18 @@ async def get_project(
     if not project or project.status == ProjectStatus.DELETED:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    ctx_dict = None
+    if project.context_profile:
+        try:
+            ctx_dict = json.loads(project.context_profile)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return ProjectDetailResponse(
         id=project.id,
         name=project.name,
         description=project.description,
+        context_profile=ctx_dict,
         status=project.status,
         created_at=project.created_at,
         updated_at=project.updated_at,
@@ -244,6 +274,14 @@ async def update_project(
         kwargs["name"] = body.name
     if body.description is not None:
         kwargs["description"] = body.description
+    if "context_profile" in body.model_fields_set:
+        # Explicit null clears context; dict sets it; absent key leaves unchanged
+        if body.context_profile:
+            ctx = codebase_context_from_dict(body.context_profile)
+            ctx_dict = context_to_dict(ctx)
+            kwargs["context_profile"] = json.dumps(ctx_dict) if ctx_dict else None
+        else:
+            kwargs["context_profile"] = None
 
     project = await repo.update(project, **kwargs)
     # Reload to include prompts in response
@@ -251,10 +289,18 @@ async def update_project(
     if not reloaded:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    ctx_out = None
+    if reloaded.context_profile:
+        try:
+            ctx_out = json.loads(reloaded.context_profile)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
     return ProjectDetailResponse(
         id=reloaded.id,
         name=reloaded.name,
         description=reloaded.description,
+        context_profile=ctx_out,
         status=reloaded.status,
         created_at=reloaded.created_at,
         updated_at=reloaded.updated_at,

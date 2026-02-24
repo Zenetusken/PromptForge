@@ -1,5 +1,9 @@
 """Health check endpoint for monitoring service status."""
 
+import asyncio
+import logging
+
+import httpx
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -9,17 +13,42 @@ from app import config
 from app.database import get_db
 from app.providers import get_provider
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["health"])
+
+
+async def _check_db(db: AsyncSession) -> bool:
+    """Check database connectivity."""
+    try:
+        result = await db.execute(text("SELECT 1"))
+        return result.scalar() == 1
+    except SQLAlchemyError:
+        return False
+
+
+async def _probe_mcp() -> bool:
+    """Probe the MCP server health endpoint.
+
+    Returns True if the MCP server responds with {"status": "ok"} within 1.5s.
+    Returns False on any error (connection refused, timeout, bad response).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=1.5) as client:
+            resp = await client.get(f"http://localhost:{config.MCP_PORT}/health")
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("status") == "ok"
+    except Exception:
+        pass
+    return False
 
 
 async def _health_response(db: AsyncSession):
     """Shared health check logic."""
-    db_connected = False
-    try:
-        result = await db.execute(text("SELECT 1"))
-        db_connected = result.scalar() == 1
-    except SQLAlchemyError:
-        db_connected = False
+    db_connected, mcp_connected = await asyncio.gather(
+        _check_db(db), _probe_mcp()
+    )
 
     try:
         provider = get_provider()
@@ -38,6 +67,7 @@ async def _health_response(db: AsyncSession):
         "llm_provider": llm_provider,
         "llm_model": llm_model,
         "db_connected": db_connected,
+        "mcp_connected": mcp_connected,
         "version": config.APP_VERSION,
     }
 

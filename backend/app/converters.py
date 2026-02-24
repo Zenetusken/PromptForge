@@ -80,6 +80,8 @@ def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
         "model_used": opt.model_used,
         "input_tokens": opt.input_tokens,
         "output_tokens": opt.output_tokens,
+        "cache_creation_input_tokens": opt.cache_creation_input_tokens,
+        "cache_read_input_tokens": opt.cache_read_input_tokens,
         "status": opt.status,
         "error_message": opt.error_message,
         "project": opt.project,
@@ -89,7 +91,21 @@ def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
         "prompt_id": opt.prompt_id,
         "project_id": getattr(opt, "_resolved_project_id", None),
         "project_status": getattr(opt, "_resolved_project_status", None),
+        "codebase_context_snapshot": _deserialize_json_dict(
+            getattr(opt, "codebase_context_snapshot", None)
+        ),
     }
+
+
+def _deserialize_json_dict(value: str | None) -> dict | None:
+    """Deserialize a JSON string to a dict, or return None."""
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def optimization_to_response(opt: Optimization) -> OptimizationResponse:
@@ -188,6 +204,8 @@ def apply_pipeline_result_to_orm(
     opt.model_used = data.get("model_used")
     opt.input_tokens = data.get("input_tokens")
     opt.output_tokens = data.get("output_tokens")
+    opt.cache_creation_input_tokens = data.get("cache_creation_input_tokens")
+    opt.cache_read_input_tokens = data.get("cache_read_input_tokens")
 
 
 async def update_optimization_status(

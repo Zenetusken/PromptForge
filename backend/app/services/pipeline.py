@@ -78,6 +78,8 @@ class PipelineResult:
     secondary_frameworks: list[str] = field(default_factory=list)
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
 
 
 async def _select_strategy(
@@ -113,6 +115,13 @@ async def _select_strategy(
     return result, selector.last_usage
 
 
+def _sum_optional(a: int | None, b: int | None) -> int | None:
+    """Sum two optional ints, returning None only when both are None."""
+    if a is None and b is None:
+        return None
+    return (a or 0) + (b or 0)
+
+
 def _add_usage(a: TokenUsage | None, b: TokenUsage | None) -> TokenUsage | None:
     """Sum two TokenUsage values, treating None as zero."""
     if a is None:
@@ -122,6 +131,12 @@ def _add_usage(a: TokenUsage | None, b: TokenUsage | None) -> TokenUsage | None:
     return TokenUsage(
         input_tokens=(a.input_tokens or 0) + (b.input_tokens or 0),
         output_tokens=(a.output_tokens or 0) + (b.output_tokens or 0),
+        cache_creation_input_tokens=_sum_optional(
+            a.cache_creation_input_tokens, b.cache_creation_input_tokens,
+        ),
+        cache_read_input_tokens=_sum_optional(
+            a.cache_read_input_tokens, b.cache_read_input_tokens,
+        ),
     )
 
 
@@ -159,6 +174,12 @@ def _assemble_result(
         secondary_frameworks=strategy.secondary_frameworks,
         input_tokens=total_usage.input_tokens if total_usage else None,
         output_tokens=total_usage.output_tokens if total_usage else None,
+        cache_creation_input_tokens=(
+            total_usage.cache_creation_input_tokens if total_usage else None
+        ),
+        cache_read_input_tokens=(
+            total_usage.cache_read_input_tokens if total_usage else None
+        ),
     )
 
 
@@ -468,6 +489,15 @@ async def run_pipeline_streaming(
     if total_usage:
         complete_data["input_tokens"] = total_usage.input_tokens
         complete_data["output_tokens"] = total_usage.output_tokens
+        if total_usage.cache_creation_input_tokens is not None:
+            complete_data["cache_creation_input_tokens"] = (
+                total_usage.cache_creation_input_tokens
+            )
+        if total_usage.cache_read_input_tokens is not None:
+            complete_data["cache_read_input_tokens"] = (
+                total_usage.cache_read_input_tokens
+            )
+
     if complete_metadata:
         complete_data.update(complete_metadata)
     yield _sse_event("complete", complete_data)

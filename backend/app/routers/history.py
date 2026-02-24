@@ -166,11 +166,12 @@ async def delete_optimization(
 @router.get("/api/history/stats", response_model=StatsResponse)
 async def get_stats(
     response: Response,
+    project: str | None = Query(None, description="Scope stats to a project name"),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve aggregated statistics across all optimizations."""
     repo = OptimizationRepository(db)
-    stats = await repo.get_stats()
+    stats = await repo.get_stats(project=project)
     response.headers["Cache-Control"] = "max-age=30"
     return StatsResponse(**stats)
 
@@ -178,10 +179,11 @@ async def get_stats(
 @router.head("/api/history/stats", include_in_schema=False)
 async def get_stats_head(
     response: Response,
+    project: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """HEAD variant of stats."""
     repo = OptimizationRepository(db)
-    stats = await repo.get_stats()
+    stats = await repo.get_stats(project=project)
     response.headers["Cache-Control"] = "max-age=30"
     return StatsResponse(**stats)

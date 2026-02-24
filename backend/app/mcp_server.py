@@ -20,6 +20,7 @@ Tools:
   - create_project: Create a new project
   - add_prompt: Add a prompt to a project
   - update_prompt: Update prompt content (auto-versions)
+  - set_project_context: Set or clear codebase context profile on a project
 """
 
 import json
@@ -61,7 +62,11 @@ from app.repositories.optimization import (
     OptimizationRepository,
     Pagination,
 )
-from app.schemas.context import codebase_context_from_dict
+from app.schemas.context import (
+    codebase_context_from_dict,
+    context_to_dict,
+    merge_contexts,
+)
 from app.services.pipeline import run_pipeline
 from app.services.strategy_selector import _STRATEGY_DESCRIPTIONS, _STRATEGY_REASON_MAP
 from app.utils.scores import score_to_display
@@ -115,16 +120,23 @@ async def _repo_session():
         yield OptimizationRepository(session), session
 
 
-def _project_to_dict(project: Project) -> dict[str, object]:
+def _project_to_dict(project: Project, *, include_context: bool = False) -> dict[str, object]:
     """Serialize a Project ORM object to a dict for MCP responses."""
-    return {
+    d: dict[str, object] = {
         "id": project.id,
         "name": project.name,
         "description": project.description,
         "status": project.status,
+        "has_context": bool(project.context_profile),
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
     }
+    if include_context and project.context_profile:
+        try:
+            d["context_profile"] = json.loads(project.context_profile)
+        except (json.JSONDecodeError, TypeError):
+            d["context_profile"] = None
+    return d
 
 
 def _prompt_to_dict(prompt: Prompt) -> dict[str, object]:
@@ -167,7 +179,8 @@ mcp = FastMCP(
         "- Iterate: retry with strategy override, or optimize again "
         "with different strategy\n"
         "- Browse: list/search, then get for full details\n"
-        "- Discover strategies: strategies lists all 10 valid strategy names"
+        "- Discover strategies: strategies lists all 10 valid strategy names\n"
+        "- Context-aware: set_project_context → optimize (auto-resolves context from project)"
     ),
     lifespan=lifespan,
 )
@@ -244,8 +257,9 @@ async def promptforge_optimize(
 
     await ctx.report_progress(0.0, 1.0, "Creating optimization record")
 
-    # Create initial DB record and auto-create Project if needed
+    # Create initial DB record, auto-create Project, and resolve context — all in one session
     resolved_project_id: str | None = None
+    resolved_context = None
     async with _repo_session() as (repo, session):
         # Validate prompt_id FK before creating record
         if prompt_id:
@@ -274,12 +288,23 @@ async def promptforge_optimize(
                 auto_prompt_id = await ensure_prompt_in_project(session, pid, prompt)
                 if auto_prompt_id:
                     opt_record.prompt_id = auto_prompt_id
+
+        # Context resolution: project profile + explicit context
+        explicit_context = codebase_context_from_dict(codebase_context)
+        project_ctx = None
+        if project:
+            project_ctx = await ProjectRepository(session).get_context_by_name(project)
+        resolved_context = merge_contexts(project_ctx, explicit_context)
+
+        # Snapshot on optimization record
+        if resolved_context:
+            ctx_dict = context_to_dict(resolved_context)
+            if ctx_dict:
+                opt_record.codebase_context_snapshot = json.dumps(ctx_dict)
+
         await session.commit()
 
     await ctx.report_progress(0.1, 1.0, "Running optimization pipeline")
-
-    # Resolve codebase context from dict
-    resolved_context = codebase_context_from_dict(codebase_context)
 
     # Run pipeline
     try:
@@ -879,7 +904,7 @@ async def promptforge_get_project(
         if not project:
             raise ToolError(f"Project not found: {project_id}")
 
-        result = _project_to_dict(project)
+        result = _project_to_dict(project, include_context=True)
         result["prompts"] = [_prompt_to_dict(p) for p in (project.prompts or [])]
         return result
 
@@ -938,6 +963,7 @@ async def promptforge_strategies() -> dict[str, object]:
 async def promptforge_create_project(
     name: Annotated[str, Field(description="Unique project name (1-100 chars)")],
     description: Annotated[str | None, Field(description="Project description (max 2000 chars)")] = None,
+    context_profile: Annotated[dict | None, Field(description="Codebase context profile dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,
 ) -> dict[str, object]:
     """Create a new project or reactivate a soft-deleted one with the same name.
 
@@ -951,6 +977,13 @@ async def promptforge_create_project(
     if description is not None and len(description) > 2000:
         raise ToolError("Description must be 2000 characters or fewer")
 
+    # Serialize context profile
+    ctx_json = None
+    if context_profile:
+        ctx = codebase_context_from_dict(context_profile)
+        ctx_dict = context_to_dict(ctx)
+        ctx_json = json.dumps(ctx_dict) if ctx_dict else None
+
     async with async_session_factory() as session:
         proj_repo = ProjectRepository(session)
         existing = await proj_repo.get_by_name(name)
@@ -961,15 +994,19 @@ async def promptforge_create_project(
                 existing.status = ProjectStatus.ACTIVE
                 if description is not None:
                     existing.description = description
+                if ctx_json is not None:
+                    existing.context_profile = ctx_json
                 existing.updated_at = datetime.now(timezone.utc)
                 await session.flush()
                 await session.commit()
-                return _project_to_dict(existing)
+                return _project_to_dict(existing, include_context=True)
             raise ToolError(f"Project already exists: {name!r}")
 
-        project = await proj_repo.create(name=name, description=description)
+        project = await proj_repo.create(
+            name=name, description=description, context_profile=ctx_json,
+        )
         await session.commit()
-        return _project_to_dict(project)
+        return _project_to_dict(project, include_context=True)
 
 
 # --- Tool 15: add_prompt ---
@@ -1069,10 +1106,75 @@ async def promptforge_update_prompt(
         return _prompt_to_dict(prompt)
 
 
+# --- Tool 17: set_project_context ---
+
+@mcp.tool(
+    name="set_project_context",
+    description=(
+        "Set or clear the codebase context profile on a project. "
+        "Context profiles are automatically resolved during optimization "
+        "when a project name is specified."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+async def promptforge_set_project_context(
+    project_id: Annotated[str, Field(description="UUID of the project to update")],
+    context_profile: Annotated[dict | None, Field(description="Codebase context profile dict. Pass null to clear. Keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,
+) -> dict[str, object]:
+    """Set or clear the codebase context profile on a project.
+
+    Returns the updated project record with context_profile included.
+    """
+    _validate_uuid(project_id, "project_id")
+
+    ctx_json: str | None = None
+    if context_profile:
+        ctx = codebase_context_from_dict(context_profile)
+        ctx_dict = context_to_dict(ctx)
+        ctx_json = json.dumps(ctx_dict) if ctx_dict else None
+
+    async with async_session_factory() as session:
+        proj_repo = ProjectRepository(session)
+        project = await proj_repo.get_by_id(project_id, load_prompts=False)
+
+        if not project or project.status == ProjectStatus.DELETED:
+            raise ToolError(f"Project not found: {project_id}")
+        if project.status == ProjectStatus.ARCHIVED:
+            raise ToolError(f"Cannot modify archived project: {project.name}")
+
+        await proj_repo.update(project, context_profile=ctx_json)
+        await session.commit()
+
+        return _project_to_dict(project, include_context=True)
+
+
 # --- ASGI app for HTTP transport (SSE) ---
 # Used by: uvicorn app.mcp_server:app --reload --port 8001
 # Provides hot-reload in dev, unlike stdio which loads code once.
-app = mcp.sse_app()
+#
+# The SSE app is wrapped in a Starlette parent to add a /health endpoint
+# for connectivity probes from the main backend.
+
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
+
+
+async def mcp_health(request):
+    """Zero-state health probe — confirms the MCP process is alive."""
+    return JSONResponse({"status": "ok", "server": "promptforge_mcp"})
+
+
+_mcp_sse = mcp.sse_app()
+app = Starlette(routes=[
+    Route("/health", mcp_health),
+    Mount("/", _mcp_sse),
+])
 
 
 # --- Main entry point ---
