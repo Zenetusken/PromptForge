@@ -29,7 +29,7 @@ A self-adaptive prompt optimization web app that transforms raw, unstructured pr
 - **4-stage optimization pipeline** — Analyze, Strategy, Optimize, Validate — streamed to the browser in real time via SSE
 - **Provider-agnostic** — Claude CLI, Anthropic API, OpenAI, and Google Gemini with auto-detection
 - **Project management** — organize prompts into projects with full version history and forge-result linking
-- **MCP server** — 16 tools for Claude Code integration (`optimize`, `retry`, `search`, `bulk_delete`, etc.)
+- **MCP server** — 17 tools for Claude Code integration (`optimize`, `retry`, `search`, `set_project_context`, etc.)
 - **Security stack** — optional bearer-token auth, per-endpoint rate limiting, CSRF protection, security headers, input sanitization, and audit logging
 - **Docker-ready** — multi-stage builds, healthchecks, non-root containers, and compose orchestration
 
@@ -144,7 +144,7 @@ PromptForge exposes its engine as an MCP server for Claude Code integration:
 cd backend && python -m app.mcp_server
 ```
 
-**Available tools:** `optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`
+**Available tools:** `optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`, `set_project_context`
 
 ## Configuration
 
