@@ -21,14 +21,14 @@
 		{ name: 'create_project', desc: 'Create a new project' },
 		{ name: 'add_prompt', desc: 'Add a prompt to a project' },
 		{ name: 'update_prompt', desc: 'Update prompt content with auto-versioning' },
+		{ name: 'set_project_context', desc: 'Set or clear codebase context profile on a project' },
 	];
 
 	const configSnippet = `{
   "mcpServers": {
     "promptforge": {
-      "command": "python",
-      "args": ["-m", "app.mcp_server"],
-      "cwd": "/path/to/promptforge/backend"
+      "type": "sse",
+      "url": "http://localhost:8001/sse"
     }
   }
 }`;

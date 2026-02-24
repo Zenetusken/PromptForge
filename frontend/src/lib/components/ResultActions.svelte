@@ -1,12 +1,17 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { optimizationState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
-	import { toastState } from '$lib/stores/toast.svelte';
-	import { promptState } from '$lib/stores/prompt.svelte';
-	import { useCopyFeedback } from '$lib/utils/useCopyFeedback.svelte';
-	import { generateExportMarkdown, downloadMarkdown } from '$lib/utils/export';
-	import Icon from './Icon.svelte';
-	import { Tooltip } from './ui';
+	import {
+		optimizationState,
+		type OptimizationResultState,
+	} from "$lib/stores/optimization.svelte";
+	import { toastState } from "$lib/stores/toast.svelte";
+	import { forgeSession } from "$lib/stores/forgeSession.svelte";
+	import { useCopyFeedback } from "$lib/utils/useCopyFeedback.svelte";
+	import {
+		generateExportMarkdown,
+		downloadMarkdown,
+	} from "$lib/utils/export";
+	import Icon from "./Icon.svelte";
+	import { Tooltip } from "./ui";
 
 	let { result }: { result: OptimizationResultState } = $props();
 
@@ -14,7 +19,7 @@
 
 	function copyOptimized() {
 		copyFeedback.copy(result.optimized);
-		toastState.show('Copied to clipboard!', 'success', 3000);
+		toastState.show("Copied to clipboard!", "success", 3000);
 	}
 
 	function handleReforge() {
@@ -23,30 +28,34 @@
 		} else {
 			optimizationState.startOptimization(result.original);
 		}
-		if (window.location.pathname !== '/') {
-			goto('/');
-		}
+		forgeSession.activate();
 	}
 
 	function handleEditReforge() {
-		promptState.set(result.optimized, result.project || '', result.prompt_id || '');
-		if (window.location.pathname !== '/') {
-			goto('/');
-		} else {
-			window.scrollTo({ top: 0, behavior: 'smooth' });
-		}
+		const isArchived = result.project_status === "archived";
+		forgeSession.loadRequest({
+			text: result.optimized,
+			project: isArchived ? "" : result.project || "",
+			promptId: isArchived ? "" : result.prompt_id || "",
+		});
+		forgeSession.activate();
 	}
 
 	function handleExportMd() {
 		const content = generateExportMarkdown(result);
-		downloadMarkdown(content, result.title || 'Optimized Prompt');
+		downloadMarkdown(content, result.title || "Optimized Prompt");
 	}
 </script>
 
-<div class="flex flex-wrap items-center gap-2 border-t border-border-subtle px-5 py-4" data-testid="result-actions">
+<div
+	class="flex flex-wrap items-center gap-2 border-t border-border-subtle px-2.5 py-2"
+	data-testid="result-actions"
+>
 	<Tooltip text="Copy optimized prompt to clipboard">
 		<button
-			class="btn-ghost flex items-center gap-1.5 transition-[background-color,color] duration-200 {copyFeedback.copied ? 'copy-flash bg-neon-green/15 text-neon-green' : 'bg-neon-cyan/8 text-neon-cyan hover:bg-neon-cyan/15'}"
+			class="btn-ghost flex items-center gap-1.5 transition-[background-color,color] duration-200 {copyFeedback.copied
+				? 'copy-flash bg-neon-green/15 text-neon-green'
+				: 'bg-neon-cyan/8 text-neon-cyan hover:bg-neon-cyan/15'}"
 			onclick={copyOptimized}
 			data-testid="copy-optimized-btn"
 		>

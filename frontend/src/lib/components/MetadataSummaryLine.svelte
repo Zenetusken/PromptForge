@@ -1,56 +1,91 @@
 <script lang="ts">
-	import type { MetadataSegment } from '$lib/utils/format';
-	import { formatComplexityDots } from '$lib/utils/format';
-	import { Tooltip } from './ui';
+	import type { MetadataSegment } from "$lib/utils/format";
+	import { formatComplexityDots } from "$lib/utils/format";
+	import { Tooltip, MetaBadge } from "./ui";
 
 	let {
 		segments,
 		complexity = undefined,
 		lowConfidence = false,
 		confidenceValue,
-		size = 'md',
+		size = "md",
+		identityColor = undefined,
 	}: {
 		segments: MetadataSegment[];
 		complexity?: string | null;
 		lowConfidence?: boolean;
 		confidenceValue?: number;
-		size?: 'sm' | 'md';
+		size?: "sm" | "md";
+		identityColor?: string;
 	} = $props();
 
 	let dots = $derived(complexity ? formatComplexityDots(complexity) : null);
-	let sizeClass = $derived(size === 'sm' ? 'text-[9px]' : 'text-[10px]');
+	let sizeClass = $derived(size === "sm" ? "text-[9px]" : "text-[10px]");
+	let badgeSize = $derived(size === "md" ? ("sm" as const) : ("xs" as const));
 
 	// Index of the framework segment (first process-type) for the low-confidence asterisk
-	let frameworkIndex = $derived(segments.findIndex(s => s.type === 'process'));
+	let frameworkIndex = $derived(
+		segments.findIndex((s) => s.type === "process"),
+	);
 
-	function getSegmentTooltip(segment: MetadataSegment, i: number): string | null {
+	function getSegmentTooltip(
+		segment: MetadataSegment,
+		i: number,
+	): string | null {
 		const hasConfidence = lowConfidence && i === frameworkIndex;
 		const confText = hasConfidence
-			? `Low confidence (${confidenceValue != null ? Math.round(confidenceValue * 100) : '?'}%)`
+			? `Low confidence (${confidenceValue != null ? Math.round(confidenceValue * 100) : "?"}%)`
 			: null;
-		if (segment.tooltip && confText) return `${segment.tooltip} · ${confText}`;
+		if (segment.tooltip && confText)
+			return `${segment.tooltip} · ${confText}`;
 		if (segment.tooltip) return segment.tooltip;
 		if (confText) return confText;
 		return null;
 	}
 </script>
 
-<div class="metadata-line {sizeClass}" data-testid="metadata-summary-line">
+<div
+	class="metadata-line {sizeClass}"
+	style:--metadata-identity-color={identityColor}
+	data-testid="metadata-summary-line"
+>
 	{#each segments as segment, i}
 		{#if i > 0}
 			<span class="metadata-separator" aria-hidden="true"></span>
 		{/if}
 		{@const tooltip = getSegmentTooltip(segment, i)}
 		{@const hasConfidence = lowConfidence && i === frameworkIndex}
-		{#if tooltip}
+		{@const isTask = segment.type === "identity"}
+		{@const isFramework = segment.type === "process"}
+		{#if isTask}
+			<MetaBadge
+				type="task"
+				value={segment.value}
+				variant="pill"
+				size={badgeSize}
+				showTooltip={false}
+			/>
+		{:else if isFramework}
+			<MetaBadge
+				type="strategy"
+				value={segment.value}
+				variant="pill"
+				size={badgeSize}
+				showTooltip={false}
+			/>
+		{:else if tooltip}
 			<Tooltip text={tooltip}>
 				<span class="metadata-{segment.type}">
-					{segment.value}{#if hasConfidence}<span class="text-neon-yellow">*</span>{/if}
+					{segment.value}{#if hasConfidence}<span
+							class="text-neon-yellow">*</span
+						>{/if}
 				</span>
 			</Tooltip>
 		{:else}
 			<span class="metadata-{segment.type}">
-				{segment.value}{#if hasConfidence}<span class="text-neon-yellow">*</span>{/if}
+				{segment.value}{#if hasConfidence}<span class="text-neon-yellow"
+						>*</span
+					>{/if}
 			</span>
 		{/if}
 	{/each}
@@ -59,10 +94,12 @@
 		{#if segments.length > 0}
 			<span class="metadata-separator" aria-hidden="true"></span>
 		{/if}
-		<Tooltip text="Complexity: {complexity}"><span class="complexity-dots">
-			{#each Array(dots.total) as _, i}
-				<span class="dot {i < dots.filled ? 'filled' : ''}"></span>
-			{/each}
-		</span></Tooltip>
+		<Tooltip text="Complexity: {complexity}"
+			><span class="complexity-dots">
+				{#each Array(dots.total) as _, i}
+					<span class="dot {i < dots.filled ? 'filled' : ''}"></span>
+				{/each}
+			</span></Tooltip
+		>
 	{/if}
 </div>

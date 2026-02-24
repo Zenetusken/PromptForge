@@ -13,7 +13,7 @@
 		<button
 			type="button"
 			onclick={() => showChanges = !showChanges}
-			class="flex w-full items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover/20"
+			class="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-bg-hover/20"
 		>
 			<Icon
 				name="chevron-right"
@@ -24,7 +24,7 @@
 			<span class="ml-auto text-[10px] text-text-dim">{result.changes_made.length}</span>
 		</button>
 		{#if showChanges}
-			<div class="animate-fade-in px-5 pb-4">
+			<div class="animate-fade-in px-2.5 pb-2">
 				<ul class="space-y-1.5">
 					{#each result.changes_made as change}
 						<li class="flex items-start gap-2 text-sm leading-relaxed text-text-secondary">
@@ -43,7 +43,7 @@
 		<button
 			type="button"
 			onclick={() => showNotes = !showNotes}
-			class="flex w-full items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover/20"
+			class="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-bg-hover/20"
 		>
 			<Icon
 				name="chevron-right"
@@ -53,7 +53,7 @@
 			<h4 class="section-heading">Notes</h4>
 		</button>
 		{#if showNotes}
-			<div class="animate-fade-in px-5 pb-4">
+			<div class="animate-fade-in px-2.5 pb-2">
 				<p class="text-sm leading-relaxed text-text-secondary">{result.optimization_notes}</p>
 			</div>
 		{/if}

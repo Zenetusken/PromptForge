@@ -8,19 +8,21 @@
 		side = "top",
 		sideOffset = 8,
 		class: className = "",
+		interactive = false,
 	}: {
 		text: string;
 		children: Snippet;
 		side?: "top" | "bottom" | "left" | "right";
 		sideOffset?: number;
 		class?: string;
+		interactive?: boolean;
 	} = $props();
 </script>
 
 <TooltipPrimitive.Root>
-	<TooltipPrimitive.Trigger tabindex={-1}>
+	<TooltipPrimitive.Trigger tabindex={interactive ? 0 : -1}>
 		{#snippet child({ props })}
-			<span class="inline-flex {className}" {...props}>
+			<span class="{className || 'inline-flex'} rounded-[inherit]" {...props}>
 				{@render children()}
 			</span>
 		{/snippet}

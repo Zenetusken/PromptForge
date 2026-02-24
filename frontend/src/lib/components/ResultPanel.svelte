@@ -17,15 +17,15 @@
 	];
 </script>
 
-<div class="animate-fade-in rounded-2xl border border-border-subtle bg-bg-card/60 overflow-hidden" data-testid="result-panel">
+<div class="animate-fade-in rounded-md border border-border-subtle bg-bg-card/60 overflow-hidden" data-testid="result-panel">
 	<ResultMetadata {result} />
 
 	<!-- Tabs -->
-	<div class="flex items-center justify-between gap-2 border-b border-border-subtle px-5 overflow-x-auto">
+	<div class="flex items-center justify-between gap-2 border-b border-border-subtle px-3 overflow-x-auto">
 		<div class="flex shrink-0" data-testid="result-tabs">
 			{#each tabs as tab}
 				<button
-					class="relative px-4 py-3.5 text-sm transition-colors {activeTab === tab.key ? 'bg-[rgba(22,22,42,0.4)] font-medium' : ''}"
+					class="relative px-2.5 py-1.5 text-sm transition-colors {activeTab === tab.key ? 'bg-[rgba(22,22,42,0.4)] font-medium' : ''}"
 					class:text-neon-cyan={activeTab === tab.key && tab.color === 'neon-cyan'}
 					class:text-neon-purple={activeTab === tab.key && tab.color === 'neon-purple'}
 					class:text-text-primary={activeTab === tab.key && tab.color === 'text-secondary'}
@@ -51,7 +51,7 @@
 	</div>
 
 	<!-- Content -->
-	<div class="p-5" data-testid="result-content">
+	<div class="p-2.5" data-testid="result-content">
 		{#if activeTab === 'optimized'}
 			<pre class="whitespace-pre-wrap font-mono text-sm leading-relaxed text-text-primary">{result.optimized}</pre>
 		{:else if activeTab === 'diff'}

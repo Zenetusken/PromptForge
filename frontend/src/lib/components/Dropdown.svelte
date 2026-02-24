@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Select } from 'bits-ui';
-	import Icon from './Icon.svelte';
+	import { Select } from "bits-ui";
+	import Icon from "./Icon.svelte";
 
 	type Option = { value: string; label: string; group?: string };
 
@@ -9,21 +9,22 @@
 		options,
 		label,
 		onchange,
-		testid = ''
+		testid = "",
+		itemContent,
 	}: {
 		value: string;
 		options: Option[];
 		label: string;
 		onchange: (value: string) => void;
 		testid?: string;
+		itemContent?: import("svelte").Snippet<[Option]>;
 	} = $props();
 
 	let open = $state(false);
 	let expandedGroups: Set<string> = $state(new Set());
 
-	let selectedLabel = $derived(
-		options.find((o) => o.value === value)?.label ?? ''
-	);
+	let selectedOption = $derived(options.find((o) => o.value === value));
+	let selectedLabel = $derived(selectedOption?.label ?? "");
 
 	// Ordered unique group names
 	let groups = $derived.by(() => {
@@ -49,6 +50,16 @@
 		return counts;
 	});
 
+	// Precomputed option partitions — avoids inline .filter() in template on every render
+	let ungroupedOptions = $derived(options.filter((o) => !o.group));
+	let groupedItems = $derived.by(() => {
+		const map: Record<string, Option[]> = {};
+		for (const opt of options) {
+			if (opt.group) (map[opt.group] ??= []).push(opt);
+		}
+		return map;
+	});
+
 	function toggleGroup(group: string, e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
@@ -64,11 +75,14 @@
 	// Auto-expand the group containing the current selection when opening
 	function handleOpenChange(isOpen: boolean) {
 		open = isOpen;
-		if (isOpen && hasGroups) {
-			const selected = options.find((o) => o.value === value);
-			if (selected?.group && !expandedGroups.has(selected.group)) {
-				expandedGroups = new Set([...expandedGroups, selected.group]);
-			}
+		// Reuse the already-derived selectedOption instead of calling options.find() again
+		if (
+			isOpen &&
+			hasGroups &&
+			selectedOption?.group &&
+			!expandedGroups.has(selectedOption.group)
+		) {
+			expandedGroups = new Set([...expandedGroups, selectedOption.group]);
 		}
 	}
 </script>
@@ -77,7 +91,9 @@
 	<Select.Root
 		type="single"
 		{value}
-		onValueChange={(v) => { if (v !== undefined) onchange(v); }}
+		onValueChange={(v) => {
+			if (v !== undefined) onchange(v);
+		}}
 		{open}
 		onOpenChange={handleOpenChange}
 	>
@@ -85,7 +101,11 @@
 			class="select-field w-full text-left"
 			aria-label={label}
 		>
-			{selectedLabel}
+			{#if itemContent && selectedOption}
+				{@render itemContent(selectedOption)}
+			{:else}
+				{selectedLabel}
+			{/if}
 		</Select.Trigger>
 
 		<Select.Portal>
@@ -97,20 +117,14 @@
 			>
 				{#if !hasGroups}
 					{#each options as opt (opt.value)}
-						<Select.Item
-							value={opt.value}
-							label={opt.label}
-						>
+						<Select.Item value={opt.value} label={opt.label}>
 							{opt.label}
 						</Select.Item>
 					{/each}
 				{:else}
 					<!-- Ungrouped options first -->
-					{#each options.filter(o => !o.group) as opt (opt.value)}
-						<Select.Item
-							value={opt.value}
-							label={opt.label}
-						>
+					{#each ungroupedOptions as opt (opt.value)}
+						<Select.Item value={opt.value} label={opt.label}>
 							{opt.label}
 						</Select.Item>
 					{/each}
@@ -120,20 +134,37 @@
 						<Select.Group>
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
-								class="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wider cursor-pointer
+								class="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-wider cursor-pointer
 									text-text-dim/70 hover:text-text-dim transition-colors"
 								onclick={(e) => toggleGroup(group, e)}
-								onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(group, e as unknown as MouseEvent); } }}
+								onkeydown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.preventDefault();
+										toggleGroup(
+											group,
+											e as unknown as MouseEvent,
+										);
+									}
+								}}
 								role="button"
 								tabindex="0"
 								aria-expanded={expanded}
 							>
-								<Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={10} class="shrink-0" />
+								<Icon
+									name={expanded
+										? "chevron-down"
+										: "chevron-right"}
+									size={10}
+									class="shrink-0"
+								/>
 								{group}
-								<span class="font-mono font-normal text-text-dim/40">({groupCounts[group]})</span>
+								<span
+									class="font-mono font-normal text-text-dim/40"
+									>({groupCounts[group]})</span
+								>
 							</div>
 							{#if expanded}
-								{#each options.filter(o => o.group === group) as opt (opt.value)}
+								{#each groupedItems[group] ?? [] as opt (opt.value)}
 									<Select.Item
 										value={opt.value}
 										label={opt.label}
@@ -147,7 +178,9 @@
 					{/each}
 				{/if}
 				{#if options.length === 0}
-					<div class="px-3 py-4 text-center text-xs text-text-dim">
+					<div
+						class="px-2 py-3 text-center text-[11px] text-text-dim"
+					>
 						No options available
 					</div>
 				{/if}

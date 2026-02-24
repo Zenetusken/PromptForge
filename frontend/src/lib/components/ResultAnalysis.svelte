@@ -14,7 +14,7 @@
 		<button
 			type="button"
 			onclick={() => showStrategy = !showStrategy}
-			class="flex w-full items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover/20"
+			class="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-bg-hover/20"
 		>
 			<Icon
 				name="chevron-right"
@@ -24,7 +24,7 @@
 			<h4 class="section-heading">Strategy</h4>
 		</button>
 		{#if showStrategy}
-			<div class="animate-fade-in px-5 pb-4">
+			<div class="animate-fade-in px-2.5 pb-2">
 				<p class="text-sm leading-relaxed text-text-secondary">{result.strategy_reasoning}</p>
 				{#if result.secondary_frameworks && result.secondary_frameworks.length > 0}
 					<div class="mt-2 flex items-center gap-1.5">
@@ -46,7 +46,7 @@
 		<button
 			type="button"
 			onclick={() => showVerdict = !showVerdict}
-			class="flex w-full items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover/20"
+			class="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-bg-hover/20"
 		>
 			<Icon
 				name="chevron-right"
@@ -56,7 +56,7 @@
 			<h4 class="section-heading">Verdict</h4>
 		</button>
 		{#if showVerdict}
-			<div class="animate-fade-in px-5 pb-4">
+			<div class="animate-fade-in px-2.5 pb-2">
 				<p class="text-sm leading-relaxed text-text-secondary">{result.verdict}</p>
 			</div>
 		{/if}
@@ -68,7 +68,7 @@
 		<button
 			type="button"
 			onclick={() => showAnalysis = !showAnalysis}
-			class="flex w-full items-center gap-2 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover/20"
+			class="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-bg-hover/20"
 		>
 			<Icon
 				name="chevron-right"
@@ -81,8 +81,8 @@
 			</span>
 		</button>
 		{#if showAnalysis}
-			<div class="animate-fade-in px-5 pb-4">
-				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+			<div class="animate-fade-in px-2.5 pb-2">
+				<div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
 					{#if result.strengths.length > 0}
 						<div>
 							<h5 class="mb-2 text-xs font-medium text-neon-green">Strengths</h5>

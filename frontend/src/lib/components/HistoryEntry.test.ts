@@ -27,9 +27,11 @@ vi.mock('$lib/stores/optimization.svelte', () => ({
 	},
 }));
 
-vi.mock('$lib/stores/prompt.svelte', () => ({
-	promptState: {
-		set: vi.fn(),
+vi.mock('$lib/stores/forgeSession.svelte', () => ({
+	forgeSession: {
+		loadRequest: vi.fn(),
+		activate: vi.fn(),
+		focusTextarea: vi.fn(),
 	},
 }));
 
@@ -42,7 +44,7 @@ vi.mock('$lib/stores/history.svelte', () => ({
 import HistoryEntry from './HistoryEntry.svelte';
 import { goto } from '$app/navigation';
 import { optimizationState } from '$lib/stores/optimization.svelte';
-import { promptState } from '$lib/stores/prompt.svelte';
+import { forgeSession } from '$lib/stores/forgeSession.svelte';
 import { historyState } from '$lib/stores/history.svelte';
 
 const mockItem = (overrides = {}) => ({
@@ -87,14 +89,14 @@ describe('HistoryEntry', () => {
 	it('displays task type', () => {
 		render(HistoryEntry, { props: { item: mockItem() } });
 
-		expect(screen.getByTestId('history-entry-task-type').textContent?.trim()).toBe('coding');
+		expect(screen.getByTestId('meta-badge-task').textContent?.trim()).toBe('coding');
 	});
 
 	it('displays strategy', () => {
 		render(HistoryEntry, { props: { item: mockItem() } });
 
-		expect(screen.getByTestId('history-entry-strategy').textContent?.trim()).toBe(
-			'chain-of-thought',
+		expect(screen.getByTestId('meta-badge-strategy').textContent?.trim()).toBe(
+			'Chain of Thought',
 		);
 	});
 
@@ -128,10 +130,10 @@ describe('HistoryEntry', () => {
 	it('displays tags', () => {
 		render(HistoryEntry, { props: { item: mockItem() } });
 
-		const chips = document.querySelectorAll('.tag-chip');
-		expect(chips.length).toBe(2);
-		expect(chips[0].textContent).toBe('#sorting');
-		expect(chips[1].textContent).toBe('#algorithm');
+		const tags = screen.getAllByTestId('meta-badge-tag');
+		expect(tags.length).toBe(2);
+		expect(tags[0].textContent).toContain('#sorting');
+		expect(tags[1].textContent).toContain('#algorithm');
 	});
 
 	it('shows +N for overflow tags', () => {
@@ -139,8 +141,8 @@ describe('HistoryEntry', () => {
 			props: { item: mockItem({ tags: ['a', 'b', 'c', 'd'] }) },
 		});
 
-		const chips = document.querySelectorAll('.tag-chip');
-		expect(chips.length).toBe(2);
+		const tags = screen.getAllByTestId('meta-badge-tag');
+		expect(tags.length).toBe(2);
 		expect(document.body.textContent).toContain('+2');
 	});
 
@@ -202,7 +204,7 @@ describe('HistoryEntry', () => {
 	});
 
 	describe('re-forge action', () => {
-		it('calls retryOptimization and navigates home', async () => {
+		it('calls retryOptimization and activates forge session', async () => {
 			render(HistoryEntry, { props: { item: mockItem() } });
 
 			await fireEvent.click(screen.getByTestId('reforge-btn'));
@@ -211,27 +213,27 @@ describe('HistoryEntry', () => {
 				'opt-1',
 				'Write a function to sort an array',
 			);
-			expect(goto).toHaveBeenCalledWith('/');
+			expect(forgeSession.activate).toHaveBeenCalled();
 		});
 	});
 
 	describe('iterate (edit) action', () => {
-		it('sets prompt state and navigates home', async () => {
+		it('loads request into forge session and activates', async () => {
 			render(HistoryEntry, { props: { item: mockItem() } });
 
 			await fireEvent.click(screen.getByTestId('iterate-btn'));
 
-			expect(promptState.set).toHaveBeenCalledWith(
-				'Write a function to sort an array',
-				'My Project',
-				'prm-1',
+			expect(forgeSession.loadRequest).toHaveBeenCalledWith(
 				expect.objectContaining({
+					text: 'Write a function to sort an array',
+					project: 'My Project',
+					promptId: 'prm-1',
 					title: 'Array Sorter',
-					tags: ['sorting', 'algorithm'],
+					tags: 'sorting, algorithm',
 					sourceAction: 'optimize',
 				}),
 			);
-			expect(goto).toHaveBeenCalledWith('/');
+			expect(forgeSession.activate).toHaveBeenCalled();
 		});
 
 		it('clears project/promptId for archived projects', async () => {
@@ -241,11 +243,13 @@ describe('HistoryEntry', () => {
 
 			await fireEvent.click(screen.getByTestId('iterate-btn'));
 
-			expect(promptState.set).toHaveBeenCalledWith(
-				'Write a function to sort an array',
-				'',
-				'',
-				expect.objectContaining({ sourceAction: 'optimize' }),
+			expect(forgeSession.loadRequest).toHaveBeenCalledWith(
+				expect.objectContaining({
+					text: 'Write a function to sort an array',
+					project: '',
+					promptId: '',
+					sourceAction: 'optimize',
+				}),
 			);
 		});
 	});

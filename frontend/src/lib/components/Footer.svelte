@@ -16,24 +16,36 @@
 
 	function getDotColor(h: typeof health, isChecking: boolean): string {
 		if (isChecking) return 'bg-neon-yellow shadow-[0_0_6px_var(--color-neon-yellow)]';
-		if (h && h.status === 'ok' && h.db_connected) return 'bg-neon-green shadow-[0_0_6px_var(--color-neon-green)]';
+		if (h && h.status === 'ok' && h.db_connected) {
+			if (!h.mcp_connected) return '';
+			return 'bg-neon-green shadow-[0_0_6px_var(--color-neon-green)]';
+		}
 		return 'bg-neon-red shadow-[0_0_6px_var(--color-neon-red)]';
 	}
 
 	function getStatusLabel(h: typeof health, isChecking: boolean): string {
 		if (isChecking) return 'Checking...';
-		if (h && h.status === 'ok') return 'Healthy';
+		if (h && h.status === 'ok' && h.db_connected) {
+			if (!h.mcp_connected) return 'Partial';
+			return 'Healthy';
+		}
 		return 'Degraded';
 	}
 
 	let dotColor = $derived(getDotColor(health, checking));
 	let statusLabel = $derived(getStatusLabel(health, checking));
+	let degraded = $derived(!checking && health?.status === 'ok' && health?.db_connected && !health?.mcp_connected);
+	let dotAnimClass = $derived(
+		!checking && health?.status === 'ok' && health?.db_connected
+			? (health?.mcp_connected ? 'status-dot-pulse' : 'status-dot-degraded')
+			: ''
+	);
 </script>
 
 <MCPInfo bind:open={showMCPInfo} />
 
 <footer
-	class="relative flex h-9 shrink-0 items-center justify-between bg-bg-secondary/80 px-4"
+	class="relative flex h-7 shrink-0 items-center justify-between bg-bg-secondary/80 px-3"
 	data-testid="footer"
 >
 	<div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border-glow to-transparent"></div>
@@ -75,7 +87,10 @@
 		aria-describedby={showTooltip && health ? 'health-tooltip' : undefined}
 		data-testid="health-indicator"
 	>
-		<div class="h-1.5 w-1.5 rounded-full {dotColor} {!checking && health && health.status === 'ok' && health.db_connected ? 'status-dot-pulse' : ''}"></div>
+		<div
+			class="h-1.5 w-1.5 rounded-full {dotColor} {dotAnimClass}"
+			style={degraded ? 'background-color: rgb(34, 255, 136); box-shadow: 0 0 6px rgba(34, 255, 136, 0.5)' : ''}
+		></div>
 		<span class="text-[10px] text-text-dim/80">{statusLabel}</span>
 
 		{#if showTooltip && health}
@@ -96,6 +111,12 @@
 						<span class="text-text-dim">Database</span>
 						<span class={health.db_connected ? 'text-neon-green' : 'text-neon-red'}>
 							{health.db_connected ? 'connected' : 'disconnected'}
+						</span>
+					</div>
+					<div class="flex items-center justify-between gap-4">
+						<span class="text-text-dim">MCP</span>
+						<span class={health.mcp_connected ? 'text-neon-green' : 'text-neon-orange'}>
+							{health.mcp_connected ? 'connected' : 'optional · offline'}
 						</span>
 					</div>
 					<div class="flex items-center justify-between gap-4">

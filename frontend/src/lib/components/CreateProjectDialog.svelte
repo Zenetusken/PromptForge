@@ -37,16 +37,16 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="animate-fade-in mx-3 mb-2 rounded-xl border border-neon-cyan/15 bg-bg-card p-3" onkeydown={handleKeydown} data-testid="create-project-dialog">
-	<p class="mb-2 text-xs font-medium text-neon-cyan">New Project</p>
-	<div class="space-y-2">
+<div class="animate-fade-in mx-1.5 mb-1.5 rounded-xl border border-neon-cyan/15 bg-bg-card p-2" onkeydown={handleKeydown} data-testid="create-project-dialog">
+	<p class="mb-1.5 text-[11px] font-medium text-neon-cyan">New Project</p>
+	<div class="space-y-1.5">
 		<input
 			type="text"
 			bind:value={name}
 			placeholder="Project name"
 			aria-label="Project name"
 			data-testid="project-name-input"
-			class="input-field w-full py-2 text-sm"
+			class="input-field w-full py-1.5 text-[12px]"
 		/>
 		<textarea
 			bind:value={description}
@@ -54,21 +54,21 @@
 			aria-label="Project description"
 			data-testid="project-description-input"
 			rows="2"
-			class="input-field w-full resize-none py-2 text-sm"
+			class="input-field w-full resize-none py-1.5 text-[12px]"
 		></textarea>
 	</div>
-	<div class="mt-2.5 flex gap-2">
+	<div class="mt-2 flex gap-2">
 		<button
 			onclick={handleCreate}
 			disabled={!name.trim() || isSubmitting}
-			class="flex-1 rounded-lg bg-neon-cyan/15 py-1.5 text-xs font-medium text-neon-cyan transition-colors hover:bg-neon-cyan/25 disabled:opacity-40"
+			class="flex-1 rounded-lg bg-neon-cyan/15 py-1 text-[11px] font-medium text-neon-cyan transition-colors hover:bg-neon-cyan/25 disabled:opacity-40"
 			data-testid="create-project-submit"
 		>
 			{isSubmitting ? 'Creating...' : 'Create'}
 		</button>
 		<button
 			onclick={onclose}
-			class="flex-1 rounded-lg bg-bg-hover py-1.5 text-xs text-text-dim transition-colors hover:bg-bg-hover/80"
+			class="flex-1 rounded-lg bg-bg-hover py-1 text-[11px] text-text-dim transition-colors hover:bg-bg-hover/80"
 			data-testid="create-project-cancel"
 		>
 			Cancel

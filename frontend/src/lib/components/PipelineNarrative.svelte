@@ -54,7 +54,7 @@
 
 {#if hasAnyContent}
 <div class="border-t border-border-subtle" data-testid="pipeline-narrative">
-	<div class="px-5 py-5">
+	<div class="px-3 py-3">
 		<div
 			class="pipeline-timeline"
 			style:--highlight-color={highlightedDimension === 'structure' ? 'var(--color-neon-purple)' :
