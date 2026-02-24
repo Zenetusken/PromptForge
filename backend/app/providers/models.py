@@ -16,7 +16,7 @@ class ModelInfo:
 
 
 # --- Claude models (shared by claude-cli and anthropic) ---
-_CLAUDE_CAPS = frozenset({"text", "vision", "json_mode"})
+_CLAUDE_CAPS = frozenset({"text", "vision", "json_mode", "prompt_caching"})
 _CLAUDE_OPUS_4_6 = ModelInfo(
     id="claude-opus-4-6",
     name="Claude Opus 4.6",

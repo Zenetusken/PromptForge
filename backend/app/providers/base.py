@@ -396,7 +396,7 @@ class LLMProvider(ABC):
     # Concrete — token counting
     # ------------------------------------------------------------------
 
-    def count_tokens(self, text: str) -> int | None:
+    async def count_tokens(self, text: str) -> int | None:
         """Estimate token count for *text*.
 
         Returns ``None`` if the provider does not support token counting.

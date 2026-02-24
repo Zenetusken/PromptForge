@@ -147,7 +147,7 @@ class OpenAIProvider(LLMProvider):
         except Exception as exc:
             raise classify_error(exc, provider=self.provider_name) from exc
 
-    def count_tokens(self, text: str) -> int | None:
+    async def count_tokens(self, text: str) -> int | None:
         """Count tokens using tiktoken (if available)."""
         try:
             import tiktoken
