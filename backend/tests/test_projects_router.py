@@ -3,6 +3,8 @@
 Archive mutation guards (403) are tested in test_archive_guards.py and not duplicated here.
 """
 
+import json
+
 import pytest
 
 from app.constants import OptimizationStatus, ProjectStatus
@@ -10,6 +12,8 @@ from app.database import get_db
 from app.main import app
 from app.models.optimization import Optimization
 from app.models.project import Project, Prompt, PromptVersion
+from app.repositories.project import ProjectRepository
+from app.schemas.context import CodebaseContext
 
 
 # ---------------------------------------------------------------------------
@@ -872,3 +876,65 @@ class TestDeleteCascade:
         history_resp = await client.get("/api/history")
         assert history_resp.json()["total"] == 1
         assert history_resp.json()["items"][0]["id"] == "opt-keep"
+
+
+# ---------------------------------------------------------------------------
+# get_context_by_name — project description fallback
+# ---------------------------------------------------------------------------
+
+class TestGetContextByNameDescriptionFallback:
+    """Verify that Project.description is injected as a fallback for
+    CodebaseContext.description when the context profile doesn't provide one."""
+
+    @pytest.mark.asyncio
+    async def test_no_profile_no_description_returns_none(self, db_session):
+        """Project with neither description nor context profile → None."""
+        db_session.add(Project(id="p1", name="Empty"))
+        await db_session.flush()
+        ctx = await ProjectRepository(db_session).get_context_by_name("Empty")
+        assert ctx is None
+
+    @pytest.mark.asyncio
+    async def test_description_only_creates_context(self, db_session):
+        """Project with description but no context profile → CodebaseContext(description=...)."""
+        db_session.add(Project(id="p1", name="Described", description="A React dashboard"))
+        await db_session.flush()
+        ctx = await ProjectRepository(db_session).get_context_by_name("Described")
+        assert ctx is not None
+        assert ctx.description == "A React dashboard"
+        # Other fields should be defaults
+        assert ctx.language is None
+        assert ctx.framework is None
+
+    @pytest.mark.asyncio
+    async def test_profile_without_description_gets_fallback(self, db_session):
+        """Context profile has language/framework but no description → project description fills in."""
+        profile = json.dumps({"language": "Python", "framework": "FastAPI"})
+        db_session.add(Project(
+            id="p1", name="Partial", description="Inventory management API",
+            context_profile=profile,
+        ))
+        await db_session.flush()
+        ctx = await ProjectRepository(db_session).get_context_by_name("Partial")
+        assert ctx is not None
+        assert ctx.language == "Python"
+        assert ctx.framework == "FastAPI"
+        assert ctx.description == "Inventory management API"
+
+    @pytest.mark.asyncio
+    async def test_profile_description_wins_over_project_description(self, db_session):
+        """Context profile's own description takes priority over Project.description."""
+        profile = json.dumps({"description": "Profile-level description", "language": "Go"})
+        db_session.add(Project(
+            id="p1", name="Both", description="Project-level description",
+            context_profile=profile,
+        ))
+        await db_session.flush()
+        ctx = await ProjectRepository(db_session).get_context_by_name("Both")
+        assert ctx is not None
+        assert ctx.description == "Profile-level description"
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_project_returns_none(self, db_session):
+        ctx = await ProjectRepository(db_session).get_context_by_name("NoSuchProject")
+        assert ctx is None

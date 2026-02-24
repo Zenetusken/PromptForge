@@ -1,4 +1,4 @@
-"""Tests for MCP server tool functions — all 15 tools exercised via direct calls."""
+"""Tests for MCP server tool functions — all 17 tools exercised via direct calls."""
 
 import json
 from contextlib import asynccontextmanager
@@ -1235,3 +1235,322 @@ class TestPromptforgeUpdatePrompt:
         )
         assert result["content"] == "new"
         assert result["version"] == 2
+
+
+# ---------------------------------------------------------------------------
+# TestPromptforgeSetProjectContext
+# ---------------------------------------------------------------------------
+
+_SAMPLE_CONTEXT = {
+    "language": "Python 3.14",
+    "framework": "FastAPI",
+    "test_framework": "pytest",
+    "conventions": ["PEP 8", "async-first"],
+}
+
+
+class TestPromptforgeSetProjectContext:
+    @pytest.mark.asyncio
+    async def test_set_context_on_active_project(self, mcp_session):
+        await _seed_project(mcp_session, id=_UUID_1, name="ctx-proj")
+        from app.mcp_server import promptforge_set_project_context
+        result = await promptforge_set_project_context(
+            project_id=_UUID_1, context_profile=_SAMPLE_CONTEXT,
+        )
+        assert result["id"] == _UUID_1
+        assert result["has_context"] is True
+        assert result["context_profile"]["language"] == "Python 3.14"
+        assert result["context_profile"]["framework"] == "FastAPI"
+        assert result["context_profile"]["conventions"] == ["PEP 8", "async-first"]
+
+    @pytest.mark.asyncio
+    async def test_clear_context_with_none(self, mcp_session):
+        await _seed_project(
+            mcp_session, id=_UUID_1, name="ctx-proj",
+            context_profile=json.dumps(_SAMPLE_CONTEXT),
+        )
+        from app.mcp_server import promptforge_set_project_context
+        result = await promptforge_set_project_context(
+            project_id=_UUID_1, context_profile=None,
+        )
+        assert result["has_context"] is False
+        assert "context_profile" not in result or result.get("context_profile") is None
+
+    @pytest.mark.asyncio
+    async def test_overwrite_existing_context(self, mcp_session):
+        await _seed_project(
+            mcp_session, id=_UUID_1, name="ctx-proj",
+            context_profile=json.dumps({"language": "Go"}),
+        )
+        from app.mcp_server import promptforge_set_project_context
+        result = await promptforge_set_project_context(
+            project_id=_UUID_1, context_profile={"language": "Rust", "framework": "Actix"},
+        )
+        assert result["context_profile"]["language"] == "Rust"
+        assert result["context_profile"]["framework"] == "Actix"
+
+    @pytest.mark.asyncio
+    async def test_archived_project_raises(self, mcp_session):
+        await _seed_project(mcp_session, id=_UUID_1, name="arch", status="archived")
+        from app.mcp_server import promptforge_set_project_context
+        with pytest.raises(ToolError, match="archived"):
+            await promptforge_set_project_context(
+                project_id=_UUID_1, context_profile=_SAMPLE_CONTEXT,
+            )
+
+    @pytest.mark.asyncio
+    async def test_deleted_project_raises(self, mcp_session):
+        await _seed_project(mcp_session, id=_UUID_1, name="del", status="deleted")
+        from app.mcp_server import promptforge_set_project_context
+        with pytest.raises(ToolError, match="not found"):
+            await promptforge_set_project_context(
+                project_id=_UUID_1, context_profile=_SAMPLE_CONTEXT,
+            )
+
+    @pytest.mark.asyncio
+    async def test_not_found_raises(self, mcp_session):
+        from app.mcp_server import promptforge_set_project_context
+        with pytest.raises(ToolError, match="not found"):
+            await promptforge_set_project_context(
+                project_id=_UUID_2, context_profile=_SAMPLE_CONTEXT,
+            )
+
+    @pytest.mark.asyncio
+    async def test_invalid_uuid_raises(self, mcp_session):
+        from app.mcp_server import promptforge_set_project_context
+        with pytest.raises(ToolError, match="Invalid"):
+            await promptforge_set_project_context(
+                project_id="bad-id", context_profile=_SAMPLE_CONTEXT,
+            )
+
+    @pytest.mark.asyncio
+    async def test_empty_context_fields_are_filtered(self, mcp_session):
+        """Context with all-empty fields is treated as no context."""
+        await _seed_project(mcp_session, id=_UUID_1, name="ctx-proj")
+        from app.mcp_server import promptforge_set_project_context
+        result = await promptforge_set_project_context(
+            project_id=_UUID_1,
+            context_profile={"language": "", "framework": "", "conventions": []},
+        )
+        assert result["has_context"] is False
+
+    @pytest.mark.asyncio
+    async def test_idempotent_set(self, mcp_session):
+        """Setting the same context twice produces the same result."""
+        await _seed_project(mcp_session, id=_UUID_1, name="ctx-proj")
+        from app.mcp_server import promptforge_set_project_context
+        r1 = await promptforge_set_project_context(
+            project_id=_UUID_1, context_profile=_SAMPLE_CONTEXT,
+        )
+        r2 = await promptforge_set_project_context(
+            project_id=_UUID_1, context_profile=_SAMPLE_CONTEXT,
+        )
+        assert r1["context_profile"] == r2["context_profile"]
+        assert r1["has_context"] == r2["has_context"]
+
+
+# ---------------------------------------------------------------------------
+# TestContextIntegration — context fields on other project/optimize tools
+# ---------------------------------------------------------------------------
+
+class TestContextIntegration:
+    @pytest.mark.asyncio
+    async def test_list_projects_has_context_field(self, mcp_session):
+        """list_projects returns has_context boolean for each project."""
+        await _seed_project(
+            mcp_session, id=_UUID_1, name="with-ctx",
+            context_profile=json.dumps({"language": "Python"}),
+        )
+        await _seed_project(mcp_session, id=_UUID_2, name="without-ctx")
+        from app.mcp_server import promptforge_list_projects
+        result = await promptforge_list_projects()
+        items_by_name = {item["name"]: item for item in result["items"]}
+        assert items_by_name["with-ctx"]["has_context"] is True
+        assert items_by_name["without-ctx"]["has_context"] is False
+
+    @pytest.mark.asyncio
+    async def test_get_project_returns_context_profile(self, mcp_session):
+        """get_project includes full context_profile dict when present."""
+        await _seed_project(
+            mcp_session, id=_UUID_1, name="ctx-proj",
+            context_profile=json.dumps({"language": "TypeScript", "framework": "SvelteKit"}),
+        )
+        from app.mcp_server import promptforge_get_project
+        result = await promptforge_get_project(_UUID_1)
+        assert result["has_context"] is True
+        assert result["context_profile"]["language"] == "TypeScript"
+        assert result["context_profile"]["framework"] == "SvelteKit"
+
+    @pytest.mark.asyncio
+    async def test_get_project_no_context_profile(self, mcp_session):
+        """get_project omits context_profile when project has no context."""
+        await _seed_project(mcp_session, id=_UUID_1, name="plain-proj")
+        from app.mcp_server import promptforge_get_project
+        result = await promptforge_get_project(_UUID_1)
+        assert result["has_context"] is False
+        assert "context_profile" not in result
+
+    @pytest.mark.asyncio
+    async def test_create_project_with_context(self, mcp_session):
+        """create_project accepts context_profile and returns it."""
+        from app.mcp_server import promptforge_create_project
+        result = await promptforge_create_project(
+            name="new-ctx-proj",
+            context_profile={"language": "Go", "framework": "Chi"},
+        )
+        assert result["has_context"] is True
+        assert result["context_profile"]["language"] == "Go"
+        assert result["context_profile"]["framework"] == "Chi"
+
+    @pytest.mark.asyncio
+    async def test_create_project_without_context(self, mcp_session):
+        """create_project without context_profile has has_context=False."""
+        from app.mcp_server import promptforge_create_project
+        result = await promptforge_create_project(name="plain-proj")
+        assert result["has_context"] is False
+
+    @pytest.mark.asyncio
+    async def test_optimize_resolves_project_context(self, mcp_session):
+        """optimize with project name resolves context from project profile."""
+        from app.mcp_server import promptforge_optimize
+        from app.services.pipeline import PipelineResult
+
+        # Seed project with context
+        await _seed_project(
+            mcp_session, id=_UUID_1, name="ctx-project",
+            context_profile=json.dumps({
+                "language": "Python 3.14",
+                "framework": "FastAPI",
+                "test_framework": "pytest",
+            }),
+        )
+
+        mock_result = PipelineResult(
+            task_type="coding",
+            complexity="medium",
+            weaknesses=[],
+            strengths=[],
+            optimized_prompt="Better",
+            framework_applied="chain-of-thought",
+            changes_made=[],
+            optimization_notes="",
+            clarity_score=0.8,
+            specificity_score=0.7,
+            structure_score=0.6,
+            faithfulness_score=0.8,
+            overall_score=0.75,
+            is_improvement=True,
+            verdict="OK",
+            duration_ms=500,
+            model_used="m",
+            strategy_reasoning="r",
+            strategy_confidence=0.9,
+        )
+
+        ctx = _make_mock_context()
+        with patch(
+            "app.mcp_server.run_pipeline", new_callable=AsyncMock, return_value=mock_result,
+        ) as mock_run:
+            await promptforge_optimize(prompt="Write a function", ctx=ctx, project="ctx-project")
+
+        _, kwargs = mock_run.call_args
+        resolved_ctx = kwargs.get("codebase_context")
+        assert resolved_ctx is not None
+        assert resolved_ctx.language == "Python 3.14"
+        assert resolved_ctx.framework == "FastAPI"
+        assert resolved_ctx.test_framework == "pytest"
+
+    @pytest.mark.asyncio
+    async def test_optimize_merges_explicit_over_project_context(self, mcp_session):
+        """Explicit codebase_context fields override project profile fields."""
+        from app.mcp_server import promptforge_optimize
+        from app.services.pipeline import PipelineResult
+
+        await _seed_project(
+            mcp_session, id=_UUID_1, name="merge-proj",
+            context_profile=json.dumps({
+                "language": "Python",
+                "framework": "FastAPI",
+                "test_framework": "pytest",
+            }),
+        )
+
+        mock_result = PipelineResult(
+            task_type="coding",
+            complexity="low",
+            weaknesses=[],
+            strengths=[],
+            optimized_prompt="Better",
+            framework_applied="chain-of-thought",
+            changes_made=[],
+            optimization_notes="",
+            clarity_score=0.8,
+            specificity_score=0.7,
+            structure_score=0.6,
+            faithfulness_score=0.8,
+            overall_score=0.75,
+            is_improvement=True,
+            verdict="OK",
+            duration_ms=500,
+            model_used="m",
+            strategy_reasoning="r",
+            strategy_confidence=0.9,
+        )
+
+        ctx = _make_mock_context()
+        with patch(
+            "app.mcp_server.run_pipeline", new_callable=AsyncMock, return_value=mock_result,
+        ) as mock_run:
+            await promptforge_optimize(
+                prompt="Write tests",
+                ctx=ctx,
+                project="merge-proj",
+                codebase_context={"framework": "Django", "conventions": ["PEP 8"]},
+            )
+
+        _, kwargs = mock_run.call_args
+        resolved_ctx = kwargs.get("codebase_context")
+        assert resolved_ctx is not None
+        # Explicit override wins
+        assert resolved_ctx.framework == "Django"
+        assert resolved_ctx.conventions == ["PEP 8"]
+        # Project profile fields retained where not overridden
+        assert resolved_ctx.language == "Python"
+        assert resolved_ctx.test_framework == "pytest"
+
+    @pytest.mark.asyncio
+    async def test_optimize_no_project_no_context(self, mcp_session):
+        """optimize without project or codebase_context passes None to pipeline."""
+        from app.mcp_server import promptforge_optimize
+        from app.services.pipeline import PipelineResult
+
+        mock_result = PipelineResult(
+            task_type="general",
+            complexity="low",
+            weaknesses=[],
+            strengths=[],
+            optimized_prompt="Better",
+            framework_applied="role-task-format",
+            changes_made=[],
+            optimization_notes="",
+            clarity_score=0.8,
+            specificity_score=0.7,
+            structure_score=0.6,
+            faithfulness_score=0.8,
+            overall_score=0.75,
+            is_improvement=True,
+            verdict="OK",
+            duration_ms=500,
+            model_used="m",
+            strategy_reasoning="r",
+            strategy_confidence=0.9,
+        )
+
+        ctx = _make_mock_context()
+        with patch(
+            "app.mcp_server.run_pipeline", new_callable=AsyncMock, return_value=mock_result,
+        ) as mock_run:
+            await promptforge_optimize(prompt="test", ctx=ctx)
+
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("codebase_context") is None

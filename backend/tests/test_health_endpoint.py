@@ -1,8 +1,11 @@
 """Tests for health check endpoints."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
+
+from app.routers.health import _probe_mcp
 
 
 @pytest.mark.asyncio
@@ -20,6 +23,16 @@ async def test_health_endpoint(client):
     # Backward compat
     assert "claude_available" in data
     assert data["claude_available"] == data["llm_available"]
+
+
+@pytest.mark.asyncio
+async def test_health_includes_mcp_connected(client):
+    """Health response includes mcp_connected field as a boolean."""
+    with patch("app.routers.health._probe_mcp", return_value=False):
+        response = await client.get("/api/health")
+    data = response.json()
+    assert "mcp_connected" in data
+    assert isinstance(data["mcp_connected"], bool)
 
 
 @pytest.mark.asyncio
@@ -76,3 +89,88 @@ async def test_health_head_request(client):
     """HEAD request returns 200."""
     response = await client.head("/api/health")
     assert response.status_code == 200
+
+
+# --- MCP probe tests ---
+
+
+class TestHealthMcpConnected:
+    """Tests for MCP connectivity probe in the health endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_health_mcp_connected(self, client):
+        """When MCP server is up, mcp_connected=True."""
+        with patch("app.routers.health._probe_mcp", return_value=True):
+            response = await client.get("/api/health")
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["mcp_connected"] is True
+
+    @pytest.mark.asyncio
+    async def test_health_mcp_disconnected_does_not_degrade(self, client):
+        """When MCP is down, status is still 'ok' — MCP is optional."""
+        with patch("app.routers.health._probe_mcp", return_value=False):
+            response = await client.get("/api/health")
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["mcp_connected"] is False
+
+
+class TestProbeMcp:
+    """Unit tests for the _probe_mcp helper function."""
+
+    @pytest.mark.asyncio
+    async def test_probe_mcp_success(self):
+        """Returns True when MCP responds with status ok."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "ok", "server": "promptforge_mcp"}
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.routers.health.httpx.AsyncClient", return_value=mock_client):
+            result = await _probe_mcp()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_probe_mcp_connection_refused(self):
+        """Returns False when MCP server is not running."""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.routers.health.httpx.AsyncClient", return_value=mock_client):
+            result = await _probe_mcp()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_probe_mcp_timeout(self):
+        """Returns False when MCP server times out."""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ReadTimeout("Timeout"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.routers.health.httpx.AsyncClient", return_value=mock_client):
+            result = await _probe_mcp()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_probe_mcp_bad_response(self):
+        """Returns False when MCP responds with unexpected status."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "error"}
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.routers.health.httpx.AsyncClient", return_value=mock_client):
+            result = await _probe_mcp()
+        assert result is False
