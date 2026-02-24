@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('$lib/api/client', () => ({
     fetchOptimize: vi.fn(),
     fetchRetry: vi.fn(),
+    orchestrateAnalyze: vi.fn(),
     fetchHistory: vi.fn(),
     deleteOptimization: vi.fn(),
     clearAllHistory: vi.fn(),
@@ -16,6 +17,14 @@ vi.mock('$lib/stores/history.svelte', () => ({
     historyState: { loadHistory: vi.fn() },
 }));
 
+vi.mock('$lib/stores/projects.svelte', () => ({
+    projectsState: { loadProjects: vi.fn() },
+}));
+
+vi.mock('$lib/stores/promptAnalysis.svelte', () => ({
+    promptAnalysis: { updateFromPipeline: vi.fn() },
+}));
+
 vi.mock('$lib/stores/provider.svelte', () => ({
     providerState: { getLLMHeaders: vi.fn().mockReturnValue(undefined) },
 }));
@@ -25,8 +34,9 @@ vi.mock('$lib/stores/toast.svelte', () => ({
 }));
 
 import { optimizationState } from './optimization.svelte';
-import { fetchOptimize, fetchRetry } from '$lib/api/client';
+import { fetchOptimize, fetchRetry, orchestrateAnalyze } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
+import { promptAnalysis } from '$lib/stores/promptAnalysis.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 import type { PipelineEvent } from '$lib/api/client';
 
@@ -183,13 +193,15 @@ describe('OptimizationState', () => {
             expect(historyState.loadHistory).toHaveBeenCalled();
         });
 
-        it('result sets pendingNavigation', () => {
+        it('result pushes to resultHistory', () => {
+            const prevLen = optimizationState.resultHistory.length;
             onEvent({
                 type: 'result',
                 data: { id: 'abc-123', optimized_prompt: 'Better' },
             });
 
-            expect(optimizationState.pendingNavigation).toBe('/optimize/abc-123');
+            expect(optimizationState.resultHistory.length).toBe(prevLen + 1);
+            expect(optimizationState.resultHistory[0].id).toBe('abc-123');
         });
 
         it('error sets error and stops running', () => {
@@ -238,22 +250,6 @@ describe('OptimizationState', () => {
             expect(optimizationState.result).toBeNull();
             expect(optimizationState.error).toBeNull();
             expect(optimizationState.isRunning).toBe(false);
-        });
-    });
-
-    describe('consumeNavigation', () => {
-        it('returns and clears pendingNavigation', () => {
-            const mockController = new AbortController();
-            vi.mocked(fetchOptimize).mockImplementation((prompt, handler, onError, meta, headers) => {
-                handler({ type: 'result', data: { id: 'nav-123', optimized_prompt: 'x' } });
-                return mockController;
-            });
-
-            optimizationState.startOptimization('test');
-
-            const nav = optimizationState.consumeNavigation();
-            expect(nav).toBe('/optimize/nav-123');
-            expect(optimizationState.consumeNavigation()).toBeNull();
         });
     });
 
@@ -316,6 +312,81 @@ describe('OptimizationState', () => {
             expect(optimizationState.result!.optimized).toBe('better');
             expect(optimizationState.currentRun).toBeNull();
             expect(optimizationState.isRunning).toBe(false);
+        });
+    });
+
+    describe('runNodeAnalyze', () => {
+        const analysisResponse = {
+            task_type: 'coding',
+            complexity: 'medium',
+            strengths: ['clear intent'],
+            weaknesses: ['too vague'],
+            step_duration_ms: 1200,
+        };
+
+        it('sets isAnalyzing true during the call', async () => {
+            let resolve: (v: typeof analysisResponse) => void;
+            vi.mocked(orchestrateAnalyze).mockReturnValue(
+                new Promise(r => { resolve = r; })
+            );
+
+            const promise = optimizationState.runNodeAnalyze({ prompt: 'test' });
+
+            expect(optimizationState.isAnalyzing).toBe(true);
+
+            resolve!(analysisResponse);
+            await promise;
+
+            expect(optimizationState.isAnalyzing).toBe(false);
+        });
+
+        it('populates analysisResult on completion', async () => {
+            vi.mocked(orchestrateAnalyze).mockResolvedValue(analysisResponse);
+
+            await optimizationState.runNodeAnalyze({ prompt: 'test' });
+
+            expect(optimizationState.analysisResult).not.toBeNull();
+            expect(optimizationState.analysisResult!.task_type).toBe('coding');
+            expect(optimizationState.analysisResult!.complexity).toBe('medium');
+            expect(optimizationState.analysisResult!.strengths).toEqual(['clear intent']);
+            expect(optimizationState.analysisResult!.weaknesses).toEqual(['too vague']);
+        });
+
+        it('calls promptAnalysis.updateFromPipeline with returned task type', async () => {
+            vi.mocked(orchestrateAnalyze).mockResolvedValue(analysisResponse);
+
+            await optimizationState.runNodeAnalyze({ prompt: 'test' });
+
+            expect(promptAnalysis.updateFromPipeline).toHaveBeenCalledWith('coding', 'medium');
+        });
+
+        it('does not call updateFromPipeline when task_type is missing', async () => {
+            vi.mocked(orchestrateAnalyze).mockResolvedValue({ step_duration_ms: 500 } as any);
+
+            await optimizationState.runNodeAnalyze({ prompt: 'test' });
+
+            expect(promptAnalysis.updateFromPipeline).not.toHaveBeenCalled();
+        });
+
+        it('clearAnalysis nulls out currentRun and analysisResult', async () => {
+            vi.mocked(orchestrateAnalyze).mockResolvedValue(analysisResponse);
+
+            await optimizationState.runNodeAnalyze({ prompt: 'test' });
+            expect(optimizationState.analysisResult).not.toBeNull();
+
+            optimizationState.clearAnalysis();
+
+            expect(optimizationState.currentRun).toBeNull();
+            expect(optimizationState.analysisResult).toBeNull();
+        });
+
+        it('shows error toast on failure', async () => {
+            vi.mocked(orchestrateAnalyze).mockRejectedValue(new Error('Network error'));
+
+            await optimizationState.runNodeAnalyze({ prompt: 'test' });
+
+            expect(optimizationState.isAnalyzing).toBe(false);
+            expect(toastState.show).toHaveBeenCalledWith(expect.any(String), 'error');
         });
     });
 });

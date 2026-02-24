@@ -29,6 +29,8 @@ vi.mock('$lib/stores/optimization.svelte', () => ({
 		model_used: '',
 		input_tokens: 0,
 		output_tokens: 0,
+		cache_creation_input_tokens: 0,
+		cache_read_input_tokens: 0,
 		title: source.title ?? '',
 		version: source.version ?? '',
 		project: '',
@@ -86,6 +88,7 @@ function makeProject(prompts: ProjectPrompt[]): ProjectDetail {
 		id: 'proj-1',
 		name: 'Test Project',
 		description: null,
+		context_profile: null,
 		status: 'active',
 		created_at: '2026-01-01T00:00:00Z',
 		updated_at: '2026-01-01T00:00:00Z',
@@ -120,6 +123,8 @@ function makeHistoryItem(overrides: Partial<HistoryItem> = {}): HistoryItem {
 		model_used: 'claude-opus-4-6',
 		input_tokens: 100,
 		output_tokens: 50,
+		cache_creation_input_tokens: null,
+		cache_read_input_tokens: null,
 		status: 'completed',
 		error_message: null,
 		project: 'Test Project',
@@ -130,6 +135,7 @@ function makeHistoryItem(overrides: Partial<HistoryItem> = {}): HistoryItem {
 		project_id: 'proj-1',
 		project_status: 'active',
 		secondary_frameworks: null,
+		codebase_context_snapshot: null,
 		...overrides,
 	};
 }

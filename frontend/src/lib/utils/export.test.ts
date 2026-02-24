@@ -29,6 +29,8 @@ function makeResult(overrides: Partial<OptimizationResultState> = {}): Optimizat
 		model_used: '',
 		input_tokens: 100,
 		output_tokens: 50,
+		cache_creation_input_tokens: 0,
+		cache_read_input_tokens: 0,
 		title: '',
 		version: '',
 		project: '',

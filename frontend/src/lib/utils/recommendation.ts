@@ -201,7 +201,7 @@ export const DEFAULT_SECONDARY_WEIGHTS: SecondaryProcessorWeights = {
  * Minimum number of uses for a strategy to qualify as "top performer".
  * At count=3 we have marginally meaningful averages; count=2 is too noisy.
  */
-export const TOP_PERFORMER_MIN_COUNT = 3;
+const TOP_PERFORMER_MIN_COUNT = 3;
 
 /**
  * Confidence curve midpoint.

@@ -16,6 +16,29 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
 	faithfulness: 'Faithfulness',
 };
 
+/** Neon color per dimension for visual bars and indicators */
+export const DIMENSION_COLORS: Record<ScoreDimension, string> = {
+	clarity: 'neon-cyan',
+	specificity: 'neon-purple',
+	structure: 'neon-green',
+	faithfulness: 'neon-yellow',
+};
+
+/** Ordered list of all dimensions for iteration */
+export const ALL_DIMENSIONS: ScoreDimension[] = ['clarity', 'specificity', 'structure', 'faithfulness'];
+
+/** Pipeline step status → Tailwind dot class mapping */
+const STEP_DOT_CLASSES: Record<string, string> = {
+	complete: 'bg-neon-green',
+	running: 'bg-neon-cyan animate-pulse',
+	error: 'bg-neon-red',
+};
+
+/** Get dot class for a pipeline step status (with pending fallback). */
+export function stepDotClass(status: string): string {
+	return STEP_DOT_CLASSES[status] ?? 'bg-text-dim/30';
+}
+
 /** Keyword patterns that associate analysis findings with score dimensions.
  *  Uses prefix matching (no trailing \b) so stems like "ambigu" match "ambiguous". */
 const DIMENSION_PATTERNS: Record<ScoreDimension, RegExp> = {

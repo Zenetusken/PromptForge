@@ -1,3 +1,23 @@
+// Cached at module level: constructing Intl formatters is expensive and these
+// options don't change at runtime, so we pay the cost once.
+const _relativeShortFmt = new Intl.DateTimeFormat('en-US', {
+	month: 'short',
+	day: 'numeric',
+});
+const _relativeLongFmt = new Intl.DateTimeFormat('en-US', {
+	month: 'short',
+	day: 'numeric',
+	year: 'numeric',
+});
+const _exactFmt = new Intl.DateTimeFormat('en-US', {
+	weekday: 'short',
+	month: 'short',
+	day: 'numeric',
+	year: 'numeric',
+	hour: 'numeric',
+	minute: '2-digit',
+});
+
 /**
  * Format a date string into a relative time description.
  */
@@ -15,26 +35,17 @@ export function formatRelativeTime(dateStr: string): string {
 	if (diffHour < 24) return `${diffHour}h ago`;
 	if (diffDay < 7) return `${diffDay}d ago`;
 
-	return date.toLocaleDateString('en-US', {
-		month: 'short',
-		day: 'numeric',
-		year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-	});
+	// Use the pre-built formatter; pick long (with year) vs short (without)
+	return date.getFullYear() !== now.getFullYear()
+		? _relativeLongFmt.format(date)
+		: _relativeShortFmt.format(date);
 }
 
 /**
  * Format a date string into a full, human-readable timestamp.
  */
 export function formatExactTime(dateStr: string): string {
-	const date = new Date(dateStr);
-	return date.toLocaleString('en-US', {
-		weekday: 'short',
-		month: 'short',
-		day: 'numeric',
-		year: 'numeric',
-		hour: 'numeric',
-		minute: '2-digit',
-	});
+	return _exactFmt.format(new Date(dateStr));
 }
 
 /**

@@ -1,6 +1,7 @@
-import { fetchOptimize, fetchRetry, type PipelineEvent, type HistoryItem, type OptimizeMetadata } from '$lib/api/client';
+import { fetchOptimize, fetchRetry, orchestrateAnalyze, orchestrateStrategy, orchestrateOptimize, orchestrateValidate, type AnalyzeRequest, type StrategyRequest, type OptimizeGenerateRequest, type ValidateRequest, type PipelineEvent, type HistoryItem, type OptimizeMetadata, type LLMHeaders } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
 import { projectsState } from '$lib/stores/projects.svelte';
+import { promptAnalysis } from '$lib/stores/promptAnalysis.svelte';
 import { providerState } from '$lib/stores/provider.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 import { safeString, safeNumber, safeArray } from '$lib/utils/safe';
@@ -82,6 +83,8 @@ export interface OptimizationResultState {
 	model_used: string;
 	input_tokens: number;
 	output_tokens: number;
+	cache_creation_input_tokens: number;
+	cache_read_input_tokens: number;
 	title: string;
 	version: string;
 	project: string;
@@ -97,20 +100,19 @@ export interface OptimizationResultState {
 }
 
 /** Translate raw error messages to user-friendly text. */
+const ERROR_MAP: [RegExp, string][] = [
+	[/failed to fetch|networkerror/i, 'Cannot reach the server. Check your connection and try again.'],
+	[/502|bad gateway/i, 'The server is temporarily unavailable. Please try again in a moment.'],
+	[/503|service unavailable/i, 'The service is under heavy load. Please try again shortly.'],
+	[/504|gateway timeout/i, 'The request timed out. The server may be busy — try again.'],
+	[/401|unauthorized/i, 'Authentication failed. Check your API key and try again.'],
+	[/429/i, 'Rate limit reached. Please wait before trying again.'],
+];
+
 function friendlyError(msg: string): string {
-	const lower = msg.toLowerCase();
-	if (lower.includes('failed to fetch') || lower.includes('networkerror'))
-		return 'Cannot reach the server. Check your connection and try again.';
-	if (lower.includes('502') || lower.includes('bad gateway'))
-		return 'The server is temporarily unavailable. Please try again in a moment.';
-	if (lower.includes('503') || lower.includes('service unavailable'))
-		return 'The service is under heavy load. Please try again shortly.';
-	if (lower.includes('504') || lower.includes('gateway timeout'))
-		return 'The request timed out. The server may be busy — try again.';
-	if (lower.includes('401') || lower.includes('unauthorized'))
-		return 'Authentication failed. Check your API key and try again.';
-	if (lower.includes('429'))
-		return 'Rate limit reached. Please wait before trying again.';
+	for (const [pattern, friendly] of ERROR_MAP) {
+		if (pattern.test(msg)) return friendly;
+	}
 	return msg;
 }
 
@@ -153,6 +155,8 @@ export function mapToResultState(
 		model_used: safeString(source.model_used),
 		input_tokens: safeNumber(source.input_tokens),
 		output_tokens: safeNumber(source.output_tokens),
+		cache_creation_input_tokens: safeNumber(source.cache_creation_input_tokens),
+		cache_read_input_tokens: safeNumber(source.cache_read_input_tokens),
 		title: safeString(source.title),
 		version: safeString(source.version),
 		project: safeString(source.project),
@@ -175,14 +179,31 @@ class OptimizationState {
 	error: string | null = $state(null);
 	errorType: string | null = $state(null);
 	retryAfter: number | null = $state(null);
-	pendingNavigation: string | null = $state(null);
+	/** Rolling window of last 10 results for comparison workflow. */
+	resultHistory: OptimizationResultState[] = $state([]);
 
 	private abortController: AbortController | null = null;
 
-	consumeNavigation(): string | null {
-		const nav = this.pendingNavigation;
-		this.pendingNavigation = null;
-		return nav;
+	/** Analysis result from a standalone "Analyze Only" call. Null when a full forge result exists. */
+	get analysisResult(): AnalysisStepData | null {
+		if (!this.currentRun || this.result) return null;
+		const step = this.currentRun.steps.find(s => s.name === 'analyze');
+		if (!step || step.status !== 'complete' || !step.data) return null;
+		return step.data as AnalysisStepData;
+	}
+
+	/** True while a standalone analyze call is in progress. */
+	get isAnalyzing(): boolean {
+		if (!this.currentRun || this.result) return false;
+		const step = this.currentRun.steps.find(s => s.name === 'analyze');
+		return step?.status === 'running';
+	}
+
+	/** Dismiss a standalone analysis preview (clears currentRun when no full result exists). */
+	clearAnalysis(): void {
+		if (this.currentRun && !this.result) {
+			this.currentRun = null;
+		}
 	}
 
 	private _resetRunState() {
@@ -236,6 +257,51 @@ class OptimizationState {
 			this._onStreamError,
 			providerState.getLLMHeaders()
 		);
+	}
+
+	/**
+	 * Generic orchestration node runner — shared by all 4 pipeline stages.
+	 * Handles step status updates, error handling, and toast notifications.
+	 */
+	private async _runNode<T extends { step_duration_ms?: number }>(
+		stepName: string,
+		fn: () => Promise<T>,
+		toast: string,
+		reset = false,
+	): Promise<T | null> {
+		if (reset) this._resetRunState();
+		this.updateStep(stepName, { status: 'running', startTime: Date.now() });
+		this.isRunning = true;
+		try {
+			const result = await fn();
+			this.updateStep(stepName, { status: 'complete', data: result, durationMs: result.step_duration_ms });
+			this.isRunning = false;
+			toastState.show(toast, 'success');
+			return result;
+		} catch (e: any) {
+			this._failWithError(e.message);
+			return null;
+		}
+	}
+
+	async runNodeAnalyze(req: AnalyzeRequest, llmHeaders?: LLMHeaders) {
+		const result = await this._runNode('analyze', () => orchestrateAnalyze(req, llmHeaders), 'Analysis complete', true);
+		if (result?.task_type) {
+			promptAnalysis.updateFromPipeline(result.task_type, result.complexity);
+		}
+		return result;
+	}
+
+	async runNodeStrategy(req: StrategyRequest, llmHeaders?: LLMHeaders) {
+		return this._runNode('strategy', () => orchestrateStrategy(req, llmHeaders), 'Strategy ready');
+	}
+
+	async runNodeOptimize(req: OptimizeGenerateRequest, llmHeaders?: LLMHeaders) {
+		return this._runNode('optimize', () => orchestrateOptimize(req, llmHeaders), 'Optimization ready');
+	}
+
+	async runNodeValidate(req: ValidateRequest, llmHeaders?: LLMHeaders) {
+		return this._runNode('validate', () => orchestrateValidate(req, llmHeaders), 'Validation complete');
 	}
 
 	private updateStep(stepName: string, updater: Partial<StepState> | ((s: StepState) => Partial<StepState>)) {
@@ -312,8 +378,9 @@ class OptimizationState {
 					}));
 				}
 				toastState.show('Optimization complete!', 'success');
+				// Push to rolling history for comparison (keep last 10)
 				if (this.result.id) {
-					this.pendingNavigation = `/optimize/${this.result.id}`;
+					this.resultHistory = [this.result, ...this.resultHistory].slice(0, 10);
 				}
 				historyState.loadHistory();
 				if (this.result?.project) {
@@ -335,7 +402,7 @@ class OptimizationState {
 	loadFromHistory(item: HistoryItem) {
 		this.cancel();
 		this.currentRun = null;
-		this.result = null;
+		// Single assignment — avoids a redundant reactive flush from a null write
 		this.result = mapToResultState({ ...item }, item.raw_prompt);
 	}
 
@@ -352,9 +419,6 @@ class OptimizationState {
 		this.currentRun = null;
 		this.result = null;
 		this.error = null;
-		if (typeof window !== 'undefined' && window.location.pathname.startsWith('/optimize/')) {
-			this.pendingNavigation = '/';
-		}
 	}
 }
 

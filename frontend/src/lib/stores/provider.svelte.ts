@@ -1,4 +1,5 @@
 import { fetchHealth, fetchProviders, validateApiKey, type HealthResponse, type LLMHeaders, type ProviderInfo, type ValidateKeyResponse } from '$lib/api/client';
+import { toastState } from '$lib/stores/toast.svelte';
 import { maskApiKey } from '$lib/utils/format';
 
 const STORAGE_PREFIX = 'pf_key_';
@@ -54,6 +55,10 @@ class ProviderState {
 	// Provider list refreshes every Nth poll tick (~180s at 60s interval)
 	private static readonly _PROVIDER_REFRESH_EVERY = 3;
 	private _pollCycle = 0;
+
+	// MCP transition detection — skip first poll to avoid spurious notifications
+	private _mcpPreviousState: boolean | null = null;
+	private _mcpFirstPoll = true;
 
 	constructor() {
 		if (typeof window !== 'undefined') {
@@ -217,9 +222,26 @@ class ProviderState {
 	private async _doPollHealth() {
 		try {
 			this.healthChecking = true;
-			this.health = await fetchHealth();
+			const result = await fetchHealth();
+			this.health = result;
 			this._healthLastFetch = Date.now();
 			this.healthChecking = false;
+
+			// MCP transition detection
+			if (result) {
+				const mcpNow = result.mcp_connected;
+				if (this._mcpFirstPoll) {
+					// Skip toast on initial page load
+					this._mcpFirstPoll = false;
+				} else if (this._mcpPreviousState !== null && mcpNow !== this._mcpPreviousState) {
+					if (mcpNow) {
+						toastState.show('MCP server connected', 'success');
+					} else {
+						toastState.show('MCP server disconnected', 'error', 5000);
+					}
+				}
+				this._mcpPreviousState = mcpNow;
+			}
 		} finally {
 			this._healthFetching = null;
 		}

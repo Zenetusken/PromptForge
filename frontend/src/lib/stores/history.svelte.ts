@@ -41,6 +41,7 @@ class HistoryState {
 	availableTaskTypes: string[] = $state([]);
 
 	private controller: AbortController | null = null;
+	private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	async loadHistory(params?: { page?: number; sort?: string; order?: string }) {
 		// Abort any in-flight request before starting a new one
@@ -114,7 +115,12 @@ class HistoryState {
 
 	setSearch(query: string) {
 		this.searchQuery = query;
-		this.loadHistory();
+		// Debounce: wait for the user to stop typing before firing an API call
+		if (this.searchDebounceTimer !== null) clearTimeout(this.searchDebounceTimer);
+		this.searchDebounceTimer = setTimeout(() => {
+			this.searchDebounceTimer = null;
+			this.loadHistory();
+		}, 300);
 	}
 
 	setSortBy(sort: string) {

@@ -14,6 +14,7 @@ import {
 	type ProjectDetail,
 	type ProjectListResponse,
 	type ArchiveResponse,
+	type CodebaseContext,
 } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
 
@@ -127,7 +128,11 @@ class ProjectsState {
 		return project;
 	}
 
-	async update(id: string, data: { name?: string; description?: string }): Promise<ProjectDetail | null> {
+	async updateContextProfile(id: string, context: CodebaseContext | null): Promise<ProjectDetail | null> {
+		return this.update(id, { context_profile: context });
+	}
+
+	async update(id: string, data: { name?: string; description?: string; context_profile?: CodebaseContext | null }): Promise<ProjectDetail | null> {
 		const updatedAt = this.activeProject?.id === id ? this.activeProject.updated_at : undefined;
 		const project = await updateProject(id, data, updatedAt);
 		if (project) {

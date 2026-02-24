@@ -40,6 +40,7 @@ const mockProject = (overrides = {}) => ({
 	description: null,
 	status: 'active',
 	prompt_count: 0,
+	has_context: false,
 	created_at: '2024-01-01T00:00:00Z',
 	updated_at: '2024-01-01T00:00:00Z',
 	...overrides,
@@ -47,6 +48,7 @@ const mockProject = (overrides = {}) => ({
 
 const mockDetail = (overrides = {}) => ({
 	...mockProject(),
+	context_profile: null,
 	prompts: [],
 	...overrides,
 });

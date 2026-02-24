@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const { mockShow } = vi.hoisted(() => ({ mockShow: vi.fn() }));
+
 vi.mock('$lib/api/client', () => ({
     fetchHealth: vi.fn(),
     fetchProviders: vi.fn().mockResolvedValue([]),
     validateApiKey: vi.fn(),
+}));
+
+vi.mock('$lib/stores/toast.svelte', () => ({
+    toastState: { show: mockShow },
 }));
 
 vi.mock('$lib/utils/format', () => ({
@@ -11,7 +17,8 @@ vi.mock('$lib/utils/format', () => ({
 }));
 
 import { providerState } from './provider.svelte';
-import type { ProviderInfo } from '$lib/api/client';
+import { fetchHealth } from '$lib/api/client';
+import type { HealthResponse, ProviderInfo } from '$lib/api/client';
 
 // Stub browser storage APIs for Node test environment
 const storageStub = (() => {
@@ -122,6 +129,69 @@ describe('ProviderState', () => {
 
             const available = providerState.availableProviders;
             expect(available.map(p => p.name)).toEqual(['a', 'b']);
+        });
+    });
+
+    describe('MCP toast notifications', () => {
+        const makeHealth = (mcp_connected: boolean): HealthResponse => ({
+            status: 'ok',
+            claude_available: true,
+            llm_available: true,
+            llm_provider: 'claude-cli',
+            llm_model: 'claude-opus-4-6',
+            db_connected: true,
+            mcp_connected,
+            version: '0.2.0',
+        });
+
+        beforeEach(() => {
+            mockShow.mockClear();
+            // Reset internal MCP tracking state by creating a fresh poll cycle
+            // Access private fields via any cast for testing
+            (providerState as any)._mcpFirstPoll = true;
+            (providerState as any)._mcpPreviousState = null;
+        });
+
+        it('does not fire toast on initial health check', async () => {
+            vi.mocked(fetchHealth).mockResolvedValueOnce(makeHealth(true));
+            await providerState.pollHealth();
+            expect(mockShow).not.toHaveBeenCalled();
+        });
+
+        it('fires error toast when MCP disconnects', async () => {
+            // First poll — establishes baseline (no toast)
+            vi.mocked(fetchHealth).mockResolvedValueOnce(makeHealth(true));
+            await providerState.pollHealth();
+
+            // Second poll — MCP goes down
+            vi.mocked(fetchHealth).mockResolvedValueOnce(makeHealth(false));
+            await providerState.pollHealth();
+
+            expect(mockShow).toHaveBeenCalledWith('MCP server disconnected', 'error', 5000);
+        });
+
+        it('fires success toast when MCP reconnects', async () => {
+            // First poll — MCP is down (no toast, first poll)
+            vi.mocked(fetchHealth).mockResolvedValueOnce(makeHealth(false));
+            await providerState.pollHealth();
+
+            // Second poll — MCP comes up
+            vi.mocked(fetchHealth).mockResolvedValueOnce(makeHealth(true));
+            await providerState.pollHealth();
+
+            expect(mockShow).toHaveBeenCalledWith('MCP server connected', 'success');
+        });
+
+        it('does not fire toast when MCP status unchanged', async () => {
+            // First poll
+            vi.mocked(fetchHealth).mockResolvedValueOnce(makeHealth(true));
+            await providerState.pollHealth();
+
+            // Second poll — same status
+            vi.mocked(fetchHealth).mockResolvedValueOnce(makeHealth(true));
+            await providerState.pollHealth();
+
+            expect(mockShow).not.toHaveBeenCalled();
         });
     });
 });

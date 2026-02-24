@@ -29,6 +29,8 @@ export interface HistoryItem {
 	model_used: string | null;
 	input_tokens: number | null;
 	output_tokens: number | null;
+	cache_creation_input_tokens: number | null;
+	cache_read_input_tokens: number | null;
 	status: string;
 	error_message: string | null;
 	project: string | null;
@@ -38,6 +40,7 @@ export interface HistoryItem {
 	prompt_id: string | null;
 	project_id: string | null;
 	project_status: string | null;
+	codebase_context_snapshot: CodebaseContext | null;
 }
 
 export interface HistorySummaryItem {
@@ -415,6 +418,104 @@ export function fetchRetry(
 }
 
 // ---------------------------------------------------------------------------
+// Modular Orchestration API
+// ---------------------------------------------------------------------------
+
+export interface AnalyzeRequest {
+	prompt: string;
+	codebase_context?: CodebaseContext | null;
+}
+
+export interface StrategyRequest {
+	prompt: string;
+	analysis: Record<string, unknown>;
+	codebase_context?: CodebaseContext | null;
+}
+
+export interface OptimizeGenerateRequest {
+	prompt: string;
+	analysis: Record<string, unknown>;
+	strategy: string;
+	secondary_frameworks?: string[];
+	codebase_context?: CodebaseContext | null;
+}
+
+export interface ValidateRequest {
+	original_prompt: string;
+	optimized_prompt: string;
+	codebase_context?: CodebaseContext | null;
+}
+
+export interface AnalyzeResponse {
+	task_type: string;
+	complexity: string;
+	weaknesses: string[];
+	strengths: string[];
+	step_duration_ms?: number;
+}
+
+export interface StrategyResponse {
+	strategy: string;
+	reasoning: string;
+	confidence: number;
+	task_type: string;
+	is_override: boolean;
+	secondary_frameworks: string[];
+	step_duration_ms?: number;
+}
+
+export interface OptimizeResponse {
+	optimized_prompt: string;
+	framework_applied: string;
+	changes_made: string[];
+	optimization_notes: string;
+	step_duration_ms?: number;
+}
+
+export interface ValidateResponse {
+	clarity_score: number;
+	specificity_score: number;
+	structure_score: number;
+	faithfulness_score: number;
+	overall_score: number;
+	is_improvement: boolean;
+	verdict: string;
+	step_duration_ms?: number;
+}
+
+export async function orchestrateAnalyze(req: AnalyzeRequest, llmHeaders?: LLMHeaders): Promise<AnalyzeResponse> {
+	return apiFetchOrThrow<AnalyzeResponse>(`${BASE_URL}/orchestrate/analyze`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', ...buildLLMHeaders(llmHeaders) },
+		body: JSON.stringify(req)
+	});
+}
+
+export async function orchestrateStrategy(req: StrategyRequest, llmHeaders?: LLMHeaders): Promise<StrategyResponse> {
+	return apiFetchOrThrow<StrategyResponse>(`${BASE_URL}/orchestrate/strategy`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', ...buildLLMHeaders(llmHeaders) },
+		body: JSON.stringify(req)
+	});
+}
+
+export async function orchestrateOptimize(req: OptimizeGenerateRequest, llmHeaders?: LLMHeaders): Promise<OptimizeResponse> {
+	return apiFetchOrThrow<OptimizeResponse>(`${BASE_URL}/orchestrate/optimize`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', ...buildLLMHeaders(llmHeaders) },
+		body: JSON.stringify(req)
+	});
+}
+
+export async function orchestrateValidate(req: ValidateRequest, llmHeaders?: LLMHeaders): Promise<ValidateResponse> {
+	return apiFetchOrThrow<ValidateResponse>(`${BASE_URL}/orchestrate/validate`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', ...buildLLMHeaders(llmHeaders) },
+		body: JSON.stringify(req)
+	});
+}
+
+// ---------------------------------------------------------------------------
 // Generic fetch helpers — single try-catch shared by all API functions
 // ---------------------------------------------------------------------------
 
@@ -435,6 +536,21 @@ async function apiFetch<T>(
 		console.warn('[PromptForge] API request failed:', url, err);
 		return fallback;
 	}
+}
+
+/** Throwing variant for POST endpoints where failure should be an error (not silent null). */
+async function apiFetchOrThrow<T>(url: string, options?: RequestInit): Promise<T> {
+	const headers = { ...buildAuthHeaders(), ...(options?.headers as Record<string, string>) };
+	const response = await fetch(url, { ...options, headers });
+	if (!response.ok) {
+		let detail = `HTTP ${response.status}`;
+		try {
+			const body = await response.json();
+			if (body.detail) detail = body.detail;
+		} catch { /* use status code */ }
+		throw new Error(detail);
+	}
+	return await response.json();
 }
 
 async function apiFetchOk(url: string, options?: RequestInit): Promise<boolean> {
@@ -506,24 +622,10 @@ export async function clearAllHistory(): Promise<boolean> {
 	});
 }
 
-export interface BulkDeleteResponse {
-	deleted_count: number;
-	deleted_ids: string[];
-	not_found_ids: string[];
-}
-
-/** Delete multiple optimization records by ID */
-export async function bulkDeleteOptimizations(ids: string[]): Promise<BulkDeleteResponse> {
-	return apiFetch(`${BASE_URL}/history/bulk-delete`, { deleted_count: 0, deleted_ids: [], not_found_ids: [] }, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ids }),
-	});
-}
-
 /** Fetch usage statistics. */
-export async function fetchStats(): Promise<StatsResponse | null> {
-	return apiFetch(`${BASE_URL}/history/stats`, null);
+export async function fetchStats(project?: string): Promise<StatsResponse | null> {
+	const params = project ? `?project=${encodeURIComponent(project)}` : '';
+	return apiFetch(`${BASE_URL}/history/stats${params}`, null);
 }
 
 export interface HealthResponse {
@@ -533,6 +635,7 @@ export interface HealthResponse {
 	llm_provider: string;
 	llm_model: string;
 	db_connected: boolean;
+	mcp_connected: boolean;
 	version: string;
 }
 
@@ -620,6 +723,7 @@ export interface ProjectSummary {
 	description: string | null;
 	status: string;
 	prompt_count: number;
+	has_context: boolean;
 	created_at: string;
 	updated_at: string;
 }
@@ -628,6 +732,7 @@ export interface ProjectDetail {
 	id: string;
 	name: string;
 	description: string | null;
+	context_profile: CodebaseContext | null;
 	status: string;
 	created_at: string;
 	updated_at: string;
@@ -670,7 +775,11 @@ export async function fetchProject(id: string, fetchFn: typeof fetch = fetch): P
 	return apiFetch(`${BASE_URL}/projects/${id}`, null, { fetchFn });
 }
 
-export async function createProject(data: { name: string; description?: string }): Promise<ProjectDetail | null> {
+export async function createProject(data: {
+	name: string;
+	description?: string;
+	context_profile?: CodebaseContext | null;
+}): Promise<ProjectDetail | null> {
 	return apiFetch(`${BASE_URL}/projects`, null, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -680,7 +789,7 @@ export async function createProject(data: { name: string; description?: string }
 
 export async function updateProject(
 	id: string,
-	data: { name?: string; description?: string },
+	data: { name?: string; description?: string; context_profile?: CodebaseContext | null },
 	updatedAt?: string,
 ): Promise<ProjectDetail | null> {
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
