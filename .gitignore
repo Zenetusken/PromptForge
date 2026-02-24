@@ -46,3 +46,6 @@ agent_scratchpad.json
 
 # Audit / working docs
 MCP_AUDIT.md
+
+# Build/check logs
+frontend/check.log
