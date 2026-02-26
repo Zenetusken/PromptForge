@@ -55,6 +55,9 @@ feature_list.json
 feature_list.json.bak
 agent_scratchpad*.json
 orchestrator.log
+scripts/update_tests.py
+scripts/validate_tests.py
+scripts/dev.sh
 
 # Secrets
 data/.webhook_secret
