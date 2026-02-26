@@ -45,7 +45,19 @@ Thumbs.db
 
 # Claude
 .claude_settings.json
-agent_scratchpad.json
+
+# Builder artifacts (autonomous-coding system)
+.claude/
+.sdk_integrated
+app_spec.txt
+claude-progress.txt
+feature_list.json
+feature_list.json.bak
+agent_scratchpad*.json
+orchestrator.log
+
+# Secrets
+data/.webhook_secret
 
 # Audit / working docs
 MCP_AUDIT.md

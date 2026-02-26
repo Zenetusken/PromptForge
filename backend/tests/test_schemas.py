@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from app.constants import Strategy
 from app.schemas.optimization import OptimizeRequest
 
-
 # ---------------------------------------------------------------------------
 # TestPromptValidation
 # ---------------------------------------------------------------------------

@@ -7,14 +7,12 @@ import json
 
 import pytest
 
-from app.constants import OptimizationStatus, ProjectStatus
+from app.constants import OptimizationStatus
 from app.database import get_db
 from app.main import app
 from app.models.optimization import Optimization
 from app.models.project import Project, Prompt, PromptVersion
 from app.repositories.project import ProjectRepository
-from app.schemas.context import CodebaseContext
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -908,7 +906,7 @@ class TestGetContextByNameDescriptionFallback:
 
     @pytest.mark.asyncio
     async def test_profile_without_description_gets_fallback(self, db_session):
-        """Context profile has language/framework but no description → project description fills in."""
+        """Profile without description gets project description fallback."""
         profile = json.dumps({"language": "Python", "framework": "FastAPI"})
         db_session.add(Project(
             id="p1", name="Partial", description="Inventory management API",

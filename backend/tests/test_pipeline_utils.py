@@ -19,7 +19,6 @@ from app.services.pipeline import (
 from app.services.strategy_selector import StrategySelection
 from app.services.validator import ValidationResult
 
-
 # ---------------------------------------------------------------------------
 # TestAddUsage
 # ---------------------------------------------------------------------------
@@ -166,7 +165,11 @@ class TestSelectStrategy:
         completion = MagicMock()
         completion.usage = None
         provider.complete_json = AsyncMock(return_value=(
-            {"strategy": "persona-assignment", "reasoning": "Coding needs expert.", "confidence": 0.78},
+            {
+                "strategy": "persona-assignment",
+                "reasoning": "Coding needs expert.",
+                "confidence": 0.78,
+            },
             completion,
         ))
         analysis = AnalysisResult("coding", "medium", [], [])
@@ -183,7 +186,11 @@ class TestSelectStrategy:
         completion = MagicMock()
         completion.usage = None
         provider.complete_json = AsyncMock(return_value=(
-            {"strategy": "persona-assignment", "reasoning": "Coding needs expert.", "confidence": 0.78},
+            {
+                "strategy": "persona-assignment",
+                "reasoning": "Coding needs expert.",
+                "confidence": 0.78,
+            },
             completion,
         ))
         analysis = AnalysisResult("coding", "medium", [], [])

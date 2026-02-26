@@ -13,7 +13,6 @@ from app.models.optimization import Optimization
 from app.models.project import Project, Prompt
 from app.repositories.optimization import OptimizationRepository
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------

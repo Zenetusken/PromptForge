@@ -1,14 +1,12 @@
 """Tests for the optimize router endpoints — POST, GET, retry."""
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.constants import OptimizationStatus
 from app.models.optimization import Optimization
 from app.services.pipeline import PipelineComplete
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -313,12 +311,12 @@ class TestAutoPromptCreation:
         assert response.status_code == 200
 
         # Verify DB state: optimization should have a prompt_id set
+        from sqlalchemy import select
+
         from app.database import get_db
         from app.main import app
         from app.models.optimization import Optimization as OptModel
         from app.models.project import Project, Prompt
-
-        from sqlalchemy import select
 
         override_fn = app.dependency_overrides[get_db]
         gen = override_fn()
@@ -383,7 +381,8 @@ class TestAutoPromptCreation:
         assert response.status_code == 200
 
         # Verify no extra Prompt was created (should still be just 1)
-        from sqlalchemy import func, select as sa_select
+        from sqlalchemy import func
+        from sqlalchemy import select as sa_select
 
         gen2 = override_fn()
         session2 = await gen2.__anext__()

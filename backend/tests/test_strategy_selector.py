@@ -324,8 +324,9 @@ class TestStrategySelector:
         result = self.selector.select(
             _make_analysis(task_type="classification", strengths=["Includes examples of each type"])
         )
-        # classification combo: primary=few-shot-scaffolding, secondary=(structured-output, constraint-injection)
-        # Redundancy redirect: few-shot → structured-output (first secondary)
+        # classification combo: primary=few-shot-scaffolding,
+        # secondary=(structured-output, constraint-injection)
+        # Redundancy: few-shot → structured-output (first secondary)
         assert result.strategy == "structured-output"
         assert result.confidence == 0.70
 
@@ -376,11 +377,16 @@ class TestStrategySelector:
         assert general_result.strategy == "role-task-format"
 
     def test_strengths_check_is_case_insensitive(self):
-        """Extraction maps to structured-output; 'PROVIDES EXAMPLES' doesn't match structured-output patterns."""
+        """Extraction maps to structured-output; 'PROVIDES EXAMPLES'
+        doesn't match structured-output patterns."""
         result = self.selector.select(
-            _make_analysis(task_type="extraction", strengths=["PROVIDES EXAMPLES for parsing"])
+            _make_analysis(
+                task_type="extraction",
+                strengths=["PROVIDES EXAMPLES for parsing"],
+            )
         )
-        # extraction combo: primary=structured-output, "PROVIDES EXAMPLES" doesn't match structured-output patterns
+        # extraction: primary=structured-output,
+        # "PROVIDES EXAMPLES" doesn't match its patterns
         assert result.strategy == "structured-output"
 
     def test_no_redundancy_without_matching_strength(self):

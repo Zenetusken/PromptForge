@@ -1,13 +1,11 @@
 """Tests for CodebaseContext dataclass — render(), truncation, and dict conversion."""
 
-import pytest
 
 from app.schemas.context import (
     MAX_CONTEXT_CHARS,
     CodebaseContext,
     codebase_context_from_dict,
 )
-
 
 # ---------------------------------------------------------------------------
 # TestCodebaseContextRender

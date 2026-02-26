@@ -11,6 +11,7 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:///./data/promptforge.db
       - FRONTEND_URL=http://localhost:5199
       - AUTH_TOKEN=${AUTH_TOKEN:-}
+      - INTERNAL_WEBHOOK_SECRET=${INTERNAL_WEBHOOK_SECRET:-}
       - RATE_LIMIT_RPM=${RATE_LIMIT_RPM:-60}
       - RATE_LIMIT_OPTIMIZE_RPM=${RATE_LIMIT_OPTIMIZE_RPM:-10}
       - LLM_PROVIDER=${LLM_PROVIDER:-}
@@ -68,8 +69,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8001:8001"
+    # MCP server is consumed by other containers and localhost only.
+    # Uncomment the port mapping below if you need external MCP access
+    # (e.g., Claude Code on a remote machine):
+    # ports:
+    #   - "8001:8001"
     volumes:
       - promptforge-data:/app/data
     environment:
@@ -81,6 +85,8 @@ services:
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-6}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-pro}
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      - INTERNAL_WEBHOOK_SECRET=${INTERNAL_WEBHOOK_SECRET:-}
     read_only: true
     tmpfs:
       - /tmp

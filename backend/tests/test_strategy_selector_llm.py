@@ -9,9 +9,8 @@ from app.constants import Strategy
 from app.prompts.strategy_prompt import STRATEGY_SYSTEM_PROMPT
 from app.services.analyzer import AnalysisResult
 from app.services.strategy_selector import (
-    StrategySelection,
-    StrategySelector,
     _STRATEGY_DESCRIPTIONS,
+    StrategySelector,
 )
 
 

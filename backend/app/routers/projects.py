@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import timezone
 from email.utils import parsedate_to_datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,10 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import ProjectStatus
 from app.converters import deserialize_json_field
 from app.database import get_db, get_db_readonly
-from app.services.stats_cache import invalidate_stats_cache
-from app.schemas.context import codebase_context_from_dict, context_to_dict
 from app.repositories.optimization import OptimizationRepository
 from app.repositories.project import ProjectFilters, ProjectPagination, ProjectRepository
+from app.schemas.context import codebase_context_from_dict, context_to_dict
 from app.schemas.project import (
     ForgeResultListResponse,
     ForgeResultSummary,
@@ -32,6 +31,10 @@ from app.schemas.project import (
     PromptVersionResponse,
     ReorderRequest,
 )
+from app.services.stats_cache import invalidate_stats_cache
+
+if TYPE_CHECKING:
+    from app.models.project import Project
 
 logger = logging.getLogger(__name__)
 
@@ -415,7 +418,10 @@ async def reorder_prompts(
         ordered = await repo.reorder_prompts(project_id, body.prompt_ids)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"message": "Prompts reordered", "prompts": [PromptResponse.model_validate(p) for p in ordered]}
+    return {
+        "message": "Prompts reordered",
+        "prompts": [PromptResponse.model_validate(p) for p in ordered],
+    }
 
 
 @router.get(
@@ -526,4 +532,8 @@ async def delete_prompt(
     deleted_optimizations = await repo.delete_prompt(prompt)
     if deleted_optimizations:
         invalidate_stats_cache()
-    return {"message": "Prompt deleted", "id": prompt_id, "deleted_optimizations": deleted_optimizations}
+    return {
+        "message": "Prompt deleted",
+        "id": prompt_id,
+        "deleted_optimizations": deleted_optimizations,
+    }

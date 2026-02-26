@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.providers import invalidate_detect_cache
-from app.providers.anthropic_api import AnthropicAPIProvider, _CACHE_CONTROL, _classify_anthropic_error
+from app.providers.anthropic_api import (
+    _CACHE_CONTROL,
+    AnthropicAPIProvider,
+    _classify_anthropic_error,
+)
 from app.providers.errors import (
     AuthenticationError,
     ModelNotFoundError,

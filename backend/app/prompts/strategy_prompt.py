@@ -41,12 +41,14 @@ Best for coding, extraction, and data formatting tasks. \
 Less beneficial when free-form text output is desired.
 
 7. **step-by-step**: Numbered sequential instructions. \
-Best for coding tasks with sequential operations, analytical breakdowns, and procedural instructions. \
+Best for coding tasks with sequential operations, analytical breakdowns, \
+and procedural instructions. \
 Less beneficial when task is inherently non-sequential.
 
 8. **constraint-injection**: Explicit do/don't rules and boundaries. \
-Best for prompts with specificity weaknesses (vague, ambiguous, too broad) when the task type \
-does not already have a natural strategy that addresses vagueness (e.g., coding, formatting, general). \
+Best for prompts with specificity weaknesses (vague, ambiguous, too broad) \
+when the task type does not already have a natural strategy that addresses \
+vagueness (e.g., coding, formatting, general). \
 Less beneficial when prompt already has explicit constraints.
 
 9. **context-enrichment**: Background info, domain context, references. \

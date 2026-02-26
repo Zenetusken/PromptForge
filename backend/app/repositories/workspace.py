@@ -6,12 +6,12 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.workspace import GitHubConnection, GitHubOAuthConfig, WorkspaceLink
 from app import config
 from app.models.project import Project
+from app.models.workspace import GitHubConnection, GitHubOAuthConfig, WorkspaceLink
 from app.schemas.context import CodebaseContext, context_from_json
 
 logger = logging.getLogger(__name__)

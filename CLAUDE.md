@@ -11,7 +11,7 @@ An AI-powered prompt optimization web app. Users submit a raw prompt, and a 4-st
 - **Backend**: Python 3.14+ / FastAPI / SQLAlchemy 2.0 async ORM / SQLite (aiosqlite) / Pydantic v2
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
 - **LLM access**: Provider-agnostic via `backend/app/providers/` — supports Claude CLI (default), Anthropic API, OpenAI, and Google Gemini. Auto-detects available provider or set `LLM_PROVIDER` explicitly.
-- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 20 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`, `set_project_context`, `batch`, `cancel`, `sync_workspace`) and 4 MCP Resources (`promptforge://projects`, `promptforge://projects/{id}/context`, `promptforge://optimizations/{id}`, `promptforge://workspaces`). All tool calls emit activity events to the backend via webhook (`_mcp_tracked` decorator) for real-time visibility in the frontend Network Monitor. Runs as SSE HTTP transport on port 8001 with uvicorn `--reload` for hot-reload. Managed by `init.sh` alongside backend/frontend. Auto-discoverable via `.mcp.json` (`type: sse`).
+- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 20 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`, `set_project_context`, `batch`, `cancel`, `sync_workspace`) and 4 MCP Resources (`promptforge://projects`, `promptforge://projects/{id}/context`, `promptforge://optimizations/{id}`, `promptforge://workspaces`). All tool calls emit activity events to the backend via authenticated webhook (`_mcp_tracked` decorator, `X-Webhook-Secret` header) for real-time visibility in the frontend Network Monitor. Runs as SSE HTTP transport on port 8001 (bound to `127.0.0.1` by default) with uvicorn `--reload` for hot-reload. Optional bearer token auth via `MCP_AUTH_TOKEN`. Managed by `init.sh` alongside backend/frontend. Auto-discoverable via `.mcp.json` (`type: sse`).
 
 ## Commands
 
@@ -188,6 +188,9 @@ Environment defaults (set in `backend/app/config.py`, overridable via `.env`):
 - `BACKEND_PORT` — default `8000`
 - `HOST` — default `0.0.0.0`
 - `MCP_PORT` — default `8001` (managed by `init.sh`, not config.py)
+- `MCP_HOST` — default `127.0.0.1` (localhost-only binding for MCP server)
+- `MCP_AUTH_TOKEN` — bearer token for MCP server authentication (empty = disabled)
+- `INTERNAL_WEBHOOK_SECRET` — shared secret for MCP→backend webhook (auto-generated to `data/.webhook_secret` if empty)
 - `DATABASE_URL` — default `sqlite+aiosqlite:///<project>/data/promptforge.db`
 - `LLM_PROVIDER` — auto-detect when empty; explicit: `claude-cli`, `anthropic`, `openai`, `gemini`
 - `CLAUDE_MODEL` — default `claude-opus-4-6` (used by Claude CLI and Anthropic API providers)

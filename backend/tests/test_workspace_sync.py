@@ -2,9 +2,7 @@
 
 import json
 
-import pytest
-
-from app.schemas.context import CodebaseContext, context_to_dict, merge_contexts
+from app.schemas.context import CodebaseContext, merge_contexts
 from app.services.workspace_sync import (
     extract_context_from_repo,
     extract_context_from_workspace_info,
@@ -180,7 +178,8 @@ class TestThreeLayerMerge:
         resolved = merge_contexts(base, explicit)
 
         assert resolved.language == "TypeScript"  # explicit wins
-        assert resolved.framework == "FastAPI"  # from workspace (neither manual nor explicit set it)
+        # from workspace (neither manual nor explicit set it)
+        assert resolved.framework == "FastAPI"
         assert resolved.description == "My API"  # from manual
 
     def test_workspace_none_does_not_break(self):

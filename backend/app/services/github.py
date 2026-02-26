@@ -55,6 +55,21 @@ def _get_fernet() -> Fernet:
             logger.info("Generated new encryption key at %s", keyfile)
 
     _fernet = Fernet(key.encode() if isinstance(key, str) else key)
+
+    # Validate the key works by round-tripping a test string.
+    # Detects key replacement or corruption before real decrypt calls fail.
+    try:
+        _fernet.decrypt(_fernet.encrypt(b"promptforge-key-check"))
+    except Exception:
+        logger.critical(
+            "ENCRYPTION KEY MISMATCH: The encryption key at %s cannot "
+            "decrypt data it just encrypted. If you replaced or regenerated "
+            "the key file, previously encrypted GitHub tokens will be "
+            "unrecoverable. Delete data/.encryption_key and stored GitHub "
+            "connections to start fresh.",
+            config.BASE_DIR / "data" / ".encryption_key",
+        )
+
     return _fernet
 
 
@@ -112,8 +127,9 @@ async def resolve_github_config(
 
     Returns (client_id, client_secret, redirect_uri, scope) or None.
     """
-    from app.models.workspace import GitHubOAuthConfig
     from sqlalchemy import select
+
+    from app.models.workspace import GitHubOAuthConfig
 
     try:
         result = await session.execute(select(GitHubOAuthConfig).limit(1))

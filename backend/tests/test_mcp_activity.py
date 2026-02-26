@@ -10,7 +10,6 @@ import pytest
 
 from app.services.mcp_activity import MCPActivityBroadcaster, MCPActivityEvent, MCPEventType
 
-
 # ── MCPActivityBroadcaster unit tests ──
 
 
@@ -381,8 +380,10 @@ class TestSSEGeneratorSnapshot:
 
 class TestRouterEndpoints:
     @pytest.mark.asyncio
-    async def test_webhook_publishes_event(self, client):
+    async def test_webhook_publishes_event(self, client, monkeypatch):
         """POST to /internal/mcp-event accepts valid payloads."""
+        from app import config
+        monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", "")
         response = await client.post(
             "/internal/mcp-event",
             json={
@@ -394,8 +395,10 @@ class TestRouterEndpoints:
         assert response.status_code == 204
 
     @pytest.mark.asyncio
-    async def test_webhook_rejects_unknown_type(self, client):
+    async def test_webhook_rejects_unknown_type(self, client, monkeypatch):
         """Unknown event types are logged but don't error."""
+        from app import config
+        monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", "")
         response = await client.post(
             "/internal/mcp-event",
             json={"event_type": "unknown_type"},
@@ -413,3 +416,45 @@ class TestRouterEndpoints:
         assert "recent_events" in data
         assert "active_calls" in data
         assert "session_count" in data
+
+
+# ── Webhook authentication tests ──
+
+
+class TestWebhookAuth:
+    VALID_SECRET = "test-webhook-secret-abc123"
+
+    @pytest.mark.asyncio
+    async def test_webhook_rejected_without_secret(self, client, monkeypatch):
+        """POST /internal/mcp-event returns 403 without X-Webhook-Secret."""
+        from app import config
+        monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", self.VALID_SECRET)
+        response = await client.post(
+            "/internal/mcp-event",
+            json={"event_type": "tool_complete", "tool_name": "test"},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_webhook_accepted_with_valid_secret(self, client, monkeypatch):
+        """Correct X-Webhook-Secret passes, returns 204."""
+        from app import config
+        monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", self.VALID_SECRET)
+        response = await client.post(
+            "/internal/mcp-event",
+            json={"event_type": "tool_complete", "tool_name": "test"},
+            headers={"X-Webhook-Secret": self.VALID_SECRET},
+        )
+        assert response.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_webhook_rejected_with_wrong_secret(self, client, monkeypatch):
+        """Wrong X-Webhook-Secret returns 403."""
+        from app import config
+        monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", self.VALID_SECRET)
+        response = await client.post(
+            "/internal/mcp-event",
+            json={"event_type": "tool_complete", "tool_name": "test"},
+            headers={"X-Webhook-Secret": "wrong-secret"},
+        )
+        assert response.status_code == 403

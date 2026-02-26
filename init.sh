@@ -401,7 +401,7 @@ do_start() {
     source venv/bin/activate
 
     nohup python -m uvicorn app.mcp_server:app \
-        --host 0.0.0.0 \
+        --host 127.0.0.1 \
         --port "$MCP_PORT" \
         --reload \
         > "$LOGS_DIR/mcp.log" 2>&1 &

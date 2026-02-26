@@ -190,6 +190,9 @@ Key environment variables (set in `.env`):
 | `MCP_PORT` | `8001` | MCP server port |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/promptforge.db` | Database connection string |
 | `AUTH_TOKEN` | *(disabled)* | Bearer token for API authentication |
+| `MCP_AUTH_TOKEN` | *(disabled)* | Bearer token for MCP server authentication |
+| `MCP_HOST` | `127.0.0.1` | MCP server bind address |
+| `INTERNAL_WEBHOOK_SECRET` | *(auto-generated)* | Shared secret for MCP→backend webhook |
 | `LLM_PROVIDER` | *(auto-detect)* | `claude-cli`, `anthropic`, `openai`, or `gemini` |
 | `ANTHROPIC_API_KEY` | | Anthropic API key |
 | `OPENAI_API_KEY` | | OpenAI API key |

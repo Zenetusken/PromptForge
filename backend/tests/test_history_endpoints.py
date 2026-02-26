@@ -1,7 +1,5 @@
 """Tests for history endpoints — pagination, filtering, deletion, stats."""
 
-import json
-from datetime import datetime, timezone
 
 import pytest
 
@@ -10,7 +8,6 @@ from app.database import get_db
 from app.main import app
 from app.models.optimization import Optimization
 from app.models.project import Project, Prompt
-
 
 # ---------------------------------------------------------------------------
 # Helpers

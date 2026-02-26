@@ -193,14 +193,23 @@ _STRENGTH_REDUNDANCY_RE: dict[Strategy, re.Pattern[str]] = {
 
 # Maps each strategy to its human-readable reasoning suffix.
 _STRATEGY_REASON_MAP: dict[Strategy, str] = {
-    Strategy.CO_STAR: "structures prompt with Context, Objective, Style, Tone, Audience, Response format.",
-    Strategy.RISEN: "organizes prompt with Role, Instructions, Steps, End-goal, Narrowing constraints.",
+    Strategy.CO_STAR: (
+        "structures prompt with Context, Objective, Style, Tone, "
+        "Audience, Response format."
+    ),
+    Strategy.RISEN: (
+        "organizes prompt with Role, Instructions, Steps, "
+        "End-goal, Narrowing constraints."
+    ),
     Strategy.CHAIN_OF_THOUGHT: "enables step-by-step reasoning.",
     Strategy.FEW_SHOT_SCAFFOLDING: "provides concrete examples for pattern-based tasks.",
     Strategy.ROLE_TASK_FORMAT: "structures prompt with role, task description, and output format.",
     Strategy.STRUCTURED_OUTPUT: "specifies structured output format (JSON, tables, etc.).",
     Strategy.STEP_BY_STEP: "breaks task into ordered sequential instructions.",
-    Strategy.CONSTRAINT_INJECTION: "addresses identified specificity weaknesses with explicit constraints.",
+    Strategy.CONSTRAINT_INJECTION: (
+        "addresses identified specificity weaknesses "
+        "with explicit constraints."
+    ),
     Strategy.CONTEXT_ENRICHMENT: "enriches prompt with background information and domain context.",
     Strategy.PERSONA_ASSIGNMENT: "leverages domain-specific expert persona.",
 }

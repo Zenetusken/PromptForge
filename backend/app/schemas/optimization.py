@@ -1,14 +1,12 @@
 """Pydantic v2 schemas for prompt optimization requests and responses."""
 
-from datetime import datetime
 
 import re
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.utils.datetime import UTCDatetime
-
 from app.constants import LEGACY_STRATEGY_ALIASES, Strategy
+from app.utils.datetime import UTCDatetime
 
 
 class OptimizeRequest(BaseModel):
@@ -69,7 +67,10 @@ class OptimizeRequest(BaseModel):
         None,
         ge=0.1,
         le=1.0,
-        description="Target overall score (0.0-1.0). Pipeline iterates until this score is reached.",
+        description=(
+            "Target overall score (0.0-1.0). "
+            "Pipeline iterates until this score is reached."
+        ),
     )
 
     @field_validator("stages")
@@ -125,7 +126,10 @@ class OptimizeRequest(BaseModel):
         for fw in v:
             mapped = LEGACY_STRATEGY_ALIASES.get(fw, fw)
             if mapped not in valid:
-                raise ValueError(f"Unknown secondary framework {fw!r}. Valid: {', '.join(sorted(valid))}")
+                raise ValueError(
+                    f"Unknown secondary framework {fw!r}. "
+                    f"Valid: {', '.join(sorted(valid))}"
+                )
             result.append(mapped)
         return result
 

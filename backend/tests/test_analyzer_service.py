@@ -8,13 +8,11 @@ import pytest
 from app.prompts.analyzer_prompt import ANALYZER_SYSTEM_PROMPT
 from app.providers.types import TokenUsage
 from app.services.analyzer import (
-    AnalysisResult,
-    PromptAnalyzer,
     _VALID_COMPLEXITIES,
     _VALID_TASK_TYPES,
+    PromptAnalyzer,
     _ensure_string_list,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

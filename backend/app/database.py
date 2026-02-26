@@ -1,8 +1,10 @@
 """Database setup with SQLAlchemy async engine and session management."""
 
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import bindparam, event, text
 from sqlalchemy.exc import OperationalError
@@ -415,6 +417,26 @@ async def _cleanup_stale_running(conn) -> None:
         logger.info("Cleaned up %d stale RUNNING records", result.rowcount)
 
 
+def _harden_data_dir() -> None:
+    """Set restrictive permissions on the data directory and database file.
+
+    data/ → 0o700 (owner-only access)
+    data/promptforge.db → 0o600 (owner-only read/write)
+    """
+    # Extract path from SQLAlchemy URL (sqlite+aiosqlite:///path/to/db)
+    if ":///" in DATABASE_URL:
+        db_path_str = DATABASE_URL.split(":///", 1)[1]
+        db_path = Path(db_path_str)
+        data_dir = db_path.parent
+        try:
+            if data_dir.is_dir():
+                os.chmod(data_dir, 0o700)
+            if db_path.is_file():
+                os.chmod(db_path, 0o600)
+        except OSError as exc:
+            logger.warning("Could not set data directory permissions: %s", exc)
+
+
 async def init_db() -> None:
     """Create all tables and apply pending migrations."""
     async with engine.begin() as conn:
@@ -426,6 +448,8 @@ async def init_db() -> None:
         # Single backfill pass after missing prompts are created
         await _backfill_prompt_ids(conn)
         await _cleanup_stale_running(conn)
+
+    _harden_data_dir()
 
 
 async def get_db() -> AsyncSession:

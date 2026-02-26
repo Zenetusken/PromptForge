@@ -12,8 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
 from app.database import get_db, get_db_readonly
-from app.models.workspace import GitHubConnection, GitHubOAuthConfig, WorkspaceLink
-from app.repositories.project import ensure_project_by_name
+from app.models.workspace import GitHubConnection, WorkspaceLink
 from app.repositories.workspace import WorkspaceRepository
 from app.schemas.context import context_to_dict
 from app.services.github import (
@@ -330,7 +329,10 @@ async def link_repo(
     # Fetch repo metadata
     parts = request.repo_full_name.split("/")
     if len(parts) != 2:
-        raise HTTPException(status_code=400, detail="Invalid repo name format (expected owner/repo)")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid repo name format (expected owner/repo)",
+        )
 
     owner, repo_name = parts
     try:

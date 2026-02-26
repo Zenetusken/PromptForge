@@ -5,7 +5,6 @@ and update_optimization_status."""
 import json
 import time
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import select
@@ -22,7 +21,6 @@ from app.converters import (
     with_display_scores,
 )
 from app.models.optimization import Optimization
-
 
 # ---------------------------------------------------------------------------
 # Helpers

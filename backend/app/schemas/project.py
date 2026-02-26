@@ -26,7 +26,10 @@ class ProjectUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=200)
     description: str | None = Field(None, max_length=2000)
-    context_profile: dict | None = Field(None, description="Codebase context profile (JSON). Null clears.")
+    context_profile: dict | None = Field(
+        None,
+        description="Codebase context profile (JSON). Null clears.",
+    )
 
     @field_validator("name")
     @classmethod

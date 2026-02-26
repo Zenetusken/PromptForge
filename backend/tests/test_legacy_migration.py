@@ -12,7 +12,6 @@ from app.database import _backfill_missing_prompts, _backfill_prompt_ids, _migra
 from app.models.project import Project
 from app.repositories.project import ProjectRepository, ensure_project_by_name
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -128,7 +127,10 @@ class TestMigrateLegacyProjects:
             ]:
                 cols = ", ".join(params.keys())
                 vals = ", ".join(f":{k}" for k in params)
-                await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
+                await conn.execute(
+                    text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"),
+                    params,
+                )
 
         # Run migration
         async with db_engine.begin() as conn:
@@ -151,7 +153,10 @@ class TestMigrateLegacyProjects:
             ]:
                 cols = ", ".join(params.keys())
                 vals = ", ".join(f":{k}" for k in params)
-                await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
+                await conn.execute(
+                    text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"),
+                    params,
+                )
 
         async with db_engine.begin() as conn:
             await _migrate_legacy_projects(conn)
@@ -193,7 +198,10 @@ class TestMigrateLegacyProjects:
             ]:
                 cols = ", ".join(params.keys())
                 vals = ", ".join(f":{k}" for k in params)
-                await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
+                await conn.execute(
+                    text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"),
+                    params,
+                )
 
             # Also insert one with NULL project
             null_params = {
@@ -241,7 +249,10 @@ class TestBackfillMissingPrompts:
             params2 = _opt("proj", "prompt B (orphaned)")
             cols2 = ", ".join(params2.keys())
             vals2 = ", ".join(f":{k}" for k in params2)
-            await conn.execute(text(f"INSERT INTO optimizations ({cols2}) VALUES ({vals2})"), params2)
+            await conn.execute(
+                text(f"INSERT INTO optimizations ({cols2}) VALUES ({vals2})"),
+                params2,
+            )
 
         # Run backfill
         async with db_engine.begin() as conn:
@@ -272,7 +283,10 @@ class TestBackfillMissingPrompts:
             orphan = _opt("proj", "orphaned content")
             cols2 = ", ".join(orphan.keys())
             vals2 = ", ".join(f":{k}" for k in orphan)
-            await conn.execute(text(f"INSERT INTO optimizations ({cols2}) VALUES ({vals2})"), orphan)
+            await conn.execute(
+                text(f"INSERT INTO optimizations ({cols2}) VALUES ({vals2})"),
+                orphan,
+            )
 
         # Run backfill_missing_prompts + backfill_prompt_ids
         async with db_engine.begin() as conn:
@@ -301,7 +315,10 @@ class TestBackfillMissingPrompts:
             orphan = _opt("proj", "orphan-once")
             cols2 = ", ".join(orphan.keys())
             vals2 = ", ".join(f":{k}" for k in orphan)
-            await conn.execute(text(f"INSERT INTO optimizations ({cols2}) VALUES ({vals2})"), orphan)
+            await conn.execute(
+                text(f"INSERT INTO optimizations ({cols2}) VALUES ({vals2})"),
+                orphan,
+            )
 
         # Run twice
         async with db_engine.begin() as conn:
@@ -331,7 +348,10 @@ class TestBackfillMissingPrompts:
             params = _opt("deleted-proj", "should-not-create")
             cols = ", ".join(params.keys())
             vals = ", ".join(f":{k}" for k in params)
-            await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
+            await conn.execute(
+                text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"),
+                params,
+            )
 
         async with db_engine.begin() as conn:
             await _backfill_missing_prompts(conn)
@@ -356,7 +376,10 @@ class TestBackfillMissingPrompts:
 
             # Simulate editing the prompt content (diverges from raw_prompt)
             await conn.execute(
-                text("UPDATE prompts SET content = 'edited content' WHERE content = 'original content'")
+                text(
+                    "UPDATE prompts SET content = 'edited content'"
+                    " WHERE content = 'original content'"
+                )
             )
 
         # Now raw_prompt='original content' doesn't match any prompt content,

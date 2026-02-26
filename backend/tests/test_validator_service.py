@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.prompts.validator_prompt import VALIDATOR_SYSTEM_PROMPT
-from app.providers.types import CompletionResponse, TokenUsage
+from app.providers.types import TokenUsage
 from app.services.validator import (
     CLARITY_WEIGHT,
     FAITHFULNESS_WEIGHT,
@@ -15,7 +15,6 @@ from app.services.validator import (
     STRUCTURE_WEIGHT,
     PromptValidator,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security — DevSecOps Hardening
+
+- **MCP server authentication**: `MCP_AUTH_TOKEN` env var enables bearer token auth on the MCP server (port 8001). When set, all requests except `/health` require `Authorization: Bearer <token>`. Disabled when empty (development mode). New `MCPAuthMiddleware` in `backend/app/middleware/mcp_auth.py`.
+- **Internal webhook authentication**: `INTERNAL_WEBHOOK_SECRET` env var (auto-generated to `data/.webhook_secret` if empty) secures the `POST /internal/mcp-event` webhook. MCP server sends `X-Webhook-Secret` header; backend validates with `hmac.compare_digest`. Returns 403 on mismatch.
+- **MCP localhost binding**: `init.sh` now binds MCP server to `127.0.0.1` instead of `0.0.0.0`. Docker compose removes the host port mapping for MCP (inter-container only). New `MCP_HOST` config var (default `127.0.0.1`).
+- **Security headers on MCP server**: `SecurityHeadersMiddleware` now mounted on the MCP Starlette app (same headers as the main backend).
+- **Database file permissions**: `init_db()` now sets `0o700` on `data/` directory and `0o600` on the SQLite database file (owner-only access).
+- **Encryption key validation**: `_get_fernet()` now validates the encryption key on first use by round-tripping a test string. Logs a CRITICAL warning if the key is mismatched or corrupted (e.g., after key file replacement).
+- **Build artifact cleanup**: Removed `.claude/`, `.sdk_integrated`, `app_spec.txt`, `claude-progress.txt`, `feature_list.json` from git tracking. Added all builder artifacts to `.gitignore`.
+
 ### Added — GitHub OAuth Setup UI & Security Hardening
 
 - **In-app OAuth configuration**: `GET/PUT/DELETE /api/github/config` endpoints for managing GitHub OAuth App credentials from within the Workspace Hub. Client secret stored Fernet-encrypted at rest; client ID returned as masked hint (`Iv1.****xxxx`) — secret never exposed in API responses.

@@ -8,14 +8,16 @@ GET  /api/mcp/status        — REST polling fallback
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app import config
 from app.services.mcp_activity import MCPActivityEvent, MCPEventType, mcp_activity
 
 logger = logging.getLogger(__name__)
@@ -41,11 +43,20 @@ class MCPEventPayload(BaseModel):
 
 
 @router.post("/internal/mcp-event", status_code=204)
-async def receive_mcp_event(payload: MCPEventPayload):
+async def receive_mcp_event(payload: MCPEventPayload, request: Request):
     """Receive an MCP tool event from the MCP server process.
 
     Internal endpoint — not exposed via CORS, exempt from auth.
+    Validated via X-Webhook-Secret header when INTERNAL_WEBHOOK_SECRET is set.
     """
+    expected = config.INTERNAL_WEBHOOK_SECRET
+    if expected:
+        provided = request.headers.get("X-Webhook-Secret", "")
+        if not hmac.compare_digest(provided, expected):
+            return JSONResponse(
+                {"error": "Invalid webhook secret"}, status_code=403,
+            )
+
     try:
         event_type = MCPEventType(payload.event_type)
     except ValueError:

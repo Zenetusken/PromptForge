@@ -19,6 +19,7 @@ from app.converters import (
     update_optimization_status,
 )
 from app.database import get_db, get_db_readonly
+from app.middleware.sanitize import sanitize_text
 from app.models.optimization import Optimization
 from app.providers import LLMProvider, get_provider
 from app.providers.errors import ProviderError
@@ -35,9 +36,8 @@ from app.schemas.context import (
     merge_contexts,
 )
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
-from app.middleware.sanitize import sanitize_text
-from app.services.stats_cache import invalidate_stats_cache
 from app.services.pipeline import PipelineComplete, run_pipeline, run_pipeline_streaming
+from app.services.stats_cache import invalidate_stats_cache
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +215,10 @@ async def optimize_prompt(
         proj_repo = ProjectRepository(db)
         existing_prompt = await proj_repo.get_prompt_by_id(request.prompt_id)
         if not existing_prompt:
-            raise HTTPException(status_code=400, detail="prompt_id does not reference a valid prompt")
+            raise HTTPException(
+                status_code=400,
+                detail="prompt_id does not reference a valid prompt",
+            )
         resolved_project_id = existing_prompt.project_id
 
     # Auto-create a Project record if a project name is provided
@@ -276,7 +279,8 @@ async def optimize_prompt(
 # Modular Orchestration Endpoints
 # ---------------------------------------------------------------------------
 
-from pydantic import BaseModel
+from pydantic import BaseModel  # noqa: E402
+
 
 class AnalyzeRequest(BaseModel):
     prompt: str
@@ -461,6 +465,7 @@ async def cancel_optimization(
 # ---------------------------------------------------------------------------
 
 from pydantic import Field as PydanticField  # noqa: E402 — batch schemas below
+
 
 class BatchOptimizeRequest(BaseModel):
     """Request for batch optimization of multiple prompts."""

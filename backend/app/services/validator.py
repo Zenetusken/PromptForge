@@ -119,8 +119,8 @@ class PromptValidator:
             is_improvement = False
         elif overall_rounded > 0.7 and not llm_is_improvement:
             logger.warning(
-                "is_improvement cross-check: LLM says not improvement but overall_score=%.4f > 0.7; "
-                "overriding to True",
+                "is_improvement cross-check: LLM says not improvement "
+                "but overall_score=%.4f > 0.7; overriding to True",
                 overall_rounded,
             )
             is_improvement = True

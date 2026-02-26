@@ -31,8 +31,12 @@ APP_DESCRIPTION = "AI-powered prompt optimization pipeline"
 
 # Security
 AUTH_TOKEN = os.getenv("AUTH_TOKEN", "")  # empty = auth disabled
+MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN", "")  # empty = MCP auth disabled
 RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "60"))
 RATE_LIMIT_OPTIMIZE_RPM = int(os.getenv("RATE_LIMIT_OPTIMIZE_RPM", "10"))
+
+# MCP Server
+MCP_HOST = os.getenv("MCP_HOST", "127.0.0.1")
 
 # LLM Provider
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")  # auto-detect when empty
@@ -53,3 +57,28 @@ GITHUB_SCOPE = os.getenv("GITHUB_SCOPE", "repo")
 
 # Encryption (Fernet symmetric key for token storage)
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
+
+
+def _resolve_webhook_secret() -> str:
+    """Resolve the internal webhook secret.
+
+    Priority: env var > file > auto-generate.
+    Parallels the ENCRYPTION_KEY auto-generation pattern.
+    """
+    secret = os.getenv("INTERNAL_WEBHOOK_SECRET", "")
+    if secret:
+        return secret
+    secret_file = BASE_DIR / "data" / ".webhook_secret"
+    if secret_file.exists():
+        return secret_file.read_text().strip()
+    # Auto-generate and persist
+    import secrets as _secrets
+
+    secret = _secrets.token_hex(32)
+    secret_file.parent.mkdir(parents=True, exist_ok=True)
+    secret_file.write_text(secret)
+    os.chmod(secret_file, 0o600)
+    return secret
+
+
+INTERNAL_WEBHOOK_SECRET = _resolve_webhook_secret()

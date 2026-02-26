@@ -53,11 +53,15 @@ from app.converters import (
     with_display_scores,
 )
 from app.database import async_session_factory, engine, init_db
-from app.services.mcp_activity import MCPEventType
-from app.services.stats_cache import get_stats_cached, invalidate_stats_cache
 from app.models.optimization import Optimization
 from app.models.project import Project, Prompt
 from app.providers.errors import ProviderError
+from app.repositories.optimization import (
+    _UNSET,
+    ListFilters,
+    OptimizationRepository,
+    Pagination,
+)
 from app.repositories.project import (
     ProjectFilters,
     ProjectPagination,
@@ -65,18 +69,14 @@ from app.repositories.project import (
     ensure_project_by_name,
     ensure_prompt_in_project,
 )
-from app.repositories.optimization import (
-    _UNSET,
-    ListFilters,
-    OptimizationRepository,
-    Pagination,
-)
 from app.schemas.context import (
     codebase_context_from_dict,
     context_to_dict,
     merge_contexts,
 )
+from app.services.mcp_activity import MCPEventType
 from app.services.pipeline import run_pipeline
+from app.services.stats_cache import get_stats_cached, invalidate_stats_cache
 from app.services.strategy_selector import _STRATEGY_DESCRIPTIONS, _STRATEGY_REASON_MAP
 from app.utils.scores import score_to_display
 
@@ -113,9 +113,13 @@ async def _emit_mcp_event(
             **{k: v for k, v in kwargs.items() if v is not None},
         }
         from app import config as _cfg
+        headers = {}
+        if _cfg.INTERNAL_WEBHOOK_SECRET:
+            headers["X-Webhook-Secret"] = _cfg.INTERNAL_WEBHOOK_SECRET
         await client.post(
             f"http://127.0.0.1:{_cfg.PORT}/internal/mcp-event",
             json=payload,
+            headers=headers,
         )
     except Exception:
         # MCP tools must never fail because the activity feed is down
@@ -135,7 +139,10 @@ async def _emit_tool_progress(progress: float, message: str | None = None) -> No
     ctx = _current_call_id.get()
     if ctx:
         tool_name, call_id = ctx
-        await _emit_mcp_event(MCPEventType.tool_progress, tool_name, call_id, progress=progress, message=message)
+        await _emit_mcp_event(
+            MCPEventType.tool_progress, tool_name, call_id,
+            progress=progress, message=message,
+        )
 
 
 def _extract_result_summary(result: Any) -> dict | None:
@@ -250,7 +257,10 @@ def _validate_uuid(value: str, field_name: str = "ID") -> None:
     Raises ToolError if the format is invalid.
     """
     if not _UUID_RE.match(value):
-        raise ToolError(f"Invalid {field_name} format: expected UUID (e.g. '550e8400-e29b-41d4-a716-446655440000')")
+        raise ToolError(
+            f"Invalid {field_name} format: expected UUID"
+            " (e.g. '550e8400-e29b-41d4-a716-446655440000')"
+        )
 
 
 def _validate_tags(tags: list[str]) -> None:
@@ -357,16 +367,16 @@ mcp = FastMCP(
 async def promptforge_optimize(
     prompt: Annotated[str, Field(description="The raw prompt text to optimize (1-100,000 chars)")],
     ctx: Context,
-    project: Annotated[str | None, Field(description="Project name to associate (max 100 chars). Auto-creates if new.")] = None,
-    tags: Annotated[list[str] | None, Field(description="Tags to attach (each max 50 chars)")] = None,
-    title: Annotated[str | None, Field(description="Title for the optimization (max 200 chars)")] = None,
-    strategy: Annotated[str | None, Field(description="Strategy override — skips auto-selection. Use the strategies tool to see valid values.")] = None,
-    secondary_frameworks: Annotated[list[str] | None, Field(description="Secondary frameworks (max 2) to combine with strategy. Use the strategies tool for valid values.")] = None,
-    prompt_id: Annotated[str | None, Field(description="UUID of an existing project prompt to link this optimization to")] = None,
-    version: Annotated[str | None, Field(description="Version label in 'v<number>' format (e.g. 'v1', 'v2')")] = None,
-    codebase_context: Annotated[dict | None, Field(description="Optional codebase context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in a real project.")] = None,
-    max_iterations: Annotated[int | None, Field(description="Max refinement iterations (1-5). Pipeline loops optimize+validate until score_threshold met.")] = None,
-    score_threshold: Annotated[float | None, Field(description="Target overall score (0.0-1.0). Pipeline iterates until reached.")] = None,
+    project: Annotated[str | None, Field(description="Project name to associate (max 100 chars). Auto-creates if new.")] = None,  # noqa: E501
+    tags: Annotated[list[str] | None, Field(description="Tags to attach (each max 50 chars)")] = None,  # noqa: E501
+    title: Annotated[str | None, Field(description="Title for the optimization (max 200 chars)")] = None,  # noqa: E501
+    strategy: Annotated[str | None, Field(description="Strategy override — skips auto-selection. Use the strategies tool to see valid values.")] = None,  # noqa: E501
+    secondary_frameworks: Annotated[list[str] | None, Field(description="Secondary frameworks (max 2) to combine with strategy. Use the strategies tool for valid values.")] = None,  # noqa: E501
+    prompt_id: Annotated[str | None, Field(description="UUID of an existing project prompt to link this optimization to")] = None,  # noqa: E501
+    version: Annotated[str | None, Field(description="Version label in 'v<number>' format (e.g. 'v1', 'v2')")] = None,  # noqa: E501
+    codebase_context: Annotated[dict | None, Field(description="Optional codebase context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in a real project.")] = None,  # noqa: E501
+    max_iterations: Annotated[int | None, Field(description="Max refinement iterations (1-5). Pipeline loops optimize+validate until score_threshold met.")] = None,  # noqa: E501
+    score_threshold: Annotated[float | None, Field(description="Target overall score (0.0-1.0). Pipeline iterates until reached.")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Run the full optimization pipeline on a prompt.
 
@@ -401,7 +411,10 @@ async def promptforge_optimize(
         for fw in secondary_frameworks:
             mapped = LEGACY_STRATEGY_ALIASES.get(fw, fw)
             if mapped not in valid:
-                raise ToolError(f"Unknown secondary framework {fw!r}. Valid: {', '.join(sorted(valid))}")
+                raise ToolError(
+                    f"Unknown secondary framework {fw!r}."
+                    f" Valid: {', '.join(sorted(valid))}"
+                )
             resolved.append(mapped)
         secondary_frameworks = resolved
     if max_iterations is not None and not (1 <= max_iterations <= 5):
@@ -454,7 +467,8 @@ async def promptforge_optimize(
         workspace_context = None
         project_context = None
         if project:
-            workspace_context = await WorkspaceRepository(session).get_workspace_context_by_project_name(project)
+            ws_repo = WorkspaceRepository(session)
+            workspace_context = await ws_repo.get_workspace_context_by_project_name(project)
             project_context = await ProjectRepository(session).get_context_by_name(project)
         base_context = merge_contexts(workspace_context, project_context)  # manual wins
         resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
@@ -530,8 +544,8 @@ async def promptforge_optimize(
 async def promptforge_retry(
     optimization_id: Annotated[str, Field(description="UUID of the optimization to retry")],
     ctx: Context,
-    strategy: Annotated[str | None, Field(description="Override strategy for the retry. Use the strategies tool for valid values.")] = None,
-    secondary_frameworks: Annotated[list[str] | None, Field(description="Override secondary frameworks (max 2). Use the strategies tool for valid values.")] = None,
+    strategy: Annotated[str | None, Field(description="Override strategy for the retry. Use the strategies tool for valid values.")] = None,  # noqa: E501
+    secondary_frameworks: Annotated[list[str] | None, Field(description="Override secondary frameworks (max 2). Use the strategies tool for valid values.")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Re-run an optimization, optionally with a different strategy.
 
@@ -560,7 +574,11 @@ async def promptforge_retry(
         tags=orig_tags,
         title=orig_title,
         strategy=strategy if strategy is not None else orig_strategy,
-        secondary_frameworks=secondary_frameworks if secondary_frameworks is not None else orig_secondary,
+        secondary_frameworks=(
+            secondary_frameworks
+            if secondary_frameworks is not None
+            else orig_secondary
+        ),
         prompt_id=orig_prompt_id,
         version=orig_version,
     )
@@ -623,13 +641,13 @@ async def promptforge_get(
 async def promptforge_list(
     project: Annotated[str | None, Field(description="Filter by project name")] = None,
     project_id: Annotated[str | None, Field(description="Filter by project UUID")] = None,
-    task_type: Annotated[str | None, Field(description="Filter by task type (e.g. 'coding', 'creative', 'reasoning')")] = None,
-    min_score: Annotated[float | None, Field(description="Minimum overall score filter (1-10 scale)")] = None,
-    search: Annotated[str | None, Field(description="Full-text search across prompt text")] = None,
-    include_archived: Annotated[bool, Field(description="Include items from archived projects")] = True,
+    task_type: Annotated[str | None, Field(description="Filter by task type (e.g. 'coding', 'creative', 'reasoning')")] = None,  # noqa: E501
+    min_score: Annotated[float | None, Field(description="Minimum overall score filter (1-10 scale)")] = None,  # noqa: E501
+    search: Annotated[str | None, Field(description="Full-text search across prompt text")] = None,  # noqa: E501
+    include_archived: Annotated[bool, Field(description="Include items from archived projects")] = True,  # noqa: E501
     limit: Annotated[int, Field(description="Max items to return (1-100)")] = 20,
     offset: Annotated[int, Field(description="Items to skip for pagination")] = 0,
-    sort: Annotated[str, Field(description="Sort field: 'created_at', 'overall_score', 'task_type'")] = "created_at",
+    sort: Annotated[str, Field(description="Sort field: 'created_at', 'overall_score', 'task_type'")] = "created_at",  # noqa: E501
     order: Annotated[str, Field(description="Sort order: 'asc' or 'desc'")] = "desc",
 ) -> dict[str, object]:
     """List optimizations with optional filters, sorting, and pagination.
@@ -688,7 +706,7 @@ async def promptforge_list(
 @_mcp_tracked("get_by_project")
 async def promptforge_get_by_project(
     project: Annotated[str, Field(description="Project name to retrieve optimizations for")],
-    include_prompts: Annotated[bool, Field(description="Include full prompt text in results")] = True,
+    include_prompts: Annotated[bool, Field(description="Include full prompt text in results")] = True,  # noqa: E501
     limit: Annotated[int, Field(description="Max items to return (1-100)")] = 50,
     offset: Annotated[int, Field(description="Items to skip for pagination")] = 0,
 ) -> dict[str, object]:
@@ -743,8 +761,8 @@ async def promptforge_get_by_project(
 )
 @_mcp_tracked("search")
 async def promptforge_search(
-    query: Annotated[str, Field(description="Search text (min 2 chars). Matches prompts, titles, tags, projects.")],
-    include_archived: Annotated[bool, Field(description="Include items from archived projects")] = True,
+    query: Annotated[str, Field(description="Search text (min 2 chars). Matches prompts, titles, tags, projects.")],  # noqa: E501
+    include_archived: Annotated[bool, Field(description="Include items from archived projects")] = True,  # noqa: E501
     limit: Annotated[int, Field(description="Max items to return (1-100)")] = 20,
     offset: Annotated[int, Field(description="Items to skip for pagination")] = 0,
 ) -> dict[str, object]:
@@ -799,10 +817,10 @@ async def promptforge_search(
 @_mcp_tracked("tag")
 async def promptforge_tag(
     optimization_id: Annotated[str, Field(description="UUID of the optimization to update")],
-    add_tags: Annotated[list[str] | None, Field(description="Tags to add (each max 50 chars)")] = None,
+    add_tags: Annotated[list[str] | None, Field(description="Tags to add (each max 50 chars)")] = None,  # noqa: E501
     remove_tags: Annotated[list[str] | None, Field(description="Tags to remove")] = None,
-    project: Annotated[str | None, Field(description="Set project name (max 100 chars; empty string to clear)")] = None,
-    title: Annotated[str | None, Field(description="Set title (max 200 chars; empty string to clear)")] = None,
+    project: Annotated[str | None, Field(description="Set project name (max 100 chars; empty string to clear)")] = None,  # noqa: E501
+    title: Annotated[str | None, Field(description="Set title (max 200 chars; empty string to clear)")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Add/remove tags, and/or set project and title on an optimization.
 
@@ -867,7 +885,7 @@ async def promptforge_tag(
 )
 @_mcp_tracked("stats")
 async def promptforge_stats(
-    project: Annotated[str | None, Field(description="Scope statistics to a specific project name")] = None,
+    project: Annotated[str | None, Field(description="Scope statistics to a specific project name")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Get usage statistics including totals, averages, and distributions.
 
@@ -904,7 +922,7 @@ async def promptforge_stats(
 )
 @_mcp_tracked("delete")
 async def promptforge_delete(
-    optimization_id: Annotated[str, Field(description="UUID of the optimization to permanently delete")],
+    optimization_id: Annotated[str, Field(description="UUID of the optimization to permanently delete")],  # noqa: E501
 ) -> dict[str, object]:
     """Permanently delete an optimization record. Cannot be undone."""
     _validate_uuid(optimization_id, "optimization_id")
@@ -979,11 +997,11 @@ async def promptforge_bulk_delete(
 )
 @_mcp_tracked("list_projects")
 async def promptforge_list_projects(
-    status: Annotated[str | None, Field(description="Filter by status: 'active' or 'archived'. Omit for all non-deleted.")] = None,
-    search: Annotated[str | None, Field(description="Search by project name or description")] = None,
+    status: Annotated[str | None, Field(description="Filter by status: 'active' or 'archived'. Omit for all non-deleted.")] = None,  # noqa: E501
+    search: Annotated[str | None, Field(description="Search by project name or description")] = None,  # noqa: E501
     limit: Annotated[int, Field(description="Max items to return (1-100)")] = 20,
     offset: Annotated[int, Field(description="Items to skip for pagination")] = 0,
-    sort: Annotated[str, Field(description="Sort field: 'created_at', 'updated_at', 'name'")] = "created_at",
+    sort: Annotated[str, Field(description="Sort field: 'created_at', 'updated_at', 'name'")] = "created_at",  # noqa: E501
     order: Annotated[str, Field(description="Sort order: 'asc' or 'desc'")] = "desc",
 ) -> dict[str, object]:
     """List projects with filtering and pagination. Excludes deleted by default.
@@ -1118,8 +1136,8 @@ async def promptforge_strategies() -> dict[str, object]:
 @_mcp_tracked("create_project")
 async def promptforge_create_project(
     name: Annotated[str, Field(description="Unique project name (1-100 chars)")],
-    description: Annotated[str | None, Field(description="Project description (max 2000 chars)")] = None,
-    context_profile: Annotated[dict | None, Field(description="Codebase context profile dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,
+    description: Annotated[str | None, Field(description="Project description (max 2000 chars)")] = None,  # noqa: E501
+    context_profile: Annotated[dict | None, Field(description="Codebase context profile dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Create a new project or reactivate a soft-deleted one with the same name.
 
@@ -1230,7 +1248,7 @@ async def promptforge_add_prompt(
 async def promptforge_update_prompt(
     prompt_id: Annotated[str, Field(description="UUID of the prompt to update")],
     content: Annotated[str, Field(description="New prompt content (1-100,000 chars)")],
-    optimization_id: Annotated[str | None, Field(description="UUID of the optimization that inspired this update (for version tracking)")] = None,
+    optimization_id: Annotated[str | None, Field(description="UUID of the optimization that inspired this update (for version tracking)")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Update prompt content with automatic versioning.
 
@@ -1285,7 +1303,7 @@ async def promptforge_update_prompt(
 @_mcp_tracked("set_project_context")
 async def promptforge_set_project_context(
     project_id: Annotated[str, Field(description="UUID of the project to update")],
-    context_profile: Annotated[dict | None, Field(description="Codebase context profile dict. Pass null to clear. Keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,
+    context_profile: Annotated[dict | None, Field(description="Codebase context profile dict. Pass null to clear. Keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Set or clear the codebase context profile on a project.
 
@@ -1359,7 +1377,10 @@ async def promptforge_batch(
     if strategy is not None:
         strategy = LEGACY_STRATEGY_ALIASES.get(strategy, strategy)
         if strategy not in valid_strategies:
-            raise ToolError(f"Unknown strategy {strategy!r}. Valid: {', '.join(sorted(valid_strategies))}")
+            raise ToolError(
+                f"Unknown strategy {strategy!r}."
+                f" Valid: {', '.join(sorted(valid_strategies))}"
+            )
 
     # Resolve project context once for the entire batch (3-layer: workspace → manual → explicit)
     from app.repositories.workspace import WorkspaceRepository
@@ -1367,7 +1388,8 @@ async def promptforge_batch(
     resolved_context = None
     if project:
         async with _repo_session() as (_repo, session):
-            workspace_context = await WorkspaceRepository(session).get_workspace_context_by_project_name(project)
+            ws_repo = WorkspaceRepository(session)
+            workspace_context = await ws_repo.get_workspace_context_by_project_name(project)
             project_context = await ProjectRepository(session).get_context_by_name(project)
             base_context = merge_contexts(workspace_context, project_context)  # manual wins
             resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
@@ -1418,7 +1440,7 @@ async def promptforge_batch(
                 strategy_override=strategy,
                 codebase_context=resolved_context,
             )
-            elapsed_ms = int((time.time() - start_time) * 1000)
+            _elapsed_ms = int((time.time() - start_time) * 1000)
 
             await update_optimization_status(
                 optimization_id,
@@ -1669,9 +1691,9 @@ async def resource_workspaces() -> str:
 # The SSE app is wrapped in a Starlette parent to add a /health endpoint
 # for connectivity probes from the main backend.
 
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
+from starlette.applications import Starlette  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
+from starlette.routing import Mount, Route  # noqa: E402
 
 
 async def mcp_health(request):
@@ -1679,11 +1701,22 @@ async def mcp_health(request):
     return JSONResponse({"status": "ok", "server": "promptforge_mcp"})
 
 
+from app.middleware.mcp_auth import MCPAuthMiddleware  # noqa: E402
+from app.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
+
 _mcp_sse = mcp.sse_app()
 app = Starlette(routes=[
     Route("/health", mcp_health),
     Mount("/", _mcp_sse),
 ])
+
+# Security middleware — order: outer (first to run) → inner (closest to handler)
+# 1. Security headers on all responses
+app.add_middleware(SecurityHeadersMiddleware)
+# 2. Bearer token auth (skips /health; disabled when MCP_AUTH_TOKEN is empty)
+from app import config as _app_config  # noqa: E402
+
+app.add_middleware(MCPAuthMiddleware, token=_app_config.MCP_AUTH_TOKEN)
 
 
 # --- Main entry point ---

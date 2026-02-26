@@ -16,7 +16,7 @@ from sqlalchemy.sql import Select
 from app.constants import ALLOWED_SORT_FIELDS, LEGACY_STRATEGY_ALIASES, OptimizationStatus
 from app.converters import deserialize_json_field
 from app.models.optimization import Optimization
-from app.models.project import Prompt, Project
+from app.models.project import Project, Prompt
 from app.utils.scores import round_score, score_threshold_to_db
 
 logger = logging.getLogger(__name__)
@@ -720,7 +720,7 @@ class OptimizationRepository:
                 if prev is None:
                     # SQLite variance workaround: stddev = sqrt(max(0, E[X^2] - E[X]^2))
                     avg_sq = srow.avg_score_sq if srow.avg_score_sq is not None else 0
-                    variance = max(0, avg_sq - srow.avg_score ** 2)
+                    _variance = max(0, avg_sq - srow.avg_score ** 2)
                     _var_accum[name] = {
                         "min": srow.min_score,
                         "max": srow.max_score,
@@ -792,7 +792,11 @@ class OptimizationRepository:
         # Finalize improvement by strategy
         improvement_by_strategy: dict[str, dict[str, float | int | None]] = {}
         for name, imp_data in _imp_accum.items():
-            rate = imp_data["improved"] / imp_data["validated"] if imp_data["validated"] > 0 else None
+            rate = (
+                imp_data["improved"] / imp_data["validated"]
+                if imp_data["validated"] > 0
+                else None
+            )
             improvement_by_strategy[name] = {
                 "improved": imp_data["improved"],
                 "validated": imp_data["validated"],

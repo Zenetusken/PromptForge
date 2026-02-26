@@ -8,16 +8,15 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
-from app.models.workspace import GitHubConnection, GitHubOAuthConfig, WorkspaceLink
+from app.models.workspace import GitHubConnection, WorkspaceLink
 from app.repositories.workspace import STALENESS_HOURS, WorkspaceRepository
 from app.services.github import (
+    _oauth_states,
     create_oauth_state,
     decrypt_token,
     encrypt_token,
     validate_oauth_state,
-    _oauth_states,
 )
-
 
 # --- Helpers ---
 
@@ -349,7 +348,7 @@ class TestLinkRepoEndpoint:
     async def test_link_invalid_repo_format(self, client, db_session):
         """Returns 400 for invalid repo_full_name format."""
         project = await _seed_project(db_session)
-        conn = await _seed_connection(db_session)
+        _conn = await _seed_connection(db_session)
         await db_session.commit()
 
         resp = await client.post("/api/workspace/link", json={
@@ -445,7 +444,10 @@ class TestWorkspaceStatusResponse:
         # Set last_synced_at to 25 hours ago (past staleness threshold)
         # Use naive UTC to match SQLite behavior
         link.sync_status = "synced"
-        link.last_synced_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=STALENESS_HOURS + 1)
+        link.last_synced_at = (
+            datetime.now(timezone.utc).replace(tzinfo=None)
+            - timedelta(hours=STALENESS_HOURS + 1)
+        )
         await db_session.flush()
 
         statuses = await repo.get_all_workspace_statuses()
@@ -651,7 +653,7 @@ class TestGitHubConfigEndpoints:
 
     @pytest.mark.asyncio
     async def test_delete_config_then_get_returns_unconfigured(self, client):
-        """After delete, GET /api/github/config shows configured: false (with env vars patched empty)."""
+        """After delete, GET shows configured: false (env vars empty)."""
         await client.put("/api/github/config", json={
             "client_id": "Iv1.test",
             "client_secret": "secret",

@@ -107,7 +107,10 @@ class TestRunWithProgressStream:
             return "done"
 
         events = []
-        async for event in _run_with_progress_stream(slow(), stage, {"strategy": "persona-assignment"}):
+        gen = _run_with_progress_stream(
+            slow(), stage, {"strategy": "persona-assignment"},
+        )
+        async for event in gen:
             events.append(event)
 
         sse_events = [e for e in events if isinstance(e, str)]

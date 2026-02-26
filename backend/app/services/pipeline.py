@@ -1,4 +1,7 @@
-"""Main optimization pipeline - orchestrates analysis, strategy selection, optimization, and validation."""
+"""Main optimization pipeline.
+
+Orchestrates analysis, strategy selection, optimization, and validation.
+"""
 
 import asyncio
 import json

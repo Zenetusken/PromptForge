@@ -474,7 +474,8 @@ class TestStrategyPropagation:
             {"task_type": "coding", "complexity": "medium",
              "weaknesses": ["Could be more concise"], "strengths": []},
             strategy_response={"strategy": "persona-assignment",
-                               "reasoning": "Coding benefits from expert role.", "confidence": 0.78},
+                               "reasoning": "Coding benefits from expert role.",
+                               "confidence": 0.78},
         )
         await run_pipeline("Write code", llm_provider=provider)
         assert _get_optimizer_strategy(captured) == Strategy.PERSONA_ASSIGNMENT

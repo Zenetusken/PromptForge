@@ -16,7 +16,6 @@ from app.repositories.optimization import (
 )
 from app.repositories.project import ProjectRepository, ensure_prompt_in_project
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -889,11 +888,20 @@ class TestDeletePrompt:
         proj = await _seed_project(db_session, name="orphan-proj")
         prompt = await _seed_prompt(db_session, proj, "orphan content")
         # Linked optimization (has prompt_id)
-        await _seed(db_session, id="linked", prompt_id=prompt.id, project="orphan-proj", raw_prompt="orphan content")
+        await _seed(
+            db_session, id="linked", prompt_id=prompt.id,
+            project="orphan-proj", raw_prompt="orphan content",
+        )
         # Unlinked optimization (prompt_id=None, same project + content)
-        await _seed(db_session, id="orphan", project="orphan-proj", raw_prompt="orphan content")
+        await _seed(
+            db_session, id="orphan",
+            project="orphan-proj", raw_prompt="orphan content",
+        )
         # Unrelated optimization (different content, same project)
-        await _seed(db_session, id="unrelated", project="orphan-proj", raw_prompt="different content")
+        await _seed(
+            db_session, id="unrelated",
+            project="orphan-proj", raw_prompt="different content",
+        )
 
         deleted = await repo.delete_prompt(prompt)
         assert deleted == 2  # linked + orphan
@@ -912,9 +920,18 @@ class TestGetStatsAnalytics:
     async def test_score_matrix(self, db_session):
         """score_matrix returns avg_score per strategy per task type."""
         repo = OptimizationRepository(db_session)
-        await _seed(db_session, id="a", strategy="chain-of-thought", task_type="coding", overall_score=0.8)
-        await _seed(db_session, id="b", strategy="chain-of-thought", task_type="coding", overall_score=0.6)
-        await _seed(db_session, id="c", strategy="chain-of-thought", task_type="writing", overall_score=0.9)
+        await _seed(
+            db_session, id="a", strategy="chain-of-thought",
+            task_type="coding", overall_score=0.8,
+        )
+        await _seed(
+            db_session, id="b", strategy="chain-of-thought",
+            task_type="coding", overall_score=0.6,
+        )
+        await _seed(
+            db_session, id="c", strategy="chain-of-thought",
+            task_type="writing", overall_score=0.9,
+        )
         await _seed(db_session, id="d", strategy="co-star", task_type="coding", overall_score=0.7)
         stats = await repo.get_stats()
         matrix = stats["score_matrix"]
@@ -984,9 +1001,18 @@ class TestGetStatsAnalytics:
     async def test_complexity_performance(self, db_session):
         """complexity_performance groups by strategy × complexity."""
         repo = OptimizationRepository(db_session)
-        await _seed(db_session, id="a", strategy="chain-of-thought", complexity="high", overall_score=0.7)
-        await _seed(db_session, id="b", strategy="chain-of-thought", complexity="low", overall_score=0.9)
-        await _seed(db_session, id="c", strategy="chain-of-thought", complexity="high", overall_score=0.5)
+        await _seed(
+            db_session, id="a", strategy="chain-of-thought",
+            complexity="high", overall_score=0.7,
+        )
+        await _seed(
+            db_session, id="b", strategy="chain-of-thought",
+            complexity="low", overall_score=0.9,
+        )
+        await _seed(
+            db_session, id="c", strategy="chain-of-thought",
+            complexity="high", overall_score=0.5,
+        )
         stats = await repo.get_stats()
         comp = stats["complexity_performance"]
         assert comp is not None
@@ -1017,9 +1043,18 @@ class TestGetStatsAnalytics:
     async def test_error_rates(self, db_session):
         """error_rates includes non-completed records for error rate computation."""
         repo = OptimizationRepository(db_session)
-        await _seed(db_session, id="a", strategy="chain-of-thought", status=OptimizationStatus.COMPLETED)
-        await _seed(db_session, id="b", strategy="chain-of-thought", status=OptimizationStatus.ERROR, overall_score=None)
-        await _seed(db_session, id="c", strategy="chain-of-thought", status=OptimizationStatus.ERROR, overall_score=None)
+        await _seed(
+            db_session, id="a", strategy="chain-of-thought",
+            status=OptimizationStatus.COMPLETED,
+        )
+        await _seed(
+            db_session, id="b", strategy="chain-of-thought",
+            status=OptimizationStatus.ERROR, overall_score=None,
+        )
+        await _seed(
+            db_session, id="c", strategy="chain-of-thought",
+            status=OptimizationStatus.ERROR, overall_score=None,
+        )
         stats = await repo.get_stats()
         err = stats["error_rates"]
         assert err is not None
@@ -1065,9 +1100,18 @@ class TestGetStatsAnalytics:
     async def test_win_rates(self, db_session):
         """win_rates identifies the best strategy per task type."""
         repo = OptimizationRepository(db_session)
-        await _seed(db_session, id="a", strategy="chain-of-thought", task_type="coding", overall_score=0.9)
-        await _seed(db_session, id="b", strategy="co-star", task_type="coding", overall_score=0.6)
-        await _seed(db_session, id="c", strategy="co-star", task_type="writing", overall_score=0.8)
+        await _seed(
+            db_session, id="a", strategy="chain-of-thought",
+            task_type="coding", overall_score=0.9,
+        )
+        await _seed(
+            db_session, id="b", strategy="co-star",
+            task_type="coding", overall_score=0.6,
+        )
+        await _seed(
+            db_session, id="c", strategy="co-star",
+            task_type="writing", overall_score=0.8,
+        )
         stats = await repo.get_stats()
         wins = stats["win_rates"]
         assert wins is not None
@@ -1112,8 +1156,14 @@ class TestGetStatsAnalytics:
     async def test_legacy_alias_in_score_matrix(self, db_session):
         """Legacy strategy aliases are normalized in score_matrix."""
         repo = OptimizationRepository(db_session)
-        await _seed(db_session, id="a", framework_applied="role-based", task_type="coding", overall_score=0.7)
-        await _seed(db_session, id="b", strategy="persona-assignment", task_type="coding", overall_score=0.9)
+        await _seed(
+            db_session, id="a", framework_applied="role-based",
+            task_type="coding", overall_score=0.7,
+        )
+        await _seed(
+            db_session, id="b", strategy="persona-assignment",
+            task_type="coding", overall_score=0.9,
+        )
         stats = await repo.get_stats()
         matrix = stats["score_matrix"]
         assert matrix is not None
