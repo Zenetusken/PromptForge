@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — GitHub OAuth Setup UI & Security Hardening
+
+- **In-app OAuth configuration**: `GET/PUT/DELETE /api/github/config` endpoints for managing GitHub OAuth App credentials from within the Workspace Hub. Client secret stored Fernet-encrypted at rest; client ID returned as masked hint (`Iv1.****xxxx`) — secret never exposed in API responses.
+- **Setup walkthrough UI**: When GitHub OAuth is not configured, the Workspace Hub GitHub tab shows a step-by-step setup form with direct links to GitHub Developer Settings and the "New OAuth App" creation page, input fields for Client ID / Secret, and a security note about Fernet encryption.
+- **Three-state GitHub tab**: Not configured (setup form) → Configured but not connected ("Connect GitHub" button) → Connected (user card + repos list). Driven by `github_configured` flag in workspace health.
+- **OAuth CSRF state validation** (security fix): `/api/github/callback` now validates the `state` parameter against a time-limited (10 min TTL), one-time-use in-memory store. Previously the state was generated but never verified.
+- **Auth middleware callback exemption**: `/api/github/callback` added to `_EXEMPT_PREFIXES` — the OAuth redirect target cannot carry a Bearer token.
+- **Sanitized exception logging**: Callback error logs now use `type(exc).__name__` instead of full exception details to prevent auth codes from appearing in logs.
+- **Config resolution**: DB-stored OAuth config takes priority over env vars. All OAuth endpoints (authorize, callback, disconnect/revoke) resolve credentials via `resolve_github_config()`.
+- **`github_configured` health flag**: Workspace health summary includes `github_configured: bool` so the frontend knows whether to show the setup form vs the connect button.
+- **`GitHubOAuthConfig` model**: New single-row table for in-app credential management with encrypted secret storage.
+- **`lock` icon**: Added lock icon to `Icon.svelte` for the security note in the setup form.
+- **Backend tests**: 25 new tests — OAuth state validation (6), config repository CRUD (5), config endpoints (8), health `github_configured` (3), callback state validation (2), auth middleware exemption (1).
+
+### Added — Workspace Hub: GitHub-Connected Dynamic Context Management
+
+- **GitHub OAuth integration**: Connect GitHub account via OAuth flow, list repos, link repos to PromptForge projects for automatic codebase context extraction. Token stored encrypted at rest (Fernet). New env vars: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`, `ENCRYPTION_KEY`.
+- **Three-layer context resolution**: Workspace auto-context (Layer 3, lowest priority) → manual `context_profile` (Layer 2) → per-request `codebase_context` (Layer 1, highest). Two chained `merge_contexts()` calls in `optimize.py`, `mcp_server.py` optimize/batch tools. Manual edits always preserved — workspace context only fills gaps.
+- **Deterministic context extraction** (`workspace_sync.py`): No LLM calls. Parses `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `pom.xml`, `Gemfile` for language/framework detection. Infers conventions from linter configs (`.eslintrc`, `ruff.toml`, `.prettierrc`), test frameworks from dev dependencies, and patterns from directory structure.
+- **Data model**: `github_connections` table (encrypted tokens, user info, token validity), `workspace_links` table (project FK with UNIQUE constraint, repo metadata, sync status, workspace_context JSON, dependencies/file_tree snapshots, sync_source). `Project.workspace_synced_at` column.
+- **Backend API** (`routers/github.py`): 9 new endpoints — `GET /api/github/authorize`, `GET /api/github/callback`, `GET /api/github/status`, `DELETE /api/github/disconnect`, `GET /api/github/repos`, `POST /api/workspace/link`, `DELETE /api/workspace/{id}`, `POST /api/workspace/{id}/sync`, `GET /api/workspace/status`.
+- **Health endpoint**: `workspace` section with `github_connected`, `github_username`, `total_links`, `synced`, `stale`, `errors` counts. Staleness threshold: 24 hours.
+- **MCP tool 20**: `sync_workspace` — allows Claude Code CLI to push workspace context (repo URL, file tree, dependencies, pre-analyzed context) for a project. Creates workspace link with `sync_source='claude-code'`.
+- **MCP resource**: `promptforge://workspaces` — returns all workspace link statuses with staleness info.
+- **Frontend Workspace Hub** (`WorkspaceWindow.svelte`): 3-tab persistent window (ID: `workspace-manager`). GitHub tab: connect/disconnect, searchable repo list, link to project. Workspaces tab: status table with sync/unlink, color-coded dots (green=synced, yellow=stale, red=error, gray=pending). Context Inspector tab: field-by-field source breakdown with completeness bar.
+- **Workspace Manager store** (`workspaceManager.svelte.ts`): Reactive state for GitHub connection, repos, workspace links. Actions: `checkGitHubStatus()`, `connectGitHub()`, `disconnectGitHub()`, `loadRepos()`, `linkRepo()`, `unlinkWorkspace()`, `syncWorkspace()`.
+- **OS integration**: Desktop icon (git-branch), Start Menu entry, `PERSISTENT_WINDOW_IDS` registration, bus events (`workspace:synced/error/connected/disconnected`), notification service subscriptions, MCP activity feed integration (`sync_workspace` in write tools).
+- **OAuth callback route** (`/github/callback`): SvelteKit page handles `?status=connected` / `?error=...`, updates store, redirects to Workspace Hub.
+- **ForgeContextSection**: Added `'workspace'` context source badge (green, "from workspace").
+- **Icon additions**: `github` (octocat) and `link` icons added to `Icon.svelte` type system.
+- **Backend tests**: 45 new tests — 15 for context extraction (React, Python/FastAPI, SvelteKit, empty, truncation), 30 for GitHub router (Fernet, repository CRUD, OAuth endpoints, workspace link CRUD, staleness detection, health).
+- **Frontend tests**: `PERSISTENT_WINDOW_IDS` count 11→12, desktop icon count 15→16 (10 system + 2 folder + 4 file), 2 new notification tests (`workspace:synced`, `workspace:error`).
+
+### Fixed — Notification System Audit
+
+- **Critical: `forge:completed` "Open in IDE" dead action** — notification handler read `event.payload.openInIDE` (always undefined) instead of constructing the callback from `optimizationId`; now self-contained via lazy `import()` just like MCP notifications
+- **Critical: `MCP_WRITE_TOOLS` incomplete** — `delete`, `bulk_delete`, `tag`, `add_prompt`, `update_prompt`, `set_project_context` were missing; MCP deletions did not trigger history reload, leaving stale data in the UI
+- **Moderate: `forge:cancelled` unhandled** — cancelling a forge produced no notification tray entry; now emits info notification with process title
+- **Moderate: `tournament:completed` unhandled** — tournament results (long-running multi-strategy forges) were only shown via a 4s auto-dismiss toast; now persisted in notification tray with best score, top strategy, and "Open in IDE" action
+- **Moderate: `mcp:session_disconnect` unhandled** — asymmetric with `session_connect`; now emits persistent error notification on MCP disconnect
+- NotificationService `subscribeToBus()` now registers 10 event handlers (was 7): added `forge:cancelled`, `tournament:completed`, `mcp:session_disconnect`
+- Added 7 new test cases to `notificationService.test.ts` covering all new handlers, MCP delete/bulk_delete notifications, and read-only tool filtering
+
+### Fixed — MCP Server Toast Deduplication (E3)
+
+- **Provider store MCP notifications routed through bus** — replaced direct `toastState.show()` calls for MCP server connect/disconnect with `systemBus.emit('mcp:session_connect'/'mcp:session_disconnect')`, unifying notification flow through the NotificationService (persistent tray entries, read/unread tracking, consistent UX)
+- **`mcp:session_connect` handler** — upgraded from `info` to `success` type, title changed from "MCP client connected" to "MCP connected" (accurate for server health-poll detection)
+- **`mcp:session_disconnect` handler** — upgraded from `info` to `error` type with `persistent: true`, title changed from "MCP client disconnected" to "MCP disconnected" (matches the severity of the old error toast)
+- Reactivated previously dead-code NotificationService handlers for `mcp:session_connect`/`mcp:session_disconnect`
+- Updated provider store tests to assert bus events instead of toast calls; added 2 new notification tests for connect/disconnect
+
+### Added — Last-Event-ID SSE Reconnection (E4)
+
+- Backend: `MCPActivityBroadcaster.get_history_after(event_id)` — returns events after a known ID for gap-fill on reconnect; falls back to `recent_history` if ID aged out of the 100-event buffer
+- Backend: SSE `id:` field on all `mcp_activity` events — enables browser-native and custom SSE clients to track stream position
+- Backend: `Last-Event-ID` header support on `GET /api/mcp/events` — on reconnect, replays only events since the last received ID instead of a full 20-event snapshot
+- Frontend: `MCPActivityFeed._lastEventId` tracking — set from parsed event data, sent as `Last-Event-ID` header on reconnect, cleared on reset
+- Backend: Added `tests/test_mcp_activity.py` with tests for broadcaster, `get_history_after()`, and SSE generator
+
 ### Added — MCP Live Bridge
 
 - Backend: **MCP Activity Broadcaster** (`backend/app/services/mcp_activity.py`) — in-memory event fan-out for real-time MCP tool call tracking with bounded history (100 events), subscriber queue management (max 256 per client), and active call state
