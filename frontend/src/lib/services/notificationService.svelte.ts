@@ -32,6 +32,17 @@ export interface NotifyConfig {
 	actionCallback?: () => void;
 }
 
+/** Human-readable names for non-pipeline MCP write tools. */
+const MCP_TOOL_FRIENDLY_NAMES: Record<string, string> = {
+	add_prompt: 'Prompt added',
+	update_prompt: 'Prompt updated',
+	set_project_context: 'Context profile updated',
+	tag: 'Tags updated',
+	create_project: 'Project created',
+	delete: 'Item deleted',
+	bulk_delete: 'Bulk delete complete',
+};
+
 const MAX_NOTIFICATIONS = 50;
 const STORAGE_KEY = 'pf_notifications';
 
@@ -146,13 +157,23 @@ class NotificationService {
 				const title = (event.payload.title as string) || 'Forge';
 				const score = event.payload.score as number | undefined;
 				const scoreText = score != null ? ` (score: ${score})` : '';
+				const optimizationId = event.payload.optimizationId as string | undefined;
 				this.notify({
 					type: 'success',
 					source: 'forge',
 					title: `${title} complete${scoreText}`,
 					body: event.payload.strategy as string | undefined,
-					actionLabel: 'Open in IDE',
-					actionCallback: event.payload.openInIDE as (() => void) | undefined,
+					actionLabel: optimizationId ? 'Open in IDE' : undefined,
+					actionCallback: optimizationId
+						? () => {
+								import('$lib/stores/optimization.svelte').then(({ optimizationState }) => {
+									import('$lib/stores/windowManager.svelte').then(({ windowManager }) => {
+										optimizationState.openInIDEFromHistory(optimizationId);
+										windowManager.openIDE();
+									});
+								});
+							}
+						: undefined,
 				});
 			}),
 
@@ -163,6 +184,39 @@ class NotificationService {
 					title: 'Forge failed',
 					body: (event.payload.error as string) || 'An unknown error occurred',
 					persistent: true,
+				});
+			}),
+
+			systemBus.on('forge:cancelled', (event) => {
+				const title = (event.payload.title as string) || 'Forge';
+				this.notify({
+					type: 'info',
+					source: 'forge',
+					title: `${title} cancelled`,
+				});
+			}),
+
+			systemBus.on('tournament:completed', (event) => {
+				const results = event.payload.results as Array<{ strategy: string; score: number; id: string }> | undefined;
+				const count = results?.length ?? 0;
+				const best = results?.[0];
+				const scoreText = best ? ` — best: ${best.score}/10` : '';
+				this.notify({
+					type: 'success',
+					source: 'forge',
+					title: `Tournament complete (${count} results${scoreText})`,
+					body: best ? `Top strategy: ${best.strategy}` : undefined,
+					actionLabel: best?.id ? 'Open in IDE' : undefined,
+					actionCallback: best?.id
+						? () => {
+								import('$lib/stores/optimization.svelte').then(({ optimizationState }) => {
+									import('$lib/stores/windowManager.svelte').then(({ windowManager }) => {
+										optimizationState.openInIDEFromHistory(best.id);
+										windowManager.openIDE();
+									});
+								});
+							}
+						: undefined,
 				});
 			}),
 
@@ -195,10 +249,14 @@ class NotificationService {
 				const score = summary?.overall_score as number | undefined;
 				const id = summary?.id as string | undefined;
 				const scoreText = score != null ? ` (score: ${score}/10)` : '';
+				const friendlyName = MCP_TOOL_FRIENDLY_NAMES[tool];
+				const title = friendlyName
+					? `MCP: ${friendlyName}${scoreText}`
+					: `MCP: ${tool} complete${scoreText}`;
 				this.notify({
 					type: 'info',
 					source: 'mcp',
-					title: `MCP: ${tool} complete${scoreText}`,
+					title,
 					body: id ? `ID: ${id.slice(0, 8)}...` : undefined,
 					actionLabel: id && tool !== 'cancel' ? 'Open in IDE' : undefined,
 					actionCallback: id && tool !== 'cancel'
@@ -226,9 +284,53 @@ class NotificationService {
 
 			systemBus.on('mcp:session_connect', () => {
 				this.notify({
-					type: 'info',
+					type: 'success',
 					source: 'mcp',
-					title: 'MCP client connected',
+					title: 'MCP connected',
+				});
+			}),
+
+			systemBus.on('mcp:session_disconnect', () => {
+				this.notify({
+					type: 'error',
+					source: 'mcp',
+					title: 'MCP disconnected',
+					persistent: true,
+				});
+			}),
+
+			// Workspace events
+			systemBus.on('workspace:synced', (event) => {
+				const project = event.payload.project_id as string | undefined;
+				this.notify({
+					type: 'success',
+					source: 'workspace',
+					title: 'Workspace synced',
+					body: project ? `Project workspace updated` : undefined,
+				});
+			}),
+
+			systemBus.on('workspace:error', (event) => {
+				this.notify({
+					type: 'error',
+					source: 'workspace',
+					title: 'Workspace sync failed',
+					body: (event.payload.error as string) || 'An error occurred during sync',
+					persistent: true,
+				});
+			}),
+
+			// Generic notification channel — any component can emit via bus
+			systemBus.on('notification:show', (event) => {
+				const p = event.payload as Record<string, unknown>;
+				this.notify({
+					type: (p.type as SystemNotification['type']) || 'info',
+					source: (p.source as string) || event.source,
+					title: (p.title as string) || 'Notification',
+					body: p.body as string | undefined,
+					persistent: p.persistent as boolean | undefined,
+					actionLabel: p.actionLabel as string | undefined,
+					actionCallback: p.actionCallback as (() => void) | undefined,
 				});
 			}),
 		);

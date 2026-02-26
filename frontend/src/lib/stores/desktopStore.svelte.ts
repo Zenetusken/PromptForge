@@ -149,6 +149,9 @@ const SYSTEM_CONTEXT_ACTIONS: Record<string, ContextAction[]> = {
 	'sys-network-monitor': [
 		{ id: 'open', label: 'Open', icon: 'activity' },
 	],
+	'sys-workspace-hub': [
+		{ id: 'open', label: 'Open', icon: 'git-branch' },
+	],
 	'sys-recycle-bin': [
 		{ id: 'open-bin', label: 'Open', icon: 'trash-2' },
 		{ id: 'empty-bin', label: 'Empty Recycle Bin', icon: 'trash-2', separator: true, danger: true },
@@ -260,6 +263,15 @@ function createDefaultIcons(): DesktopIconDef[] {
 			type: 'system',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-network-monitor'],
+		},
+		{
+			id: 'sys-workspace-hub',
+			label: 'Workspace Hub',
+			icon: 'git-branch',
+			color: 'green',
+			type: 'system',
+			position: { col: 0, row: 0 },
+			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-workspace-hub'],
 		},
 		{
 			id: RECYCLE_BIN_ID,
@@ -567,6 +579,8 @@ class DesktopStoreState {
 					windowManager.openWindow({ id: 'terminal', title: 'Terminal', icon: 'terminal' });
 				} else if (targetIconId === 'sys-network-monitor') {
 					windowManager.openNetworkMonitor();
+				} else if (targetIconId === 'sys-workspace-hub') {
+					windowManager.openWorkspaceHub();
 				} else if (targetIconId?.startsWith('shortcut-')) {
 					this._openShortcut(targetIconId);
 				}

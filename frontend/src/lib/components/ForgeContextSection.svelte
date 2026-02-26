@@ -194,6 +194,11 @@
 				class="ml-1.5 rounded-full bg-neon-green/10 px-1.5 py-0.5 text-[10px] leading-none text-neon-green"
 				>from template</span
 			>
+		{:else if forgeSession.draft.contextSource === "workspace"}
+			<span
+				class="ml-1.5 rounded-full bg-neon-green/10 px-1.5 py-0.5 text-[10px] leading-none text-neon-green"
+				>from workspace</span
+			>
 		{/if}
 		{#if hasContextData && !forgeSession.draft.contextSource}
 			<span class="collapsible-indicator bg-neon-green"></span>

@@ -11,6 +11,7 @@
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { forgeSession } from '$lib/stores/forgeSession.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
+	import { clipboardService } from '$lib/services/clipboardService.svelte';
 	import { fetchProject, type ProjectDetail } from '$lib/api/client';
 	import { formatRelativeTime, truncateText } from '$lib/utils/format';
 	import { toFilename } from '$lib/utils/fileTypes';
@@ -100,7 +101,7 @@
 			case 'copy-content': {
 				const prompt = activeProjectData?.prompts.find((p) => p.id === targetId);
 				if (prompt) {
-					navigator.clipboard.writeText(prompt.content);
+					clipboardService.copy(prompt.content, 'Prompt content');
 					toastState.show('Prompt content copied', 'success');
 				}
 				break;

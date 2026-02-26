@@ -645,6 +645,16 @@ export interface TokenBudgetStatus {
 	remaining: number | null;
 }
 
+export interface WorkspaceHealth {
+	github_configured: boolean;
+	github_connected: boolean;
+	github_username: string | null;
+	total_links: number;
+	synced: number;
+	stale: number;
+	errors: number;
+}
+
 export interface HealthResponse {
 	status: string;
 	claude_available: boolean;
@@ -655,6 +665,7 @@ export interface HealthResponse {
 	mcp_connected: boolean;
 	version: string;
 	token_budgets?: Record<string, TokenBudgetStatus>;
+	workspace?: WorkspaceHealth;
 }
 
 /** Fetch API health status. */
@@ -981,4 +992,111 @@ export async function fetchPromptForges(
 		`${BASE_URL}/projects/${projectId}/prompts/${promptId}/forges${qs ? '?' + qs : ''}`,
 		{ items: [], total: 0 },
 	);
+}
+
+// --- GitHub / Workspace API ---
+
+export interface GitHubStatus {
+	connected: boolean;
+	username?: string;
+	avatar_url?: string;
+	scopes?: string;
+	token_valid?: boolean;
+	connected_at?: string;
+}
+
+export interface GitHubRepo {
+	full_name: string;
+	name: string;
+	description: string | null;
+	language: string | null;
+	default_branch: string;
+	html_url: string;
+	private: boolean;
+	updated_at: string | null;
+}
+
+export interface WorkspaceLink {
+	id: string;
+	project_id: string;
+	repo_full_name: string;
+	repo_url: string;
+	default_branch: string;
+	sync_status: string;
+	last_synced_at?: string | null;
+}
+
+export interface WorkspaceStatus {
+	id: string;
+	project: string;
+	project_id: string;
+	repo: string;
+	repo_url: string;
+	branch: string;
+	synced_at: string | null;
+	stale: boolean;
+	sync_status: string;
+	sync_error: string | null;
+	sync_source: string;
+	context_completeness: number;
+}
+
+export async function fetchGitHubAuthorize(): Promise<{ url: string; state: string }> {
+	return apiFetchOrThrow(`${BASE_URL}/github/authorize`);
+}
+
+export async function fetchGitHubStatus(): Promise<GitHubStatus> {
+	return apiFetch(`${BASE_URL}/github/status`, { connected: false });
+}
+
+export async function disconnectGitHub(): Promise<{ status: string }> {
+	return apiFetchOrThrow(`${BASE_URL}/github/disconnect`, { method: 'DELETE' });
+}
+
+export async function fetchGitHubRepos(page = 1, perPage = 30): Promise<GitHubRepo[]> {
+	return apiFetchOrThrow(`${BASE_URL}/github/repos?page=${page}&per_page=${perPage}`);
+}
+
+export async function linkRepo(projectId: string, repoFullName: string): Promise<WorkspaceLink | null> {
+	return apiFetchOrThrow(`${BASE_URL}/workspace/link`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ project_id: projectId, repo_full_name: repoFullName }),
+	});
+}
+
+export async function unlinkWorkspace(linkId: string): Promise<{ status: string }> {
+	return apiFetchOrThrow(`${BASE_URL}/workspace/${linkId}`, { method: 'DELETE' });
+}
+
+export async function syncWorkspace(linkId: string): Promise<WorkspaceLink> {
+	return apiFetchOrThrow(`${BASE_URL}/workspace/${linkId}/sync`, { method: 'POST' });
+}
+
+export async function fetchWorkspaceStatuses(): Promise<WorkspaceStatus[]> {
+	return apiFetch(`${BASE_URL}/workspace/status`, []);
+}
+
+// --- GitHub OAuth Config API ---
+
+export interface GitHubConfigResponse {
+	configured: boolean;
+	client_id_hint: string;
+	source: string | null;
+}
+
+export async function fetchGitHubConfig(): Promise<GitHubConfigResponse> {
+	return apiFetch(`${BASE_URL}/github/config`, { configured: false, client_id_hint: '', source: null });
+}
+
+export async function saveGitHubConfig(clientId: string, clientSecret: string): Promise<{ configured: boolean }> {
+	return apiFetchOrThrow(`${BASE_URL}/github/config`, {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+	});
+}
+
+export async function deleteGitHubConfig(): Promise<{ status: string }> {
+	return apiFetchOrThrow(`${BASE_URL}/github/config`, { method: 'DELETE' });
 }

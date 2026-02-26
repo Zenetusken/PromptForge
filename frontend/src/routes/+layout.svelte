@@ -18,6 +18,7 @@
 	import TemplateLibraryWindow from "$lib/components/TemplateLibraryWindow.svelte";
 	import TerminalWindow from "$lib/components/TerminalWindow.svelte";
 	import NetworkMonitorWindow from "$lib/components/NetworkMonitorWindow.svelte";
+	import WorkspaceWindow from "$lib/components/WorkspaceWindow.svelte";
 	import CommandPaletteUI from "$lib/components/CommandPaletteUI.svelte";
 	import ConfirmModal from "$lib/components/ConfirmModal.svelte";
 	import { desktopStore } from "$lib/stores/desktopStore.svelte";
@@ -36,6 +37,7 @@
 	import { commandPalette } from "$lib/services/commandPalette.svelte";
 	import { clipboardService } from "$lib/services/clipboardService.svelte";
 	import { mcpActivityFeed, MCP_WRITE_TOOLS } from "$lib/services/mcpActivityFeed.svelte";
+	import { workspaceManager } from "$lib/stores/workspaceManager.svelte";
 	import { saveActiveTabState, restoreTabState } from "$lib/stores/tabCoherence";
 	import type { WorkspaceTab } from "$lib/stores/forgeSession.svelte";
 	import { onMount } from "svelte";
@@ -424,6 +426,14 @@
 		}
 	});
 
+	// Sync workspace health data from provider polling → workspaceManager
+	$effect(() => {
+		const workspace = providerState.health?.workspace;
+		if (workspace) {
+			workspaceManager.updateFromHealth(workspace);
+		}
+	});
+
 	// Keep History window title in sync
 	$effect(() => {
 		const count = historyState.total;
@@ -577,6 +587,17 @@
 						icon="activity"
 					>
 						<NetworkMonitorWindow />
+					</DesktopWindow>
+				{/if}
+
+				<!-- Workspace Hub Window -->
+				{#if windowManager.getWindow('workspace-manager')}
+					<DesktopWindow
+						windowId="workspace-manager"
+						title="Workspace Hub"
+						icon="git-branch"
+					>
+						<WorkspaceWindow />
 					</DesktopWindow>
 				{/if}
 

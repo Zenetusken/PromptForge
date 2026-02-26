@@ -1,6 +1,6 @@
 import { fetchHealth, fetchProviders, validateApiKey, type HealthResponse, type LLMHeaders, type ProviderInfo, type TokenBudgetStatus, type ValidateKeyResponse } from '$lib/api/client';
 import { settingsState } from '$lib/stores/settings.svelte';
-import { toastState } from '$lib/stores/toast.svelte';
+import { systemBus } from '$lib/services/systemBus.svelte';
 import { maskApiKey } from '$lib/utils/format';
 
 const STORAGE_PREFIX = 'pf_key_';
@@ -242,13 +242,13 @@ class ProviderState {
 			if (result) {
 				const mcpNow = result.mcp_connected;
 				if (this._mcpFirstPoll) {
-					// Skip toast on initial page load
+					// Skip notification on initial page load
 					this._mcpFirstPoll = false;
 				} else if (this._mcpPreviousState !== null && mcpNow !== this._mcpPreviousState) {
 					if (mcpNow) {
-						toastState.show('MCP server connected', 'success');
+						systemBus.emit('mcp:session_connect', 'provider', {});
 					} else {
-						toastState.show('MCP server disconnected', 'error', 5000);
+						systemBus.emit('mcp:session_disconnect', 'provider', {});
 					}
 				}
 				this._mcpPreviousState = mcpNow;

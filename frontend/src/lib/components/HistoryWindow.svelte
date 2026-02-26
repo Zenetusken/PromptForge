@@ -10,6 +10,7 @@
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { forgeSession } from '$lib/stores/forgeSession.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
+	import { clipboardService } from '$lib/services/clipboardService.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { fetchOptimization, type HistorySummaryItem } from '$lib/api/client';
 	import { formatRelativeTime, truncateText, normalizeScore, getScoreBadgeClass } from '$lib/utils/format';
@@ -80,7 +81,7 @@
 			case 'copy-result':
 				fetchAndAct(targetId, (item) => {
 					if (item.optimized_prompt) {
-						navigator.clipboard.writeText(item.optimized_prompt);
+						clipboardService.copy(item.optimized_prompt, 'Optimized prompt');
 						toastState.show('Optimized prompt copied', 'success');
 					} else {
 						toastState.show('No optimized prompt to copy', 'info');

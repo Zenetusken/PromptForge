@@ -31,7 +31,7 @@ export const PERSISTENT_WINDOW_IDS = new Set([
 	'ide', 'recycle-bin', 'projects', 'history',
 	'control-panel', 'task-manager',
 	'batch-processor', 'strategy-workshop', 'template-library', 'terminal',
-	'network-monitor',
+	'network-monitor', 'workspace-manager',
 ]);
 
 export interface BreadcrumbSegment {
@@ -352,6 +352,10 @@ class WindowManagerState {
 
 	openNetworkMonitor() {
 		return this.openWindow({ id: 'network-monitor', title: 'Network Monitor', icon: 'activity' });
+	}
+
+	openWorkspaceHub() {
+		return this.openWindow({ id: 'workspace-manager', title: 'Workspace Hub', icon: 'git-branch' });
 	}
 
 	// ── Persistence ──

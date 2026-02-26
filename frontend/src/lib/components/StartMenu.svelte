@@ -179,6 +179,13 @@
 							<Icon name="terminal" size={13} class="text-neon-cyan" />
 							Forge IDE
 						</button>
+						<button
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+							onclick={() => { windowManager.openWorkspaceHub(); close(); }}
+						>
+							<Icon name="git-branch" size={13} class="text-neon-green" />
+							Workspace Hub
+						</button>
 						<a
 							href={import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/docs` : '/docs'}
 							target="_blank"

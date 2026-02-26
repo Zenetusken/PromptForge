@@ -245,7 +245,12 @@ class OptimizationState {
 				status: s.status === 'running' ? ('error' as const) : s.status
 			}));
 		}
-		toastState.show(this.error, 'error');
+		// Only toast for standalone orchestration calls (no active process).
+		// Forge errors go through processScheduler.fail() → forge:failed bus event
+		// → NotificationService handles feedback, so no toast needed there.
+		if (!this._activeProcessId) {
+			toastState.show(this.error, 'error');
+		}
 	}
 
 	private _onStreamError = (err: Error) => {
@@ -429,7 +434,6 @@ class OptimizationState {
 						status: 'complete' as const
 					}));
 				}
-				toastState.show('Optimization complete!', 'success');
 				// Push to rolling history for comparison (keep last 10)
 				if (this.forgeResult.id) {
 					this.resultHistory = [this.forgeResult, ...this.resultHistory].slice(0, 10);
@@ -531,6 +535,7 @@ class OptimizationState {
 		this.forgeResult = null;
 		this.viewResult = null;
 		this.error = null;
+		this._activeProcessId = null;
 	}
 
 	/**
@@ -617,7 +622,6 @@ class OptimizationState {
 		systemBus.emit('tournament:completed', 'optimization', {
 			results: valid.map(r => ({ strategy: r.strategy, score: r.score, id: r.id })),
 		});
-		toastState.show(`Tournament complete! ${valid.length} results.`, 'success');
 		// Reload history
 		setTimeout(() => {
 			historyState.loadHistory();

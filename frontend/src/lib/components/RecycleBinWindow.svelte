@@ -68,6 +68,7 @@
 			desktopStore.permanentlyDeleteItem(confirmDeleteId);
 			if (selectedId === confirmDeleteId) selectedId = null;
 			confirmDeleteId = null;
+			toastState.show('Item permanently deleted', 'success');
 		}
 	}
 
@@ -79,6 +80,7 @@
 		desktopStore.emptyRecycleBin();
 		selectedId = null;
 		confirmEmpty = false;
+		toastState.show('Recycle Bin emptied', 'success');
 	}
 </script>
 

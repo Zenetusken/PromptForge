@@ -17,7 +17,7 @@ export interface ForgeSessionDraft {
 	strategy: string;
 	secondaryStrategies: string[];
 	contextProfile: CodebaseContext | null;
-	contextSource: 'manual' | 'project' | 'template' | null;
+	contextSource: 'manual' | 'project' | 'template' | 'workspace' | null;
 	activeTemplateId: string | null;
 }
 

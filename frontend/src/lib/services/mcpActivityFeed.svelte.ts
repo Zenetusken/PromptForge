@@ -69,7 +69,11 @@ const EVENT_TYPE_MAP: Record<string, BusEventType> = {
 };
 
 /** MCP tool names that modify data — used for notifications and history reload. */
-export const MCP_WRITE_TOOLS = ['optimize', 'retry', 'batch', 'create_project', 'cancel'] as const;
+export const MCP_WRITE_TOOLS = [
+	'optimize', 'retry', 'batch', 'cancel',
+	'create_project', 'add_prompt', 'update_prompt', 'set_project_context',
+	'delete', 'bulk_delete', 'tag', 'sync_workspace',
+] as const;
 
 /**
  * Canonical mapping of MCP tool names → Tailwind text color classes.
@@ -98,6 +102,8 @@ export const MCP_TOOL_COLORS: Record<string, string> = {
 	add_prompt: 'text-neon-green',
 	update_prompt: 'text-neon-green',
 	set_project_context: 'text-neon-green',
+	// Workspace
+	sync_workspace: 'text-neon-green',
 	// Destructive
 	delete: 'text-neon-red',
 	bulk_delete: 'text-neon-red',
@@ -119,6 +125,7 @@ class MCPActivityFeed {
 	private _backoff = INITIAL_BACKOFF;
 	private _snapshotPhase = true;
 	private _snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+	private _lastEventId: string | null = null;
 
 	/**
 	 * Start the SSE connection. Returns a cleanup function.
@@ -156,6 +163,7 @@ class MCPActivityFeed {
 		this.activeCalls = [];
 		this.sessionCount = 0;
 		this.totalEventsReceived = 0;
+		this._lastEventId = null;
 	}
 
 	private async _startStream(): Promise<void> {
@@ -166,9 +174,13 @@ class MCPActivityFeed {
 		const { signal } = this._abortController;
 
 		try {
+			const headers: Record<string, string> = { Accept: 'text/event-stream' };
+			if (this._lastEventId) {
+				headers['Last-Event-ID'] = this._lastEventId;
+			}
 			const response = await fetch(`${API_BASE}/api/mcp/events`, {
 				signal,
-				headers: { Accept: 'text/event-stream' },
+				headers,
 			});
 
 			if (!response.ok || !response.body) {
@@ -204,6 +216,8 @@ class MCPActivityFeed {
 						currentEventType = line.slice(7).trim();
 					} else if (line.startsWith('data: ')) {
 						currentData = line.slice(6);
+					} else if (line.startsWith('id: ')) {
+						// SSE protocol id field — tracked via parsed JSON in _handleActivity
 					} else if (line === '' && currentEventType && currentData) {
 						this._handleSSEEvent(currentEventType, currentData);
 						currentEventType = '';
@@ -264,6 +278,11 @@ class MCPActivityFeed {
 	}
 
 	private _handleActivity(event: MCPActivityEvent): void {
+		// Track for Last-Event-ID reconnection
+		if (event.id) {
+			this._lastEventId = event.id;
+		}
+
 		// Add to events list (newest first)
 		this.events = [event, ...this.events].slice(0, MAX_EVENTS);
 		this.totalEventsReceived++;

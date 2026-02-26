@@ -29,7 +29,11 @@ export type BusEventType =
 	| 'mcp:tool_complete'
 	| 'mcp:tool_error'
 	| 'mcp:session_connect'
-	| 'mcp:session_disconnect';
+	| 'mcp:session_disconnect'
+	| 'workspace:synced'
+	| 'workspace:error'
+	| 'workspace:connected'
+	| 'workspace:disconnected';
 
 export interface BusEvent {
 	type: BusEventType;
