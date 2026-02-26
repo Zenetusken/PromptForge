@@ -1,0 +1,215 @@
+<script lang="ts">
+	import { settingsState, NEON_COLORS, type NeonColor } from '$lib/stores/settings.svelte';
+	import { providerState } from '$lib/stores/provider.svelte';
+	import { processScheduler } from '$lib/stores/processScheduler.svelte';
+	import { ALL_STRATEGIES } from '$lib/utils/strategies';
+	import Icon from './Icon.svelte';
+
+	let activeTab: 'providers' | 'pipeline' | 'display' | 'system' = $state('providers');
+
+	const tabs = [
+		{ id: 'providers' as const, label: 'Providers', icon: 'cpu' as const },
+		{ id: 'pipeline' as const, label: 'Pipeline', icon: 'git-branch' as const },
+		{ id: 'display' as const, label: 'Display', icon: 'monitor' as const },
+		{ id: 'system' as const, label: 'System', icon: 'settings' as const },
+	];
+
+	const strategies = ['', ...ALL_STRATEGIES];
+
+	// Map neon color names to their CSS hex values for preview swatches
+	const COLOR_HEX: Record<NeonColor, string> = {
+		'neon-cyan': '#00e5ff',
+		'neon-purple': '#a855f7',
+		'neon-green': '#22ff88',
+		'neon-red': '#ff3366',
+		'neon-yellow': '#fbbf24',
+		'neon-orange': '#ff8c00',
+		'neon-blue': '#4d8eff',
+		'neon-pink': '#ff6eb4',
+		'neon-teal': '#00d4aa',
+		'neon-indigo': '#7b61ff',
+	};
+</script>
+
+<div class="flex h-full flex-col bg-bg-primary text-text-primary font-mono">
+	<!-- Tab strip -->
+	<div class="flex border-b border-neon-cyan/10">
+		{#each tabs as tab (tab.id)}
+			<button
+				class="flex items-center gap-1.5 px-3 py-2 text-[11px] transition-colors
+					{activeTab === tab.id
+						? 'border-b border-neon-cyan text-neon-cyan bg-neon-cyan/5'
+						: 'text-text-dim hover:text-text-secondary hover:bg-bg-hover'}"
+				onclick={() => activeTab = tab.id}
+			>
+				<Icon name={tab.icon} size={11} />
+				{tab.label}
+			</button>
+		{/each}
+	</div>
+
+	<!-- Content -->
+	<div class="flex-1 overflow-y-auto p-4 space-y-4">
+		{#if activeTab === 'providers'}
+			<div class="space-y-3">
+				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Provider Configuration</h3>
+				<div class="space-y-2">
+					<div class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">Active Provider</span>
+						<span class="text-xs text-neon-green">{providerState.health?.llm_provider || 'Auto-detect'}</span>
+					</div>
+					<div class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">Model</span>
+						<span class="text-xs text-text-primary">{providerState.health?.llm_model || 'Default'}</span>
+					</div>
+					<div class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">Status</span>
+						<span class="text-xs {providerState.health?.llm_available ? 'text-neon-green' : 'text-neon-red'}">
+							{providerState.health?.llm_available ? 'Connected' : 'Unavailable'}
+						</span>
+					</div>
+				</div>
+			</div>
+
+		{:else if activeTab === 'pipeline'}
+			<div class="space-y-3">
+				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Pipeline Defaults</h3>
+				<div class="space-y-2">
+					<label class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">Default Strategy</span>
+						<select
+							class="bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none focus:border-neon-cyan/30"
+							value={settingsState.defaultStrategy}
+							onchange={(e) => settingsState.update({ defaultStrategy: (e.target as HTMLSelectElement).value })}
+						>
+							{#each strategies as s}
+								<option value={s}>{s || 'Auto-select'}</option>
+							{/each}
+						</select>
+					</label>
+					<label class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">Max Concurrent Forges</span>
+						<input
+							type="number"
+							min="1"
+							max="5"
+							class="w-16 bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none text-center focus:border-neon-cyan/30"
+							value={settingsState.maxConcurrentForges}
+							onchange={(e) => {
+								const val = parseInt((e.target as HTMLInputElement).value) || 2;
+								settingsState.update({ maxConcurrentForges: Math.max(1, Math.min(5, val)) });
+							}}
+						/>
+					</label>
+					<label class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">Auto-retry on Rate Limit</span>
+						<input
+							type="checkbox"
+							class="accent-neon-cyan"
+							checked={settingsState.autoRetryOnRateLimit}
+							onchange={(e) => settingsState.update({ autoRetryOnRateLimit: (e.target as HTMLInputElement).checked })}
+						/>
+					</label>
+				</div>
+			</div>
+
+		{:else if activeTab === 'display'}
+			<div class="space-y-3">
+				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Accent Color</h3>
+				<div class="grid grid-cols-5 gap-2">
+					{#each NEON_COLORS as color (color)}
+						<button
+							class="flex items-center justify-center w-8 h-8 border transition-colors
+								{settingsState.accentColor === color
+									? 'border-white/60'
+									: 'border-transparent hover:border-white/20'}"
+							onclick={() => settingsState.update({ accentColor: color })}
+							title={color.replace('neon-', '')}
+						>
+							<span
+								class="w-4 h-4"
+								style="background-color: {COLOR_HEX[color]}"
+							></span>
+						</button>
+					{/each}
+				</div>
+
+				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider pt-2">Animations</h3>
+				<label class="flex items-center justify-between">
+					<span class="text-xs text-text-secondary">Enable Animations</span>
+					<input
+						type="checkbox"
+						class="accent-neon-cyan"
+						checked={settingsState.enableAnimations}
+						onchange={(e) => settingsState.update({ enableAnimations: (e.target as HTMLInputElement).checked })}
+					/>
+				</label>
+			</div>
+
+		{:else if activeTab === 'system'}
+			<div class="space-y-3">
+				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">System Info</h3>
+				<div class="space-y-2">
+					<div class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">Backend Version</span>
+						<span class="text-xs text-text-primary">{providerState.health?.version || 'Unknown'}</span>
+					</div>
+					<div class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">DB Connected</span>
+						<span class="text-xs {providerState.health?.db_connected ? 'text-neon-green' : 'text-neon-red'}">
+							{providerState.health?.db_connected ? 'Yes' : 'No'}
+						</span>
+					</div>
+					<div class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">MCP Connected</span>
+						<span class="text-xs {providerState.health?.mcp_connected ? 'text-neon-green' : 'text-neon-red'}">
+							{providerState.health?.mcp_connected ? 'Yes' : 'No'}
+						</span>
+					</div>
+					<div class="flex items-center justify-between">
+						<span class="text-xs text-text-secondary">Active Processes</span>
+						<span class="text-xs text-text-primary">{processScheduler.runningCount} running, {processScheduler.queue.length} queued</span>
+					</div>
+				</div>
+
+				{#if Object.keys(providerState.tokenBudgets).length > 0}
+					<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider pt-2">Token Usage</h3>
+					<div class="space-y-2">
+						{#each Object.entries(providerState.tokenBudgets) as [provider, budget]}
+							<div class="border border-neon-cyan/10 p-2 space-y-1">
+								<div class="text-xs text-neon-cyan font-medium">{provider}</div>
+								<div class="flex items-center justify-between">
+									<span class="text-[10px] text-text-dim">Requests</span>
+									<span class="text-[10px] text-text-primary">{budget.request_count}</span>
+								</div>
+								<div class="flex items-center justify-between">
+									<span class="text-[10px] text-text-dim">Input tokens</span>
+									<span class="text-[10px] text-text-primary">{budget.input_tokens_used.toLocaleString()}</span>
+								</div>
+								<div class="flex items-center justify-between">
+									<span class="text-[10px] text-text-dim">Output tokens</span>
+									<span class="text-[10px] text-text-primary">{budget.output_tokens_used.toLocaleString()}</span>
+								</div>
+								{#if budget.daily_limit != null}
+									<div class="flex items-center justify-between">
+										<span class="text-[10px] text-text-dim">Remaining</span>
+										<span class="text-[10px] {(budget.remaining ?? 0) > 0 ? 'text-neon-green' : 'text-neon-red'}">
+											{budget.remaining?.toLocaleString() ?? '0'}
+										</span>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<button
+					class="mt-2 border border-neon-red/20 px-3 py-1.5 text-[11px] text-neon-red hover:bg-neon-red/10 transition-colors"
+					onclick={() => settingsState.reset()}
+				>
+					Reset All Settings
+				</button>
+			</div>
+		{/if}
+	</div>
+</div>
