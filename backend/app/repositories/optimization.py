@@ -374,35 +374,35 @@ class OptimizationRepository:
 
         if not filters.include_archived:
             # Exclude optimizations linked to archived or deleted projects
-            # (both FK and legacy paths). Uses NOT IN on optimization IDs to
-            # avoid SQL NULL logic issues.
+            # (both FK and legacy paths). Uses NOT EXISTS correlated subqueries
+            # instead of NOT IN to avoid materializing the full result set.
             arch_prompt = Prompt.__table__.alias("arch_prompt")
             arch_proj_fk = Project.__table__.alias("arch_proj_fk")
             arch_proj_leg = Project.__table__.alias("arch_proj_leg")
             hidden_statuses = ["archived", "deleted"]
-            # IDs linked via FK to archived/deleted projects
-            exclude_fk = (
-                select(Optimization.id)
-                .join(arch_prompt, Optimization.prompt_id == arch_prompt.c.id)
+
+            # NOT EXISTS for FK path: prompt → project with hidden status
+            fk_exists = (
+                select(1)
+                .select_from(arch_prompt)
                 .join(arch_proj_fk, arch_prompt.c.project_id == arch_proj_fk.c.id)
+                .where(arch_prompt.c.id == Optimization.prompt_id)
                 .where(arch_proj_fk.c.status.in_(hidden_statuses))
+                .correlate(Optimization)
             )
-            # IDs linked via legacy project name to archived/deleted projects
-            exclude_legacy = (
-                select(Optimization.id)
-                .where(
-                    and_(
-                        Optimization.prompt_id.is_(None),
-                        Optimization.project.in_(
-                            select(arch_proj_leg.c.name)
-                            .where(arch_proj_leg.c.status.in_(hidden_statuses))
-                        ),
-                    )
-                )
+
+            # NOT EXISTS for legacy path: project name match with hidden status
+            legacy_exists = (
+                select(1)
+                .select_from(arch_proj_leg)
+                .where(arch_proj_leg.c.name == Optimization.project)
+                .where(arch_proj_leg.c.status.in_(hidden_statuses))
+                .where(Optimization.prompt_id.is_(None))
+                .correlate(Optimization)
             )
-            conditions.append(
-                Optimization.id.notin_(exclude_fk.union(exclude_legacy))
-            )
+
+            conditions.append(~fk_exists.exists())
+            conditions.append(~legacy_exists.exists())
 
         for cond in conditions:
             query = query.where(cond)

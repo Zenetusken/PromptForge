@@ -122,17 +122,32 @@ def optimization_to_dict(opt: Optimization) -> dict[str, Any]:
     return fields
 
 
-_SUMMARY_FIELDS = frozenset({
-    "id", "raw_prompt", "task_type", "complexity", "overall_score",
-    "strategy", "secondary_frameworks", "framework_applied", "model_used",
-    "status", "error_message", "project", "tags",
-    "title", "version", "prompt_id", "project_id", "project_status",
-})
-
-
 def _extract_summary_fields(opt: Optimization) -> dict[str, Any]:
-    """Extract the lightweight summary field set from _extract_optimization_fields."""
-    return {k: v for k, v in _extract_optimization_fields(opt).items() if k in _SUMMARY_FIELDS}
+    """Extract the lightweight summary field set directly from an Optimization ORM object.
+
+    Only deserializes the 2 JSON fields needed for summaries (tags, secondary_frameworks),
+    avoiding the 4 extra json.loads() calls that _extract_optimization_fields() would do.
+    """
+    return {
+        "id": opt.id,
+        "raw_prompt": opt.raw_prompt,
+        "task_type": opt.task_type,
+        "complexity": opt.complexity,
+        "overall_score": opt.overall_score,
+        "strategy": opt.strategy,
+        "secondary_frameworks": deserialize_json_field(opt.secondary_frameworks),
+        "framework_applied": opt.framework_applied,
+        "model_used": opt.model_used,
+        "status": opt.status,
+        "error_message": opt.error_message,
+        "project": opt.project,
+        "tags": deserialize_json_field(opt.tags),
+        "title": opt.title,
+        "version": opt.version,
+        "prompt_id": opt.prompt_id,
+        "project_id": getattr(opt, "_resolved_project_id", None),
+        "project_status": getattr(opt, "_resolved_project_status", None),
+    }
 
 
 def optimization_to_summary_response(opt: Optimization) -> HistorySummaryResponse:

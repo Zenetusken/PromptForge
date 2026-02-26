@@ -11,6 +11,7 @@ class OptimizationStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     ERROR = "error"
+    CANCELLED = "cancelled"
 
 
 class Strategy(StrEnum):

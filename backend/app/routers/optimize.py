@@ -12,13 +12,13 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
-from app.constants import OptimizationStatus, ProjectStatus
+from app.constants import OptimizationStatus
 from app.converters import (
     deserialize_json_field,
     optimization_to_response,
     update_optimization_status,
 )
-from app.database import get_db
+from app.database import get_db, get_db_readonly
 from app.models.optimization import Optimization
 from app.providers import LLMProvider, get_provider
 from app.providers.errors import ProviderError
@@ -36,17 +36,12 @@ from app.schemas.context import (
 )
 from app.schemas.optimization import OptimizationResponse, OptimizeRequest
 from app.middleware.sanitize import sanitize_text
-from app.services.pipeline import PipelineComplete, run_pipeline_streaming
+from app.services.stats_cache import invalidate_stats_cache
+from app.services.pipeline import PipelineComplete, run_pipeline, run_pipeline_streaming
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["optimize"])
-
-
-async def _is_project_archived(db: AsyncSession, project_id: str) -> bool:
-    """Return True if the project exists and is archived."""
-    proj = await ProjectRepository(db).get_by_id(project_id, load_prompts=False)
-    return bool(proj and proj.status == ProjectStatus.ARCHIVED)
 
 
 def _resolve_provider(
@@ -69,6 +64,9 @@ def _create_streaming_response(
     strategy_override: str | None = None,
     secondary_frameworks_override: list[str] | None = None,
     codebase_context: CodebaseContext | None = None,
+    stages: list[str] | None = None,
+    max_iterations: int | None = None,
+    score_threshold: float | None = None,
 ) -> StreamingResponse:
     """Create a StreamingResponse wrapping the pipeline with DB persistence."""
 
@@ -98,6 +96,9 @@ def _create_streaming_response(
                 strategy_override=strategy_override,
                 secondary_frameworks_override=secondary_frameworks_override,
                 codebase_context=codebase_context,
+                stages=stages,
+                max_iterations=max_iterations,
+                score_threshold=score_threshold,
             )
             async for event in stream:
                 if isinstance(event, PipelineComplete):
@@ -132,6 +133,7 @@ def _create_streaming_response(
                 start_time=start_time,
                 model_fallback=model_fallback,
             )
+            invalidate_stats_cache()
         except Exception:
             logger.error("DB update failed for optimization %s", opt_id, exc_info=True)
             err_payload = json.dumps({
@@ -218,15 +220,15 @@ async def optimize_prompt(
 
     # Auto-create a Project record if a project name is provided
     if request.project:
-        project_id_from_name = await ensure_project_by_name(db, request.project)
-        if not resolved_project_id:
-            resolved_project_id = project_id_from_name
+        project_info = await ensure_project_by_name(db, request.project)
+        if project_info and not resolved_project_id:
+            resolved_project_id = project_info.id
         # Auto-create a Prompt record if no explicit prompt_id was provided
         # Skip linking to archived projects — user intended them to be frozen
-        if not request.prompt_id and project_id_from_name:
-            if not await _is_project_archived(db, project_id_from_name):
+        if not request.prompt_id and project_info:
+            if project_info.status != "archived":
                 auto_prompt_id = await ensure_prompt_in_project(
-                    db, project_id_from_name, sanitized_prompt,
+                    db, project_info.id, sanitized_prompt,
                 )
                 if auto_prompt_id:
                     optimization.prompt_id = auto_prompt_id
@@ -259,6 +261,9 @@ async def optimize_prompt(
         llm_provider=llm_provider, strategy_override=request.strategy,
         secondary_frameworks_override=request.secondary_frameworks,
         codebase_context=resolved_context,
+        stages=request.stages,
+        max_iterations=request.max_iterations,
+        score_threshold=request.score_threshold,
     )
 
 # ---------------------------------------------------------------------------
@@ -415,11 +420,173 @@ async def orchestrate_validate(
     return _timed_result(result, start)
 
 
+@router.post("/api/optimize/{optimization_id}/cancel")
+async def cancel_optimization(
+    optimization_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a running optimization.
+
+    Sets optimization status to CANCELLED for bookkeeping. The client's
+    AbortController already closes the SSE connection; this endpoint ensures
+    cancelled forges don't remain as RUNNING forever.
+    """
+    repo = OptimizationRepository(db)
+    optimization = await repo.get_by_id(optimization_id)
+
+    if not optimization:
+        raise HTTPException(status_code=404, detail="Optimization not found")
+
+    if optimization.status != OptimizationStatus.RUNNING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot cancel optimization in '{optimization.status}' status",
+        )
+
+    optimization.status = OptimizationStatus.CANCELLED
+    await db.commit()
+    invalidate_stats_cache()
+
+    return {"id": optimization_id, "status": "cancelled"}
+
+
+# ---------------------------------------------------------------------------
+# Batch Optimization
+# ---------------------------------------------------------------------------
+
+from pydantic import Field as PydanticField  # noqa: E402 — batch schemas below
+
+class BatchOptimizeRequest(BaseModel):
+    """Request for batch optimization of multiple prompts."""
+    prompts: list[str] = PydanticField(
+        ..., min_length=1, max_length=20,
+        description="List of prompts to optimize (1-20)",
+    )
+    strategy: str | None = PydanticField(None, description="Strategy override for all prompts")
+    project: str | None = PydanticField(None, description="Project to associate results with")
+    tags: list[str] | None = PydanticField(None, description="Tags for all results")
+
+class BatchItemResult(BaseModel):
+    """Result for a single item in a batch."""
+    index: int
+    optimization_id: str | None = None
+    overall_score: float | None = None
+    status: str = "pending"
+    error: str | None = None
+
+class BatchOptimizeResponse(BaseModel):
+    """Response for batch optimization."""
+    total: int
+    completed: int
+    failed: int
+    results: list[BatchItemResult]
+
+
+@router.post("/api/optimize/batch", response_model=BatchOptimizeResponse)
+async def batch_optimize(
+    request: BatchOptimizeRequest,
+    db: AsyncSession = Depends(get_db),
+    x_llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
+    x_llm_model: str | None = Header(None, alias="X-LLM-Model"),
+    x_llm_provider: str | None = Header(None, alias="X-LLM-Provider"),
+):
+    """Run optimization pipeline on multiple prompts sequentially.
+
+    Returns results for all prompts. Failed items don't stop the batch.
+    """
+    from dataclasses import asdict
+
+    llm_provider = _resolve_provider(x_llm_provider, x_llm_api_key, x_llm_model)
+
+    # Pre-compute model fallback (same pattern as _create_streaming_response)
+    if llm_provider:
+        model_fallback = llm_provider.model_name
+    else:
+        try:
+            model_fallback = get_provider().model_name
+        except (RuntimeError, ImportError, ProviderError):
+            model_fallback = config.CLAUDE_MODEL
+
+    results: list[BatchItemResult] = []
+    completed = 0
+    failed = 0
+
+    for i, prompt_text in enumerate(request.prompts):
+        sanitized, _ = sanitize_text(prompt_text)
+        if not sanitized.strip():
+            results.append(BatchItemResult(index=i, status="error", error="Empty prompt"))
+            failed += 1
+            continue
+
+        optimization_id = str(uuid.uuid4())
+        start_time = time.time()
+
+        try:
+            optimization = Optimization(
+                id=optimization_id,
+                raw_prompt=sanitized,
+                status=OptimizationStatus.RUNNING,
+                project=request.project,
+                tags=json.dumps(request.tags or ["batch"]),
+                title=f"Batch #{i + 1}",
+            )
+            db.add(optimization)
+            await db.commit()
+
+            # Run pipeline (non-streaming — returns PipelineResult dataclass)
+            pipeline_result = await run_pipeline(
+                sanitized,
+                llm_provider=llm_provider,
+                strategy_override=request.strategy,
+            )
+
+            await update_optimization_status(
+                optimization_id,
+                result_data=asdict(pipeline_result),
+                start_time=start_time,
+                model_fallback=model_fallback,
+                session=db,
+            )
+            results.append(BatchItemResult(
+                index=i,
+                optimization_id=optimization_id,
+                overall_score=pipeline_result.overall_score,
+                status="completed",
+            ))
+            completed += 1
+
+        except Exception as exc:
+            logger.exception("Batch item %d failed: %s", i, exc)
+            try:
+                await update_optimization_status(
+                    optimization_id, error=str(exc)[:500], session=db,
+                )
+            except Exception:
+                pass
+            results.append(BatchItemResult(
+                index=i,
+                optimization_id=optimization_id,
+                status="error",
+                error=str(exc)[:200],
+            ))
+            failed += 1
+
+    if completed > 0:
+        invalidate_stats_cache()
+
+    return BatchOptimizeResponse(
+        total=len(request.prompts),
+        completed=completed,
+        failed=failed,
+        results=results,
+    )
+
+
 @router.get("/api/optimize/check-duplicate")
 async def check_duplicate_title(
     title: str,
     project: str | None = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """Check if an optimization with the given title already exists in the project."""
     repo = OptimizationRepository(db)
@@ -431,7 +598,7 @@ async def check_duplicate_title(
 async def get_optimization(
     optimization_id: str,
     response: Response,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """Retrieve a single optimization by its ID."""
     repo = OptimizationRepository(db)
@@ -499,14 +666,15 @@ async def retry_optimization(
 
     resolved_project_id: str | None = None
     if original.project:
-        project_id_from_name = await ensure_project_by_name(db, original.project)
-        resolved_project_id = project_id_from_name
+        project_info = await ensure_project_by_name(db, original.project)
+        if project_info:
+            resolved_project_id = project_info.id
         # Auto-create prompt if original had no prompt_id
         # Skip linking to archived projects — user intended them to be frozen
-        if not original.prompt_id and project_id_from_name:
-            if not await _is_project_archived(db, project_id_from_name):
+        if not original.prompt_id and project_info:
+            if project_info.status != "archived":
                 auto_prompt_id = await ensure_prompt_in_project(
-                    db, project_id_from_name, raw_prompt,
+                    db, project_info.id, raw_prompt,
                 )
                 if auto_prompt_id:
                     new_optimization.prompt_id = auto_prompt_id

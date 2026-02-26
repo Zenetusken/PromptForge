@@ -21,8 +21,12 @@ Tools:
   - add_prompt: Add a prompt to a project
   - update_prompt: Update prompt content (auto-versions)
   - set_project_context: Set or clear codebase context profile on a project
+  - batch: Optimize multiple prompts in one call
+  - cancel: Cancel a running optimization
 """
 
+import contextvars
+import functools
 import json
 import logging
 import re
@@ -31,8 +35,9 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any, Callable
 
+import httpx
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
@@ -47,6 +52,9 @@ from app.converters import (
     with_display_scores,
 )
 from app.database import async_session_factory, engine, init_db
+from app.services.mcp_activity import MCPEventType
+from app.services.stats_cache import get_stats_cached, invalidate_stats_cache
+from app.models.optimization import Optimization
 from app.models.project import Project, Prompt
 from app.providers.errors import ProviderError
 from app.repositories.project import (
@@ -73,6 +81,122 @@ from app.utils.scores import score_to_display
 
 logger = logging.getLogger(__name__)
 
+# --- MCP Activity Tracking ---
+# Emits events to the backend's /internal/mcp-event webhook so external tool calls
+# appear live in the PromptForge frontend (Network Monitor, Task Manager, notifications).
+
+_webhook_client: httpx.AsyncClient | None = None
+
+
+def _get_webhook_client() -> httpx.AsyncClient:
+    """Lazy-init a shared HTTP client for webhook emission."""
+    global _webhook_client
+    if _webhook_client is None:
+        _webhook_client = httpx.AsyncClient(timeout=2.0)
+    return _webhook_client
+
+
+async def _emit_mcp_event(
+    event_type: MCPEventType | str,
+    tool_name: str | None = None,
+    call_id: str | None = None,
+    **kwargs: Any,
+) -> None:
+    """Fire-and-forget POST to backend webhook. Never raises."""
+    try:
+        client = _get_webhook_client()
+        payload = {
+            "event_type": event_type,
+            "tool_name": tool_name,
+            "call_id": call_id,
+            **{k: v for k, v in kwargs.items() if v is not None},
+        }
+        from app import config as _cfg
+        await client.post(
+            f"http://127.0.0.1:{_cfg.PORT}/internal/mcp-event",
+            json=payload,
+        )
+    except Exception:
+        # MCP tools must never fail because the activity feed is down
+        pass
+
+
+_current_call_id: contextvars.ContextVar[tuple[str, str] | None] = contextvars.ContextVar(
+    "_current_call_id", default=None,
+)
+
+
+async def _emit_tool_progress(progress: float, message: str | None = None) -> None:
+    """Emit a tool_progress event for the current tracked tool call.
+
+    Only works inside a @_mcp_tracked handler. No-op otherwise.
+    """
+    ctx = _current_call_id.get()
+    if ctx:
+        tool_name, call_id = ctx
+        await _emit_mcp_event(MCPEventType.tool_progress, tool_name, call_id, progress=progress, message=message)
+
+
+def _extract_result_summary(result: Any) -> dict | None:
+    """Extract key fields from a tool's return value for the activity feed."""
+    if not isinstance(result, dict):
+        return None
+    summary: dict[str, Any] = {}
+    for key in ("id", "status", "overall_score", "total", "completed", "failed"):
+        if key in result:
+            summary[key] = result[key]
+    return summary if summary else None
+
+
+def _mcp_tracked(tool_name: str) -> Callable:
+    """Decorator that wraps MCP tool handlers with activity event emission.
+
+    Sits between @mcp.tool() and the async def handler.
+    Emits tool_start before execution, tool_complete/tool_error after.
+
+    When a tracked handler calls another tracked handler (e.g. retry → optimize),
+    the inner decorator is skipped so only the outer tool appears in the activity
+    feed.  The ContextVar retains the outer call_id, so _emit_tool_progress()
+    calls inside the inner handler still attribute to the correct outer tool.
+    """
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # If already inside a tracked call, skip tracking for this nested call
+            if _current_call_id.get() is not None:
+                return await func(*args, **kwargs)
+
+            call_id = str(uuid.uuid4())
+            token = _current_call_id.set((tool_name, call_id))
+            await _emit_mcp_event(MCPEventType.tool_start, tool_name, call_id)
+            start = time.time()
+            try:
+                result = await func(*args, **kwargs)
+                duration_ms = int((time.time() - start) * 1000)
+                await _emit_mcp_event(
+                    MCPEventType.tool_complete,
+                    tool_name,
+                    call_id,
+                    duration_ms=duration_ms,
+                    result_summary=_extract_result_summary(result),
+                )
+                return result
+            except Exception as exc:
+                duration_ms = int((time.time() - start) * 1000)
+                await _emit_mcp_event(
+                    MCPEventType.tool_error,
+                    tool_name,
+                    call_id,
+                    duration_ms=duration_ms,
+                    error=str(exc)[:200],
+                )
+                raise
+            finally:
+                _current_call_id.reset(token)
+        return wrapper
+    return decorator
+
+
 # Score keys that need 0.0-1.0 → 1-10 conversion in stats responses
 _STATS_SCORE_KEYS = (
     "average_overall_score",
@@ -81,6 +205,31 @@ _STATS_SCORE_KEYS = (
     "average_structure_score",
     "average_faithfulness_score",
 )
+
+# All dict key names whose float values represent 0.0-1.0 scores
+_SCORE_KEY_NAMES = frozenset({
+    "avg_score", "min", "max", "avg",
+    *_STATS_SCORE_KEYS,
+})
+
+
+def _convert_scores_recursive(obj: object) -> object:
+    """Recursively walk a dict/list structure and convert known score fields to 1-10.
+
+    Converts float values in dict entries whose key is in _SCORE_KEY_NAMES.
+    Also converts top-level score_by_strategy values (flat str→float dicts).
+    """
+    if isinstance(obj, dict):
+        return {
+            k: (
+                score_to_display(v) if k in _SCORE_KEY_NAMES and isinstance(v, (int, float))
+                else _convert_scores_recursive(v)
+            )
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_convert_scores_recursive(item) for item in obj]
+    return obj
 
 # UUID v4 format regex (case-insensitive)
 _UUID_RE = re.compile(
@@ -203,6 +352,7 @@ mcp = FastMCP(
         openWorldHint=True,
     ),
 )
+@_mcp_tracked("optimize")
 async def promptforge_optimize(
     prompt: Annotated[str, Field(description="The raw prompt text to optimize (1-100,000 chars)")],
     ctx: Context,
@@ -214,6 +364,8 @@ async def promptforge_optimize(
     prompt_id: Annotated[str | None, Field(description="UUID of an existing project prompt to link this optimization to")] = None,
     version: Annotated[str | None, Field(description="Version label in 'v<number>' format (e.g. 'v1', 'v2')")] = None,
     codebase_context: Annotated[dict | None, Field(description="Optional codebase context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in a real project.")] = None,
+    max_iterations: Annotated[int | None, Field(description="Max refinement iterations (1-5). Pipeline loops optimize+validate until score_threshold met.")] = None,
+    score_threshold: Annotated[float | None, Field(description="Target overall score (0.0-1.0). Pipeline iterates until reached.")] = None,
 ) -> dict[str, object]:
     """Run the full optimization pipeline on a prompt.
 
@@ -251,11 +403,16 @@ async def promptforge_optimize(
                 raise ToolError(f"Unknown secondary framework {fw!r}. Valid: {', '.join(sorted(valid))}")
             resolved.append(mapped)
         secondary_frameworks = resolved
+    if max_iterations is not None and not (1 <= max_iterations <= 5):
+        raise ToolError("max_iterations must be between 1 and 5")
+    if score_threshold is not None and not (0.1 <= score_threshold <= 1.0):
+        raise ToolError("score_threshold must be between 0.1 and 1.0")
 
     start_time = time.time()
     optimization_id = str(uuid.uuid4())
 
     await ctx.report_progress(0.0, 1.0, "Creating optimization record")
+    await _emit_tool_progress(0.0, "Creating optimization record")
 
     # Create initial DB record, auto-create Project, and resolve context — all in one session
     resolved_project_id: str | None = None
@@ -280,12 +437,13 @@ async def promptforge_optimize(
             version=version,
         )
         if project:
-            pid = await ensure_project_by_name(session, project)
-            if not resolved_project_id:
-                resolved_project_id = pid
+            project_info = await ensure_project_by_name(session, project)
+            if project_info and not resolved_project_id:
+                resolved_project_id = project_info.id
             # Auto-create prompt if no explicit prompt_id
-            if not prompt_id and pid:
-                auto_prompt_id = await ensure_prompt_in_project(session, pid, prompt)
+            # Skip linking to archived projects — user intended them to be frozen
+            if not prompt_id and project_info and project_info.status != "archived":
+                auto_prompt_id = await ensure_prompt_in_project(session, project_info.id, prompt)
                 if auto_prompt_id:
                     opt_record.prompt_id = auto_prompt_id
 
@@ -305,6 +463,7 @@ async def promptforge_optimize(
         await session.commit()
 
     await ctx.report_progress(0.1, 1.0, "Running optimization pipeline")
+    await _emit_tool_progress(0.1, "Running optimization pipeline")
 
     # Run pipeline
     try:
@@ -313,6 +472,8 @@ async def promptforge_optimize(
             strategy_override=strategy,
             secondary_frameworks_override=secondary_frameworks,
             codebase_context=resolved_context,
+            max_iterations=max_iterations,
+            score_threshold=score_threshold,
         )
         elapsed_ms = int((time.time() - start_time) * 1000)
 
@@ -322,8 +483,10 @@ async def promptforge_optimize(
             start_time=start_time,
             model_fallback=result.model_used,
         )
+        invalidate_stats_cache()
 
         await ctx.report_progress(1.0, 1.0, "Optimization complete")
+        await _emit_tool_progress(1.0, "Optimization complete")
 
         result_dict = with_display_scores(asdict(result))
         result_dict["id"] = optimization_id
@@ -358,6 +521,7 @@ async def promptforge_optimize(
         openWorldHint=True,
     ),
 )
+@_mcp_tracked("retry")
 async def promptforge_retry(
     optimization_id: Annotated[str, Field(description="UUID of the optimization to retry")],
     ctx: Context,
@@ -414,6 +578,7 @@ async def promptforge_retry(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("get")
 async def promptforge_get(
     optimization_id: Annotated[str, Field(description="UUID of the optimization to retrieve")],
 ) -> dict[str, object]:
@@ -449,6 +614,7 @@ async def promptforge_get(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("list")
 async def promptforge_list(
     project: Annotated[str | None, Field(description="Filter by project name")] = None,
     project_id: Annotated[str | None, Field(description="Filter by project UUID")] = None,
@@ -514,6 +680,7 @@ async def promptforge_list(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("get_by_project")
 async def promptforge_get_by_project(
     project: Annotated[str, Field(description="Project name to retrieve optimizations for")],
     include_prompts: Annotated[bool, Field(description="Include full prompt text in results")] = True,
@@ -569,6 +736,7 @@ async def promptforge_get_by_project(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("search")
 async def promptforge_search(
     query: Annotated[str, Field(description="Search text (min 2 chars). Matches prompts, titles, tags, projects.")],
     include_archived: Annotated[bool, Field(description="Include items from archived projects")] = True,
@@ -623,6 +791,7 @@ async def promptforge_search(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("tag")
 async def promptforge_tag(
     optimization_id: Annotated[str, Field(description="UUID of the optimization to update")],
     add_tags: Annotated[list[str] | None, Field(description="Tags to add (each max 50 chars)")] = None,
@@ -666,10 +835,12 @@ async def promptforge_tag(
 
         # Auto-create Project and resolve project_id directly
         if project:
-            project_id = await ensure_project_by_name(session, project)
-            result["project_id"] = project_id
+            project_info = await ensure_project_by_name(session, project)
+            result["project_id"] = project_info.id if project_info else None
 
         await session.commit()
+        if project is not None:
+            invalidate_stats_cache()
         return result
 
 
@@ -689,6 +860,7 @@ async def promptforge_tag(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("stats")
 async def promptforge_stats(
     project: Annotated[str | None, Field(description="Scope statistics to a specific project name")] = None,
 ) -> dict[str, object]:
@@ -696,48 +868,18 @@ async def promptforge_stats(
 
     Returns scores on 1-10 scale, improvement rate, strategy distribution, etc.
     """
-    async with _repo_session() as (repo, _session):
-        stats = await repo.get_stats(project=project)
-        # Convert 0.0-1.0 averages to 1-10 display scale for MCP consistency
-        for key in _STATS_SCORE_KEYS:
-            if key in stats:
-                stats[key] = score_to_display(stats[key])
-        # Convert per-strategy score averages too
+    async with _repo_session() as (_repo, session):
+        raw = await get_stats_cached(project, session)
+        # Shallow copy to avoid mutating the cached dict
+        stats = dict(raw)
+        # Convert per-strategy flat score dict (str→float) before recursive walk
         if stats.get("score_by_strategy"):
             stats["score_by_strategy"] = {
                 name: score_to_display(val)
                 for name, val in stats["score_by_strategy"].items()
             }
-        # Convert new analytics score fields
-        if stats.get("score_matrix"):
-            for strat_data in stats["score_matrix"].values():
-                for entry in strat_data.values():
-                    if "avg_score" in entry:
-                        entry["avg_score"] = score_to_display(entry["avg_score"])
-        if stats.get("score_variance"):
-            for entry in stats["score_variance"].values():
-                for key in ("min", "max", "avg"):
-                    if key in entry:
-                        entry[key] = score_to_display(entry[key])
-        if stats.get("combo_effectiveness"):
-            for sec_data in stats["combo_effectiveness"].values():
-                for entry in sec_data.values():
-                    if "avg_score" in entry:
-                        entry["avg_score"] = score_to_display(entry["avg_score"])
-        if stats.get("complexity_performance"):
-            for comp_data in stats["complexity_performance"].values():
-                for entry in comp_data.values():
-                    if "avg_score" in entry:
-                        entry["avg_score"] = score_to_display(entry["avg_score"])
-        if stats.get("win_rates"):
-            for entry in stats["win_rates"].values():
-                if "avg_score" in entry:
-                    entry["avg_score"] = score_to_display(entry["avg_score"])
-        if stats.get("trend_7d") and stats["trend_7d"].get("avg_score") is not None:
-            stats["trend_7d"]["avg_score"] = score_to_display(stats["trend_7d"]["avg_score"])
-        if stats.get("trend_30d") and stats["trend_30d"].get("avg_score") is not None:
-            stats["trend_30d"]["avg_score"] = score_to_display(stats["trend_30d"]["avg_score"])
-        return stats
+        # Recursively convert all known score fields from 0.0-1.0 to 1-10
+        return _convert_scores_recursive(stats)
 
 
 # --- Tool 9: delete ---
@@ -755,6 +897,7 @@ async def promptforge_stats(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("delete")
 async def promptforge_delete(
     optimization_id: Annotated[str, Field(description="UUID of the optimization to permanently delete")],
 ) -> dict[str, object]:
@@ -768,6 +911,7 @@ async def promptforge_delete(
             raise ToolError(f"Optimization not found: {optimization_id}")
 
         await session.commit()
+        invalidate_stats_cache()
         return {"deleted": True, "id": optimization_id}
 
 
@@ -787,6 +931,7 @@ async def promptforge_delete(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("bulk_delete")
 async def promptforge_bulk_delete(
     ids: Annotated[list[str], Field(description="List of optimization UUIDs to delete (1-100)")],
 ) -> dict[str, object]:
@@ -802,6 +947,8 @@ async def promptforge_bulk_delete(
     async with _repo_session() as (repo, session):
         deleted_ids, not_found_ids = await repo.delete_by_ids(ids)
         await session.commit()
+        if deleted_ids:
+            invalidate_stats_cache()
         return {
             "deleted_count": len(deleted_ids),
             "deleted_ids": deleted_ids,
@@ -825,6 +972,7 @@ async def promptforge_bulk_delete(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("list_projects")
 async def promptforge_list_projects(
     status: Annotated[str | None, Field(description="Filter by status: 'active' or 'archived'. Omit for all non-deleted.")] = None,
     search: Annotated[str | None, Field(description="Search by project name or description")] = None,
@@ -888,6 +1036,7 @@ async def promptforge_list_projects(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("get_project")
 async def promptforge_get_project(
     project_id: Annotated[str, Field(description="UUID of the project to retrieve")],
 ) -> dict[str, object]:
@@ -925,6 +1074,7 @@ async def promptforge_get_project(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("strategies")
 async def promptforge_strategies() -> dict[str, object]:
     """List all 10 optimization strategies with descriptions and reasoning.
 
@@ -960,6 +1110,7 @@ async def promptforge_strategies() -> dict[str, object]:
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("create_project")
 async def promptforge_create_project(
     name: Annotated[str, Field(description="Unique project name (1-100 chars)")],
     description: Annotated[str | None, Field(description="Project description (max 2000 chars)")] = None,
@@ -999,6 +1150,7 @@ async def promptforge_create_project(
                 existing.updated_at = datetime.now(timezone.utc)
                 await session.flush()
                 await session.commit()
+                invalidate_stats_cache()
                 return _project_to_dict(existing, include_context=True)
             raise ToolError(f"Project already exists: {name!r}")
 
@@ -1006,6 +1158,7 @@ async def promptforge_create_project(
             name=name, description=description, context_profile=ctx_json,
         )
         await session.commit()
+        invalidate_stats_cache()
         return _project_to_dict(project, include_context=True)
 
 
@@ -1024,6 +1177,7 @@ async def promptforge_create_project(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("add_prompt")
 async def promptforge_add_prompt(
     project_id: Annotated[str, Field(description="UUID of the project to add the prompt to")],
     content: Annotated[str, Field(description="Prompt content (1-100,000 chars)")],
@@ -1067,6 +1221,7 @@ async def promptforge_add_prompt(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("update_prompt")
 async def promptforge_update_prompt(
     prompt_id: Annotated[str, Field(description="UUID of the prompt to update")],
     content: Annotated[str, Field(description="New prompt content (1-100,000 chars)")],
@@ -1122,6 +1277,7 @@ async def promptforge_update_prompt(
         openWorldHint=False,
     ),
 )
+@_mcp_tracked("set_project_context")
 async def promptforge_set_project_context(
     project_id: Annotated[str, Field(description="UUID of the project to update")],
     context_profile: Annotated[dict | None, Field(description="Codebase context profile dict. Pass null to clear. Keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,
@@ -1151,6 +1307,227 @@ async def promptforge_set_project_context(
         await session.commit()
 
         return _project_to_dict(project, include_context=True)
+
+
+# --- Tool 18: batch ---
+
+@mcp.tool(
+    name="batch",
+    description=(
+        "Optimize multiple prompts in a single call. Runs the full pipeline "
+        "sequentially on each prompt (1-20). Returns summary with per-prompt "
+        "results including scores and optimization IDs."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=True,
+    ),
+)
+@_mcp_tracked("batch")
+async def promptforge_batch(
+    prompts: Annotated[list[str], Field(description="List of prompts to optimize (1-20)")],
+    ctx: Context,
+    strategy: Annotated[str | None, Field(description="Strategy override for all prompts")] = None,
+    project: Annotated[str | None, Field(description="Project to associate results with")] = None,
+    tags: Annotated[list[str] | None, Field(description="Tags for all results")] = None,
+) -> dict[str, object]:
+    """Optimize multiple prompts sequentially. Failed items don't stop the batch.
+
+    Returns total, completed, failed counts and per-item results.
+    """
+    if not prompts:
+        raise ToolError("prompts list must not be empty")
+    if len(prompts) > 20:
+        raise ToolError("prompts list must contain 20 or fewer entries")
+    if tags:
+        _validate_tags(tags)
+    if project is not None and len(project) > 100:
+        raise ToolError("Project name must be 100 characters or fewer")
+
+    valid_strategies = {s.value for s in Strategy}
+    if strategy is not None:
+        strategy = LEGACY_STRATEGY_ALIASES.get(strategy, strategy)
+        if strategy not in valid_strategies:
+            raise ToolError(f"Unknown strategy {strategy!r}. Valid: {', '.join(sorted(valid_strategies))}")
+
+    # Resolve project context once for the entire batch
+    resolved_context = None
+    if project:
+        async with _repo_session() as (_repo, session):
+            project_ctx = await ProjectRepository(session).get_context_by_name(project)
+            resolved_context = merge_contexts(project_ctx, None)
+
+    results: list[dict[str, object]] = []
+    completed = 0
+    failed = 0
+
+    for i, prompt_text in enumerate(prompts):
+        prompt_text = prompt_text.strip()
+        if not prompt_text:
+            results.append({"index": i, "status": "error", "error": "Empty prompt"})
+            failed += 1
+            continue
+
+        progress_msg = f"Optimizing prompt {i + 1}/{len(prompts)}"
+        await ctx.report_progress(i / len(prompts), 1.0, progress_msg)
+        await _emit_tool_progress(i / len(prompts), progress_msg)
+
+        optimization_id = str(uuid.uuid4())
+        start_time = time.time()
+        batch_tags = tags or ["batch"]
+
+        try:
+            async with _repo_session() as (repo, session):
+                opt = Optimization(
+                    id=optimization_id,
+                    raw_prompt=prompt_text,
+                    status=OptimizationStatus.RUNNING,
+                    project=project,
+                    tags=json.dumps(batch_tags),
+                    title=f"Batch #{i + 1}",
+                )
+                # Snapshot resolved context on the record
+                if resolved_context:
+                    ctx_dict = context_to_dict(resolved_context)
+                    if ctx_dict:
+                        opt.codebase_context_snapshot = json.dumps(ctx_dict)
+                session.add(opt)
+                if project:
+                    await ensure_project_by_name(session, project)
+                await session.commit()
+
+            result = await run_pipeline(
+                prompt_text,
+                strategy_override=strategy,
+                codebase_context=resolved_context,
+            )
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            await update_optimization_status(
+                optimization_id,
+                result_data=asdict(result),
+                start_time=start_time,
+                model_fallback=result.model_used,
+            )
+
+            results.append({
+                "index": i,
+                "optimization_id": optimization_id,
+                "overall_score": score_to_display(result.overall_score),
+                "status": "completed",
+            })
+            completed += 1
+        except Exception as exc:
+            logger.exception("Batch item %d failed: %s", i, exc)
+            try:
+                await update_optimization_status(optimization_id, error=str(exc)[:500])
+            except Exception:
+                pass
+            results.append({
+                "index": i,
+                "optimization_id": optimization_id,
+                "status": "error",
+                "error": str(exc)[:200],
+            })
+            failed += 1
+
+    if completed > 0:
+        invalidate_stats_cache()
+
+    await ctx.report_progress(1.0, 1.0, "Batch complete")
+    await _emit_tool_progress(1.0, "Batch complete")
+
+    return {
+        "total": len(prompts),
+        "completed": completed,
+        "failed": failed,
+        "results": results,
+    }
+
+
+# --- Tool 19: cancel ---
+
+@mcp.tool(
+    name="cancel",
+    description=(
+        "Cancel a running optimization. Sets its status to CANCELLED "
+        "for bookkeeping. Use this when an optimization is stuck or "
+        "no longer needed."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+@_mcp_tracked("cancel")
+async def promptforge_cancel(
+    optimization_id: Annotated[str, Field(description="UUID of the optimization to cancel")],
+) -> dict[str, object]:
+    """Cancel a running optimization by setting its status to CANCELLED."""
+    _validate_uuid(optimization_id, "optimization_id")
+
+    async with _repo_session() as (repo, session):
+        opt = await repo.get_by_id(optimization_id)
+
+        if not opt:
+            raise ToolError(f"Optimization not found: {optimization_id}")
+
+        if opt.status != OptimizationStatus.RUNNING:
+            raise ToolError(f"Cannot cancel optimization in '{opt.status}' status")
+
+        opt.status = OptimizationStatus.CANCELLED
+        await session.commit()
+        invalidate_stats_cache()
+
+    return {"id": optimization_id, "status": "cancelled"}
+
+
+# --- MCP Resources ---
+# Expose PromptForge data for bi-directional context flow with Claude Code.
+
+
+@mcp.resource("promptforge://projects")
+async def resource_projects() -> str:
+    """JSON list of active projects with context profile indicators."""
+    async with async_session_factory() as session:
+        proj_repo = ProjectRepository(session)
+        filters = ProjectFilters(status="active")
+        pagination = ProjectPagination(sort="updated_at", order="desc", offset=0, limit=100)
+        projects, _total = await proj_repo.list(filters=filters, pagination=pagination)
+        items = [_project_to_dict(p, include_context=True) for p in projects]
+        return json.dumps(items, indent=2)
+
+
+@mcp.resource("promptforge://projects/{project_id}/context")
+async def resource_project_context(project_id: str) -> str:
+    """Single project's codebase context profile as JSON."""
+    _validate_uuid(project_id, "project_id")
+    async with async_session_factory() as session:
+        proj_repo = ProjectRepository(session)
+        project = await proj_repo.get_by_id(project_id, load_prompts=False)
+        if not project:
+            return json.dumps({"error": f"Project not found: {project_id}"})
+        if project.context_profile:
+            try:
+                return project.context_profile  # Already JSON string
+            except Exception:
+                return json.dumps({"error": "Invalid context profile"})
+        return json.dumps({"info": "No context profile set for this project"})
+
+
+@mcp.resource("promptforge://optimizations/{optimization_id}")
+async def resource_optimization(optimization_id: str) -> str:
+    """Full optimization result with display scores as JSON."""
+    _validate_uuid(optimization_id, "optimization_id")
+    async with _repo_session() as (repo, _session):
+        opt = await repo.get_by_id(optimization_id)
+        if not opt:
+            return json.dumps({"error": f"Optimization not found: {optimization_id}"})
+        return json.dumps(with_display_scores(optimization_to_dict(opt)), indent=2)
 
 
 # --- ASGI app for HTTP transport (SSE) ---

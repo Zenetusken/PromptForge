@@ -7,7 +7,7 @@ endpoints and a stricter limit for the optimization endpoint.
 from __future__ import annotations
 
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -19,6 +19,9 @@ from app.middleware import get_client_ip
 # Window size in seconds
 _WINDOW = 60.0
 
+# Stale IP entries are pruned every 60 seconds
+_PRUNE_INTERVAL = 60.0
+
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Sliding-window per-IP rate limiter.
@@ -29,30 +32,42 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app):
         super().__init__(app)
-        # ip -> list of request timestamps
-        self._requests: dict[str, list[float]] = defaultdict(list)
+        # ip -> deque of request timestamps (O(1) popleft vs list splice)
+        self._requests: dict[str, deque[float]] = defaultdict(deque)
+        self._last_prune = 0.0
 
     def reset(self) -> None:
         """Clear all tracked requests. Used in testing."""
         self._requests.clear()
+        self._last_prune = 0.0
 
     def _cleanup(self, ip: str, now: float) -> None:
         """Remove timestamps outside the current window."""
         cutoff = now - _WINDOW
         timestamps = self._requests[ip]
-        # Find first index within window
-        idx = 0
-        while idx < len(timestamps) and timestamps[idx] < cutoff:
-            idx += 1
-        if idx > 0:
-            self._requests[ip] = timestamps[idx:]
+        while timestamps and timestamps[0] < cutoff:
+            timestamps.popleft()
+
+    def _prune_stale_ips(self, now: float) -> None:
+        """Periodically remove empty IP entries to prevent unbounded memory growth."""
+        if now - self._last_prune < _PRUNE_INTERVAL:
+            return
+        self._last_prune = now
+        stale = [ip for ip, ts in self._requests.items() if not ts]
+        for ip in stale:
+            del self._requests[ip]
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint,
     ) -> Response:
+        # Internal endpoints (MCP webhook) are exempt from rate limiting
+        if request.url.path.startswith("/internal/"):
+            return await call_next(request)
+
         ip = get_client_ip(request)
         now = time.monotonic()
         self._cleanup(ip, now)
+        self._prune_stale_ips(now)
 
         # Determine limit based on endpoint
         is_optimize = (

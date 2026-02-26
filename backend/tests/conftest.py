@@ -5,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app import config
-from app.database import Base, get_db
+from app.database import Base, get_db, get_db_readonly
 from app.main import app
 
 
@@ -57,7 +57,15 @@ async def client(db_engine):
                 await session.rollback()
                 raise
 
+    async def override_get_db_readonly():
+        async with session_factory() as session:
+            try:
+                yield session
+            finally:
+                await session.close()
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_db_readonly] = override_get_db_readonly
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

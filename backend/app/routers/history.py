@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.converters import optimization_to_summary_response
-from app.database import get_db
+from app.database import get_db, get_db_readonly
 from app.repositories.optimization import ListFilters, OptimizationRepository, Pagination
 from app.schemas.optimization import (
     BulkDeleteRequest,
@@ -14,24 +14,25 @@ from app.schemas.optimization import (
     HistoryResponse,
     StatsResponse,
 )
+from app.services.stats_cache import get_stats_cached, invalidate_stats_cache
 
 router = APIRouter(tags=["history"])
 
 
 async def _get_history(
     response: Response,
-    page: int = Query(1, ge=1, description="Page number"),
-    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
-    search: str | None = Query(None, description="Search in prompt text and title"),
-    sort: str = Query("created_at", description="Field to sort by"),
-    sort_by: str | None = Query(None, description="Alias for sort (field to sort by)"),
-    order: Literal["asc", "desc"] = Query("desc", description="Sort order"),
-    project: str | None = Query(None, description="Filter by project name"),
-    project_id: str | None = Query(None, description="Filter by project ID"),
-    task_type: str | None = Query(None, description="Filter by task type"),
-    status: str | None = Query(None, description="Filter by status"),
-    include_archived: bool = Query(True, description="Include items from archived projects"),
-    db: AsyncSession = Depends(get_db),
+    page: int,
+    per_page: int,
+    search: str | None,
+    sort: str,
+    sort_by: str | None,
+    order: str,
+    project: str | None,
+    project_id: str | None,
+    task_type: str | None,
+    status: str | None,
+    include_archived: bool,
+    db: AsyncSession,
 ):
     """Retrieve paginated optimization history with filtering and sorting.
 
@@ -78,7 +79,7 @@ async def get_history(
     task_type: str | None = Query(None, description="Filter by task type"),
     status: str | None = Query(None, description="Filter by status"),
     include_archived: bool = Query(True, description="Include items from archived projects"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """Retrieve paginated optimization history with filtering and sorting."""
     return await _get_history(
@@ -101,7 +102,7 @@ async def get_history_head(
     task_type: str | None = Query(None),
     status: str | None = Query(None),
     include_archived: bool = Query(True),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """HEAD variant of history list."""
     return await _get_history(
@@ -126,6 +127,7 @@ async def clear_all_history(
         )
     repo = OptimizationRepository(db)
     count = await repo.clear_all()
+    invalidate_stats_cache()
 
     if count == 0:
         return {"message": "No records to delete", "deleted_count": 0}
@@ -141,6 +143,8 @@ async def bulk_delete_optimizations(
     """Delete multiple optimization records by ID."""
     repo = OptimizationRepository(db)
     deleted_ids, not_found_ids = await repo.delete_by_ids(payload.ids)
+    if deleted_ids:
+        invalidate_stats_cache()
     return BulkDeleteResponse(
         deleted_count=len(deleted_ids),
         deleted_ids=deleted_ids,
@@ -160,18 +164,19 @@ async def delete_optimization(
     if not deleted:
         raise HTTPException(status_code=404, detail="Optimization not found")
 
+    invalidate_stats_cache()
     return {"message": "Optimization deleted", "id": optimization_id}
+
 
 
 @router.get("/api/history/stats", response_model=StatsResponse)
 async def get_stats(
     response: Response,
     project: str | None = Query(None, description="Scope stats to a project name"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """Retrieve aggregated statistics across all optimizations."""
-    repo = OptimizationRepository(db)
-    stats = await repo.get_stats(project=project)
+    stats = await get_stats_cached(project, db)
     response.headers["Cache-Control"] = "max-age=30"
     return StatsResponse(**stats)
 
@@ -180,10 +185,9 @@ async def get_stats(
 async def get_stats_head(
     response: Response,
     project: str | None = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """HEAD variant of stats."""
-    repo = OptimizationRepository(db)
-    stats = await repo.get_stats(project=project)
+    stats = await get_stats_cached(project, db)
     response.headers["Cache-Control"] = "max-age=30"
     return StatsResponse(**stats)

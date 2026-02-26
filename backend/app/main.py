@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 
 from app import config
 from app.database import init_db
@@ -13,7 +14,7 @@ from app.middleware.auth import AuthMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import health, history, optimize, projects, providers
+from app.routers import health, history, mcp_activity, optimize, projects, providers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,7 +54,7 @@ app = FastAPI(
 
 # ---------------------------------------------------------------------------
 # Middleware stack (outermost → innermost)
-# Order: SecurityHeaders → CORS → CSRF → RateLimit → Auth → Audit → Router
+# Order: GZip → SecurityHeaders → CORS → CSRF → RateLimit → Auth → Audit → Router
 # ---------------------------------------------------------------------------
 
 # Audit (innermost — logs after route handling)
@@ -85,8 +86,11 @@ app.add_middleware(
     ],
 )
 
-# Security headers (outermost — always applied)
+# Security headers
 app.add_middleware(SecurityHeadersMiddleware)
+
+# GZip compression (outermost — compresses responses ≥1KB, small SSE chunks pass through)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Include routers
 app.include_router(health.router)
@@ -94,6 +98,7 @@ app.include_router(optimize.router)
 app.include_router(history.router)
 app.include_router(projects.router)
 app.include_router(providers.router)
+app.include_router(mcp_activity.router)
 
 
 @app.get("/")

@@ -55,6 +55,9 @@ async def mcp_session(db_engine):
         patch("app.mcp_server._repo_session", _fake_repo_session),
         patch("app.mcp_server.async_session_factory", factory),
     ):
+        # Clear shared stats cache so tests start with a clean slate
+        from app.services.stats_cache import invalidate_stats_cache
+        invalidate_stats_cache()
         async with factory() as session:
             yield session
 

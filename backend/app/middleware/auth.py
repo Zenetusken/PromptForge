@@ -22,6 +22,7 @@ _EXEMPT_PREFIXES = (
     "/docs",
     "/openapi.json",
     "/redoc",
+    "/internal/",
 )
 
 

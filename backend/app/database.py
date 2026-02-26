@@ -4,7 +4,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import event, text
+from sqlalchemy import bindparam, event, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -27,11 +27,19 @@ engine = create_async_engine(
 )
 
 
-# Enable SQLite foreign key enforcement on every connection.
+# Enable SQLite foreign keys and performance PRAGMAs on every connection.
+# WAL mode eliminates reader/writer blocking during SSE streaming.
+# synchronous=NORMAL is safe with WAL. Cache/mmap reduce syscalls.
 @event.listens_for(engine.sync_engine, "connect")
 def _set_sqlite_pragma(dbapi_connection, _connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys = ON")
+    cursor.execute("PRAGMA journal_mode = WAL")
+    cursor.execute("PRAGMA synchronous = NORMAL")
+    cursor.execute("PRAGMA cache_size = -65536")  # 64 MB
+    cursor.execute("PRAGMA mmap_size = 268435456")  # 256 MB
+    cursor.execute("PRAGMA temp_store = MEMORY")
+    cursor.execute("PRAGMA busy_timeout = 5000")  # 5s retry on lock contention
     cursor.close()
 
 async_session_factory = async_sessionmaker(
@@ -109,6 +117,13 @@ _MIGRATIONS: list[str] = [
     # --- Prompt caching token tracking ---
     "ALTER TABLE optimizations ADD COLUMN cache_creation_input_tokens INTEGER",
     "ALTER TABLE optimizations ADD COLUMN cache_read_input_tokens INTEGER",
+    # --- Composite indexes for common query patterns ---
+    "CREATE INDEX IF NOT EXISTS ix_optimizations_project_status"
+    " ON optimizations (project, status)",
+    "CREATE INDEX IF NOT EXISTS ix_optimizations_prompt_id_status"
+    " ON optimizations (prompt_id, status)",
+    "CREATE INDEX IF NOT EXISTS ix_optimizations_status_score"
+    " ON optimizations (status, overall_score)",
 ]
 
 
@@ -210,13 +225,9 @@ async def _migrate_legacy_projects(conn) -> None:
         )
         prompt_rows = prompts_result.fetchall()
 
-        for idx, (content, _first_used) in enumerate(prompt_rows):
-            await conn.execute(
-                text(
-                    "INSERT INTO prompts "
-                    "(id, content, version, project_id, order_index, created_at, updated_at) "
-                    "VALUES (:id, :content, 1, :project_id, :order_index, :created, :updated)"
-                ),
+        # Batch insert all prompts for this project in a single execute
+        if prompt_rows:
+            prompt_inserts = [
                 {
                     "id": str(uuid.uuid4()),
                     "content": content,
@@ -224,7 +235,16 @@ async def _migrate_legacy_projects(conn) -> None:
                     "order_index": idx,
                     "created": now,
                     "updated": now,
-                },
+                }
+                for idx, (content, _first_used) in enumerate(prompt_rows)
+            ]
+            await conn.execute(
+                text(
+                    "INSERT INTO prompts "
+                    "(id, content, version, project_id, order_index, created_at, updated_at) "
+                    "VALUES (:id, :content, 1, :project_id, :order_index, :created, :updated)"
+                ),
+                prompt_inserts,
             )
 
         logger.info(
@@ -293,37 +313,43 @@ async def _backfill_missing_prompts(conn) -> None:
     if not orphans:
         return
 
+    # Batch: fetch max order_index per project in one query
+    project_ids = list({row[0] for row in orphans})
+    max_result = await conn.execute(
+        text(
+            "SELECT project_id, COALESCE(MAX(order_index), -1) "
+            "FROM prompts WHERE project_id IN :pids GROUP BY project_id"
+        ).bindparams(bindparam("pids", expanding=True)),
+        {"pids": project_ids},
+    )
+    max_orders: dict[str, int] = {row[0]: row[1] for row in max_result.fetchall()}
+
     now = datetime.now(timezone.utc)
-    created = 0
-
+    inserts = []
     for project_id, raw_prompt in orphans:
-        # Determine next order_index
-        max_result = await conn.execute(
-            text("SELECT MAX(order_index) FROM prompts WHERE project_id = :pid"),
-            {"pid": project_id},
+        next_order = max_orders.get(project_id, -1) + 1
+        max_orders[project_id] = next_order  # Track for subsequent orphans in same project
+        inserts.append(
+            {
+                "id": str(uuid.uuid4()),
+                "content": raw_prompt,
+                "project_id": project_id,
+                "order_index": next_order,
+                "created": now,
+                "updated": now,
+            }
         )
-        max_order = max_result.scalar()
-        next_order = 0 if max_order is None else max_order + 1
 
-        prompt_id = str(uuid.uuid4())
+    if inserts:
         await conn.execute(
             text(
                 "INSERT INTO prompts "
                 "(id, content, version, project_id, order_index, created_at, updated_at) "
                 "VALUES (:id, :content, 1, :project_id, :order_index, :created, :updated)"
             ),
-            {
-                "id": prompt_id,
-                "content": raw_prompt,
-                "project_id": project_id,
-                "order_index": next_order,
-                "created": now,
-                "updated": now,
-            },
+            inserts,
         )
-        created += 1
-
-    logger.info("Backfilled %d missing prompt record(s)", created)
+        logger.info("Backfilled %d missing prompt record(s)", len(inserts))
 
 
 async def _cleanup_stale_running(conn) -> None:
@@ -347,9 +373,8 @@ async def init_db() -> None:
         await _run_migrations(conn)
         await _migrate_legacy_strategies(conn)
         await _migrate_legacy_projects(conn)
-        await _backfill_prompt_ids(conn)
         await _backfill_missing_prompts(conn)
-        # Re-run backfill to link newly created prompts
+        # Single backfill pass after missing prompts are created
         await _backfill_prompt_ids(conn)
         await _cleanup_stale_running(conn)
 
@@ -366,5 +391,18 @@ async def get_db() -> AsyncSession:
         except Exception:
             await session.rollback()
             raise
+        finally:
+            await session.close()
+
+
+async def get_db_readonly() -> AsyncSession:
+    """Lightweight read-only session dependency for GET/HEAD endpoints.
+
+    Skips the commit() call since no writes occur, avoiding an unnecessary
+    flush of the session identity map on every read request.
+    """
+    async with async_session_factory() as session:
+        try:
+            yield session
         finally:
             await session.close()

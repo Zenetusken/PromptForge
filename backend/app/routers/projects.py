@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import ProjectStatus
 from app.converters import deserialize_json_field
-from app.database import get_db
+from app.database import get_db, get_db_readonly
+from app.services.stats_cache import invalidate_stats_cache
 from app.schemas.context import codebase_context_from_dict, context_to_dict
 from app.repositories.optimization import OptimizationRepository
 from app.repositories.project import ProjectFilters, ProjectPagination, ProjectRepository
@@ -122,7 +123,7 @@ async def list_projects(
     status: str | None = Query(None),
     sort: str = Query("created_at"),
     order: Literal["asc", "desc"] = Query("desc"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """List projects with optional filtering, search, and pagination."""
     repo = _repo(db)
@@ -192,6 +193,7 @@ async def create_project(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    invalidate_stats_cache()
     return ProjectDetailResponse(
         id=project.id,
         name=project.name,
@@ -207,7 +209,7 @@ async def create_project(
 @router.get("/api/projects/{project_id}", response_model=ProjectDetailResponse)
 async def get_project(
     project_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """Get full project detail with prompts."""
     repo = _repo(db)
@@ -321,6 +323,7 @@ async def delete_project(
 
     deleted_optimizations = await repo.delete_project_data(project)
     await repo.soft_delete(project)
+    invalidate_stats_cache()
     return {
         "message": "Project deleted",
         "id": project_id,
@@ -342,6 +345,7 @@ async def archive_project(
         raise HTTPException(status_code=400, detail="Project is already archived")
 
     await repo.archive(project)
+    invalidate_stats_cache()
     return {
         "message": "Project archived",
         "id": project_id,
@@ -364,6 +368,7 @@ async def unarchive_project(
         raise HTTPException(status_code=400, detail="Project is already active")
 
     await repo.unarchive(project)
+    invalidate_stats_cache()
     return {
         "message": "Project unarchived",
         "id": project_id,
@@ -422,7 +427,7 @@ async def get_prompt_versions(
     prompt_id: str,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """Get paginated version history for a prompt."""
     repo = _repo(db)
@@ -446,7 +451,7 @@ async def get_prompt_forges(
     prompt_id: str,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_db_readonly),
 ):
     """Get paginated forge results linked to a prompt."""
     repo = _repo(db)
@@ -519,4 +524,6 @@ async def delete_prompt(
     await _get_mutable_project(repo, project_id)
 
     deleted_optimizations = await repo.delete_prompt(prompt)
+    if deleted_optimizations:
+        invalidate_stats_cache()
     return {"message": "Prompt deleted", "id": prompt_id, "deleted_optimizations": deleted_optimizations}

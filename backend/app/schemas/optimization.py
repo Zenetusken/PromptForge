@@ -51,14 +51,52 @@ class OptimizeRequest(BaseModel):
             "code_snippets, documentation, test_framework, test_patterns."
         ),
     )
+    stages: list[str] | None = Field(
+        None,
+        description=(
+            "Optional list of pipeline stages to run (e.g. ['analyze', 'optimize']). "
+            "Default: all 4 stages in order. Valid: analyze, strategy, optimize, validate."
+        ),
+    )
+    max_iterations: int | None = Field(
+        None,
+        ge=1,
+        le=5,
+        description="Max refinement iterations. When set with score_threshold, the pipeline "
+        "loops optimize+validate until the score meets the threshold or iterations are exhausted.",
+    )
+    score_threshold: float | None = Field(
+        None,
+        ge=0.1,
+        le=1.0,
+        description="Target overall score (0.0-1.0). Pipeline iterates until this score is reached.",
+    )
+
+    @field_validator("stages")
+    @classmethod
+    def stages_must_be_valid(cls, v: list[str] | None) -> list[str] | None:
+        """Validate that requested stages are known pipeline stage names."""
+        if v is None:
+            return v
+        valid = {"analyze", "strategy", "optimize", "validate"}
+        for stage in v:
+            if stage not in valid:
+                raise ValueError(
+                    f"Unknown stage {stage!r}. Valid: {', '.join(sorted(valid))}"
+                )
+        return v
 
     @field_validator("version")
     @classmethod
     def version_format(cls, v: str | None) -> str | None:
-        """Validate version matches v<number> pattern when non-empty."""
-        if v is not None and v.strip():
-            if not re.match(r"^v\d+$", v.strip(), re.IGNORECASE):
-                raise ValueError("Version must be in 'v<number>' format (e.g. 'v1', 'v2')")
+        """Validate version matches v<number> pattern.  Blank strings become None."""
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        if not re.match(r"^v\d+$", v, re.IGNORECASE):
+            raise ValueError("Version must be in 'v<number>' format (e.g. 'v1', 'v2')")
         return v
 
     @field_validator("strategy")

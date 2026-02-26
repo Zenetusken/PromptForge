@@ -10,8 +10,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
-from app.database import get_db
+from app.database import get_db_readonly
 from app.providers import get_provider
+from app.services.token_budget import token_budget
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +70,12 @@ async def _health_response(db: AsyncSession):
         "db_connected": db_connected,
         "mcp_connected": mcp_connected,
         "version": config.APP_VERSION,
+        "token_budgets": token_budget.to_dict(),
     }
 
 
 @router.get("/api/health")
-async def health_check(db: AsyncSession = Depends(get_db)):
+async def health_check(db: AsyncSession = Depends(get_db_readonly)):
     """Check the health of the API, database connection, and LLM provider availability.
 
     Returns a JSON object with status information for each component.
@@ -82,13 +84,13 @@ async def health_check(db: AsyncSession = Depends(get_db)):
 
 
 @router.head("/api/health", include_in_schema=False)
-async def health_check_head(db: AsyncSession = Depends(get_db)):
+async def health_check_head(db: AsyncSession = Depends(get_db_readonly)):
     """HEAD variant of the health check."""
     return await _health_response(db)
 
 
 @router.get("/health", include_in_schema=False)
-async def health_check_alias(db: AsyncSession = Depends(get_db)):
+async def health_check_alias(db: AsyncSession = Depends(get_db_readonly)):
     """Alias for /api/health at the root path.
 
     Some monitoring tools expect health checks at /health.
@@ -97,6 +99,6 @@ async def health_check_alias(db: AsyncSession = Depends(get_db)):
 
 
 @router.head("/health", include_in_schema=False)
-async def health_check_alias_head(db: AsyncSession = Depends(get_db)):
+async def health_check_alias_head(db: AsyncSession = Depends(get_db_readonly)):
     """HEAD variant of the health alias."""
     return await _health_response(db)

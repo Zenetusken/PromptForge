@@ -4,8 +4,9 @@ import asyncio
 import json
 import logging
 import time
+from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
-from typing import TYPE_CHECKING, AsyncIterator
+from typing import TYPE_CHECKING, Any, AsyncIterator
 
 from app.constants import (
     STAGE_ANALYZE,
@@ -22,12 +23,186 @@ from app.providers.types import TokenUsage
 from app.services.analyzer import AnalysisResult, PromptAnalyzer
 from app.services.optimizer import OptimizationResult, PromptOptimizer
 from app.services.strategy_selector import StrategySelection, StrategySelector
+from app.services.token_budget import token_budget
 from app.services.validator import PromptValidator, ValidationResult
 
 if TYPE_CHECKING:
     from app.schemas.context import CodebaseContext
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Stage Registry — pluggable pipeline stage system
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PipelineContext:
+    """Shared mutable context passed through pipeline stages."""
+
+    raw_prompt: str
+    llm_provider: LLMProvider
+    analysis: AnalysisResult | None = None
+    strategy: StrategySelection | None = None
+    optimization: OptimizationResult | None = None
+    validation: ValidationResult | None = None
+    total_usage: TokenUsage | None = None
+    codebase_context: Any = None  # CodebaseContext
+    strategy_override: str | None = None
+    secondary_frameworks_override: list[str] | None = None
+
+
+class PipelineStage(ABC):
+    """Abstract base class for pluggable pipeline stages."""
+
+    @abstractmethod
+    async def execute(self, context: PipelineContext) -> object:
+        """Execute the stage and return a result object. Update context as needed."""
+        ...
+
+    @property
+    @abstractmethod
+    def config(self) -> StageConfig:
+        """Return the StageConfig for SSE streaming."""
+        ...
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Unique stage name."""
+        ...
+
+
+class AnalyzeStage(PipelineStage):
+    """Stage 1: Analyze prompt structure and intent."""
+
+    @property
+    def name(self) -> str:
+        return "analyze"
+
+    @property
+    def config(self) -> StageConfig:
+        return STAGE_ANALYZE
+
+    async def execute(self, context: PipelineContext) -> AnalysisResult:
+        analyzer = PromptAnalyzer(context.llm_provider)
+        result = await analyzer.analyze(
+            context.raw_prompt, codebase_context=context.codebase_context,
+        )
+        context.analysis = result
+        context.total_usage = _add_usage(context.total_usage, analyzer.last_usage)
+        return result
+
+
+class StrategyStage(PipelineStage):
+    """Stage 2: Select optimization strategy."""
+
+    @property
+    def name(self) -> str:
+        return "strategy"
+
+    @property
+    def config(self) -> StageConfig:
+        return STAGE_STRATEGY
+
+    async def execute(self, context: PipelineContext) -> StrategySelection:
+        if context.analysis is None:
+            raise RuntimeError("StrategyStage requires analysis result in context")
+        selection, usage = await _select_strategy(
+            context.analysis,
+            context.strategy_override,
+            raw_prompt=context.raw_prompt,
+            prompt_length=len(context.raw_prompt),
+            llm_provider=context.llm_provider,
+            secondary_frameworks_override=context.secondary_frameworks_override,
+            codebase_context=context.codebase_context,
+        )
+        context.strategy = selection
+        context.total_usage = _add_usage(context.total_usage, usage)
+        return selection
+
+
+class OptimizeStage(PipelineStage):
+    """Stage 3: Rewrite the prompt using the selected strategy."""
+
+    @property
+    def name(self) -> str:
+        return "optimize"
+
+    @property
+    def config(self) -> StageConfig:
+        return STAGE_OPTIMIZE
+
+    async def execute(self, context: PipelineContext) -> OptimizationResult:
+        if context.analysis is None or context.strategy is None:
+            raise RuntimeError("OptimizeStage requires analysis and strategy in context")
+        optimizer = PromptOptimizer(context.llm_provider)
+        result = await optimizer.optimize(
+            context.raw_prompt,
+            context.analysis,
+            context.strategy.strategy,
+            secondary_frameworks=context.strategy.secondary_frameworks or None,
+            codebase_context=context.codebase_context,
+        )
+        context.optimization = result
+        context.total_usage = _add_usage(context.total_usage, optimizer.last_usage)
+        return result
+
+
+class ValidateStage(PipelineStage):
+    """Stage 4: Score and validate the optimization."""
+
+    @property
+    def name(self) -> str:
+        return "validate"
+
+    @property
+    def config(self) -> StageConfig:
+        return STAGE_VALIDATE
+
+    async def execute(self, context: PipelineContext) -> ValidationResult:
+        if context.optimization is None:
+            raise RuntimeError("ValidateStage requires optimization result in context")
+        validator = PromptValidator(context.llm_provider)
+        result = await validator.validate(
+            context.raw_prompt,
+            context.optimization.optimized_prompt,
+            codebase_context=context.codebase_context,
+        )
+        context.validation = result
+        context.total_usage = _add_usage(context.total_usage, validator.last_usage)
+        return result
+
+
+class StageRegistry:
+    """Registry of named pipeline stages."""
+
+    def __init__(self) -> None:
+        self._stages: dict[str, type[PipelineStage]] = {}
+
+    def register(self, name: str, stage_cls: type[PipelineStage]) -> None:
+        self._stages[name] = stage_cls
+
+    def get(self, name: str) -> type[PipelineStage]:
+        if name not in self._stages:
+            raise KeyError(f"Unknown pipeline stage: {name!r}")
+        return self._stages[name]
+
+    def list(self) -> list[str]:
+        return list(self._stages.keys())
+
+    def create(self, name: str) -> PipelineStage:
+        return self.get(name)()
+
+
+# Global registry with built-in stages
+stage_registry = StageRegistry()
+stage_registry.register("analyze", AnalyzeStage)
+stage_registry.register("strategy", StrategyStage)
+stage_registry.register("optimize", OptimizeStage)
+stage_registry.register("validate", ValidateStage)
+
+DEFAULT_STAGES = ["analyze", "strategy", "optimize", "validate"]
 
 
 @dataclass
@@ -189,6 +364,8 @@ async def run_pipeline(
     strategy_override: str | None = None,
     secondary_frameworks_override: list[str] | None = None,
     codebase_context: CodebaseContext | None = None,
+    max_iterations: int | None = None,
+    score_threshold: float | None = None,
 ) -> PipelineResult:
     """Run the full optimization pipeline: analyze, select strategy, optimize, validate."""
     start_time = time.time()
@@ -229,11 +406,36 @@ async def run_pipeline(
     )
     total_usage = _add_usage(total_usage, validator.last_usage)
 
+    # Iterative refinement (non-streaming)
+    iteration = 1
+    effective_max = max_iterations or 1
+    effective_threshold = score_threshold or 1.0
+    while iteration < effective_max and validation.overall_score < effective_threshold:
+        iteration += 1
+        logger.info(
+            "Iteration %d: score %.2f < threshold %.2f, re-optimizing",
+            iteration, validation.overall_score, effective_threshold,
+        )
+        optimizer = PromptOptimizer(client)
+        optimization = await optimizer.optimize(
+            optimization.optimized_prompt, analysis, strategy_selection.strategy,
+            secondary_frameworks=strategy_selection.secondary_frameworks or None,
+            codebase_context=codebase_context,
+        )
+        total_usage = _add_usage(total_usage, optimizer.last_usage)
+        validator = PromptValidator(client)
+        validation = await validator.validate(
+            raw_prompt, optimization.optimized_prompt, codebase_context=codebase_context,
+        )
+        total_usage = _add_usage(total_usage, validator.last_usage)
+
     elapsed_ms = int((time.time() - start_time) * 1000)
     logger.info(
         "Pipeline complete: duration_ms=%d model=%s overall_score=%.2f",
         elapsed_ms, client.model_name, validation.overall_score,
     )
+    if total_usage:
+        token_budget.record_usage(client.model_name, total_usage)
     return _assemble_result(
         analysis, strategy_selection,
         optimization, validation, elapsed_ms, client.model_name,
@@ -340,6 +542,9 @@ async def run_pipeline_streaming(
     strategy_override: str | None = None,
     secondary_frameworks_override: list[str] | None = None,
     codebase_context: CodebaseContext | None = None,
+    stages: list[str] | None = None,
+    max_iterations: int | None = None,
+    score_threshold: float | None = None,
 ) -> AsyncIterator[str | PipelineComplete]:
     """Run the pipeline and yield SSE events for each stage.
 
@@ -352,6 +557,7 @@ async def run_pipeline_streaming(
         secondary_frameworks_override: When set with strategy_override, these
             secondary frameworks are passed to the optimizer.
         codebase_context: Optional codebase context to thread through all stages.
+        stages: Optional list of stage names to run. Default: all 4 in order.
 
     Yields:
         SSE-formatted strings for each pipeline stage, then a PipelineComplete
@@ -361,23 +567,54 @@ async def run_pipeline_streaming(
     client = llm_provider or get_provider()
     total_usage: TokenUsage | None = None
 
+    # Resolve which stages to run (default: all 4)
+    active_stages = set(stages) if stages else set(DEFAULT_STAGES)
+
     # Stage 1: Analyze
     analyzer = PromptAnalyzer(client)
     analysis = None
-    async for event in _stream_stage(
-        analyzer.analyze(raw_prompt, codebase_context=codebase_context), STAGE_ANALYZE,
-    ):
-        if isinstance(event, StageResult):
-            analysis = event.value
-        else:
-            yield event
-    if analysis is None:
-        raise RuntimeError("Analyze stage completed without returning a result")
-    total_usage = _add_usage(total_usage, analyzer.last_usage)
-    logger.info(
-        "Analysis: task_type=%s complexity=%s weaknesses=%s strengths=%s",
-        analysis.task_type, analysis.complexity, analysis.weaknesses, analysis.strengths,
-    )
+    if "analyze" in active_stages:
+        async for event in _stream_stage(
+            analyzer.analyze(raw_prompt, codebase_context=codebase_context), STAGE_ANALYZE,
+        ):
+            if isinstance(event, StageResult):
+                analysis = event.value
+            else:
+                yield event
+        if analysis is None:
+            raise RuntimeError("Analyze stage completed without returning a result")
+        total_usage = _add_usage(total_usage, analyzer.last_usage)
+        logger.info(
+            "Analysis: task_type=%s complexity=%s weaknesses=%s strengths=%s",
+            analysis.task_type, analysis.complexity, analysis.weaknesses, analysis.strengths,
+        )
+    else:
+        # Provide a default analysis for downstream stages
+        analysis = AnalysisResult(
+            task_type="general", complexity="moderate",
+            weaknesses=[], strengths=[],
+        )
+
+    # Analyze-only: emit partial complete and return early
+    if active_stages == {"analyze"}:
+        elapsed_ms = int((time.time() - pipeline_start) * 1000)
+        if total_usage:
+            token_budget.record_usage(client.model_name, total_usage)
+        from dataclasses import asdict as _asdict
+        complete_data: dict[str, object] = {
+            **_asdict(analysis),
+            "duration_ms": elapsed_ms,
+            "model_used": client.model_name,
+            "status": OptimizationStatus.COMPLETED,
+        }
+        if total_usage:
+            complete_data["input_tokens"] = total_usage.input_tokens
+            complete_data["output_tokens"] = total_usage.output_tokens
+        if complete_metadata:
+            complete_data.update(complete_metadata)
+        yield _sse_event("complete", complete_data)
+        yield PipelineComplete(data=complete_data)
+        return
 
     # Stage 2: Strategy Selection
     strategy = None
@@ -451,6 +688,72 @@ async def run_pipeline_streaming(
     if validation is None:
         raise RuntimeError("Validate stage completed without returning a result")
     total_usage = _add_usage(total_usage, validator.last_usage)
+
+    # --- Iterative refinement loop ---
+    optimization_prev = optimization
+    iteration = 1
+    effective_max = max_iterations or 1
+    effective_threshold = score_threshold or 1.0  # 1.0 means never iterate by default
+
+    while (
+        iteration < effective_max
+        and validation is not None
+        and validation.overall_score < effective_threshold
+    ):
+        iteration += 1
+        logger.info(
+            "Iteration %d: score %.2f < threshold %.2f, re-optimizing",
+            iteration, validation.overall_score, effective_threshold,
+        )
+        yield _sse_event("iteration", {
+            "iteration": iteration,
+            "score": validation.overall_score,
+            "threshold": effective_threshold,
+        })
+
+        # Re-optimize using the previous optimized prompt as input
+        optimizer = PromptOptimizer(client)
+        optimization = None
+        async for event in _stream_stage(
+            optimizer.optimize(
+                optimization_prev.optimized_prompt if optimization_prev else raw_prompt,
+                analysis, strategy.strategy,
+                secondary_frameworks=strategy.secondary_frameworks or None,
+                codebase_context=codebase_context,
+            ),
+            STAGE_OPTIMIZE,
+            fmt,
+        ):
+            if isinstance(event, StageResult):
+                optimization = event.value
+            else:
+                yield event
+        if optimization is None:
+            break
+        optimization_prev = optimization
+        total_usage = _add_usage(total_usage, optimizer.last_usage)
+
+        # Re-validate
+        validator = PromptValidator(client)
+        validation = None
+        async for event in _stream_stage(
+            validator.validate(
+                raw_prompt, optimization.optimized_prompt,
+                codebase_context=codebase_context,
+            ),
+            STAGE_VALIDATE,
+        ):
+            if isinstance(event, StageResult):
+                validation = event.value
+            else:
+                yield event
+        if validation is None:
+            break
+        total_usage = _add_usage(total_usage, validator.last_usage)
+
+    # Record accumulated usage in token budget manager
+    if total_usage:
+        token_budget.record_usage(client.model_name, total_usage)
 
     # Complete
     elapsed_ms = int((time.time() - pipeline_start) * 1000)

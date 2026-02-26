@@ -42,33 +42,34 @@ class TestEnsureProjectByName:
 
     @pytest.mark.asyncio
     async def test_creates_new_project(self, db_session: AsyncSession):
-        pid = await ensure_project_by_name(db_session, "my-project")
+        info = await ensure_project_by_name(db_session, "my-project")
         await db_session.commit()
 
-        assert pid is not None
+        assert info is not None
+        assert info.status == "active"
         repo = ProjectRepository(db_session)
         project = await repo.get_by_name("my-project")
         assert project is not None
-        assert project.id == pid
+        assert project.id == info.id
         assert project.status == "active"
 
     @pytest.mark.asyncio
     async def test_returns_existing_project(self, db_session: AsyncSession):
         # Create first
-        pid1 = await ensure_project_by_name(db_session, "existing")
+        info1 = await ensure_project_by_name(db_session, "existing")
         await db_session.flush()
 
         # Should return same ID
-        pid2 = await ensure_project_by_name(db_session, "existing")
-        assert pid1 == pid2
+        info2 = await ensure_project_by_name(db_session, "existing")
+        assert info1.id == info2.id
 
     @pytest.mark.asyncio
     async def test_strips_whitespace(self, db_session: AsyncSession):
-        pid1 = await ensure_project_by_name(db_session, "  spaced  ")
+        info1 = await ensure_project_by_name(db_session, "  spaced  ")
         await db_session.flush()
 
-        pid2 = await ensure_project_by_name(db_session, "spaced")
-        assert pid1 == pid2
+        info2 = await ensure_project_by_name(db_session, "spaced")
+        assert info1.id == info2.id
 
     @pytest.mark.asyncio
     async def test_reactivates_deleted_project(self, db_session: AsyncSession):
@@ -78,8 +79,9 @@ class TestEnsureProjectByName:
         await db_session.flush()
 
         # Should reactivate the deleted project (name is UNIQUE)
-        pid = await ensure_project_by_name(db_session, "deleted-proj")
-        assert pid == project.id
+        info = await ensure_project_by_name(db_session, "deleted-proj")
+        assert info.id == project.id
+        assert info.status == ProjectStatus.ACTIVE
 
         repo = ProjectRepository(db_session)
         reloaded = await repo.get_by_name("deleted-proj")
@@ -92,8 +94,9 @@ class TestEnsureProjectByName:
         db_session.add(project)
         await db_session.flush()
 
-        pid = await ensure_project_by_name(db_session, "archived-proj")
-        assert pid == project.id
+        info = await ensure_project_by_name(db_session, "archived-proj")
+        assert info.id == project.id
+        assert info.status == ProjectStatus.ARCHIVED
 
 
 # ---------------------------------------------------------------------------

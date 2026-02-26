@@ -21,6 +21,14 @@ _UNSET = object()
 """Sentinel indicating a keyword argument was not provided."""
 
 
+@dataclass(frozen=True, slots=True)
+class ProjectInfo:
+    """Lightweight result from ensure_project_by_name — avoids a second query."""
+
+    id: str
+    status: str
+
+
 @dataclass
 class ProjectFilters:
     """Filter parameters for listing projects."""
@@ -39,8 +47,8 @@ class ProjectPagination:
     limit: int = 20
 
 
-async def ensure_project_by_name(session: AsyncSession, name: str) -> str | None:
-    """Get or create a Project by name, returning its ID.
+async def ensure_project_by_name(session: AsyncSession, name: str) -> ProjectInfo | None:
+    """Get or create a Project by name, returning its ID and status.
 
     Returns None if name is empty/blank. Reuses active/archived projects.
     Reactivates soft-deleted projects (name is UNIQUE so we can't create a
@@ -57,12 +65,12 @@ async def ensure_project_by_name(session: AsyncSession, name: str) -> str | None
             project.status = ProjectStatus.ACTIVE
             project.updated_at = datetime.now(timezone.utc)
             await session.flush()
-        return project.id
+        return ProjectInfo(id=project.id, status=project.status)
 
     new_project = Project(name=name)
     session.add(new_project)
     await session.flush()
-    return new_project.id
+    return ProjectInfo(id=new_project.id, status=new_project.status)
 
 
 async def ensure_prompt_in_project(
@@ -87,9 +95,20 @@ async def ensure_prompt_in_project(
         return existing_id
     # Fuzzy path: strip edges + collapse internal whitespace
     normalized = " ".join(content.split())
+    # SQL-side normalization handles common whitespace differences
+    fuzzy_stmt = select(Prompt.id).where(
+        Prompt.project_id == project_id,
+        func.trim(func.replace(func.replace(func.replace(
+            Prompt.content, '\n', ' '), '\t', ' '), '  ', ' ')) == normalized,
+    ).limit(1)
+    fuzzy_result = await session.execute(fuzzy_stmt)
+    fuzzy_id = fuzzy_result.scalar_one_or_none()
+    if fuzzy_id:
+        return fuzzy_id
+    # Final fallback: Python-side normalization with safety limit
     all_stmt = select(Prompt.id, Prompt.content).where(
         Prompt.project_id == project_id,
-    )
+    ).limit(100)
     all_result = await session.execute(all_stmt)
     for pid, pcontent in all_result.all():
         if " ".join(pcontent.split()) == normalized:
