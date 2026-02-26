@@ -8,6 +8,7 @@ measure, not the sole security boundary.
 
 from __future__ import annotations
 
+import functools
 from urllib.parse import urlparse
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -19,9 +20,13 @@ from app import config
 _STATE_CHANGING_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
 
 
-def _allowed_origins() -> set[str]:
-    """Build a set of allowed origin strings from the configured FRONTEND_URL."""
-    origins = set()
+@functools.lru_cache(maxsize=1)
+def _allowed_origins() -> frozenset[str]:
+    """Build a set of allowed origin strings from the configured FRONTEND_URL.
+
+    Cached at module level — config doesn't change after startup.
+    """
+    origins: set[str] = set()
     for url in config.FRONTEND_URL.split(","):
         url = url.strip()
         if url:
@@ -31,7 +36,7 @@ def _allowed_origins() -> set[str]:
     # Also allow the backend's own origin for API docs
     origins.add(f"http://localhost:{config.PORT}")
     origins.add(f"http://127.0.0.1:{config.PORT}")
-    return origins
+    return frozenset(origins)
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):

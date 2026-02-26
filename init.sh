@@ -3,9 +3,11 @@
 # This script is idempotent — safe to run multiple times.
 #
 # Usage:
-#   ./init.sh              Setup deps + start services (default)
+#   ./init.sh              Setup deps + start services (default, dev mode with hot-reload)
+#   ./init.sh build        Setup deps + build frontend + start with pre-built assets (no hot-reload)
 #   ./init.sh stop         Stop all running services
-#   ./init.sh restart      Stop then start (no reinstall)
+#   ./init.sh restart      Stop then start dev mode (no reinstall)
+#   ./init.sh restart-build Stop then start built mode (requires prior build)
 #   ./init.sh status       Show running/stopped state + health details
 #   ./init.sh test         Install test extras, run backend + frontend tests
 #   ./init.sh seed         Populate example optimization data
@@ -490,6 +492,177 @@ except Exception: pass
     fi
 }
 
+# ─── Built Mode (pre-built assets, no hot-reload) ────────────────
+# For local testing without Vite dev-server overhead.
+# For real production deployments, use: docker-compose up
+do_build_frontend() {
+    log "Building frontend..."
+    cd "$SCRIPT_DIR/frontend"
+
+    # VITE_* env vars are baked in at build time by Vite (import.meta.env).
+    # VITE_API_URL tells the browser where to find the backend API.
+    # VITE_AUTH_TOKEN (if set) is embedded for Bearer auth.
+    VITE_API_URL="http://localhost:$BACKEND_PORT" \
+    VITE_AUTH_TOKEN="$AUTH_TOKEN" \
+    npm run build
+
+    success "Frontend build complete"
+    cd "$SCRIPT_DIR"
+}
+
+do_start_built() {
+    log "Stopping any existing PromptForge processes..."
+    stop_service "Backend" "$BACKEND_PID_FILE" "$BACKEND_PORT" 0 &
+    local stop_bg=$!
+    stop_service "Frontend" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" 0 &
+    local stop_fg=$!
+    stop_service "MCP" "$MCP_PID_FILE" "$MCP_PORT" 0 &
+    local stop_mcp=$!
+
+    wait $stop_bg || true
+    wait $stop_fg || true
+    wait $stop_mcp || true
+
+    wait_for_port_free "$BACKEND_PORT" 5 &
+    local wait_bg=$!
+    wait_for_port_free "$FRONTEND_PORT" 5 &
+    local wait_fg=$!
+    wait_for_port_free "$MCP_PORT" 5 &
+    local wait_mcp=$!
+
+    wait $wait_bg || true
+    wait $wait_fg || true
+    wait $wait_mcp || true
+
+    mkdir -p "$LOGS_DIR"
+    chmod 700 "$LOGS_DIR" 2>/dev/null || true
+
+    if [ ! -d "$SCRIPT_DIR/backend/venv" ]; then
+        error "Backend not set up yet. Run ./init.sh first."
+        exit 1
+    fi
+
+    if [ ! -d "$SCRIPT_DIR/frontend/build" ]; then
+        error "Frontend not built yet. Run ./init.sh build first."
+        exit 1
+    fi
+
+    # Start backend (no --reload)
+    log "Starting backend server on port $BACKEND_PORT..."
+    cd "$SCRIPT_DIR/backend"
+    source venv/bin/activate
+
+    nohup python -m uvicorn app.main:app \
+        --host 0.0.0.0 \
+        --port "$BACKEND_PORT" \
+        > "$LOGS_DIR/backend.log" 2>&1 &
+
+    local backend_pid=$!
+    chmod 600 "$LOGS_DIR/backend.log" 2>/dev/null || true
+    echo $backend_pid > "$BACKEND_PID_FILE"
+    success "Backend starting (PID: $backend_pid)"
+
+    cd "$SCRIPT_DIR"
+
+    # Start frontend (pre-built Node server, no Vite)
+    log "Starting frontend server on port $FRONTEND_PORT (pre-built)..."
+    cd "$SCRIPT_DIR/frontend"
+
+    # ORIGIN is required by SvelteKit adapter-node for CSRF protection.
+    # Derive from FRONTEND_URL (.env) if available, otherwise default to localhost.
+    local frontend_origin
+    frontend_origin=$(_read_env_var FRONTEND_URL)
+    if [ -z "$frontend_origin" ]; then
+        frontend_origin="http://localhost:$FRONTEND_PORT"
+    fi
+
+    PORT="$FRONTEND_PORT" HOST="0.0.0.0" ORIGIN="$frontend_origin" \
+    nohup node build/index.js \
+        > "$LOGS_DIR/frontend.log" 2>&1 &
+
+    local frontend_pid=$!
+    chmod 600 "$LOGS_DIR/frontend.log" 2>/dev/null || true
+    echo $frontend_pid > "$FRONTEND_PID_FILE"
+    success "Frontend starting (PID: $frontend_pid)"
+
+    cd "$SCRIPT_DIR"
+
+    # Start MCP server (no --reload)
+    log "Starting MCP server on port $MCP_PORT..."
+    cd "$SCRIPT_DIR/backend"
+    source venv/bin/activate
+
+    nohup python -m uvicorn app.mcp_server:app \
+        --host "$MCP_HOST" \
+        --port "$MCP_PORT" \
+        > "$LOGS_DIR/mcp.log" 2>&1 &
+
+    local mcp_pid=$!
+    chmod 600 "$LOGS_DIR/mcp.log" 2>/dev/null || true
+    echo $mcp_pid > "$MCP_PID_FILE"
+    success "MCP server starting (PID: $mcp_pid)"
+
+    cd "$SCRIPT_DIR"
+
+    # Wait for health
+    log "Waiting for services to be healthy..."
+    local backend_ok=false frontend_ok=false mcp_ok=false
+
+    (wait_for_url "http://localhost:$BACKEND_PORT/api/health" "Backend" 30) &
+    local hc_bg=$!
+
+    (wait_for_url "http://localhost:$FRONTEND_PORT" "Frontend" 30) &
+    local hc_fg=$!
+
+    (wait_for_url "http://localhost:$MCP_PORT/health" "MCP" 15) &
+    local hc_mcp=$!
+
+    if wait $hc_bg; then backend_ok=true; fi
+    if wait $hc_fg; then frontend_ok=true; fi
+    if wait $hc_mcp; then mcp_ok=true; fi
+
+    local provider_info=""
+    if $backend_ok; then
+        provider_info=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null \
+            | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    p = d.get('llm_provider', d.get('provider', ''))
+    if p: print(p)
+except Exception: pass
+" 2>/dev/null || true)
+    fi
+
+    local end_time=$(date +%s.%N)
+    local startup_time=$(awk "BEGIN {printf \"%.2f\", $end_time - $START_TIME}")
+
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  PromptForge ${GREEN}Built${CYAN} Environment${NC}        [Ready in ${startup_time}s]"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "  Backend API:    ${GREEN}http://localhost:$BACKEND_PORT${NC}"
+    echo -e "  API Docs:       ${GREEN}http://localhost:$BACKEND_PORT/docs${NC}"
+    echo -e "  Frontend:       ${GREEN}http://localhost:$FRONTEND_PORT${NC}"
+    echo -e "  MCP Server:     ${GREEN}http://localhost:$MCP_PORT/sse${NC}"
+    echo -e "  Mode:           ${GREEN}built${NC} (pre-built assets, no hot-reload)"
+    if [ -n "$provider_info" ]; then
+        echo -e "  LLM Provider:   ${GREEN}$provider_info${NC}"
+    fi
+    echo ""
+    echo -e "  Backend PID:    $backend_pid"
+    echo -e "  Frontend PID:   $frontend_pid"
+    echo -e "  MCP PID:        $mcp_pid"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    if $backend_ok && $frontend_ok && $mcp_ok; then
+        success "All services running (built mode)!"
+    else
+        warn "Some services may still be starting. Check logs."
+    fi
+}
+
 # ─── Stop ─────────────────────────────────────────────────────────
 do_stop() {
     log "Stopping PromptForge services..."
@@ -682,9 +855,11 @@ do_help() {
     echo "Usage: ./init.sh [command]"
     echo ""
     echo "Commands:"
-    echo "  (none)      Setup dependencies and start services (default)"
+    echo "  (none)      Setup dependencies and start services (default, dev mode with hot-reload)"
+    echo "  build       Build frontend and start with pre-built assets (no hot-reload)"
     echo "  stop        Stop all running services"
-    echo "  restart     Stop then start services (no reinstall)"
+    echo "  restart     Stop then start dev mode (no reinstall)"
+    echo "  restart-build Stop then start built mode (requires prior ./init.sh build)"
     echo "  status      Show running/stopped state and health details"
     echo "  test        Install test extras, run backend + frontend tests"
     echo "  seed        Populate example optimization data"
@@ -703,12 +878,21 @@ do_help() {
 
 # ─── Command Dispatcher ──────────────────────────────────────────
 case "${1:-}" in
+    build)
+        do_setup
+        do_build_frontend
+        do_start_built
+        ;;
     stop)
         do_stop
         ;;
     restart)
         do_stop
         do_start
+        ;;
+    restart-build)
+        do_stop
+        do_start_built
         ;;
     status)
         do_status
