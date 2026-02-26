@@ -450,11 +450,13 @@ async def _sync_workspace_link(
 
     file_paths = [item["path"] for item in tree_items if item.get("type") == "blob"]
 
-    # Fetch key marker files
+    # Fetch key marker files (dependency + config + README)
     marker_files = [
         "package.json", "pyproject.toml", "requirements.txt",
         "go.mod", "Cargo.toml", "Gemfile", "composer.json",
-        "tsconfig.json",
+        "tsconfig.json", "README.md",
+        ".eslintrc.json", ".eslintrc.js", "eslint.config.js",
+        ".prettierrc", ".prettierrc.json", "ruff.toml",
     ]
     file_contents: dict[str, str] = {}
     for marker in marker_files:

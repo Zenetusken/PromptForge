@@ -340,14 +340,15 @@ class WorkspaceRepository:
                 and synced_at < stale_threshold
             )
 
-            # Calculate context completeness
+            # Calculate context completeness (all 9 CodebaseContext fields)
             completeness = 0.0
             if link.workspace_context:
                 ctx = context_from_json(link.workspace_context)
                 if ctx:
                     fields = [
                         ctx.language, ctx.framework, ctx.description,
-                        ctx.conventions, ctx.patterns, ctx.test_framework,
+                        ctx.conventions, ctx.patterns, ctx.code_snippets,
+                        ctx.documentation, ctx.test_framework,
                         ctx.test_patterns,
                     ]
                     filled = sum(1 for f in fields if f)

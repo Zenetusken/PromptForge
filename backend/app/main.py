@@ -43,6 +43,9 @@ async def lifespan(app: FastAPI):
                 env_provider, exc,
             )
     yield
+    # Shutdown: close persistent HTTP clients
+    from app.routers.health import _mcp_client
+    await _mcp_client.aclose()
 
 
 app = FastAPI(
@@ -89,8 +92,8 @@ app.add_middleware(
 # Security headers
 app.add_middleware(SecurityHeadersMiddleware)
 
-# GZip compression (outermost — compresses responses ≥1KB, small SSE chunks pass through)
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+# GZip compression (outermost — compresses responses ≥4KB, avoids CPU waste on small payloads)
+app.add_middleware(GZipMiddleware, minimum_size=4096)
 
 # Include routers
 app.include_router(health.router)

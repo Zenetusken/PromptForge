@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 
+# Persistent client for MCP health probes — avoids TCP setup on every poll
+_mcp_client = httpx.AsyncClient(timeout=1.5)
+
 
 async def _check_db(db: AsyncSession) -> bool:
     """Check database connectivity."""
@@ -35,13 +38,12 @@ async def _probe_mcp() -> bool:
     Returns False on any error (connection refused, timeout, bad response).
     """
     try:
-        async with httpx.AsyncClient(timeout=1.5) as client:
-            resp = await client.get(
-                f"http://{config.MCP_HOST}:{config.MCP_PORT}/health"
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("status") == "ok"
+        resp = await _mcp_client.get(
+            f"http://{config.MCP_HOST}:{config.MCP_PORT}/health"
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("status") == "ok"
     except Exception:
         pass
     return False

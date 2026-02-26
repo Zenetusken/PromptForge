@@ -126,36 +126,24 @@ class TestProbeMcp:
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "ok", "server": "promptforge_mcp"}
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("app.routers.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.routers.health._mcp_client") as mock_client:
+            mock_client.get = AsyncMock(return_value=mock_response)
             result = await _probe_mcp()
         assert result is True
 
     @pytest.mark.asyncio
     async def test_probe_mcp_connection_refused(self):
         """Returns False when MCP server is not running."""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("app.routers.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.routers.health._mcp_client") as mock_client:
+            mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
             result = await _probe_mcp()
         assert result is False
 
     @pytest.mark.asyncio
     async def test_probe_mcp_timeout(self):
         """Returns False when MCP server times out."""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.ReadTimeout("Timeout"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("app.routers.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.routers.health._mcp_client") as mock_client:
+            mock_client.get = AsyncMock(side_effect=httpx.ReadTimeout("Timeout"))
             result = await _probe_mcp()
         assert result is False
 
@@ -166,11 +154,7 @@ class TestProbeMcp:
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "error"}
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("app.routers.health.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.routers.health._mcp_client") as mock_client:
+            mock_client.get = AsyncMock(return_value=mock_response)
             result = await _probe_mcp()
         assert result is False

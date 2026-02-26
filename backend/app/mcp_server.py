@@ -531,6 +531,8 @@ async def promptforge_optimize(
         "Re-run an existing optimization with its original parameters. "
         "Optionally override the strategy or secondary_frameworks to try "
         "a different approach (e.g. 'retry with chain-of-thought'). "
+        "Context is re-resolved from the project's workspace + manual layers; "
+        "pass codebase_context to override with explicit layer-3 context. "
         "Returns a new optimization record."
     ),
     annotations=ToolAnnotations(
@@ -546,6 +548,7 @@ async def promptforge_retry(
     ctx: Context,
     strategy: Annotated[str | None, Field(description="Override strategy for the retry. Use the strategies tool for valid values.")] = None,  # noqa: E501
     secondary_frameworks: Annotated[list[str] | None, Field(description="Override secondary frameworks (max 2). Use the strategies tool for valid values.")] = None,  # noqa: E501
+    codebase_context: Annotated[dict | None, Field(description="Optional codebase context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in a real project.")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Re-run an optimization, optionally with a different strategy.
 
@@ -581,6 +584,7 @@ async def promptforge_retry(
         ),
         prompt_id=orig_prompt_id,
         version=orig_version,
+        codebase_context=codebase_context,
     )
 
 

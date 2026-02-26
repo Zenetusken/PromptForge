@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.optimization import OptimizationRepository
 
-_STATS_CACHE_TTL = 120  # seconds
+_STATS_CACHE_TTL = 300  # seconds (invalidated on mutations anyway)
 _stats_cache: dict[str | None, tuple[float, dict]] = {}  # project_key → (timestamp, data)
 
 

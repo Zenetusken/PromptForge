@@ -29,6 +29,7 @@ from app.repositories.project import (
     ensure_project_by_name,
     ensure_prompt_in_project,
 )
+from app.repositories.workspace import WorkspaceRepository
 from app.schemas.context import (
     CodebaseContext,
     codebase_context_from_dict,
@@ -53,6 +54,24 @@ def _resolve_provider(
     if not provider_name:
         return None
     return get_provider(provider_name, api_key=api_key, model=model)
+
+
+async def _resolve_context(
+    db: AsyncSession,
+    project_name: str | None,
+    explicit_dict: dict[str, Any] | None = None,
+) -> CodebaseContext | None:
+    """Three-layer context resolution: workspace → manual profile → explicit request."""
+    explicit = codebase_context_from_dict(explicit_dict)
+    workspace = None
+    manual = None
+    if project_name:
+        workspace = await WorkspaceRepository(db).get_workspace_context_by_project_name(
+            project_name,
+        )
+        manual = await ProjectRepository(db).get_context_by_name(project_name)
+    base = merge_contexts(workspace, manual)
+    return merge_contexts(base, explicit)
 
 
 def _create_streaming_response(
@@ -236,18 +255,7 @@ async def optimize_prompt(
                 if auto_prompt_id:
                     optimization.prompt_id = auto_prompt_id
 
-    # Context resolution: workspace auto-context → manual profile → explicit request
-    from app.repositories.workspace import WorkspaceRepository
-    explicit_context = codebase_context_from_dict(request.codebase_context)
-    workspace_context = None
-    project_context = None
-    if request.project:
-        workspace_context = await WorkspaceRepository(db).get_workspace_context_by_project_name(
-            request.project,
-        )
-        project_context = await ProjectRepository(db).get_context_by_name(request.project)
-    base_context = merge_contexts(workspace_context, project_context)  # manual wins
-    resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
+    resolved_context = await _resolve_context(db, request.project, request.codebase_context)
 
     # Snapshot on optimization record
     if resolved_context:
@@ -265,6 +273,10 @@ async def optimize_prompt(
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id
+    if resolved_context:
+        ctx_dict = context_to_dict(resolved_context)
+        if ctx_dict:
+            metadata["codebase_context_snapshot"] = ctx_dict
     return _create_streaming_response(
         optimization_id, sanitized_prompt, start_time, metadata,
         llm_provider=llm_provider, strategy_override=request.strategy,
@@ -521,19 +533,8 @@ async def batch_optimize(
         except (RuntimeError, ImportError, ProviderError):
             model_fallback = config.CLAUDE_MODEL
 
-    # Context resolution: workspace auto-context → manual profile → explicit request
     # Resolved once for the entire batch (all items share the same project context)
-    from app.repositories.workspace import WorkspaceRepository
-    explicit_context = codebase_context_from_dict(request.codebase_context)
-    workspace_context = None
-    project_context = None
-    if request.project:
-        workspace_context = await WorkspaceRepository(db).get_workspace_context_by_project_name(
-            request.project,
-        )
-        project_context = await ProjectRepository(db).get_context_by_name(request.project)
-    base_context = merge_contexts(workspace_context, project_context)  # manual wins
-    resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
+    resolved_context = await _resolve_context(db, request.project, request.codebase_context)
 
     results: list[BatchItemResult] = []
     completed = 0
@@ -713,15 +714,8 @@ async def retry_optimization(
                 if auto_prompt_id:
                     new_optimization.prompt_id = auto_prompt_id
 
-    # Re-resolve context: workspace auto-context → manual profile (picks up updates)
-    resolved_context = None
-    if original.project:
-        from app.repositories.workspace import WorkspaceRepository
-        workspace_context = await WorkspaceRepository(db).get_workspace_context_by_project_name(
-            original.project,
-        )
-        project_context = await ProjectRepository(db).get_context_by_name(original.project)
-        resolved_context = merge_contexts(workspace_context, project_context)  # manual wins
+    # Re-resolve context from workspace + manual profile (picks up updates since original)
+    resolved_context = await _resolve_context(db, original.project)
 
     if resolved_context:
         ctx_dict = context_to_dict(resolved_context)
@@ -738,6 +732,10 @@ async def retry_optimization(
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id
+    if resolved_context:
+        ctx_dict = context_to_dict(resolved_context)
+        if ctx_dict:
+            metadata["codebase_context_snapshot"] = ctx_dict
     return _create_streaming_response(
         new_id, raw_prompt, start_time, metadata, llm_provider=llm_provider,
         codebase_context=resolved_context,

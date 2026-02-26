@@ -39,7 +39,7 @@ def _set_sqlite_pragma(dbapi_connection, _connection_record):
     cursor.execute("PRAGMA journal_mode = WAL")
     cursor.execute("PRAGMA synchronous = NORMAL")
     cursor.execute("PRAGMA cache_size = -65536")  # 64 MB
-    cursor.execute("PRAGMA mmap_size = 268435456")  # 256 MB
+    cursor.execute("PRAGMA mmap_size = 67108864")  # 64 MB
     cursor.execute("PRAGMA temp_store = MEMORY")
     cursor.execute("PRAGMA busy_timeout = 5000")  # 5s retry on lock contention
     cursor.close()
