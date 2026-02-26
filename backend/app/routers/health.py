@@ -45,10 +45,19 @@ async def _probe_mcp() -> bool:
     return False
 
 
+async def _workspace_health(db: AsyncSession) -> dict:
+    """Check workspace health — wrapped to never fail the health endpoint."""
+    try:
+        from app.repositories.workspace import WorkspaceRepository
+        return await WorkspaceRepository(db).get_health_summary()
+    except Exception:
+        return {"github_connected": False, "total_links": 0, "synced": 0, "stale": 0, "errors": 0}
+
+
 async def _health_response(db: AsyncSession):
     """Shared health check logic."""
-    db_connected, mcp_connected = await asyncio.gather(
-        _check_db(db), _probe_mcp()
+    db_connected, mcp_connected, workspace = await asyncio.gather(
+        _check_db(db), _probe_mcp(), _workspace_health(db),
     )
 
     try:
@@ -71,6 +80,7 @@ async def _health_response(db: AsyncSession):
         "mcp_connected": mcp_connected,
         "version": config.APP_VERSION,
         "token_budgets": token_budget.to_dict(),
+        "workspace": workspace,
     }
 
 

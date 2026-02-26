@@ -12,7 +12,7 @@ import json
 import logging
 from typing import AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -69,23 +69,35 @@ async def receive_mcp_event(payload: MCPEventPayload):
 # ── SSE stream for frontend ──
 
 
-async def _sse_generator() -> AsyncGenerator[str, None]:
-    """Yield SSE events: snapshot on connect, then live events."""
+async def _sse_generator(
+    last_event_id: str | None = None,
+) -> AsyncGenerator[str, None]:
+    """Yield SSE events: snapshot on connect, then live events.
+
+    When *last_event_id* is provided (SSE reconnection), the snapshot phase
+    replays only events published after that ID.  If the ID has aged out of
+    the history buffer, falls back to ``recent_history`` (same as a fresh
+    connect).
+    """
     queue = mcp_activity.subscribe()
     try:
         # 1. Send status snapshot
         status = mcp_activity.get_status()
         yield f"event: mcp_status\ndata: {json.dumps(status)}\n\n"
 
-        # 2. Send recent history as a batch
-        for event in mcp_activity.recent_history:
-            yield f"event: mcp_activity\ndata: {event.to_sse()}\n\n"
+        # 2. Send history — gap-fill on reconnect, or recent batch on fresh connect
+        if last_event_id:
+            history = mcp_activity.get_history_after(last_event_id)
+        else:
+            history = mcp_activity.recent_history
+        for event in history:
+            yield f"id: {event.id}\nevent: mcp_activity\ndata: {event.to_sse()}\n\n"
 
         # 3. Stream live events
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                yield f"event: mcp_activity\ndata: {event.to_sse()}\n\n"
+                yield f"id: {event.id}\nevent: mcp_activity\ndata: {event.to_sse()}\n\n"
             except TimeoutError:
                 # Send keepalive comment to prevent connection timeout
                 yield ": keepalive\n\n"
@@ -96,10 +108,11 @@ async def _sse_generator() -> AsyncGenerator[str, None]:
 
 
 @router.get("/api/mcp/events")
-async def mcp_events_stream():
+async def mcp_events_stream(request: Request):
     """SSE stream of MCP activity events for the frontend."""
+    last_event_id = request.headers.get("Last-Event-ID")
     return StreamingResponse(
-        _sse_generator(),
+        _sse_generator(last_event_id=last_event_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

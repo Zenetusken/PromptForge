@@ -14,7 +14,7 @@ from app.middleware.auth import AuthMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import health, history, mcp_activity, optimize, projects, providers
+from app.routers import github, health, history, mcp_activity, optimize, projects, providers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,6 +99,7 @@ app.include_router(history.router)
 app.include_router(projects.router)
 app.include_router(providers.router)
 app.include_router(mcp_activity.router)
+app.include_router(github.router)
 
 
 @app.get("/")

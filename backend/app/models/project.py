@@ -33,6 +33,9 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False,
     )
+    workspace_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
 
     prompts: Mapped[list["Prompt"]] = relationship(
         back_populates="project",

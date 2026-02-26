@@ -23,6 +23,7 @@ Tools:
   - set_project_context: Set or clear codebase context profile on a project
   - batch: Optimize multiple prompts in one call
   - cancel: Cancel a running optimization
+  - sync_workspace: Sync workspace context from Claude Code or external tools
 """
 
 import contextvars
@@ -447,12 +448,16 @@ async def promptforge_optimize(
                 if auto_prompt_id:
                     opt_record.prompt_id = auto_prompt_id
 
-        # Context resolution: project profile + explicit context
+        # Context resolution: workspace auto-context → manual profile → explicit request
+        from app.repositories.workspace import WorkspaceRepository
         explicit_context = codebase_context_from_dict(codebase_context)
-        project_ctx = None
+        workspace_context = None
+        project_context = None
         if project:
-            project_ctx = await ProjectRepository(session).get_context_by_name(project)
-        resolved_context = merge_contexts(project_ctx, explicit_context)
+            workspace_context = await WorkspaceRepository(session).get_workspace_context_by_project_name(project)
+            project_context = await ProjectRepository(session).get_context_by_name(project)
+        base_context = merge_contexts(workspace_context, project_context)  # manual wins
+        resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
 
         # Snapshot on optimization record
         if resolved_context:
@@ -1332,6 +1337,10 @@ async def promptforge_batch(
     strategy: Annotated[str | None, Field(description="Strategy override for all prompts")] = None,
     project: Annotated[str | None, Field(description="Project to associate results with")] = None,
     tags: Annotated[list[str] | None, Field(description="Tags for all results")] = None,
+    codebase_context: Annotated[
+        dict | None,
+        Field(description="Codebase context for all prompts in the batch"),
+    ] = None,
 ) -> dict[str, object]:
     """Optimize multiple prompts sequentially. Failed items don't stop the batch.
 
@@ -1352,12 +1361,18 @@ async def promptforge_batch(
         if strategy not in valid_strategies:
             raise ToolError(f"Unknown strategy {strategy!r}. Valid: {', '.join(sorted(valid_strategies))}")
 
-    # Resolve project context once for the entire batch
+    # Resolve project context once for the entire batch (3-layer: workspace → manual → explicit)
+    from app.repositories.workspace import WorkspaceRepository
+    explicit_context = codebase_context_from_dict(codebase_context)
     resolved_context = None
     if project:
         async with _repo_session() as (_repo, session):
-            project_ctx = await ProjectRepository(session).get_context_by_name(project)
-            resolved_context = merge_contexts(project_ctx, None)
+            workspace_context = await WorkspaceRepository(session).get_workspace_context_by_project_name(project)
+            project_context = await ProjectRepository(session).get_context_by_name(project)
+            base_context = merge_contexts(workspace_context, project_context)  # manual wins
+            resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
+    elif explicit_context:
+        resolved_context = explicit_context
 
     results: list[dict[str, object]] = []
     completed = 0
@@ -1486,6 +1501,114 @@ async def promptforge_cancel(
     return {"id": optimization_id, "status": "cancelled"}
 
 
+# --- Tool 20: sync_workspace ---
+
+@mcp.tool(
+    name="sync_workspace",
+    description=(
+        "Sync workspace context from a local codebase to a PromptForge project. "
+        "For Claude Code CLI users: pass repo metadata, file tree, and dependencies. "
+        "Creates or updates a workspace link with auto-detected codebase context. "
+        "This context serves as the base layer — manual context overrides it."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+@_mcp_tracked("sync_workspace")
+async def promptforge_sync_workspace(
+    project: Annotated[str, Field(description="Project name (auto-creates if new)")],
+    workspace_info: Annotated[
+        dict,
+        Field(description=(
+            "Workspace metadata: {repo_url, git_branch, file_tree (list of paths), "
+            "dependencies ({name: version})}"
+        )),
+    ],
+    context: Annotated[
+        dict | None,
+        Field(
+            description="Optional pre-analyzed CodebaseContext dict from Claude Code",
+            default=None,
+        ),
+    ] = None,
+) -> dict[str, object]:
+    """Sync workspace context from Claude Code to a PromptForge project."""
+    if not project or not project.strip():
+        raise ToolError("project name must not be empty")
+    project = project.strip()
+    if len(project) > 100:
+        raise ToolError("Project name must be 100 characters or fewer")
+
+    from app.repositories.workspace import WorkspaceRepository
+    from app.services.workspace_sync import extract_context_from_workspace_info
+
+    # Extract context from workspace_info or use pre-analyzed context
+    if context:
+        extracted_context = codebase_context_from_dict(context)
+        ctx_dict = context_to_dict(extracted_context) if extracted_context else None
+    else:
+        extracted = extract_context_from_workspace_info(workspace_info)
+        ctx_dict = context_to_dict(extracted) if extracted else None
+
+    repo_url = workspace_info.get("repo_url", "")
+    git_branch = workspace_info.get("git_branch", "main")
+    file_tree = workspace_info.get("file_tree", [])
+    deps = workspace_info.get("dependencies", {})
+
+    # Derive repo_full_name from URL
+    repo_full_name = ""
+    if repo_url:
+        # Extract owner/repo from URL like https://github.com/owner/repo
+        parts = repo_url.rstrip("/").split("/")
+        if len(parts) >= 2:
+            repo_full_name = f"{parts[-2]}/{parts[-1]}"
+
+    async with _repo_session() as (_repo, session):
+        ws_repo = WorkspaceRepository(session)
+
+        # Ensure project exists
+        project_info = await ensure_project_by_name(session, project)
+        if not project_info:
+            raise ToolError(f"Failed to create/find project: {project}")
+
+        # Get or create workspace link
+        link = await ws_repo.get_link_by_project_id(project_info.id)
+        if link:
+            # Update existing link
+            link.repo_full_name = repo_full_name or link.repo_full_name
+            link.repo_url = repo_url or link.repo_url
+            link.default_branch = git_branch
+            link.sync_source = "claude-code"
+        else:
+            link = await ws_repo.create_link(
+                project_id=project_info.id,
+                repo_full_name=repo_full_name or "local/workspace",
+                repo_url=repo_url or "",
+                default_branch=git_branch,
+                sync_source="claude-code",
+            )
+
+        await ws_repo.update_sync_status(
+            link,
+            "synced",
+            workspace_context=ctx_dict,
+            dependencies_snapshot=deps or None,
+            file_tree_snapshot=file_tree[:500] if file_tree else None,
+        )
+        await session.commit()
+
+    return {
+        "id": link.id,
+        "project": project,
+        "sync_status": "synced",
+        "context_fields": list(ctx_dict.keys()) if ctx_dict else [],
+    }
+
+
 # --- MCP Resources ---
 # Expose PromptForge data for bi-directional context flow with Claude Code.
 
@@ -1528,6 +1651,15 @@ async def resource_optimization(optimization_id: str) -> str:
         if not opt:
             return json.dumps({"error": f"Optimization not found: {optimization_id}"})
         return json.dumps(with_display_scores(optimization_to_dict(opt)), indent=2)
+
+
+@mcp.resource("promptforge://workspaces")
+async def resource_workspaces() -> str:
+    """JSON list of all workspace links with sync status and context completeness."""
+    async with async_session_factory() as session:
+        from app.repositories.workspace import WorkspaceRepository
+        statuses = await WorkspaceRepository(session).get_all_workspace_statuses()
+        return json.dumps(statuses, indent=2)
 
 
 # --- ASGI app for HTTP transport (SSE) ---

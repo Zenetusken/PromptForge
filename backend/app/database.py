@@ -124,6 +124,55 @@ _MIGRATIONS: list[str] = [
     " ON optimizations (prompt_id, status)",
     "CREATE INDEX IF NOT EXISTS ix_optimizations_status_score"
     " ON optimizations (status, overall_score)",
+    # --- GitHub connections & workspace links ---
+    "CREATE TABLE IF NOT EXISTS github_connections ("
+    "  id TEXT PRIMARY KEY,"
+    "  github_user_id TEXT NOT NULL UNIQUE,"
+    "  github_username TEXT NOT NULL,"
+    "  access_token_encrypted TEXT NOT NULL,"
+    "  avatar_url TEXT,"
+    "  scopes TEXT,"
+    "  token_valid BOOLEAN NOT NULL DEFAULT 1,"
+    "  created_at TIMESTAMP NOT NULL,"
+    "  updated_at TIMESTAMP NOT NULL"
+    ")",
+    "CREATE INDEX IF NOT EXISTS ix_github_connections_username"
+    " ON github_connections (github_username)",
+    "CREATE TABLE IF NOT EXISTS workspace_links ("
+    "  id TEXT PRIMARY KEY,"
+    "  project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,"
+    "  github_connection_id TEXT REFERENCES github_connections(id) ON DELETE SET NULL,"
+    "  repo_full_name TEXT NOT NULL,"
+    "  repo_url TEXT NOT NULL,"
+    "  default_branch TEXT NOT NULL DEFAULT 'main',"
+    "  last_synced_at TIMESTAMP,"
+    "  sync_status TEXT NOT NULL DEFAULT 'pending',"
+    "  sync_error TEXT,"
+    "  workspace_context TEXT,"
+    "  dependencies_snapshot TEXT,"
+    "  file_tree_snapshot TEXT,"
+    "  sync_source TEXT NOT NULL DEFAULT 'github',"
+    "  created_at TIMESTAMP NOT NULL,"
+    "  updated_at TIMESTAMP NOT NULL"
+    ")",
+    "CREATE INDEX IF NOT EXISTS ix_workspace_links_repo"
+    " ON workspace_links (repo_full_name)",
+    "CREATE INDEX IF NOT EXISTS ix_workspace_links_sync_status"
+    " ON workspace_links (sync_status)",
+    "CREATE INDEX IF NOT EXISTS ix_workspace_links_github_connection"
+    " ON workspace_links (github_connection_id)",
+    # --- workspace_synced_at on projects ---
+    "ALTER TABLE projects ADD COLUMN workspace_synced_at TIMESTAMP",
+    # --- GitHub OAuth config (in-app credential management) ---
+    "CREATE TABLE IF NOT EXISTS github_oauth_config ("
+    "  id TEXT PRIMARY KEY,"
+    "  client_id TEXT NOT NULL,"
+    "  client_secret_encrypted TEXT NOT NULL,"
+    "  redirect_uri TEXT NOT NULL DEFAULT 'http://localhost:8000/api/github/callback',"
+    "  scope TEXT NOT NULL DEFAULT 'repo',"
+    "  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+    "  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
+    ")",
 ]
 
 

@@ -129,6 +129,18 @@ class MCPActivityBroadcaster:
         """Last 20 events for SSE connect snapshot."""
         return self._history[-20:]
 
+    def get_history_after(self, event_id: str) -> list[MCPActivityEvent]:
+        """Return events published after the given event ID.
+
+        Used for Last-Event-ID SSE reconnection. If the ID is not found
+        (aged out of the 100-event history buffer), falls back to
+        recent_history (same as a fresh connect).
+        """
+        for i, event in enumerate(self._history):
+            if event.id == event_id:
+                return self._history[i + 1 :]
+        return self.recent_history
+
     def get_status(self) -> dict:
         """Current status for REST endpoint and SSE snapshot."""
         return {

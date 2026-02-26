@@ -19,6 +19,7 @@ from app import config
 # Paths that never require authentication
 _EXEMPT_PREFIXES = (
     "/api/health",
+    "/api/github/callback",
     "/docs",
     "/openapi.json",
     "/redoc",

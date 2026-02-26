@@ -233,12 +233,18 @@ async def optimize_prompt(
                 if auto_prompt_id:
                     optimization.prompt_id = auto_prompt_id
 
-    # Context resolution: project profile + explicit context
+    # Context resolution: workspace auto-context → manual profile → explicit request
+    from app.repositories.workspace import WorkspaceRepository
     explicit_context = codebase_context_from_dict(request.codebase_context)
+    workspace_context = None
     project_context = None
     if request.project:
+        workspace_context = await WorkspaceRepository(db).get_workspace_context_by_project_name(
+            request.project,
+        )
         project_context = await ProjectRepository(db).get_context_by_name(request.project)
-    resolved_context = merge_contexts(project_context, explicit_context)
+    base_context = merge_contexts(workspace_context, project_context)  # manual wins
+    resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
 
     # Snapshot on optimization record
     if resolved_context:
@@ -465,6 +471,9 @@ class BatchOptimizeRequest(BaseModel):
     strategy: str | None = PydanticField(None, description="Strategy override for all prompts")
     project: str | None = PydanticField(None, description="Project to associate results with")
     tags: list[str] | None = PydanticField(None, description="Tags for all results")
+    codebase_context: dict[str, Any] | None = PydanticField(
+        None, description="Codebase context for all prompts in the batch",
+    )
 
 class BatchItemResult(BaseModel):
     """Result for a single item in a batch."""
@@ -507,6 +516,20 @@ async def batch_optimize(
         except (RuntimeError, ImportError, ProviderError):
             model_fallback = config.CLAUDE_MODEL
 
+    # Context resolution: workspace auto-context → manual profile → explicit request
+    # Resolved once for the entire batch (all items share the same project context)
+    from app.repositories.workspace import WorkspaceRepository
+    explicit_context = codebase_context_from_dict(request.codebase_context)
+    workspace_context = None
+    project_context = None
+    if request.project:
+        workspace_context = await WorkspaceRepository(db).get_workspace_context_by_project_name(
+            request.project,
+        )
+        project_context = await ProjectRepository(db).get_context_by_name(request.project)
+    base_context = merge_contexts(workspace_context, project_context)  # manual wins
+    resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
+
     results: list[BatchItemResult] = []
     completed = 0
     failed = 0
@@ -530,6 +553,11 @@ async def batch_optimize(
                 tags=json.dumps(request.tags or ["batch"]),
                 title=f"Batch #{i + 1}",
             )
+            # Snapshot resolved context on the optimization record
+            if resolved_context:
+                ctx_dict = context_to_dict(resolved_context)
+                if ctx_dict:
+                    optimization.codebase_context_snapshot = json.dumps(ctx_dict)
             db.add(optimization)
             await db.commit()
 
@@ -538,6 +566,7 @@ async def batch_optimize(
                 sanitized,
                 llm_provider=llm_provider,
                 strategy_override=request.strategy,
+                codebase_context=resolved_context,
             )
 
             await update_optimization_status(
@@ -679,10 +708,15 @@ async def retry_optimization(
                 if auto_prompt_id:
                     new_optimization.prompt_id = auto_prompt_id
 
-    # Re-resolve context from current project profile (picks up profile updates)
+    # Re-resolve context: workspace auto-context → manual profile (picks up updates)
     resolved_context = None
     if original.project:
-        resolved_context = await ProjectRepository(db).get_context_by_name(original.project)
+        from app.repositories.workspace import WorkspaceRepository
+        workspace_context = await WorkspaceRepository(db).get_workspace_context_by_project_name(
+            original.project,
+        )
+        project_context = await ProjectRepository(db).get_context_by_name(original.project)
+        resolved_context = merge_contexts(workspace_context, project_context)  # manual wins
 
     if resolved_context:
         ctx_dict = context_to_dict(resolved_context)
