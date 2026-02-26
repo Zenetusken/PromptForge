@@ -11,7 +11,7 @@ An AI-powered prompt optimization web app. Users submit a raw prompt, and a 4-st
 - **Backend**: Python 3.14+ / FastAPI / SQLAlchemy 2.0 async ORM / SQLite (aiosqlite) / Pydantic v2
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
 - **LLM access**: Provider-agnostic via `backend/app/providers/` — supports Claude CLI (default), Anthropic API, OpenAI, and Google Gemini. Auto-detects available provider or set `LLM_PROVIDER` explicitly.
-- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 17 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`, `set_project_context`). Runs as SSE HTTP transport on port 8001 with uvicorn `--reload` for hot-reload. Managed by `init.sh` alongside backend/frontend. Auto-discoverable via `.mcp.json` (`type: sse`).
+- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 19 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`, `set_project_context`, `batch`, `cancel`) and 3 MCP Resources (`promptforge://projects`, `promptforge://projects/{id}/context`, `promptforge://optimizations/{id}`). All tool calls emit activity events to the backend via webhook (`_mcp_tracked` decorator) for real-time visibility in the frontend Network Monitor. Runs as SSE HTTP transport on port 8001 with uvicorn `--reload` for hot-reload. Managed by `init.sh` alongside backend/frontend. Auto-discoverable via `.mcp.json` (`type: sse`).
 
 ## Commands
 
@@ -66,6 +66,18 @@ Backend emits named SSE events: `stage`, `step_progress`, `strategy`, `analysis`
 
 Frontend consumes SSE via `fetch` + `ReadableStream` reader (not native `EventSource`). The mapping from backend events to frontend `PipelineEvent` types is in `frontend/src/lib/api/client.ts:mapSSEEvent`. The `strategy` backend event maps to a dedicated `strategy_selected` frontend event type that preserves all structured fields (confidence, reasoning, task_type).
 
+### MCP Activity Feed
+
+Real-time bridge from MCP server tool calls to the PromptForge frontend. When external clients (Claude Code, IDEs) invoke MCP tools, the activity appears live in the Network Monitor window, taskbar indicator, Task Manager, Terminal log, and notifications.
+
+**Backend** (`backend/app/services/mcp_activity.py`): `MCPActivityBroadcaster` singleton with in-memory pub/sub. `MCPEventType` enum: `tool_start`, `tool_progress`, `tool_complete`, `tool_error`, `session_connect`, `session_disconnect`. Bounded history (100 events), subscriber queues (max 256 per client, slow clients evicted). Router (`backend/app/routers/mcp_activity.py`): `POST /internal/mcp-event` webhook (auth-exempt), `GET /api/mcp/events` SSE stream (snapshot + live), `GET /api/mcp/status` REST fallback.
+
+**MCP Server** (`backend/app/mcp_server.py`): `_mcp_tracked(tool_name)` decorator wraps all 19 tool handlers. Emits `tool_start`/`tool_complete`/`tool_error` events via fire-and-forget HTTP POST to `http://127.0.0.1:8000/internal/mcp-event`. Never fails the tool call if the webhook is down. `_extract_result_summary()` pulls `id`, `status`, `overall_score`, `total` from results.
+
+**MCP Resources**: 3 read-only resources via `@mcp.resource()` — `promptforge://projects` (active project list), `promptforge://projects/{id}/context` (project codebase context profile), `promptforge://optimizations/{id}` (full optimization result). Claude Code can reference these as `@promptforge:projects/...` for context.
+
+**Frontend** (`frontend/src/lib/services/mcpActivityFeed.svelte.ts`): SSE client with auto-reconnect (exponential backoff 3s→30s). Reactive state: `events`, `activeCalls`, `sessionCount`, `connected`. Emits `mcp:*` events on SystemBus. Bootstrapped in `+layout.svelte` `onMount`. `NetworkMonitorWindow` component provides 3-tab UI (Live Activity, Event Log, Connections). Taskbar shows activity indicator when feed is connected. TaskManager shows External (MCP) section. Terminal adds `mcp`, `mcp-log`, `netmon` commands. Notifications fire for write-tool completions (`optimize`, `retry`, `batch`, `create_project`, `cancel`) with "Open in IDE" actions. History/stats auto-reload on external MCP write-tool completion (debounced 1s).
+
 ### Data Layer
 
 - **Repository pattern**: `OptimizationRepository` (`backend/app/repositories/optimization.py`) handles all DB queries; `ProjectRepository` (`backend/app/repositories/project.py`) for projects/prompts
@@ -81,9 +93,40 @@ Frontend consumes SSE via `fetch` + `ReadableStream` reader (not native `EventSo
 
 ### Frontend
 
-Svelte 5 runes-based stores in `frontend/src/lib/stores/`, shared color/strategy/recommendation utilities in `frontend/src/lib/utils/`, and key components in `frontend/src/lib/components/`. Three routes: `/` (content dashboard), `/optimize/[id]` (forge detail), `/projects/[id]` (project detail). When the user has text in the editor or the forge machine is in a non-compose mode, the layout shows `ForgeIDEWorkspace` — a full-width 3-pane IDE (Explorer, Editor, Inspector). Otherwise, the normal dashboard content with routes above is shown.
+Svelte 5 runes-based stores in `frontend/src/lib/stores/`, shared color/strategy/recommendation utilities in `frontend/src/lib/utils/`, and key components in `frontend/src/lib/components/`. One route: `/` (content dashboard). All project and forge interactions happen through the persistent window system (ProjectsWindow, HistoryWindow, IDE) — there are no detail page routes.
+
+**OS Metaphor Architecture**: The frontend follows an operating system metaphor — Dashboard = Desktop, Sidebar = Start Menu, IDE = VS Code program.
+
+- **Window Manager** (`windowManager.svelte.ts`): Multi-window system with z-index stacking and sessionStorage persistence. `PERSISTENT_WINDOW_IDS` (`ide`, `recycle-bin`, `projects`, `history`) survive route changes and minimize on active taskbar click. Breadcrumb address bar: `setBreadcrumbs(id, segments)` / `getBreadcrumbs(id)` — Projects/History windows manage their own breadcrumbs via `onMount`; `DesktopWindow.svelte` renders them between title bar and content. `WindowNavigation` interface: `set/get/clearNavigation(id, nav)` — per-window back/forward state (not persisted; callbacks rebuilt by components on mount). `DesktopWindow` renders back/forward chevron buttons in the address bar when navigation state exists. ProjectsWindow uses drill-down navigation (list → project prompts) with back/forward history stacks; `pendingNavigateProjectId` + `navigateToProject()` on `ProjectsState` lets external code (StartMenu, ResultActions) request the ProjectsWindow to drill into a project. Convenience openers: `openIDE()`, `openProjectsWindow()`, `openHistoryWindow()`, `focusDashboard()`. Derived: `ideVisible` (true when IDE exists + not minimized), `ideSpawned`. Desktop icons for Projects/History open dedicated `DesktopWindow`s (not the Start Menu).
+- **Scoped Results** (`optimization.svelte.ts`): Two separate result slots prevent clobbering — `forgeResult` (set by SSE pipeline) and `viewResult` (set by `loadFromHistory()`). The `result` getter returns `forgeResult ?? viewResult`. `resetForge()` clears forge-side state while preserving `viewResult`.
+- **Forge Machine** (`forgeMachine.svelte.ts`): IDE mode state machine (`compose` → `forging` → `review` / `compare`). Manages panel width (auto-widen on forge/compare), minimize/restore state, and `ComparisonSlots`. Derived: `runningCount` (from `processScheduler`), `widthTier`, `isCompact`. Persisted to sessionStorage.
+- **Taskbar** (`ForgeTaskbar.svelte`): Horizontal strip of process buttons shown when IDE is hidden and processes exist. Click running → open IDE, click completed → load result into `forgeResult` and open IDE in review mode.
+- **IDE-Native Interactions**: All entry points open results in the IDE — no detail page routes exist. HistoryWindow double-click/context "Open in IDE" calls `optimizationState.openInIDEFromHistory(id)`. StartMenu recent forges do the same. StartMenu project clicks call `projectsState.navigateToProject(id)` + `openProjectsWindow()`. ProjectsWindow prompt double-click uses `openPromptInIDE()` (from `$lib/utils/promptOpener.ts`): if the prompt has forges, opens latest forge in IDE review mode with reiterate context; if no forges, opens in compose mode. Running forges section appears above history list when active.
+- **Prompt Opener** (`$lib/utils/promptOpener.ts`): `openPromptInIDE({ promptId, projectId, projectData?, prompt? })` — resolves project/prompt data, then branches: forge_count > 0 → `openInIDEFromHistory` + `loadRequest(reiterate)` + `enterReview()`; forge_count === 0 → `restore()` + `loadRequest(optimize)` (which internally opens IDE).
+- **Tab Bounds & Per-Tab State**: `MAX_TABS = 5` with LRU eviction of non-active tabs in `forgeSession.loadRequest()`. Each `WorkspaceTab` carries `resultId` (bound optimization ID) and `mode` (`ForgeMode`) so switching/closing tabs correctly saves and restores the inspector panel state. Tab coordination (`tabCoherence.ts`) provides `saveActiveTabState()` and `restoreTabState(tab)` — used by `ForgeIDEEditor` tab operations, keyboard shortcuts (`Ctrl+W`/`Ctrl+N`), and layout `$effect`s. Forging guards block tab switching, closing the active tab, and new tab creation during an active forge. Hydration resets `'forging'` to `'compose'` and defaults missing fields; `ForgeIDEWorkspace.onMount` restores results from the server on page reload.
+- **Compare Robustness**: `ForgeCompare.svelte` has async server fallback with staleness guards — when `resultHistory` misses a slot ID, it fetches from the server via `fetchOptimization()` with loading/error/empty UI states and race-condition protection.
+- **Keyboard Shortcuts**: `Ctrl/Cmd+M` toggles minimize, `Escape` restores/closes IDE, `/` focuses textarea, `Ctrl/Cmd+N` new tab, `Ctrl/Cmd+W` close tab.
+- **Transitions**: IDE open/close uses `fly` transition (window feel) vs `fade` for dashboard content.
+- **System Bus** (`$lib/services/systemBus.svelte.ts`): Decoupled IPC for inter-store events — `forge:started/completed/failed/cancelled`, `window:opened/closed/focused`, `clipboard:copied`, `provider:*`, `history:reload`, `stats:reload`, `notification:show`. Handlers: `on(type, handler)`, `once()`, wildcard `'*'`. Tracks recent events for debugging.
+- **Services Layer** (`$lib/services/`): `notificationService` (system notifications with read/unread/actions, auto-dismiss, max 50), `clipboardService` (copy with history + bus integration), `commandPalette` (fuzzy-matched commands with Ctrl+K activation).
+- **Process Scheduler** (`processScheduler.svelte.ts`): Single source of truth for all forge process lifecycle. Methods: `spawn(config)`, `complete(id, data)`, `fail(id)`, `cancel(id)`, `dismiss(pid)`, `updateProgress(id, stage, progress)`. Bounded-concurrency queue — `maxConcurrent` (default 2) limits parallel forges. Tracks `queue`, `running`, `completed` process lists, `runningCount`, `canSpawn`, `activeProcess`. Persisted to sessionStorage; running processes become `'error'` on hydrate (can't resume callbacks). Wired into `startOptimization()`, SSE event handlers, and tournament forges. Rate-limit aware via `provider:rate_limited` bus events.
+- **Settings Store** (`settings.svelte.ts`): Persisted user preferences — `accentColor`, `defaultStrategy`, `maxConcurrentForges`, `enableAnimations`, `autoRetryOnRateLimit`. Persisted to localStorage with schema migration.
+- **Additional Windows**: `ControlPanelWindow` (provider/pipeline/display/system settings), `TaskManagerWindow` (process monitor), `BatchProcessorWindow` (multi-prompt batch optimization), `StrategyWorkshopWindow` (score heatmap, win rates, combo analysis), `TemplateLibraryWindow` (prompt templates with search/categories), `TerminalWindow` (system bus event log), `NetworkMonitorWindow` (real-time MCP tool call activity: live calls, event log, connections), `RecycleBinWindow` (soft-deleted items).
+- **Token Budget Manager** (backend: `backend/app/services/token_budget.py`): Per-provider token tracking with optional daily limits. Records usage at pipeline completion. Exposes `to_dict()` for health endpoint integration.
 
 For detailed store APIs, component catalog, utility reference, and route descriptions, see [`docs/frontend-internals.md`](docs/frontend-internals.md).
+
+## Developer Documentation
+
+The following docs contain implementation details that **must be kept in sync** when changes are made to the corresponding code, just as CLAUDE.md itself is updated:
+
+| Doc | Covers | Update when changing... |
+|-----|--------|------------------------|
+| [`docs/frontend-internals.md`](docs/frontend-internals.md) | Stores, utilities, components, routes | Any frontend store, shared utility, key component, or route |
+| [`docs/frontend-components.md`](docs/frontend-components.md) | All 62 Svelte components: shared vs individual, props, store deps, patterns | Adding/removing/renaming components, changing props or store dependencies |
+| [`docs/backend-middleware.md`](docs/backend-middleware.md) | Middleware stack order, per-layer config | Middleware add/remove/reorder, config values, security headers |
+| [`docs/backend-database.md`](docs/backend-database.md) | PRAGMAs, migrations, startup sequence, models, repositories | Schema changes, new migrations, startup hooks, repository methods |
+| [`docs/backend-caching.md`](docs/backend-caching.md) | Stats cache, invalidation points, provider staleness, LLM caching | Cache TTLs, new invalidation points, polling behavior |
 
 ## API Endpoints
 
@@ -91,7 +134,9 @@ For detailed store APIs, component catalog, utility reference, and route descrip
 |--------|------|-----|
 | POST | `/api/optimize` | Yes |
 | GET | `/api/optimize/{id}` | No |
+| POST | `/api/optimize/batch` | No |
 | POST | `/api/optimize/{id}/retry` | Yes |
+| POST | `/api/optimize/{id}/cancel` | No |
 | GET/HEAD | `/api/history` | No |
 | DELETE | `/api/history/{id}` | No |
 | POST | `/api/history/bulk-delete` | No |
@@ -113,6 +158,9 @@ For detailed store APIs, component catalog, utility reference, and route descrip
 | GET | `/api/projects/{id}/prompts/{pid}/forges` | No |
 | PUT | `/api/projects/{id}/prompts/{pid}` | No |
 | DELETE | `/api/projects/{id}/prompts/{pid}` | No |
+| POST | `/internal/mcp-event` | No |
+| GET | `/api/mcp/events` | Yes |
+| GET | `/api/mcp/status` | No |
 | POST | `/api/orchestrate/analyze` | No |
 | POST | `/api/orchestrate/strategy` | No |
 | POST | `/api/orchestrate/optimize` | No |

@@ -6,7 +6,153 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — MCP Live Bridge
+
+- Backend: **MCP Activity Broadcaster** (`backend/app/services/mcp_activity.py`) — in-memory event fan-out for real-time MCP tool call tracking with bounded history (100 events), subscriber queue management (max 256 per client), and active call state
+- Backend: **MCP Activity Router** (`backend/app/routers/mcp_activity.py`) — `POST /internal/mcp-event` webhook (auth-exempt), `GET /api/mcp/events` SSE stream (snapshot + live events), `GET /api/mcp/status` REST polling fallback
+- Backend: **MCP Tracking Decorator** (`_mcp_tracked`) on all 19 MCP tools — emits `tool_start`/`tool_complete`/`tool_error` events via fire-and-forget webhook to backend; includes duration_ms and result_summary extraction
+- Backend: **MCP Resources** — 3 read-only resources: `promptforge://projects`, `promptforge://projects/{id}/context`, `promptforge://optimizations/{id}` for bi-directional context flow with Claude Code
+- Frontend: **MCPActivityFeed** (`$lib/services/mcpActivityFeed.svelte.ts`) — SSE client with auto-reconnect (exponential backoff), reactive state for events/activeCalls/sessionCount, SystemBus emission (`mcp:*` events)
+- Frontend: **NetworkMonitorWindow** — 3-tab activity monitor (Live Activity with progress bars, Event Log table, Connections status) following OS metaphor
+- Frontend: **SystemBus** — 6 new event types: `mcp:tool_start`, `mcp:tool_progress`, `mcp:tool_complete`, `mcp:tool_error`, `mcp:session_connect`, `mcp:session_disconnect`
+- Frontend: **Taskbar** network activity indicator (animated when active, click opens Network Monitor)
+- Frontend: **TaskManager** External (MCP) section showing active tool calls from external clients
+- Frontend: **Terminal** 3 new commands: `mcp` (status), `mcp-log [n]` (recent events), `netmon` (open Network Monitor)
+- Frontend: **Notifications** for MCP write-tool completions (optimize/retry/batch/create_project/cancel) with "Open in IDE" actions; error and session_connect notifications
+- Frontend: **History auto-reload** on external MCP write-tool completion (debounced 1s)
+- Frontend: **Desktop icon** for Network Monitor, command palette entry, persistent window ID
+
+### Fixed — MCP Live Bridge Review Pass
+
+- Backend: **Tool progress events** — `optimize` (3 checkpoints) and `batch` (per-prompt progress) tools now emit `tool_progress` events via `_emit_tool_progress()` helper using `contextvars.ContextVar` to propagate decorator-generated `call_id` into tool handlers
+- Backend: **Config-based webhook port** — removed hardcoded `_BACKEND_PORT = 8000` in MCP server; `_emit_mcp_event()` now reads `config.PORT` dynamically
+- Backend: **Rate limiter `/internal/` exemption** — internal webhook traffic (e.g., batch of 20 prompts = 60+ POSTs) now bypasses per-IP rate limiting to prevent self-throttling
+- Frontend: **MCPStatus `startedAt` conversion** — backend sends ISO `timestamp` strings in active_calls; frontend now converts to epoch ms via `MCPStatusRaw` interface and `new Date().getTime()`
+- Frontend: **Network Monitor elapsed time** — `formatElapsed()` now accepts reactive `_tick` parameter so Svelte re-renders on each `$effect` interval (previously displayed stale time)
+- Frontend: **DRY `MCP_WRITE_TOOLS`** — extracted shared constant from `mcpActivityFeed.svelte.ts`, imported in `notificationService` and `+layout.svelte` (was duplicated inline)
+- Backend: **Nested `_mcp_tracked` guard** — when a tracked tool calls another tracked tool (e.g. `retry` → `optimize`), the inner decorator is skipped so only the outer tool appears in the activity feed. Prevents duplicate events in Network Monitor.
+- Backend: **`MCPEventType` enum enforcement** — `_emit_mcp_event()` and `_mcp_tracked` decorator now use `MCPEventType` enum values instead of raw strings, eliminating typo risk and ensuring consistency with the broadcaster
+- Frontend: **DRY `MCP_TOOL_COLORS`** — extracted canonical tool→Tailwind-color mapping from `NetworkMonitorWindow` into `mcpActivityFeed.svelte.ts`; NetworkMonitorWindow now imports shared constant
+
+### Added — Cognitive OS Architecture (Phases 1-3)
+
+**Phase 1: System Libraries**
+- Backend: **Token Budget Manager** (`backend/app/services/token_budget.py`) — per-provider token tracking with configurable daily limits, auto-reset, and health endpoint integration
+- Frontend: **System Bus** (`$lib/services/systemBus.svelte.ts`) — decoupled IPC with typed events (`forge:*`, `window:*`, `clipboard:copied`, `provider:*`, `history/stats:reload`, `notification:show`), wildcard handlers, recent event log
+- Frontend: **Notification Service** (`$lib/services/notificationService.svelte.ts`) — system notifications with info/success/warning/error types, auto-dismiss, read/unread tracking, action callbacks
+- Frontend: **Clipboard Service** (`$lib/services/clipboardService.svelte.ts`) — copy with 10-entry history, bus integration, fallback textarea method for non-secure contexts
+- Frontend: **Command Palette** (`$lib/services/commandPalette.svelte.ts`) — fuzzy-matched command registry with `Ctrl+K` activation, categories, recent commands
+
+**Phase 2: Process Management**
+- Frontend: **Process Scheduler** (`processScheduler.svelte.ts`) — bounded-concurrency queue for forge operations, configurable `maxConcurrent` (default 2), running/queued tracking
+- Frontend: **Settings Store** (`settings.svelte.ts`) — persisted user preferences (accent color, default strategy, max concurrent forges, animations toggle, auto-retry), localStorage persistence with schema migration
+
+**Phase 3: Window Components**
+- Frontend: **ControlPanelWindow** — system settings with 4 tabs: Providers, Pipeline, Display (accent color grid), System (backend info + reset)
+- Frontend: **TaskManagerWindow** — process monitor showing running/queued/completed forge processes
+- Frontend: **BatchProcessorWindow** — multi-prompt batch optimization (up to 20), progress tracking, JSON export
+- Frontend: **StrategyWorkshopWindow** — analytics with Score Heatmap (strategy × task type), Win Rates, Combo Analysis views
+- Frontend: **TemplateLibraryWindow** — 10 built-in prompt templates across 6 categories with search/filter, double-click to forge
+- Frontend: **TerminalWindow** — system bus event log for debugging
+- Frontend: **RecycleBinWindow** — soft-deleted/cancelled optimization viewer
+- Frontend: **CommandPaletteUI** — floating command palette overlay
+- Frontend: **NotificationTray** — taskbar dropdown with unread count badge
+- Backend: **Batch optimization endpoint** (`POST /api/optimize/batch`) — sequential pipeline runs for 1-20 prompts
+- Backend: **Cancel optimization endpoint** (`POST /api/optimize/{id}/cancel`) — sets running optimization to CANCELLED status
+- Backend: **MCP `batch` tool** — optimize multiple prompts via MCP (1-20, sequential)
+- Backend: **MCP `cancel` tool** — cancel running optimization via MCP
+- Frontend: 10 new icons added to `Icon.svelte`: `cpu`, `git-branch`, `monitor`, `settings`, `mail`, `users`, `x-circle`, `bar-chart`, `check-square`, `activity`
+
+### Changed — Code Quality & Architecture
+- Backend: **Stats cache extracted** to `backend/app/services/stats_cache.py` — eliminates circular cross-module dependency (MCP server → routers). All modules now import `invalidate_stats_cache` and `get_stats_cached` from the service layer.
+- Backend: **MCP batch tool context snapshot** — `promptforge_batch` now resolves project codebase context and snapshots it on optimization records (consistency with the `optimize` tool)
+- Backend: **Version schema validation** — empty/whitespace-only version strings now normalize to `None` instead of passing through as invalid empty strings
+- Frontend: **Process lifecycle consolidated** — removed deprecated `forgeMachine.spawnProcess/completeProcess/failProcess/dismissProcess` bridge methods and `ProcessStatus`/`ForgeProcess` types. All callers now use `processScheduler` directly as the single source of truth.
+- Frontend: **Component imports updated** — `ForgeIDEInspector` and `ForgeReview` now import and use `processScheduler.spawn()` directly instead of the removed `forgeMachine.spawnProcess()`
+
+### Fixed — Audit Fixes
+- Backend: **Batch endpoint `event.data` bug** — `event.result` → `event.data` (AttributeError), dict bracket access for `overall_score`, correct kwargs for `update_optimization_status()`
+- Backend: **Token budget recording** — `token_budget.record_usage()` now called at pipeline completion in both `run_pipeline()` and `run_pipeline_streaming()`
+- Backend: **`stages` parameter wired** — `request.stages` now passed through router to pipeline; analyze-only mode (`stages=["analyze"]`) returns early with partial result
+- Frontend: **DRY strategy lists** — `ControlPanelWindow` and `BatchProcessorWindow` now import `ALL_STRATEGIES` from `$lib/utils/strategies` instead of hardcoding
+- Frontend: **Clipboard service integration** — `TemplateLibraryWindow` now uses `clipboardService.copy()` instead of raw `navigator.clipboard.writeText()`
+- Frontend: **StrategyWorkshopWindow types** — fixed `best_strategy` → `strategy` for win rates data, fixed combo entries to use `avg_score` field
+- Frontend: **Window bus events** — `windowManager` now emits `window:opened` and `window:closed` events on the system bus
+- Frontend: **StrategyWorkshopWindow heatmap** — fixed `entry.avg` → `entry.avg_score` to match backend `score_matrix` shape; heatmap cells now display actual scores instead of dashes
+- Backend: **Batch endpoint robustness** — rewrote to use `run_pipeline()` (non-streaming) instead of `run_pipeline_streaming()`, added `model_fallback` computation, f-string logger fix
+- Backend: **MCP batch error handling** — added try/except around `update_optimization_status` in error path to match HTTP endpoint pattern, truncate error to 500 chars
+
+### Fixed
+- Frontend: **Per-tab state coherence** — `WorkspaceTab` now carries `resultId` and `mode` fields, so closing a tab, switching tabs, or creating new tabs correctly saves/restores the inspector panel state. Previously, `forgeResult` and `forgeMachine.mode` were global singletons with no tab awareness, causing stale results to persist in the inspector after tab operations.
+- Frontend: **Forging guards** — tab switching, active-tab close, and new-tab creation are blocked while a forge is in progress (both click and keyboard shortcuts `Ctrl+W`/`Ctrl+N`)
+- Frontend: **Ctrl+W close stale result** — keyboard shortcut now clears `forgeResult` and resets `forgeMachine.mode` when closing the last tab
+- Frontend: **Hydration recovery** — on page reload, `ForgeIDEWorkspace.onMount` restores results from the server or falls back to compose mode; hydration resets `'forging'` mode to `'compose'` and defaults missing `resultId`/`mode` fields
+
 ### Added
+- Frontend: **`tabCoherence.ts`** coordination module — `saveActiveTabState()` and `restoreTabState(tab)` centralize save/restore logic across `forgeSession`, `optimizationState`, and `forgeMachine` stores
+- Frontend: **`restoreResult(id)`** method on `OptimizationState` — loads a result by ID from `resultHistory` cache or server without side effects (no `enterReview`, no `openIDE`)
+- Frontend: **Tab sync `$effect`** in layout — binds `forgeResult` to the active tab on forge completion and on non-pipeline result loads (e.g. `openInIDEFromHistory`)
+
+### Removed
+- Frontend: **Route-based detail pages** — removed `/projects/[id]` and `/optimize/[id]` SvelteKit routes. All project and forge interactions now happen through the persistent window system (ProjectsWindow, HistoryWindow, IDE). No backend changes.
+
+### Added
+- Frontend: **`openPromptInIDE()` utility** (`$lib/utils/promptOpener.ts`) — opens a project prompt in the IDE; branches on forge_count: latest forge → IDE review mode with reiterate context; no forges → compose mode with prompt text
+- Frontend: **`navigateToProject(id)`** on `ProjectsState` — lets external code (StartMenu, ResultActions) request the ProjectsWindow to drill into a specific project via `pendingNavigateProjectId`
+- Frontend: **Nautilus-style file manager navigation** — Projects and History windows now use shared `FileManagerView`/`FileManagerRow` components with sortable column headers. ProjectsWindow supports drill-down navigation (list → project prompts) with back/forward history stacks. `WindowNavigation` interface in `windowManager.svelte.ts` enables per-window back/forward buttons in `DesktopWindow` address bar. Windows manage their own breadcrumbs.
+- Frontend: **Window Manager** store (`windowManager.svelte.ts`) — IDE renders as route-independent overlay on any page, controlled by `openIDE()`, `closeIDE()`, `focusDashboard()`
+- Frontend: **Scoped optimization results** — `forgeResult` (from SSE pipeline) and `viewResult` (from history) are separate slots; navigating to detail pages no longer clobbers an active forge
+- Frontend: **Forge process tracking** — `ForgeProcess[]` in `forgeMachine` tracks running/completed/error forges (max 5, LRU eviction), persisted to sessionStorage
+- Frontend: **Taskbar** component (`ForgeTaskbar.svelte`) — horizontal process strip shown on dashboard when IDE is hidden, click to resume/view processes
+- Frontend: **IDE-aware cards** — sidebar history entries, dashboard recent forges, and project detail forge cards detect IDE visibility; when IDE is open, primary click loads result directly into the IDE (no page navigation), and the redundant "Open in IDE" overlay button is hidden. When IDE is closed, cards navigate to `/optimize/[id]` as before with the "Open in IDE" button available.
+- Frontend: **"Open in IDE" on detail page** — `ResultActions.svelte` now includes an "Open in IDE" button (shown only when IDE is not visible) providing a pathway from the forge detail page into the IDE
+- Frontend: **Running Forges** section in sidebar — live pulse indicators for active forge processes, clickable to restore IDE
+- Frontend: **Tab bounds** — `MAX_TABS = 5` with LRU eviction of non-active tabs when at capacity
+- Frontend: **Compare robustness** — async server fallback in `ForgeCompare` fetches missing slot data from API when `resultHistory` is empty (e.g., after page reload)
+- Frontend: **Session desync guard** — `$effect` in layout resets forge machine when both `forgeSession.isActive` and `windowManager.ideSpawned` are false while machine is in non-compose mode
+- Frontend: `openInIDE(result)` and `openInIDEFromHistory(id)` methods on `OptimizationState` — DRY entry points for loading results into IDE review mode
+- Frontend: `enterReview()` and `enterForging()` methods on `forgeMachine` — teleport transitions with proper sessionStorage persistence (replaces direct `mode =` mutations)
+- Frontend: `resetForge()` method on `OptimizationState` — clears forge-side state while preserving `viewResult`
+- Frontend: `Ctrl/Cmd+N` keyboard shortcut — creates new forge tab and opens IDE
+- Frontend: `Ctrl/Cmd+W` keyboard shortcut — closes current tab or exits IDE when on last tab
+- Frontend: `fly` transition for IDE open/close (window feel) replacing `fade`
+- Frontend: `forgeMachine` state persistence — mode, isMinimized, activeProcessId, processes persisted to sessionStorage
+
+### Performance
+- Frontend: IDE spawn/minimize transitions — fade in/out (150ms/100ms) via absolute-positioned overlay, minimized bar slides with `transition:slide`
+- Frontend: View Transitions API for page navigation crossfade between routes (graceful fallback on unsupported browsers)
+- Frontend: `section-expand` animation replaced `max-height` keyframe with CSS `grid-template-rows: 0fr→1fr` (no layout thrashing, no arbitrary height cap)
+- Frontend: `shimmer-placeholder` promoted to own compositor layer (`will-change: background-position`, `contain: paint`)
+- Frontend: `status-degraded-pulse` converted from `background-color` animation to GPU-composited `opacity` on `::after` pseudo-element
+- Frontend: Removed dead `gradient-flow` keyframe (defined but never referenced)
+- Frontend: Replaced all 32 `transition-all` instances across 15 components with specific property transitions (`transition-colors`, `transition-[width]`, `transition-transform`)
+- Frontend: CSS class definitions (`card-hover-bleed`, `prompt-card`, `iteration-timeline-item`, `ctx-template-chip`, `forge-action-btn`, `btn-primary`) replaced `transition: all` with explicit properties
+- Frontend: `content-visibility: auto` containment on `HistoryEntry` and `ProjectItem` sidebar cards for off-screen rendering skip
+- Frontend: BrandLogo `IntersectionObserver` pauses/resumes 17+ infinite SVG animations when scrolled off-screen
+- Frontend: Vite `manualChunks` splits `bits-ui` into dedicated vendor chunk for better cache efficiency
+- Backend: `ensure_project_by_name()` returns `ProjectInfo(id, status)` dataclass, eliminating redundant `_is_project_archived()` DB round-trip on every optimize/retry
+- Backend: Summary serialization now only deserializes 2 JSON fields instead of 6, saving ~120 `json.loads()` calls per 20-item list view
+- Backend: Archive filter query uses `NOT EXISTS` correlated subqueries instead of `NOT IN` with materialized UNION
+- Backend: SQLite `busy_timeout = 5000` prevents `SQLITE_BUSY` errors under concurrent SSE writes; `mmap_size` raised to 256 MB
+- Backend: Read-only `get_db_readonly()` session dependency for GET/HEAD endpoints — skips unnecessary `commit()` flush
+- Backend: Rate limiter stale IP prune interval reduced from 300s to 60s
+- Backend: Stats cache TTL increased from 30s to 120s (cache is already invalidated on mutations)
+- Backend: MCP stats score conversion uses recursive `_convert_scores_recursive()` utility instead of nested manual loops
+- Backend: Legacy migration batches prompt inserts per project instead of one-at-a-time
+- Frontend: Skeleton shimmer animation uses GPU-composited `transform: translateX()` via pseudo-element instead of `background-position` (120 FPS safe)
+- Frontend: `RecentForges` list keyed by `item.id` to prevent DOM reuse glitches on reorder
+- Frontend: Stats and history load in parallel on mount instead of sequentially gated
+- Frontend: `promptAnalysis.destroy()` method cleans up debounce timer on workspace teardown
+- Frontend: Visibility restore polling adds 0-2s random jitter to prevent thundering herd across tabs
+
+### Added
+- IDE minimize/restore — `forgeMachine.minimize()`/`restore()` with `isMinimized` transient state and `showMinimizedBar` derived
+- `ForgeMinimizedBar` component — slim real-time status bar with three mode renders (forging: step dots + timer + cancel, review: score + strategy, compare: label), persists across routes, expand navigates to home when on other pages
+- Minimize buttons in `ForgeIDEInspector` (forging), `ForgeReview` (review), `ForgeCompare` (compare) headers
+- Keyboard shortcuts: `Ctrl/Cmd+M` toggle minimize, `Escape` restores when minimized, `/` restores and focuses textarea
+- `formatElapsed()` shared utility in `$lib/utils/format` (extracted from duplicated implementations)
+- Dashboard state guard — `+page.svelte` skips clearing optimization state when forge is minimized or in active mode
+- Detail page guard — `/optimize/[id]` uses local result mapping when forge is minimized to avoid clobbering shared store
 - Prompt caching on `AnthropicAPIProvider` — `cache_control={"type": "ephemeral"}` on all API calls for up to 90% cost savings on repeated system prompts
 - Cache token tracking — `cache_creation_input_tokens` and `cache_read_input_tokens` fields in `TokenUsage`, `PipelineResult`, DB `Optimization` model, API schemas, and frontend display (cache savings indicator in result metadata tooltip)
 - SDK-typed error classification — `_classify_anthropic_error()` uses the Anthropic SDK's exception hierarchy (`AuthenticationError`, `RateLimitError`, etc.) with `retry-after` header extraction, replacing string-based pattern matching for the Anthropic provider
@@ -46,6 +192,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - "Back to Home" button + `navigation.svelte.ts` store — redundant with breadcrumbs; breadcrumbs are the single navigation mechanism on detail pages
 
 ### Changed
+- IDE compaction — VS Code + Excel density overhaul across all 3 panes (Explorer `w-56`, Editor tab bar `h-7`, Inspector `w-72`), global CSS utilities, pipeline/analysis/review/editor components; strict 2–8px spacing scale (`p-0.5`–`p-2` max), removed `shadow-inner`/`shadow-xl` for flat neon contour compliance, `leading-relaxed` → `leading-snug` on all display text, extracted `.section-toggle-btn` CSS utility for DRY collapsible buttons
 - `HeaderStats` — redesigned as wing formation layout with center-stage task type chip and animated glow (`header-contour-pulse` keyframes), context-aware project label
 - `total_projects` stat — now counts only active projects from the projects table instead of distinct project names from optimizations
 - Homepage — transformed from forge-only into content dashboard (RecentForges + RecentProjects above StrategyInsights for returning users)
@@ -54,9 +201,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CLAUDE.md — extracted frontend stores/components/utilities/routes catalog to `docs/frontend-internals.md`; CLAUDE.md now links to it instead of inlining ~30 lines of detail
 
 ### Fixed
+- Frontend: `ResultActions.handleReforge()` missing `forgeMachine.spawnProcess()` and `forgeMachine.forge()` — re-forging from detail page had no process tracking and no mode transition to forging state
+- Frontend: `ResultActions.handleEditReforge()` dropped title, tags, version, and sourceAction metadata — iterating from detail page lost all metadata context
+- Frontend: `ForgeTaskbar` completed process click silently failed when `resultHistory` cache missed — added `openInIDEFromHistory()` async server fallback
+- Frontend: "Open in IDE" wrote to `viewResult` but `ForgeReview` read `forgeResult` — result never displayed; now uses `openInIDE()` which sets `forgeResult` directly
+- Frontend: Desync guard immediately reset `forgeMachine` when "Open in IDE" set mode to review (because `forgeSession.isActive` was false) — guard now also checks `windowManager.ideSpawned`
+- Frontend: Direct `forgeMachine.mode =` mutations (in re-forge, Open in IDE, taskbar) skipped `_persistMachine()` — replaced with `enterReview()`/`enterForging()` methods that persist correctly
+- Frontend: `ForgeCompare` showed stale slot data briefly when comparison changed — now clears `fetchedSlotA/B` on comparison change and adds `.catch()` for error handling
 - `most_common_task_type` ignored project filter — subquery used `.correlate(None)` without project/completed filters, always returning the global most common task type even when stats were scoped to a project
 - `total_projects` included archived projects in count — now queries `projects` table with `status = 'active'`
 - CLAUDE.md palette documentation — corrected 5 hex values to match `app.css` and brand guidelines (`bg-primary` #0a0a0f→#06060c, `neon-cyan` #00f0ff→#00e5ff, `neon-purple` #b000ff→#a855f7, `neon-green` #00ff88→#22ff88, `neon-red` #ff0055→#ff3366) and expanded from 5 to 19 palette tokens
+- Rate limiter memory leak — replaced `defaultdict(list)` with `defaultdict(deque)` for O(1) cleanup, added periodic stale IP pruning every 5 minutes
+
+### Performance
+- SQLite WAL mode + PRAGMAs — `journal_mode=WAL` eliminates reader/writer blocking during SSE streaming, `synchronous=NORMAL`, 64MB cache, 30MB mmap, temp_store=MEMORY
+- GZip compression — `GZipMiddleware(minimum_size=1000)` for 60-80% size reduction on JSON responses; small SSE chunks pass through uncompressed
+- Shared stats cache — MCP `stats` tool reuses the HTTP router's TTL cache; all mutation paths (optimize, delete, bulk_delete, tag, create/archive/unarchive/delete project, delete prompt) invalidate the cache consistently across both HTTP routers and MCP tools
+- Fuzzy prompt match optimization — SQL-side whitespace normalization before Python fallback loop, LIMIT(100) safety cap on fallback query
+- Debounced post-forge reloads — `loadHistory()` + `loadProjects()` delayed 500ms to coalesce with server commit
+- Tab visibility polling — provider health/providers polling pauses when tab is hidden, immediate poll on tab restore
+- PipelineNarrative consolidation — 8 separate `$derived` values collapsed into single `$derived.by()` returning one object
+- ScoreDecomposition animation — `$effect` replaced with `onMount` (animation is lifecycle, not reactive)
+- Vite build target `es2022` for modern output
 
 ## [0.2.0] - 2026-02-18
 

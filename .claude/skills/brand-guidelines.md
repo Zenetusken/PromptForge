@@ -16,6 +16,12 @@
 | Bold | High-contrast neon palette, solid gradients, pure neon UI elements |
 | Technical | Monospace data, terminal aesthetic, developer-first voice |
 
+### Design Density
+- **Philosophy:** Ultra-compact analytical dashboard — VS Code density with Excel's data-rich information hierarchy
+- **Density rule:** Maximize information per pixel. Padding, gaps, and radii skew toward the smaller end of each scale.
+- **Radius rule:** Smaller radii signal precision. Hero-level rounding (12px+) is reserved for rare modal/dialog containers.
+- **Padding rule:** Most panels use p-2 (8px). Only dialog/hero contexts exceed p-3 (12px).
+
 ### Licensing & Distribution
 
 | Attribute | Value |
@@ -198,7 +204,7 @@ Each of the 14 classified task types has a neon color assignment. Primary types 
 | Chip | 10px | 500 | Geist Mono (mono) | Pill labels, tags |
 | Input field | 14px | 400 | Geist (sans) | Form inputs |
 | Select field | 11px | 500 | Geist (sans) | Dropdown selects |
-| Score circle | 11px | 700 | Geist Mono (mono) | Score display (28px circle) |
+| Score circle | 10px | 700 | Geist Mono (mono) | Score display (20px circle) |
 
 ### Typography Rules
 
@@ -284,7 +290,7 @@ backdrop-filter: blur(8px);
 
 | Variant | Class | Background | Text | Border |
 |---------|-------|------------|------|--------|
-| Primary | `.btn-primary` | Gradient (cyan → purple) | `#06060c` (dark) | None |
+| Primary | `.btn-primary` | Transparent → `rgba(168, 85, 247, 0.1)` on hover | neon-purple | `1px solid neon-purple` |
 | Outline Primary | `.btn-outline-primary` | `rgba(0, 229, 255, 0.05)` | neon-cyan | `rgba(0, 229, 255, 0.2)` |
 | Outline Secondary | `.btn-outline-secondary` | Transparent | text-secondary | border-subtle |
 | Outline Danger | `.btn-outline-danger` | `rgba(255, 51, 102, 0.05)` | neon-red | `rgba(255, 51, 102, 0.2)` |
@@ -331,18 +337,18 @@ backdrop-filter: blur(8px);
 
 ```css
 .score-circle {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   box-shadow: inset 0 0 0 1.5px currentColor;
   background: color-mix(in srgb, currentColor 8%, transparent);
 }
 ```
 
-Small variant (`.score-circle-sm`): 24px, 10px font.
+Small variant (`.score-circle-sm`): 20px, 10px font (same as standard in compact layout).
 
 ### Strategy Bar (Premium Glass)
 
@@ -421,18 +427,18 @@ border: 1px solid var(--color-neon-cyan);
 
 ## Border Radius System
 
-6-tier system from compact controls to hero containers.
+6-tier system aligned to ultra-compact dashboard density.
 
 | Tier | Radius | Token | Use Cases |
 |------|--------|-------|-----------|
-| XS | `6px` | `rounded-md` | Badges, skeleton, sidebar tab inner, sidebar action buttons |
-| Small | `8px` | `rounded-lg` | Buttons (all variants), input fields, select fields, skip link, icon buttons |
-| Medium | `10px` | `rounded-[10px]` | Primary button, prompt content well, action groups, filter rows, iteration timeline |
-| Large | `12px` | `rounded-xl` | Collapsible sections, filter bar, version panel, prompt cards |
-| XL | `16px` | `rounded-2xl` | Project header card (hero-level containers) |
-| Full | `9999px` | `rounded-full` | Chips, small badges, tag chips, template chips, pills |
+| Micro | `4px` | `rounded` | Forge action buttons, inline micro-controls |
+| XS | `6px` | `rounded-md` | Badges, skeleton, sidebar tabs, prompt content wells, iteration items, sidebar action buttons |
+| Small | `8px` | `rounded-lg` | Buttons, input fields, cards, panels, project header, prompt cards, filter bar, version panel |
+| Medium | `10px` | `rounded-[10px]` | Primary CTA button, collapsible section content |
+| Large | `12px` | `rounded-xl` | Dialog/modal containers, pipeline progress (rare, hero-level only) |
+| Full | `9999px` | `rounded-full` | Chips, badges, tag chips, pills |
 
-**Convention:** Border radius increases with visual importance. Interactive controls use 8px. Content containers use 10–12px. Hero elements use 16px. Pill shapes use full rounding.
+**Convention:** Border radius increases with visual importance. Most cards and panels use 8px (Small). Interactive micro-controls use 4-6px. 10px+ is reserved for CTA buttons and rare hero containers. Pill shapes use full rounding.
 
 ---
 
@@ -562,11 +568,11 @@ transition: 250ms cubic-bezier(0.16, 1, 0.3, 1)
 
 | Value | Pixels | Use Case |
 |-------|--------|----------|
-| `p-2` | 8px | Compact controls, tab bar container, action groups |
-| `p-3` | 12px | Sidebar cards, list items, prompt content wells |
-| `p-4` | 16px | Dialog content, form sections |
-| `p-5` | 20px | Prompt cards, large content areas |
-| `p-6` | 24px | Project header card, hero sections, pipeline progress |
+| `p-1.5` | 6px | Sidebar cards, compact list items, prompt card content |
+| `p-2` | 8px | Standard cards, panels, project header, filter bar, action groups |
+| `p-2.5` | 10px | Dialog content, form sections, collapsible section content |
+| `p-3` | 12px | Larger content areas (max common padding) |
+| `p-4` | 16px | Hero sections, pipeline progress (rare) |
 
 ### Gap Scale
 
