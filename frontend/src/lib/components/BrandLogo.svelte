@@ -2,12 +2,17 @@
 	import { onMount } from "svelte";
 	import { optimizationState } from "$lib/stores/optimization.svelte";
 
-	let { wallpaper = false }: { wallpaper?: boolean } = $props();
+	import type { WallpaperMode } from '$lib/stores/settings.svelte';
+
+	let { wallpaper = false, level = 'off' as 'off' | WallpaperMode }: { wallpaper?: boolean; level?: 'off' | WallpaperMode } = $props();
+
+	const effectiveLevel = $derived(wallpaper && level === 'off' ? 'static' : level);
+	const isWallpaper = $derived(effectiveLevel !== 'off');
 
 	let svgEl: SVGSVGElement | undefined = $state();
 
 	onMount(() => {
-		if (!svgEl) return;
+		if (!svgEl || isWallpaper) return;
 		const observer = new IntersectionObserver(
 			([entry]) => {
 				if (entry.isIntersecting) svgEl?.unpauseAnimations();
@@ -431,7 +436,7 @@
 	class="w-full h-auto bl-logo"
 	class:bl-forging={mode === "forging"}
 	class:bl-complete={mode === "complete"}
-	class:bl-wallpaper={wallpaper}
+	class:bl-wallpaper={isWallpaper}
 	viewBox="-250 -200 1500 1000"
 	overflow="visible"
 	xmlns="http://www.w3.org/2000/svg"
@@ -543,7 +548,8 @@
 			<stop offset="100%" stop-color="#ffffff" stop-opacity="1" />
 		</linearGradient>
 
-		<!-- Dynamic Tendril Gradients -->
+		<!-- Dynamic Tendril Gradients (dynamic mode only — not rendered otherwise) -->
+		{#if effectiveLevel === 'dynamic'}
 		{#each tendrils as tendril}
 			<radialGradient
 				id={tendril.gradId}
@@ -564,6 +570,7 @@
 				<stop offset="100%" stop-color={tendril.c3} stop-opacity="0" />
 			</radialGradient>
 		{/each}
+		{/if}
 
 		<radialGradient
 			id="bl-lens-outer"
@@ -616,7 +623,21 @@
 			<stop offset="100%" stop-color="#00e5ff" stop-opacity="0" />
 		</radialGradient>
 
-		<!-- Inner shadow filter for nacelle rim -->
+		<radialGradient
+			id="bl-hub-depth"
+			cx="0"
+			cy="0"
+			r={INNER_R}
+			gradientUnits="userSpaceOnUse"
+		>
+			<stop offset="0%" stop-color="#000000" />
+			<stop offset="30%" stop-color="#020815" />
+			<stop offset="70%" stop-color="#04101e" />
+			<stop offset="100%" stop-color="#002030" />
+		</radialGradient>
+
+		<!-- SVG filters (dynamic mode only — GPU-expensive blur composites) -->
+		{#if effectiveLevel === 'dynamic'}
 		<filter
 			id="bl-inner-shadow"
 			x="-20%"
@@ -646,19 +667,6 @@
 			</feMerge>
 		</filter>
 
-		<radialGradient
-			id="bl-hub-depth"
-			cx="0"
-			cy="0"
-			r={INNER_R}
-			gradientUnits="userSpaceOnUse"
-		>
-			<stop offset="0%" stop-color="#000000" />
-			<stop offset="30%" stop-color="#020815" />
-			<stop offset="70%" stop-color="#04101e" />
-			<stop offset="100%" stop-color="#002030" />
-		</radialGradient>
-
 		<filter id="bl-cyan-glow" x="-50%" y="-50%" width="200%" height="200%">
 			<feGaussianBlur stdDeviation={cyanBlur} result="coloredBlur" />
 			<feMerge>
@@ -674,16 +682,12 @@
 				<feMergeNode in="SourceGraphic" />
 			</feMerge>
 		</filter>
-		<!-- Ultra-wide ambient beam bloom (perpendicular Gaussian spread) -->
 		<filter id="bl-beam-wide" x="-400%" y="-20%" width="900%" height="140%">
 			<feGaussianBlur stdDeviation="45" />
 		</filter>
-		<!-- Mid glow corona (perpendicular Gaussian spread) -->
 		<filter id="bl-beam-mid" x="-150%" y="-20%" width="400%" height="140%">
 			<feGaussianBlur stdDeviation="12" />
 		</filter>
-
-		<!-- Heavy Blur for Venting Steam -->
 		<filter
 			id="bl-steam-blur"
 			x="-100%"
@@ -693,6 +697,7 @@
 		>
 			<feGaussianBlur stdDeviation="8" />
 		</filter>
+		{/if}
 	</defs>
 
 	<g transform="translate({CX}, {CY})">
@@ -742,7 +747,7 @@
 			/>
 
 			<!-- Latitudinal Cylinder Arcs (Belly Detail Rings) -->
-			<g filter="url(#bl-cyan-glow)">
+			<g filter={effectiveLevel === 'dynamic' ? "url(#bl-cyan-glow)" : undefined}>
 				{#each latArcs as arcCmd}
 					<!-- Glow layer -->
 					<path
@@ -821,12 +826,10 @@
 			/>
 		</g>
 
-		<!-- Purple Plasma Vortex: Differential rotation black hole suction -->
-		<!-- Each band rotates at a different speed: inner=fast, outer=slow -->
-		<!-- screen blending creates optical glow at intersections -->
+		<!-- Plasma Vortex + Particles (dynamic mode only — 42 tendrils × 30 keyframes + 15 particles) -->
+		{#if effectiveLevel === 'dynamic'}
 		<g style="mix-blend-mode: screen;">
 			{#each tendrilsByBand as band, bi}
-				<!-- Each concentric band spins continuously at its own speed -->
 				<g>
 					<animateTransform
 						attributeName="transform"
@@ -836,7 +839,6 @@
 						dur="{bandRotationDur[bi]}s"
 						repeatCount="indefinite"
 					/>
-					<!-- Sub-glow bloom layer -->
 					{#each band as tendril}
 						<path
 							d={tendril.d0}
@@ -855,7 +857,6 @@
 							/>
 						</path>
 					{/each}
-					<!-- Sharp core lightning -->
 					{#each band as tendril}
 						<path
 							d={tendril.d0}
@@ -878,7 +879,6 @@
 			{/each}
 		</g>
 
-		<!-- Ambient Spark Particles -->
 		<g>
 			{#each particles as p}
 				<circle r={p.r} fill={p.color} opacity="0">
@@ -908,11 +908,11 @@
 				</circle>
 			{/each}
 		</g>
+		{/if}
 
 		<!-- ═══ 3D TURBINE: layered depth illusion ═══ -->
 		<g>
-			<!-- Tightly framed Case Flanges (Brightened) -->
-			<!-- Edge highlight ring hugging the exact boundary -->
+			{#if effectiveLevel !== 'static'}
 			<animateTransform
 				attributeName="transform"
 				type="rotate"
@@ -921,6 +921,7 @@
 				dur={coreDur}
 				repeatCount="indefinite"
 			/>
+			{/if}
 
 			<!-- Layer 0: Deep nacelle void — blackest depth behind everything -->
 			<circle r={OUTER_R - 2} fill="url(#bl-nacelle-deep)" />
@@ -953,7 +954,7 @@
 				<path d={blade} fill="#000d14" opacity="0.8" />
 			{/each}
 
-			<g filter="url(#bl-cyan-glow)">
+			<g filter={effectiveLevel === 'dynamic' ? "url(#bl-cyan-glow)" : undefined}>
 				<!-- Layer 5: Main blades — solid metallic overlapping fans -->
 				{#each blades as blade}
 					<path
@@ -1024,6 +1025,7 @@
 
 		<!-- Mid ring: CCW counter-rotation, beveled -->
 		<g>
+			{#if effectiveLevel !== 'static'}
 			<animateTransform
 				attributeName="transform"
 				type="rotate"
@@ -1032,6 +1034,7 @@
 				dur={coreDur}
 				repeatCount="indefinite"
 			/>
+			{/if}
 			<circle
 				r={MID_R + 1}
 				stroke="#001820"
@@ -1044,14 +1047,14 @@
 				stroke="#003040"
 				stroke-width="4.5"
 				fill="none"
-				filter="url(#bl-cyan-glow)"
+				filter={effectiveLevel === 'dynamic' ? "url(#bl-cyan-glow)" : undefined}
 			/>
 			<circle
 				r={MID_R}
 				stroke="url(#bl-cyan-neon)"
 				stroke-width="2.5"
 				fill="none"
-				filter="url(#bl-cyan-glow)"
+				filter={effectiveLevel === 'dynamic' ? "url(#bl-cyan-glow)" : undefined}
 			/>
 			<circle
 				r={MID_R}
@@ -1078,7 +1081,7 @@
 				<path d={blade} fill="url(#bl-blade-shadow)" opacity="0.5" />
 			{/each}
 
-			<g filter="url(#bl-cyan-glow)">
+			<g filter={effectiveLevel === 'dynamic' ? "url(#bl-cyan-glow)" : undefined}>
 				<!-- Layer 5: Inner main blades -->
 				{#each innerBlades as blade}
 					<path
@@ -1101,12 +1104,13 @@
 		</g>
 
 		<!-- Hub: deep layered mechanical socket -->
-		<g filter="url(#bl-inner-shadow)">
+		<g filter={effectiveLevel === 'dynamic' ? "url(#bl-inner-shadow)" : undefined}>
 			<circle r={INNER_R} fill="url(#bl-hub-depth)" />
 		</g>
 
 		<!-- Spinning Data Rings (dashed tech lines) -->
 		<g>
+			{#if effectiveLevel !== 'static'}
 			<animateTransform
 				attributeName="transform"
 				type="rotate"
@@ -1115,6 +1119,7 @@
 				dur="8s"
 				repeatCount="indefinite"
 			/>
+			{/if}
 			<circle
 				r={INNER_R * 0.85}
 				stroke="#00e5ff"
@@ -1135,6 +1140,7 @@
 
 		<!-- Micro Turbine Layer (Clockwise inner spin) -->
 		<g>
+			{#if effectiveLevel !== 'static'}
 			<animateTransform
 				attributeName="transform"
 				type="rotate"
@@ -1143,6 +1149,7 @@
 				dur="12s"
 				repeatCount="indefinite"
 			/>
+			{/if}
 			<!-- Depth shadow base -->
 			<circle r={INNER_R * 0.65} fill="#020205" opacity="0.8" />
 
@@ -1151,7 +1158,7 @@
 				<path d={blade} fill="url(#bl-blade-deep)" opacity="0.6" />
 			{/each}
 
-			<g filter="url(#bl-cyan-glow)">
+			<g filter={effectiveLevel === 'dynamic' ? "url(#bl-cyan-glow)" : undefined}>
 				<!-- Main micro blades -->
 				{#each microBlades as blade}
 					<path
@@ -1194,7 +1201,7 @@
 			stroke="url(#bl-cyan-neon)"
 			stroke-width="3.5"
 			fill="none"
-			filter="url(#bl-cyan-glow)"
+			filter={effectiveLevel === 'dynamic' ? "url(#bl-cyan-glow)" : undefined}
 			opacity="0.8"
 		/>
 		<circle
@@ -1206,18 +1213,18 @@
 		/>
 
 		<!-- Center dot glow socket -->
-		<g class="bl-core-pulse">
+		<g class={effectiveLevel !== 'static' ? 'bl-core-pulse' : ''}>
 			<circle
 				r="7"
 				fill="#00e5ff"
-				filter="url(#bl-cyan-glow)"
+				filter={effectiveLevel === 'dynamic' ? "url(#bl-cyan-glow)" : undefined}
 				opacity="0.6"
 			/>
-			<circle r="4" fill="#ffffff" filter="url(#bl-beam-glow)" />
+			<circle r="4" fill="#ffffff" filter={effectiveLevel === 'dynamic' ? "url(#bl-beam-glow)" : undefined} />
 		</g>
 
-		<!-- Forge beam — Compounded Additive Energy Flow -->
-		<!-- Layer 0: Core origin flare (horizontal burst) -->
+		<!-- Forge beam + Steam (dynamic mode only — 5 blur layers + CSS animations) -->
+		{#if effectiveLevel === 'dynamic'}
 		<ellipse
 			cx="0"
 			cy="0"
@@ -1230,11 +1237,7 @@
 			opacity="0.9"
 		/>
 
-		<!-- Cross-section glow: each layer is a thin line + Gaussian blur.             -->
-		<!-- The blur spreads as a natural bell-curve — bright at center, transparent at edges. -->
-		<!-- No tube rings: opacity comes from the blur math, not the stroke width.     -->
 		<g style="mix-blend-mode: screen;">
-			<!-- L1: Ultra-wide ambient halo — 4px cyan, blurred ±45px -->
 			<path
 				class="bl-beam-hum"
 				d="M0 0 L350 -500"
@@ -1244,7 +1247,6 @@
 				stroke-linecap="round"
 				filter="url(#bl-beam-wide)"
 			/>
-			<!-- L2: Mid glow corona — 4px, blurred ±12px -->
 			<path
 				class="bl-beam-hum"
 				d="M0 0 L350 -500"
@@ -1254,7 +1256,6 @@
 				stroke-linecap="round"
 				filter="url(#bl-beam-mid)"
 			/>
-			<!-- L3: Core bloom — 5px bright cyan, small glow blur -->
 			<path
 				class="bl-beam-hum"
 				d="M0 0 L350 -500"
@@ -1264,7 +1265,6 @@
 				stroke-linecap="round"
 				filter="url(#bl-beam-glow)"
 			/>
-			<!-- L4: Animated energy dashes flowing upward -->
 			<path
 				d="M0 0 L350 -500"
 				stroke="#c0ffff"
@@ -1273,7 +1273,6 @@
 				stroke-dasharray="80 130"
 				class="bl-beam-flow"
 			/>
-			<!-- L5: Razor-thin blazing white spine -->
 			<path
 				class="bl-beam-hum"
 				d="M0 0 L340 -490"
@@ -1284,7 +1283,6 @@
 			/>
 		</g>
 
-		<!-- Subdued Sporadic Steam Vents -->
 		{#if mode === "forging"}
 			<g filter="url(#bl-steam-blur)" opacity="0.6">
 				{#each steamParticles as p}
@@ -1303,7 +1301,6 @@
 							begin="{p.delay}s"
 							repeatCount="indefinite"
 						/>
-						<!-- Steam cloud expands as it drifts -->
 						<animateTransform
 							attributeName="transform"
 							type="scale"
@@ -1317,10 +1314,11 @@
 				{/each}
 			</g>
 		{/if}
+		{/if}
 	</g>
 
-	<!-- Text (hidden in wallpaper mode) -->
-	{#if !wallpaper}
+	<!-- Text (hidden in all wallpaper modes) -->
+	{#if !isWallpaper}
 	<g
 		transform="translate({CX}, 610)"
 		text-anchor="middle"
@@ -1460,7 +1458,7 @@
 
 	/* ── Wallpaper mode ── */
 	.bl-wallpaper {
-		opacity: 0.12;
+		opacity: var(--wallpaper-opacity, 0.12);
 		animation: none;
 		width: 100%;
 		height: 100%;

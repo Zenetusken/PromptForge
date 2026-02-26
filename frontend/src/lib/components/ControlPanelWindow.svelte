@@ -1,58 +1,32 @@
 <script lang="ts">
-	import { settingsState, NEON_COLORS, type NeonColor } from '$lib/stores/settings.svelte';
+	import { settingsState, NEON_COLORS, NEON_COLOR_HEX } from '$lib/stores/settings.svelte';
 	import { providerState } from '$lib/stores/provider.svelte';
 	import { processScheduler } from '$lib/stores/processScheduler.svelte';
+	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { ALL_STRATEGIES } from '$lib/utils/strategies';
 	import Icon from './Icon.svelte';
+	import { WindowTabStrip } from './ui';
 
-	let activeTab: 'providers' | 'pipeline' | 'display' | 'system' = $state('providers');
+	let activeTab = $state('providers');
 
 	const tabs = [
-		{ id: 'providers' as const, label: 'Providers', icon: 'cpu' as const },
-		{ id: 'pipeline' as const, label: 'Pipeline', icon: 'git-branch' as const },
-		{ id: 'display' as const, label: 'Display', icon: 'monitor' as const },
-		{ id: 'system' as const, label: 'System', icon: 'settings' as const },
+		{ id: 'providers', label: 'Providers', icon: 'cpu' },
+		{ id: 'pipeline', label: 'Pipeline', icon: 'git-branch' },
+		{ id: 'display', label: 'Display', icon: 'monitor' },
+		{ id: 'system', label: 'System', icon: 'settings' },
 	];
 
 	const strategies = ['', ...ALL_STRATEGIES];
-
-	// Map neon color names to their CSS hex values for preview swatches
-	const COLOR_HEX: Record<NeonColor, string> = {
-		'neon-cyan': '#00e5ff',
-		'neon-purple': '#a855f7',
-		'neon-green': '#22ff88',
-		'neon-red': '#ff3366',
-		'neon-yellow': '#fbbf24',
-		'neon-orange': '#ff8c00',
-		'neon-blue': '#4d8eff',
-		'neon-pink': '#ff6eb4',
-		'neon-teal': '#00d4aa',
-		'neon-indigo': '#7b61ff',
-	};
 </script>
 
 <div class="flex h-full flex-col bg-bg-primary text-text-primary font-mono">
-	<!-- Tab strip -->
-	<div class="flex border-b border-neon-cyan/10">
-		{#each tabs as tab (tab.id)}
-			<button
-				class="flex items-center gap-1.5 px-3 py-2 text-[11px] transition-colors
-					{activeTab === tab.id
-						? 'border-b border-neon-cyan text-neon-cyan bg-neon-cyan/5'
-						: 'text-text-dim hover:text-text-secondary hover:bg-bg-hover'}"
-				onclick={() => activeTab = tab.id}
-			>
-				<Icon name={tab.icon} size={11} />
-				{tab.label}
-			</button>
-		{/each}
-	</div>
+	<WindowTabStrip {tabs} {activeTab} onTabChange={(id) => activeTab = id} />
 
 	<!-- Content -->
-	<div class="flex-1 overflow-y-auto p-4 space-y-4">
+	<div class="flex-1 overflow-y-auto p-3 space-y-3">
 		{#if activeTab === 'providers'}
 			<div class="space-y-3">
-				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Provider Configuration</h3>
+				<h3 class="section-heading">Provider Configuration</h3>
 				<div class="space-y-2">
 					<div class="flex items-center justify-between">
 						<span class="text-xs text-text-secondary">Active Provider</span>
@@ -73,7 +47,7 @@
 
 		{:else if activeTab === 'pipeline'}
 			<div class="space-y-3">
-				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Pipeline Defaults</h3>
+				<h3 class="section-heading">Pipeline Defaults</h3>
 				<div class="space-y-2">
 					<label class="flex items-center justify-between">
 						<span class="text-xs text-text-secondary">Default Strategy</span>
@@ -115,7 +89,7 @@
 
 		{:else if activeTab === 'display'}
 			<div class="space-y-3">
-				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Accent Color</h3>
+				<h3 class="section-heading">Accent Color</h3>
 				<div class="grid grid-cols-5 gap-2">
 					{#each NEON_COLORS as color (color)}
 						<button
@@ -128,13 +102,13 @@
 						>
 							<span
 								class="w-4 h-4"
-								style="background-color: {COLOR_HEX[color]}"
+								style="background-color: {NEON_COLOR_HEX[color]}"
 							></span>
 						</button>
 					{/each}
 				</div>
 
-				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider pt-2">Animations</h3>
+				<h3 class="section-heading pt-2">Animations</h3>
 				<label class="flex items-center justify-between">
 					<span class="text-xs text-text-secondary">Enable Animations</span>
 					<input
@@ -144,11 +118,19 @@
 						onchange={(e) => settingsState.update({ enableAnimations: (e.target as HTMLInputElement).checked })}
 					/>
 				</label>
+
+				<button
+					class="mt-2 flex items-center gap-1.5 text-[10px] text-text-dim hover:text-neon-cyan transition-colors"
+					onclick={() => windowManager.openDisplaySettings()}
+				>
+					<Icon name="monitor" size={10} />
+					<span>More Display Settings...</span>
+				</button>
 			</div>
 
 		{:else if activeTab === 'system'}
 			<div class="space-y-3">
-				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">System Info</h3>
+				<h3 class="section-heading">System Info</h3>
 				<div class="space-y-2">
 					<div class="flex items-center justify-between">
 						<span class="text-xs text-text-secondary">Backend Version</span>
@@ -173,7 +155,7 @@
 				</div>
 
 				{#if Object.keys(providerState.tokenBudgets).length > 0}
-					<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider pt-2">Token Usage</h3>
+					<h3 class="section-heading pt-2">Token Usage</h3>
 					<div class="space-y-2">
 						{#each Object.entries(providerState.tokenBudgets) as [provider, budget]}
 							<div class="border border-neon-cyan/10 p-2 space-y-1">

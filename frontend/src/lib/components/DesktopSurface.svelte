@@ -3,6 +3,7 @@
 	import DesktopIcon from './DesktopIcon.svelte';
 	import DesktopContextMenu from './DesktopContextMenu.svelte';
 	import { desktopStore, CELL_WIDTH, CELL_HEIGHT, GRID_PADDING, RECYCLE_BIN_ID } from '$lib/stores/desktopStore.svelte';
+	import { settingsState } from '$lib/stores/settings.svelte';
 
 	let surfaceEl: HTMLDivElement | undefined = $state();
 	let editingIconId: string | null = $state(null);
@@ -137,7 +138,7 @@
 >
 	<!-- Wallpaper layer -->
 	<div class="desktop-wallpaper">
-		<BrandLogo wallpaper />
+		<BrandLogo wallpaper level={settingsState.wallpaperMode} />
 	</div>
 
 	<!-- Icons layer (absolute positioned) -->
