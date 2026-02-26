@@ -13,9 +13,9 @@ GZip → SecurityHeaders → CORS → CSRF → RateLimit → Auth → Audit → 
 | GZip | `starlette.middleware.gzip` | Compresses responses ≥1 KB. `minimum_size=1000` ensures small SSE chunks pass through uncompressed. |
 | SecurityHeaders | `middleware/security_headers.py` | Adds `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, strict CSP. Relaxes CSP for Swagger/ReDoc paths. |
 | CORS | `fastapi.middleware.cors` | Origins from `FRONTEND_URL` (comma-separated). Exposes `X-LLM-*`, `X-Confirm-Delete`, `If-Unmodified-Since` headers. |
-| CSRF | `middleware/csrf.py` | Origin-based validation for state-changing methods (POST/PUT/DELETE/PATCH). Allows requests without `Origin` header (curl). Also allows localhost origins for API docs. |
-| RateLimit | `middleware/rate_limit.py` | Per-IP sliding window (60 s). Limits from config: `RATE_LIMIT_RPM` (general), `RATE_LIMIT_OPTIMIZE_RPM` (`POST /api/optimize`). Exempts `/internal/` paths (MCP webhook traffic). Returns 429 + `Retry-After: 60`. Uses `deque` for O(1) cleanup. Stale IPs pruned every 60 s. `reset()` for testing. |
-| Auth | `middleware/auth.py` | Optional bearer token. Active when `AUTH_TOKEN` config is set. Exempts `/`, `/api/health`, `/internal/` prefix, docs paths. Uses `hmac.compare_digest()`. The `/internal/` exemption allows the MCP server process (port 8001) to POST webhook events to `/internal/mcp-event` without a bearer token. |
+| CSRF | `middleware/csrf.py` | Origin-based validation for state-changing methods (POST/PUT/DELETE/PATCH). Allows requests without `Origin` header (curl/non-browser clients). |
+| RateLimit | `middleware/rate_limit.py` | Per-IP sliding window. Limits from config: `RATE_LIMIT_RPM` (general), `RATE_LIMIT_OPTIMIZE_RPM` (`POST /api/optimize`). Internal service traffic exempt. Returns 429 + `Retry-After`. `reset()` for testing. |
+| Auth | `middleware/auth.py` | Optional bearer token. Active when `AUTH_TOKEN` config is set. Exempts health checks, documentation paths, and internal service endpoints. Constant-time comparison. |
 | Audit | `middleware/audit.py` | Logs state-changing requests (POST/PUT/DELETE/PATCH): method, path, status, client IP, provider name. Logger: `promptforge.audit`. Never logs API keys. |
 
 ## Shared Utilities
@@ -37,7 +37,7 @@ MCPAuth → SecurityHeaders → FastMCP SSE handler
 
 | Layer | File | Purpose |
 |-------|------|---------|
-| MCPAuth | `middleware/mcp_auth.py` | Optional bearer token auth. Active when `MCP_AUTH_TOKEN` is set. Exempts `/health`. Uses `hmac.compare_digest()`. Returns 401 JSON on failure. When token is empty, all requests pass through (development mode). |
+| MCPAuth | `middleware/mcp_auth.py` | Optional bearer token auth. Active when `MCP_AUTH_TOKEN` is set. Exempts health checks. Returns 401 on failure. Disabled when token is empty (development mode). |
 | SecurityHeaders | `middleware/security_headers.py` | Same headers as the main backend — `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, strict CSP. |
 
 The MCP server does not use CORS, CSRF, rate-limiting, or audit middleware — it is consumed by trusted MCP clients (Claude Code), not browsers.

@@ -59,25 +59,40 @@ GITHUB_SCOPE = os.getenv("GITHUB_SCOPE", "repo")
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "")
 
 
+def _data_dir_from_db_url() -> Path:
+    """Derive the data directory from DATABASE_URL (works in both local and Docker)."""
+    if ":///" in DATABASE_URL:
+        return Path(DATABASE_URL.split(":///", 1)[1]).parent
+    return BASE_DIR / "data"
+
+
 def _resolve_webhook_secret() -> str:
     """Resolve the internal webhook secret.
 
     Priority: env var > file > auto-generate.
     Parallels the ENCRYPTION_KEY auto-generation pattern.
+    Falls back to an ephemeral in-memory secret when the filesystem is
+    read-only (e.g. Docker containers without a data volume).
     """
     secret = os.getenv("INTERNAL_WEBHOOK_SECRET", "")
     if secret:
         return secret
-    secret_file = BASE_DIR / "data" / ".webhook_secret"
-    if secret_file.exists():
-        return secret_file.read_text().strip()
-    # Auto-generate and persist
+    secret_file = _data_dir_from_db_url() / ".webhook_secret"
+    try:
+        if secret_file.exists():
+            return secret_file.read_text().strip()
+    except OSError:
+        pass
+    # Auto-generate and try to persist
     import secrets as _secrets
 
     secret = _secrets.token_hex(32)
-    secret_file.parent.mkdir(parents=True, exist_ok=True)
-    secret_file.write_text(secret)
-    os.chmod(secret_file, 0o600)
+    try:
+        secret_file.parent.mkdir(parents=True, exist_ok=True)
+        secret_file.write_text(secret)
+        os.chmod(secret_file, 0o600)
+    except OSError:
+        pass  # read-only FS — secret lives only in memory for this process
     return secret
 
 

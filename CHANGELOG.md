@@ -8,36 +8,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security — DevSecOps Hardening
 
-- **MCP server authentication**: `MCP_AUTH_TOKEN` env var enables bearer token auth on the MCP server (port 8001). When set, all requests except `/health` require `Authorization: Bearer <token>`. Disabled when empty (development mode). New `MCPAuthMiddleware` in `backend/app/middleware/mcp_auth.py`.
-- **Internal webhook authentication**: `INTERNAL_WEBHOOK_SECRET` env var (auto-generated to `data/.webhook_secret` if empty) secures the `POST /internal/mcp-event` webhook. MCP server sends `X-Webhook-Secret` header; backend validates with `hmac.compare_digest`. Returns 403 on mismatch.
+- **MCP server authentication**: `MCP_AUTH_TOKEN` env var enables bearer token auth on the MCP server. Disabled when empty (development mode).
+- **Internal webhook authentication**: `INTERNAL_WEBHOOK_SECRET` env var (auto-generated if empty) secures internal service-to-service communication between the MCP server and backend.
 - **MCP localhost binding**: `init.sh` now binds MCP server to `127.0.0.1` instead of `0.0.0.0`. Docker compose removes the host port mapping for MCP (inter-container only). New `MCP_HOST` config var (default `127.0.0.1`).
-- **Security headers on MCP server**: `SecurityHeadersMiddleware` now mounted on the MCP Starlette app (same headers as the main backend).
-- **Database file permissions**: `init_db()` now sets `0o700` on `data/` directory and `0o600` on the SQLite database file (owner-only access).
-- **Encryption key validation**: `_get_fernet()` now validates the encryption key on first use by round-tripping a test string. Logs a CRITICAL warning if the key is mismatched or corrupted (e.g., after key file replacement).
+- **Security headers on MCP server**: Same security headers as the main backend now applied to the MCP server.
+- **Database file permissions**: `init_db()` now restricts filesystem permissions on the data directory and database file (owner-only access).
+- **Encryption key validation**: Encryption key is validated on first use via round-trip test. Logs a CRITICAL warning if the key is mismatched or corrupted.
 - **Build artifact cleanup**: Removed `.claude/`, `.sdk_integrated`, `app_spec.txt`, `claude-progress.txt`, `feature_list.json` from git tracking. Added all builder artifacts to `.gitignore`.
 
 ### Added — GitHub OAuth Setup UI & Security Hardening
 
-- **In-app OAuth configuration**: `GET/PUT/DELETE /api/github/config` endpoints for managing GitHub OAuth App credentials from within the Workspace Hub. Client secret stored Fernet-encrypted at rest; client ID returned as masked hint (`Iv1.****xxxx`) — secret never exposed in API responses.
-- **Setup walkthrough UI**: When GitHub OAuth is not configured, the Workspace Hub GitHub tab shows a step-by-step setup form with direct links to GitHub Developer Settings and the "New OAuth App" creation page, input fields for Client ID / Secret, and a security note about Fernet encryption.
+- **In-app OAuth configuration**: `GET/PUT/DELETE /api/github/config` endpoints for managing GitHub OAuth App credentials from within the Workspace Hub. Client secret encrypted at rest; client ID returned as masked hint — secret never exposed in API responses.
+- **Setup walkthrough UI**: When GitHub OAuth is not configured, the Workspace Hub GitHub tab shows a step-by-step setup form with direct links to GitHub Developer Settings and the "New OAuth App" creation page, input fields for Client ID / Secret, and a security note about encryption.
 - **Three-state GitHub tab**: Not configured (setup form) → Configured but not connected ("Connect GitHub" button) → Connected (user card + repos list). Driven by `github_configured` flag in workspace health.
-- **OAuth CSRF state validation** (security fix): `/api/github/callback` now validates the `state` parameter against a time-limited (10 min TTL), one-time-use in-memory store. Previously the state was generated but never verified.
-- **Auth middleware callback exemption**: `/api/github/callback` added to `_EXEMPT_PREFIXES` — the OAuth redirect target cannot carry a Bearer token.
-- **Sanitized exception logging**: Callback error logs now use `type(exc).__name__` instead of full exception details to prevent auth codes from appearing in logs.
-- **Config resolution**: DB-stored OAuth config takes priority over env vars. All OAuth endpoints (authorize, callback, disconnect/revoke) resolve credentials via `resolve_github_config()`.
+- **OAuth CSRF state validation** (security fix): OAuth callback now validates the `state` parameter against a time-limited, one-time-use in-memory store. Previously the state was generated but never verified.
+- **Auth middleware callback exemption**: OAuth callback endpoint exempted from bearer token auth — the redirect target cannot carry a token.
+- **Sanitized exception logging**: Callback error logs no longer leak sensitive values.
+- **Config resolution**: DB-stored OAuth config takes priority over env vars. All OAuth endpoints resolve credentials via centralized config resolution.
 - **`github_configured` health flag**: Workspace health summary includes `github_configured: bool` so the frontend knows whether to show the setup form vs the connect button.
 - **`GitHubOAuthConfig` model**: New single-row table for in-app credential management with encrypted secret storage.
 - **`lock` icon**: Added lock icon to `Icon.svelte` for the security note in the setup form.
-- **Backend tests**: 25 new tests — OAuth state validation (6), config repository CRUD (5), config endpoints (8), health `github_configured` (3), callback state validation (2), auth middleware exemption (1).
+- **Backend tests**: 25 new tests covering OAuth state validation, config repository CRUD, config endpoints, health integration, and auth middleware.
 
 ### Added — Workspace Hub: GitHub-Connected Dynamic Context Management
 
-- **GitHub OAuth integration**: Connect GitHub account via OAuth flow, list repos, link repos to PromptForge projects for automatic codebase context extraction. Token stored encrypted at rest (Fernet). New env vars: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`, `ENCRYPTION_KEY`.
+- **GitHub OAuth integration**: Connect GitHub account via OAuth flow, list repos, link repos to PromptForge projects for automatic codebase context extraction. Token stored encrypted at rest. New env vars: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URI`, `ENCRYPTION_KEY`.
 - **Three-layer context resolution**: Workspace auto-context (Layer 3, lowest priority) → manual `context_profile` (Layer 2) → per-request `codebase_context` (Layer 1, highest). Two chained `merge_contexts()` calls in `optimize.py`, `mcp_server.py` optimize/batch tools. Manual edits always preserved — workspace context only fills gaps.
 - **Deterministic context extraction** (`workspace_sync.py`): No LLM calls. Parses `package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `pom.xml`, `Gemfile` for language/framework detection. Infers conventions from linter configs (`.eslintrc`, `ruff.toml`, `.prettierrc`), test frameworks from dev dependencies, and patterns from directory structure.
 - **Data model**: `github_connections` table (encrypted tokens, user info, token validity), `workspace_links` table (project FK with UNIQUE constraint, repo metadata, sync status, workspace_context JSON, dependencies/file_tree snapshots, sync_source). `Project.workspace_synced_at` column.
 - **Backend API** (`routers/github.py`): 9 new endpoints — `GET /api/github/authorize`, `GET /api/github/callback`, `GET /api/github/status`, `DELETE /api/github/disconnect`, `GET /api/github/repos`, `POST /api/workspace/link`, `DELETE /api/workspace/{id}`, `POST /api/workspace/{id}/sync`, `GET /api/workspace/status`.
-- **Health endpoint**: `workspace` section with `github_connected`, `github_username`, `total_links`, `synced`, `stale`, `errors` counts. Staleness threshold: 24 hours.
+- **Health endpoint**: `workspace` section with `github_connected`, `github_username`, `total_links`, `synced`, `stale`, `errors` counts.
 - **MCP tool 20**: `sync_workspace` — allows Claude Code CLI to push workspace context (repo URL, file tree, dependencies, pre-analyzed context) for a project. Creates workspace link with `sync_source='claude-code'`.
 - **MCP resource**: `promptforge://workspaces` — returns all workspace link statuses with staleness info.
 - **Frontend Workspace Hub** (`WorkspaceWindow.svelte`): 3-tab persistent window (ID: `workspace-manager`). GitHub tab: connect/disconnect, searchable repo list, link to project. Workspaces tab: status table with sync/unlink, color-coded dots (green=synced, yellow=stale, red=error, gray=pending). Context Inspector tab: field-by-field source breakdown with completeness bar.
@@ -46,7 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **OAuth callback route** (`/github/callback`): SvelteKit page handles `?status=connected` / `?error=...`, updates store, redirects to Workspace Hub.
 - **ForgeContextSection**: Added `'workspace'` context source badge (green, "from workspace").
 - **Icon additions**: `github` (octocat) and `link` icons added to `Icon.svelte` type system.
-- **Backend tests**: 45 new tests — 15 for context extraction (React, Python/FastAPI, SvelteKit, empty, truncation), 30 for GitHub router (Fernet, repository CRUD, OAuth endpoints, workspace link CRUD, staleness detection, health).
+- **Backend tests**: 45 new tests — 15 for context extraction (React, Python/FastAPI, SvelteKit, empty, truncation), 30 for GitHub router (encryption, repository CRUD, OAuth endpoints, workspace link CRUD, staleness detection, health).
 - **Frontend tests**: `PERSISTENT_WINDOW_IDS` count 11→12, desktop icon count 15→16 (10 system + 2 folder + 4 file), 2 new notification tests (`workspace:synced`, `workspace:error`).
 
 ### Fixed — Notification System Audit
@@ -78,7 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added — MCP Live Bridge
 
 - Backend: **MCP Activity Broadcaster** (`backend/app/services/mcp_activity.py`) — in-memory event fan-out for real-time MCP tool call tracking with bounded history (100 events), subscriber queue management (max 256 per client), and active call state
-- Backend: **MCP Activity Router** (`backend/app/routers/mcp_activity.py`) — `POST /internal/mcp-event` webhook (auth-exempt), `GET /api/mcp/events` SSE stream (snapshot + live events), `GET /api/mcp/status` REST polling fallback
+- Backend: **MCP Activity Router** (`backend/app/routers/mcp_activity.py`) — internal webhook endpoint, `GET /api/mcp/events` SSE stream (snapshot + live events), `GET /api/mcp/status` REST polling fallback
 - Backend: **MCP Tracking Decorator** (`_mcp_tracked`) on all 19 MCP tools — emits `tool_start`/`tool_complete`/`tool_error` events via fire-and-forget webhook to backend; includes duration_ms and result_summary extraction
 - Backend: **MCP Resources** — 3 read-only resources: `promptforge://projects`, `promptforge://projects/{id}/context`, `promptforge://optimizations/{id}` for bi-directional context flow with Claude Code
 - Frontend: **MCPActivityFeed** (`$lib/services/mcpActivityFeed.svelte.ts`) — SSE client with auto-reconnect (exponential backoff), reactive state for events/activeCalls/sessionCount, SystemBus emission (`mcp:*` events)
@@ -95,7 +95,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Backend: **Tool progress events** — `optimize` (3 checkpoints) and `batch` (per-prompt progress) tools now emit `tool_progress` events via `_emit_tool_progress()` helper using `contextvars.ContextVar` to propagate decorator-generated `call_id` into tool handlers
 - Backend: **Config-based webhook port** — removed hardcoded `_BACKEND_PORT = 8000` in MCP server; `_emit_mcp_event()` now reads `config.PORT` dynamically
-- Backend: **Rate limiter `/internal/` exemption** — internal webhook traffic (e.g., batch of 20 prompts = 60+ POSTs) now bypasses per-IP rate limiting to prevent self-throttling
+- Backend: **Rate limiter internal traffic exemption** — internal service-to-service webhook traffic now bypasses per-IP rate limiting to prevent self-throttling
 - Frontend: **MCPStatus `startedAt` conversion** — backend sends ISO `timestamp` strings in active_calls; frontend now converts to epoch ms via `MCPStatusRaw` interface and `new Date().getTime()`
 - Frontend: **Network Monitor elapsed time** — `formatElapsed()` now accepts reactive `_tick` parameter so Svelte re-renders on each `$effect` interval (previously displayed stale time)
 - Frontend: **DRY `MCP_WRITE_TOOLS`** — extracted shared constant from `mcpActivityFeed.svelte.ts`, imported in `notificationService` and `+layout.svelte` (was duplicated inline)
@@ -204,8 +204,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Backend: Archive filter query uses `NOT EXISTS` correlated subqueries instead of `NOT IN` with materialized UNION
 - Backend: SQLite `busy_timeout = 5000` prevents `SQLITE_BUSY` errors under concurrent SSE writes; `mmap_size` raised to 256 MB
 - Backend: Read-only `get_db_readonly()` session dependency for GET/HEAD endpoints — skips unnecessary `commit()` flush
-- Backend: Rate limiter stale IP prune interval reduced from 300s to 60s
-- Backend: Stats cache TTL increased from 30s to 120s (cache is already invalidated on mutations)
+- Backend: Rate limiter stale IP cleanup interval optimized
+- Backend: Stats cache TTL tuned (cache is already invalidated on mutations)
 - Backend: MCP stats score conversion uses recursive `_convert_scores_recursive()` utility instead of nested manual loops
 - Backend: Legacy migration batches prompt inserts per project instead of one-at-a-time
 - Frontend: Skeleton shimmer animation uses GPU-composited `transform: translateX()` via pseudo-element instead of `background-position` (120 FPS safe)
@@ -280,7 +280,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `most_common_task_type` ignored project filter — subquery used `.correlate(None)` without project/completed filters, always returning the global most common task type even when stats were scoped to a project
 - `total_projects` included archived projects in count — now queries `projects` table with `status = 'active'`
 - CLAUDE.md palette documentation — corrected 5 hex values to match `app.css` and brand guidelines (`bg-primary` #0a0a0f→#06060c, `neon-cyan` #00f0ff→#00e5ff, `neon-purple` #b000ff→#a855f7, `neon-green` #00ff88→#22ff88, `neon-red` #ff0055→#ff3366) and expanded from 5 to 19 palette tokens
-- Rate limiter memory leak — replaced `defaultdict(list)` with `defaultdict(deque)` for O(1) cleanup, added periodic stale IP pruning every 5 minutes
+- Rate limiter memory leak — fixed unbounded memory growth in per-IP rate tracking with bounded data structures and periodic cleanup
 
 ### Performance
 - SQLite WAL mode + PRAGMAs — `journal_mode=WAL` eliminates reader/writer blocking during SSE streaming, `synchronous=NORMAL`, 64MB cache, 30MB mmap, temp_store=MEMORY

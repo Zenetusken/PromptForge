@@ -33,7 +33,7 @@ Submit a raw prompt, get it rewritten and scored through a 4-stage AI pipeline (
 - **Workspace Hub** — connect GitHub repos to projects for automatic codebase context extraction; three-layer context merge (workspace auto-context, manual profile, per-request override)
 - **MCP server** — 20 tools and 4 resources for Claude Code integration (`optimize`, `retry`, `search`, `set_project_context`, `sync_workspace`, etc.)
 - **OS-metaphor UI** — multi-window desktop with IDE, projects explorer, history browser, network monitor, strategy workshop, batch processor, terminal, and more
-- **Security stack** — optional bearer-token auth (API + MCP server), `X-Webhook-Secret` for internal MCP→backend webhooks, per-endpoint rate limiting, origin-based CSRF protection, security headers, input sanitization, Fernet-encrypted token storage, hardened data directory permissions, and audit logging
+- **Security stack** — optional bearer-token auth (API + MCP server), authenticated internal webhooks, per-endpoint rate limiting, origin-based CSRF protection, security headers, input sanitization, encrypted token storage, hardened data directory permissions, and audit logging
 - **Docker-ready** — multi-stage builds, healthchecks, non-root containers, and compose orchestration
 
 ## Quick Start
@@ -95,10 +95,10 @@ The resolved context is snapshotted on every optimization for reproducibility.
 
 Connect GitHub repositories to PromptForge projects for automatic codebase context extraction:
 
-1. **Configure** — Enter GitHub OAuth App credentials in the Workspace Hub (encrypted at rest with Fernet)
+1. **Configure** — Enter GitHub OAuth App credentials in the Workspace Hub (encrypted at rest)
 2. **Connect** — Authorize via GitHub OAuth to access your repositories
 3. **Link** — Associate repos with projects; context is extracted deterministically (no LLM calls) from `package.json`, `pyproject.toml`, linter configs, directory structure, etc.
-4. **Sync** — Manual or automatic re-sync when code changes; staleness detection at 24h
+4. **Sync** — Manual or automatic re-sync when code changes; automatic staleness detection
 
 Context can also be pushed via the `sync_workspace` MCP tool from Claude Code without GitHub OAuth.
 
@@ -199,7 +199,7 @@ Key environment variables (set in `.env`):
 | `GEMINI_API_KEY` | | Google Gemini API key |
 | `GITHUB_CLIENT_ID` | | GitHub OAuth App client ID (for Workspace Hub) |
 | `GITHUB_CLIENT_SECRET` | | GitHub OAuth App client secret (for Workspace Hub) |
-| `ENCRYPTION_KEY` | *(auto-generated)* | Fernet key for token encryption at rest |
+| `ENCRYPTION_KEY` | *(auto-generated)* | Symmetric key for token encryption at rest |
 | `RATE_LIMIT_RPM` | `60` | General rate limit (requests/minute) |
 | `RATE_LIMIT_OPTIMIZE_RPM` | `10` | Optimize endpoint rate limit |
 

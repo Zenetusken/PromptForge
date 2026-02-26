@@ -74,7 +74,10 @@ jobs:
 
       - name: Smoke test backend
         run: |
-          docker run -d --name pf-backend -p 8000:8000 promptforge-backend
+          docker run -d --name pf-backend -p 8000:8000 \
+            -e DATABASE_URL=sqlite+aiosqlite:///./data/promptforge.db \
+            --tmpfs /app/data \
+            promptforge-backend
           sleep 5
           curl -f http://localhost:8000/api/health || (docker logs pf-backend && exit 1)
           docker stop pf-backend

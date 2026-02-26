@@ -353,6 +353,7 @@ do_start() {
     wait $wait_mcp || true
 
     mkdir -p "$LOGS_DIR"
+    chmod 700 "$LOGS_DIR" 2>/dev/null || true
 
     # Guard: venv must exist
     if [ ! -d "$SCRIPT_DIR/backend/venv" ]; then
@@ -378,6 +379,7 @@ do_start() {
         > "$LOGS_DIR/backend.log" 2>&1 &
 
     local backend_pid=$!
+    chmod 600 "$LOGS_DIR/backend.log" 2>/dev/null || true
     echo $backend_pid > "$BACKEND_PID_FILE"
     success "Backend starting (PID: $backend_pid)"
 
@@ -392,6 +394,7 @@ do_start() {
         > "$LOGS_DIR/frontend.log" 2>&1 &
 
     local frontend_pid=$!
+    chmod 600 "$LOGS_DIR/frontend.log" 2>/dev/null || true
     echo $frontend_pid > "$FRONTEND_PID_FILE"
     success "Frontend starting (PID: $frontend_pid)"
 
@@ -409,6 +412,7 @@ do_start() {
         > "$LOGS_DIR/mcp.log" 2>&1 &
 
     local mcp_pid=$!
+    chmod 600 "$LOGS_DIR/mcp.log" 2>/dev/null || true
     echo $mcp_pid > "$MCP_PID_FILE"
     success "MCP server starting (PID: $mcp_pid)"
 
@@ -434,7 +438,7 @@ do_start() {
     # Fetch provider info from health endpoint
     local provider_info=""
     if $backend_ok; then
-        provider_info=$(curl -sf "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null \
+        provider_info=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null \
             | python3 -c "
 import sys, json
 try:
@@ -572,7 +576,7 @@ do_status() {
     # Health details (single curl call)
     echo ""
     local health_json
-    health_json=$(curl -sf "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null || true)
+    health_json=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null || true)
     if [ -n "$health_json" ]; then
         echo -e "  ${BOLD}Health endpoint:${NC}"
         echo "$health_json" | python3 -c "

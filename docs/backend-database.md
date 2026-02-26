@@ -30,7 +30,7 @@ Tests use `:memory:` SQLite — PRAGMAs are applied but most are no-ops there.
 6. **`_backfill_prompt_ids`** — links optimizations to prompts by matching content within same project
 7. **`_cleanup_stale_running`** — marks RUNNING records >30 min old as ERROR
 
-8. **`_harden_data_dir`** — sets `0o700` on the `data/` directory and `0o600` on the database file (owner-only access). Logs a warning on `OSError` (e.g., non-owner process).
+8. **`_harden_data_dir`** — restricts filesystem permissions on the data directory and database file (owner-only access). Logs a warning on `OSError` (e.g., non-owner process).
 
 All steps are idempotent — safe to run on every restart.
 
