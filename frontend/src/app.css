@@ -319,9 +319,7 @@ body {
 /* ─── Glass effect utility ────────────────────────── */
 
 .glass {
-	background: rgba(12, 12, 22, 0.12);
-	backdrop-filter: blur(1.5px) saturate(1.6);
-	-webkit-backdrop-filter: blur(1.5px) saturate(1.6);
+	background: rgba(12, 12, 22, 0.92);
 }
 
 /* ─── Gradient text utility ───────────────────────── */
@@ -339,11 +337,8 @@ body {
 
 .glass-panel-bleed {
 	position: relative;
-	background: rgba(12, 12, 22, 0.15);
-	backdrop-filter: blur(2px) saturate(1.5);
-	-webkit-backdrop-filter: blur(2px) saturate(1.5);
+	background: rgba(12, 12, 22, 0.92);
 	border: 1px solid var(--color-border-subtle);
-	transform: translateZ(0);
 }
 
 .card-hover-bleed {
@@ -794,7 +789,6 @@ body {
 	.delete-confirm-bar {
 		border-top: 1px solid rgba(255, 51, 102, 0.15);
 		background: color-mix(in srgb, var(--color-bg-card) 98%, var(--color-neon-red));
-		backdrop-filter: blur(8px);
 	}
 
 	/* ─── Pipeline Narrative ─────────────────────── */
@@ -884,10 +878,7 @@ body {
 		position: relative;
 		border-radius: 8px;
 		border: 1px solid var(--color-border-subtle);
-		background: rgba(12, 12, 22, 0.15);
-		backdrop-filter: blur(2px) saturate(1.5);
-		-webkit-backdrop-filter: blur(2px) saturate(1.5);
-		transform: translateZ(0);
+		background: rgba(12, 12, 22, 0.95);
 		padding: 8px;
 		overflow: hidden;
 	}
@@ -913,10 +904,7 @@ body {
 	.prompt-card {
 		border-radius: 8px;
 		border: 1px solid var(--color-border-subtle);
-		background: rgba(12, 12, 22, 0.15);
-		backdrop-filter: blur(2px) saturate(1.5);
-		-webkit-backdrop-filter: blur(2px) saturate(1.5);
-		transform: translateZ(0);
+		background: rgba(12, 12, 22, 0.95);
 		padding: 6px 8px;
 		transition: background-color 0.2s ease, border-color 0.2s ease;
 	}
@@ -957,10 +945,7 @@ body {
 
 	.filter-bar {
 		border-radius: 8px;
-		background: rgba(12, 12, 22, 0.15);
-		backdrop-filter: blur(2px) saturate(1.5);
-		-webkit-backdrop-filter: blur(2px) saturate(1.5);
-		transform: translateZ(0);
+		background: rgba(12, 12, 22, 0.95);
 		border: 1px solid var(--color-border-subtle);
 		padding: 4px 6px;
 	}
@@ -1017,9 +1002,8 @@ body {
 	.version-panel {
 		border-radius: 8px;
 		border: 1px solid rgba(168, 85, 247, 0.12);
-		background: rgba(168, 85, 247, 0.03);
+		background: rgba(168, 85, 247, 0.06);
 		padding: 6px;
-		backdrop-filter: blur(4px);
 		box-shadow: inset 0 1px 0 0 rgba(168, 85, 247, 0.06);
 	}
 
@@ -1366,9 +1350,7 @@ body {
 	pointer-events: auto;
 	width: 340px;
 	max-height: 70vh;
-	background: rgba(17, 17, 30, 0.97);
-	backdrop-filter: blur(12px) saturate(1.5);
-	-webkit-backdrop-filter: blur(12px) saturate(1.5);
+	background: rgba(17, 17, 30, 0.98);
 	border: 1px solid rgba(0, 229, 255, 0.12);
 	border-radius: 8px;
 	overflow-y: auto;
@@ -1497,15 +1479,50 @@ body {
 	background: color-mix(in srgb, var(--color-neon-cyan) 5%, transparent);
 }
 
+/* ─── Range Slider (cyberpunk) ────────────────────── */
+
+input[type="range"].cyber-range {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 100%;
+	height: 2px;
+	background: var(--color-border-subtle);
+	outline: none;
+	cursor: pointer;
+}
+
+input[type="range"].cyber-range::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 10px;
+	height: 10px;
+	background: var(--color-neon-cyan);
+	border: none;
+	border-radius: 0;
+	cursor: pointer;
+}
+
+input[type="range"].cyber-range::-moz-range-thumb {
+	width: 10px;
+	height: 10px;
+	background: var(--color-neon-cyan);
+	border: none;
+	border-radius: 0;
+	cursor: pointer;
+}
+
+input[type="range"].cyber-range::-moz-range-track {
+	height: 2px;
+	background: var(--color-border-subtle);
+}
+
 /* ─── Desktop Context Menu ───────────────────────── */
 
 .desktop-context-menu {
 	position: fixed;
 	z-index: 45;
 	min-width: 180px;
-	background: rgba(17, 17, 30, 0.97);
-	backdrop-filter: blur(12px) saturate(1.5);
-	-webkit-backdrop-filter: blur(12px) saturate(1.5);
+	background: rgba(17, 17, 30, 0.98);
 	border: 1px solid var(--color-border-subtle);
 	border-radius: 6px;
 	padding: 4px 0;
@@ -1534,4 +1551,131 @@ body {
 .context-menu-item--danger:hover {
 	background: rgba(255, 51, 102, 0.1);
 	color: var(--color-neon-red);
+}
+
+/* ─── Snap Preview Overlay ───────────────────────── */
+
+.snap-preview {
+	position: absolute;
+	background: rgba(0, 229, 255, 0.06);
+	border: 1px solid rgba(0, 229, 255, 0.25);
+	pointer-events: none;
+	transition: top 120ms ease, left 120ms ease, width 120ms ease, height 120ms ease;
+}
+
+/* ─── Snap Assist Overlay ────────────────────────── */
+
+.snap-assist-scrim {
+	position: absolute;
+	inset: 0;
+	background: rgba(6, 6, 12, 0.5);
+	pointer-events: auto;
+	z-index: 15;
+}
+
+.snap-assist-zone {
+	position: absolute;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 8px;
+	overflow-y: auto;
+	max-height: 100%;
+}
+
+.snap-assist-card {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 8px;
+	background: var(--color-bg-card);
+	border: 1px solid var(--color-border-subtle);
+	border-radius: 4px;
+	cursor: pointer;
+	transition: border-color 0.12s, background-color 0.12s;
+	pointer-events: auto;
+}
+
+.snap-assist-card:hover {
+	border-color: var(--color-neon-cyan);
+	background: rgba(0, 229, 255, 0.05);
+}
+
+/* ─── Snap Layout Picker ─────────────────────────── */
+
+.snap-layout-picker {
+	position: absolute;
+	background: var(--color-bg-secondary);
+	border: 1px solid var(--color-border-subtle);
+	border-radius: 6px;
+	padding: 12px;
+	z-index: 20;
+	pointer-events: auto;
+}
+
+.snap-layout-thumbnail {
+	width: 64px;
+	height: 44px;
+	border: 1px solid var(--color-border-subtle);
+	border-radius: 3px;
+	overflow: hidden;
+	cursor: pointer;
+	transition: border-color 0.12s;
+	background: var(--color-bg-primary);
+}
+
+.snap-layout-thumbnail:hover {
+	border-color: var(--color-neon-cyan);
+}
+
+.snap-layout-slot {
+	background: rgba(255, 255, 255, 0.06);
+	border-radius: 1px;
+	transition: background-color 0.12s;
+}
+
+.snap-layout-slot:hover {
+	background: rgba(0, 229, 255, 0.15);
+}
+
+.snap-layout-slot--active {
+	background: rgba(0, 229, 255, 0.2);
+	outline: 1px solid rgba(0, 229, 255, 0.4);
+	outline-offset: -1px;
+}
+
+/* ─── Lock Indicator ─────────────────────────────── */
+
+.snap-lock-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 12px;
+	height: 12px;
+	color: color-mix(in srgb, var(--color-text-dim) 50%, transparent);
+	cursor: pointer;
+	transition: color 0.12s;
+	flex-shrink: 0;
+}
+
+.snap-lock-icon:hover {
+	color: var(--color-neon-cyan);
+}
+
+/* ─── Taskbar Snap Group Bar ─────────────────────── */
+
+.taskbar-window-btn--grouped {
+	position: relative;
+}
+
+.taskbar-group-bar {
+	position: absolute;
+	bottom: 0;
+	left: 4px;
+	right: 4px;
+	height: 2px;
+}
+
+.taskbar-window-btn--sibling-highlight {
+	background: rgba(0, 229, 255, 0.04);
 }
