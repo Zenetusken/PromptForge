@@ -13,6 +13,22 @@ from app.schemas.context import CodebaseContext
 
 logger = logging.getLogger(__name__)
 
+# Maximum chars for README content in documentation field
+_README_MAX_CHARS = 3000
+
+# Common dual-language combos: (backend_marker, frontend_marker) → label
+_DUAL_LANGUAGE_COMBOS: list[tuple[str, str, str]] = [
+    ("pyproject.toml", "package.json", "Python (backend) / TypeScript (frontend)"),
+    ("requirements.txt", "package.json", "Python (backend) / TypeScript (frontend)"),
+    ("setup.py", "package.json", "Python (backend) / TypeScript (frontend)"),
+    ("go.mod", "package.json", "Go (backend) / TypeScript (frontend)"),
+    ("Cargo.toml", "package.json", "Rust (backend) / TypeScript (frontend)"),
+    ("pom.xml", "package.json", "Java (backend) / TypeScript (frontend)"),
+    ("build.gradle", "package.json", "Java (backend) / TypeScript (frontend)"),
+    ("Gemfile", "package.json", "Ruby (backend) / TypeScript (frontend)"),
+    ("composer.json", "package.json", "PHP (backend) / TypeScript (frontend)"),
+]
+
 # Marker files that identify project type
 _MARKER_FILES = {
     "package.json": "javascript",
@@ -97,7 +113,7 @@ _LINTER_CONFIGS = {
     "biome.json": "Biome configured",
     "biome.jsonc": "Biome configured",
     ".editorconfig": "EditorConfig defined",
-    "tsconfig.json": "TypeScript strict mode",
+    "tsconfig.json": "TypeScript configured",
     ".stylelintrc": "Stylelint configured",
 }
 
@@ -152,6 +168,9 @@ def extract_context_from_repo(
     if description and len(description) > 500:
         description = description[:497] + "..."
 
+    # Extract README content for documentation field
+    documentation = _extract_readme(file_contents)
+
     # Format framework string with version
     framework_str = None
     if framework:
@@ -163,6 +182,7 @@ def extract_context_from_repo(
         description=description or None,
         conventions=conventions,
         patterns=patterns,
+        documentation=documentation,
         test_framework=test_framework,
         test_patterns=test_patterns,
     )
@@ -196,7 +216,16 @@ def extract_context_from_workspace_info(workspace_info: dict) -> CodebaseContext
 def _detect_language(
     repo_metadata: dict, file_tree: list[str], file_contents: dict[str, str],
 ) -> str | None:
-    """Detect primary language from GitHub API field or marker files."""
+    """Detect primary language from GitHub API field or marker files.
+
+    Detects dual-language projects when marker files exist for multiple
+    ecosystems (e.g. Python backend + TypeScript frontend).
+    """
+    # Check for dual-language projects first (before single-language shortcuts)
+    dual = _detect_dual_language(file_contents, file_tree)
+    if dual:
+        return dual
+
     # GitHub API language field is the primary signal
     gh_lang = repo_metadata.get("language")
     if gh_lang:
@@ -224,6 +253,27 @@ def _detect_language(
     return None
 
 
+def _detect_dual_language(
+    file_contents: dict[str, str], file_tree: list[str],
+) -> str | None:
+    """Check for dual-language projects (e.g. Python backend + JS/TS frontend)."""
+    def _has_marker(name: str) -> bool:
+        return name in file_contents or any(
+            f == name or f.endswith(f"/{name}") for f in file_tree
+        )
+
+    for backend_marker, frontend_marker, label in _DUAL_LANGUAGE_COMBOS:
+        if _has_marker(backend_marker) and _has_marker(frontend_marker):
+            # Check if frontend is actually TypeScript or JavaScript
+            ts_config = _has_marker("tsconfig.json")
+            if not ts_config and "TypeScript" in label:
+                # Downgrade to JavaScript if no tsconfig
+                label = label.replace("TypeScript", "JavaScript")
+            return label
+
+    return None
+
+
 def _detect_framework(
     language: str | None, file_contents: dict[str, str],
 ) -> tuple[str | None, str | None]:
@@ -233,20 +283,31 @@ def _detect_framework(
 
     lang_lower = language.lower()
 
+    # For dual-language projects like "Python (backend) / TypeScript (frontend)",
+    # try both ecosystems and return the first framework found.
+    has_js = "javascript" in lang_lower or "typescript" in lang_lower
+    has_python = "python" in lang_lower
+
     # JavaScript / TypeScript
-    if lang_lower in ("javascript", "typescript"):
+    if has_js:
         pkg_json = file_contents.get("package.json")
         if pkg_json:
-            return _parse_js_framework(pkg_json)
+            fw, ver = _parse_js_framework(pkg_json)
+            if fw:
+                return fw, ver
 
     # Python
-    if lang_lower == "python":
+    if has_python:
         toml = file_contents.get("pyproject.toml")
         if toml:
-            return _parse_python_framework(toml)
+            fw, ver = _parse_python_framework(toml)
+            if fw:
+                return fw, ver
         reqs = file_contents.get("requirements.txt")
         if reqs:
-            return _parse_requirements_framework(reqs)
+            fw, ver = _parse_requirements_framework(reqs)
+            if fw:
+                return fw, ver
 
     return None, None
 
@@ -317,8 +378,10 @@ def _detect_test_framework(
         return None
 
     lang_lower = language.lower()
+    has_js = "javascript" in lang_lower or "typescript" in lang_lower
+    has_python = "python" in lang_lower
 
-    if lang_lower in ("javascript", "typescript"):
+    if has_js:
         pkg_json = file_contents.get("package.json")
         if pkg_json:
             try:
@@ -331,7 +394,7 @@ def _detect_test_framework(
             except json.JSONDecodeError:
                 pass
 
-    if lang_lower == "python":
+    if has_python:
         toml = file_contents.get("pyproject.toml", "")
         reqs = file_contents.get("requirements.txt", "")
         combined = toml + reqs
@@ -345,7 +408,12 @@ def _detect_test_framework(
 def _detect_conventions(
     file_tree: list[str], file_contents: dict[str, str],
 ) -> list[str]:
-    """Detect code conventions from linter configs and project files."""
+    """Detect code conventions from linter configs and project files.
+
+    When actual config file content is available, parses key settings
+    for richer convention strings (e.g. 'TypeScript strict mode enabled'
+    with target/module details instead of just 'TypeScript configured').
+    """
     conventions: list[str] = []
     seen = set()
 
@@ -366,17 +434,54 @@ def _detect_conventions(
                     conventions.append(convention_str)
                     seen.add(convention_str)
 
+    # Parse actual config content for richer convention details
+    conventions.extend(_parse_tsconfig_conventions(file_contents, seen))
+    conventions.extend(_parse_ruff_conventions(file_contents, seen))
+    conventions.extend(_parse_prettier_conventions(file_contents, seen))
+    conventions.extend(_parse_eslint_conventions(file_contents, seen))
+
     return conventions
 
 
 def _detect_patterns(file_tree: list[str]) -> list[str]:
-    """Detect architectural patterns from directory structure."""
+    """Detect architectural patterns from directory structure and infra files."""
     patterns: list[str] = []
     seen = set()
 
     for dir_pattern, pattern_str in _DIR_PATTERNS.items():
         for path in file_tree:
             if dir_pattern in path and pattern_str not in seen:
+                patterns.append(pattern_str)
+                seen.add(pattern_str)
+                break
+
+    # Detect infrastructure patterns from specific files
+    infra_markers: dict[str, str] = {
+        "Dockerfile": "Containerized deployment",
+        "docker-compose.yml": "Docker Compose orchestration",
+        "docker-compose.yaml": "Docker Compose orchestration",
+        "Makefile": "Make-based build system",
+        "nx.json": "Monorepo (Nx)",
+        "lerna.json": "Monorepo (Lerna)",
+        "pnpm-workspace.yaml": "Monorepo (pnpm)",
+        "turbo.json": "Monorepo (Turborepo)",
+    }
+    for marker, pattern_str in infra_markers.items():
+        if pattern_str in seen:
+            continue
+        for path in file_tree:
+            if path == marker or path.endswith(f"/{marker}"):
+                patterns.append(pattern_str)
+                seen.add(pattern_str)
+                break
+
+    # GitHub Actions CI/CD: check for .github/workflows/*.yml
+    if not any("GitHub Actions" in p for p in seen):
+        for path in file_tree:
+            if ".github/workflows/" in path and (
+                path.endswith(".yml") or path.endswith(".yaml")
+            ):
+                pattern_str = "GitHub Actions CI/CD"
                 patterns.append(pattern_str)
                 seen.add(pattern_str)
                 break
@@ -407,6 +512,167 @@ def _detect_test_patterns(file_tree: list[str]) -> list[str]:
         patterns.append("test_*.py pytest naming convention")
 
     return patterns
+
+
+def _extract_readme(file_contents: dict[str, str]) -> str | None:
+    """Extract and truncate README content for the documentation field."""
+    readme = file_contents.get("README.md")
+    if not readme:
+        return None
+
+    # Strip HTML tags if present, keep markdown
+    readme = re.sub(r"<[^>]+>", "", readme)
+    # Strip leading/trailing whitespace
+    readme = readme.strip()
+
+    if not readme:
+        return None
+
+    if len(readme) > _README_MAX_CHARS:
+        readme = readme[:_README_MAX_CHARS] + "\n... (truncated)"
+
+    return readme
+
+
+def _parse_tsconfig_conventions(
+    file_contents: dict[str, str], seen: set[str],
+) -> list[str]:
+    """Parse tsconfig.json for specific TypeScript settings."""
+    result: list[str] = []
+    tsconfig_str = file_contents.get("tsconfig.json", "")
+    if not tsconfig_str:
+        return result
+
+    try:
+        tsconfig = json.loads(tsconfig_str)
+        opts = tsconfig.get("compilerOptions", {})
+
+        if opts.get("strict") is True:
+            conv = "TypeScript strict mode enabled"
+            if conv not in seen:
+                result.append(conv)
+                seen.add(conv)
+
+        target = opts.get("target")
+        if target:
+            conv = f"TypeScript target: {target}"
+            if conv not in seen:
+                result.append(conv)
+                seen.add(conv)
+
+        module = opts.get("module")
+        if module:
+            conv = f"TypeScript module: {module}"
+            if conv not in seen:
+                result.append(conv)
+                seen.add(conv)
+
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    return result
+
+
+def _parse_ruff_conventions(
+    file_contents: dict[str, str], seen: set[str],
+) -> list[str]:
+    """Parse pyproject.toml [tool.ruff] or ruff.toml for Ruff settings."""
+    result: list[str] = []
+
+    # Check ruff.toml first, then pyproject.toml
+    ruff_content = file_contents.get("ruff.toml", "")
+    if not ruff_content:
+        pyproject = file_contents.get("pyproject.toml", "")
+        if "[tool.ruff]" in pyproject:
+            ruff_content = pyproject
+
+    if not ruff_content:
+        return result
+
+    # Extract line-length
+    match = re.search(r'line-length\s*=\s*(\d+)', ruff_content)
+    if match:
+        conv = f"Ruff line-length: {match.group(1)}"
+        if conv not in seen:
+            result.append(conv)
+            seen.add(conv)
+
+    # Extract target-version
+    match = re.search(r'target-version\s*=\s*["\']?(py\d+)["\']?', ruff_content)
+    if match:
+        conv = f"Ruff target: {match.group(1)}"
+        if conv not in seen:
+            result.append(conv)
+            seen.add(conv)
+
+    return result
+
+
+def _parse_prettier_conventions(
+    file_contents: dict[str, str], seen: set[str],
+) -> list[str]:
+    """Parse .prettierrc/.prettierrc.json for formatting conventions."""
+    result: list[str] = []
+
+    prettier_str = file_contents.get(".prettierrc", "") or file_contents.get(
+        ".prettierrc.json", "",
+    )
+    if not prettier_str:
+        return result
+
+    try:
+        config = json.loads(prettier_str)
+
+        parts: list[str] = []
+        if "semi" in config:
+            parts.append("semicolons" if config["semi"] else "no semicolons")
+        if "singleQuote" in config:
+            parts.append("single quotes" if config["singleQuote"] else "double quotes")
+        if "tabWidth" in config:
+            parts.append(f"tab width {config['tabWidth']}")
+
+        if parts:
+            conv = f"Prettier: {', '.join(parts)}"
+            if conv not in seen:
+                result.append(conv)
+                seen.add(conv)
+
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    return result
+
+
+def _parse_eslint_conventions(
+    file_contents: dict[str, str], seen: set[str],
+) -> list[str]:
+    """Parse ESLint config for plugin detection."""
+    result: list[str] = []
+
+    eslint_str = ""
+    for key in (".eslintrc.json", ".eslintrc.js", "eslint.config.js"):
+        if key in file_contents:
+            eslint_str = file_contents[key]
+            break
+
+    if not eslint_str:
+        return result
+
+    # Detect TypeScript ESLint plugin
+    if "@typescript-eslint" in eslint_str:
+        conv = "@typescript-eslint plugin active"
+        if conv not in seen:
+            result.append(conv)
+            seen.add(conv)
+
+    # Detect React/hooks plugin
+    if "eslint-plugin-react" in eslint_str or "react-hooks" in eslint_str:
+        conv = "ESLint React/hooks rules"
+        if conv not in seen:
+            result.append(conv)
+            seen.add(conv)
+
+    return result
 
 
 def _build_toml_deps(deps: dict) -> str:

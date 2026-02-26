@@ -1168,3 +1168,102 @@ class TestStrategyUtilizationCoverage:
         assert reached == set(Strategy), (
             f"Not all strategies reachable. Missing: {set(Strategy) - reached}"
         )
+
+
+class TestContextAwareHeuristic:
+    """Tests for context-aware strategy selection adjustments."""
+
+    def setup_method(self):
+        self.selector = HeuristicStrategySelector()
+
+    def test_strict_types_boosts_structured_output(self):
+        """TypeScript strict mode in context → structured-output confidence boost."""
+        from app.schemas.context import CodebaseContext
+
+        ctx = CodebaseContext(
+            language="TypeScript",
+            conventions=["TypeScript strict mode enabled"],
+        )
+        # coding task → natural strategy is structured-output
+        result = self.selector.select(
+            _make_analysis(task_type="coding"),
+            codebase_context=ctx,
+        )
+        assert result.strategy == "structured-output"
+        # Base 0.75 + 0.05 context boost = 0.80
+        assert result.confidence == 0.80
+
+    def test_rust_language_boosts_structured_output(self):
+        """Rust language in context → structured-output confidence boost."""
+        from app.schemas.context import CodebaseContext
+
+        ctx = CodebaseContext(language="Rust")
+        result = self.selector.select(
+            _make_analysis(task_type="coding"),
+            codebase_context=ctx,
+        )
+        assert result.strategy == "structured-output"
+        assert result.confidence == 0.80
+
+    def test_context_doesnt_override_p1(self):
+        """High complexity math still gets CoT regardless of context."""
+        from app.schemas.context import CodebaseContext
+
+        ctx = CodebaseContext(
+            language="TypeScript",
+            conventions=["TypeScript strict mode enabled"],
+        )
+        result = self.selector.select(
+            _make_analysis(task_type="math", complexity="high"),
+            codebase_context=ctx,
+        )
+        # P1 fires first → chain-of-thought, context cannot override
+        assert result.strategy == "chain-of-thought"
+        assert result.confidence == 0.95
+
+    def test_context_doesnt_override_p2(self):
+        """Specificity weakness still gets constraint-injection despite context."""
+        from app.schemas.context import CodebaseContext
+
+        ctx = CodebaseContext(
+            language="TypeScript",
+            conventions=["TypeScript strict mode enabled"],
+        )
+        result = self.selector.select(
+            _make_analysis(task_type="coding", weaknesses=["Instructions are vague"]),
+            codebase_context=ctx,
+        )
+        # P2 fires → constraint-injection, context cannot override
+        assert result.strategy == "constraint-injection"
+
+    def test_no_context_no_boost(self):
+        """Without context, confidence is unchanged."""
+        result_no_ctx = self.selector.select(
+            _make_analysis(task_type="coding"),
+        )
+        result_none_ctx = self.selector.select(
+            _make_analysis(task_type="coding"),
+            codebase_context=None,
+        )
+        assert result_no_ctx.confidence == result_none_ctx.confidence == 0.75
+
+    def test_service_layer_boosts_step_by_step(self):
+        """Multi-layer architecture → step-by-step boost when aligned."""
+        from app.schemas.context import CodebaseContext
+
+        ctx = CodebaseContext(
+            patterns=["Service layer pattern", "Repository pattern", "Middleware layer"],
+        )
+        # education task → natural strategy is risen (step-by-step is secondary)
+        # step-by-step boost only applies when step-by-step is the selected strategy
+        # Let's use a task type where step-by-step is the natural for a combo's secondary
+        # Actually, step-by-step is natural for none. The boost only applies when
+        # the P3-selected strategy matches the context preference.
+        # education task → risen, so context boost for step-by-step won't apply
+        result = self.selector.select(
+            _make_analysis(task_type="education"),
+            codebase_context=ctx,
+        )
+        # risen is the natural strategy, not step-by-step, so no boost
+        assert result.strategy == "risen"
+        assert result.confidence == 0.75

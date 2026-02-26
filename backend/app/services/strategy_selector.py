@@ -264,6 +264,8 @@ class HeuristicStrategySelector:
         self,
         analysis: AnalysisResult,
         prompt_length: int = 0,
+        *,
+        codebase_context: CodebaseContext | None = None,
     ) -> StrategySelection:
         """Select the best optimization strategy given an analysis result.
 
@@ -271,11 +273,13 @@ class HeuristicStrategySelector:
             analysis: The analysis result from PromptAnalyzer.
             prompt_length: Length of the raw prompt in characters. When < 50,
                 a small confidence penalty is applied.
+            codebase_context: Optional codebase context for context-aware
+                strategy preference adjustments at P3 level.
 
         Returns:
             A StrategySelection with the chosen strategy name and reasoning.
         """
-        result = self._select_core(analysis)
+        result = self._select_core(analysis, codebase_context=codebase_context)
 
         # Short-prompt penalty: very short prompts are harder to classify
         # accurately, so reduce confidence to reflect that uncertainty.
@@ -296,7 +300,12 @@ class HeuristicStrategySelector:
 
         return result
 
-    def _select_core(self, analysis: AnalysisResult) -> StrategySelection:
+    def _select_core(
+        self,
+        analysis: AnalysisResult,
+        *,
+        codebase_context: CodebaseContext | None = None,
+    ) -> StrategySelection:
         """Core selection logic without prompt-length adjustments."""
         task_key = analysis.task_type.lower()
         combo = TASK_TYPE_FRAMEWORK_MAP.get(task_key, _DEFAULT_COMBO)
@@ -468,6 +477,19 @@ class HeuristicStrategySelector:
         if is_high:
             confidence = min(confidence + 0.10, 0.95)
 
+        # Context-aware adjustment: boost confidence when codebase context
+        # aligns with the selected strategy.
+        ctx_pref = _context_strategy_preference(codebase_context)
+        if ctx_pref:
+            pref_strategy, pref_boost, pref_reason = ctx_pref
+            if pref_strategy == strategy:
+                confidence = min(confidence + pref_boost, 0.95)
+                reason = f"{reason} {pref_reason}"
+                logger.info(
+                    "P3-context: %s matches context preference, boost +%.2f",
+                    strategy, pref_boost,
+                )
+
         logger.info(
             "P3: task_type=%s → %s (confidence=%.2f, high_boost=%s)",
             task_key, strategy, confidence, is_high,
@@ -478,6 +500,58 @@ class HeuristicStrategySelector:
             confidence=confidence,
             secondary_frameworks=[s.value for s in combo.secondary],
         )
+
+
+def _context_strategy_preference(
+    ctx: CodebaseContext | None,
+) -> tuple[Strategy, float, str] | None:
+    """Map codebase context signals to a strategy preference.
+
+    Returns (preferred_strategy, confidence_boost, reason) or None.
+    Only used to boost confidence when the context aligns with the already-
+    selected strategy — never overrides P1 or P2.
+    """
+    if not ctx:
+        return None
+
+    lang = (ctx.language or "").lower()
+    framework = (ctx.framework or "").lower()
+    conventions = " ".join(ctx.conventions).lower() if ctx.conventions else ""
+    patterns = " ".join(ctx.patterns).lower() if ctx.patterns else ""
+
+    # Strict type systems → structured-output gets a boost
+    strict_signals = (
+        "strict mode" in conventions
+        or "typescript strict" in conventions
+        or lang in ("rust", "go")
+    )
+    if strict_signals:
+        return (Strategy.STRUCTURED_OUTPUT, 0.05, "Strict type system aligns with structured output.")
+
+    # Domain-specific frameworks → persona-assignment boost
+    domain_signals = any(
+        kw in framework or kw in patterns
+        for kw in ("medical", "legal", "healthcare", "clinical", "juridical")
+    )
+    if domain_signals:
+        return (Strategy.PERSONA_ASSIGNMENT, 0.05, "Domain-specific project benefits from expert persona.")
+
+    # Complex multi-service patterns → step-by-step boost
+    service_signals = (
+        "service layer" in patterns
+        and "repository pattern" in patterns
+    ) or "microservice" in patterns
+    if service_signals:
+        return (Strategy.STEP_BY_STEP, 0.05, "Multi-layer architecture suits step-by-step decomposition.")
+
+    # Rich conventions/patterns → constraint-injection boost
+    has_rich_context = (
+        len(ctx.conventions) >= 3 and len(ctx.patterns) >= 3
+    )
+    if has_rich_context:
+        return (Strategy.CONSTRAINT_INJECTION, 0.05, "Rich project conventions ground constraint injection.")
+
+    return None
 
 
 _VALID_STRATEGIES: frozenset[str] = frozenset(s.value for s in Strategy)
@@ -513,7 +587,9 @@ class StrategySelector:
                 "LLM strategy selection failed, falling back to heuristic",
                 exc_info=True,
             )
-            result = self._heuristic.select(analysis, prompt_length=prompt_length)
+            result = self._heuristic.select(
+                analysis, prompt_length=prompt_length, codebase_context=codebase_context,
+            )
 
         result.task_type = analysis.task_type
         return result

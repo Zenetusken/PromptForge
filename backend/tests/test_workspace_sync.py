@@ -4,6 +4,7 @@ import json
 
 from app.schemas.context import CodebaseContext, merge_contexts
 from app.services.workspace_sync import (
+    _README_MAX_CHARS,
     extract_context_from_repo,
     extract_context_from_workspace_info,
 )
@@ -113,7 +114,7 @@ line-length = 100
         )
         assert "ESLint configured" in ctx.conventions
         assert "Prettier configured" in ctx.conventions
-        assert "TypeScript strict mode" in ctx.conventions
+        assert "TypeScript configured" in ctx.conventions
 
     def test_test_patterns_detection(self):
         """Detect test patterns from file naming conventions."""
@@ -195,3 +196,181 @@ class TestThreeLayerMerge:
         base = merge_contexts(None, None)
         resolved = merge_contexts(base, None)
         assert resolved is None
+
+
+class TestReadmeExtraction:
+    """Test README.md content extraction into documentation field."""
+
+    def test_readme_populates_documentation(self):
+        """README in file_contents → documentation field set."""
+        ctx = extract_context_from_repo(
+            repo_metadata={"language": "Python"},
+            file_tree=["README.md", "app/main.py"],
+            file_contents={"README.md": "# My Project\n\nA cool project."},
+        )
+        assert ctx.documentation is not None
+        assert "My Project" in ctx.documentation
+
+    def test_readme_truncation(self):
+        """Long README is truncated to _README_MAX_CHARS."""
+        long_readme = "x" * (_README_MAX_CHARS + 500)
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=["README.md"],
+            file_contents={"README.md": long_readme},
+        )
+        assert ctx.documentation is not None
+        assert len(ctx.documentation) <= _README_MAX_CHARS + 20  # allow for suffix
+        assert ctx.documentation.endswith("(truncated)")
+
+    def test_readme_html_stripped(self):
+        """HTML tags in README are removed."""
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=["README.md"],
+            file_contents={"README.md": "<h1>Title</h1>\n<p>Content</p>"},
+        )
+        assert "<h1>" not in ctx.documentation
+        assert "Title" in ctx.documentation
+
+    def test_no_readme_leaves_documentation_none(self):
+        """Missing README leaves documentation as None."""
+        ctx = extract_context_from_repo(
+            repo_metadata={"language": "Go"},
+            file_tree=["main.go"],
+            file_contents={},
+        )
+        assert ctx.documentation is None
+
+
+class TestDualLanguageDetection:
+    """Test dual-language detection for multi-ecosystem projects."""
+
+    def test_python_and_typescript(self):
+        """Both pyproject.toml and package.json → combined language string."""
+        pkg = json.dumps({"dependencies": {"react": "^18.0.0"}})
+        toml = '[project]\ndependencies = ["fastapi>=0.100"]'
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=["backend/main.py", "frontend/index.ts", "tsconfig.json"],
+            file_contents={"pyproject.toml": toml, "package.json": pkg, "tsconfig.json": "{}"},
+        )
+        assert "Python" in ctx.language
+        assert "TypeScript" in ctx.language
+        # Framework detection still works for dual-language projects
+        assert ctx.framework is not None
+        assert "React" in ctx.framework or "FastAPI" in ctx.framework
+
+    def test_python_and_javascript_no_tsconfig(self):
+        """Python + package.json without tsconfig → JavaScript (not TypeScript)."""
+        pkg = json.dumps({"dependencies": {"express": "^4.0.0"}})
+        toml = '[project]\ndependencies = ["flask>=2.0"]'
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=["app.py", "index.js"],
+            file_contents={"pyproject.toml": toml, "package.json": pkg},
+        )
+        assert "Python" in ctx.language
+        assert "JavaScript" in ctx.language
+        assert "TypeScript" not in ctx.language
+
+    def test_single_language_not_dual(self):
+        """Only Python markers → no dual language."""
+        toml = '[project]\ndependencies = ["fastapi>=0.100"]'
+        ctx = extract_context_from_repo(
+            repo_metadata={"language": "Python"},
+            file_tree=["app/main.py"],
+            file_contents={"pyproject.toml": toml},
+        )
+        assert ctx.language == "Python"
+
+
+class TestLinterConfigParsing:
+    """Test richer convention extraction from actual linter config content."""
+
+    def test_tsconfig_strict_convention(self):
+        """tsconfig with strict:true → 'TypeScript strict mode enabled' convention."""
+        tsconfig = json.dumps({"compilerOptions": {"strict": True, "target": "ES2022"}})
+        ctx = extract_context_from_repo(
+            repo_metadata={"language": "TypeScript"},
+            file_tree=["tsconfig.json"],
+            file_contents={"tsconfig.json": tsconfig},
+        )
+        assert "TypeScript strict mode enabled" in ctx.conventions
+        assert "TypeScript target: ES2022" in ctx.conventions
+
+    def test_ruff_line_length(self):
+        """pyproject.toml [tool.ruff] line-length → convention."""
+        toml = '[project]\ndependencies = []\n\n[tool.ruff]\nline-length = 100\ntarget-version = "py312"'
+        ctx = extract_context_from_repo(
+            repo_metadata={"language": "Python"},
+            file_tree=[],
+            file_contents={"pyproject.toml": toml},
+        )
+        assert "Ruff line-length: 100" in ctx.conventions
+        assert "Ruff target: py312" in ctx.conventions
+
+    def test_prettier_settings(self):
+        """Prettier config → formatting convention string."""
+        prettierrc = json.dumps({"semi": False, "singleQuote": True, "tabWidth": 2})
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=[".prettierrc"],
+            file_contents={".prettierrc": prettierrc},
+        )
+        assert any("no semicolons" in c for c in ctx.conventions)
+        assert any("single quotes" in c for c in ctx.conventions)
+
+    def test_eslint_typescript_plugin(self):
+        """ESLint config with @typescript-eslint → convention detected."""
+        eslint = json.dumps({"extends": ["@typescript-eslint/recommended"]})
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=[".eslintrc.json"],
+            file_contents={".eslintrc.json": eslint},
+        )
+        assert "@typescript-eslint plugin active" in ctx.conventions
+
+
+class TestInfraPatterns:
+    """Test Docker/CI/monorepo pattern detection."""
+
+    def test_dockerfile_detected(self):
+        """Dockerfile in tree → Containerized deployment pattern."""
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=["Dockerfile", "src/main.py"],
+        )
+        assert "Containerized deployment" in ctx.patterns
+
+    def test_docker_compose_detected(self):
+        """docker-compose.yml → Docker Compose pattern."""
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=["docker-compose.yml", "Dockerfile"],
+        )
+        assert "Docker Compose orchestration" in ctx.patterns
+
+    def test_github_actions_detected(self):
+        """GitHub Actions workflow files → CI/CD pattern."""
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=[".github/workflows/ci.yml", "src/main.py"],
+        )
+        assert "GitHub Actions CI/CD" in ctx.patterns
+
+    def test_monorepo_nx_detected(self):
+        """nx.json → Monorepo pattern."""
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=["nx.json", "packages/app/src/main.ts"],
+        )
+        assert "Monorepo (Nx)" in ctx.patterns
+
+    def test_makefile_detected(self):
+        """Makefile → Make-based build system."""
+        ctx = extract_context_from_repo(
+            repo_metadata={},
+            file_tree=["Makefile", "src/main.go"],
+        )
+        assert "Make-based build system" in ctx.patterns
