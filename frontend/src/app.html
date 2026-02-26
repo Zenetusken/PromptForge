@@ -3,19 +3,29 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-		<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 		<link
 			href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&display=swap"
 			rel="stylesheet"
 		/>
-		<link rel="preload" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css" as="style" onload="this.rel='stylesheet'" />
-		<link rel="preload" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.min.css" as="style" onload="this.rel='stylesheet'" />
-		<noscript>
-			<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css" />
-			<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.min.css" />
-		</noscript>
+		<style>
+			@font-face {
+				font-family: 'Geist';
+				src: url('/fonts/geist-sans/Geist-Variable.woff2') format('woff2');
+				font-weight: 100 900;
+				font-style: normal;
+				font-display: swap;
+			}
+			@font-face {
+				font-family: 'Geist Mono';
+				src: url('/fonts/geist-mono/GeistMono-Variable.woff2') format('woff2');
+				font-weight: 100 900;
+				font-style: normal;
+				font-display: swap;
+			}
+		</style>
 		<title>PromptForge</title>
 		%sveltekit.head%
 	</head>
