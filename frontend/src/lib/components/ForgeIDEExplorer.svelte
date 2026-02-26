@@ -4,7 +4,7 @@
 	import ForgeContextSection from './ForgeContextSection.svelte';
 </script>
 
-<div class="flex h-full w-64 shrink-0 flex-col overflow-y-auto border-r border-neon-cyan/10 bg-bg-secondary p-3 gap-3">
+<div class="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-neon-cyan/10 bg-bg-secondary p-2 gap-1.5">
 	<div class="text-[10px] font-bold uppercase tracking-widest text-text-dim">Workspace Explorer</div>
 
 	<!-- Metadata (title, version, project, tags) — stacked in narrow pane -->

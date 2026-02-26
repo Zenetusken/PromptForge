@@ -14,7 +14,7 @@
 
 	/** Load a result's optimized text into the composer for further iteration. */
 	function selectAndIterate(slot: OptimizationResultState | null) {
-		if (!slot) return;
+		if (!slot?.optimized?.trim()) return;
 		forgeSession.loadRequest({
 			text: slot.optimized,
 			sourceAction: 'reiterate',
@@ -25,7 +25,7 @@
 	}
 </script>
 
-<div class="flex flex-wrap gap-1.5 px-2.5 py-2 border-t border-neon-cyan/8">
+<div class="flex flex-wrap gap-1.5 px-2 py-1.5 border-t border-neon-cyan/8">
 	<button onclick={() => selectAndIterate(slotA)} class="forge-action-btn">
 		<Icon name="check" size={10} />
 		Keep A

@@ -104,7 +104,7 @@
 [data-tabs-trigger][data-state="active"] {
 	color: var(--color-neon-cyan);
 	background: rgba(0, 229, 255, 0.08);
-	box-shadow: 0 0 8px rgba(0, 229, 255, 0.06);
+	box-shadow: inset 0 0 0 1px rgba(0, 229, 255, 0.15);
 }
 
 /* ─── Switch ────────────────────────────────────────────── */
@@ -139,7 +139,6 @@
 [data-switch-root][data-state="checked"] [data-switch-thumb] {
 	transform: translateX(14px);
 	background: var(--color-neon-cyan);
-	box-shadow: 0 0 6px rgba(0, 229, 255, 0.4);
 }
 
 /* ─── Tooltip ───────────────────────────────────────────── */

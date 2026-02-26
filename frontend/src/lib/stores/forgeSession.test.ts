@@ -492,4 +492,71 @@ describe('ForgeSessionState', () => {
 			expect(forgeSession.draft.sourceAction).toBe('reiterate');
 		});
 	});
+
+	describe('per-tab state', () => {
+		it('createInitialTab includes resultId: null and mode: compose', () => {
+			expect(forgeSession.activeTab.resultId).toBeNull();
+			expect(forgeSession.activeTab.mode).toBe('compose');
+		});
+
+		it('loadRequest creates new tab with resultId: null and mode: compose', () => {
+			forgeSession.loadRequest({ text: 'first tab content' });
+			forgeSession.loadRequest({ text: 'second tab content', title: 'Second' });
+
+			const newTab = forgeSession.tabs.find(t => t.draft.text === 'second tab content');
+			expect(newTab).toBeDefined();
+			expect(newTab!.resultId).toBeNull();
+			expect(newTab!.mode).toBe('compose');
+		});
+
+		it('hydration resets forging mode to compose', () => {
+			storageMap.set('pf_forge_draft', JSON.stringify({
+				tabs: [{
+					id: 'tab-1',
+					name: 'Forging Tab',
+					draft: { text: 'test' },
+					resultId: 'res-1',
+					mode: 'forging',
+				}],
+				activeTabId: 'tab-1',
+			}));
+
+			forgeSession._hydrateFromStorage();
+			expect(forgeSession.activeTab.mode).toBe('compose');
+			expect(forgeSession.activeTab.resultId).toBe('res-1');
+		});
+
+		it('hydration preserves review mode with resultId', () => {
+			storageMap.set('pf_forge_draft', JSON.stringify({
+				tabs: [{
+					id: 'tab-2',
+					name: 'Review Tab',
+					draft: { text: 'test' },
+					resultId: 'res-2',
+					mode: 'review',
+				}],
+				activeTabId: 'tab-2',
+			}));
+
+			forgeSession._hydrateFromStorage();
+			expect(forgeSession.activeTab.mode).toBe('review');
+			expect(forgeSession.activeTab.resultId).toBe('res-2');
+		});
+
+		it('hydration defaults missing resultId and mode fields', () => {
+			storageMap.set('pf_forge_draft', JSON.stringify({
+				tabs: [{
+					id: 'tab-3',
+					name: 'Old Tab',
+					draft: { text: 'legacy' },
+					// no resultId or mode
+				}],
+				activeTabId: 'tab-3',
+			}));
+
+			forgeSession._hydrateFromStorage();
+			expect(forgeSession.activeTab.resultId).toBeNull();
+			expect(forgeSession.activeTab.mode).toBe('compose');
+		});
+	});
 });

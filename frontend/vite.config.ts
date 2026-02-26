@@ -28,6 +28,16 @@ export default defineConfig({
 			}
 		}
 	},
+	build: {
+		target: 'es2022',
+		rollupOptions: {
+			output: {
+				manualChunks: {
+					'vendor-ui': ['bits-ui']
+				}
+			}
+		}
+	},
 	test: {
 		include: ['src/**/*.test.ts'],
 		environment: 'jsdom'

@@ -1,8 +1,13 @@
-import { fetchOptimize, fetchRetry, orchestrateAnalyze, orchestrateStrategy, orchestrateOptimize, orchestrateValidate, type AnalyzeRequest, type StrategyRequest, type OptimizeGenerateRequest, type ValidateRequest, type PipelineEvent, type HistoryItem, type OptimizeMetadata, type LLMHeaders } from '$lib/api/client';
+import { fetchOptimize, fetchRetry, fetchOptimization, cancelOptimization, orchestrateAnalyze, orchestrateStrategy, orchestrateOptimize, orchestrateValidate, type AnalyzeRequest, type StrategyRequest, type OptimizeGenerateRequest, type ValidateRequest, type PipelineEvent, type HistoryItem, type OptimizeMetadata, type LLMHeaders } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
 import { projectsState } from '$lib/stores/projects.svelte';
+import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
+import { processScheduler } from '$lib/stores/processScheduler.svelte';
+import { windowManager } from '$lib/stores/windowManager.svelte';
 import { promptAnalysis } from '$lib/stores/promptAnalysis.svelte';
 import { providerState } from '$lib/stores/provider.svelte';
+import { systemBus } from '$lib/services/systemBus.svelte';
+import { sessionContext } from '$lib/stores/sessionContext.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 import { safeString, safeNumber, safeArray } from '$lib/utils/safe';
 
@@ -174,8 +179,16 @@ export function mapToResultState(
 
 class OptimizationState {
 	currentRun: RunState | null = $state(null);
-	result: OptimizationResultState | null = $state(null);
+	/** Result from the active forge pipeline (SSE stream). */
+	forgeResult: OptimizationResultState | null = $state(null);
+	/** Result loaded from history/detail page (no pipeline). */
+	viewResult: OptimizationResultState | null = $state(null);
+	/** Compatibility getter — returns forge result if available, else view result. */
+	get result(): OptimizationResultState | null {
+		return this.forgeResult ?? this.viewResult;
+	}
 	isRunning: boolean = $state(false);
+	currentIteration: number = $state(0);
 	error: string | null = $state(null);
 	errorType: string | null = $state(null);
 	retryAfter: number | null = $state(null);
@@ -183,10 +196,12 @@ class OptimizationState {
 	resultHistory: OptimizationResultState[] = $state([]);
 
 	private abortController: AbortController | null = null;
+	private _reloadTimerId: ReturnType<typeof setTimeout> | null = null;
+	private _activeProcessId: string | null = null;
 
 	/** Analysis result from a standalone "Analyze Only" call. Null when a full forge result exists. */
 	get analysisResult(): AnalysisStepData | null {
-		if (!this.currentRun || this.result) return null;
+		if (!this.currentRun || this.forgeResult) return null;
 		const step = this.currentRun.steps.find(s => s.name === 'analyze');
 		if (!step || step.status !== 'complete' || !step.data) return null;
 		return step.data as AnalysisStepData;
@@ -194,14 +209,14 @@ class OptimizationState {
 
 	/** True while a standalone analyze call is in progress. */
 	get isAnalyzing(): boolean {
-		if (!this.currentRun || this.result) return false;
+		if (!this.currentRun || this.forgeResult) return false;
 		const step = this.currentRun.steps.find(s => s.name === 'analyze');
 		return step?.status === 'running';
 	}
 
 	/** Dismiss a standalone analysis preview (clears currentRun when no full result exists). */
 	clearAnalysis(): void {
-		if (this.currentRun && !this.result) {
+		if (this.currentRun && !this.forgeResult) {
 			this.currentRun = null;
 		}
 	}
@@ -212,7 +227,8 @@ class OptimizationState {
 		this.error = null;
 		this.errorType = null;
 		this.retryAfter = null;
-		this.result = null;
+		this.currentIteration = 0;
+		this.forgeResult = null;
 		this.currentRun = {
 			steps: INITIAL_PIPELINE_STEPS.map(s => ({ ...s }))
 		};
@@ -234,29 +250,45 @@ class OptimizationState {
 
 	private _onStreamError = (err: Error) => {
 		this._failWithError(err.message);
+		if (this._activeProcessId) {
+			processScheduler.fail(this._activeProcessId, err.message);
+		}
 	};
 
 	startOptimization(prompt: string, metadata?: OptimizeMetadata) {
-		this._resetRunState();
-
-		this.abortController = fetchOptimize(
-			prompt,
-			(event) => this.handleEvent(event, prompt),
-			this._onStreamError,
+		const proc = processScheduler.spawn({
+			title: metadata?.title || prompt.slice(0, 60),
 			metadata,
-			providerState.getLLMHeaders()
-		);
+			onExecute: () => {
+				this._resetRunState();
+
+				this.abortController = fetchOptimize(
+					prompt,
+					(event) => this.handleEvent(event, prompt),
+					this._onStreamError,
+					metadata,
+					providerState.getLLMHeaders()
+				);
+			}
+		});
+		this._activeProcessId = proc.id;
 	}
 
 	retryOptimization(id: string, originalPrompt: string) {
-		this._resetRunState();
+		const proc = processScheduler.spawn({
+			title: `Retry: ${originalPrompt.slice(0, 50)}`,
+			onExecute: () => {
+				this._resetRunState();
 
-		this.abortController = fetchRetry(
-			id,
-			(event) => this.handleEvent(event, originalPrompt),
-			this._onStreamError,
-			providerState.getLLMHeaders()
-		);
+				this.abortController = fetchRetry(
+					id,
+					(event) => this.handleEvent(event, originalPrompt),
+					this._onStreamError,
+					providerState.getLLMHeaders()
+				);
+			}
+		});
+		this._activeProcessId = proc.id;
 	}
 
 	/**
@@ -318,13 +350,19 @@ class OptimizationState {
 		if (!this.currentRun) return;
 
 		switch (event.type) {
-			case 'step_start':
+			case 'step_start': {
 				this.updateStep(event.step || '', (s) => ({
 					status: 'running' as const,
 					startTime: Date.now(),
 					streamingContent: s.streamingContent || '',
 				}));
+				// Update process scheduler with stage progress
+				if (this._activeProcessId && event.step) {
+					const stageProgress: Record<string, number> = { analyze: 0.1, strategy: 0.3, optimize: 0.5, validate: 0.8 };
+					processScheduler.updateProgress(this._activeProcessId, event.step, stageProgress[event.step] ?? 0);
+				}
 				break;
+			}
 
 			case 'step_progress': {
 				const content = safeString(event.data?.content);
@@ -367,9 +405,23 @@ class OptimizationState {
 				this.error = event.error || 'Step failed';
 				break;
 
+			case 'iteration': {
+				const iterData = event.data || {};
+				this.currentIteration = (iterData.iteration as number) ?? 0;
+				// Reset optimize+validate steps to pending for re-run
+				this.updateStep('optimize', { status: 'pending' as const, streamingContent: undefined });
+				this.updateStep('validate', { status: 'pending' as const, streamingContent: undefined });
+				toastState.show(
+					`Iteration ${iterData.iteration}: score ${Math.round(((iterData.score as number) || 0) * 10)}/10, re-optimizing...`,
+					'info'
+				);
+				break;
+			}
+
 			case 'result': {
-				this.result = mapToResultState(event.data || {}, originalPrompt);
+				this.forgeResult = mapToResultState(event.data || {}, originalPrompt);
 				this.isRunning = false;
+				sessionContext.record(this.forgeResult);
 				// Mark all steps as complete
 				if (this.currentRun) {
 					this.currentRun.steps = this.currentRun.steps.map((s) => ({
@@ -379,31 +431,86 @@ class OptimizationState {
 				}
 				toastState.show('Optimization complete!', 'success');
 				// Push to rolling history for comparison (keep last 10)
-				if (this.result.id) {
-					this.resultHistory = [this.result, ...this.resultHistory].slice(0, 10);
+				if (this.forgeResult.id) {
+					this.resultHistory = [this.forgeResult, ...this.resultHistory].slice(0, 10);
 				}
-				historyState.loadHistory();
-				if (this.result?.project) {
-					projectsState.loadProjects();
+				// Complete the tracked process
+				if (this._activeProcessId) {
+					processScheduler.complete(this._activeProcessId, {
+						score: this.forgeResult.scores.overall,
+						strategy: this.forgeResult.strategy,
+						optimizationId: this.forgeResult.id,
+						result: this.forgeResult,
+					});
 				}
+				// Debounce: give the server time to commit and coalesce reloads
+				this._reloadTimerId = setTimeout(() => {
+					this._reloadTimerId = null;
+					historyState.loadHistory();
+					if (this.forgeResult?.project) {
+						projectsState.loadProjects();
+					}
+				}, 500);
 				break;
 			}
 
 			case 'error': {
 				this._failWithError(event.error || 'Unknown error', event.errorType, event.retryAfter);
+				if (this._activeProcessId) {
+					processScheduler.fail(this._activeProcessId, event.error || 'Unknown error');
+				}
 				break;
 			}
 		}
 	}
 
 	/**
-	 * Load a result from history (no pipeline animation)
+	 * Load a result by ID from the resultHistory cache or server.
+	 * Sets forgeResult without triggering enterReview or openIDE.
+	 */
+	async restoreResult(id: string): Promise<boolean> {
+		const cached = this.resultHistory.find(r => r.id === id);
+		if (cached) {
+			this.forgeResult = cached;
+			return true;
+		}
+		const item = await fetchOptimization(id);
+		if (item) {
+			this.forgeResult = mapToResultState({ ...item }, item.raw_prompt);
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Open a result in the IDE in review mode.
+	 * Sets forgeResult directly and opens the IDE window.
+	 */
+	openInIDE(result: OptimizationResultState) {
+		this.forgeResult = result;
+		forgeMachine.enterReview();
+		windowManager.openIDE();
+	}
+
+	/**
+	 * Fetch an optimization by ID and open it in the IDE.
+	 * Convenience method combining fetch + openInIDE.
+	 */
+	async openInIDEFromHistory(id: string): Promise<void> {
+		const item = await fetchOptimization(id);
+		if (item) {
+			this.openInIDE(mapToResultState({ ...item }, item.raw_prompt));
+		}
+	}
+
+	/**
+	 * Load a result from history (no pipeline animation).
+	 * Only touches viewResult — does not clobber an active forge.
 	 */
 	loadFromHistory(item: HistoryItem) {
 		this.cancel();
 		this.currentRun = null;
-		// Single assignment — avoids a redundant reactive flush from a null write
-		this.result = mapToResultState({ ...item }, item.raw_prompt);
+		this.viewResult = mapToResultState({ ...item }, item.raw_prompt);
 	}
 
 	cancel() {
@@ -411,14 +518,157 @@ class OptimizationState {
 			this.abortController.abort();
 			this.abortController = null;
 		}
+		if (this._reloadTimerId !== null) {
+			clearTimeout(this._reloadTimerId);
+			this._reloadTimerId = null;
+		}
 		this.isRunning = false;
 	}
 
 	reset() {
 		this.cancel();
 		this.currentRun = null;
-		this.result = null;
+		this.forgeResult = null;
+		this.viewResult = null;
 		this.error = null;
+	}
+
+	/**
+	 * Run a multi-strategy tournament — parallel forges with different strategies, auto-compare best two.
+	 */
+	startTournament(prompt: string, strategies: string[], metadata?: OptimizeMetadata) {
+		const tournamentId = crypto.randomUUID();
+		const tournamentResults: { strategy: string; score: number; id: string; result: OptimizationResultState }[] = [];
+		const totalStrategies = strategies.length;
+
+		for (const strategy of strategies) {
+			const tourneyMeta: OptimizeMetadata = { ...metadata, strategy };
+
+			const proc = processScheduler.spawn({
+				title: `${strategy}: ${prompt.slice(0, 40)}`,
+				priority: 'interactive',
+				promptHash: tournamentId,
+				metadata: tourneyMeta,
+				onExecute: () => {
+					fetchOptimize(
+						prompt,
+						(event) => {
+							if (event.type === 'step_start' && event.step) {
+								const stageProgress: Record<string, number> = { analyze: 0.1, strategy: 0.3, optimize: 0.5, validate: 0.8 };
+								processScheduler.updateProgress(proc.id, event.step, stageProgress[event.step] ?? 0);
+							}
+							if (event.type === 'result') {
+								const resultState = mapToResultState(event.data || {}, prompt);
+								processScheduler.complete(proc.id, {
+									score: resultState.scores.overall,
+									strategy,
+									optimizationId: resultState.id,
+									result: resultState,
+								});
+								// Push to rolling history
+								if (resultState.id) {
+									this.resultHistory = [resultState, ...this.resultHistory].slice(0, 10);
+								}
+								tournamentResults.push({
+									strategy,
+									score: resultState.scores.overall,
+									id: resultState.id,
+									result: resultState,
+								});
+								// If all tournament entries complete, auto-compare best two
+								if (tournamentResults.length === totalStrategies) {
+									this._onTournamentComplete(tournamentResults);
+								}
+							} else if (event.type === 'error') {
+								processScheduler.fail(proc.id, event.error || 'Failed');
+								tournamentResults.push({ strategy, score: 0, id: '', result: null as any });
+								if (tournamentResults.length === totalStrategies) {
+									this._onTournamentComplete(tournamentResults);
+								}
+							}
+						},
+						(err) => {
+							processScheduler.fail(proc.id, err.message);
+							tournamentResults.push({ strategy, score: 0, id: '', result: null as any });
+							if (tournamentResults.length === totalStrategies) {
+								this._onTournamentComplete(tournamentResults);
+							}
+						},
+						tourneyMeta,
+						providerState.getLLMHeaders()
+					);
+				},
+			});
+		}
+	}
+
+	private _onTournamentComplete(results: { strategy: string; score: number; id: string; result: OptimizationResultState }[]) {
+		const valid = results.filter(r => r.id && r.score > 0).sort((a, b) => b.score - a.score);
+		if (valid.length >= 2) {
+			// Load best result and auto-enter compare mode
+			this.forgeResult = valid[0].result;
+			forgeMachine.compare(valid[0].id, valid[1].id);
+			windowManager.openIDE();
+		} else if (valid.length === 1) {
+			this.forgeResult = valid[0].result;
+			forgeMachine.enterReview();
+			windowManager.openIDE();
+		}
+		systemBus.emit('tournament:completed', 'optimization', {
+			results: valid.map(r => ({ strategy: r.strategy, score: r.score, id: r.id })),
+		});
+		toastState.show(`Tournament complete! ${valid.length} results.`, 'success');
+		// Reload history
+		setTimeout(() => {
+			historyState.loadHistory();
+		}, 500);
+	}
+
+	/**
+	 * Chain a new forge from an existing result — use the optimized prompt as input.
+	 */
+	chainForge(result: OptimizationResultState, metadata?: OptimizeMetadata) {
+		const chainMeta: OptimizeMetadata = {
+			...metadata,
+			title: `Chain: ${result.title || result.optimized.slice(0, 30)}`,
+			tags: [...(metadata?.tags || []), 'chained'],
+		};
+		this.startOptimization(result.optimized, chainMeta);
+	}
+
+	/** Clear only forge-side state, preserving viewResult for detail pages. */
+	resetForge() {
+		this.cancel();
+		this.currentRun = null;
+		this.forgeResult = null;
+		this.error = null;
+	}
+
+	/** Initialize bus subscriptions. Call once from +layout.svelte onMount. */
+	init(): () => void {
+		const unsubCancel = systemBus.on('forge:cancelled', (event) => {
+			const payload = event.payload as { id?: string; optimizationId?: string } | undefined;
+			if (!payload) return;
+			// If the cancelled process matches our active process, abort the stream
+			if (payload.id && payload.id === this._activeProcessId) {
+				this.cancel();
+				this.isRunning = false;
+				if (this.currentRun) {
+					this.currentRun.steps = this.currentRun.steps.map(s => ({
+						...s,
+						status: s.status === 'running' ? ('error' as const) : s.status,
+					}));
+				}
+			}
+			// Also cancel on the backend if we have an optimization ID
+			if (payload.optimizationId) {
+				cancelOptimization(payload.optimizationId);
+			}
+		});
+
+		return () => {
+			unsubCancel();
+		};
 	}
 }
 

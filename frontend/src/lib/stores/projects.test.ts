@@ -231,6 +231,36 @@ describe('ProjectsState', () => {
 		});
 	});
 
+	describe('setSortField', () => {
+		it('updates sort state and triggers load', async () => {
+			vi.mocked(fetchProjects).mockResolvedValue({
+				items: [], total: 0, page: 1, per_page: 20,
+			});
+
+			projectsState.setSortField('name');
+			await vi.waitFor(() => expect(fetchProjects).toHaveBeenCalled());
+
+			expect(projectsState.sortBy).toBe('name');
+			expect(projectsState.sortOrder).toBe('desc');
+			expect(fetchProjects).toHaveBeenCalledWith(
+				expect.objectContaining({ sort: 'name', order: 'desc' })
+			);
+		});
+
+		it('toggles to asc when same field clicked again', async () => {
+			projectsState.sortBy = 'name';
+			projectsState.sortOrder = 'desc';
+			vi.mocked(fetchProjects).mockResolvedValue({
+				items: [], total: 0, page: 1, per_page: 20,
+			});
+
+			projectsState.setSortField('name');
+			await vi.waitFor(() => expect(fetchProjects).toHaveBeenCalled());
+
+			expect(projectsState.sortOrder).toBe('asc');
+		});
+	});
+
 	describe('loadProject', () => {
 		it('fetches and sets activeProject', async () => {
 			const detail = mockDetail({ id: 'p1', name: 'Loaded' });

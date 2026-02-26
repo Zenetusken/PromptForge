@@ -2,6 +2,8 @@
     import { forgeSession } from "$lib/stores/forgeSession.svelte";
     import { optimizationState } from "$lib/stores/optimization.svelte";
     import { forgeMachine } from "$lib/stores/forgeMachine.svelte";
+    import { processScheduler } from "$lib/stores/processScheduler.svelte";
+    import { windowManager } from "$lib/stores/windowManager.svelte";
     import { promptAnalysis } from "$lib/stores/promptAnalysis.svelte";
     import ForgeStrategySection from "./ForgeStrategySection.svelte";
     import ForgePipelineInline from "./ForgePipelineInline.svelte";
@@ -23,6 +25,7 @@
             forgeSession.showMetadata = true;
             return;
         }
+        processScheduler.spawn({ title: forgeSession.draft.title || 'Untitled Forge' });
         optimizationState.startOptimization(
             forgeSession.draft.text,
             forgeSession.buildMetadata(),
@@ -41,11 +44,11 @@
 </script>
 
 <div
-    class="flex h-full w-80 shrink-0 flex-col overflow-y-auto border-l border-neon-cyan/10 bg-bg-secondary"
+    class="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l border-neon-cyan/10 bg-bg-secondary"
 >
     {#if forgeMachine.mode === 'compose'}
         <!-- COMPOSE MODE: Strategy recommendations + picker + actions -->
-        <div class="flex flex-col gap-3 p-3">
+        <div class="flex flex-col gap-1.5 p-2">
             <div class="text-[10px] font-bold uppercase tracking-widest text-text-dim">
                 Orchestrator
             </div>
@@ -75,32 +78,39 @@
                         {/each}
                     </div>
                 </div>
+            {:else if forgeSession.hasText && promptAnalysis.isAnalyzing}
+                <div class="flex items-center gap-1.5">
+                    <Icon name="spinner" size={10} class="animate-spin text-text-dim" />
+                    <span class="text-[10px] text-text-dim">Analyzing prompt...</span>
+                </div>
+            {:else if forgeSession.hasText}
+                <span class="text-[10px] text-text-dim">Type more for strategy recommendations</span>
             {/if}
 
             <!-- Strategy Section (full picker) -->
             <ForgeStrategySection />
 
             <!-- Actions -->
-            <div class="flex flex-col gap-2">
+            <div class="flex flex-col gap-1">
                 <button
                     onclick={handleAnalyze}
-                    class="flex items-center justify-center gap-2 rounded bg-neon-cyan/10 px-3 py-2 text-xs font-bold uppercase tracking-wider text-neon-cyan transition-colors hover:bg-neon-cyan/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-cyan/10"
+                    class="flex items-center justify-center gap-2 rounded bg-neon-cyan/10 px-2 py-1.5 text-[11px] font-bold uppercase tracking-wider text-neon-cyan transition-colors hover:bg-neon-cyan/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-cyan/10"
                     disabled={!canForge}
                 >
                     {#if isAnalyzing}
-                        <Icon name="spinner" size={14} class="animate-spin" />
+                        <Icon name="spinner" size={12} class="animate-spin" />
                         Analyzing...
                     {:else}
-                        <Icon name="search" size={14} />
+                        <Icon name="search" size={12} />
                         Analyze Only
                     {/if}
                 </button>
                 <button
                     onclick={handleForge}
-                    class="flex items-center justify-center gap-2 rounded bg-neon-purple/10 px-3 py-2 text-xs font-bold uppercase tracking-wider text-neon-purple transition-colors hover:bg-neon-purple/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-purple/10"
+                    class="flex items-center justify-center gap-2 rounded bg-neon-purple/10 px-2 py-1.5 text-[11px] font-bold uppercase tracking-wider text-neon-purple transition-colors hover:bg-neon-purple/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-neon-purple/10"
                     disabled={!canForge}
                 >
-                    <Icon name="zap" size={14} />
+                    <Icon name="zap" size={12} />
                     Full Optimization
                 </button>
             </div>
@@ -111,25 +121,34 @@
 
     {:else if forgeMachine.mode === 'forging'}
         <!-- FORGING MODE: Pipeline progress -->
-        <div class="flex flex-col gap-3 p-3">
+        <div class="flex flex-col gap-1.5 p-2">
             <div class="flex items-center justify-between">
                 <div class="text-[10px] font-bold uppercase tracking-widest text-text-dim">
                     Pipeline
                 </div>
-                <button
-                    onclick={handleCancelPipeline}
-                    class="text-[10px] text-text-dim hover:text-text-primary transition-colors"
-                    aria-label="Cancel and return to compose"
-                >
-                    <Icon name="x" size={12} />
-                </button>
+                <div class="flex items-center gap-1">
+                    <button
+                        onclick={() => windowManager.minimizeWindow('ide')}
+                        class="text-[10px] text-text-dim hover:text-text-primary transition-colors"
+                        aria-label="Minimize to taskbar"
+                    >
+                        <Icon name="minimize-2" size={12} />
+                    </button>
+                    <button
+                        onclick={handleCancelPipeline}
+                        class="text-[10px] text-text-dim hover:text-text-primary transition-colors"
+                        aria-label="Cancel and return to compose"
+                    >
+                        <Icon name="x" size={12} />
+                    </button>
+                </div>
             </div>
         </div>
         <ForgePipelineInline />
 
         <!-- Error recovery: explicit back-to-compose when pipeline errors out -->
         {#if hasError}
-            <div class="shrink-0 border-t border-neon-cyan/10 px-3 py-2">
+            <div class="shrink-0 border-t border-neon-cyan/10 px-2 py-1.5">
                 <button
                     onclick={handleCancelPipeline}
                     class="flex w-full items-center justify-center gap-1.5 rounded bg-bg-hover/50 px-3 py-1.5 text-[10px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"

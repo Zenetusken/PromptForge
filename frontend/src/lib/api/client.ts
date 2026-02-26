@@ -73,7 +73,7 @@ export interface HistoryResponse {
 }
 
 export interface PipelineEvent {
-	type: 'step_start' | 'step_complete' | 'step_progress' | 'step_error' | 'strategy_selected' | 'result' | 'error';
+	type: 'step_start' | 'step_complete' | 'step_progress' | 'step_error' | 'strategy_selected' | 'iteration' | 'result' | 'error';
 	step?: string;
 	data?: Record<string, unknown>;
 	error?: string;
@@ -104,6 +104,8 @@ export interface OptimizeMetadata {
 	secondary_frameworks?: string[];
 	prompt_id?: string;
 	codebase_context?: CodebaseContext;
+	max_iterations?: number;
+	score_threshold?: number;
 }
 
 export interface ScoreMatrixEntry {
@@ -239,6 +241,12 @@ export function mapSSEEvent(eventType: string, data: Record<string, unknown>): P
 			return {
 				type: 'step_complete',
 				step: 'validate',
+				data: data
+			};
+		}
+		case 'iteration': {
+			return {
+				type: 'iteration',
 				data: data
 			};
 		}
@@ -628,6 +636,15 @@ export async function fetchStats(project?: string): Promise<StatsResponse | null
 	return apiFetch(`${BASE_URL}/history/stats${params}`, null);
 }
 
+export interface TokenBudgetStatus {
+	input_tokens_used: number;
+	output_tokens_used: number;
+	total_tokens_used: number;
+	request_count: number;
+	daily_limit: number | null;
+	remaining: number | null;
+}
+
 export interface HealthResponse {
 	status: string;
 	claude_available: boolean;
@@ -637,6 +654,7 @@ export interface HealthResponse {
 	db_connected: boolean;
 	mcp_connected: boolean;
 	version: string;
+	token_budgets?: Record<string, TokenBudgetStatus>;
 }
 
 /** Fetch API health status. */
@@ -917,6 +935,37 @@ export async function checkDuplicateTitle(title: string, project?: string): Prom
 		{ duplicate: false },
 	);
 	return result.duplicate;
+}
+
+/** Cancel a running optimization. Sets status to CANCELLED for bookkeeping. */
+export async function cancelOptimization(id: string): Promise<boolean> {
+	return apiFetchOk(`${BASE_URL}/optimize/${id}/cancel`, { method: 'POST' });
+}
+
+/** Batch optimize multiple prompts sequentially. */
+export async function batchOptimize(
+	prompts: string[],
+	options?: { strategy?: string; project?: string; tags?: string[] },
+): Promise<{
+	total: number;
+	completed: number;
+	failed: number;
+	results: { index: number; optimization_id: string | null; overall_score: number | null; status: string; error: string | null }[];
+}> {
+	const res = await fetch(`${BASE_URL}/optimize/batch`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			prompts,
+			strategy: options?.strategy || null,
+			project: options?.project || null,
+			tags: options?.tags || null,
+		}),
+	});
+	if (!res.ok) {
+		throw new Error(`Batch optimize failed: ${res.status}`);
+	}
+	return res.json();
 }
 
 export async function fetchPromptForges(

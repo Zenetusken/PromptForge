@@ -3,6 +3,7 @@
 	import { normalizeScore, getScoreColorClass, getScoreTierLabel } from '$lib/utils/format';
 	import { SCORE_WEIGHTS, DIMENSION_LABELS, computeContribution, type ScoreDimension } from '$lib/utils/scoreDimensions';
 	import { generateScoreExplanation } from '$lib/utils/scoreExplanation';
+	import { onMount } from 'svelte';
 	import Icon from './Icon.svelte';
 	import { Separator, Tooltip } from './ui';
 
@@ -38,7 +39,7 @@
 	};
 
 	let animated = $state(false);
-	$effect(() => {
+	onMount(() => {
 		const timer = setTimeout(() => { animated = true; }, 100);
 		return () => clearTimeout(timer);
 	});
@@ -58,12 +59,12 @@
 	}
 </script>
 
-<div class="space-y-4" data-testid="score-decomposition">
+<div class="space-y-2" data-testid="score-decomposition">
 	<!-- Headline -->
 	<div class="flex items-center gap-2">
 		<h3 class="section-heading" style="color: var(--color-neon-green);">Validation</h3>
 		{#if hasScores}
-			<span class="text-sm text-text-secondary">
+			<span class="text-xs text-text-secondary">
 				Overall
 				<span
 					class="font-mono font-bold tabular-nums"
@@ -89,15 +90,15 @@
 
 	<!-- Verdict -->
 	{#if verdict}
-		<p class="text-sm leading-relaxed text-text-secondary">{verdict}</p>
+		<p class="text-xs leading-snug text-text-secondary">{verdict}</p>
 	{/if}
 
 	<!-- Score Breakdown -->
 	{#if hasScores}
-		<div class="rounded-xl border border-border-subtle bg-bg-input/40 p-4">
-			<h4 class="section-heading mb-3">Score Breakdown</h4>
+		<div class="rounded-lg border border-border-subtle bg-bg-input/40 p-2.5">
+			<h4 class="section-heading mb-2">Score Breakdown</h4>
 
-			<div class="space-y-3">
+			<div class="space-y-1.5">
 				{#each dimensions as dim (dim)}
 					{@const rawScore = scores[dim]}
 					{@const pct = normalizeScore(rawScore) ?? 0}
@@ -107,7 +108,7 @@
 					{@const isPinned = pinnedDimension === dim}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
-						class="group/score w-full text-left rounded-lg p-2.5 transition-colors hover:bg-bg-hover/20 focus-within:bg-bg-hover/20 hover:ring-1 hover:ring-border-subtle focus-within:ring-1 focus-within:ring-border-subtle cursor-pointer {isPinned ? 'bg-bg-hover/20 ring-1 ring-border-subtle' : ''}"
+						class="group/score w-full text-left rounded-lg p-1.5 transition-colors hover:bg-bg-hover/20 focus-within:bg-bg-hover/20 hover:ring-1 hover:ring-border-subtle focus-within:ring-1 focus-within:ring-border-subtle cursor-pointer {isPinned ? 'bg-bg-hover/20 ring-1 ring-border-subtle' : ''}"
 						role="button"
 						tabindex="0"
 						aria-label="View {DIMENSION_LABELS[dim]} analysis findings"
@@ -120,7 +121,7 @@
 						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isPinned) scrollToAnalysis(); onPin(dim); } }}
 						data-testid="score-bar-{dim}"
 					>
-						<div class="mb-1.5 flex items-center justify-between text-sm">
+						<div class="mb-1 flex items-center justify-between text-xs">
 							<Tooltip text={DIMENSION_TOOLTIPS[dim]} side="right"><span class="text-text-primary">{DIMENSION_LABELS[dim]}</span></Tooltip>
 							<span class="flex items-center gap-2 font-mono text-xs tabular-nums">
 								<span
@@ -157,8 +158,8 @@
 				<Separator class="divider-glow my-1" />
 
 				<!-- Overall -->
-				<div class="rounded-lg p-2.5" data-testid="score-bar-overall">
-					<div class="mb-1.5 flex items-center justify-between text-sm">
+				<div class="rounded-lg p-1.5" data-testid="score-bar-overall">
+					<div class="mb-1 flex items-center justify-between text-xs">
 						<span class="font-semibold text-text-primary">Overall</span>
 						<span class="flex items-center gap-2 font-mono text-xs tabular-nums">
 							<span
@@ -184,14 +185,14 @@
 		</div>
 
 		<!-- Explanation -->
-		<p class="text-xs leading-relaxed text-text-dim">{explanation}</p>
+		<p class="text-xs leading-snug text-text-dim">{explanation}</p>
 	{/if}
 
 	<!-- Low score / no improvement guidance -->
 	{#if showLowScoreGuidance}
-		<div class="flex items-start gap-3 rounded-xl border border-neon-yellow/15 bg-neon-yellow/5 p-3.5" data-testid="low-score-guidance">
-			<Icon name="info" size={16} class="mt-0.5 shrink-0 text-neon-yellow" />
-			<div class="text-sm leading-relaxed text-text-secondary">
+		<div class="flex items-start gap-2 rounded-lg border border-neon-yellow/15 bg-neon-yellow/5 p-2.5" data-testid="low-score-guidance">
+			<Icon name="info" size={14} class="mt-0.5 shrink-0 text-neon-yellow" />
+			<div class="text-xs leading-snug text-text-secondary">
 				{#if !isImprovement}
 					<span class="font-medium text-neon-yellow">No improvement detected.</span>
 				{:else}

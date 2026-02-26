@@ -133,11 +133,11 @@
 		{/if}
 	</Collapsible.Trigger>
 	<Collapsible.Content>
-		<div class="px-3 pt-1 pb-2" data-testid="advanced-fields">
+		<div class="px-1.5 pt-0.5 pb-1" data-testid="advanced-fields">
 			<!-- Ungrouped (Auto) -->
 			{#each strategyCategories.ungrouped as option}
 				<label
-					class="mb-1.5 flex cursor-pointer items-start gap-2 rounded-sm px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-neon-cyan/40
+					class="mb-1 flex cursor-pointer items-start gap-1.5 rounded-sm px-1.5 py-1 transition-colors focus-within:ring-2 focus-within:ring-neon-cyan/40
 						{forgeSession.draft.strategy === option.value
 						? 'bg-neon-purple/10 border-l-2 border-neon-purple'
 						: 'border-l-2 border-transparent hover:bg-bg-hover/40'}"
@@ -152,7 +152,7 @@
 					/>
 					<div class="min-w-0">
 						<span
-							class="text-[12px] font-medium {forgeSession.draft
+							class="text-[11px] font-medium {forgeSession.draft
 								.strategy === option.value
 								? 'text-neon-purple'
 								: 'text-text-primary'}"
@@ -175,10 +175,10 @@
 						{categoryName}
 					</span>
 				</div>
-				<div class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+				<div class="grid grid-cols-1 gap-1 sm:grid-cols-2">
 					{#each categoryOptions as option}
 						<label
-							class="flex cursor-pointer items-start gap-2 rounded-sm px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-neon-cyan/40
+							class="flex cursor-pointer items-start gap-1.5 rounded-sm px-1.5 py-1 transition-colors focus-within:ring-2 focus-within:ring-neon-cyan/40
 								{forgeSession.draft.strategy === option.value
 								? 'bg-neon-purple/10 border-l-2 border-neon-purple'
 								: 'border-l-2 border-transparent hover:bg-bg-hover/40'}"
@@ -193,7 +193,7 @@
 							/>
 							<div class="min-w-0">
 								<span
-									class="text-[12px] font-medium {forgeSession
+									class="text-[11px] font-medium {forgeSession
 										.draft.strategy === option.value
 										? 'text-neon-purple'
 										: 'text-text-primary'}"
@@ -224,7 +224,7 @@
 									onclick={() =>
 										toggleSecondary(option.value)}
 									data-testid="secondary-{option.value}"
-									class="transition-all active:scale-95 {forgeSession.draft.secondaryStrategies.includes(
+									class="transition-[color,background-color,border-color,opacity,transform] active:scale-95 {forgeSession.draft.secondaryStrategies.includes(
 										option.value,
 									)
 										? ''

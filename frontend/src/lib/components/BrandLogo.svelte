@@ -1,5 +1,23 @@
 <script lang="ts">
+	import { onMount } from "svelte";
 	import { optimizationState } from "$lib/stores/optimization.svelte";
+
+	let { wallpaper = false }: { wallpaper?: boolean } = $props();
+
+	let svgEl: SVGSVGElement | undefined = $state();
+
+	onMount(() => {
+		if (!svgEl) return;
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				if (entry.isIntersecting) svgEl?.unpauseAnimations();
+				else svgEl?.pauseAnimations();
+			},
+			{ threshold: 0 },
+		);
+		observer.observe(svgEl);
+		return () => observer.disconnect();
+	});
 
 	type LogoMode = "idle" | "forging" | "complete";
 
@@ -409,9 +427,11 @@
 </script>
 
 <svg
+	bind:this={svgEl}
 	class="w-full h-auto bl-logo"
 	class:bl-forging={mode === "forging"}
 	class:bl-complete={mode === "complete"}
+	class:bl-wallpaper={wallpaper}
 	viewBox="-250 -200 1500 1000"
 	overflow="visible"
 	xmlns="http://www.w3.org/2000/svg"
@@ -1299,7 +1319,8 @@
 		{/if}
 	</g>
 
-	<!-- Text -->
+	<!-- Text (hidden in wallpaper mode) -->
+	{#if !wallpaper}
 	<g
 		transform="translate({CX}, 610)"
 		text-anchor="middle"
@@ -1353,6 +1374,7 @@
 			stroke-width="0.5">AI-POWERED PROMPT OPTIMIZATION</text
 		>
 	</g>
+	{/if}
 </svg>
 
 <style>
@@ -1434,5 +1456,25 @@
 			opacity: 1;
 			transform: scale(1) translateY(0);
 		}
+	}
+
+	/* ── Wallpaper mode ── */
+	.bl-wallpaper {
+		opacity: 0.12;
+		animation: none;
+		width: 100%;
+		height: 100%;
+	}
+
+	.bl-wallpaper .bl-beam-hum {
+		animation-duration: 3s;
+	}
+
+	.bl-wallpaper .bl-beam-flow {
+		animation-duration: 1.6s;
+	}
+
+	.bl-wallpaper .bl-core-pulse {
+		animation-duration: 0.2s;
 	}
 </style>

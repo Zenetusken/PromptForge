@@ -155,9 +155,9 @@
 <div class="relative {isCollapsed ? '' : 'flex-1 flex'}">
 	{#if showSlashMenu && filteredStrategies.length > 0}
 		<div
-			class="absolute {isCollapsed ? 'bottom-full left-0 mb-2 w-full sm:w-64' : 'top-[100px] left-6 ml-1 w-64'} rounded-md border border-neon-cyan/20 bg-bg-secondary/95 shadow-xl backdrop-blur-md overflow-hidden z-[50]"
+			class="absolute {isCollapsed ? 'bottom-full left-0 mb-2 w-full sm:w-64' : 'top-[100px] left-3 ml-1 w-64'} rounded-md border border-neon-cyan/20 bg-bg-secondary/95 overflow-hidden z-[50]"
 		>
-			<div class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-text-dim border-b border-neon-cyan/10">
+			<div class="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-text-dim border-b border-neon-cyan/10">
 				Strategies
 			</div>
 			<ul class="max-h-48 overflow-y-auto p-1">
@@ -180,7 +180,7 @@
 
 	<!-- Structure gutter (focus mode only) -->
 	{#if showGutter}
-		<div class="shrink-0 w-5 pt-6 flex flex-col relative">
+		<div class="shrink-0 w-4 pt-3 flex flex-col relative">
 			{#each sections as section}
 				{@const color = SECTION_COLORS[section.type]}
 				<button
@@ -207,13 +207,13 @@
 			disabled={optimizationState.isRunning}
 			class={isCollapsed
 				? 'w-full resize-none bg-transparent px-2 pt-2 pb-0 text-[12px] leading-relaxed text-text-primary outline-none disabled:opacity-50'
-				: 'h-full w-full resize-none bg-transparent p-6 text-[15px] leading-relaxed text-text-primary outline-none disabled:opacity-50 font-mono'}
+				: 'h-full w-full resize-none bg-transparent p-3 text-[13px] leading-relaxed text-text-primary outline-none disabled:opacity-50 font-mono'}
 			style={isCollapsed ? 'max-height: 250px; overflow-y: auto;' : ''}
 			data-testid={isCollapsed ? 'forge-panel-textarea' : 'focus-mode-textarea'}
 		></textarea>
 		{#if !forgeSession.draft.text && !isFocused}
 			<span
-				class="shimmer-placeholder pointer-events-none absolute {isCollapsed ? 'left-2 top-2 text-[12px]' : 'left-6 top-6 text-[15px]'} leading-relaxed opacity-70 transition-opacity {isCollapsed ? 'group-focus-within:opacity-30' : ''}"
+				class="shimmer-placeholder pointer-events-none absolute {isCollapsed ? 'left-2 top-2 text-[12px]' : 'left-3 top-3 text-[13px]'} leading-relaxed opacity-70 transition-opacity {isCollapsed ? 'group-focus-within:opacity-30' : ''}"
 			>
 				{isCollapsed ? 'What should your prompt do...' : 'Write your system prompt or instructions here...\nTake all the space you need.'}
 				<br />
@@ -227,7 +227,7 @@
 
 <!-- Variable chips (shown in both collapsed and focus modes) -->
 {#if variables.length > 0}
-	<div class="flex flex-wrap gap-1 {isCollapsed ? 'px-2 pb-1 pt-0.5' : 'px-6 pb-2 pt-1.5'} border-t border-neon-teal/10">
+	<div class="flex flex-wrap gap-1 {isCollapsed ? 'px-2 pb-1 pt-0.5' : 'px-3 pb-1 pt-1'} border-t border-neon-teal/10">
 		<span class="text-[8px] uppercase tracking-wider text-text-dim/50 font-bold self-center mr-0.5">Vars</span>
 		{#each variables as variable}
 			<button

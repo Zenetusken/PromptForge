@@ -11,8 +11,29 @@
 	} = $props();
 
 	let viewMode = $state<'unified' | 'side-by-side'>('side-by-side');
-	let segments = $derived(computeDiff(original, optimized));
-	let lineDiff = $derived(computeLineDiff(original, optimized));
+
+	// Memoize diff computations — only recompute when input strings actually change
+	let _prevOriginal = '';
+	let _prevOptimized = '';
+	let _cachedSegments: ReturnType<typeof computeDiff> = [];
+	let _cachedLineDiff: ReturnType<typeof computeLineDiff> = { left: [], right: [] };
+
+	let segments = $derived.by(() => {
+		if (original === _prevOriginal && optimized === _prevOptimized && _cachedSegments.length > 0) {
+			return _cachedSegments;
+		}
+		_prevOriginal = original;
+		_prevOptimized = optimized;
+		_cachedSegments = computeDiff(original, optimized);
+		_cachedLineDiff = computeLineDiff(original, optimized);
+		return _cachedSegments;
+	});
+
+	let lineDiff = $derived.by(() => {
+		// Trigger segments first to ensure cache is populated
+		void segments;
+		return _cachedLineDiff;
+	});
 
 	// Default to unified on mobile after hydration to avoid SSR mismatch
 	onMount(() => {

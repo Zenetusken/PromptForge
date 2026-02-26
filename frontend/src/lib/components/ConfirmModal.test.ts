@@ -4,11 +4,16 @@ import ConfirmModal from './ConfirmModal.svelte';
 
 describe('ConfirmModal', () => {
 	beforeEach(() => {
+		vi.useFakeTimers();
 		document.body.innerHTML = '';
 	});
 
 	afterEach(() => {
+		// Flush bits-ui's deferred body scroll lock cleanup before
+		// the jsdom environment tears down `document`.
+		vi.runAllTimers();
 		cleanup();
+		vi.useRealTimers();
 	});
 
 	it('renders nothing when open=false', () => {

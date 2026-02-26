@@ -32,7 +32,7 @@ class HistoryState {
 	isLoading: boolean = $state(false);
 	hasLoaded: boolean = $state(false);
 	sortBy: string = $state('created_at');
-	sortOrder: string = $state('desc');
+	sortOrder: 'asc' | 'desc' = $state('desc');
 	searchQuery: string = $state('');
 	filterTaskType: string = $state('');
 	filterProject: string = $state('');
@@ -123,10 +123,11 @@ class HistoryState {
 		}, 300);
 	}
 
-	setSortBy(sort: string) {
+	setSortField(sort: string, order?: 'asc' | 'desc') {
+		const newOrder = order ?? (this.sortBy === sort && this.sortOrder === 'desc' ? 'asc' : 'desc');
 		this.sortBy = sort;
-		this.sortOrder = 'desc';
-		this.loadHistory({ sort, order: this.sortOrder });
+		this.sortOrder = newOrder;
+		this.loadHistory({ sort: this.sortBy, order: this.sortOrder });
 	}
 
 	setFilterTaskType(taskType: string) {

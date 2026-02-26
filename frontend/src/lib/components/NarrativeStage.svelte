@@ -46,7 +46,7 @@
 	data-testid="narrative-stage-{stage}"
 >
 	<!-- Stage Header -->
-	<div class="flex items-center gap-2 mb-3">
+	<div class="flex items-center gap-2 mb-1.5">
 		<h3 class="section-heading" style="color: var(--color-{color});">
 			{stageLabels[stage]}
 		</h3>
@@ -105,17 +105,17 @@
 	<!-- Stage Content -->
 	{#if stage === "analysis"}
 		{#if result.strengths.length > 0 || result.weaknesses.length > 0}
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
 				{#if result.strengths.length > 0}
 					<div>
-						<h4 class="mb-2 text-xs font-medium text-neon-green">
+						<h4 class="mb-1 text-xs font-medium text-neon-green">
 							Strengths ({result.strengths.length})
 						</h4>
 						<ul class="space-y-1.5">
 							{#each result.strengths as strength, idx}
 								{@const tags = strengthTags[idx]}
 								<li
-									class="flex items-start gap-2 rounded-md px-1.5 py-1 text-sm leading-relaxed text-text-secondary transition-all duration-200"
+									class="flex items-start gap-2 rounded-md px-1 py-0.5 text-xs leading-snug text-text-secondary transition-colors duration-200"
 									class:finding-highlight={highlightedDimension !==
 										null &&
 										tags.includes(highlightedDimension)}
@@ -132,14 +132,14 @@
 				{/if}
 				{#if result.weaknesses.length > 0}
 					<div>
-						<h4 class="mb-2 text-xs font-medium text-neon-red">
+						<h4 class="mb-1 text-xs font-medium text-neon-red">
 							Weaknesses ({result.weaknesses.length})
 						</h4>
 						<ul class="space-y-1.5">
 							{#each result.weaknesses as weakness, idx}
 								{@const tags = weaknessTags[idx]}
 								<li
-									class="flex items-start gap-2 rounded-md px-1.5 py-1 text-sm leading-relaxed text-text-secondary transition-all duration-200"
+									class="flex items-start gap-2 rounded-md px-1 py-0.5 text-xs leading-snug text-text-secondary transition-colors duration-200"
 									class:finding-highlight={highlightedDimension !==
 										null &&
 										tags.includes(highlightedDimension)}
@@ -158,7 +158,7 @@
 		{/if}
 	{:else if stage === "strategy"}
 		{#if result.strategy_reasoning}
-			<p class="text-sm leading-relaxed text-text-secondary">
+			<p class="text-xs leading-snug text-text-secondary">
 				{result.strategy_reasoning}
 			</p>
 		{/if}
@@ -181,7 +181,7 @@
 			<ul class="space-y-1.5">
 				{#each result.changes_made as change}
 					<li
-						class="flex items-start gap-2 text-sm leading-relaxed text-text-secondary"
+						class="flex items-start gap-2 text-xs leading-snug text-text-secondary"
 					>
 						<span
 							class="mt-2 h-1 w-1 shrink-0 rounded-full bg-neon-purple"
@@ -192,7 +192,7 @@
 			</ul>
 		{/if}
 		{#if result.optimization_notes}
-			<p class="mt-3 text-xs leading-relaxed text-text-dim italic">
+			<p class="mt-1.5 text-xs leading-snug text-text-dim italic">
 				{result.optimization_notes}
 			</p>
 		{/if}

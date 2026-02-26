@@ -5,11 +5,15 @@
 	} from "$lib/stores/optimization.svelte";
 	import { toastState } from "$lib/stores/toast.svelte";
 	import { forgeSession } from "$lib/stores/forgeSession.svelte";
+	import { forgeMachine } from "$lib/stores/forgeMachine.svelte";
 	import { useCopyFeedback } from "$lib/utils/useCopyFeedback.svelte";
+	import { clipboardService } from "$lib/services/clipboardService.svelte";
 	import {
 		generateExportMarkdown,
 		downloadMarkdown,
 	} from "$lib/utils/export";
+	import { windowManager } from "$lib/stores/windowManager.svelte";
+	import { projectsState } from "$lib/stores/projects.svelte";
 	import Icon from "./Icon.svelte";
 	import { Tooltip } from "./ui";
 
@@ -19,6 +23,7 @@
 
 	function copyOptimized() {
 		copyFeedback.copy(result.optimized);
+		clipboardService.copy(result.optimized, 'Optimized prompt', 'forge-result');
 		toastState.show("Copied to clipboard!", "success", 3000);
 	}
 
@@ -28,6 +33,13 @@
 		} else {
 			optimizationState.startOptimization(result.original);
 		}
+		forgeMachine.forge();
+		forgeSession.activate();
+	}
+
+	function handleChain() {
+		optimizationState.chainForge(result);
+		forgeMachine.forge();
 		forgeSession.activate();
 	}
 
@@ -37,6 +49,10 @@
 			text: result.optimized,
 			project: isArchived ? "" : result.project || "",
 			promptId: isArchived ? "" : result.prompt_id || "",
+			title: result.title || "",
+			tags: (result.tags ?? []).join(", "),
+			version: result.version || "",
+			sourceAction: "reiterate",
 		});
 		forgeSession.activate();
 	}
@@ -78,6 +94,28 @@
 			Re-forge
 		</button>
 	</Tooltip>
+	<Tooltip text="Use this result as input for a new forge">
+		<button
+			class="btn-ghost flex items-center gap-1.5 border border-neon-orange/20 bg-neon-orange/8 text-neon-orange hover:bg-neon-orange/15"
+			onclick={handleChain}
+			data-testid="chain-result-btn"
+		>
+			<Icon name="git-branch" size={12} />
+			Chain
+		</button>
+	</Tooltip>
+	{#if !windowManager.ideVisible}
+		<Tooltip text="Open this result in the IDE">
+			<button
+				class="btn-ghost flex items-center gap-1.5 bg-neon-green/8 text-neon-green hover:bg-neon-green/15"
+				onclick={() => optimizationState.openInIDE(result)}
+				data-testid="open-in-ide-btn"
+			>
+				<Icon name="terminal" size={12} />
+				Open in IDE
+			</button>
+		</Tooltip>
+	{/if}
 	<Tooltip text="Use optimized result as new input">
 		<button
 			class="btn-ghost flex items-center gap-1.5 bg-neon-purple/8 text-neon-purple hover:bg-neon-purple/15"
@@ -90,14 +128,14 @@
 	</Tooltip>
 	{#if result.project_id && result.project}
 		<Tooltip text="Open project containing this prompt">
-			<a
-				href="/projects/{result.project_id}"
+			<button
 				class="btn-ghost flex items-center gap-1.5 bg-neon-yellow/8 text-neon-yellow hover:bg-neon-yellow/15"
+				onclick={() => { projectsState.navigateToProject(result.project_id!); windowManager.openProjectsWindow(); }}
 				data-testid="view-project-btn"
 			>
 				<Icon name="folder-open" size={12} />
 				View Project
-			</a>
+			</button>
 		</Tooltip>
 	{/if}
 	<Tooltip text="Download as Markdown" class="ml-auto">

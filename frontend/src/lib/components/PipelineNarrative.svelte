@@ -16,55 +16,48 @@
 		{ key: 'optimization' as const, color: 'neon-purple' },
 	];
 
-	let hasScores = $derived(
-		result.scores.clarity > 0 ||
-		result.scores.specificity > 0 ||
-		result.scores.structure > 0 ||
-		result.scores.faithfulness > 0 ||
-		result.scores.overall > 0
-	);
+	let narrative = $derived.by(() => {
+		const hasScores =
+			result.scores.clarity > 0 ||
+			result.scores.specificity > 0 ||
+			result.scores.structure > 0 ||
+			result.scores.faithfulness > 0 ||
+			result.scores.overall > 0;
 
-	let hasValidation = $derived(hasScores || !!result.verdict);
-	let hasAnalysis = $derived(result.strengths.length > 0 || result.weaknesses.length > 0 || result.task_type);
-	let hasStrategy = $derived(!!result.strategy || !!result.strategy_reasoning);
-	let hasOptimization = $derived(result.changes_made.length > 0 || !!result.optimization_notes);
-
-	function shouldShow(stage: 'analysis' | 'strategy' | 'optimization'): boolean {
-		if (stage === 'analysis') return !!hasAnalysis;
-		if (stage === 'strategy') return !!hasStrategy;
-		if (stage === 'optimization') return !!hasOptimization;
-		return false;
-	}
-
-	let visibleStages = $derived(stages.filter(s => shouldShow(s.key)));
-	let hasAnyContent = $derived(visibleStages.length > 0 || hasValidation);
-
-	/**
-	 * Full ordered list of timeline entries (including validation)
-	 * so we can compute "next color" for each entry's connecting line.
-	 */
-	let allEntries = $derived.by(() => {
-		const entries: { key: string; color: string }[] = visibleStages.map(s => ({ key: s.key, color: s.color }));
+		const hasValidation = hasScores || !!result.verdict;
+		const stageVisible = {
+			analysis: result.strengths.length > 0 || result.weaknesses.length > 0 || !!result.task_type,
+			strategy: !!result.strategy || !!result.strategy_reasoning,
+			optimization: result.changes_made.length > 0 || !!result.optimization_notes,
+		};
+		const visibleStages = stages.filter(s => stageVisible[s.key]);
+		const allEntries: { key: string; color: string }[] = visibleStages.map(s => ({ key: s.key, color: s.color }));
 		if (hasValidation) {
-			entries.push({ key: 'validation', color: 'neon-green' });
+			allEntries.push({ key: 'validation', color: 'neon-green' });
 		}
-		return entries;
+		return {
+			hasScores,
+			hasValidation,
+			visibleStages,
+			hasAnyContent: visibleStages.length > 0 || hasValidation,
+			allEntries,
+		};
 	});
 </script>
 
-{#if hasAnyContent}
+{#if narrative.hasAnyContent}
 <div class="border-t border-border-subtle" data-testid="pipeline-narrative">
-	<div class="px-3 py-3">
+	<div class="px-2 py-2">
 		<div
 			class="pipeline-timeline"
 			style:--highlight-color={highlightedDimension === 'structure' ? 'var(--color-neon-purple)' :
 				highlightedDimension === 'faithfulness' ? 'var(--color-neon-green)' :
 				highlightedDimension ? 'var(--color-neon-cyan)' : 'transparent'}
 		>
-			{#each visibleStages as stage, i (stage.key)}
-				{@const entryIdx = allEntries.findIndex(e => e.key === stage.key)}
-				{@const isLast = entryIdx === allEntries.length - 1}
-				{@const nextColor = isLast ? stage.color : allEntries[entryIdx + 1].color}
+			{#each narrative.visibleStages as stage, i (stage.key)}
+				{@const entryIdx = narrative.allEntries.findIndex(e => e.key === stage.key)}
+				{@const isLast = entryIdx === narrative.allEntries.length - 1}
+				{@const nextColor = isLast ? stage.color : narrative.allEntries[entryIdx + 1].color}
 				<div
 					class="pipeline-entry"
 					class:pipeline-entry--connected={!isLast}
@@ -87,7 +80,7 @@
 				</div>
 			{/each}
 
-			{#if hasValidation}
+			{#if narrative.hasValidation}
 				<div class="pipeline-entry">
 					<div
 						class="pipeline-node"
@@ -100,7 +93,7 @@
 							scores={result.scores}
 							verdict={result.verdict}
 							isImprovement={result.is_improvement}
-							{hasScores}
+							hasScores={narrative.hasScores}
 							{pinnedDimension}
 							onHighlight={(dim) => hoveredDimension = dim}
 							onClear={() => hoveredDimension = null}

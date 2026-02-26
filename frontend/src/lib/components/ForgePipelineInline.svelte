@@ -2,6 +2,7 @@
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 	import { stepDotClass } from '$lib/utils/scoreDimensions';
+	import { formatElapsed } from '$lib/utils/format';
 	import PipelineStep from './PipelineStep.svelte';
 	import ForgeError from './ForgeError.svelte';
 
@@ -20,12 +21,6 @@
 
 	// Total elapsed timer
 	let totalElapsed = $state('');
-
-	function formatElapsed(seconds: number): string {
-		const mins = Math.floor(seconds / 60);
-		const secs = seconds % 60;
-		return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-	}
 
 	$effect(() => {
 		const anyRunning = steps.some((s) => s.status === 'running');
@@ -50,10 +45,10 @@
 	{#if steps.length > 0}
 		{#if isExpanded}
 			<!-- Expanded pipeline: vertical step list -->
-			<div class="px-2.5 pt-2.5 animate-fade-in">
-				<div class="mb-2 flex items-center gap-2">
-					<div class="h-1.5 w-1.5 animate-pulse rounded-full bg-neon-cyan"></div>
-					<h3 class="font-display text-[11px] font-bold uppercase tracking-widest text-text-secondary">
+			<div class="px-2 pt-1.5 animate-fade-in">
+				<div class="mb-1 flex items-center gap-1.5">
+					<div class="h-1 w-1 animate-pulse rounded-full bg-neon-cyan"></div>
+					<h3 class="font-display text-[10px] font-bold uppercase tracking-widest text-text-secondary">
 						Pipeline
 					</h3>
 					{#if totalElapsed}
@@ -66,7 +61,7 @@
 						<PipelineStep {step} index={i} isLatestActive={i === latestActiveIndex} mobile={true} />
 						{#if i < steps.length - 1}
 							<div class="flex justify-center">
-								<div class="relative h-4 w-0.5 rounded-full">
+								<div class="relative h-2 w-0.5 rounded-full">
 									<div class="absolute inset-0 rounded-full bg-text-dim/30"></div>
 									{#if step.status === 'complete'}
 										<div class="absolute inset-0 rounded-full bg-gradient-to-b from-neon-cyan to-neon-purple" style="animation: fade-in 500ms ease forwards;"></div>
@@ -79,8 +74,8 @@
 			</div>
 		{:else}
 			<!-- Compact pipeline: dots only -->
-			<div class="px-2.5 pt-2.5">
-				<div class="flex items-center gap-2 mb-2">
+			<div class="px-2 pt-1.5">
+				<div class="flex items-center gap-1.5 mb-1">
 					<div class="flex items-center gap-1">
 						{#each steps as step}
 							<div class="h-2 w-2 rounded-full {stepDotClass(step.status)}"></div>
@@ -100,8 +95,8 @@
 							{/if}
 						</div>
 						{#if currentStep.streamingContent}
-							<div class="rounded-md border border-border-subtle bg-bg-primary/60 p-1.5 mb-1">
-								<p class="line-clamp-3 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-text-secondary">
+							<div class="rounded-md border border-border-subtle bg-bg-primary/60 p-1 mb-0.5">
+								<p class="line-clamp-3 whitespace-pre-wrap font-mono text-[10px] leading-snug text-text-secondary">
 									{currentStep.streamingContent.trim()}
 								</p>
 								<span class="mt-0.5 inline-block h-2.5 w-0.5 animate-pulse bg-neon-cyan"></span>
@@ -114,7 +109,7 @@
 	{/if}
 
 	<!-- Error display -->
-	<div class="px-2.5 pt-1.5">
+	<div class="px-2 pt-1.5">
 		<ForgeError />
 	</div>
 </div>

@@ -200,14 +200,14 @@
 		{/if}
 	</Collapsible.Trigger>
 	<Collapsible.Content>
-		<div class="ctx-zone px-3 pt-1 pb-2" data-testid="context-fields">
-			<p class="mb-2 text-[10px] leading-relaxed text-text-dim">
+		<div class="ctx-zone px-1.5 pt-0.5 pb-1" data-testid="context-fields">
+			<p class="mb-1 text-[9px] leading-snug text-text-dim">
 				All fields optional. Providing context grounds the
 				optimization in your actual codebase.
 			</p>
 
 			<!-- Stack Template Picker -->
-			<div class="mb-2 flex flex-wrap items-center gap-1.5">
+			<div class="mb-1 flex flex-wrap items-center gap-1">
 				{#each STACK_TEMPLATES as tmpl (tmpl.id)}
 					<button
 						type="button"
@@ -232,7 +232,7 @@
 
 			<!-- Stack Identity -->
 			<div class="ctx-group-label">Stack</div>
-			<div class="grid grid-cols-1 gap-2 {compact ? '' : 'sm:grid-cols-3'}">
+			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-3'}">
 				<div class="ctx-field">
 					<label for="pop-ctx-lang" class="ctx-field-label"
 						>Language</label
@@ -310,7 +310,7 @@
 
 			<!-- Architecture -->
 			<div class="ctx-group-label mt-2">Architecture</div>
-			<div class="grid grid-cols-1 gap-2 {compact ? '' : 'sm:grid-cols-2'}">
+			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-2'}">
 				<div class="ctx-field">
 					<label for="pop-ctx-conv" class="ctx-field-label"
 						>Conventions</label
@@ -359,7 +359,7 @@
 
 			<!-- Testing & Docs -->
 			<div class="ctx-group-label mt-2">Testing & Docs</div>
-			<div class="grid grid-cols-1 gap-2 {compact ? '' : 'sm:grid-cols-2'}">
+			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-2'}">
 				<div class="ctx-field">
 					<label for="pop-ctx-tp" class="ctx-field-label"
 						>Test Patterns</label

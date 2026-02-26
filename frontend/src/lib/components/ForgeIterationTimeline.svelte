@@ -16,7 +16,7 @@
 </script>
 
 {#if hasItems}
-	<div class="px-2.5 py-1.5">
+	<div class="px-2 py-1.5">
 		<span class="text-[8px] uppercase tracking-wider text-text-dim/50 font-bold">Iterations</span>
 		<div class="flex items-center gap-1 mt-1 overflow-x-auto">
 			{#each items as item, i}
@@ -30,7 +30,7 @@
 				<Tooltip text="{item.strategy || 'auto'}: {score ?? '?'}/100">
 					<button
 						onclick={() => onselect?.(item)}
-						class="relative shrink-0 flex items-center justify-center rounded-full transition-all duration-150
+						class="relative shrink-0 flex items-center justify-center rounded-full transition-colors duration-150
 							{isCurrent ? 'ring-1 ring-neon-cyan/50 scale-110' : 'hover:scale-110'}"
 						style="width: 18px; height: 18px; background-color: color-mix(in srgb, var(--color-{colorClass}) 20%, transparent); border: 1px solid var(--color-{colorClass})"
 						aria-label="Iteration {items.length - i}: score {score}"

@@ -19,10 +19,10 @@ const _exactFmt = new Intl.DateTimeFormat('en-US', {
 });
 
 /**
- * Format a date string into a relative time description.
+ * Format a date string or timestamp into a relative time description.
  */
-export function formatRelativeTime(dateStr: string): string {
-	const date = new Date(dateStr);
+export function formatRelativeTime(dateStr: string | number): string {
+	const date = typeof dateStr === 'number' ? new Date(dateStr) : new Date(dateStr);
 	const now = new Date();
 	const diffMs = now.getTime() - date.getTime();
 	const diffSec = Math.floor(diffMs / 1000);
@@ -49,6 +49,15 @@ export function formatExactTime(dateStr: string): string {
 }
 
 /**
+ * Format elapsed seconds as a compact duration string (e.g. "3s", "1m 23s").
+ */
+export function formatElapsed(seconds: number): string {
+	const mins = Math.floor(seconds / 60);
+	const secs = seconds % 60;
+	return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+}
+
+/**
  * Truncate text to a maximum length, adding ellipsis if needed.
  */
 export function truncateText(text: string, maxLength: number): string {
@@ -58,8 +67,12 @@ export function truncateText(text: string, maxLength: number): string {
 
 /**
  * Normalize a score to 0-100 scale for frontend display.
- * Scores <= 1 are treated as the backend's 0.0-1.0 DB scale; otherwise as 0-100.
- * Backend MCP tools use a separate 1-10 scale (see backend/app/utils/scores.py).
+ *
+ * The backend stores scores as 0.0-1.0 floats in the DB (capped at 1.0 by the
+ * validation stage). Scores <= 1 are treated as this DB scale and multiplied by
+ * 100; values already > 1 are assumed to be pre-scaled and just rounded. The
+ * backend's MCP tools expose a separate 1-10 integer scale (see
+ * `backend/app/utils/scores.py`) — that conversion is server-side only.
  */
 export function normalizeScore(score: number | null | undefined): number | null {
 	if (score === null || score === undefined) return null;

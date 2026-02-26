@@ -22,7 +22,7 @@
 		{#if segment.href && i < segments.length - 1}
 			<a
 				href={segment.href}
-				class="font-mono text-[11px] leading-none text-text-dim transition-all duration-200
+				class="font-mono text-[11px] leading-none text-text-dim transition-colors duration-200
 					hover:text-neon-cyan
 					active:scale-95 active:text-neon-cyan/70
 					focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neon-cyan/40 focus-visible:rounded-sm"

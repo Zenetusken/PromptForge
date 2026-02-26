@@ -59,12 +59,12 @@
 				<div class="flex-1 relative h-2 bg-bg-primary/40 rounded-sm overflow-hidden">
 					{#if isPositive}
 						<div
-							class="absolute left-1/2 h-full rounded-sm bg-neon-green/60 transition-all duration-300"
+							class="absolute left-1/2 h-full rounded-sm bg-neon-green/60 transition-[width] duration-300"
 							style="width: {Math.min(absDelta, 50)}%"
 						></div>
 					{:else if isNegative}
 						<div
-							class="absolute right-1/2 h-full rounded-sm bg-neon-red/60 transition-all duration-300"
+							class="absolute right-1/2 h-full rounded-sm bg-neon-red/60 transition-[width] duration-300"
 							style="width: {Math.min(absDelta, 50)}%"
 						></div>
 					{:else}

@@ -12,7 +12,7 @@
 
 {#if analysis}
     {@const data = analysis as AnalysisStepData}
-    <div class="animate-fade-in flex flex-col gap-2.5 rounded border border-neon-cyan/10 bg-bg-card/50 p-3">
+    <div class="animate-fade-in flex flex-col gap-1.5 rounded border border-neon-cyan/10 bg-bg-card/50 p-2">
         <!-- Header -->
         <div class="flex items-center justify-between">
             <span class="text-[10px] font-bold uppercase tracking-widest text-neon-cyan">Analysis</span>
@@ -44,10 +44,10 @@
         <!-- Strengths -->
         {#if data.strengths && data.strengths.length > 0}
             <div class="flex flex-col gap-1.5">
-                <span class="text-xs font-medium uppercase tracking-wider text-neon-green">Strengths ({data.strengths.length})</span>
-                <ul class="flex flex-col gap-1">
+                <span class="text-[10px] font-medium uppercase tracking-wider text-neon-green">Strengths ({data.strengths.length})</span>
+                <ul class="flex flex-col gap-0.5">
                     {#each data.strengths as strength}
-                        <li class="flex items-start gap-2 text-xs leading-relaxed text-text-secondary">
+                        <li class="flex items-start gap-1.5 text-[11px] leading-snug text-text-secondary">
                             <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-neon-green"></span>
                             {strength}
                         </li>
@@ -59,10 +59,10 @@
         <!-- Weaknesses -->
         {#if data.weaknesses && data.weaknesses.length > 0}
             <div class="flex flex-col gap-1.5">
-                <span class="text-xs font-medium uppercase tracking-wider text-neon-red">Weaknesses ({data.weaknesses.length})</span>
-                <ul class="flex flex-col gap-1">
+                <span class="text-[10px] font-medium uppercase tracking-wider text-neon-red">Weaknesses ({data.weaknesses.length})</span>
+                <ul class="flex flex-col gap-0.5">
                     {#each data.weaknesses as weakness}
-                        <li class="flex items-start gap-2 text-xs leading-relaxed text-text-secondary">
+                        <li class="flex items-start gap-1.5 text-[11px] leading-snug text-text-secondary">
                             <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-neon-red"></span>
                             {weakness}
                         </li>

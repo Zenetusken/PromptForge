@@ -1,6 +1,6 @@
 /**
  * Canonical list of all 10 optimization strategies.
- * Single source of truth — used by ForgeOptionsTray (strategy picker)
+ * Single source of truth — used by ForgeStrategySection (strategy picker)
  * and StrategyInsights (distribution panel).
  */
 export const ALL_STRATEGIES = [

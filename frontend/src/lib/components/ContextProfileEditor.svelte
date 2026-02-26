@@ -285,7 +285,7 @@
 		<div class="flex items-center gap-1.5 pt-0.5">
 			<button
 				type="button"
-				class="rounded-md bg-neon-green/15 px-2 py-0.5 text-[11px] font-medium text-neon-green transition-all hover:bg-neon-green/25 disabled:opacity-40"
+				class="rounded-md bg-neon-green/15 px-2 py-0.5 text-[11px] font-medium text-neon-green transition-colors hover:bg-neon-green/25 disabled:opacity-40"
 				disabled={!isDirty}
 				onclick={handleSave}
 			>Save Context</button>

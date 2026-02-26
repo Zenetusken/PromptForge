@@ -110,7 +110,7 @@
 
 		<Select.Portal>
 			<Select.Content
-				class="mt-1 border-t border-t-neon-cyan/8 shadow-xl shadow-black/50"
+				class="mt-1 border-t border-t-neon-cyan/8 border border-border-subtle"
 				sideOffset={4}
 				side="bottom"
 				align="start"

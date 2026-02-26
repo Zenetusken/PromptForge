@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('$lib/api/client', () => ({
     fetchOptimize: vi.fn(),
     fetchRetry: vi.fn(),
+    fetchOptimization: vi.fn(),
     orchestrateAnalyze: vi.fn(),
     fetchHistory: vi.fn(),
     deleteOptimization: vi.fn(),
@@ -33,9 +34,57 @@ vi.mock('$lib/stores/toast.svelte', () => ({
     toastState: { show: vi.fn() },
 }));
 
+vi.mock('$lib/stores/forgeMachine.svelte', () => ({
+    forgeMachine: {
+        enterReview: vi.fn(),
+    },
+}));
+
+vi.mock('$lib/stores/windowManager.svelte', () => ({
+    windowManager: {
+        openIDE: vi.fn(),
+        closeIDE: vi.fn(),
+        ideSpawned: false,
+        ideVisible: false,
+    },
+}));
+
+vi.mock('$lib/stores/processScheduler.svelte', () => ({
+    processScheduler: {
+        spawn: vi.fn((opts: { onExecute?: () => void; title?: string }) => {
+            const proc = { id: `proc-${Math.random().toString(36).slice(2, 8)}`, pid: 1, status: 'running', title: opts.title || '' };
+            // Call onExecute synchronously — matches real scheduler behavior
+            opts.onExecute?.();
+            return proc;
+        }),
+        complete: vi.fn(),
+        fail: vi.fn(),
+        updateProgress: vi.fn(),
+    },
+}));
+
+vi.mock('$lib/services/systemBus.svelte', () => ({
+    systemBus: {
+        on: vi.fn(() => vi.fn()),
+        emit: vi.fn(),
+        recentEvents: [],
+    },
+}));
+
+vi.mock('$lib/stores/sessionContext.svelte', () => ({
+    sessionContext: {
+        record: vi.fn(),
+        hasContext: false,
+        buildContextHint: vi.fn().mockReturnValue(''),
+        reset: vi.fn(),
+    },
+}));
+
 import { optimizationState } from './optimization.svelte';
-import { fetchOptimize, fetchRetry, orchestrateAnalyze } from '$lib/api/client';
+import { fetchOptimize, fetchRetry, fetchOptimization, orchestrateAnalyze } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
+import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
+import { windowManager } from '$lib/stores/windowManager.svelte';
 import { promptAnalysis } from '$lib/stores/promptAnalysis.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 import type { PipelineEvent } from '$lib/api/client';
@@ -190,6 +239,8 @@ describe('OptimizationState', () => {
             });
 
             expect(toastState.show).toHaveBeenCalledWith('Optimization complete!', 'success');
+            // Reload is debounced by 500ms
+            vi.advanceTimersByTime(500);
             expect(historyState.loadHistory).toHaveBeenCalled();
         });
 
@@ -271,47 +322,222 @@ describe('OptimizationState', () => {
     });
 
     describe('loadFromHistory', () => {
-        it('populates result from history item without pipeline', () => {
-            const item = {
-                id: 'hist-1',
-                created_at: '2024-01-01',
-                raw_prompt: 'original',
-                optimized_prompt: 'better',
-                task_type: 'coding',
-                complexity: 'medium',
-                weaknesses: ['vague'],
-                strengths: ['clear'],
-                changes_made: ['added context'],
-                framework_applied: 'role-based',
-                optimization_notes: 'notes',
-                strategy_reasoning: null,
-                strategy_confidence: null,
-                clarity_score: 0.9,
-                specificity_score: 0.8,
-                structure_score: 0.7,
-                faithfulness_score: 0.85,
-                overall_score: 0.81,
-                is_improvement: true,
-                verdict: 'Improved',
-                duration_ms: 1500,
-                model_used: 'claude',
-                input_tokens: 100,
-                output_tokens: 50,
-                status: 'completed',
-                error_message: null,
-                project: 'proj',
-                tags: ['tag1'],
-                title: 'Test',
-            };
+        const item = {
+            id: 'hist-1',
+            created_at: '2024-01-01',
+            raw_prompt: 'original',
+            optimized_prompt: 'better',
+            task_type: 'coding',
+            complexity: 'medium',
+            weaknesses: ['vague'],
+            strengths: ['clear'],
+            changes_made: ['added context'],
+            framework_applied: 'role-based',
+            optimization_notes: 'notes',
+            strategy_reasoning: null,
+            strategy_confidence: null,
+            clarity_score: 0.9,
+            specificity_score: 0.8,
+            structure_score: 0.7,
+            faithfulness_score: 0.85,
+            overall_score: 0.81,
+            is_improvement: true,
+            verdict: 'Improved',
+            duration_ms: 1500,
+            model_used: 'claude',
+            input_tokens: 100,
+            output_tokens: 50,
+            status: 'completed',
+            error_message: null,
+            project: 'proj',
+            tags: ['tag1'],
+            title: 'Test',
+        };
 
+        it('populates viewResult from history item without pipeline', () => {
             optimizationState.loadFromHistory(item as any);
 
-            expect(optimizationState.result).not.toBeNull();
-            expect(optimizationState.result!.id).toBe('hist-1');
-            expect(optimizationState.result!.original).toBe('original');
-            expect(optimizationState.result!.optimized).toBe('better');
+            expect(optimizationState.viewResult).not.toBeNull();
+            expect(optimizationState.viewResult!.id).toBe('hist-1');
+            expect(optimizationState.viewResult!.original).toBe('original');
+            expect(optimizationState.viewResult!.optimized).toBe('better');
             expect(optimizationState.currentRun).toBeNull();
             expect(optimizationState.isRunning).toBe(false);
+        });
+
+        it('result getter returns viewResult when forgeResult is null', () => {
+            optimizationState.loadFromHistory(item as any);
+            expect(optimizationState.result).not.toBeNull();
+            expect(optimizationState.result!.id).toBe('hist-1');
+            expect(optimizationState.forgeResult).toBeNull();
+        });
+
+        it('does not clobber forgeResult', () => {
+            // Simulate a forgeResult being set
+            const mockController = new AbortController();
+            vi.mocked(fetchOptimize).mockImplementation((prompt, handler) => {
+                handler({
+                    type: 'result',
+                    data: { id: 'forge-1', optimized_prompt: 'Forged' },
+                });
+                return mockController;
+            });
+            optimizationState.startOptimization('test');
+            expect(optimizationState.forgeResult).not.toBeNull();
+
+            // Now load from history — should not touch forgeResult
+            optimizationState.loadFromHistory(item as any);
+            expect(optimizationState.forgeResult!.id).toBe('forge-1');
+            expect(optimizationState.viewResult!.id).toBe('hist-1');
+            // result getter prefers forgeResult
+            expect(optimizationState.result!.id).toBe('forge-1');
+        });
+    });
+
+    describe('resetForge', () => {
+        it('clears forgeResult but preserves viewResult', () => {
+            const item = {
+                id: 'hist-1', created_at: '2024-01-01', raw_prompt: 'test',
+                optimized_prompt: 'better', status: 'completed',
+            };
+            optimizationState.loadFromHistory(item as any);
+            expect(optimizationState.viewResult).not.toBeNull();
+
+            optimizationState.resetForge();
+
+            expect(optimizationState.forgeResult).toBeNull();
+            expect(optimizationState.viewResult).not.toBeNull();
+        });
+    });
+
+    describe('openInIDE', () => {
+        const mockResult = {
+            id: 'ide-1',
+            original: 'original',
+            optimized: 'better',
+            task_type: 'coding',
+            complexity: 'medium',
+            weaknesses: [],
+            strengths: [],
+            changes_made: [],
+            framework_applied: '',
+            optimization_notes: '',
+            scores: { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, overall: 0.8 },
+            is_improvement: true,
+            verdict: '',
+            duration_ms: 0,
+            model_used: '',
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            title: 'Test',
+            version: '',
+            project: '',
+            prompt_id: '',
+            project_id: '',
+            project_status: '',
+            tags: [],
+            strategy: 'co-star',
+            strategy_reasoning: '',
+            strategy_confidence: 0,
+            secondary_frameworks: [],
+            created_at: '2024-01-01',
+        };
+
+        it('sets forgeResult and calls enterReview + openIDE', () => {
+            optimizationState.openInIDE(mockResult as any);
+
+            expect(optimizationState.forgeResult).not.toBeNull();
+            expect(optimizationState.forgeResult!.id).toBe('ide-1');
+            expect(forgeMachine.enterReview).toHaveBeenCalled();
+            expect(windowManager.openIDE).toHaveBeenCalled();
+        });
+
+        it('overwrites previous forgeResult', () => {
+            optimizationState.openInIDE({ ...mockResult, id: 'first' } as any);
+            optimizationState.openInIDE({ ...mockResult, id: 'second' } as any);
+
+            expect(optimizationState.forgeResult!.id).toBe('second');
+        });
+    });
+
+    describe('openInIDEFromHistory', () => {
+        it('fetches optimization and calls openInIDE', async () => {
+            const historyItem = {
+                id: 'fetch-1',
+                raw_prompt: 'original',
+                optimized_prompt: 'better',
+                status: 'completed',
+                created_at: '2024-01-01',
+            };
+            vi.mocked(fetchOptimization).mockResolvedValue(historyItem as any);
+
+            await optimizationState.openInIDEFromHistory('fetch-1');
+
+            expect(fetchOptimization).toHaveBeenCalledWith('fetch-1');
+            expect(optimizationState.forgeResult).not.toBeNull();
+            expect(optimizationState.forgeResult!.id).toBe('fetch-1');
+            expect(forgeMachine.enterReview).toHaveBeenCalled();
+            expect(windowManager.openIDE).toHaveBeenCalled();
+        });
+
+        it('does not set forgeResult when fetch returns null', async () => {
+            vi.mocked(fetchOptimization).mockResolvedValue(null as any);
+
+            await optimizationState.openInIDEFromHistory('missing');
+
+            expect(optimizationState.forgeResult).toBeNull();
+        });
+    });
+
+    describe('restoreResult', () => {
+        it('returns cached result from resultHistory', async () => {
+            // Push a result into resultHistory via event
+            const mockController = new AbortController();
+            vi.mocked(fetchOptimize).mockImplementation((prompt, handler) => {
+                handler({
+                    type: 'result',
+                    data: { id: 'cached-1', optimized_prompt: 'Cached' },
+                });
+                return mockController;
+            });
+            optimizationState.startOptimization('test');
+            vi.advanceTimersByTime(500);
+            optimizationState.resetForge();
+
+            const ok = await optimizationState.restoreResult('cached-1');
+
+            expect(ok).toBe(true);
+            expect(optimizationState.forgeResult).not.toBeNull();
+            expect(optimizationState.forgeResult!.id).toBe('cached-1');
+        });
+
+        it('fetches from server when not in cache', async () => {
+            const historyItem = {
+                id: 'server-1',
+                raw_prompt: 'original',
+                optimized_prompt: 'better',
+                status: 'completed',
+                created_at: '2024-01-01',
+            };
+            vi.mocked(fetchOptimization).mockResolvedValue(historyItem as any);
+
+            const ok = await optimizationState.restoreResult('server-1');
+
+            expect(ok).toBe(true);
+            expect(fetchOptimization).toHaveBeenCalledWith('server-1');
+            expect(optimizationState.forgeResult).not.toBeNull();
+            expect(optimizationState.forgeResult!.id).toBe('server-1');
+        });
+
+        it('returns false when result not found', async () => {
+            vi.mocked(fetchOptimization).mockResolvedValue(null as any);
+
+            const ok = await optimizationState.restoreResult('missing-1');
+
+            expect(ok).toBe(false);
+            expect(optimizationState.forgeResult).toBeNull();
         });
     });
 

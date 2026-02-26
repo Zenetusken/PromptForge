@@ -290,13 +290,13 @@ describe('HistoryState', () => {
         });
     });
 
-    describe('setSortBy', () => {
-        it('updates sort field and reloads with desc order', async () => {
+    describe('setSortField', () => {
+        it('updates sort field and reloads, toggling order', async () => {
             vi.mocked(fetchHistory).mockResolvedValue({
                 items: [], total: 0, page: 1, per_page: 20,
             });
 
-            historyState.setSortBy('overall_score');
+            historyState.setSortField('overall_score');
             await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
 
             expect(historyState.sortBy).toBe('overall_score');
@@ -304,6 +304,33 @@ describe('HistoryState', () => {
             expect(fetchHistory).toHaveBeenCalledWith(
                 expect.objectContaining({ sort: 'overall_score', order: 'desc' })
             );
+        });
+
+        it('toggles to asc when same field clicked again', async () => {
+            historyState.sortBy = 'overall_score';
+            historyState.sortOrder = 'desc';
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setSortField('overall_score');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.sortOrder).toBe('asc');
+        });
+
+        it('resets to desc when switching to a different field', async () => {
+            historyState.sortBy = 'overall_score';
+            historyState.sortOrder = 'asc';
+            vi.mocked(fetchHistory).mockResolvedValue({
+                items: [], total: 0, page: 1, per_page: 20,
+            });
+
+            historyState.setSortField('created_at');
+            await vi.waitFor(() => expect(fetchHistory).toHaveBeenCalled());
+
+            expect(historyState.sortBy).toBe('created_at');
+            expect(historyState.sortOrder).toBe('desc');
         });
     });
 

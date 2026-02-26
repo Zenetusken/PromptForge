@@ -27,8 +27,13 @@ class ProjectsState {
 	hasLoaded: boolean = $state(false);
 	searchQuery: string = $state('');
 	statusFilter: 'active' | 'archived' = $state('active');
+	sortBy: string = $state('updated_at');
+	sortOrder: 'asc' | 'desc' = $state('desc');
 	activeProject: ProjectDetail | null = $state(null);
 	activeProjectLoading: boolean = $state(false);
+
+	/** Set by navigateToProject(), consumed by ProjectsWindow to drill into a project. */
+	pendingNavigateProjectId: string | null = $state(null);
 
 	/** All projects (active + archived) for filter dropdowns. */
 	allItems: ProjectSummary[] = $state([]);
@@ -51,8 +56,8 @@ class ProjectsState {
 				per_page: this.perPage,
 				search: this.searchQuery || undefined,
 				status: this.statusFilter,
-				sort: 'updated_at',
-				order: 'desc',
+				sort: this.sortBy,
+				order: this.sortOrder,
 				signal,
 			});
 
@@ -97,11 +102,23 @@ class ProjectsState {
 		this.loadProjects();
 	}
 
+	/** Request the ProjectsWindow to navigate to a specific project. */
+	navigateToProject(id: string) {
+		this.pendingNavigateProjectId = id;
+	}
+
 	setStatusFilter(status: 'active' | 'archived') {
 		this.statusFilter = status;
 		this.items = [];
 		this.total = 0;
 		this.hasLoaded = false;
+		this.loadProjects();
+	}
+
+	setSortField(sort: string, order?: 'asc' | 'desc') {
+		const newOrder = order ?? (this.sortBy === sort && this.sortOrder === 'desc' ? 'asc' : 'desc');
+		this.sortBy = sort;
+		this.sortOrder = newOrder;
 		this.loadProjects();
 	}
 

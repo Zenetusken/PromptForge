@@ -1,4 +1,5 @@
-import { fetchHealth, fetchProviders, validateApiKey, type HealthResponse, type LLMHeaders, type ProviderInfo, type ValidateKeyResponse } from '$lib/api/client';
+import { fetchHealth, fetchProviders, validateApiKey, type HealthResponse, type LLMHeaders, type ProviderInfo, type TokenBudgetStatus, type ValidateKeyResponse } from '$lib/api/client';
+import { settingsState } from '$lib/stores/settings.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 import { maskApiKey } from '$lib/utils/format';
 
@@ -23,6 +24,9 @@ class ProviderState {
 	// User's per-session provider selection (null = auto-detect)
 	selectedProvider: string | null = $state(null);
 
+	// Token budget status from health endpoint
+	tokenBudgets: Record<string, TokenBudgetStatus> = $state({});
+
 	// Masked display values for API keys (raw keys stay in browser storage only)
 	apiKeys: Record<string, string> = $state({});
 
@@ -41,6 +45,8 @@ class ProviderState {
 	private _nextValidationId = 0;
 
 	private intervalId: ReturnType<typeof setInterval> | null = null;
+	private _intervalMs = 60_000;
+	private _visibilityHandler: (() => void) | null = null;
 
 	// Staleness tracking — skip fetches when data is still fresh
 	private static readonly _PROVIDERS_STALE_MS = 10_000;
@@ -64,6 +70,10 @@ class ProviderState {
 		if (typeof window !== 'undefined') {
 			this.rememberKeys = localStorage.getItem(REMEMBER_KEY) === 'true';
 			this._hydrateFromStorage();
+			// Apply default provider from settings if no provider was loaded from session
+			if (!this.selectedProvider && settingsState.defaultProvider) {
+				this.selectedProvider = settingsState.defaultProvider;
+			}
 		}
 	}
 
@@ -224,6 +234,7 @@ class ProviderState {
 			this.healthChecking = true;
 			const result = await fetchHealth();
 			this.health = result;
+			this.tokenBudgets = result?.token_budgets ?? {};
 			this._healthLastFetch = Date.now();
 			this.healthChecking = false;
 
@@ -287,15 +298,43 @@ class ProviderState {
 		// Guard against double-subscription on component remount
 		this.stopPolling();
 		this._pollCycle = 0;
+		this._intervalMs = intervalMs;
 		this.pollHealth();
 		this.loadProviders();
 		this.intervalId = setInterval(() => this._pollTick(), intervalMs);
+
+		// Pause polling when tab is hidden, resume with jitter on return
+		this._visibilityHandler = () => {
+			if (document.hidden) {
+				if (this.intervalId !== null) {
+					clearInterval(this.intervalId);
+					this.intervalId = null;
+				}
+			} else {
+				// Add 0-2s jitter before first poll on visibility restore
+				// to avoid thundering herd across many tabs
+				if (this.intervalId === null) {
+					const jitter = Math.random() * 2000;
+					setTimeout(() => {
+						if (this.intervalId === null) {
+							this._pollTick();
+							this.intervalId = setInterval(() => this._pollTick(), this._intervalMs);
+						}
+					}, jitter);
+				}
+			}
+		};
+		document.addEventListener('visibilitychange', this._visibilityHandler);
 	}
 
 	stopPolling() {
 		if (this.intervalId !== null) {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
+		}
+		if (this._visibilityHandler) {
+			document.removeEventListener('visibilitychange', this._visibilityHandler);
+			this._visibilityHandler = null;
 		}
 	}
 

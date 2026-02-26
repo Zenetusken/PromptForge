@@ -5,6 +5,8 @@
 		getScoreBadgeClass,
 		formatMetadataSummary,
 	} from "$lib/utils/format";
+	import { projectsState } from "$lib/stores/projects.svelte";
+	import { windowManager } from "$lib/stores/windowManager.svelte";
 	import MetadataSummaryLine from "./MetadataSummaryLine.svelte";
 	import Icon from "./Icon.svelte";
 	import { EntryTitle, Tooltip, MetaBadge } from "./ui";
@@ -105,13 +107,13 @@
 	<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 		{#if result.project}
 			{#if result.project_id}
-				<a
-					href="/projects/{result.project_id}"
+				<button
+					onclick={() => { projectsState.navigateToProject(result.project_id!); windowManager.openProjectsWindow(); }}
 					class="text-[11px] font-medium text-neon-yellow transition-colors hover:text-neon-yellow/80 hover:underline"
 					data-testid="project-badge"
 				>
 					{result.project}
-				</a>
+				</button>
 			{:else}
 				<span
 					class="text-[11px] font-medium text-neon-yellow"

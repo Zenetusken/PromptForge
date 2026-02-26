@@ -1,5 +1,8 @@
 import type { CodebaseContext, OptimizeMetadata } from '$lib/api/client';
+import type { ForgeMode } from '$lib/stores/forgeMachine.svelte';
 import { providerState } from '$lib/stores/provider.svelte';
+import { settingsState } from '$lib/stores/settings.svelte';
+import { windowManager } from '$lib/stores/windowManager.svelte';
 
 export type SourceAction = 'optimize' | 'reiterate' | null;
 
@@ -22,6 +25,8 @@ export interface WorkspaceTab {
 	id: string;
 	name: string;
 	draft: ForgeSessionDraft;
+	resultId: string | null;
+	mode: ForgeMode;
 }
 
 export function createEmptyDraft(): ForgeSessionDraft {
@@ -33,7 +38,7 @@ export function createEmptyDraft(): ForgeSessionDraft {
 		tags: '',
 		version: '',
 		sourceAction: null,
-		strategy: 'auto',
+		strategy: settingsState.defaultStrategy || 'auto',
 		secondaryStrategies: [],
 		contextProfile: null,
 		contextSource: null,
@@ -42,12 +47,15 @@ export function createEmptyDraft(): ForgeSessionDraft {
 }
 
 const STORAGE_KEY = 'pf_forge_draft';
+const MAX_TABS = 5;
 
 function createInitialTab(): WorkspaceTab {
-	return { 
-		id: typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(), 
-		name: 'Untitled 1', 
-		draft: createEmptyDraft() 
+	return {
+		id: typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(),
+		name: 'Untitled 1',
+		draft: createEmptyDraft(),
+		resultId: null,
+		mode: 'compose',
 	};
 }
 
@@ -79,7 +87,7 @@ class ForgeSessionState {
 	showStrategy: boolean = $state(false);
 	validationErrors: Record<string, string> = $state({});
 	duplicateTitleWarning: boolean = $state(false);
-	autoRetryOnRateLimit: boolean = $state(false);
+	get autoRetryOnRateLimit(): boolean { return settingsState.autoRetryOnRateLimit; }
 
 	// Derived booleans — only recompute when the referenced draft fields change
 	hasText: boolean = $derived(!!this.draft.text.trim());
@@ -95,6 +103,7 @@ class ForgeSessionState {
 	/** Open the IDE workspace. */
 	activate(): void {
 		this.isActive = true;
+		windowManager.openIDE();
 		this._persistDraft();
 	}
 
@@ -104,16 +113,26 @@ class ForgeSessionState {
 	 */
 	loadRequest(req: Partial<ForgeSessionDraft> & { text: string }): void {
 		this.isActive = true;
+		windowManager.openIDE();
 		const newDraft = { ...createEmptyDraft(), ...req };
 
 		if (!this.draft.text.trim()) {
 			this.draft = newDraft;
 			this.activeTab.name = req.title || 'Loaded Prompt';
 		} else {
-			const newTab = {
+			// Evict LRU non-active tab when at limit
+			if (this.tabs.length >= MAX_TABS) {
+				const evictIdx = this.tabs.findLastIndex(t => t.id !== this.activeTabId);
+				if (evictIdx >= 0) {
+					this.tabs.splice(evictIdx, 1);
+				}
+			}
+			const newTab: WorkspaceTab = {
 				id: typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(),
 				name: req.title || 'New Prompt',
-				draft: newDraft
+				draft: newDraft,
+				resultId: null,
+				mode: 'compose',
 			};
 			this.tabs.push(newTab);
 			this.activeTabId = newTab.id;
@@ -146,6 +165,7 @@ class ForgeSessionState {
 	updateDraft(patch: Partial<ForgeSessionDraft>): void {
 		if ('text' in patch && patch.text?.trim()) {
 			this.isActive = true;
+			windowManager.openIDE();
 		}
 		this.draft = { ...this.draft, ...patch };
 		this._persistDraft();
@@ -211,6 +231,7 @@ class ForgeSessionState {
 	 */
 	reset(): void {
 		this.isActive = false;
+		windowManager.closeIDE();
 		this.tabs = [createInitialTab()];
 		this.activeTabId = this.tabs[0].id;
 		this.showMetadata = false;
@@ -218,7 +239,6 @@ class ForgeSessionState {
 		this.showStrategy = false;
 		this.validationErrors = {};
 		this.duplicateTitleWarning = false;
-		this.autoRetryOnRateLimit = false;
 		this._clearStorage();
 	}
 
@@ -227,12 +247,18 @@ class ForgeSessionState {
 	 */
 	focusTextarea(): void {
 		this.isActive = true;
+		windowManager.openIDE();
 		this._persistDraft();
 		queueMicrotask(() => {
 			document.querySelector<HTMLTextAreaElement>(
 				'[data-testid="forge-panel-textarea"]',
 			)?.focus();
 		});
+	}
+
+	/** Persist current tab state to sessionStorage. Called by tabCoherence after state changes. */
+	persistTabs(): void {
+		this._persistDraft();
 	}
 
 	// --- Storage persistence ---
@@ -269,7 +295,9 @@ class ForgeSessionState {
 				if (parsed && parsed.tabs && Array.isArray(parsed.tabs)) {
 					this.tabs = parsed.tabs.map((t: any) => ({
 						...t,
-						draft: { ...createEmptyDraft(), ...t.draft }
+						draft: { ...createEmptyDraft(), ...t.draft },
+						resultId: t.resultId ?? null,
+						mode: t.mode === 'forging' ? 'compose' : (t.mode ?? 'compose'),
 					}));
 					this.activeTabId = parsed.activeTabId || this.tabs[0].id;
 					this.isActive = !!parsed.isActive;

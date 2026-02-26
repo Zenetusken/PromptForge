@@ -48,8 +48,8 @@
 		{/if}
 	</Collapsible.Trigger>
 	<Collapsible.Content>
-		<div class="px-3 pt-1 pb-2" data-testid="metadata-fields">
-			<div class="grid grid-cols-1 gap-2 {compact ? '' : 'sm:grid-cols-4'}">
+		<div class="px-1.5 pt-0.5 pb-1" data-testid="metadata-fields">
+			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-4'}">
 				<div>
 					<input
 						type="text"
@@ -57,7 +57,7 @@
 						placeholder="Title"
 						aria-label="Optimization title"
 						data-testid="metadata-title"
-						class="input-field w-full py-1.5 text-[12px] {forgeSession.validationErrors.title
+						class="input-field w-full py-1 text-[11px] {forgeSession.validationErrors.title
 							? 'border-neon-red/50'
 							: ''}"
 					/>
@@ -79,7 +79,7 @@
 						placeholder="Version"
 						aria-label="Version"
 						data-testid="metadata-version"
-						class="input-field w-full py-1.5 text-[12px] {forgeSession.validationErrors.version
+						class="input-field w-full py-1 text-[11px] {forgeSession.validationErrors.version
 							? 'border-neon-red/50'
 							: ''}"
 					/>
@@ -98,7 +98,7 @@
 						data-testid="metadata-project"
 						list={projectListId}
 						disabled={!!forgeSession.draft.sourceAction}
-						class="input-field w-full py-1.5 text-[12px] {forgeSession.validationErrors.project
+						class="input-field w-full py-1 text-[11px] {forgeSession.validationErrors.project
 							? 'border-neon-red/50'
 							: ''} {forgeSession.draft.sourceAction
 							? 'opacity-60 cursor-not-allowed'
@@ -117,7 +117,7 @@
 						placeholder="Tags (comma-separated)"
 						aria-label="Tags"
 						data-testid="metadata-tags"
-						class="input-field w-full py-1.5 text-[12px] {forgeSession.validationErrors.tags
+						class="input-field w-full py-1 text-[11px] {forgeSession.validationErrors.tags
 							? 'border-neon-red/50'
 							: ''}"
 					/>

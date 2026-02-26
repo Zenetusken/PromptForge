@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { optimizationState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
 	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
+	import { processScheduler } from '$lib/stores/processScheduler.svelte';
+	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { forgeSession } from '$lib/stores/forgeSession.svelte';
 	import { normalizeScore, getScoreBadgeClass, formatScore } from '$lib/utils/format';
+	import { getStrategyColor } from '$lib/utils/strategies';
 	import { ALL_DIMENSIONS, DIMENSION_LABELS, DIMENSION_COLORS } from '$lib/utils/scoreDimensions';
 	import Icon from './Icon.svelte';
 	import CopyButton from './CopyButton.svelte';
 	import ForgeIterationTimeline from './ForgeIterationTimeline.svelte';
 
-	let result = $derived(optimizationState.result);
+	let result = $derived(optimizationState.forgeResult);
 
 	let activeTab = $state<'optimized' | 'original'>('optimized');
 
@@ -38,9 +41,10 @@
 
 	function handleReforge() {
 		if (!result) return;
+		processScheduler.spawn({ title: result.title || 'Re-forge' });
 		const metadata = forgeSession.buildMetadata();
 		optimizationState.startOptimization(result.original, metadata);
-		forgeMachine.mode = 'forging';
+		forgeMachine.enterForging();
 	}
 
 	function handleCompareWithPrevious() {
@@ -59,20 +63,24 @@
 {#if result}
 	<div class="flex flex-1 flex-col overflow-y-auto" data-testid="forge-review">
 		<!-- Score header -->
-		<div class="px-3 pt-3 pb-2">
-			<div class="flex items-center gap-2 mb-2">
+		<div class="px-2 pt-2 pb-1.5">
+			<div class="flex items-center gap-1.5 mb-1">
 				{#if result.scores.overall}
 					<span class="score-circle score-circle-sm {getScoreBadgeClass(result.scores.overall)}">
 						{normalizeScore(result.scores.overall)}
 					</span>
 				{/if}
 				<div class="min-w-0 flex-1">
-					<h3 class="truncate text-[12px] font-semibold text-text-primary">
+					<h3 class="truncate text-[11px] font-semibold text-text-primary">
 						{result.title || 'Optimization complete'}
 					</h3>
 					<div class="flex items-center gap-1.5 mt-0.5">
 						{#if result.strategy}
-							<span class="rounded-sm bg-neon-green/10 border border-neon-green/20 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-neon-green">
+							{@const sColors = getStrategyColor(result.strategy)}
+							<span
+								class="rounded-sm px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider {sColors.text}"
+								style="background: {sColors.rawRgba.replace('0.35', '0.10')}; border: 1px solid {sColors.rawRgba.replace('0.35', '0.20')};"
+							>
 								{result.strategy}
 							</span>
 						{/if}
@@ -83,6 +91,13 @@
 						{/if}
 					</div>
 				</div>
+				<button
+					onclick={() => windowManager.minimizeWindow('ide')}
+					class="shrink-0 text-text-dim hover:text-text-primary transition-colors"
+					aria-label="Minimize to taskbar"
+				>
+					<Icon name="minimize-2" size={12} />
+				</button>
 			</div>
 
 			<!-- Score breakdown bars -->
@@ -94,7 +109,7 @@
 						<span class="w-16 text-[9px] font-medium text-text-dim truncate">{DIMENSION_LABELS[dim]}</span>
 						<div class="flex-1 h-1 rounded-full bg-bg-primary/60 overflow-hidden">
 							<div
-								class="h-full rounded-full transition-all duration-500"
+								class="h-full rounded-full transition-[width] duration-500"
 								style="width: {normalized ?? 0}%; background-color: var(--color-{DIMENSION_COLORS[dim]})"
 							></div>
 						</div>
@@ -121,26 +136,26 @@
 		</div>
 
 		<!-- Content -->
-		<div class="flex-1 overflow-y-auto px-2.5 py-2">
-			<pre class="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-text-primary">{activeTab === 'optimized' ? result.optimized : result.original}</pre>
+		<div class="flex-1 overflow-y-auto px-2 py-1.5">
+			<pre class="whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-primary">{activeTab === 'optimized' ? result.optimized : result.original}</pre>
 		</div>
 
 		<!-- Strategy reasoning (collapsible) -->
 		{#if result.strategy_reasoning}
-			<div class="px-2.5 pb-1">
+			<div class="px-2 pb-0.5">
 				<details class="text-[10px]">
 					<summary class="cursor-pointer text-text-dim hover:text-text-secondary transition-colors font-medium">
 						Strategy reasoning
 					</summary>
-					<p class="mt-1 text-text-secondary leading-relaxed">{result.strategy_reasoning}</p>
+					<p class="mt-1 text-text-secondary leading-snug">{result.strategy_reasoning}</p>
 				</details>
 			</div>
 		{/if}
 
 		<!-- Verdict -->
 		{#if result.verdict}
-			<div class="px-2.5 pb-2">
-				<p class="text-[10px] italic text-text-dim leading-relaxed">{result.verdict}</p>
+			<div class="px-2 pb-1.5">
+				<p class="text-[10px] italic text-text-dim leading-snug">{result.verdict}</p>
 			</div>
 		{/if}
 
@@ -151,7 +166,7 @@
 		/>
 
 		<!-- Actions -->
-		<div class="shrink-0 border-t border-neon-cyan/8 px-2.5 py-2 flex flex-wrap gap-1.5">
+		<div class="shrink-0 border-t border-neon-cyan/8 px-2 py-1.5 flex flex-wrap gap-1">
 			<CopyButton text={result.optimized} />
 			<button
 				onclick={handleIterate}
@@ -169,24 +184,17 @@
 				<Icon name="refresh" size={10} />
 				Re-forge
 			</button>
-			{#if previousResult}
+			{#if optimizationState.resultHistory.length > 1}
 				<button
 					onclick={handleCompareWithPrevious}
-					class="forge-action-btn"
+					class="forge-action-btn {!previousResult ? 'opacity-40 cursor-not-allowed' : ''}"
+					disabled={!previousResult}
 					aria-label="Compare with previous iteration"
 				>
 					<Icon name="layers" size={10} />
 					Compare
 				</button>
 			{/if}
-			<a
-				href="/optimize/{result.id}"
-				class="forge-action-btn"
-				aria-label="Open full detail view"
-			>
-				<Icon name="maximize-2" size={10} />
-				Pop out
-			</a>
 		</div>
 	</div>
 {:else}

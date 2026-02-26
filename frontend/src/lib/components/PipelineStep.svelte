@@ -167,7 +167,7 @@
 	<!-- Mobile: horizontal row layout -->
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 	<div
-		class="flex items-start gap-3 rounded-xl p-3 transition-[background-color] duration-300 {isExpanded
+		class="flex items-start gap-2 rounded-lg p-1.5 transition-[background-color] duration-300 {isExpanded
 			? 'bg-bg-hover/30'
 			: ''} {step.status === 'complete' ? 'cursor-pointer' : ''}"
 		data-testid="pipeline-step-{step.name}"
@@ -186,44 +186,44 @@
 		tabindex={step.status === "complete" ? 0 : -1}
 	>
 		<!-- Left: icon -->
-		<div class="relative flex h-9 w-9 shrink-0 items-center justify-center">
+		<div class="relative flex h-7 w-7 shrink-0 items-center justify-center">
 			{#if step.status === "running"}
 				<div
 					class="absolute inset-0 animate-ping rounded-full opacity-15"
 					style="background-color: var(--color-{stepColor})"
 				></div>
 				<div
-					class="flex h-9 w-9 items-center justify-center rounded-full border-2"
+					class="flex h-7 w-7 items-center justify-center rounded-full border-2"
 					style="border-color: var(--color-{stepColor})"
 				>
 					<Icon
 						name="spinner"
-						size={14}
+						size={12}
 						class="animate-spin"
 						style="color: var(--color-{stepColor})"
 					/>
 				</div>
 			{:else if step.status === "complete"}
 				<div
-					class="flex h-9 w-9 items-center justify-center rounded-full animate-scale-in"
+					class="flex h-7 w-7 items-center justify-center rounded-full animate-scale-in"
 					style="background-color: color-mix(in srgb, var(--color-{stepColor}) 15%, transparent); animation-delay: {index *
 						50}ms; animation-fill-mode: backwards;"
 				>
 					<Icon
 						name="check"
-						size={14}
+						size={12}
 						style="color: var(--color-{stepColor})"
 					/>
 				</div>
 			{:else if step.status === "error"}
 				<div
-					class="flex h-9 w-9 items-center justify-center rounded-full bg-neon-red/15"
+					class="flex h-7 w-7 items-center justify-center rounded-full bg-neon-red/15"
 				>
-					<Icon name="x" size={14} class="text-neon-red" />
+					<Icon name="x" size={12} class="text-neon-red" />
 				</div>
 			{:else}
 				<div
-					class="flex h-9 w-9 items-center justify-center rounded-full border border-text-dim/20"
+					class="flex h-7 w-7 items-center justify-center rounded-full border border-text-dim/20"
 				>
 					<span class="font-mono text-xs text-text-dim"
 						>{String(index + 1).padStart(2, "0")}</span
@@ -267,11 +267,11 @@
 
 			{#if step.status === "running" && step.streamingContent}
 				<div
-					class="mt-1.5 w-full max-w-sm rounded-lg border border-border-subtle bg-bg-primary/60 p-2 text-left"
+					class="mt-1 w-full max-w-sm rounded-lg border border-border-subtle bg-bg-primary/60 p-1.5 text-left"
 					style="border-left: 2px solid color-mix(in srgb, var(--color-{stepColor}) 40%, transparent)"
 				>
 					<p
-						class="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-text-secondary"
+						class="whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-secondary"
 					>
 						{step.streamingContent.trim()}
 					</p>
@@ -401,7 +401,7 @@
 				</div>
 				{#if isStrategyStep && strategyReasoning}
 					<p
-						class="mt-1 max-w-sm text-[10px] leading-relaxed text-text-secondary"
+						class="mt-1 max-w-sm text-[10px] leading-snug text-text-secondary"
 					>
 						{strategyReasoning}
 					</p>
@@ -521,7 +521,7 @@
 				data-testid="streaming-content-{step.name}"
 			>
 				<p
-					class="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-text-secondary"
+					class="whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-secondary"
 				>
 					{step.streamingContent.trim()}
 				</p>
@@ -638,7 +638,7 @@
 					{/if}
 					{#if strategyReasoning}
 						<p
-							class="max-w-[200px] text-center text-[10px] leading-relaxed text-text-secondary"
+							class="max-w-[200px] text-center text-[10px] leading-snug text-text-secondary"
 						>
 							{strategyReasoning}
 						</p>
@@ -665,7 +665,7 @@
 						class="mt-1 max-w-[200px] rounded-lg border border-neon-purple/15 bg-neon-purple/5 p-1.5 text-left"
 					>
 						<p
-							class="line-clamp-3 font-mono text-[10px] leading-relaxed text-text-secondary"
+							class="line-clamp-3 font-mono text-[10px] leading-snug text-text-secondary"
 						>
 							{optimizedPrompt.slice(
 								0,

@@ -59,9 +59,18 @@ class PromptAnalysisState {
 	/** Clear analysis state. */
 	reset(): void {
 		if (this._debounceTimer) clearTimeout(this._debounceTimer);
+		this._debounceTimer = null;
 		this.heuristic = null;
 		this.recommendedStrategies = [];
 		this.isAnalyzing = false;
+	}
+
+	/** Cancel any pending debounce timer. Call from component teardown. */
+	destroy(): void {
+		if (this._debounceTimer) {
+			clearTimeout(this._debounceTimer);
+			this._debounceTimer = null;
+		}
 	}
 
 	/**
