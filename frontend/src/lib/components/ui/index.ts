@@ -4,3 +4,7 @@ export { default as Tooltip } from './Tooltip.svelte';
 export { default as Separator } from './Separator.svelte';
 export { default as Switch } from './Switch.svelte';
 export { default as SidebarTabs } from './SidebarTabs.svelte';
+export { default as WindowTabStrip } from './WindowTabStrip.svelte';
+export { default as EmptyState } from './EmptyState.svelte';
+export { default as StatusDot } from './StatusDot.svelte';
+export { default as InlineProgress } from './InlineProgress.svelte';
