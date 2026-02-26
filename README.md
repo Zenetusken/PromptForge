@@ -33,7 +33,7 @@ Submit a raw prompt, get it rewritten and scored through a 4-stage AI pipeline (
 - **Workspace Hub** — connect GitHub repos to projects for automatic codebase context extraction; three-layer context merge (workspace auto-context, manual profile, per-request override)
 - **MCP server** — 20 tools and 4 resources for Claude Code integration (`optimize`, `retry`, `search`, `set_project_context`, `sync_workspace`, etc.)
 - **OS-metaphor UI** — multi-window desktop with IDE, projects explorer, history browser, network monitor, strategy workshop, batch processor, terminal, and more
-- **Security stack** — optional bearer-token auth, per-endpoint rate limiting, CSRF protection, security headers, input sanitization, Fernet-encrypted token storage, and audit logging
+- **Security stack** — optional bearer-token auth (API + MCP server), `X-Webhook-Secret` for internal MCP→backend webhooks, per-endpoint rate limiting, origin-based CSRF protection, security headers, input sanitization, Fernet-encrypted token storage, hardened data directory permissions, and audit logging
 - **Docker-ready** — multi-stage builds, healthchecks, non-root containers, and compose orchestration
 
 ## Quick Start
@@ -177,7 +177,7 @@ cd backend && python -m uvicorn app.mcp_server:app --reload --port 8001
 
 **4 resources:** `promptforge://projects`, `promptforge://projects/{id}/context`, `promptforge://optimizations/{id}`, `promptforge://workspaces`
 
-All MCP tool calls emit activity events to the backend for real-time visibility in the frontend Network Monitor.
+All MCP tool calls emit activity events to the backend for real-time visibility in the frontend Network Monitor. Set `MCP_AUTH_TOKEN` to require bearer token authentication for MCP clients.
 
 ## Configuration
 

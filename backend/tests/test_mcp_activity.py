@@ -380,10 +380,8 @@ class TestSSEGeneratorSnapshot:
 
 class TestRouterEndpoints:
     @pytest.mark.asyncio
-    async def test_webhook_publishes_event(self, client, monkeypatch):
+    async def test_webhook_publishes_event(self, client):
         """POST to /internal/mcp-event accepts valid payloads."""
-        from app import config
-        monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", "")
         response = await client.post(
             "/internal/mcp-event",
             json={
@@ -395,10 +393,8 @@ class TestRouterEndpoints:
         assert response.status_code == 204
 
     @pytest.mark.asyncio
-    async def test_webhook_rejects_unknown_type(self, client, monkeypatch):
+    async def test_webhook_rejects_unknown_type(self, client):
         """Unknown event types are logged but don't error."""
-        from app import config
-        monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", "")
         response = await client.post(
             "/internal/mcp-event",
             json={"event_type": "unknown_type"},
@@ -458,3 +454,13 @@ class TestWebhookAuth:
             headers={"X-Webhook-Secret": "wrong-secret"},
         )
         assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_webhook_passes_when_secret_empty(self, client):
+        """Dev mode: empty INTERNAL_WEBHOOK_SECRET allows all requests."""
+        # conftest sets INTERNAL_WEBHOOK_SECRET="" globally — no header needed
+        response = await client.post(
+            "/internal/mcp-event",
+            json={"event_type": "tool_complete", "tool_name": "test"},
+        )
+        assert response.status_code == 204

@@ -34,6 +34,7 @@ error()   { echo -e "${RED}[✗]${NC} $1"; }
 BACKEND_PORT=8000
 FRONTEND_PORT=5199
 MCP_PORT=8001
+MCP_HOST=127.0.0.1
 LOGS_DIR="$SCRIPT_DIR/logs"
 BACKEND_PID_FILE="$LOGS_DIR/backend.pid"
 FRONTEND_PID_FILE="$LOGS_DIR/frontend.pid"
@@ -56,6 +57,7 @@ read_env_config() {
     local val
     val=$(_read_env_var BACKEND_PORT);            if [ -n "$val" ]; then BACKEND_PORT="$val"; fi
     val=$(_read_env_var MCP_PORT);                 if [ -n "$val" ]; then MCP_PORT="$val"; fi
+    val=$(_read_env_var MCP_HOST);                 if [ -n "$val" ]; then MCP_HOST="$val"; fi
     val=$(_read_env_var AUTH_TOKEN);               if [ -n "$val" ]; then AUTH_TOKEN="$val"; fi
     val=$(_read_env_var RATE_LIMIT_RPM);           if [ -n "$val" ]; then RATE_LIMIT_RPM="$val"; fi
     val=$(_read_env_var RATE_LIMIT_OPTIMIZE_RPM);  if [ -n "$val" ]; then RATE_LIMIT_OPTIMIZE_RPM="$val"; fi
@@ -401,7 +403,7 @@ do_start() {
     source venv/bin/activate
 
     nohup python -m uvicorn app.mcp_server:app \
-        --host 127.0.0.1 \
+        --host "$MCP_HOST" \
         --port "$MCP_PORT" \
         --reload \
         > "$LOGS_DIR/mcp.log" 2>&1 &

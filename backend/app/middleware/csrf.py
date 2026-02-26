@@ -40,6 +40,10 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint,
     ) -> Response:
+        # Internal endpoints (MCP webhook) are secured by X-Webhook-Secret
+        if request.url.path.startswith("/internal/"):
+            return await call_next(request)
+
         if request.method not in _STATE_CHANGING_METHODS:
             return await call_next(request)
 

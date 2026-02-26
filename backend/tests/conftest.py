@@ -10,10 +10,14 @@ from app.main import app
 
 
 @pytest.fixture(autouse=True)
-def _high_rate_limit(monkeypatch):
-    """Disable rate limiting for all tests unless explicitly overridden."""
+def _test_defaults(monkeypatch):
+    """Disable rate limiting and webhook auth for all tests.
+
+    Individual tests can override via monkeypatch when testing these features.
+    """
     monkeypatch.setattr(config, "RATE_LIMIT_RPM", 100_000)
     monkeypatch.setattr(config, "RATE_LIMIT_OPTIMIZE_RPM", 100_000)
+    monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", "")
 
 
 @pytest.fixture()

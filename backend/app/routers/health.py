@@ -36,7 +36,9 @@ async def _probe_mcp() -> bool:
     """
     try:
         async with httpx.AsyncClient(timeout=1.5) as client:
-            resp = await client.get(f"http://localhost:{config.MCP_PORT}/health")
+            resp = await client.get(
+                f"http://{config.MCP_HOST}:{config.MCP_PORT}/health"
+            )
             if resp.status_code == 200:
                 data = resp.json()
                 return data.get("status") == "ok"

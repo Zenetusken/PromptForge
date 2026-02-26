@@ -12,6 +12,7 @@ services:
       - FRONTEND_URL=http://localhost:5199
       - AUTH_TOKEN=${AUTH_TOKEN:-}
       - INTERNAL_WEBHOOK_SECRET=${INTERNAL_WEBHOOK_SECRET:-}
+      - MCP_HOST=mcp
       - RATE_LIMIT_RPM=${RATE_LIMIT_RPM:-60}
       - RATE_LIMIT_OPTIMIZE_RPM=${RATE_LIMIT_OPTIMIZE_RPM:-10}
       - LLM_PROVIDER=${LLM_PROVIDER:-}
@@ -96,7 +97,7 @@ services:
       - ALL
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -o /dev/null -s -w '%{http_code}' --max-time 2 http://localhost:8001/sse | grep -q 200"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 5s
       retries: 3
