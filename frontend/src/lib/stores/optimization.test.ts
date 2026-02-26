@@ -232,13 +232,14 @@ describe('OptimizationState', () => {
             }
         });
 
-        it('result triggers toast and history reload', () => {
+        it('result triggers history reload (no duplicate toast — bus handles notification)', () => {
             onEvent({
                 type: 'result',
                 data: { id: 'abc-123', optimized_prompt: 'Better' },
             });
 
-            expect(toastState.show).toHaveBeenCalledWith('Optimization complete!', 'success');
+            // No direct toast — forge:completed bus event triggers NotificationService
+            expect(toastState.show).not.toHaveBeenCalledWith('Optimization complete!', 'success');
             // Reload is debounced by 500ms
             vi.advanceTimersByTime(500);
             expect(historyState.loadHistory).toHaveBeenCalled();
@@ -270,9 +271,10 @@ describe('OptimizationState', () => {
             expect(step!.status).toBe('error');
         });
 
-        it('error shows toast', () => {
+        it('error does not show direct toast (bus handles notification)', () => {
             onEvent({ type: 'error', error: 'Oops' });
-            expect(toastState.show).toHaveBeenCalledWith('Oops', 'error');
+            // No direct toast — forge:failed bus event triggers NotificationService
+            expect(toastState.show).not.toHaveBeenCalledWith('Oops', 'error');
         });
     });
 
@@ -606,12 +608,13 @@ describe('OptimizationState', () => {
             expect(optimizationState.analysisResult).toBeNull();
         });
 
-        it('shows error toast on failure', async () => {
+        it('shows error toast on failure (standalone orchestration)', async () => {
             vi.mocked(orchestrateAnalyze).mockRejectedValue(new Error('Network error'));
 
             await optimizationState.runNodeAnalyze({ prompt: 'test' });
 
             expect(optimizationState.isAnalyzing).toBe(false);
+            // Standalone orchestration calls (no active process) show toast directly
             expect(toastState.show).toHaveBeenCalledWith(expect.any(String), 'error');
         });
     });

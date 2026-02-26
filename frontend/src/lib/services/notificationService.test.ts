@@ -163,6 +163,68 @@ describe('NotificationService', () => {
 			expect(n.title).toContain('score: 8');
 		});
 
+		it('forge:completed builds Open in IDE action from optimizationId', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('forge:completed', 'scheduler', {
+				title: 'My Forge',
+				score: 9,
+				optimizationId: 'abc-123',
+			});
+
+			const n = notificationService.notifications[0];
+			expect(n.actionLabel).toBe('Open in IDE');
+			expect(n.actionCallback).toBeDefined();
+		});
+
+		it('forge:completed omits action when no optimizationId', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('forge:completed', 'scheduler', {
+				title: 'My Forge',
+				score: 9,
+			});
+
+			const n = notificationService.notifications[0];
+			expect(n.actionLabel).toBeUndefined();
+			expect(n.actionCallback).toBeUndefined();
+		});
+
+		it('creates info notification on forge:cancelled', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('forge:cancelled', 'scheduler', {
+				title: 'My Forge',
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			const n = notificationService.notifications[0];
+			expect(n.type).toBe('info');
+			expect(n.source).toBe('forge');
+			expect(n.title).toContain('My Forge');
+			expect(n.title).toContain('cancelled');
+		});
+
+		it('creates success notification on tournament:completed', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('tournament:completed', 'optimization', {
+				results: [
+					{ strategy: 'chain-of-thought', score: 9, id: 'best-1' },
+					{ strategy: 'risen', score: 8, id: 'second-1' },
+				],
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			const n = notificationService.notifications[0];
+			expect(n.type).toBe('success');
+			expect(n.source).toBe('forge');
+			expect(n.title).toContain('Tournament');
+			expect(n.title).toContain('2 results');
+			expect(n.body).toContain('chain-of-thought');
+			expect(n.actionLabel).toBe('Open in IDE');
+		});
+
 		it('creates error notification on forge:failed', () => {
 			notificationService.subscribeToBus();
 
@@ -200,6 +262,162 @@ describe('NotificationService', () => {
 			expect(n.type).toBe('error');
 			expect(n.persistent).toBe(true);
 			expect(n.title).toContain('OpenAI');
+		});
+
+		it('creates success notification on mcp:session_connect', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('mcp:session_connect', 'provider', {});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			const n = notificationService.notifications[0];
+			expect(n.type).toBe('success');
+			expect(n.source).toBe('mcp');
+			expect(n.title).toBe('MCP connected');
+		});
+
+		it('creates persistent error notification on mcp:session_disconnect', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('mcp:session_disconnect', 'provider', {});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			const n = notificationService.notifications[0];
+			expect(n.type).toBe('error');
+			expect(n.source).toBe('mcp');
+			expect(n.title).toBe('MCP disconnected');
+			expect(n.persistent).toBe(true);
+		});
+
+		it('creates success notification on workspace:synced', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('workspace:synced', 'workspaceManager', {
+				project_id: 'proj-123',
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			const n = notificationService.notifications[0];
+			expect(n.type).toBe('success');
+			expect(n.source).toBe('workspace');
+			expect(n.title).toBe('Workspace synced');
+		});
+
+		it('creates persistent error notification on workspace:error', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('workspace:error', 'workspaceManager', {
+				link_id: 'link-123',
+				error: 'GitHub API rate limit exceeded',
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			const n = notificationService.notifications[0];
+			expect(n.type).toBe('error');
+			expect(n.source).toBe('workspace');
+			expect(n.title).toBe('Workspace sync failed');
+			expect(n.body).toBe('GitHub API rate limit exceeded');
+			expect(n.persistent).toBe(true);
+		});
+
+		it('creates notification for MCP delete tool completion', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('mcp:tool_complete', 'mcpActivityFeed', {
+				tool_name: 'delete',
+				result_summary: { id: 'del-abc-123' },
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			const n = notificationService.notifications[0];
+			expect(n.type).toBe('info');
+			expect(n.title).toBe('MCP: Item deleted');
+		});
+
+		it('creates notification for MCP bulk_delete tool completion', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('mcp:tool_complete', 'mcpActivityFeed', {
+				tool_name: 'bulk_delete',
+				result_summary: { total: 3 },
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			expect(notificationService.notifications[0].title).toBe('MCP: Bulk delete complete');
+		});
+
+		it('ignores MCP read-only tool completions', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('mcp:tool_complete', 'mcpActivityFeed', {
+				tool_name: 'list',
+			});
+
+			expect(notificationService.notifications).toHaveLength(0);
+		});
+
+		it('uses human-readable name for MCP add_prompt tool', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('mcp:tool_complete', 'mcpActivityFeed', {
+				tool_name: 'add_prompt',
+				result_summary: { id: 'prompt-123' },
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			expect(notificationService.notifications[0].title).toBe('MCP: Prompt added');
+		});
+
+		it('uses human-readable name for MCP tag tool', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('mcp:tool_complete', 'mcpActivityFeed', {
+				tool_name: 'tag',
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			expect(notificationService.notifications[0].title).toBe('MCP: Tags updated');
+		});
+
+		it('keeps score suffix for MCP pipeline tools with friendly names', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('mcp:tool_complete', 'mcpActivityFeed', {
+				tool_name: 'optimize',
+				result_summary: { id: 'opt-123', overall_score: 8 },
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			// 'optimize' has no friendly name — falls back to generic format
+			expect(notificationService.notifications[0].title).toBe('MCP: optimize complete (score: 8/10)');
+		});
+
+		it('creates notification via notification:show bus event', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('notification:show', 'test-component', {
+				type: 'warning',
+				title: 'Custom Alert',
+				body: 'Something happened',
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			const n = notificationService.notifications[0];
+			expect(n.type).toBe('warning');
+			expect(n.title).toBe('Custom Alert');
+			expect(n.body).toBe('Something happened');
+			expect(n.source).toBe('test-component');
+		});
+
+		it('notification:show defaults to info type when type not provided', () => {
+			notificationService.subscribeToBus();
+
+			systemBus.emit('notification:show', 'source', {
+				title: 'No type specified',
+			});
+
+			expect(notificationService.notifications).toHaveLength(1);
+			expect(notificationService.notifications[0].type).toBe('info');
 		});
 
 		it('unsubscribeFromBus stops receiving events', () => {

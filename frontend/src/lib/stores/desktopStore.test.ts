@@ -32,12 +32,12 @@ describe('DesktopStore', () => {
 	});
 
 	describe('initial state', () => {
-		it('starts with 9 system + 2 folder + 4 file icons', () => {
-			expect(desktopStore.icons).toHaveLength(15);
+		it('starts with 10 system + 2 folder + 4 file icons', () => {
+			expect(desktopStore.icons).toHaveLength(16);
 			const systemIcons = desktopStore.icons.filter((i) => i.type === 'system');
 			const folderIcons = desktopStore.icons.filter((i) => i.type === 'folder');
 			const fileIcons = desktopStore.icons.filter((i) => i.type === 'file');
-			expect(systemIcons).toHaveLength(9);
+			expect(systemIcons).toHaveLength(10);
 			expect(folderIcons).toHaveLength(2);
 			expect(fileIcons).toHaveLength(4);
 		});
@@ -396,7 +396,7 @@ describe('DesktopStore', () => {
 
 	describe('occupiedCells', () => {
 		it('maps all icon positions', () => {
-			expect(desktopStore.occupiedCells.size).toBe(15);
+			expect(desktopStore.occupiedCells.size).toBe(16);
 			expect(desktopStore.occupiedCells.get('0,0')).toBe('sys-forge-ide');
 			expect(desktopStore.occupiedCells.get('0,1')).toBe('sys-projects');
 		});
@@ -440,10 +440,10 @@ describe('DesktopStore', () => {
 		it('restores all default icons', () => {
 			desktopStore.trashIcon('shortcut-code-review');
 			desktopStore.trashIcon('shortcut-marketing-email');
-			expect(desktopStore.icons).toHaveLength(13);
+			expect(desktopStore.icons).toHaveLength(14);
 
 			desktopStore.resetDesktop();
-			expect(desktopStore.icons).toHaveLength(15);
+			expect(desktopStore.icons).toHaveLength(16);
 		});
 
 		it('clears selection and drag state', () => {
@@ -617,7 +617,7 @@ describe('DesktopStore', () => {
 			desktopStore.trashIcon('shortcut-code-review');
 			desktopStore.openContextMenu(100, 200, null);
 			desktopStore.executeContextAction('refresh-desktop');
-			expect(desktopStore.icons).toHaveLength(15);
+			expect(desktopStore.icons).toHaveLength(16);
 		});
 	});
 
@@ -933,11 +933,11 @@ describe('DesktopStore', () => {
 		});
 
 		it('first load (no persistence) produces valid layout', () => {
-			// After resetDesktop (simulates first load), all 15 icons present
-			expect(desktopStore.icons).toHaveLength(15);
+			// After resetDesktop (simulates first load), all 16 icons present
+			expect(desktopStore.icons).toHaveLength(16);
 			const positions = desktopStore.icons.map((i) => `${i.position.col},${i.position.row}`);
 			// All unique
-			expect(new Set(positions).size).toBe(15);
+			expect(new Set(positions).size).toBe(16);
 			// All in bounds
 			for (const icon of desktopStore.icons) {
 				expect(icon.position.col).toBeLessThanOrEqual(getMaxCol());

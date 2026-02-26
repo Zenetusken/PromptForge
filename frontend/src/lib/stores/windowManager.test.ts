@@ -246,8 +246,8 @@ describe('WindowManagerState', () => {
 			expect(PERSISTENT_WINDOW_IDS.has('history')).toBe(true);
 		});
 
-		it('has exactly 11 entries', () => {
-			expect(PERSISTENT_WINDOW_IDS.size).toBe(11);
+		it('has exactly 12 entries', () => {
+			expect(PERSISTENT_WINDOW_IDS.size).toBe(12);
 		});
 
 		it('does not contain route-driven window IDs', () => {
