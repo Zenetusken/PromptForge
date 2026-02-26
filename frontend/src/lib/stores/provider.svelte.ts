@@ -45,7 +45,7 @@ class ProviderState {
 	private _nextValidationId = 0;
 
 	private intervalId: ReturnType<typeof setInterval> | null = null;
-	private _intervalMs = 60_000;
+	private _intervalMs = 120_000;
 	private _visibilityHandler: (() => void) | null = null;
 
 	// Staleness tracking — skip fetches when data is still fresh

@@ -1,11 +1,12 @@
 import { windowManager } from '$lib/stores/windowManager.svelte';
+import { TASKBAR_HEIGHT } from '$lib/stores/snapLayout';
 import { TYPE_SORT_ORDER } from '$lib/utils/fileTypes';
 
 // ── Grid Geometry ──
 export const CELL_WIDTH = 76; // 72px icon + 4px gap
 export const CELL_HEIGHT = 84; // 80px icon + 4px gap
 export const GRID_PADDING = 12;
-export const TASKBAR_HEIGHT = 40;
+export { TASKBAR_HEIGHT };
 export const RECYCLE_BIN_ID = 'sys-recycle-bin';
 
 /**
@@ -169,6 +170,7 @@ const DESKTOP_CONTEXT_ACTIONS: ContextAction[] = [
 	{ id: 'new-project', label: 'New Project', icon: 'folder' },
 	{ id: 'sort-by-name', label: 'Sort by Name', icon: 'layers', separator: true },
 	{ id: 'sort-by-type', label: 'Sort by Type', icon: 'sliders' },
+	{ id: 'display-settings', label: 'Display Settings...', icon: 'monitor', separator: true },
 	{ id: 'refresh-desktop', label: 'Refresh Desktop', icon: 'refresh', separator: true },
 ];
 
@@ -337,7 +339,16 @@ interface PersistedDesktop {
 function loadPersisted(): PersistedDesktop | null {
 	if (typeof window === 'undefined') return null;
 	try {
-		const raw = sessionStorage.getItem(STORAGE_KEY);
+		// Try localStorage first (new location)
+		let raw = localStorage.getItem(STORAGE_KEY);
+		if (!raw) {
+			// Migrate from sessionStorage (old location)
+			raw = sessionStorage.getItem(STORAGE_KEY);
+			if (raw) {
+				localStorage.setItem(STORAGE_KEY, raw);
+				sessionStorage.removeItem(STORAGE_KEY);
+			}
+		}
 		if (!raw) return null;
 		return JSON.parse(raw) as PersistedDesktop;
 	} catch {
@@ -651,6 +662,10 @@ class DesktopStoreState {
 			}
 			case 'sort-by-type': {
 				this.sortIcons('type');
+				break;
+			}
+			case 'display-settings': {
+				windowManager.openDisplaySettings();
 				break;
 			}
 			case 'refresh-desktop': {
@@ -983,7 +998,7 @@ class DesktopStoreState {
 				recycleBin: this.recycleBin.map((item) => ({ ...item })),
 				customLabels,
 			};
-			sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 		} catch {
 			// ignore
 		}

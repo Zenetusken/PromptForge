@@ -1,4 +1,4 @@
-import { fetchOptimize, fetchRetry, fetchOptimization, cancelOptimization, orchestrateAnalyze, orchestrateStrategy, orchestrateOptimize, orchestrateValidate, type AnalyzeRequest, type StrategyRequest, type OptimizeGenerateRequest, type ValidateRequest, type PipelineEvent, type HistoryItem, type OptimizeMetadata, type LLMHeaders } from '$lib/api/client';
+import { fetchOptimize, fetchRetry, fetchOptimization, cancelOptimization, orchestrateAnalyze, orchestrateStrategy, orchestrateOptimize, orchestrateValidate, type AnalyzeRequest, type StrategyRequest, type OptimizeGenerateRequest, type ValidateRequest, type PipelineEvent, type HistoryItem, type OptimizeMetadata, type LLMHeaders, type CodebaseContext } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
 import { projectsState } from '$lib/stores/projects.svelte';
 import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
@@ -102,6 +102,7 @@ export interface OptimizationResultState {
 	strategy_confidence: number;
 	secondary_frameworks: string[];
 	created_at: string;
+	codebase_context_snapshot: CodebaseContext | null;
 }
 
 /** Translate raw error messages to user-friendly text. */
@@ -174,6 +175,7 @@ export function mapToResultState(
 		strategy_confidence: safeNumber(source.strategy_confidence),
 		secondary_frameworks: safeArray(source.secondary_frameworks),
 		created_at: safeString(source.created_at),
+		codebase_context_snapshot: (source.codebase_context_snapshot as CodebaseContext) ?? null,
 	};
 }
 

@@ -126,13 +126,16 @@ class MCPActivityFeed {
 	private _snapshotPhase = true;
 	private _snapshotTimer: ReturnType<typeof setTimeout> | null = null;
 	private _lastEventId: string | null = null;
+	private _connecting = false;
 
 	/**
-	 * Start the SSE connection. Returns a cleanup function.
+	 * Start the SSE connection. Safe to call multiple times — guards
+	 * against concurrent connect attempts from rapid $effect re-runs.
 	 */
-	connect(): () => void {
-		this._startStream();
-		return () => this.disconnect();
+	connect(): void {
+		if (this._connecting || this.connected) return;
+		this._connecting = true;
+		this._startStream().finally(() => { this._connecting = false; });
 	}
 
 	/**
@@ -283,8 +286,9 @@ class MCPActivityFeed {
 			this._lastEventId = event.id;
 		}
 
-		// Add to events list (newest first)
-		this.events = [event, ...this.events].slice(0, MAX_EVENTS);
+		// Add to events list (newest first) — mutate in place to avoid GC churn
+		this.events.unshift(event);
+		if (this.events.length > MAX_EVENTS) this.events.length = MAX_EVENTS;
 		this.totalEventsReceived++;
 
 		// Update active calls

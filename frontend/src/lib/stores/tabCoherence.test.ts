@@ -89,6 +89,7 @@ function makeResult(id: string): OptimizationResultState {
 		strategy_confidence: 0,
 		secondary_frameworks: [],
 		created_at: '',
+		codebase_context_snapshot: null,
 	};
 }
 

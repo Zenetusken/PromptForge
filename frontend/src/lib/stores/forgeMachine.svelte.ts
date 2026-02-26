@@ -20,7 +20,15 @@ function clamp(value: number, min: number, max: number): number {
 function loadPersistedWidth(): number {
 	if (typeof window === 'undefined') return MIN_WIDTH;
 	try {
-		const stored = sessionStorage.getItem(WIDTH_STORAGE_KEY);
+		let stored = localStorage.getItem(WIDTH_STORAGE_KEY);
+		if (!stored) {
+			// Migrate from sessionStorage (old location)
+			stored = sessionStorage.getItem(WIDTH_STORAGE_KEY);
+			if (stored) {
+				localStorage.setItem(WIDTH_STORAGE_KEY, stored);
+				sessionStorage.removeItem(WIDTH_STORAGE_KEY);
+			}
+		}
 		if (stored) {
 			const parsed = parseInt(stored, 10);
 			if (!isNaN(parsed)) return clamp(parsed, MIN_WIDTH, MAX_WIDTH);
@@ -154,7 +162,7 @@ class ForgeMachineState {
 	private _persistWidth() {
 		if (typeof window === 'undefined') return;
 		try {
-			sessionStorage.setItem(WIDTH_STORAGE_KEY, String(this.panelWidth));
+			localStorage.setItem(WIDTH_STORAGE_KEY, String(this.panelWidth));
 		} catch {
 			// ignore
 		}

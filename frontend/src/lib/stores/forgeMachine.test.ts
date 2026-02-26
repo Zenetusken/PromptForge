@@ -12,6 +12,18 @@ const mockSessionStorage = {
 };
 Object.defineProperty(globalThis, 'sessionStorage', { value: mockSessionStorage, writable: true });
 
+// Mock localStorage (panel width now persists here)
+const localMap = new Map<string, string>();
+const mockLocalStorage = {
+	getItem: (key: string) => localMap.get(key) ?? null,
+	setItem: (key: string, value: string) => localMap.set(key, value),
+	removeItem: (key: string) => localMap.delete(key),
+	clear: () => localMap.clear(),
+	get length() { return localMap.size; },
+	key: (i: number) => [...localMap.keys()][i] ?? null,
+};
+Object.defineProperty(globalThis, 'localStorage', { value: mockLocalStorage, writable: true });
+
 // Mock crypto.randomUUID
 let uuidCounter = 0;
 if (!globalThis.crypto?.randomUUID) {
@@ -181,9 +193,9 @@ describe('ForgeMachineState', () => {
 			expect(forgeMachine.panelWidth).toBe(500);
 		});
 
-		it('persists width to sessionStorage', () => {
+		it('persists width to localStorage', () => {
 			forgeMachine.setWidth(400);
-			expect(storageMap.get('pf_forge_panel_width')).toBe('400');
+			expect(localMap.get('pf_forge_panel_width')).toBe('400');
 		});
 	});
 

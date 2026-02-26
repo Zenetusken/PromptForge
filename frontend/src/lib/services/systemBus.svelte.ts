@@ -33,7 +33,11 @@ export type BusEventType =
 	| 'workspace:synced'
 	| 'workspace:error'
 	| 'workspace:connected'
-	| 'workspace:disconnected';
+	| 'workspace:disconnected'
+	| 'snap:created'
+	| 'snap:dissolved'
+	| 'snap:window_added'
+	| 'snap:window_removed';
 
 export interface BusEvent {
 	type: BusEventType;

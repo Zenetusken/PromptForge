@@ -9,6 +9,15 @@ const mockStorage = {
 };
 Object.defineProperty(globalThis, 'sessionStorage', { value: mockStorage, writable: true });
 
+// Mock localStorage (desktop store now persists here)
+const localStore = new Map<string, string>();
+const mockLocalStorage = {
+	getItem: (key: string) => localStore.get(key) ?? null,
+	setItem: (key: string, value: string) => localStore.set(key, value),
+	removeItem: (key: string) => localStore.delete(key),
+};
+Object.defineProperty(globalThis, 'localStorage', { value: mockLocalStorage, writable: true });
+
 // Mock crypto.randomUUID
 let uuidCounter = 0;
 Object.defineProperty(globalThis, 'crypto', {
@@ -24,6 +33,7 @@ import { windowManager } from './windowManager.svelte';
 describe('DesktopStore', () => {
 	beforeEach(() => {
 		storage.clear();
+		localStore.clear();
 		uuidCounter = 0;
 		desktopStore.resetDesktop();
 		desktopStore.recycleBin = [];
@@ -410,7 +420,7 @@ describe('DesktopStore', () => {
 			desktopStore.dragState!.ghostRow = 0;
 			desktopStore.endDrag();
 
-			const saved = storage.get('pf_desktop');
+			const saved = localStore.get('pf_desktop');
 			expect(saved).toBeTruthy();
 			const parsed = JSON.parse(saved!);
 			expect(parsed.iconPositions['sys-forge-ide']).toEqual({ col: 3, row: 0 });
@@ -418,19 +428,19 @@ describe('DesktopStore', () => {
 
 		it('persists removed non-system icons', () => {
 			desktopStore.trashIcon('shortcut-code-review');
-			const saved = JSON.parse(storage.get('pf_desktop')!);
+			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.removedShortcuts).toContain('shortcut-code-review');
 		});
 
 		it('persists removed folder icons', () => {
 			desktopStore.trashIcon('sys-projects');
-			const saved = JSON.parse(storage.get('pf_desktop')!);
+			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.removedShortcuts).toContain('sys-projects');
 		});
 
 		it('persists recycle bin items', () => {
 			desktopStore.trashIcon('shortcut-code-review');
-			const saved = JSON.parse(storage.get('pf_desktop')!);
+			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.recycleBin).toHaveLength(1);
 			expect(saved.recycleBin[0].name).toBe('Code Review.md');
 		});
@@ -495,15 +505,15 @@ describe('DesktopStore', () => {
 			expect(() => desktopStore.renameIcon('nonexistent', 'Test')).not.toThrow();
 		});
 
-		it('persists custom label to sessionStorage', () => {
+		it('persists custom label to localStorage', () => {
 			desktopStore.renameIcon('shortcut-code-review', 'My Reviews');
-			const saved = JSON.parse(storage.get('pf_desktop')!);
+			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.customLabels['shortcut-code-review']).toBe('My Reviews');
 		});
 
 		it('does not persist unchanged labels', () => {
 			desktopStore.renameIcon('shortcut-code-review', 'Code Review.md');
-			const saved = JSON.parse(storage.get('pf_desktop')!);
+			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.customLabels['shortcut-code-review']).toBeUndefined();
 		});
 
@@ -521,7 +531,7 @@ describe('DesktopStore', () => {
 			desktopStore.renameIcon('shortcut-code-review', 'Custom Name');
 			// Simulate reload by calling resetDesktop then manually re-init
 			// We verify the persisted data contains the custom label
-			const saved = JSON.parse(storage.get('pf_desktop')!);
+			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.customLabels['shortcut-code-review']).toBe('Custom Name');
 		});
 
@@ -531,7 +541,7 @@ describe('DesktopStore', () => {
 			const icon = desktopStore.icons.find((i) => i.id === 'shortcut-code-review');
 			expect(icon?.label).toBe('Code Review.md');
 			// Verify persistence too
-			const saved = JSON.parse(storage.get('pf_desktop')!);
+			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.customLabels).toEqual({});
 		});
 	});
@@ -779,15 +789,15 @@ describe('DesktopStore', () => {
 
 			desktopStore.reclampPositions();
 
-			const saved = JSON.parse(storage.get('pf_desktop')!);
+			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.iconPositions['sys-forge-ide'].col).toBeLessThanOrEqual(getMaxCol());
 		});
 
 		it('does not persist when nothing changes', () => {
 			// Clear storage and reclamp (all icons in bounds)
-			storage.clear();
+			localStore.clear();
 			desktopStore.reclampPositions();
-			expect(mockStorage.getItem('pf_desktop')).toBeNull();
+			expect(mockLocalStorage.getItem('pf_desktop')).toBeNull();
 		});
 	});
 

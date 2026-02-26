@@ -43,6 +43,7 @@ function makeResult(overrides: Partial<OptimizationResultState> = {}): Optimizat
 		strategy_confidence: 0.9,
 		secondary_frameworks: [],
 		created_at: '',
+		codebase_context_snapshot: null,
 		...overrides,
 	};
 }
