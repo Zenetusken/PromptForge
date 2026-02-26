@@ -8,19 +8,12 @@
 	import StartMenu from "$lib/components/StartMenu.svelte";
 	import Toast from "$lib/components/Toast.svelte";
 	import ForgeIDEWorkspace from "$lib/components/ForgeIDEWorkspace.svelte";
-	import RecycleBinWindow from "$lib/components/RecycleBinWindow.svelte";
 	import ProjectsWindow from "$lib/components/ProjectsWindow.svelte";
 	import HistoryWindow from "$lib/components/HistoryWindow.svelte";
-	import ControlPanelWindow from "$lib/components/ControlPanelWindow.svelte";
-	import TaskManagerWindow from "$lib/components/TaskManagerWindow.svelte";
-	import BatchProcessorWindow from "$lib/components/BatchProcessorWindow.svelte";
-	import StrategyWorkshopWindow from "$lib/components/StrategyWorkshopWindow.svelte";
-	import TemplateLibraryWindow from "$lib/components/TemplateLibraryWindow.svelte";
-	import TerminalWindow from "$lib/components/TerminalWindow.svelte";
-	import NetworkMonitorWindow from "$lib/components/NetworkMonitorWindow.svelte";
-	import WorkspaceWindow from "$lib/components/WorkspaceWindow.svelte";
 	import CommandPaletteUI from "$lib/components/CommandPaletteUI.svelte";
 	import ConfirmModal from "$lib/components/ConfirmModal.svelte";
+	import SnapPreview from "$lib/components/SnapPreview.svelte";
+	import SnapAssist from "$lib/components/SnapAssist.svelte";
 	import { desktopStore } from "$lib/stores/desktopStore.svelte";
 	import { historyState } from "$lib/stores/history.svelte";
 	import { optimizationState } from "$lib/stores/optimization.svelte";
@@ -72,8 +65,7 @@
 		// --- OS Bootstrap: System Bus subscriptions ---
 		notificationService.subscribeToBus();
 
-		// --- OS Bootstrap: MCP Activity Feed ---
-		const cleanupMCPFeed = mcpActivityFeed.connect();
+		// MCP Activity Feed connection is managed reactively via $effect below.
 
 		// Reload history/stats when a forge completes (via bus, not direct import chains)
 		const unsubForgeComplete = systemBus.on('forge:completed', () => {
@@ -230,12 +222,86 @@
 				execute: () => windowManager.openNetworkMonitor(),
 			},
 			{
+				id: 'window-display-settings',
+				label: 'Display Settings',
+				category: 'settings',
+				icon: 'monitor',
+				execute: () => windowManager.openDisplaySettings(),
+			},
+			{
 				id: 'command-palette-toggle',
 				label: 'Command Palette',
 				category: 'navigation',
 				shortcut: 'Ctrl+K',
 				icon: 'search',
 				execute: () => commandPalette.toggle(),
+			},
+			// ── Snap Layout Commands ──
+			{
+				id: 'snap-left',
+				label: 'Snap Window Left',
+				category: 'window',
+				shortcut: 'Alt+←',
+				icon: 'chevrons-left',
+				execute: () => windowManager.snapActiveWindow('left'),
+				available: () => !!windowManager.activeWindowId,
+			},
+			{
+				id: 'snap-right',
+				label: 'Snap Window Right',
+				category: 'window',
+				shortcut: 'Alt+→',
+				icon: 'chevrons-right',
+				execute: () => windowManager.snapActiveWindow('right'),
+				available: () => !!windowManager.activeWindowId,
+			},
+			{
+				id: 'snap-layouts',
+				label: 'Snap Layouts...',
+				category: 'window',
+				icon: 'maximize-2',
+				execute: () => {
+					if (windowManager.activeWindowId) {
+						windowManager.openLayoutPicker(windowManager.activeWindowId);
+					}
+				},
+				available: () => !!windowManager.activeWindowId,
+			},
+			{
+				id: 'unsnap-window',
+				label: 'Unsnap Window',
+				category: 'window',
+				icon: 'lock',
+				execute: () => {
+					if (windowManager.activeWindowId) {
+						windowManager.unsnapWindow(windowManager.activeWindowId);
+					}
+				},
+				available: () => !!windowManager.activeWindowId && windowManager.isWindowLocked(windowManager.activeWindowId!),
+			},
+			{
+				id: 'unsnap-all',
+				label: 'Unsnap All Windows',
+				category: 'window',
+				icon: 'x-circle',
+				execute: () => windowManager.unsnapAll(),
+				available: () => windowManager.snapGroups.length > 0,
+			},
+			{
+				id: 'tile-grid',
+				label: 'Tile All (Grid)',
+				category: 'window',
+				icon: 'layers',
+				execute: () => windowManager.tileWindows('grid'),
+				available: () => windowManager.windows.filter(w => w.state !== 'minimized').length > 0,
+			},
+			{
+				id: 'tile-columns',
+				label: 'Tile All (Columns)',
+				category: 'window',
+				icon: 'sliders',
+				execute: () => windowManager.tileWindows('left-right'),
+				available: () => windowManager.windows.filter(w => w.state !== 'minimized').length > 0,
 			},
 		]);
 
@@ -245,8 +311,18 @@
 			if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
 				return;
 
-			// Escape — close start menu → restore minimized IDE → close IDE (compose only)
+			// Escape — dismiss snap assist/picker → close start menu → restore minimized IDE → close IDE (compose only)
 			if (e.key === "Escape") {
+				if (windowManager.snapAssistActive) {
+					e.preventDefault();
+					windowManager.dismissSnapAssist();
+					return;
+				}
+				if (windowManager.layoutPickerWindowId) {
+					e.preventDefault();
+					windowManager.closeLayoutPicker();
+					return;
+				}
 				if (windowManager.startMenuOpen) {
 					e.preventDefault();
 					windowManager.closeStartMenu();
@@ -336,6 +412,65 @@
 				return;
 			}
 
+			// Alt+Arrow — snap active window
+			if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+				if (e.key === "ArrowLeft") {
+					e.preventDefault();
+					windowManager.snapActiveWindow('left');
+					return;
+				}
+				if (e.key === "ArrowRight") {
+					e.preventDefault();
+					windowManager.snapActiveWindow('right');
+					return;
+				}
+				if (e.key === "ArrowUp") {
+					e.preventDefault();
+					windowManager.snapActiveWindow('top');
+					return;
+				}
+				if (e.key === "ArrowDown") {
+					e.preventDefault();
+					if (windowManager.activeWindowId) {
+						const win = windowManager.getWindow(windowManager.activeWindowId);
+						if (win?.state === 'maximized') {
+							windowManager.restoreWindow(windowManager.activeWindowId);
+						} else {
+							windowManager.minimizeWindow(windowManager.activeWindowId);
+						}
+					}
+					return;
+				}
+			}
+
+			// Ctrl+Alt+Arrow — snap to quadrants
+			if (e.altKey && e.ctrlKey && !e.metaKey && !e.shiftKey) {
+				if (e.key === "ArrowLeft") {
+					e.preventDefault();
+					windowManager.snapActiveWindow('top-left');
+					return;
+				}
+				if (e.key === "ArrowRight") {
+					e.preventDefault();
+					windowManager.snapActiveWindow('top-right');
+					return;
+				}
+			}
+
+			// Ctrl+Alt+Shift+Arrow — snap to bottom quadrants
+			if (e.altKey && e.ctrlKey && e.shiftKey && !e.metaKey) {
+				if (e.key === "ArrowLeft") {
+					e.preventDefault();
+					windowManager.snapActiveWindow('bottom-left');
+					return;
+				}
+				if (e.key === "ArrowRight") {
+					e.preventDefault();
+					windowManager.snapActiveWindow('bottom-right');
+					return;
+				}
+			}
+
 			// `/` — open/restore IDE and focus textarea
 			if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
 				e.preventDefault();
@@ -351,7 +486,7 @@
 			unsubMCPComplete();
 			cleanupScheduler();
 			cleanupOptimization();
-			cleanupMCPFeed();
+			mcpActivityFeed.disconnect();
 			clearTimeout(mcpReloadTimer);
 			document.removeEventListener("keydown", handleGlobalKeydown);
 		};
@@ -442,6 +577,19 @@
 		}
 	});
 
+	// Lazy MCP Activity Feed — connect only when NetworkMonitor is open or MCP is connected
+	$effect(() => {
+		const networkMonitorOpen = !!windowManager.getWindow('network-monitor');
+		const mcpConnected = !!providerState.health?.mcp_connected;
+		const shouldConnect = networkMonitorOpen || mcpConnected;
+
+		if (shouldConnect && !mcpActivityFeed.connected) {
+			mcpActivityFeed.connect();
+		} else if (!shouldConnect && mcpActivityFeed.connected) {
+			mcpActivityFeed.disconnect();
+		}
+	});
+
 	// Breadcrumbs for recycle-bin (Projects/History manage their own breadcrumbs)
 	$effect(() => {
 		if (windowManager.getWindow('recycle-bin')) {
@@ -464,6 +612,9 @@
 
 			<!-- Window layer -->
 			<div class="absolute inset-0 pointer-events-none" style="z-index: 10">
+				<!-- Snap Preview (z-index: 9, below windows) -->
+				<SnapPreview />
+
 				<!-- IDE Window -->
 				{#if windowManager.ideVisible}
 					<DesktopWindow
@@ -480,18 +631,24 @@
 					</DesktopWindow>
 				{/if}
 
-				<!-- Recycle Bin Window -->
+				<!-- Recycle Bin Window (dynamic import) -->
 				{#if windowManager.getWindow('recycle-bin')}
-					<DesktopWindow
-						windowId="recycle-bin"
-						title="Recycle Bin ({desktopStore.binItemCount})"
-						icon="trash-2"
-					>
-						<RecycleBinWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/RecycleBinWindow.svelte") then mod}
+						<DesktopWindow
+							windowId="recycle-bin"
+							title="Recycle Bin ({desktopStore.binItemCount})"
+							icon="trash-2"
+						>
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="recycle-bin" title="Recycle Bin" icon="trash-2">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
 
-				<!-- Projects Window -->
+				<!-- Projects Window (static — frequently used) -->
 				{#if windowManager.getWindow('projects')}
 					<DesktopWindow
 						windowId="projects"
@@ -502,7 +659,7 @@
 					</DesktopWindow>
 				{/if}
 
-				<!-- History Window -->
+				<!-- History Window (static — frequently used) -->
 				{#if windowManager.getWindow('history')}
 					<DesktopWindow
 						windowId="history"
@@ -513,93 +670,125 @@
 					</DesktopWindow>
 				{/if}
 
-				<!-- Control Panel Window -->
+				<!-- Control Panel Window (dynamic import) -->
 				{#if windowManager.getWindow('control-panel')}
-					<DesktopWindow
-						windowId="control-panel"
-						title="Control Panel"
-						icon="settings"
-					>
-						<ControlPanelWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/ControlPanelWindow.svelte") then mod}
+						<DesktopWindow windowId="control-panel" title="Control Panel" icon="settings">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="control-panel" title="Control Panel" icon="settings">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
 
-				<!-- Task Manager Window -->
+				<!-- Task Manager Window (dynamic import) -->
 				{#if windowManager.getWindow('task-manager')}
-					<DesktopWindow
-						windowId="task-manager"
-						title="Task Manager"
-						icon="cpu"
-					>
-						<TaskManagerWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/TaskManagerWindow.svelte") then mod}
+						<DesktopWindow windowId="task-manager" title="Task Manager" icon="cpu">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="task-manager" title="Task Manager" icon="cpu">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
 
-				<!-- Batch Processor Window -->
+				<!-- Batch Processor Window (dynamic import) -->
 				{#if windowManager.getWindow('batch-processor')}
-					<DesktopWindow
-						windowId="batch-processor"
-						title="Batch Processor"
-						icon="layers"
-					>
-						<BatchProcessorWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/BatchProcessorWindow.svelte") then mod}
+						<DesktopWindow windowId="batch-processor" title="Batch Processor" icon="layers">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="batch-processor" title="Batch Processor" icon="layers">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
 
-				<!-- Strategy Workshop Window -->
+				<!-- Strategy Workshop Window (dynamic import) -->
 				{#if windowManager.getWindow('strategy-workshop')}
-					<DesktopWindow
-						windowId="strategy-workshop"
-						title="Strategy Workshop"
-						icon="bar-chart"
-					>
-						<StrategyWorkshopWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/StrategyWorkshopWindow.svelte") then mod}
+						<DesktopWindow windowId="strategy-workshop" title="Strategy Workshop" icon="bar-chart">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="strategy-workshop" title="Strategy Workshop" icon="bar-chart">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
 
-				<!-- Template Library Window -->
+				<!-- Template Library Window (dynamic import) -->
 				{#if windowManager.getWindow('template-library')}
-					<DesktopWindow
-						windowId="template-library"
-						title="Template Library"
-						icon="file-text"
-					>
-						<TemplateLibraryWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/TemplateLibraryWindow.svelte") then mod}
+						<DesktopWindow windowId="template-library" title="Template Library" icon="file-text">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="template-library" title="Template Library" icon="file-text">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
 
-				<!-- Terminal Window -->
+				<!-- Terminal Window (dynamic import) -->
 				{#if windowManager.getWindow('terminal')}
-					<DesktopWindow
-						windowId="terminal"
-						title="Terminal"
-						icon="terminal"
-					>
-						<TerminalWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/TerminalWindow.svelte") then mod}
+						<DesktopWindow windowId="terminal" title="Terminal" icon="terminal">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="terminal" title="Terminal" icon="terminal">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
 
-				<!-- Network Monitor Window -->
+				<!-- Network Monitor Window (dynamic import) -->
 				{#if windowManager.getWindow('network-monitor')}
-					<DesktopWindow
-						windowId="network-monitor"
-						title="Network Monitor"
-						icon="activity"
-					>
-						<NetworkMonitorWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/NetworkMonitorWindow.svelte") then mod}
+						<DesktopWindow windowId="network-monitor" title="Network Monitor" icon="activity">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="network-monitor" title="Network Monitor" icon="activity">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
 
-				<!-- Workspace Hub Window -->
+				<!-- Workspace Hub Window (dynamic import) -->
 				{#if windowManager.getWindow('workspace-manager')}
-					<DesktopWindow
-						windowId="workspace-manager"
-						title="Workspace Hub"
-						icon="git-branch"
-					>
-						<WorkspaceWindow />
-					</DesktopWindow>
+					{#await import("$lib/components/WorkspaceWindow.svelte") then mod}
+						<DesktopWindow windowId="workspace-manager" title="Workspace Hub" icon="git-branch">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="workspace-manager" title="Workspace Hub" icon="git-branch">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
 				{/if}
+
+				<!-- Display Settings Window (dynamic import) -->
+				{#if windowManager.getWindow('display-settings')}
+					{#await import("$lib/components/DisplaySettingsWindow.svelte") then mod}
+						<DesktopWindow windowId="display-settings" title="Display Settings" icon="monitor">
+							<mod.default />
+						</DesktopWindow>
+					{:catch}
+						<DesktopWindow windowId="display-settings" title="Display Settings" icon="monitor">
+							<p class="p-4 text-text-secondary">Failed to load component.</p>
+						</DesktopWindow>
+					{/await}
+				{/if}
+
+				<!-- Snap Assist Overlay (z-index: 15, above windows) -->
+				<SnapAssist />
 
 				</div>
 
