@@ -189,6 +189,7 @@ Environment defaults (set in `backend/app/config.py`, overridable via `.env`):
 - `HOST` — default `0.0.0.0`
 - `MCP_PORT` — default `8001` (managed by `init.sh`, not config.py)
 - `MCP_HOST` — default `127.0.0.1` (localhost-only binding for MCP server)
+- `BACKEND_HOST` — default `127.0.0.1` (used by MCP server to reach backend webhook; set to `backend` in Docker)
 - `MCP_AUTH_TOKEN` — bearer token for MCP server authentication (empty = disabled)
 - `INTERNAL_WEBHOOK_SECRET` — shared secret for MCP→backend webhook (auto-generated if empty)
 - `DATABASE_URL` — default `sqlite+aiosqlite:///<project>/data/promptforge.db`

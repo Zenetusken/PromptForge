@@ -38,6 +38,9 @@ RATE_LIMIT_OPTIMIZE_RPM = int(os.getenv("RATE_LIMIT_OPTIMIZE_RPM", "10"))
 # MCP Server
 MCP_HOST = os.getenv("MCP_HOST", "127.0.0.1")
 
+# Backend host (used by MCP server to reach the backend webhook in Docker)
+BACKEND_HOST = os.getenv("BACKEND_HOST", "127.0.0.1")
+
 # LLM Provider
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")  # auto-detect when empty
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

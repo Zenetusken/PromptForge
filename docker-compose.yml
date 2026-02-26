@@ -8,8 +8,8 @@ services:
     volumes:
       - promptforge-data:/app/data
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./data/promptforge.db
-      - FRONTEND_URL=http://localhost:5199
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/promptforge.db
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5199}
       - AUTH_TOKEN=${AUTH_TOKEN:-}
       - INTERNAL_WEBHOOK_SECRET=${INTERNAL_WEBHOOK_SECRET:-}
       - MCP_HOST=mcp
@@ -22,6 +22,10 @@ services:
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-4-6}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-pro}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI:-http://localhost:8000/api/github/callback}
     read_only: true
     tmpfs:
       - /tmp
@@ -35,7 +39,16 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
 
   frontend:
     build:
@@ -43,7 +56,10 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=http://localhost:8000
-        - VITE_AUTH_TOKEN=${AUTH_TOKEN:-}
+        # Auth token is NOT baked into the image — it would be visible in the
+        # JS bundle and Docker image history. For authenticated Docker deploys,
+        # use a reverse proxy that injects the token or configure auth at the
+        # network level.
     ports:
       - "5199:5199"
     environment:
@@ -65,6 +81,15 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   mcp:
     build:
@@ -75,10 +100,12 @@ services:
     # (e.g., Claude Code on a remote machine):
     # ports:
     #   - "8001:8001"
+    expose:
+      - "8001"
     volumes:
       - promptforge-data:/app/data
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./data/promptforge.db
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/promptforge.db
       - LLM_PROVIDER=${LLM_PROVIDER:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -88,6 +115,10 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-pro}
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
       - INTERNAL_WEBHOOK_SECRET=${INTERNAL_WEBHOOK_SECRET:-}
+      - BACKEND_HOST=backend
+    depends_on:
+      backend:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
@@ -101,7 +132,16 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     command: ["python", "-m", "uvicorn", "app.mcp_server:app", "--host", "0.0.0.0", "--port", "8001"]
 
 volumes:

@@ -117,7 +117,7 @@ async def _emit_mcp_event(
         if _cfg.INTERNAL_WEBHOOK_SECRET:
             headers["X-Webhook-Secret"] = _cfg.INTERNAL_WEBHOOK_SECRET
         await client.post(
-            f"http://127.0.0.1:{_cfg.PORT}/internal/mcp-event",
+            f"http://{_cfg.BACKEND_HOST}:{_cfg.PORT}/internal/mcp-event",
             json=payload,
             headers=headers,
         )

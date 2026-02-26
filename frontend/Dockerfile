@@ -5,7 +5,6 @@ WORKDIR /app
 
 # Build args for Vite (embedded at build time via import.meta.env)
 ARG VITE_API_URL
-ARG VITE_AUTH_TOKEN
 
 # Copy dependency files first for layer caching
 COPY package.json package-lock.json* ./
