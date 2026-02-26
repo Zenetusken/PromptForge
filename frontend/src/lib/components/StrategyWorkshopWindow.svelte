@@ -2,7 +2,7 @@
 	import { statsState } from '$lib/stores/stats.svelte';
 	import { normalizeScore } from '$lib/utils/format';
 	import { STRATEGY_LABELS, STRATEGY_COLOR_META, type StrategyName } from '$lib/utils/strategies';
-	import Icon from './Icon.svelte';
+	import { WindowTabStrip, EmptyState } from './ui';
 
 	const label = (s: string) => (STRATEGY_LABELS as Record<string, string>)[s] ?? s;
 
@@ -53,37 +53,19 @@
 </script>
 
 <div class="flex h-full flex-col bg-bg-primary text-text-primary font-mono">
-	<!-- Tab strip -->
-	<div class="flex border-b border-neon-cyan/10">
-		<button
-			class="px-3 py-2 text-[11px] transition-colors
-				{activeView === 'heatmap' ? 'border-b border-neon-cyan text-neon-cyan bg-neon-cyan/5' : 'text-text-dim hover:text-text-secondary'}"
-			onclick={() => activeView = 'heatmap'}
-		>
-			Score Heatmap
-		</button>
-		<button
-			class="px-3 py-2 text-[11px] transition-colors
-				{activeView === 'winrates' ? 'border-b border-neon-cyan text-neon-cyan bg-neon-cyan/5' : 'text-text-dim hover:text-text-secondary'}"
-			onclick={() => activeView = 'winrates'}
-		>
-			Win Rates
-		</button>
-		<button
-			class="px-3 py-2 text-[11px] transition-colors
-				{activeView === 'combos' ? 'border-b border-neon-cyan text-neon-cyan bg-neon-cyan/5' : 'text-text-dim hover:text-text-secondary'}"
-			onclick={() => activeView = 'combos'}
-		>
-			Combo Analysis
-		</button>
-	</div>
+	<WindowTabStrip
+		tabs={[
+			{ id: 'heatmap', label: 'Score Heatmap' },
+			{ id: 'winrates', label: 'Win Rates' },
+			{ id: 'combos', label: 'Combo Analysis' },
+		]}
+		activeTab={activeView}
+		onTabChange={(id) => activeView = id as typeof activeView}
+	/>
 
-	<div class="flex-1 overflow-y-auto p-4">
+	<div class="flex-1 overflow-y-auto p-3">
 		{#if !stats}
-			<div class="flex flex-col items-center justify-center h-full gap-2 text-text-dim">
-				<Icon name="layers" size={24} class="opacity-30" />
-				<span class="text-xs">No analytics data yet. Run some forges first.</span>
-			</div>
+			<EmptyState icon="layers" message="No analytics data yet. Run some forges first." />
 		{:else if activeView === 'heatmap'}
 			<!-- Strategy x Task Type score heatmap -->
 			{#if strategies.length === 0 || taskTypes.length === 0}
@@ -125,7 +107,7 @@
 		{:else if activeView === 'winrates'}
 			<!-- Win rates: which strategy wins most for each task type -->
 			<div class="space-y-4">
-				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Strategy Performance</h3>
+				<h3 class="section-heading">Strategy Performance</h3>
 				<div class="space-y-2">
 					{#each strategies as strat}
 						{@const count = stratDist[strat] ?? 0}
@@ -150,7 +132,7 @@
 				</div>
 
 				{#if winRates && Object.keys(winRates).length > 0}
-					<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider pt-4">Best Strategy by Task Type</h3>
+					<h3 class="section-heading pt-4">Best Strategy by Task Type</h3>
 					<div class="space-y-1">
 						{#each Object.entries(winRates) as [taskType, data]}
 							<div class="flex items-center justify-between">
@@ -166,7 +148,7 @@
 			<!-- Primary + secondary strategy combo effectiveness -->
 			{#if comboEffectiveness && Object.keys(comboEffectiveness).length > 0}
 				<div class="space-y-3">
-					<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Strategy Combos</h3>
+					<h3 class="section-heading">Strategy Combos</h3>
 					{#each Object.entries(comboEffectiveness) as [primary, secondaries]}
 						<div class="space-y-1">
 							<span class="text-[11px] text-text-primary">{label(primary)}</span>

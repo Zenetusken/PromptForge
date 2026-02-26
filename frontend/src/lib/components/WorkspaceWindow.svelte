@@ -7,6 +7,7 @@
 	import type { ProjectSummary } from '$lib/api/client';
 	import { fetchProjects } from '$lib/api/client';
 	import Icon from './Icon.svelte';
+	import { WindowTabStrip, StatusDot, InlineProgress } from './ui';
 	import { onMount } from 'svelte';
 
 	let activeTab: 'github' | 'workspaces' | 'inspector' = $state('github');
@@ -71,11 +72,11 @@
 		return `${Math.floor(ms / 86_400_000)}d ago`;
 	}
 
-	function statusDot(ws: { sync_status: string; stale: boolean }): string {
-		if (ws.sync_status === 'error') return 'bg-neon-red';
-		if (ws.sync_status === 'syncing' || ws.sync_status === 'pending') return 'bg-text-dim';
-		if (ws.stale) return 'bg-neon-yellow';
-		return 'bg-neon-green';
+	function statusDotColor(ws: { sync_status: string; stale: boolean }): 'green' | 'yellow' | 'red' | 'cyan' | 'orange' {
+		if (ws.sync_status === 'error') return 'red';
+		if (ws.sync_status === 'syncing' || ws.sync_status === 'pending') return 'cyan';
+		if (ws.stale) return 'yellow';
+		return 'green';
 	}
 
 	function statusLabel(ws: { sync_status: string; stale: boolean }): string {
@@ -239,28 +240,14 @@
 </script>
 
 <div class="flex h-full flex-col bg-bg-primary text-text-primary font-mono">
-	<!-- Tab strip -->
-	<div class="flex border-b border-neon-cyan/10">
-		{#each tabs as tab (tab.id)}
-			<button
-				class="flex items-center gap-1.5 px-3 py-2 text-[11px] transition-colors
-					{activeTab === tab.id
-						? 'border-b border-neon-cyan text-neon-cyan bg-neon-cyan/5'
-						: 'text-text-dim hover:text-text-secondary hover:bg-bg-hover'}"
-				onclick={() => (activeTab = tab.id)}
-			>
-				<Icon name={tab.icon} size={11} />
-				{tab.label}
-			</button>
-		{/each}
-	</div>
+	<WindowTabStrip {tabs} {activeTab} onTabChange={(id) => (activeTab = id as typeof activeTab)} />
 
 	<!-- Content -->
-	<div class="flex-1 overflow-y-auto p-4 space-y-4">
+	<div class="flex-1 overflow-y-auto p-3 space-y-3">
 		{#if activeTab === 'github'}
 			<!-- GitHub Connection Tab -->
 			<div class="space-y-3">
-				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">
+				<h3 class="section-heading">
 					GitHub Connection
 				</h3>
 
@@ -269,7 +256,7 @@
 						<Icon name="alert-triangle" size={10} class="shrink-0" />
 						<span class="flex-1">{githubError}</span>
 						<button
-							class="text-neon-red/60 hover:text-neon-red text-[9px] shrink-0"
+							class="text-neon-red/60 hover:text-neon-red text-[10px] shrink-0"
 							onclick={() => (workspaceManager.githubError = null)}
 						>dismiss</button>
 					</div>
@@ -361,7 +348,7 @@
 							{#each repos as repo (repo.full_name)}
 								{@const linked = workspaces.some((w) => w.repo === repo.full_name)}
 								<div
-									class="flex items-center gap-2 p-2 border border-neon-cyan/5 hover:border-neon-cyan/15 transition-colors
+									class="flex items-center gap-2 p-2 border border-neon-cyan/5 hover:border-neon-cyan/20 transition-colors
 										{linked ? 'bg-neon-green/5 border-neon-green/10' : 'bg-bg-card'}"
 								>
 									<div class="flex-1 min-w-0">
@@ -499,7 +486,7 @@
 									href="https://github.com/settings/applications/new"
 									target="_blank"
 									rel="noopener noreferrer"
-									class="flex items-center justify-center gap-1.5 text-[10px] text-neon-cyan px-2 py-1 border border-neon-cyan/15 hover:border-neon-cyan/30 hover:bg-neon-cyan/5 transition-colors mt-1"
+									class="flex items-center justify-center gap-1.5 text-[10px] text-neon-cyan px-2 py-1 border border-neon-cyan/20 hover:border-neon-cyan/30 hover:bg-neon-cyan/5 transition-colors mt-1"
 								>
 									<Icon name="github" size={10} />
 									Create OAuth App on GitHub
@@ -512,7 +499,7 @@
 								<Icon name="alert-triangle" size={10} class="shrink-0" />
 								<span class="flex-1">{configError}</span>
 								<button
-									class="text-neon-red/60 hover:text-neon-red text-[9px] shrink-0"
+									class="text-neon-red/60 hover:text-neon-red text-[10px] shrink-0"
 									onclick={() => (configError = '')}
 								>dismiss</button>
 							</div>
@@ -578,23 +565,23 @@
 			<!-- Workspaces Tab -->
 			<div class="space-y-3">
 				<div class="flex items-center gap-2">
-					<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider flex-1">
+					<h3 class="section-heading flex-1">
 						Workspace Links
 					</h3>
 					<div class="flex items-center gap-2 text-[10px] text-text-dim">
 						<span class="flex items-center gap-1">
-							<span class="w-1.5 h-1.5 rounded-full bg-neon-green inline-block"></span>
+							<StatusDot color="green" />
 							{workspaceManager.connectedCount}
 						</span>
 						{#if workspaceManager.staleCount > 0}
 							<span class="flex items-center gap-1">
-								<span class="w-1.5 h-1.5 rounded-full bg-neon-yellow inline-block"></span>
+								<StatusDot color="yellow" />
 								{workspaceManager.staleCount}
 							</span>
 						{/if}
 						{#if workspaceManager.errorCount > 0}
 							<span class="flex items-center gap-1">
-								<span class="w-1.5 h-1.5 rounded-full bg-neon-red inline-block"></span>
+								<StatusDot color="red" />
 								{workspaceManager.errorCount}
 							</span>
 						{/if}
@@ -606,7 +593,7 @@
 						<Icon name="alert-triangle" size={10} class="shrink-0" />
 						<span class="flex-1">{workspacesError}</span>
 						<button
-							class="text-neon-cyan/60 hover:text-neon-cyan text-[9px] shrink-0"
+							class="text-neon-cyan/60 hover:text-neon-cyan text-[10px] shrink-0"
 							onclick={() => workspaceManager.loadWorkspaces()}
 						>retry</button>
 					</div>
@@ -627,11 +614,11 @@
 								class="w-full flex items-center gap-2 p-2 text-left border transition-colors cursor-pointer
 									{workspaceManager.selectedId === ws.project_id
 										? 'border-neon-cyan/30 bg-neon-cyan/5'
-										: 'border-neon-cyan/5 bg-bg-card hover:border-neon-cyan/15'}"
+										: 'border-neon-cyan/5 bg-bg-card hover:border-neon-cyan/20'}"
 								onclick={() => (workspaceManager.selectedId = ws.project_id)}
 								onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); workspaceManager.selectedId = ws.project_id; } }}
 							>
-								<span class="w-1.5 h-1.5 rounded-full shrink-0 {statusDot(ws)}"></span>
+								<StatusDot color={statusDotColor(ws)} />
 								<div class="flex-1 min-w-0">
 									<div class="text-xs text-text-primary truncate">{ws.project}</div>
 									<div class="text-[10px] text-text-dim truncate">{ws.repo}</div>
@@ -669,7 +656,7 @@
 		{:else if activeTab === 'inspector'}
 			<!-- Context Inspector Tab -->
 			<div class="space-y-3">
-				<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">
+				<h3 class="section-heading">
 					Context Inspector
 				</h3>
 
@@ -689,7 +676,7 @@
 								<Icon name="alert-triangle" size={10} class="shrink-0" />
 								<span class="flex-1">Sync failed — context may be stale or missing.</span>
 								<button
-									class="text-neon-cyan/60 hover:text-neon-cyan text-[9px] shrink-0"
+									class="text-neon-cyan/60 hover:text-neon-cyan text-[10px] shrink-0"
 									onclick={() => handleSync(selectedWorkspace?.id ?? '')}
 									disabled={syncingId === selectedWorkspace?.id}
 								>{syncingId === selectedWorkspace?.id ? 'Syncing...' : 'retry'}</button>
@@ -704,12 +691,7 @@
 						<!-- Context completeness -->
 						<div class="flex items-center gap-2">
 							<span class="text-[10px] text-text-secondary">Completeness</span>
-							<div class="flex-1 h-1 bg-bg-card border border-neon-cyan/5">
-								<div
-									class="h-full bg-neon-cyan/40 transition-all"
-									style="width: {selectedWorkspace.context_completeness * 100}%"
-								></div>
-							</div>
+							<InlineProgress percent={selectedWorkspace.context_completeness * 100} class="flex-1" />
 							<span class="text-[10px] text-neon-cyan">
 								{Math.round(selectedWorkspace.context_completeness * 100)}%
 							</span>
@@ -750,7 +732,11 @@
 	<div class="flex items-center gap-3 px-3 py-1.5 border-t border-neon-cyan/10 text-[10px] text-text-dim">
 		{#if wsHealth}
 			<span class="flex items-center gap-1">
-				<span class="w-1.5 h-1.5 rounded-full {wsHealth.github_connected ? 'bg-neon-green' : 'bg-text-dim'}"></span>
+				{#if wsHealth.github_connected}
+					<StatusDot color="green" />
+				{:else}
+					<StatusDot color="red" />
+				{/if}
 				{wsHealth.github_connected ? wsHealth.github_username : 'Not connected'}
 			</span>
 			<span>Links: {wsHealth.total_links}</span>

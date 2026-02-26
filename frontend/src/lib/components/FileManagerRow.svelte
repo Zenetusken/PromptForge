@@ -37,7 +37,7 @@
 </script>
 
 <button
-	class="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors rounded-sm {active ? 'bg-neon-cyan/10' : 'hover:bg-bg-hover'}"
+	class="cv-auto flex w-full items-center gap-3 px-3 py-2 text-left transition-colors rounded-sm {active ? 'bg-neon-cyan/10' : 'hover:bg-bg-hover'}"
 	onclick={handleClick}
 	ondblclick={handleDblClick}
 	oncontextmenu={handleContextMenu}

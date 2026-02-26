@@ -10,6 +10,7 @@
 	import Icon from './Icon.svelte';
 	import CopyButton from './CopyButton.svelte';
 	import ForgeIterationTimeline from './ForgeIterationTimeline.svelte';
+	import ContextSnapshotPanel from './ContextSnapshotPanel.svelte';
 
 	let result = $derived(optimizationState.forgeResult);
 
@@ -157,6 +158,11 @@
 			<div class="px-2 pb-1.5">
 				<p class="text-[10px] italic text-text-dim leading-snug">{result.verdict}</p>
 			</div>
+		{/if}
+
+		<!-- Codebase context snapshot (collapsible) -->
+		{#if result.codebase_context_snapshot}
+			<ContextSnapshotPanel context={result.codebase_context_snapshot} />
 		{/if}
 
 		<!-- Iteration timeline -->

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
+	import { EmptyState } from './ui';
 	import FileManagerRow from './FileManagerRow.svelte';
 	import DesktopContextMenu from './DesktopContextMenu.svelte';
 	import ConfirmModal from './ConfirmModal.svelte';
@@ -115,10 +116,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="flex-1 overflow-y-auto py-1" onclick={() => selectedId = null}>
 		{#if desktopStore.binIsEmpty}
-			<div class="flex flex-col items-center justify-center gap-2 pt-16 text-text-dim">
-				<Icon name="trash-2" size={32} class="opacity-30" />
-				<span class="text-xs">Recycle Bin is empty</span>
-			</div>
+			<EmptyState icon="trash-2" message="Recycle Bin is empty" />
 		{:else}
 			<div class="flex flex-col">
 				{#each desktopStore.recycleBin as item (item.id)}

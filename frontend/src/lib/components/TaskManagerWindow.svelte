@@ -6,6 +6,7 @@
 	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 	import { mcpActivityFeed } from '$lib/services/mcpActivityFeed.svelte';
 	import Icon from './Icon.svelte';
+	import { StatusDot, InlineProgress, EmptyState } from './ui';
 
 	let sortBy: 'pid' | 'status' | 'started' = $state('pid');
 	let sortAsc = $state(false);
@@ -85,17 +86,17 @@
 
 <div class="flex h-full flex-col bg-bg-primary text-text-primary font-mono">
 	<!-- Summary bar -->
-	<div class="flex items-center gap-4 border-b border-neon-cyan/10 px-4 py-2">
+	<div class="flex items-center gap-4 border-b border-neon-cyan/10 px-3 py-2">
 		<div class="flex items-center gap-1.5">
-			<span class="h-1.5 w-1.5 bg-neon-green"></span>
+			<StatusDot color="green" />
 			<span class="text-[11px] text-text-secondary">{runCount} running</span>
 		</div>
 		<div class="flex items-center gap-1.5">
-			<span class="h-1.5 w-1.5 bg-neon-yellow"></span>
+			<StatusDot color="yellow" />
 			<span class="text-[11px] text-text-secondary">{queueCount} queued</span>
 		</div>
 		<div class="flex items-center gap-1.5">
-			<span class="h-1.5 w-1.5 bg-neon-cyan"></span>
+			<StatusDot color="cyan" />
 			<span class="text-[11px] text-text-secondary">{completedCount} completed</span>
 		</div>
 		<span class="ml-auto text-[10px] text-text-dim">{totalCount} total</span>
@@ -111,10 +112,7 @@
 	<!-- Process table -->
 	<div class="flex-1 overflow-y-auto">
 		{#if sorted.length === 0}
-			<div class="flex flex-col items-center justify-center h-full gap-2 text-text-dim">
-				<Icon name="server" size={24} class="opacity-30" />
-				<span class="text-xs">No processes</span>
-			</div>
+			<EmptyState icon="server" message="No processes" />
 		{:else}
 			<table class="w-full text-[11px]">
 				<thead>
@@ -146,12 +144,7 @@
 							<td class="px-3 py-1.5">
 								{#if proc.status === 'running'}
 									<div class="flex items-center gap-2">
-										<div class="h-1 flex-1 bg-bg-input max-w-[80px]">
-											<div
-												class="h-full bg-neon-cyan transition-all duration-300"
-												style="width: {proc.progress * 100}%"
-											></div>
-										</div>
+										<InlineProgress percent={proc.progress * 100} class="flex-1 max-w-[80px]" />
 										<span class="text-[10px] tabular-nums text-neon-cyan">{Math.round(proc.progress * 100)}%</span>
 									</div>
 								{:else if proc.status === 'completed'}
@@ -217,7 +210,7 @@
 	<!-- External (MCP) processes -->
 	{#if mcpActivityFeed.activeCalls.length > 0}
 		<div class="border-t border-neon-green/10">
-			<div class="flex items-center gap-2 px-4 py-1.5">
+			<div class="flex items-center gap-2 px-3 py-1.5">
 				<Icon name="activity" size={10} class="text-neon-green" />
 				<span class="text-[10px] text-neon-green uppercase tracking-wider">External (MCP)</span>
 				<span class="text-[10px] text-text-dim ml-auto">{mcpActivityFeed.activeCalls.length} active</span>
@@ -234,12 +227,7 @@
 							<td class="px-3 py-1.5">
 								{#if call.progress != null}
 									<div class="flex items-center gap-2">
-										<div class="h-1 flex-1 bg-bg-input max-w-[80px]">
-											<div
-												class="h-full bg-neon-green transition-all duration-300"
-												style="width: {(call.progress ?? 0) * 100}%"
-											></div>
-										</div>
+										<InlineProgress percent={(call.progress ?? 0) * 100} color="green" class="flex-1 max-w-[80px]" />
 										<span class="text-[10px] tabular-nums text-neon-green">
 											{Math.round((call.progress ?? 0) * 100)}%
 										</span>
@@ -259,7 +247,7 @@
 	{/if}
 
 	<!-- Footer: scheduler config + token usage -->
-	<div class="flex items-center gap-4 border-t border-neon-cyan/10 px-4 py-1.5">
+	<div class="flex items-center gap-4 border-t border-neon-cyan/10 px-3 py-1.5">
 		<span class="text-[10px] text-text-dim">Max concurrent:</span>
 		<span class="text-[10px] text-text-secondary tabular-nums">{processScheduler.maxConcurrent}</span>
 		{#if Object.keys(providerState.tokenBudgets).length > 0}

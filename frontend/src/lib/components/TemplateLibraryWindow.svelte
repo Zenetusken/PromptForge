@@ -4,6 +4,7 @@
 	import { clipboardService } from '$lib/services/clipboardService.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
 	import Icon from './Icon.svelte';
+	import { EmptyState } from './ui';
 	import { onMount } from 'svelte';
 
 	interface BuiltinTemplate {
@@ -235,7 +236,7 @@
 
 <div class="flex h-full flex-col bg-bg-primary text-text-primary font-mono">
 	<!-- Header -->
-	<div class="flex items-center gap-3 border-b border-neon-cyan/10 px-4 py-2">
+	<div class="flex items-center gap-3 border-b border-neon-cyan/10 px-3 py-2">
 		<div class="flex items-center gap-1.5 flex-1 bg-bg-input border border-neon-cyan/10 px-2 py-1">
 			<Icon name="search" size={11} class="text-text-dim shrink-0" />
 			<input
@@ -272,7 +273,7 @@
 
 	<!-- Save template form -->
 	{#if showSaveForm}
-		<div class="border-b border-neon-green/10 bg-bg-secondary px-4 py-3 space-y-2">
+		<div class="border-b border-neon-green/10 bg-bg-secondary px-3 py-3 space-y-2">
 			<div class="text-[10px] text-neon-green uppercase tracking-wider font-medium">Save Template</div>
 			<div class="flex gap-2">
 				<input
@@ -312,12 +313,9 @@
 	{/if}
 
 	<!-- Template grid -->
-	<div class="flex-1 overflow-y-auto p-4">
+	<div class="flex-1 overflow-y-auto p-3">
 		{#if filtered.length === 0}
-			<div class="flex flex-col items-center justify-center h-full gap-2 text-text-dim">
-				<Icon name="file-text" size={24} class="opacity-30" />
-				<span class="text-xs">No templates match your search</span>
-			</div>
+			<EmptyState icon="file-text" message="No templates match your search" />
 		{:else}
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 				{#each filtered as template (template.builtin ? template.name : template.promptId)}
@@ -330,7 +328,7 @@
 							<Icon name={template.icon as any} size={12} class="{template.builtin ? 'text-neon-cyan' : 'text-neon-green'} shrink-0" />
 							<span class="text-[11px] text-text-primary font-medium flex-1">{template.name}</span>
 							{#if !template.builtin}
-								<span class="text-[8px] text-neon-green/60 uppercase tracking-wider">custom</span>
+								<span class="text-[9px] text-neon-green/60 uppercase tracking-wider">custom</span>
 							{/if}
 							<span class="text-[9px] text-text-dim uppercase tracking-wider">{template.category}</span>
 						</div>
@@ -373,7 +371,7 @@
 	</div>
 
 	<!-- Footer -->
-	<div class="flex items-center justify-between border-t border-neon-cyan/10 px-4 py-1.5">
+	<div class="flex items-center justify-between border-t border-neon-cyan/10 px-3 py-1.5">
 		<span class="text-[10px] text-text-dim">{filtered.length} of {allTemplates.length} templates ({customTemplates.length} custom)</span>
 		<span class="text-[10px] text-text-dim">Double-click to forge</span>
 	</div>

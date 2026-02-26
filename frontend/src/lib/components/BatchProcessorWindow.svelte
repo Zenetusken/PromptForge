@@ -6,7 +6,7 @@
 	import { systemBus } from '$lib/services/systemBus.svelte';
 	import { ALL_STRATEGIES } from '$lib/utils/strategies';
 	import { safeNumber } from '$lib/utils/safe';
-	import Icon from './Icon.svelte';
+	import { InlineProgress, StatusDot } from './ui';
 
 	type BatchItemStatus = 'pending' | 'queued' | 'running' | 'completed' | 'error';
 
@@ -178,8 +178,8 @@
 <div class="flex h-full flex-col bg-bg-primary text-text-primary font-mono">
 	{#if items.length === 0}
 		<!-- Input mode -->
-		<div class="flex-1 p-4 space-y-3">
-			<h3 class="text-xs font-medium text-neon-cyan uppercase tracking-wider">Batch Processor</h3>
+		<div class="flex-1 p-3 space-y-3">
+			<h3 class="section-heading">Batch Processor</h3>
 			<p class="text-[11px] text-text-secondary">
 				Enter multiple prompts separated by blank lines or <code class="text-neon-cyan">---</code>. Max 20 prompts.
 			</p>
@@ -207,7 +207,7 @@ Third prompt here..."
 					</select>
 				</label>
 				<button
-					class="ml-auto border border-neon-cyan/20 px-4 py-1.5 text-[11px] text-neon-cyan hover:bg-neon-cyan/10 transition-colors disabled:opacity-30"
+					class="ml-auto border border-neon-cyan/20 px-3 py-1.5 text-[11px] text-neon-cyan hover:bg-neon-cyan/10 transition-colors disabled:opacity-30"
 					onclick={parsePrompts}
 					disabled={!bulkText.trim()}
 				>
@@ -217,7 +217,7 @@ Third prompt here..."
 		</div>
 	{:else}
 		<!-- Progress mode -->
-		<div class="flex items-center gap-4 border-b border-neon-cyan/10 px-4 py-2">
+		<div class="flex items-center gap-4 border-b border-neon-cyan/10 px-3 py-2">
 			<span class="text-[11px] text-text-secondary">{items.length} prompts</span>
 			<span class="text-[11px] text-neon-green">{completedCount} done</span>
 			{#if errorCount > 0}
@@ -263,22 +263,17 @@ Third prompt here..."
 		</div>
 
 		<!-- Overall progress bar -->
-		<div class="h-0.5 bg-bg-input">
-			<div
-				class="h-full bg-neon-cyan transition-all duration-300"
-				style="width: {items.length > 0 ? (finishedCount / items.length * 100) : 0}%"
-			></div>
-		</div>
+		<InlineProgress percent={items.length > 0 ? (finishedCount / items.length * 100) : 0} />
 
 		<!-- Items list -->
 		<div class="flex-1 overflow-y-auto">
 			{#each items as item, i (item.id)}
-				<div class="flex items-center gap-3 px-4 py-2 border-b border-neon-cyan/5">
+				<div class="flex items-center gap-3 px-3 py-2 border-b border-neon-cyan/5">
 					<span class="text-[10px] text-text-dim tabular-nums w-5">#{i + 1}</span>
 					<span class="text-[11px] text-text-primary flex-1 truncate">{item.prompt.slice(0, 80)}{item.prompt.length > 80 ? '...' : ''}</span>
 					<span class="{STATUS_COLOR[item.status]} text-[10px] uppercase tracking-wider w-16 text-right">
 						{#if item.status === 'running'}
-							<span class="inline-block animate-pulse">forging</span>
+							<span class="inline-flex items-center gap-1"><StatusDot color="yellow" class="status-dot-pulse" />forging</span>
 						{:else}
 							{item.status}
 						{/if}

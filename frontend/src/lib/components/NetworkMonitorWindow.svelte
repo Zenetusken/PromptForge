@@ -2,6 +2,7 @@
 	import { mcpActivityFeed, MCP_TOOL_COLORS, type MCPActivityEvent } from '$lib/services/mcpActivityFeed.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import Icon from './Icon.svelte';
+	import { WindowTabStrip, EmptyState, InlineProgress, StatusDot } from './ui';
 	import { onMount } from 'svelte';
 
 	let activeTab: 'live' | 'log' | 'connections' = $state('live');
@@ -78,11 +79,9 @@
 
 <div class="flex h-full flex-col bg-bg-primary text-text-primary font-mono">
 	<!-- Status bar -->
-	<div class="flex items-center gap-4 border-b border-neon-green/10 px-4 py-2">
+	<div class="flex items-center gap-4 border-b border-neon-green/10 px-3 py-2">
 		<div class="flex items-center gap-1.5">
-			<div
-				class="h-1.5 w-1.5 rounded-full {connected ? 'bg-neon-green' : 'bg-neon-red'}"
-			></div>
+			<StatusDot color={connected ? 'green' : 'red'} />
 			<span class="text-[11px] text-text-secondary">
 				{connected ? 'Connected' : 'Disconnected'}
 			</span>
@@ -109,36 +108,23 @@
 		</span>
 	</div>
 
-	<!-- Tab bar -->
-	<div class="flex border-b border-neon-green/10">
-		{#each [
-			{ id: 'live', label: 'Live Activity', icon: 'activity' as const },
-			{ id: 'log', label: 'Event Log', icon: 'file-text' as const },
-			{ id: 'connections', label: 'Connections', icon: 'users' as const },
-		] as tab (tab.id)}
-			<button
-				class="flex items-center gap-1.5 px-4 py-1.5 text-[11px] transition-colors
-					{activeTab === tab.id
-					? 'text-neon-green border-b border-neon-green'
-					: 'text-text-dim hover:text-text-secondary'}"
-				onclick={() => (activeTab = tab.id as typeof activeTab)}
-			>
-				<Icon name={tab.icon} size={11} />
-				{tab.label}
-			</button>
-		{/each}
-	</div>
+	<WindowTabStrip
+		tabs={[
+			{ id: 'live', label: 'Live Activity', icon: 'activity' },
+			{ id: 'log', label: 'Event Log', icon: 'file-text' },
+			{ id: 'connections', label: 'Connections', icon: 'users' },
+		]}
+		{activeTab}
+		onTabChange={(id) => (activeTab = id as typeof activeTab)}
+		accent="green"
+	/>
 
 	<!-- Tab content -->
 	<div class="flex-1 overflow-y-auto">
 		{#if activeTab === 'live'}
 			<!-- Live Activity -->
 			{#if activeCalls.length === 0}
-				<div class="flex flex-col items-center justify-center h-full gap-2 text-text-dim">
-					<Icon name="activity" size={24} class="opacity-30" />
-					<span class="text-xs">No active MCP tool calls</span>
-					<span class="text-[10px] text-text-dim/60">Waiting for external clients...</span>
-				</div>
+				<EmptyState icon="activity" message="No active MCP tool calls" submessage="Waiting for external clients..." />
 			{:else}
 				<div class="p-3 space-y-2">
 					{#each activeCalls as call (call.call_id)}
@@ -159,12 +145,7 @@
 
 							{#if call.progress != null}
 								<div class="flex items-center gap-2">
-									<div class="h-1 flex-1 bg-bg-input">
-										<div
-											class="h-full bg-neon-green transition-all duration-300"
-											style="width: {(call.progress ?? 0) * 100}%"
-										></div>
-									</div>
+									<InlineProgress percent={(call.progress ?? 0) * 100} color="green" class="flex-1" />
 									<span class="text-[10px] tabular-nums text-neon-green">
 										{Math.round((call.progress ?? 0) * 100)}%
 									</span>
@@ -181,10 +162,7 @@
 		{:else if activeTab === 'log'}
 			<!-- Event Log -->
 			{#if events.length === 0}
-				<div class="flex flex-col items-center justify-center h-full gap-2 text-text-dim">
-					<Icon name="file-text" size={24} class="opacity-30" />
-					<span class="text-xs">No events recorded</span>
-				</div>
+				<EmptyState icon="file-text" message="No events recorded" />
 			{:else}
 				<table class="w-full text-[11px]">
 					<thead>
@@ -223,8 +201,8 @@
 			{/if}
 		{:else}
 			<!-- Connections -->
-			<div class="p-4 space-y-4">
-				<div class="border border-neon-green/10 p-4 space-y-3">
+			<div class="p-3 space-y-3">
+				<div class="border border-neon-green/10 p-3 space-y-3">
 					<div class="flex items-center gap-2">
 						<Icon name="server" size={14} class="text-neon-green" />
 						<span class="text-[12px] text-text-primary">MCP Server</span>
@@ -261,7 +239,7 @@
 	</div>
 
 	<!-- Footer -->
-	<div class="flex items-center gap-4 border-t border-neon-green/10 px-4 py-1.5">
+	<div class="flex items-center gap-4 border-t border-neon-green/10 px-3 py-1.5">
 		<span class="text-[10px] text-text-dim">MCP Server: localhost:8001</span>
 		<span class="ml-auto text-[10px] text-text-dim tabular-nums">
 			{events.length} buffered
