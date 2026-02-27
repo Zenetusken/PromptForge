@@ -36,9 +36,9 @@ All steps are idempotent — safe to run on every restart.
 
 ## Migration List
 
-24 migrations in `_MIGRATIONS` covering:
+27 migrations in `_MIGRATIONS` covering:
 
-- Column additions: `strategy_reasoning`, `input_tokens`, `output_tokens`, `strategy_confidence`, `prompt_id`, `strategy`, `secondary_frameworks`, `version`, `context_profile`, `codebase_context_snapshot`, `cache_creation_input_tokens`, `cache_read_input_tokens`
+- Column additions: `strategy_reasoning`, `input_tokens`, `output_tokens`, `strategy_confidence`, `prompt_id`, `strategy`, `secondary_frameworks`, `version`, `context_profile`, `codebase_context_snapshot`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `conciseness_score`, `detected_patterns`, `retry_of`, `framework_adherence_score`
 - Table creation: `projects`, `prompts`, `prompt_versions`
 - Indexes: 13 single/composite indexes on `optimizations`, `projects`, `prompts`, `prompt_versions`
 
@@ -48,7 +48,7 @@ New databases get indexes at CREATE TABLE time; migrations apply them for pre-ex
 
 | Table | File | Key Fields |
 |-------|------|------------|
-| `optimizations` | `models/optimization.py` | `raw_prompt`, `optimized_prompt`, `status`, `overall_score`, `strategy`, `project`, `prompt_id` FK, `codebase_context_snapshot` |
+| `optimizations` | `models/optimization.py` | `raw_prompt`, `optimized_prompt`, `status`, `overall_score`, `conciseness_score`, `framework_adherence_score`, `detected_patterns` (JSON list), `strategy`, `project`, `prompt_id` FK, `retry_of`, `codebase_context_snapshot` |
 | `projects` | `models/project.py` | `name` (unique), `status` (active/archived/deleted), `context_profile` (JSON text) |
 | `prompts` | `models/project.py` | `content`, `version`, `project_id` FK, `order_index` |
 | `prompt_versions` | `models/project.py` | `prompt_id` FK, `version`, `content`, `optimization_id` FK (immutable snapshots) |
