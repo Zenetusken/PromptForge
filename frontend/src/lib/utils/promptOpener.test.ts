@@ -1,84 +1,73 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ProjectDetail, ProjectPrompt } from '$lib/api/client';
 
-// Mock all dependencies
-vi.mock('$lib/api/client', () => ({
-	fetchProject: vi.fn(),
+// Mock documentOpener — it's the new underlying implementation
+vi.mock('$lib/utils/documentOpener', () => ({
+	openDocument: vi.fn(),
 }));
 
-vi.mock('$lib/stores/optimization.svelte', () => ({
-	optimizationState: {
-		openInIDEFromHistory: vi.fn(),
-	},
+// Mock fileTypes
+vi.mock('$lib/utils/fileTypes', () => ({
+	toFilename: vi.fn((content: string, title?: string) => title || content.slice(0, 20) + '.md'),
 }));
 
-vi.mock('$lib/stores/forgeSession.svelte', () => ({
-	forgeSession: {
-		loadRequest: vi.fn(),
-	},
-}));
-
-vi.mock('$lib/stores/forgeMachine.svelte', () => ({
-	forgeMachine: {
-		restore: vi.fn(),
-		enterReview: vi.fn(),
-	},
-}));
-
-vi.mock('$lib/stores/toast.svelte', () => ({
-	toastState: {
-		show: vi.fn(),
-	},
+// Mock fileDescriptor
+vi.mock('$lib/utils/fileDescriptor', () => ({
+	createPromptDescriptor: vi.fn((id: string, projectId: string, name: string) => ({
+		kind: 'prompt',
+		id,
+		projectId,
+		name,
+		extension: '.md',
+	})),
 }));
 
 import { openPromptInIDE } from './promptOpener';
-import { fetchProject } from '$lib/api/client';
-import { optimizationState } from '$lib/stores/optimization.svelte';
-import { forgeSession } from '$lib/stores/forgeSession.svelte';
-import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
-import { toastState } from '$lib/stores/toast.svelte';
+import { openDocument } from '$lib/utils/documentOpener';
+import { createPromptDescriptor } from '$lib/utils/fileDescriptor';
 
-function makePrompt(overrides: Partial<ProjectPrompt> = {}): ProjectPrompt {
-	return {
-		id: 'prompt-1',
-		content: 'Write a haiku about coding',
-		version: 1,
-		project_id: 'proj-1',
-		order_index: 0,
-		created_at: '2026-01-01T00:00:00Z',
-		updated_at: '2026-01-01T00:00:00Z',
-		forge_count: 0,
-		latest_forge: null,
-		...overrides,
-	};
-}
-
-function makeProject(overrides: Partial<ProjectDetail> = {}, prompts?: ProjectPrompt[]): ProjectDetail {
-	return {
-		id: 'proj-1',
-		name: 'Test Project',
-		description: null,
-		context_profile: null,
-		status: 'active',
-		created_at: '2026-01-01T00:00:00Z',
-		updated_at: '2026-01-01T00:00:00Z',
-		prompts: prompts ?? [makePrompt()],
-		...overrides,
-	};
-}
-
-describe('openPromptInIDE', () => {
+describe('openPromptInIDE (delegating to openDocument)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(optimizationState.openInIDEFromHistory).mockResolvedValue(undefined);
 	});
 
-	it('opens latest forge in IDE review mode when prompt has forges', async () => {
-		const prompt = makePrompt({
-			forge_count: 3,
+	it('creates a PromptDescriptor and delegates to openDocument', async () => {
+		const prompt = {
+			id: 'prompt-1',
+			content: 'Write a haiku',
+			version: 1,
+			project_id: 'proj-1',
+			order_index: 0,
+			created_at: '2026-01-01T00:00:00Z',
+			updated_at: '2026-01-01T00:00:00Z',
+			forge_count: 0,
+			latest_forge: null,
+		};
+
+		await openPromptInIDE({
+			promptId: 'prompt-1',
+			projectId: 'proj-1',
+			prompt,
+		});
+
+		expect(createPromptDescriptor).toHaveBeenCalledWith('prompt-1', 'proj-1', expect.any(String));
+		expect(openDocument).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: 'prompt', id: 'prompt-1', projectId: 'proj-1' }),
+		);
+	});
+
+	it('uses latest_forge title for the descriptor name', async () => {
+		const prompt = {
+			id: 'prompt-1',
+			content: 'Write a haiku',
+			version: 1,
+			project_id: 'proj-1',
+			order_index: 0,
+			created_at: '2026-01-01T00:00:00Z',
+			updated_at: '2026-01-01T00:00:00Z',
+			forge_count: 1,
 			latest_forge: {
-				id: 'forge-42',
-				title: 'My Forge',
+				id: 'forge-1',
+				title: 'My Forge Title',
 				task_type: 'coding',
 				complexity: 'medium',
 				framework_applied: 'chain-of-thought',
@@ -87,128 +76,14 @@ describe('openPromptInIDE', () => {
 				tags: [],
 				version: null,
 			},
-		});
-		const project = makeProject({}, [prompt]);
-
-		await openPromptInIDE({
-			promptId: prompt.id,
-			projectId: project.id,
-			projectData: project,
-			prompt,
-		});
-
-		expect(optimizationState.openInIDEFromHistory).toHaveBeenCalledWith('forge-42');
-		expect(forgeSession.loadRequest).toHaveBeenCalledWith(
-			expect.objectContaining({
-				text: prompt.content,
-				project: project.name,
-				promptId: prompt.id,
-				sourceAction: 'reiterate',
-			}),
-		);
-		expect(forgeMachine.enterReview).toHaveBeenCalled();
-	});
-
-	it('opens in compose mode when prompt has no forges', async () => {
-		const prompt = makePrompt({ forge_count: 0, latest_forge: null });
-		const project = makeProject({}, [prompt]);
-
-		await openPromptInIDE({
-			promptId: prompt.id,
-			projectId: project.id,
-			projectData: project,
-			prompt,
-		});
-
-		expect(optimizationState.openInIDEFromHistory).not.toHaveBeenCalled();
-		expect(forgeMachine.restore).toHaveBeenCalled();
-		expect(forgeSession.loadRequest).toHaveBeenCalledWith(
-			expect.objectContaining({
-				text: prompt.content,
-				project: project.name,
-				promptId: prompt.id,
-				sourceAction: 'optimize',
-			}),
-		);
-	});
-
-	it('fetches project when projectData is not provided', async () => {
-		const prompt = makePrompt();
-		const project = makeProject({}, [prompt]);
-		vi.mocked(fetchProject).mockResolvedValue(project);
-
-		await openPromptInIDE({
-			promptId: prompt.id,
-			projectId: project.id,
-			prompt,
-		});
-
-		expect(fetchProject).toHaveBeenCalledWith(project.id);
-		expect(forgeSession.loadRequest).toHaveBeenCalled();
-	});
-
-	it('shows error toast when fetchProject returns null', async () => {
-		vi.mocked(fetchProject).mockResolvedValue(null as unknown as ProjectDetail);
+		};
 
 		await openPromptInIDE({
 			promptId: 'prompt-1',
 			projectId: 'proj-1',
-		});
-
-		expect(fetchProject).toHaveBeenCalledWith('proj-1');
-		expect(forgeSession.loadRequest).not.toHaveBeenCalled();
-		expect(optimizationState.openInIDEFromHistory).not.toHaveBeenCalled();
-		expect(toastState.show).toHaveBeenCalledWith('Could not load project', 'error');
-	});
-
-	it('shows error toast when prompt is not found in project', async () => {
-		const project = makeProject({}, [makePrompt({ id: 'other-prompt' })]);
-
-		await openPromptInIDE({
-			promptId: 'nonexistent-prompt',
-			projectId: project.id,
-			projectData: project,
-		});
-
-		expect(forgeSession.loadRequest).not.toHaveBeenCalled();
-		expect(optimizationState.openInIDEFromHistory).not.toHaveBeenCalled();
-		expect(toastState.show).toHaveBeenCalledWith('Prompt not found in project', 'error');
-	});
-
-	it('passes context profile through when available', async () => {
-		const contextProfile = { language: 'TypeScript', framework: 'SvelteKit' };
-		const prompt = makePrompt({ forge_count: 0 });
-		const project = makeProject({ context_profile: contextProfile }, [prompt]);
-
-		await openPromptInIDE({
-			promptId: prompt.id,
-			projectId: project.id,
-			projectData: project,
 			prompt,
 		});
 
-		expect(forgeSession.loadRequest).toHaveBeenCalledWith(
-			expect.objectContaining({
-				contextProfile,
-			}),
-		);
-	});
-
-	it('passes null context profile when project has none', async () => {
-		const prompt = makePrompt({ forge_count: 0 });
-		const project = makeProject({ context_profile: null }, [prompt]);
-
-		await openPromptInIDE({
-			promptId: prompt.id,
-			projectId: project.id,
-			projectData: project,
-			prompt,
-		});
-
-		expect(forgeSession.loadRequest).toHaveBeenCalledWith(
-			expect.objectContaining({
-				contextProfile: null,
-			}),
-		);
+		expect(openDocument).toHaveBeenCalled();
 	});
 });

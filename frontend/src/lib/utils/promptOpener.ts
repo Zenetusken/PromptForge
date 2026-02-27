@@ -1,8 +1,7 @@
-import { fetchProject, type ProjectDetail, type ProjectPrompt } from '$lib/api/client';
-import { optimizationState } from '$lib/stores/optimization.svelte';
-import { forgeSession } from '$lib/stores/forgeSession.svelte';
-import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
-import { toastState } from '$lib/stores/toast.svelte';
+import type { ProjectDetail, ProjectPrompt } from '$lib/api/client';
+import { createPromptDescriptor } from '$lib/utils/fileDescriptor';
+import { openDocument } from '$lib/utils/documentOpener';
+import { toFilename } from '$lib/utils/fileTypes';
 
 export interface PromptOpenerContext {
 	promptId: string;
@@ -13,46 +12,18 @@ export interface PromptOpenerContext {
 
 /**
  * Open a project prompt in the IDE.
- * - If the prompt has forges, opens the latest forge in review mode.
- * - If the prompt has no forges, opens in compose mode with the prompt text.
+ * @deprecated Use `openDocument(createPromptDescriptor(...))` directly.
+ * Delegates to the unified document opener.
  */
 export async function openPromptInIDE(ctx: PromptOpenerContext): Promise<void> {
-	// Resolve project data
-	const projectData = ctx.projectData ?? (await fetchProject(ctx.projectId));
-	if (!projectData) { toastState.show('Could not load project', 'error'); return; }
+	const name = ctx.prompt
+		? toFilename(ctx.prompt.content, ctx.prompt.latest_forge?.title)
+		: 'Prompt';
 
-	// Resolve prompt
-	const prompt = ctx.prompt ?? projectData.prompts.find((p) => p.id === ctx.promptId);
-	if (!prompt) { toastState.show('Prompt not found in project', 'error'); return; }
-
-	// Derive a meaningful tab title
-	const tabTitle = prompt.latest_forge?.title || projectData.name;
-
-	if (prompt.forge_count > 0 && prompt.latest_forge) {
-		// Open latest forge result in IDE review mode
-		await optimizationState.openInIDEFromHistory(prompt.latest_forge.id);
-		// Populate the left pane with the prompt text for reiteration
-		forgeSession.loadRequest({
-			text: prompt.content,
-			title: tabTitle,
-			project: projectData.name,
-			promptId: prompt.id,
-			sourceAction: 'reiterate',
-			contextProfile: projectData.context_profile,
-		});
-		// Re-assert review mode after loadRequest (which may switch to compose)
-		forgeMachine.enterReview();
-	} else {
-		// No forges — open in compose mode with the prompt text
-		forgeMachine.restore();
-		// loadRequest sets isActive, opens IDE, and populates the draft
-		forgeSession.loadRequest({
-			text: prompt.content,
-			title: tabTitle,
-			project: projectData.name,
-			promptId: prompt.id,
-			sourceAction: 'optimize',
-			contextProfile: projectData.context_profile,
-		});
-	}
+	const descriptor = createPromptDescriptor(
+		ctx.promptId,
+		ctx.projectId,
+		name,
+	);
+	await openDocument(descriptor);
 }

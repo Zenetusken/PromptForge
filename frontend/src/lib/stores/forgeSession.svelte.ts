@@ -1,5 +1,7 @@
 import type { CodebaseContext, OptimizeMetadata } from '$lib/api/client';
 import type { ForgeMode } from '$lib/stores/forgeMachine.svelte';
+import type { FileDescriptor } from '$lib/utils/fileDescriptor';
+import { FILE_DESCRIPTOR_KINDS } from '$lib/utils/fileDescriptor';
 import { providerState } from '$lib/stores/provider.svelte';
 import { settingsState } from '$lib/stores/settings.svelte';
 import { windowManager } from '$lib/stores/windowManager.svelte';
@@ -27,6 +29,8 @@ export interface WorkspaceTab {
 	draft: ForgeSessionDraft;
 	resultId: string | null;
 	mode: ForgeMode;
+	/** The document this tab is viewing/editing. Null for fresh "Untitled" tabs. */
+	document: FileDescriptor | null;
 }
 
 export function createEmptyDraft(): ForgeSessionDraft {
@@ -56,7 +60,17 @@ function createInitialTab(): WorkspaceTab {
 		draft: createEmptyDraft(),
 		resultId: null,
 		mode: 'compose',
+		document: null,
 	};
+}
+
+/** Validate and reconstitute a FileDescriptor from sessionStorage. Returns null if invalid. */
+function _hydrateDocument(raw: unknown): FileDescriptor | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const obj = raw as Record<string, unknown>;
+	if (typeof obj.kind !== 'string' || !FILE_DESCRIPTOR_KINDS.includes(obj.kind as any)) return null;
+	if (typeof obj.id !== 'string' || typeof obj.name !== 'string') return null;
+	return obj as unknown as FileDescriptor;
 }
 
 class ForgeSessionState {
@@ -138,6 +152,7 @@ class ForgeSessionState {
 				draft: newDraft,
 				resultId: null,
 				mode: 'compose',
+				document: null,
 			};
 			this.tabs.push(newTab);
 			this.activeTabId = newTab.id;
@@ -261,6 +276,7 @@ class ForgeSessionState {
 			draft: createEmptyDraft(),
 			resultId: null,
 			mode: 'compose',
+			document: null,
 		};
 		this.tabs.push(tab);
 		this.activeTabId = tab.id;
@@ -383,6 +399,7 @@ class ForgeSessionState {
 						draft: { ...createEmptyDraft(), ...t.draft },
 						resultId: t.resultId ?? null,
 						mode: t.mode === 'forging' ? 'compose' : (t.mode ?? 'compose'),
+						document: _hydrateDocument(t.document),
 					}));
 					this.activeTabId = parsed.activeTabId || this.tabs[0].id;
 					this.isActive = !!parsed.isActive;

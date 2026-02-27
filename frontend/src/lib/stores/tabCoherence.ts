@@ -21,6 +21,7 @@ export function saveActiveTabState(): void {
 
 /**
  * Restore forge/machine state from a tab's saved state.
+ * Document-aware: uses tab.document.kind for kind-specific restore behavior.
  * Call after switching to a new active tab.
  */
 export function restoreTabState(tab: WorkspaceTab): void {
@@ -43,6 +44,10 @@ export function restoreTabState(tab: WorkspaceTab): void {
 				} else if (forgeSession.activeTabId === tab.id) {
 					tab.resultId = null;
 					tab.mode = 'compose';
+					// Clear artifact/sub-artifact document when its result can't be restored
+					if (tab.document?.kind === 'artifact' || tab.document?.kind === 'sub-artifact') {
+						tab.document = null;
+					}
 					forgeSession.persistTabs();
 					toastState.show('Previous result could not be restored', 'info');
 				}

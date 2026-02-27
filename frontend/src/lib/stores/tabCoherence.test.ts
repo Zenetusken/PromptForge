@@ -68,7 +68,7 @@ function makeResult(id: string): OptimizationResultState {
 		changes_made: [],
 		framework_applied: '',
 		optimization_notes: '',
-		scores: { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, overall: 0.8 },
+		scores: { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, conciseness: 0, overall: 0.8 },
 		is_improvement: true,
 		verdict: '',
 		duration_ms: 0,
@@ -100,9 +100,64 @@ function makeTab(overrides?: Partial<WorkspaceTab>): WorkspaceTab {
 		draft: createEmptyDraft(),
 		resultId: null,
 		mode: 'compose',
+		document: null,
 		...overrides,
 	};
 }
+
+describe('WorkspaceTab document field', () => {
+	beforeEach(() => {
+		forgeSession.reset();
+		storageMap.clear();
+	});
+
+	it('newly created tabs have document: null', () => {
+		const tab = forgeSession.createTab();
+		expect(tab).not.toBeNull();
+		expect(tab!.document).toBeNull();
+	});
+
+	it('document field persists through hydration', () => {
+		const tab = forgeSession.activeTab;
+		tab.document = {
+			kind: 'artifact',
+			id: 'opt-1',
+			artifactKind: 'forge-result',
+			name: 'Test Result',
+			sourcePromptId: null,
+			sourceProjectId: null,
+		};
+		forgeSession.persistTabs();
+		// Save the storage snapshot before reset clears it
+		const snapshot = storageMap.get('pf_forge_draft');
+		// Reset wipes state AND storage
+		forgeSession.reset();
+		// Restore the snapshot so hydration has data
+		if (snapshot) storageMap.set('pf_forge_draft', snapshot);
+		forgeSession._hydrateFromStorage();
+		expect(forgeSession.activeTab.document).not.toBeNull();
+		expect(forgeSession.activeTab.document!.kind).toBe('artifact');
+		expect(forgeSession.activeTab.document!.id).toBe('opt-1');
+	});
+
+	it('invalid document data hydrates as null', () => {
+		// Inject malformed data directly
+		storageMap.set('pf_forge_draft', JSON.stringify({
+			tabs: [{
+				id: 'tab-1',
+				name: 'Test',
+				draft: {},
+				resultId: null,
+				mode: 'compose',
+				document: { kind: 'invalid-type', id: 'x' },
+			}],
+			activeTabId: 'tab-1',
+			isActive: false,
+		}));
+		forgeSession._hydrateFromStorage();
+		expect(forgeSession.activeTab.document).toBeNull();
+	});
+});
 
 describe('tabCoherence', () => {
 	beforeEach(() => {
@@ -165,6 +220,65 @@ describe('tabCoherence', () => {
 
 			expect(optimizationState.forgeResult).toBeNull();
 			expect(forgeMachine.mode).toBe('compose');
+		});
+
+		it('clears artifact document when result cannot be restored', async () => {
+			// No cached result, mock fetchOptimization to return null
+			const { fetchOptimization } = await import('$lib/api/client');
+			vi.mocked(fetchOptimization).mockResolvedValue(null as any);
+
+			const tab = makeTab({
+				id: 'tab-artifact',
+				resultId: 'missing-opt',
+				mode: 'review',
+				document: {
+					kind: 'artifact',
+					id: 'missing-opt',
+					artifactKind: 'forge-result',
+					name: 'Lost Result',
+					sourcePromptId: null,
+					sourceProjectId: null,
+				},
+			});
+			forgeSession.tabs = [tab];
+			forgeSession.activeTabId = tab.id;
+
+			restoreTabState(tab);
+
+			await vi.waitFor(() => {
+				expect(tab.document).toBeNull();
+				expect(tab.resultId).toBeNull();
+				expect(tab.mode).toBe('compose');
+			});
+		});
+
+		it('clears sub-artifact document when result cannot be restored', async () => {
+			const { fetchOptimization } = await import('$lib/api/client');
+			vi.mocked(fetchOptimization).mockResolvedValue(null as any);
+
+			const tab = makeTab({
+				id: 'tab-sub-artifact',
+				resultId: 'missing-opt',
+				mode: 'review',
+				document: {
+					kind: 'sub-artifact',
+					id: 'missing-opt',
+					artifactKind: 'forge-analysis',
+					name: 'analysis.scan',
+					parentForgeId: 'missing-opt',
+					extension: '.scan',
+				},
+			});
+			forgeSession.tabs = [tab];
+			forgeSession.activeTabId = tab.id;
+
+			restoreTabState(tab);
+
+			await vi.waitFor(() => {
+				expect(tab.document).toBeNull();
+				expect(tab.resultId).toBeNull();
+				expect(tab.mode).toBe('compose');
+			});
 		});
 
 		it('falls back to compose and shows toast when result not in cache (async path)', async () => {
