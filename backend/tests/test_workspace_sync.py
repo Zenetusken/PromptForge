@@ -301,7 +301,10 @@ class TestLinterConfigParsing:
 
     def test_ruff_line_length(self):
         """pyproject.toml [tool.ruff] line-length → convention."""
-        toml = '[project]\ndependencies = []\n\n[tool.ruff]\nline-length = 100\ntarget-version = "py312"'
+        toml = (
+            "[project]\ndependencies = []\n\n"
+            '[tool.ruff]\nline-length = 100\ntarget-version = "py312"'
+        )
         ctx = extract_context_from_repo(
             repo_metadata={"language": "Python"},
             file_tree=[],

@@ -526,7 +526,8 @@ def _context_strategy_preference(
         or lang in ("rust", "go")
     )
     if strict_signals:
-        return (Strategy.STRUCTURED_OUTPUT, 0.05, "Strict type system aligns with structured output.")
+        reason = "Strict type system aligns with structured output."
+        return (Strategy.STRUCTURED_OUTPUT, 0.05, reason)
 
     # Domain-specific frameworks → persona-assignment boost
     domain_signals = any(
@@ -534,7 +535,8 @@ def _context_strategy_preference(
         for kw in ("medical", "legal", "healthcare", "clinical", "juridical")
     )
     if domain_signals:
-        return (Strategy.PERSONA_ASSIGNMENT, 0.05, "Domain-specific project benefits from expert persona.")
+        reason = "Domain-specific project benefits from expert persona."
+        return (Strategy.PERSONA_ASSIGNMENT, 0.05, reason)
 
     # Complex multi-service patterns → step-by-step boost
     service_signals = (
@@ -542,14 +544,16 @@ def _context_strategy_preference(
         and "repository pattern" in patterns
     ) or "microservice" in patterns
     if service_signals:
-        return (Strategy.STEP_BY_STEP, 0.05, "Multi-layer architecture suits step-by-step decomposition.")
+        reason = "Multi-layer architecture suits step-by-step decomposition."
+        return (Strategy.STEP_BY_STEP, 0.05, reason)
 
     # Rich conventions/patterns → constraint-injection boost
     has_rich_context = (
         len(ctx.conventions) >= 3 and len(ctx.patterns) >= 3
     )
     if has_rich_context:
-        return (Strategy.CONSTRAINT_INJECTION, 0.05, "Rich project conventions ground constraint injection.")
+        reason = "Rich project conventions ground constraint injection."
+        return (Strategy.CONSTRAINT_INJECTION, 0.05, reason)
 
     return None
 
