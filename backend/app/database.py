@@ -165,6 +165,12 @@ _MIGRATIONS: list[str] = [
     " ON workspace_links (github_connection_id)",
     # --- workspace_synced_at on projects ---
     "ALTER TABLE projects ADD COLUMN workspace_synced_at TIMESTAMP",
+    # --- Pipeline audit: conciseness score, detected patterns, retry lineage ---
+    "ALTER TABLE optimizations ADD COLUMN conciseness_score REAL",
+    "ALTER TABLE optimizations ADD COLUMN detected_patterns TEXT",
+    "ALTER TABLE optimizations ADD COLUMN retry_of TEXT",
+    # --- Framework adherence score (supplementary, not in weighted overall) ---
+    "ALTER TABLE optimizations ADD COLUMN framework_adherence_score REAL",
     # --- GitHub OAuth config (in-app credential management) ---
     "CREATE TABLE IF NOT EXISTS github_oauth_config ("
     "  id TEXT PRIMARY KEY,"
@@ -186,6 +192,161 @@ async def _run_migrations(conn) -> None:
             logger.info("Migration applied: %s", stmt[:60])
         except OperationalError:
             logger.debug("Migration skipped (already applied): %s", stmt[:60])
+
+
+# ---------------------------------------------------------------------------
+# Schema version tracking for table rebuilds
+# ---------------------------------------------------------------------------
+
+async def _ensure_schema_version_table(conn) -> None:
+    """Create the _schema_version table if it doesn't exist."""
+    await conn.execute(text(
+        "CREATE TABLE IF NOT EXISTS _schema_version ("
+        "  version INTEGER PRIMARY KEY"
+        ")"
+    ))
+
+
+async def _has_schema_version(conn, version: int) -> bool:
+    """Check if a schema version has already been applied."""
+    result = await conn.execute(
+        text("SELECT 1 FROM _schema_version WHERE version = :v"),
+        {"v": version},
+    )
+    return result.scalar() is not None
+
+
+async def _mark_schema_version(conn, version: int) -> None:
+    """Record that a schema version has been applied."""
+    await conn.execute(
+        text("INSERT INTO _schema_version (version) VALUES (:v)"),
+        {"v": version},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Table rebuild migrations (SQLite doesn't support ALTER COLUMN)
+# ---------------------------------------------------------------------------
+
+async def _rebuild_projects_table(conn) -> None:
+    """Rebuild projects table to add parent_id, depth, and scoped UNIQUE constraint.
+
+    Version 1: Adds hierarchical folder support — parent_id (self-FK),
+    depth (precomputed nesting level), UNIQUE(name, parent_id) replacing
+    the old global UNIQUE(name).
+    """
+    await _ensure_schema_version_table(conn)
+    if await _has_schema_version(conn, 1):
+        return
+
+    # Check if parent_id column already exists (fresh DB from create_all)
+    result = await conn.execute(text("PRAGMA table_info(projects)"))
+    columns = {row[1] for row in result.fetchall()}
+    if "parent_id" in columns and "depth" in columns:
+        await _mark_schema_version(conn, 1)
+        logger.info("Schema v1: projects table already has parent_id/depth columns")
+        return
+
+    logger.info("Schema v1: rebuilding projects table for hierarchical folders")
+    await conn.execute(text("PRAGMA foreign_keys = OFF"))
+    try:
+        await conn.execute(text(
+            "CREATE TABLE projects_new ("
+            "  id TEXT PRIMARY KEY,"
+            "  name TEXT NOT NULL,"
+            "  description TEXT,"
+            "  context_profile TEXT,"
+            "  status TEXT NOT NULL DEFAULT 'active',"
+            "  parent_id TEXT REFERENCES projects_new(id) ON DELETE CASCADE,"
+            "  depth INTEGER NOT NULL DEFAULT 0,"
+            "  created_at TIMESTAMP NOT NULL,"
+            "  updated_at TIMESTAMP NOT NULL,"
+            "  workspace_synced_at TIMESTAMP,"
+            "  UNIQUE(name, parent_id)"
+            ")"
+        ))
+        await conn.execute(text(
+            "INSERT INTO projects_new"
+            " (id, name, description, context_profile, status,"
+            "  parent_id, depth, created_at, updated_at, workspace_synced_at)"
+            " SELECT id, name, description, context_profile, status,"
+            "  NULL, 0, created_at, updated_at, workspace_synced_at"
+            " FROM projects"
+        ))
+        await conn.execute(text("DROP TABLE projects"))
+        await conn.execute(text("ALTER TABLE projects_new RENAME TO projects"))
+        # Recreate indexes
+        for idx_sql in (
+            "CREATE INDEX IF NOT EXISTS ix_projects_status ON projects (status)",
+            "CREATE INDEX IF NOT EXISTS ix_projects_created_at ON projects (created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_projects_updated_at ON projects (updated_at)",
+            "CREATE INDEX IF NOT EXISTS ix_projects_parent_id ON projects (parent_id)",
+        ):
+            await conn.execute(text(idx_sql))
+        await conn.execute(text("PRAGMA foreign_keys = ON"))
+        await conn.execute(text("PRAGMA foreign_key_check"))
+        await _mark_schema_version(conn, 1)
+        logger.info("Schema v1: projects table rebuilt successfully")
+    except Exception:
+        await conn.execute(text("PRAGMA foreign_keys = ON"))
+        raise
+
+
+async def _rebuild_prompts_table(conn) -> None:
+    """Rebuild prompts table to make project_id nullable with ON DELETE SET NULL.
+
+    Version 2: Allows prompts to live outside folders (desktop prompts)
+    by making project_id nullable and changing cascade to SET NULL.
+    """
+    await _ensure_schema_version_table(conn)
+    if await _has_schema_version(conn, 2):
+        return
+
+    # Check if project_id is already nullable (fresh DB from create_all)
+    result = await conn.execute(text("PRAGMA table_info(prompts)"))
+    for row in result.fetchall():
+        # row: (cid, name, type, notnull, default, pk)
+        if row[1] == "project_id" and row[3] == 0:  # notnull=0 means nullable
+            await _mark_schema_version(conn, 2)
+            logger.info("Schema v2: prompts.project_id already nullable")
+            return
+
+    logger.info("Schema v2: rebuilding prompts table for nullable project_id")
+    await conn.execute(text("PRAGMA foreign_keys = OFF"))
+    try:
+        await conn.execute(text(
+            "CREATE TABLE prompts_new ("
+            "  id TEXT PRIMARY KEY,"
+            "  content TEXT NOT NULL,"
+            "  version INTEGER NOT NULL DEFAULT 1,"
+            "  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,"
+            "  order_index INTEGER NOT NULL DEFAULT 0,"
+            "  created_at TIMESTAMP NOT NULL,"
+            "  updated_at TIMESTAMP NOT NULL"
+            ")"
+        ))
+        await conn.execute(text(
+            "INSERT INTO prompts_new"
+            " (id, content, version, project_id, order_index, created_at, updated_at)"
+            " SELECT id, content, version, project_id, order_index, created_at, updated_at"
+            " FROM prompts"
+        ))
+        await conn.execute(text("DROP TABLE prompts"))
+        await conn.execute(text("ALTER TABLE prompts_new RENAME TO prompts"))
+        # Recreate indexes
+        for idx_sql in (
+            "CREATE INDEX IF NOT EXISTS ix_prompts_project_id ON prompts (project_id)",
+            "CREATE INDEX IF NOT EXISTS ix_prompts_order_index"
+            " ON prompts (project_id, order_index)",
+        ):
+            await conn.execute(text(idx_sql))
+        await conn.execute(text("PRAGMA foreign_keys = ON"))
+        await conn.execute(text("PRAGMA foreign_key_check"))
+        await _mark_schema_version(conn, 2)
+        logger.info("Schema v2: prompts table rebuilt successfully")
+    except Exception:
+        await conn.execute(text("PRAGMA foreign_keys = ON"))
+        raise
 
 
 async def _migrate_legacy_strategies(conn) -> None:
@@ -251,8 +412,9 @@ async def _migrate_legacy_projects(conn) -> None:
 
         await conn.execute(
             text(
-                "INSERT INTO projects (id, name, description, status, created_at, updated_at) "
-                "VALUES (:id, :name, :desc, 'active', :created, :updated)"
+                "INSERT INTO projects"
+                " (id, name, description, status, parent_id, depth, created_at, updated_at)"
+                " VALUES (:id, :name, :desc, 'active', NULL, 0, :created, :updated)"
             ),
             {
                 "id": project_id,
@@ -442,6 +604,8 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _run_migrations(conn)
+        await _rebuild_projects_table(conn)
+        await _rebuild_prompts_table(conn)
         await _migrate_legacy_strategies(conn)
         await _migrate_legacy_projects(conn)
         await _backfill_missing_prompts(conn)

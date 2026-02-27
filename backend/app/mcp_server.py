@@ -46,11 +46,14 @@ from pydantic import Field
 
 from app.constants import LEGACY_STRATEGY_ALIASES, OptimizationStatus, ProjectStatus, Strategy
 from app.converters import (
+    _SCORE_FIELDS,
+    compute_score_deltas,
     deserialize_json_field,
+    extract_raw_scores,
     optimization_to_dict,
     optimization_to_summary,
     update_optimization_status,
-    with_display_scores,
+    with_display_and_raw_scores,
 )
 from app.database import async_session_factory, engine, init_db
 from app.models.optimization import Optimization
@@ -212,6 +215,8 @@ _STATS_SCORE_KEYS = (
     "average_specificity_score",
     "average_structure_score",
     "average_faithfulness_score",
+    "average_conciseness_score",
+    "average_framework_adherence_score",
 )
 
 # All dict key names whose float values represent 0.0-1.0 scores
@@ -287,6 +292,8 @@ def _project_to_dict(project: Project, *, include_context: bool = False) -> dict
         "name": project.name,
         "description": project.description,
         "status": project.status,
+        "parent_id": project.parent_id,
+        "depth": project.depth,
         "has_context": bool(project.context_profile),
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
@@ -340,7 +347,10 @@ mcp = FastMCP(
         "with different strategy\n"
         "- Browse: list/search, then get for full details\n"
         "- Discover strategies: strategies lists all 10 valid strategy names\n"
-        "- Context-aware: set_project_context → optimize (auto-resolves context from project)"
+        "- Context-aware: set_project_context → optimize "
+        "(auto-resolves context from project)\n"
+        "- Filesystem: get_children to browse folders, move to reorganize, "
+        "create_project with parent_id for subfolders (max depth 8)"
     ),
     lifespan=lifespan,
 )
@@ -507,7 +517,7 @@ async def promptforge_optimize(
         await ctx.report_progress(1.0, 1.0, "Optimization complete")
         await _emit_tool_progress(1.0, "Optimization complete")
 
-        result_dict = with_display_scores(asdict(result))
+        result_dict = with_display_and_raw_scores(asdict(result))
         result_dict["id"] = optimization_id
         result_dict["duration_ms"] = elapsed_ms
         result_dict["status"] = OptimizationStatus.COMPLETED
@@ -570,7 +580,10 @@ async def promptforge_retry(
         orig_tags = deserialize_json_field(opt.tags)
         orig_secondary = deserialize_json_field(opt.secondary_frameworks)
 
-    return await promptforge_optimize(
+    # Capture original scores for delta computation
+    original_scores = extract_raw_scores(opt)
+
+    result = await promptforge_optimize(
         prompt=raw_prompt,
         ctx=ctx,
         project=orig_project,
@@ -586,6 +599,26 @@ async def promptforge_retry(
         version=orig_version,
         codebase_context=codebase_context,
     )
+
+    # Set retry_of on the new record
+    new_id = result.get("id")
+    if new_id:
+        async with _repo_session() as (repo, session):
+            new_opt = await repo.get_by_id(new_id)
+            if new_opt:
+                new_opt.retry_of = optimization_id
+                await session.commit()
+
+    # Compute and include score deltas (display-scale and raw)
+    new_raw_scores = {k: result.get(f"{k}_raw") for k in _SCORE_FIELDS}
+    score_deltas, score_deltas_raw = compute_score_deltas(new_raw_scores, original_scores)
+    if score_deltas:
+        result["score_deltas"] = score_deltas
+    if score_deltas_raw:
+        result["score_deltas_raw"] = score_deltas_raw
+    result["retry_of"] = optimization_id
+
+    return result
 
 
 # --- Tool 3: get ---
@@ -622,7 +655,22 @@ async def promptforge_get(
         if not opt:
             raise ToolError(f"Optimization not found: {optimization_id}")
 
-        return with_display_scores(optimization_to_dict(opt))
+        result = with_display_and_raw_scores(optimization_to_dict(opt))
+
+        # Compute score_deltas for retry records (mirrors HTTP GET behavior)
+        retry_of = getattr(opt, "retry_of", None)
+        if retry_of and opt.status == "completed":
+            original = await repo.get_by_id(retry_of)
+            if original:
+                deltas, deltas_raw = compute_score_deltas(
+                    extract_raw_scores(opt), extract_raw_scores(original),
+                )
+                if deltas:
+                    result["score_deltas"] = deltas
+                if deltas_raw:
+                    result["score_deltas_raw"] = deltas_raw
+
+        return result
 
 
 # --- Tool 4: list ---
@@ -728,7 +776,7 @@ async def promptforge_get_by_project(
         items, total = await repo.list(filters=filters, pagination=pagination)
 
         if include_prompts:
-            converted = [with_display_scores(optimization_to_dict(opt)) for opt in items]
+            converted = [with_display_and_raw_scores(optimization_to_dict(opt)) for opt in items]
         else:
             converted = [optimization_to_summary(opt) for opt in items]
 
@@ -1141,6 +1189,7 @@ async def promptforge_strategies() -> dict[str, object]:
 async def promptforge_create_project(
     name: Annotated[str, Field(description="Unique project name (1-100 chars)")],
     description: Annotated[str | None, Field(description="Project description (max 2000 chars)")] = None,  # noqa: E501
+    parent_id: Annotated[str | None, Field(description="Parent folder ID. Null or omit for root-level.")] = None,  # noqa: E501
     context_profile: Annotated[dict | None, Field(description="Codebase context profile dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Create a new project or reactivate a soft-deleted one with the same name.
@@ -1164,26 +1213,33 @@ async def promptforge_create_project(
 
     async with async_session_factory() as session:
         proj_repo = ProjectRepository(session)
-        existing = await proj_repo.get_by_name(name)
 
-        if existing:
-            if existing.status == ProjectStatus.DELETED:
-                # Reactivate soft-deleted project
-                existing.status = ProjectStatus.ACTIVE
-                if description is not None:
-                    existing.description = description
-                if ctx_json is not None:
-                    existing.context_profile = ctx_json
-                existing.updated_at = datetime.now(timezone.utc)
-                await session.flush()
-                await session.commit()
-                invalidate_stats_cache()
-                return _project_to_dict(existing, include_context=True)
-            raise ToolError(f"Project already exists: {name!r}")
+        # Reactivation check only applies to root-level projects
+        if parent_id is None:
+            existing = await proj_repo.get_by_name(name)
 
-        project = await proj_repo.create(
-            name=name, description=description, context_profile=ctx_json,
-        )
+            if existing:
+                if existing.status == ProjectStatus.DELETED:
+                    # Reactivate soft-deleted project
+                    existing.status = ProjectStatus.ACTIVE
+                    if description is not None:
+                        existing.description = description
+                    if ctx_json is not None:
+                        existing.context_profile = ctx_json
+                    existing.updated_at = datetime.now(timezone.utc)
+                    await session.flush()
+                    await session.commit()
+                    invalidate_stats_cache()
+                    return _project_to_dict(existing, include_context=True)
+                raise ToolError(f"Project already exists: {name!r}")
+
+        try:
+            project = await proj_repo.create(
+                name=name, description=description, context_profile=ctx_json,
+                parent_id=parent_id,
+            )
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
         await session.commit()
         invalidate_stats_cache()
         return _project_to_dict(project, include_context=True)
@@ -1635,6 +1691,129 @@ async def promptforge_sync_workspace(
     }
 
 
+# --- Tool 21: get_children ---
+
+@mcp.tool(
+    name="get_children",
+    description=(
+        "List direct children (folders and prompts) of a folder or root. "
+        "Returns folder and prompt nodes with type, name, parent_id, depth. "
+        "Pass parent_id=null or omit it to list root-level items."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+@_mcp_tracked("get_children")
+async def promptforge_get_children(
+    parent_id: Annotated[
+        str | None,
+        Field(description="Parent folder ID. Null or omit for root-level items."),
+    ] = None,
+) -> dict[str, object]:
+    """List folders and prompts under a parent folder (or root)."""
+    if parent_id is not None:
+        _validate_uuid(parent_id, "parent_id")
+
+    async with async_session_factory() as session:
+        proj_repo = ProjectRepository(session)
+
+        if parent_id is not None:
+            parent = await proj_repo.get_by_id(parent_id, load_prompts=False)
+            if not parent:
+                raise ToolError(f"Folder not found: {parent_id}")
+
+        folders, prompts = await proj_repo.get_children(parent_id)
+
+        folder_nodes = [
+            {
+                "id": f.id,
+                "name": f.name,
+                "type": "folder",
+                "parent_id": f.parent_id,
+                "depth": f.depth,
+            }
+            for f in folders
+        ]
+        prompt_nodes = [
+            {
+                "id": p.id,
+                "name": (
+                    p.content[:60].replace("\n", " ") if p.content else "Untitled"
+                ),
+                "type": "prompt",
+                "parent_id": p.project_id,
+                "version": p.version,
+            }
+            for p in prompts
+        ]
+
+        path: list[dict[str, str]] = []
+        if parent_id is not None:
+            raw_path = await proj_repo.get_path(parent_id)
+            path = raw_path
+
+        return {
+            "nodes": folder_nodes + prompt_nodes,
+            "path": path,
+            "total": len(folder_nodes) + len(prompt_nodes),
+        }
+
+
+# --- Tool 22: move ---
+
+@mcp.tool(
+    name="move",
+    description=(
+        "Move a folder or prompt to a new parent folder (or root). "
+        "Validates depth limits, circular references, and name uniqueness."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+@_mcp_tracked("move")
+async def promptforge_move(
+    type: Annotated[
+        str,
+        Field(description="Type of node to move: 'project' (folder) or 'prompt'"),
+    ],
+    id: Annotated[str, Field(description="ID of the node to move")],
+    new_parent_id: Annotated[
+        str | None,
+        Field(description="Target folder ID. Null or omit to move to root/desktop."),
+    ] = None,
+) -> dict[str, object]:
+    """Move a folder or prompt to a new location in the hierarchy."""
+    if type not in ("project", "prompt"):
+        raise ToolError("type must be 'project' or 'prompt'")
+    _validate_uuid(id, "id")
+    if new_parent_id is not None:
+        _validate_uuid(new_parent_id, "new_parent_id")
+
+    async with async_session_factory() as session:
+        proj_repo = ProjectRepository(session)
+
+        try:
+            if type == "project":
+                project = await proj_repo.move_project(id, new_parent_id)
+                node = _project_to_dict(project)
+            else:
+                prompt = await proj_repo.move_prompt(id, new_parent_id)
+                node = _prompt_to_dict(prompt)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+
+        await session.commit()
+        return {"success": True, "node": node}
+
+
 # --- MCP Resources ---
 # Expose PromptForge data for bi-directional context flow with Claude Code.
 
@@ -1676,7 +1855,7 @@ async def resource_optimization(optimization_id: str) -> str:
         opt = await repo.get_by_id(optimization_id)
         if not opt:
             return json.dumps({"error": f"Optimization not found: {optimization_id}"})
-        return json.dumps(with_display_scores(optimization_to_dict(opt)), indent=2)
+        return json.dumps(with_display_and_raw_scores(optimization_to_dict(opt)), indent=2)
 
 
 @mcp.resource("promptforge://workspaces")

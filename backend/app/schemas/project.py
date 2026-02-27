@@ -11,6 +11,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200, description="Project name")
     description: str | None = Field(None, max_length=2000, description="Project description")
     context_profile: dict | None = Field(None, description="Codebase context profile (JSON)")
+    parent_id: str | None = Field(None, description="Parent folder ID (null = root level)")
 
     @field_validator("name")
     @classmethod
@@ -94,7 +95,7 @@ class PromptResponse(BaseModel):
     id: str
     content: str
     version: int
-    project_id: str
+    project_id: str | None
     order_index: int
     created_at: UTCDatetime
     updated_at: UTCDatetime
@@ -111,6 +112,8 @@ class ProjectSummaryResponse(BaseModel):
     name: str
     description: str | None = None
     status: str
+    parent_id: str | None = None
+    depth: int = 0
     prompt_count: int = 0
     has_context: bool = False
     created_at: UTCDatetime
@@ -125,6 +128,8 @@ class ProjectDetailResponse(BaseModel):
     description: str | None = None
     context_profile: dict | None = None
     status: str
+    parent_id: str | None = None
+    depth: int = 0
     created_at: UTCDatetime
     updated_at: UTCDatetime
     prompts: list[PromptResponse] = []

@@ -339,8 +339,8 @@ class TestBackfillMissingPrompts:
             now = datetime.now(timezone.utc).isoformat()
             await conn.execute(
                 text(
-                    "INSERT INTO projects (id, name, status, created_at, updated_at) "
-                    "VALUES (:id, :name, 'deleted', :now, :now)"
+                    "INSERT INTO projects (id, name, status, depth, created_at, updated_at) "
+                    "VALUES (:id, :name, 'deleted', 0, :now, :now)"
                 ),
                 {"id": "del-proj", "name": "deleted-proj", "now": now},
             )

@@ -18,7 +18,7 @@ def _utcnow() -> datetime:
 
 
 class Project(Base):
-    """A named project that groups related prompts."""
+    """A named project/folder that groups related prompts and subfolders."""
 
     __tablename__ = "projects"
 
@@ -27,6 +27,10 @@ class Project(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     context_profile: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    parent_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True,
+    )
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False,
     )
@@ -37,17 +41,28 @@ class Project(Base):
         DateTime(timezone=True), nullable=True,
     )
 
+    children: Mapped[list["Project"]] = relationship(
+        back_populates="parent",
+        cascade="all, delete-orphan",
+        foreign_keys="Project.parent_id",
+    )
+    parent: Mapped["Project | None"] = relationship(
+        back_populates="children",
+        remote_side="Project.id",
+        foreign_keys="Project.parent_id",
+    )
     prompts: Mapped[list["Prompt"]] = relationship(
         back_populates="project",
         order_by="Prompt.order_index",
-        cascade="all, delete-orphan",
+        foreign_keys="Prompt.project_id",
     )
 
     __table_args__ = (
-        UniqueConstraint("name", name="uq_projects_name"),
+        UniqueConstraint("name", "parent_id", name="uq_projects_name_parent"),
         Index("ix_projects_status", "status"),
         Index("ix_projects_created_at", "created_at"),
         Index("ix_projects_updated_at", "updated_at"),
+        Index("ix_projects_parent_id", "parent_id"),
     )
 
     def __repr__(self) -> str:
@@ -55,15 +70,20 @@ class Project(Base):
 
 
 class Prompt(Base):
-    """A prompt within a project, with versioning and ordering."""
+    """A prompt with versioning and ordering, optionally inside a folder.
+
+    ``project_id`` is nullable — NULL means the prompt lives on the desktop
+    (root level) rather than inside a folder.  ON DELETE SET NULL ensures
+    desktop prompts survive folder deletion.
+    """
 
     __tablename__ = "prompts"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=_generate_uuid)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    project_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False,
+    project_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True,
     )
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
@@ -73,7 +93,9 @@ class Prompt(Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False,
     )
 
-    project: Mapped["Project"] = relationship(back_populates="prompts")
+    project: Mapped["Project | None"] = relationship(
+        back_populates="prompts", foreign_keys=[project_id],
+    )
     versions: Mapped[list["PromptVersion"]] = relationship(
         back_populates="prompt",
         cascade="all, delete-orphan",

@@ -145,6 +145,8 @@ async def list_projects(
             name=p.name,
             description=p.description,
             status=p.status,
+            parent_id=p.parent_id,
+            depth=p.depth,
             prompt_count=prompt_counts.get(p.id, 0),
             has_context=bool(p.context_profile),
             created_at=p.created_at,
@@ -167,9 +169,6 @@ async def create_project(
     with the new description instead of creating a duplicate (UNIQUE constraint).
     """
     repo = _repo(db)
-    existing = await repo.get_by_name(body.name)
-    if existing and existing.status != ProjectStatus.DELETED:
-        raise HTTPException(status_code=409, detail="A project with this name already exists")
 
     # Serialize context profile if provided
     ctx_json = None
@@ -178,16 +177,51 @@ async def create_project(
         ctx_dict = context_to_dict(ctx)
         ctx_json = json.dumps(ctx_dict) if ctx_dict else None
 
-    if existing and existing.status == ProjectStatus.DELETED:
-        # Reactivate the soft-deleted project
-        project = await repo.update(
-            existing, name=body.name, description=body.description, context_profile=ctx_json,
+    # Check name uniqueness within the same parent
+    try:
+        await repo._validate_name_unique(body.name, body.parent_id)
+    except ValueError:
+        # Allow reactivating soft-deleted projects at root level
+        if body.parent_id is None:
+            existing = await repo.get_by_name(body.name)
+            if existing and existing.status == ProjectStatus.DELETED:
+                project = await repo.update(
+                    existing, name=body.name, description=body.description,
+                    context_profile=ctx_json,
+                )
+                await repo.unarchive(project)
+
+                ctx_dict_out = None
+                if project.context_profile:
+                    try:
+                        ctx_dict_out = json.loads(project.context_profile)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                invalidate_stats_cache()
+                return ProjectDetailResponse(
+                    id=project.id,
+                    name=project.name,
+                    description=project.description,
+                    context_profile=ctx_dict_out,
+                    status=project.status,
+                    parent_id=project.parent_id,
+                    depth=project.depth,
+                    created_at=project.created_at,
+                    updated_at=project.updated_at,
+                    prompts=[],
+                )
+        raise HTTPException(
+            status_code=409, detail="A project with this name already exists in this location",
         )
-        await repo.unarchive(project)  # Sets status to ACTIVE
-    else:
+
+    try:
         project = await repo.create(
-            name=body.name, description=body.description, context_profile=ctx_json,
+            name=body.name, description=body.description,
+            context_profile=ctx_json, parent_id=body.parent_id,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     ctx_dict = None
     if project.context_profile:
@@ -203,6 +237,8 @@ async def create_project(
         description=project.description,
         context_profile=ctx_dict,
         status=project.status,
+        parent_id=project.parent_id,
+        depth=project.depth,
         created_at=project.created_at,
         updated_at=project.updated_at,
         prompts=[],
@@ -233,6 +269,8 @@ async def get_project(
         description=project.description,
         context_profile=ctx_dict,
         status=project.status,
+        parent_id=project.parent_id,
+        depth=project.depth,
         created_at=project.created_at,
         updated_at=project.updated_at,
         prompts=await _build_prompt_responses(db, project.prompts, project_name=project.name),
@@ -268,11 +306,17 @@ async def update_project(
         except (ValueError, TypeError):
             pass  # Ignore unparseable header
 
-    # Check name uniqueness if changing
+    # Check name uniqueness within the same parent if changing
     if body.name is not None and body.name != project.name:
-        existing = await repo.get_by_name(body.name)
-        if existing and existing.id != project.id and existing.status != ProjectStatus.DELETED:
-            raise HTTPException(status_code=409, detail="A project with this name already exists")
+        try:
+            await repo._validate_name_unique(
+                body.name, project.parent_id, exclude_id=project.id,
+            )
+        except ValueError:
+            raise HTTPException(
+                status_code=409,
+                detail="A project with this name already exists in this location",
+            )
 
     kwargs: dict = {}
     if body.name is not None:
@@ -307,6 +351,8 @@ async def update_project(
         description=reloaded.description,
         context_profile=ctx_out,
         status=reloaded.status,
+        parent_id=reloaded.parent_id,
+        depth=reloaded.depth,
         created_at=reloaded.created_at,
         updated_at=reloaded.updated_at,
         prompts=await _build_prompt_responses(db, reloaded.prompts, project_name=reloaded.name),

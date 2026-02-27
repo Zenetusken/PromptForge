@@ -50,6 +50,9 @@ class ProjectStatus(StrEnum):
     DELETED = "deleted"
 
 
+MAX_FOLDER_DEPTH = 8
+"""Maximum nesting depth for hierarchical folders (0 = root level)."""
+
 ALLOWED_SORT_FIELDS: frozenset[str] = frozenset({
     "created_at",
     "overall_score",

@@ -237,6 +237,7 @@ class TestPromptforgeOptimize:
             specificity_score=0.8,
             structure_score=0.7,
             faithfulness_score=0.85,
+            conciseness_score=0.75,
             overall_score=0.81,
             is_improvement=True,
             verdict="Improved",
@@ -284,6 +285,7 @@ class TestPromptforgeOptimize:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -352,6 +354,7 @@ class TestPromptforgeOptimize:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -402,6 +405,7 @@ class TestPromptforgeOptimize:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -469,6 +473,7 @@ class TestPromptforgeRetry:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -516,6 +521,7 @@ class TestPromptforgeRetry:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -566,6 +572,7 @@ class TestPromptforgeRetry:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -615,6 +622,7 @@ class TestPromptforgeRetry:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -659,6 +667,41 @@ class TestPromptforgeGet:
         from app.mcp_server import promptforge_get
         with pytest.raises(ToolError, match="Invalid"):
             await promptforge_get("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_display_and_raw_scores(self, mcp_session):
+        """get tool returns both display (int) and raw (float) scores."""
+        await _seed(
+            mcp_session, id=_UUID_1,
+            clarity_score=0.85, specificity_score=0.72,
+            structure_score=0.65, faithfulness_score=0.90,
+            conciseness_score=0.55, overall_score=0.75,
+        )
+        from app.mcp_server import promptforge_get
+        result = await promptforge_get(_UUID_1)
+        # Display scores are integers 1-10
+        assert isinstance(result["clarity_score"], int)
+        assert isinstance(result["overall_score"], int)
+        # Raw scores are floats 0.0-1.0
+        assert result["clarity_score_raw"] == 0.85
+        assert result["specificity_score_raw"] == 0.72
+        assert result["overall_score_raw"] == 0.75
+        assert isinstance(result["clarity_score_raw"], float)
+
+    @pytest.mark.asyncio
+    async def test_framework_adherence_score_present(self, mcp_session):
+        """get tool includes framework_adherence_score and its _raw companion."""
+        await _seed(
+            mcp_session, id=_UUID_1,
+            clarity_score=0.85, specificity_score=0.72,
+            structure_score=0.65, faithfulness_score=0.90,
+            conciseness_score=0.55, overall_score=0.75,
+            framework_adherence_score=0.68,
+        )
+        from app.mcp_server import promptforge_get
+        result = await promptforge_get(_UUID_1)
+        assert result["framework_adherence_score"] == 7  # display: round(6.8)=7
+        assert result["framework_adherence_score_raw"] == 0.68
 
 
 # ---------------------------------------------------------------------------
@@ -1440,6 +1483,7 @@ class TestContextIntegration:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -1490,6 +1534,7 @@ class TestContextIntegration:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
@@ -1539,6 +1584,7 @@ class TestContextIntegration:
             specificity_score=0.7,
             structure_score=0.6,
             faithfulness_score=0.8,
+            conciseness_score=0.7,
             overall_score=0.75,
             is_improvement=True,
             verdict="OK",
