@@ -70,16 +70,16 @@ describe('DesktopStore', () => {
 		it('has correct file icon types and extensions', () => {
 			const fileIcons = desktopStore.icons.filter((i) => i.type === 'file');
 			for (const icon of fileIcons) {
-				expect(icon.extension).toBe('.md');
+				expect(icon.extension).toBe('.lnk');
 				expect(icon.icon).toBe('file-text');
 			}
 		});
 
-		it('has .md in file icon labels', () => {
-			expect(desktopStore.icons.find((i) => i.id === 'shortcut-code-review')?.label).toBe('Code Review.md');
-			expect(desktopStore.icons.find((i) => i.id === 'shortcut-marketing-email')?.label).toBe('Marketing Email.md');
-			expect(desktopStore.icons.find((i) => i.id === 'shortcut-technical-docs')?.label).toBe('Technical Docs.md');
-			expect(desktopStore.icons.find((i) => i.id === 'shortcut-error-messages')?.label).toBe('Error Messages.md');
+		it('has .lnk in file icon labels', () => {
+			expect(desktopStore.icons.find((i) => i.id === 'shortcut-code-review')?.label).toBe('Code Review.lnk');
+			expect(desktopStore.icons.find((i) => i.id === 'shortcut-marketing-email')?.label).toBe('Marketing Email.lnk');
+			expect(desktopStore.icons.find((i) => i.id === 'shortcut-technical-docs')?.label).toBe('Technical Docs.lnk');
+			expect(desktopStore.icons.find((i) => i.id === 'shortcut-error-messages')?.label).toBe('Error Messages.lnk');
 		});
 
 		it('has correct default positions', () => {
@@ -295,7 +295,7 @@ describe('DesktopStore', () => {
 			expect(desktopStore.binItemCount).toBe(1);
 			expect(desktopStore.binIsEmpty).toBe(false);
 			expect(desktopStore.recycleBin[0].sourceType).toBe('file');
-			expect(desktopStore.recycleBin[0].name).toBe('Code Review.md');
+			expect(desktopStore.recycleBin[0].name).toBe('Code Review.lnk');
 		});
 
 		it('trashIcon removes folder icon and adds to bin with folder sourceType', () => {
@@ -326,7 +326,7 @@ describe('DesktopStore', () => {
 			expect(desktopStore.recycleBin).toHaveLength(0);
 			const restored = desktopStore.icons.find((i) => i.id === 'shortcut-code-review');
 			expect(restored).toBeDefined();
-			expect(restored?.label).toBe('Code Review.md');
+			expect(restored?.label).toBe('Code Review.lnk');
 		});
 
 		it('restoreItem puts folder icon back', () => {
@@ -442,7 +442,7 @@ describe('DesktopStore', () => {
 			desktopStore.trashIcon('shortcut-code-review');
 			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.recycleBin).toHaveLength(1);
-			expect(saved.recycleBin[0].name).toBe('Code Review.md');
+			expect(saved.recycleBin[0].name).toBe('Code Review.lnk');
 		});
 	});
 
@@ -486,13 +486,13 @@ describe('DesktopStore', () => {
 		it('rejects empty string', () => {
 			desktopStore.renameIcon('shortcut-code-review', '');
 			const icon = desktopStore.icons.find((i) => i.id === 'shortcut-code-review');
-			expect(icon?.label).toBe('Code Review.md');
+			expect(icon?.label).toBe('Code Review.lnk');
 		});
 
 		it('rejects whitespace-only string', () => {
 			desktopStore.renameIcon('shortcut-code-review', '   ');
 			const icon = desktopStore.icons.find((i) => i.id === 'shortcut-code-review');
-			expect(icon?.label).toBe('Code Review.md');
+			expect(icon?.label).toBe('Code Review.lnk');
 		});
 
 		it('is no-op for system icons', () => {
@@ -512,7 +512,7 @@ describe('DesktopStore', () => {
 		});
 
 		it('does not persist unchanged labels', () => {
-			desktopStore.renameIcon('shortcut-code-review', 'Code Review.md');
+			desktopStore.renameIcon('shortcut-code-review', 'Code Review.lnk');
 			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.customLabels['shortcut-code-review']).toBeUndefined();
 		});
@@ -539,7 +539,7 @@ describe('DesktopStore', () => {
 			desktopStore.renameIcon('shortcut-code-review', 'Custom Name');
 			desktopStore.resetDesktop();
 			const icon = desktopStore.icons.find((i) => i.id === 'shortcut-code-review');
-			expect(icon?.label).toBe('Code Review.md');
+			expect(icon?.label).toBe('Code Review.lnk');
 			// Verify persistence too
 			const saved = JSON.parse(localStore.get('pf_desktop')!);
 			expect(saved.customLabels).toEqual({});

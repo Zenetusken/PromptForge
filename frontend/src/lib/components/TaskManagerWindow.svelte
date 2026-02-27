@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { processScheduler, type ForgeProcess, type ProcessStatus } from '$lib/stores/processScheduler.svelte';
 	import { providerState } from '$lib/stores/provider.svelte';
-	import { windowManager } from '$lib/stores/windowManager.svelte';
-	import { optimizationState } from '$lib/stores/optimization.svelte';
-	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 	import { mcpActivityFeed } from '$lib/services/mcpActivityFeed.svelte';
+	import { createArtifactDescriptor } from '$lib/utils/fileDescriptor';
+	import { toArtifactName } from '$lib/utils/fileTypes';
+	import { openDocument } from '$lib/utils/documentOpener';
 	import Icon from './Icon.svelte';
 	import { StatusDot, InlineProgress, EmptyState } from './ui';
 
@@ -70,8 +70,11 @@
 
 	function handleOpenResult(proc: ForgeProcess) {
 		if (proc.optimizationId) {
-			optimizationState.openInIDEFromHistory(proc.optimizationId);
-			windowManager.openIDE();
+			const descriptor = createArtifactDescriptor(
+				proc.optimizationId,
+				toArtifactName(proc.title, proc.score),
+			);
+			openDocument(descriptor);
 		}
 	}
 

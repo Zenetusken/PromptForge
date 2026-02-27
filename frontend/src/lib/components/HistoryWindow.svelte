@@ -14,6 +14,9 @@
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { fetchOptimization, type HistoryItem, type HistorySummaryItem } from '$lib/api/client';
 	import { formatRelativeTime, truncateText, normalizeScore, getScoreBadgeClass } from '$lib/utils/format';
+	import { createArtifactDescriptor } from '$lib/utils/fileDescriptor';
+	import { toArtifactName, toForgeFilename } from '$lib/utils/fileTypes';
+	import { openDocument } from '$lib/utils/documentOpener';
 
 	let searchInput = $state('');
 
@@ -62,7 +65,7 @@
 
 		switch (actionId) {
 			case 'open':
-				optimizationState.openInIDEFromHistory(targetId);
+				handleItemClick(targetId);
 				break;
 			case 're-forge':
 				if (summaryItem) {
@@ -126,7 +129,12 @@
 	}
 
 	function handleItemClick(id: string) {
-		optimizationState.openInIDEFromHistory(id);
+		const item = historyState.items.find(i => i.id === id);
+		const descriptor = createArtifactDescriptor(
+			id,
+			toArtifactName(item?.title, item?.overall_score),
+		);
+		openDocument(descriptor);
 	}
 
 	onMount(() => {
@@ -175,7 +183,7 @@
 
 	{#snippet rows()}
 		{#each historyState.items as item (item.id)}
-			<FileManagerRow onselect={() => selectedId = item.id} onopen={() => handleItemClick(item.id)} oncontextmenu={(e) => openCtxMenu(e, item.id, forgeEntryActions(item))} active={selectedId === item.id} testId="history-row-{item.id}">
+			<FileManagerRow onselect={() => selectedId = item.id} onopen={() => handleItemClick(item.id)} oncontextmenu={(e) => openCtxMenu(e, item.id, forgeEntryActions(item))} active={selectedId === item.id} testId="history-row-{item.id}" dragPayload={{ descriptor: createArtifactDescriptor(item.id, toArtifactName(item.title, item.overall_score)), source: 'history-window' }}>
 				<div class="w-12 flex justify-center">
 					{#if item.overall_score != null}
 						<span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums {getScoreBadgeClass(item.overall_score)}">
@@ -191,7 +199,7 @@
 				</div>
 				<div class="flex-1 min-w-0">
 					<span class="text-xs text-text-primary truncate block">
-						{item.title || truncateText(item.raw_prompt, 60)}
+						{toForgeFilename(item.title, item.overall_score)}
 					</span>
 				</div>
 				<div class="w-20 text-[10px] text-text-dim truncate">

@@ -1,6 +1,7 @@
 import { windowManager } from '$lib/stores/windowManager.svelte';
 import { TASKBAR_HEIGHT } from '$lib/stores/snapLayout';
 import { TYPE_SORT_ORDER } from '$lib/utils/fileTypes';
+import type { FsNode } from '$lib/api/client';
 
 // ── Grid Geometry ──
 export const CELL_WIDTH = 76; // 72px icon + 4px gap
@@ -8,6 +9,8 @@ export const CELL_HEIGHT = 84; // 80px icon + 4px gap
 export const GRID_PADDING = 12;
 export { TASKBAR_HEIGHT };
 export const RECYCLE_BIN_ID = 'sys-recycle-bin';
+export const DB_FOLDER_PREFIX = 'db-folder-';
+export const DB_PROMPT_PREFIX = 'db-prompt-';
 
 /**
  * Compute the max row index (0-based) that fits above the taskbar.
@@ -35,7 +38,7 @@ const STORAGE_KEY = 'pf_desktop';
 
 // ── Types ──
 
-export type IconType = 'system' | 'folder' | 'file';
+export type IconType = 'system' | 'folder' | 'file' | 'prompt';
 
 export interface GridPosition {
 	col: number;
@@ -165,9 +168,23 @@ const FILE_CONTEXT_ACTIONS: ContextAction[] = [
 	{ id: 'delete', label: 'Delete', icon: 'trash-2', separator: true, danger: true },
 ];
 
+const DB_FOLDER_CONTEXT_ACTIONS: ContextAction[] = [
+	{ id: 'open', label: 'Open', icon: 'folder-open' },
+	{ id: 'rename', label: 'Rename', icon: 'edit', separator: true },
+	{ id: 'delete', label: 'Delete', icon: 'trash-2', separator: true, danger: true },
+];
+
+const DB_PROMPT_CONTEXT_ACTIONS: ContextAction[] = [
+	{ id: 'open', label: 'Open', icon: 'terminal' },
+	{ id: 'rename', label: 'Rename', icon: 'edit' },
+	{ id: 'delete', label: 'Delete', icon: 'trash-2', separator: true, danger: true },
+];
+
 const DESKTOP_CONTEXT_ACTIONS: ContextAction[] = [
 	{ id: 'new-forge', label: 'New Forge', icon: 'bolt' },
+	{ id: 'new-prompt', label: 'New Prompt', icon: 'file-text' },
 	{ id: 'new-project', label: 'New Project', icon: 'folder' },
+	{ id: 'new-folder', label: 'New Folder', icon: 'folder' },
 	{ id: 'sort-by-name', label: 'Sort by Name', icon: 'layers', separator: true },
 	{ id: 'sort-by-type', label: 'Sort by Type', icon: 'sliders' },
 	{ id: 'display-settings', label: 'Display Settings...', icon: 'monitor', separator: true },
@@ -182,6 +199,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'terminal',
 			color: 'cyan',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-forge-ide'],
 		},
@@ -191,6 +209,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'folder',
 			color: 'yellow',
 			type: 'folder',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-projects'],
 		},
@@ -200,6 +219,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'folder',
 			color: 'blue',
 			type: 'folder',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-history'],
 		},
@@ -209,6 +229,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'settings',
 			color: 'purple',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-control-panel'],
 		},
@@ -218,6 +239,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'cpu',
 			color: 'green',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-task-manager'],
 		},
@@ -227,6 +249,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'layers',
 			color: 'orange',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-batch-processor'],
 		},
@@ -236,6 +259,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'bar-chart',
 			color: 'indigo',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-strategy-workshop'],
 		},
@@ -245,6 +269,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'file-text',
 			color: 'teal',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-template-library'],
 		},
@@ -254,6 +279,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'terminal',
 			color: 'cyan',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-terminal'],
 		},
@@ -263,6 +289,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'activity',
 			color: 'green',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-network-monitor'],
 		},
@@ -272,6 +299,7 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'git-branch',
 			color: 'green',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-workspace-hub'],
 		},
@@ -281,46 +309,47 @@ function createDefaultIcons(): DesktopIconDef[] {
 			icon: 'trash-2',
 			color: 'red',
 			type: 'system',
+			extension: '.app',
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS[RECYCLE_BIN_ID],
 		},
 		{
 			id: 'shortcut-code-review',
-			label: 'Code Review.md',
+			label: 'Code Review.lnk',
 			icon: 'file-text',
 			color: 'cyan',
 			type: 'file',
-			extension: '.md',
+			extension: '.lnk',
 			position: { col: 0, row: 0 },
 			contextActions: FILE_CONTEXT_ACTIONS,
 		},
 		{
 			id: 'shortcut-marketing-email',
-			label: 'Marketing Email.md',
+			label: 'Marketing Email.lnk',
 			icon: 'file-text',
 			color: 'purple',
 			type: 'file',
-			extension: '.md',
+			extension: '.lnk',
 			position: { col: 0, row: 0 },
 			contextActions: FILE_CONTEXT_ACTIONS,
 		},
 		{
 			id: 'shortcut-technical-docs',
-			label: 'Technical Docs.md',
+			label: 'Technical Docs.lnk',
 			icon: 'file-text',
 			color: 'green',
 			type: 'file',
-			extension: '.md',
+			extension: '.lnk',
 			position: { col: 0, row: 0 },
 			contextActions: FILE_CONTEXT_ACTIONS,
 		},
 		{
 			id: 'shortcut-error-messages',
-			label: 'Error Messages.md',
+			label: 'Error Messages.lnk',
 			icon: 'file-text',
 			color: 'red',
 			type: 'file',
-			extension: '.md',
+			extension: '.lnk',
 			position: { col: 0, row: 0 },
 			contextActions: FILE_CONTEXT_ACTIONS,
 		},
@@ -592,8 +621,12 @@ class DesktopStoreState {
 					windowManager.openNetworkMonitor();
 				} else if (targetIconId === 'sys-workspace-hub') {
 					windowManager.openWorkspaceHub();
+				} else if (targetIconId?.startsWith(DB_FOLDER_PREFIX)) {
+					this._openDbFolder(targetIconId);
 				} else if (targetIconId?.startsWith('shortcut-')) {
 					this._openShortcut(targetIconId);
+				} else if (targetIconId?.startsWith(DB_PROMPT_PREFIX)) {
+					this._openDbPrompt(targetIconId);
 				}
 				break;
 			}
@@ -611,6 +644,10 @@ class DesktopStoreState {
 			}
 			case 'new-forge': {
 				this._newForge(true);
+				break;
+			}
+			case 'new-prompt': {
+				this._createDesktopPrompt();
 				break;
 			}
 			case 'new-project': {
@@ -638,7 +675,11 @@ class DesktopStoreState {
 				break;
 			}
 			case 'delete': {
-				if (targetIconId) {
+				if (targetIconId?.startsWith(DB_FOLDER_PREFIX)) {
+					this._deleteDbFolder(targetIconId);
+				} else if (targetIconId?.startsWith(DB_PROMPT_PREFIX)) {
+					this._deleteDbPrompt(targetIconId);
+				} else if (targetIconId) {
 					this.trashIcon(targetIconId);
 				}
 				break;
@@ -668,6 +709,10 @@ class DesktopStoreState {
 				windowManager.openDisplaySettings();
 				break;
 			}
+			case 'new-folder': {
+				this._createDesktopFolder();
+				break;
+			}
 			case 'refresh-desktop': {
 				this.resetDesktop();
 				break;
@@ -683,6 +728,13 @@ class DesktopStoreState {
 		const icon = this.icons.find((i) => i.id === id);
 		if (!icon || icon.type === 'system') return;
 		icon.label = trimmed;
+		// Server-side rename for DB folders
+		if (id.startsWith(DB_FOLDER_PREFIX)) {
+			const folderId = id.slice(DB_FOLDER_PREFIX.length);
+			import('$lib/stores/filesystemOrchestrator.svelte').then(({ fsOrchestrator }) => {
+				fsOrchestrator.renameFolder(folderId, trimmed);
+			});
+		}
 		for (const item of this.recycleBin) {
 			if (item.sourceId === id && item.iconDef) {
 				item.iconDef.label = trimmed;
@@ -697,6 +749,8 @@ class DesktopStoreState {
 		if (this.dragState?.iconId === id) this.dragState = null;
 		const icon = this.icons.find((i) => i.id === id);
 		if (!icon || icon.type === 'system') return;
+		// DB-backed items must use server-side delete, not recycle bin
+		if (id.startsWith(DB_FOLDER_PREFIX) || id.startsWith(DB_PROMPT_PREFIX)) return;
 
 		const binItem: RecycleBinItem = {
 			id: crypto.randomUUID(),
@@ -791,7 +845,11 @@ class DesktopStoreState {
 	// ── Reset ──
 
 	resetDesktop() {
-		this.icons = createDefaultIcons();
+		// Preserve DB-backed icons across resets (they're server-backed)
+		const dbIcons = this.icons.filter(
+			(i) => i.id.startsWith(DB_FOLDER_PREFIX) || i.id.startsWith(DB_PROMPT_PREFIX),
+		);
+		this.icons = [...createDefaultIcons(), ...dbIcons];
 		this._autoLayout(this.icons);
 		this.selectedIconId = null;
 		this.dragState = null;
@@ -833,6 +891,180 @@ class DesktopStoreState {
 			title: `Recycle Bin (${this.binItemCount})`,
 			icon: 'trash-2',
 		});
+	}
+
+	private _openDbFolder(iconId: string) {
+		const folderId = iconId.slice(DB_FOLDER_PREFIX.length);
+		const icon = this.icons.find((i) => i.id === iconId);
+		windowManager.openFolderWindow(folderId, icon?.label ?? 'Folder');
+	}
+
+	private _deleteDbFolder(iconId: string) {
+		const icon = this.icons.find((i) => i.id === iconId);
+		this.confirmDialog = {
+			open: true,
+			title: 'Delete Folder',
+			message: `Delete "${icon?.label ?? 'this folder'}" and all its contents? This cannot be undone.`,
+			confirmLabel: 'Delete',
+			onConfirm: async () => {
+				const folderId = iconId.slice(DB_FOLDER_PREFIX.length);
+				const { fsOrchestrator } = await import('$lib/stores/filesystemOrchestrator.svelte');
+				const ok = await fsOrchestrator.deleteFolder(folderId);
+				if (ok) {
+					this.icons = this.icons.filter((i) => i.id !== iconId);
+					if (this.selectedIconId === iconId) this.selectedIconId = null;
+					this._persist();
+				}
+				this.confirmDialog.open = false;
+			},
+		};
+	}
+
+	private _createDesktopFolder() {
+		import('$lib/stores/filesystemOrchestrator.svelte').then(async ({ fsOrchestrator }) => {
+			const node = await fsOrchestrator.createFolder('New Folder', null);
+			if (node) {
+				const children = await fsOrchestrator.loadChildren(null);
+				this.syncDbFolders(children.filter((n) => n.type === 'folder'));
+				this.requestRename = `${DB_FOLDER_PREFIX}${node.id}`;
+			}
+		});
+	}
+
+	private _createDesktopPrompt() {
+		// Create a new prompt via the forge IDE — opens a fresh tab
+		this._newForge(true);
+	}
+
+	/**
+	 * Sync DB-backed root folders into desktop icons.
+	 * Adds new, removes stale, updates names. Preserves user-set positions.
+	 */
+	syncDbFolders(folders: FsNode[]) {
+		const dbIds = new Set(folders.map((f) => `${DB_FOLDER_PREFIX}${f.id}`));
+		const saved = loadPersisted();
+
+		// Remove stale DB folder icons
+		this.icons = this.icons.filter(
+			(i) => !i.id.startsWith(DB_FOLDER_PREFIX) || dbIds.has(i.id),
+		);
+
+		// Add new / update existing DB folder icons
+		const existingIds = new Set(this.icons.map((i) => i.id));
+		for (const folder of folders) {
+			const iconId = `${DB_FOLDER_PREFIX}${folder.id}`;
+			if (existingIds.has(iconId)) {
+				const icon = this.icons.find((i) => i.id === iconId);
+				if (icon && icon.label !== folder.name) {
+					icon.label = folder.name;
+				}
+			} else {
+				const savedPos = saved?.iconPositions[iconId];
+				const maxRow = getMaxRow();
+				const maxCol = getMaxCol();
+				const position = savedPos
+					? { col: Math.min(savedPos.col, maxCol), row: Math.min(savedPos.row, maxRow) }
+					: this._findEmptyCell();
+				this.icons.push({
+					id: iconId,
+					label: folder.name,
+					icon: 'folder',
+					color: 'yellow',
+					type: 'folder',
+					position,
+					contextActions: DB_FOLDER_CONTEXT_ACTIONS,
+				});
+			}
+		}
+
+		this._dedupPositions(this.icons);
+		this._persist();
+	}
+
+	/** Extract the actual folder ID from a desktop icon ID. */
+	getDbFolderId(iconId: string): string | null {
+		if (!iconId.startsWith(DB_FOLDER_PREFIX)) return null;
+		return iconId.slice(DB_FOLDER_PREFIX.length);
+	}
+
+	/**
+	 * Sync DB-backed root prompts (project_id=null) into desktop icons.
+	 * Mirrors syncDbFolders() pattern. Adds new, removes stale, updates names.
+	 */
+	syncDbPrompts(prompts: FsNode[]) {
+		const dbIds = new Set(prompts.map((p) => `${DB_PROMPT_PREFIX}${p.id}`));
+		const saved = loadPersisted();
+
+		// Remove stale DB prompt icons
+		this.icons = this.icons.filter(
+			(i) => !i.id.startsWith(DB_PROMPT_PREFIX) || dbIds.has(i.id),
+		);
+
+		// Add new / update existing DB prompt icons
+		const existingIds = new Set(this.icons.map((i) => i.id));
+
+		for (const prompt of prompts) {
+			const iconId = `${DB_PROMPT_PREFIX}${prompt.id}`;
+			const displayName = prompt.name.endsWith('.md') ? prompt.name : `${prompt.name}.md`;
+			if (existingIds.has(iconId)) {
+				const icon = this.icons.find((i) => i.id === iconId);
+				if (icon && icon.label !== displayName) {
+					icon.label = displayName;
+				}
+			} else {
+				const savedPos = saved?.iconPositions[iconId];
+				const maxRow = getMaxRow();
+				const maxCol = getMaxCol();
+				const position = savedPos
+					? { col: Math.min(savedPos.col, maxCol), row: Math.min(savedPos.row, maxRow) }
+					: this._findEmptyCell();
+				this.icons.push({
+					id: iconId,
+					label: displayName,
+					icon: 'file-text',
+					color: 'cyan',
+					type: 'prompt',
+					extension: '.md',
+					position,
+					contextActions: DB_PROMPT_CONTEXT_ACTIONS,
+				});
+			}
+		}
+
+		this._dedupPositions(this.icons);
+		this._persist();
+	}
+
+	private _openDbPrompt(iconId: string) {
+		const promptId = iconId.slice(DB_PROMPT_PREFIX.length);
+		import('$lib/utils/documentOpener').then(({ openDocument }) => {
+			import('$lib/utils/fileDescriptor').then(({ createPromptDescriptor }) => {
+				const icon = this.icons.find((i) => i.id === iconId);
+				const name = icon?.label?.replace(/\.md$/, '') ?? 'Prompt';
+				// Desktop prompts have no project — use empty string as projectId
+				// The openDocument flow will handle this gracefully
+				openDocument(createPromptDescriptor(promptId, '', name));
+			});
+		});
+	}
+
+	private _deleteDbPrompt(iconId: string) {
+		const promptId = iconId.slice(DB_PROMPT_PREFIX.length);
+		const icon = this.icons.find((i) => i.id === iconId);
+		this.confirmDialog = {
+			open: true,
+			title: 'Delete Prompt',
+			message: `Delete "${icon?.label ?? 'this prompt'}"? This will also delete all linked forge results. This cannot be undone.`,
+			confirmLabel: 'Delete',
+			onConfirm: async () => {
+				const { fsOrchestrator } = await import('$lib/stores/filesystemOrchestrator.svelte');
+				await fsOrchestrator.deletePrompt(promptId);
+				this.icons = this.icons.filter((i) => i.id !== iconId);
+				if (this.selectedIconId === iconId) this.selectedIconId = null;
+				this._persist();
+				this.confirmDialog.open = false;
+			},
+		};
 	}
 
 	private _newForge(focusTextarea = false) {

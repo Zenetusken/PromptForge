@@ -72,7 +72,7 @@ const EVENT_TYPE_MAP: Record<string, BusEventType> = {
 export const MCP_WRITE_TOOLS = [
 	'optimize', 'retry', 'batch', 'cancel',
 	'create_project', 'add_prompt', 'update_prompt', 'set_project_context',
-	'delete', 'bulk_delete', 'tag', 'sync_workspace',
+	'delete', 'bulk_delete', 'tag', 'sync_workspace', 'move',
 ] as const;
 
 /**
@@ -104,6 +104,9 @@ export const MCP_TOOL_COLORS: Record<string, string> = {
 	set_project_context: 'text-neon-green',
 	// Workspace
 	sync_workspace: 'text-neon-green',
+	// Filesystem
+	get_children: 'text-neon-yellow',
+	move: 'text-neon-yellow',
 	// Destructive
 	delete: 'text-neon-red',
 	bulk_delete: 'text-neon-red',

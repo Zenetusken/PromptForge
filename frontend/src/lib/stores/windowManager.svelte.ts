@@ -886,6 +886,15 @@ class WindowManagerState {
 		return this.openWindow({ id: 'history', title: 'History', icon: 'clock' });
 	}
 
+	openFolderWindow(folderId: string, name: string) {
+		return this.openWindow({
+			id: `folder-${folderId}`,
+			title: name,
+			icon: 'folder',
+			data: { folderId },
+		});
+	}
+
 	openControlPanel() {
 		return this.openWindow({ id: 'control-panel', title: 'Control Panel', icon: 'settings' });
 	}

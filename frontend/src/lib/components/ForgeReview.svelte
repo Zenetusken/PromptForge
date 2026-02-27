@@ -10,6 +10,7 @@
 	import CopyButton from './CopyButton.svelte';
 	import ForgeIterationTimeline from './ForgeIterationTimeline.svelte';
 	import ContextSnapshotPanel from './ContextSnapshotPanel.svelte';
+	import ForgeContents from './ForgeContents.svelte';
 
 	let result = $derived(optimizationState.forgeResult);
 
@@ -162,6 +163,9 @@
 		{#if result.codebase_context_snapshot}
 			<ContextSnapshotPanel context={result.codebase_context_snapshot} />
 		{/if}
+
+		<!-- Forge sub-artifact contents -->
+		<ForgeContents {result} />
 
 		<!-- Iteration timeline -->
 		<ForgeIterationTimeline

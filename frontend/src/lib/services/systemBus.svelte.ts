@@ -37,7 +37,11 @@ export type BusEventType =
 	| 'snap:created'
 	| 'snap:dissolved'
 	| 'snap:window_added'
-	| 'snap:window_removed';
+	| 'snap:window_removed'
+	| 'fs:moved'
+	| 'fs:created'
+	| 'fs:deleted'
+	| 'fs:renamed';
 
 export interface BusEvent {
 	type: BusEventType;

@@ -8,8 +8,10 @@
 	import { projectsState } from '$lib/stores/projects.svelte';
 	import { forgeSession } from '$lib/stores/forgeSession.svelte';
 	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
-	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { saveActiveTabState, restoreTabState } from '$lib/stores/tabCoherence';
+	import { createArtifactDescriptor } from '$lib/utils/fileDescriptor';
+	import { toArtifactName } from '$lib/utils/fileTypes';
+	import { openDocument } from '$lib/utils/documentOpener';
 
 	import { normalizeScore, getScoreBadgeClass } from '$lib/utils/format';
 	import { onMount, tick } from 'svelte';
@@ -64,7 +66,12 @@
 
 	function handleForgeClick(id: string) {
 		close();
-		optimizationState.openInIDEFromHistory(id);
+		const item = historyState.items.find(i => i.id === id);
+		const descriptor = createArtifactDescriptor(
+			id,
+			toArtifactName(item?.title, item?.overall_score),
+		);
+		openDocument(descriptor);
 	}
 
 	function handleProjectClick(id: string) {

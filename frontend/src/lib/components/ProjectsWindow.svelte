@@ -9,23 +9,33 @@
 	import type { ContextAction } from '$lib/stores/desktopStore.svelte';
 	import { projectsState } from '$lib/stores/projects.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
+	import { fsOrchestrator } from '$lib/stores/filesystemOrchestrator.svelte';
+	import { systemBus } from '$lib/services/systemBus.svelte';
 	import { forgeSession } from '$lib/stores/forgeSession.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
 	import { clipboardService } from '$lib/services/clipboardService.svelte';
-	import { fetchProject, type ProjectDetail } from '$lib/api/client';
+	import { type FsNode, type PathSegment } from '$lib/api/client';
 	import { formatRelativeTime, truncateText } from '$lib/utils/format';
 	import { toFilename } from '$lib/utils/fileTypes';
+	import { createPromptDescriptor, createFolderDescriptor } from '$lib/utils/fileDescriptor';
+	import { openDocument } from '$lib/utils/documentOpener';
+	import { DRAG_MIME, decodeDragPayload } from '$lib/utils/dragPayload';
+
+	function autoFocus(node: HTMLElement) {
+		node.focus();
+	}
 
 	// ── View state ──
-	type ProjectsView = 'list' | 'project';
+	type ProjectsView = 'list' | 'folder';
 	let currentView: ProjectsView = $state('list');
-	let activeProjectId: string | null = $state(null);
-	let activeProjectData: ProjectDetail | null = $state(null);
-	let activeProjectLoading: boolean = $state(false);
+	let activeFolderId: string | null = $state(null);
+	let folderNodes: FsNode[] = $state([]);
+	let folderPath: PathSegment[] = $state([]);
+	let folderLoading: boolean = $state(false);
 
 	// ── Navigation stacks ──
-	let backStack: Array<{ view: ProjectsView; projectId: string | null }> = $state([]);
-	let forwardStack: Array<{ view: ProjectsView; projectId: string | null }> = $state([]);
+	let backStack: Array<{ view: ProjectsView; folderId: string | null }> = $state([]);
+	let forwardStack: Array<{ view: ProjectsView; folderId: string | null }> = $state([]);
 
 	// ── Search ──
 	let searchInput = $state('');
@@ -34,9 +44,16 @@
 	// ── Selection ──
 	let selectedId: string | null = $state(null);
 
+	// ── New folder ──
+	let newFolderInput = $state(false);
+	let newFolderName = $state('');
+
+	// ── Drop target ──
+	let dropTargetId: string | null = $state(null);
+
 	// ── Context menu ──
 	let ctxMenu = $state({ open: false, x: 0, y: 0, targetId: null as string | null, actions: [] as ContextAction[] });
-	let confirmAction: { type: 'delete-project' | 'delete-prompt'; id: string; label: string } | null = $state(null);
+	let confirmAction: { type: 'delete-project' | 'delete-prompt' | 'delete-folder'; id: string; label: string } | null = $state(null);
 
 	function projectActions(project: { id: string; status: string }): ContextAction[] {
 		const actions: ContextAction[] = [
@@ -50,6 +67,11 @@
 		actions.push({ id: 'delete', label: 'Delete Project', icon: 'trash-2', separator: true, danger: true });
 		return actions;
 	}
+
+	const subfolderActions: ContextAction[] = [
+		{ id: 'open-folder', label: 'Open', icon: 'folder-open' },
+		{ id: 'delete-folder', label: 'Delete', icon: 'trash-2', separator: true, danger: true },
+	];
 
 	const promptActions: ContextAction[] = [
 		{ id: 'open-review', label: 'Open', icon: 'arrow-up-right' },
@@ -73,11 +95,14 @@
 
 		switch (actionId) {
 			case 'open':
-				navigateTo('project', targetId);
+				navigateTo('folder', targetId);
+				break;
+			case 'open-folder':
+				navigateTo('folder', targetId);
 				break;
 			case 'open-review': {
-				const prompt = activeProjectData?.prompts.find((p) => p.id === targetId);
-				if (prompt) handlePromptOpen(prompt);
+				const node = folderNodes.find((n) => n.id === targetId && n.type === 'prompt');
+				if (node) handleNodeOpen(node);
 				break;
 			}
 			case 'archive':
@@ -91,30 +116,36 @@
 				confirmAction = { type: 'delete-project', id: targetId, label: project?.name ?? 'this project' };
 				break;
 			}
+			case 'delete-folder': {
+				const node = folderNodes.find((n) => n.id === targetId);
+				confirmAction = { type: 'delete-folder', id: targetId, label: node?.name ?? 'this folder' };
+				break;
+			}
 			case 'forge': {
-				const prompt = activeProjectData?.prompts.find((p) => p.id === targetId);
-				if (prompt && activeProjectData) {
+				const node = folderNodes.find((n) => n.id === targetId && n.type === 'prompt');
+				if (node && activeFolderId) {
+					const projectName = folderPath[0]?.name ?? '';
 					forgeSession.loadRequest({
-						text: prompt.content,
-						title: activeProjectData.name,
-						project: activeProjectData.name,
-						promptId: prompt.id,
+						text: node.content ?? '',
+						title: projectName,
+						project: projectName,
+						promptId: node.id,
 						sourceAction: 'optimize',
 					});
 				}
 				break;
 			}
 			case 'copy-content': {
-				const prompt = activeProjectData?.prompts.find((p) => p.id === targetId);
-				if (prompt) {
-					clipboardService.copy(prompt.content, 'Prompt content');
+				const node = folderNodes.find((n) => n.id === targetId && n.type === 'prompt');
+				if (node?.content) {
+					clipboardService.copy(node.content, 'Prompt content');
 					toastState.show('Prompt content copied', 'success');
 				}
 				break;
 			}
 			case 'delete-prompt': {
-				const prompt = activeProjectData?.prompts.find((p) => p.id === targetId);
-				confirmAction = { type: 'delete-prompt', id: targetId, label: truncateText(prompt?.content ?? 'this prompt', 40) };
+				const node = folderNodes.find((n) => n.id === targetId && n.type === 'prompt');
+				confirmAction = { type: 'delete-prompt', id: targetId, label: truncateText(node?.content ?? 'this prompt', 40) };
 				break;
 			}
 		}
@@ -128,11 +159,19 @@
 			const ok = await projectsState.remove(id);
 			if (ok) toastState.show('Project deleted', 'success');
 			else toastState.show('Failed to delete project', 'error');
-		} else if (type === 'delete-prompt' && activeProjectId) {
-			const ok = await projectsState.removePrompt(activeProjectId, id);
+		} else if (type === 'delete-folder') {
+			const ok = await fsOrchestrator.deleteFolder(id);
+			if (ok) {
+				toastState.show('Folder deleted', 'success');
+				if (activeFolderId) await loadFolderContents(activeFolderId);
+			} else {
+				toastState.show('Failed to delete folder', 'error');
+			}
+		} else if (type === 'delete-prompt' && activeFolderId) {
+			const ok = await projectsState.removePrompt(activeFolderId, id);
 			if (ok) {
 				toastState.show('Prompt deleted', 'success');
-				await loadProjectDetail(activeProjectId);
+				await loadFolderContents(activeFolderId);
 			} else {
 				toastState.show('Failed to delete prompt', 'error');
 			}
@@ -146,21 +185,21 @@
 		{ key: 'updated_at', label: 'Modified', width: 'w-24' },
 	];
 
-	const promptColumns: ColumnDef[] = [
-		{ key: 'content', label: 'Name', width: 'flex-1', sortable: false },
+	const folderColumns: ColumnDef[] = [
+		{ key: 'name', label: 'Name', width: 'flex-1', sortable: false },
 		{ key: 'version', label: 'Ver', width: 'w-10', align: 'right', sortable: false },
-		{ key: 'forge_count', label: 'Forges', width: 'w-14', align: 'right', sortable: false },
 		{ key: 'updated_at', label: 'Modified', width: 'w-24', sortable: false },
 	];
 
 	// ── Navigation functions ──
-	function navigateTo(view: ProjectsView, projectId: string | null) {
-		backStack = [...backStack, { view: currentView, projectId: activeProjectId }];
+	function navigateTo(view: ProjectsView, folderId: string | null) {
+		backStack = [...backStack, { view: currentView, folderId: activeFolderId }];
 		forwardStack = [];
 		currentView = view;
-		activeProjectId = projectId;
+		activeFolderId = folderId;
 		selectedId = null;
-		if (view === 'project' && projectId) loadProjectDetail(projectId);
+		newFolderInput = false;
+		if (view === 'folder' && folderId) loadFolderContents(folderId);
 		syncBreadcrumbs();
 		syncNavigation();
 	}
@@ -169,11 +208,12 @@
 		if (!backStack.length) return;
 		const prev = backStack[backStack.length - 1];
 		backStack = backStack.slice(0, -1);
-		forwardStack = [...forwardStack, { view: currentView, projectId: activeProjectId }];
+		forwardStack = [...forwardStack, { view: currentView, folderId: activeFolderId }];
 		currentView = prev.view;
-		activeProjectId = prev.projectId;
+		activeFolderId = prev.folderId;
 		selectedId = null;
-		if (prev.view === 'project' && prev.projectId) loadProjectDetail(prev.projectId);
+		newFolderInput = false;
+		if (prev.view === 'folder' && prev.folderId) loadFolderContents(prev.folderId);
 		syncBreadcrumbs();
 		syncNavigation();
 	}
@@ -182,11 +222,12 @@
 		if (!forwardStack.length) return;
 		const next = forwardStack[forwardStack.length - 1];
 		forwardStack = forwardStack.slice(0, -1);
-		backStack = [...backStack, { view: currentView, projectId: activeProjectId }];
+		backStack = [...backStack, { view: currentView, folderId: activeFolderId }];
 		currentView = next.view;
-		activeProjectId = next.projectId;
+		activeFolderId = next.folderId;
 		selectedId = null;
-		if (next.view === 'project' && next.projectId) loadProjectDetail(next.projectId);
+		newFolderInput = false;
+		if (next.view === 'folder' && next.folderId) loadFolderContents(next.folderId);
 		syncBreadcrumbs();
 		syncNavigation();
 	}
@@ -198,13 +239,21 @@
 				{ label: 'Desktop', icon: 'monitor', action: () => windowManager.closeWindow('projects') },
 				{ label: 'Projects' },
 			]);
-		} else {
-			const name = activeProjectData?.name ?? 'Loading...';
-			windowManager.setBreadcrumbs('projects', [
+		} else if (activeFolderId) {
+			const segments: Array<{ label: string; icon?: string; action?: () => void }> = [
 				{ label: 'Desktop', icon: 'monitor', action: () => windowManager.closeWindow('projects') },
 				{ label: 'Projects', action: () => navigateTo('list', null) },
-				{ label: name },
-			]);
+			];
+			for (let i = 0; i < folderPath.length; i++) {
+				const seg = folderPath[i];
+				if (i < folderPath.length - 1) {
+					const segId = seg.id;
+					segments.push({ label: seg.name, action: () => navigateTo('folder', segId) });
+				} else {
+					segments.push({ label: seg.name });
+				}
+			}
+			windowManager.setBreadcrumbs('projects', segments);
 		}
 	}
 
@@ -218,17 +267,63 @@
 	}
 
 	// ── Data loading ──
-	async function loadProjectDetail(id: string) {
-		activeProjectLoading = true;
+	async function loadFolderContents(id: string) {
+		folderLoading = true;
 		try {
-			activeProjectData = await fetchProject(id);
-			syncBreadcrumbs(); // Update "Loading..." → real name
+			folderNodes = await fsOrchestrator.loadChildren(id);
+			folderPath = await fsOrchestrator.getPath(id);
+			syncBreadcrumbs();
 		} finally {
-			activeProjectLoading = false;
+			folderLoading = false;
 		}
 	}
 
-	// ── Handlers ──
+	// ── Node open handler ──
+	function handleNodeOpen(node: FsNode) {
+		if (node.type === 'folder') {
+			navigateTo('folder', node.id);
+		} else if (activeFolderId) {
+			openDocument(createPromptDescriptor(node.id, activeFolderId, node.name));
+		}
+	}
+
+	// ── New folder ──
+	async function handleCreateFolder() {
+		const name = newFolderName.trim();
+		if (!name) return;
+		await fsOrchestrator.createFolder(name, activeFolderId);
+		newFolderInput = false;
+		newFolderName = '';
+		if (activeFolderId) await loadFolderContents(activeFolderId);
+	}
+
+	// ── Drag-and-drop for folder rows ──
+	function handleRowDragOver(e: DragEvent, targetNodeId: string) {
+		if (!e.dataTransfer?.types.includes(DRAG_MIME)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'move';
+		dropTargetId = targetNodeId;
+	}
+
+	function handleRowDragLeave() {
+		dropTargetId = null;
+	}
+
+	async function handleRowDrop(e: DragEvent, targetNodeId: string) {
+		e.preventDefault();
+		e.stopPropagation();
+		dropTargetId = null;
+		const raw = e.dataTransfer?.getData(DRAG_MIME);
+		if (!raw) return;
+		const payload = decodeDragPayload(raw);
+		if (!payload) return;
+		const desc = payload.descriptor;
+		const type = desc.kind === 'folder' ? 'project' : 'prompt';
+		await fsOrchestrator.move(type as 'project' | 'prompt', desc.id, targetNodeId);
+		if (activeFolderId) await loadFolderContents(activeFolderId);
+	}
+
+	// ── Search/filter ──
 	function handleSearch(value: string) {
 		searchInput = value;
 		if (searchTimer) clearTimeout(searchTimer);
@@ -247,18 +342,12 @@
 		projectsState.setSortField(key);
 	}
 
-	async function handlePromptOpen(prompt: import('$lib/api/client').ProjectPrompt) {
-		if (!activeProjectId || !activeProjectData) return;
-		const { openPromptInIDE } = await import('$lib/utils/promptOpener');
-		await openPromptInIDE({ promptId: prompt.id, projectId: activeProjectId, projectData: activeProjectData, prompt });
-	}
-
 	// ── Consume pending navigation from projectsState ──
 	$effect(() => {
 		const pendingId = projectsState.pendingNavigateProjectId;
 		if (pendingId) {
 			projectsState.pendingNavigateProjectId = null;
-			navigateTo('project', pendingId);
+			navigateTo('folder', pendingId);
 		}
 	});
 
@@ -267,9 +356,25 @@
 		if (!projectsState.hasLoaded) projectsState.loadProjects();
 		syncNavigation();
 		syncBreadcrumbs();
+
+		const unsub1 = systemBus.on('fs:moved', () => {
+			if (activeFolderId) loadFolderContents(activeFolderId);
+		});
+		const unsub2 = systemBus.on('fs:created', () => {
+			if (activeFolderId) loadFolderContents(activeFolderId);
+		});
+		const unsub3 = systemBus.on('fs:deleted', () => {
+			if (activeFolderId) loadFolderContents(activeFolderId);
+		});
+		const unsub4 = systemBus.on('fs:renamed', () => {
+			if (activeFolderId) loadFolderContents(activeFolderId);
+		});
+
+		return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
 	});
 
 	onDestroy(() => {
+		if (searchTimer) clearTimeout(searchTimer);
 		windowManager.clearNavigation('projects');
 	});
 </script>
@@ -312,7 +417,7 @@
 
 		{#snippet rows()}
 			{#each projectsState.items as project (project.id)}
-				<FileManagerRow onselect={() => selectedId = project.id} onopen={() => navigateTo('project', project.id)} oncontextmenu={(e) => openCtxMenu(e, project.id, projectActions(project))} active={selectedId === project.id} testId="project-row-{project.id}">
+				<FileManagerRow onselect={() => selectedId = project.id} onopen={() => navigateTo('folder', project.id)} oncontextmenu={(e) => openCtxMenu(e, project.id, projectActions(project))} active={selectedId === project.id} testId="project-row-{project.id}">
 					<div class="flex flex-1 min-w-0 items-center gap-3">
 						<Icon
 							name="folder"
@@ -339,43 +444,81 @@
 	</FileManagerView>
 
 {:else}
-	<!-- Project detail (prompts) view -->
+	<!-- Folder view (N-level nesting) -->
 	<FileManagerView
-		columns={promptColumns}
+		columns={folderColumns}
 		sortKey=""
 		sortOrder="asc"
 		onsort={() => {}}
-		itemCount={activeProjectData?.prompts.length ?? 0}
-		itemLabel="prompt"
-		isLoading={activeProjectLoading}
+		itemCount={folderNodes.length}
+		itemLabel="item"
+		isLoading={folderLoading}
 		onbackgroundclick={() => selectedId = null}
-		emptyIcon="file-text"
-		emptyMessage="No prompts yet"
+		emptyIcon="folder"
+		emptyMessage="This folder is empty"
 	>
-		{#snippet toolbar()}{/snippet}
+		{#snippet toolbar()}
+			{#if newFolderInput}
+				<input
+					class="h-6 w-36 rounded border border-white/10 bg-bg-input px-2 text-[10px] text-text-primary outline-none focus:border-neon-cyan/40"
+					placeholder="Folder name..."
+					use:autoFocus
+					bind:value={newFolderName}
+					onkeydown={(e) => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') { newFolderInput = false; newFolderName = ''; } }}
+				/>
+			{:else}
+				<button
+					class="text-[10px] text-text-dim hover:text-neon-cyan transition-colors"
+					onclick={() => { newFolderInput = true; }}
+				>+ New Folder</button>
+			{/if}
+		{/snippet}
 
 		{#snippet rows()}
-			{#if activeProjectData}
-				{#each activeProjectData.prompts as prompt (prompt.id)}
-					<FileManagerRow onselect={() => selectedId = prompt.id} onopen={() => handlePromptOpen(prompt)} oncontextmenu={(e) => openCtxMenu(e, prompt.id, promptActions)} active={selectedId === prompt.id} testId="prompt-row-{prompt.id}">
-						<div class="flex flex-1 min-w-0 items-center gap-3">
-							<Icon name="file-text" size={16} class="text-neon-cyan/70 shrink-0" />
-							<span class="text-xs text-text-primary truncate block">
-								{toFilename(prompt.content)}
-							</span>
-						</div>
-						<div class="w-10 text-right text-[10px] text-text-dim tabular-nums">
-							v{prompt.version}
-						</div>
-						<div class="w-14 text-right text-[10px] text-text-dim tabular-nums">
-							{prompt.forge_count}
-						</div>
-						<div class="w-24 text-[10px] text-text-dim">
-							{formatRelativeTime(prompt.updated_at)}
-						</div>
+			{#each folderNodes as node (node.id)}
+				{@const isFolder = node.type === 'folder'}
+				{@const isDropTarget = dropTargetId === node.id && isFolder}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					class={isDropTarget ? 'bg-neon-cyan/10 ring-1 ring-neon-cyan/30 rounded-sm' : ''}
+					ondragover={(e) => { if (isFolder) handleRowDragOver(e, node.id); }}
+					ondragleave={() => handleRowDragLeave()}
+					ondrop={(e) => { if (isFolder) { e.stopPropagation(); handleRowDrop(e, node.id); } }}
+				>
+					<FileManagerRow
+						active={selectedId === node.id}
+						onselect={() => { selectedId = node.id; }}
+						onopen={() => handleNodeOpen(node)}
+						oncontextmenu={(e) => openCtxMenu(e, node.id, isFolder ? subfolderActions : promptActions)}
+						dragPayload={isFolder
+							? { descriptor: createFolderDescriptor(node.id, node.name, node.parent_id, node.depth), source: 'projects-window' }
+							: { descriptor: createPromptDescriptor(node.id, activeFolderId ?? '', node.name), source: 'projects-window' }
+						}
+					>
+						{#if isFolder}
+							<div class="flex flex-1 min-w-0 items-center gap-3">
+								<Icon name="folder" size={16} class="text-neon-yellow/70 shrink-0" />
+								<span class="text-xs font-medium text-text-primary truncate">{node.name}</span>
+							</div>
+							<div class="w-10"></div>
+							<div class="w-24 text-[10px] text-text-dim">
+								{node.updated_at ? formatRelativeTime(node.updated_at) : ''}
+							</div>
+						{:else}
+							<div class="flex flex-1 min-w-0 items-center gap-3">
+								<Icon name="file-text" size={16} class="text-neon-cyan/70 shrink-0" />
+								<span class="text-xs text-text-primary truncate block">{node.name}</span>
+							</div>
+							<div class="w-10 text-right text-[10px] text-text-dim tabular-nums">
+								{#if node.version}v{node.version}{/if}
+							</div>
+							<div class="w-24 text-[10px] text-text-dim">
+								{node.updated_at ? formatRelativeTime(node.updated_at) : ''}
+							</div>
+						{/if}
 					</FileManagerRow>
-				{/each}
-			{/if}
+				</div>
+			{/each}
 		{/snippet}
 	</FileManagerView>
 {/if}
@@ -391,7 +534,7 @@
 
 <ConfirmModal
 	open={confirmAction !== null}
-	title={confirmAction?.type === 'delete-project' ? 'Delete Project' : 'Delete Prompt'}
+	title={confirmAction?.type === 'delete-project' ? 'Delete Project' : confirmAction?.type === 'delete-folder' ? 'Delete Folder' : 'Delete Prompt'}
 	message={confirmAction ? `Permanently delete "${confirmAction.label}"? This cannot be undone.` : ''}
 	confirmLabel="Delete"
 	onconfirm={handleConfirmAction}

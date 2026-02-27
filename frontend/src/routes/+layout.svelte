@@ -485,7 +485,7 @@
 		}
 	});
 
-	// Sync tab state for non-pipeline result loads (e.g. openInIDEFromHistory)
+	// Sync tab state for non-pipeline result loads (e.g. openDocument, restoreResult)
 	$effect(() => {
 		const tab = forgeSession.activeTab;
 		const mode = forgeMachine.mode;
@@ -755,6 +755,22 @@
 						</DesktopWindow>
 					{/await}
 				{/if}
+
+				<!-- Dynamic Folder Windows -->
+				{#each windowManager.windows.filter(w => w.id.startsWith('folder-')) as entry (entry.id)}
+					{@const folderId = entry.data?.folderId as string}
+					{#if folderId}
+						{#await import("$lib/components/FolderWindow.svelte") then mod}
+							<DesktopWindow windowId={entry.id} title={entry.title} icon="folder">
+								<mod.default {folderId} />
+							</DesktopWindow>
+						{:catch}
+							<DesktopWindow windowId={entry.id} title={entry.title} icon="folder">
+								<p class="p-4 text-text-secondary">Failed to load folder.</p>
+							</DesktopWindow>
+						{/await}
+					{/if}
+				{/each}
 
 				<!-- Snap Assist Overlay (z-index: 15, above windows) -->
 				<SnapAssist />

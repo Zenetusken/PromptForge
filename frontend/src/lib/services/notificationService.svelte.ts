@@ -9,6 +9,20 @@
 import { systemBus } from './systemBus.svelte';
 import { MCP_WRITE_TOOLS } from './mcpActivityFeed.svelte';
 
+/**
+ * Lazily import and open an artifact in the IDE via the unified document opener.
+ * Uses dynamic imports to avoid circular dependencies from the notification service.
+ */
+function openArtifactInIDE(id: string, title?: string, score?: number): void {
+	Promise.all([
+		import('$lib/utils/documentOpener'),
+		import('$lib/utils/fileDescriptor'),
+		import('$lib/utils/fileTypes'),
+	]).then(([{ openDocument }, { createArtifactDescriptor }, { toArtifactName }]) => {
+		openDocument(createArtifactDescriptor(id, toArtifactName(title, score)));
+	});
+}
+
 export interface SystemNotification {
 	id: string;
 	type: 'info' | 'success' | 'warning' | 'error';
@@ -39,6 +53,7 @@ const MCP_TOOL_FRIENDLY_NAMES: Record<string, string> = {
 	set_project_context: 'Context profile updated',
 	tag: 'Tags updated',
 	create_project: 'Project created',
+	move: 'Item moved',
 	delete: 'Item deleted',
 	bulk_delete: 'Bulk delete complete',
 };
@@ -165,14 +180,7 @@ class NotificationService {
 					body: event.payload.strategy as string | undefined,
 					actionLabel: optimizationId ? 'Open in IDE' : undefined,
 					actionCallback: optimizationId
-						? () => {
-								import('$lib/stores/optimization.svelte').then(({ optimizationState }) => {
-									import('$lib/stores/windowManager.svelte').then(({ windowManager }) => {
-										optimizationState.openInIDEFromHistory(optimizationId);
-										windowManager.openIDE();
-									});
-								});
-							}
+						? () => openArtifactInIDE(optimizationId, title, score)
 						: undefined,
 				});
 			}),
@@ -208,14 +216,7 @@ class NotificationService {
 					body: best ? `Top strategy: ${best.strategy}` : undefined,
 					actionLabel: best?.id ? 'Open in IDE' : undefined,
 					actionCallback: best?.id
-						? () => {
-								import('$lib/stores/optimization.svelte').then(({ optimizationState }) => {
-									import('$lib/stores/windowManager.svelte').then(({ windowManager }) => {
-										optimizationState.openInIDEFromHistory(best.id);
-										windowManager.openIDE();
-									});
-								});
-							}
+						? () => openArtifactInIDE(best.id, best.strategy, best.score)
 						: undefined,
 				});
 			}),
@@ -260,14 +261,7 @@ class NotificationService {
 					body: id ? `ID: ${id.slice(0, 8)}...` : undefined,
 					actionLabel: id && tool !== 'cancel' ? 'Open in IDE' : undefined,
 					actionCallback: id && tool !== 'cancel'
-						? () => {
-								import('$lib/stores/optimization.svelte').then(({ optimizationState }) => {
-									import('$lib/stores/windowManager.svelte').then(({ windowManager }) => {
-										optimizationState.openInIDEFromHistory(id);
-										windowManager.openIDE();
-									});
-								});
-							}
+						? () => openArtifactInIDE(id, undefined, score)
 						: undefined,
 				});
 			}),

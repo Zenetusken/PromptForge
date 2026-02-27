@@ -39,6 +39,8 @@ const mockProject = (overrides = {}) => ({
 	name: 'Test Project',
 	description: null,
 	status: 'active',
+	parent_id: null,
+	depth: 0,
 	prompt_count: 0,
 	has_context: false,
 	created_at: '2024-01-01T00:00:00Z',
