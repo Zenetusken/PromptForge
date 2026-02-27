@@ -10,6 +10,9 @@ import { systemBus } from '$lib/services/systemBus.svelte';
 import { sessionContext } from '$lib/stores/sessionContext.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 import { safeString, safeNumber, safeArray } from '$lib/utils/safe';
+import { forgeSession } from '$lib/stores/forgeSession.svelte';
+import { createArtifactDescriptor } from '$lib/utils/fileDescriptor';
+import { toArtifactName } from '$lib/utils/fileTypes';
 
 export interface AnalysisStepData {
 	task_type?: string;
@@ -32,9 +35,11 @@ export interface ValidationStepData {
 	specificity_score?: number;
 	structure_score?: number;
 	faithfulness_score?: number;
+	conciseness_score?: number;
 	overall_score?: number;
 	is_improvement?: boolean;
 	verdict?: string;
+	detected_patterns?: string[];
 	step_duration_ms?: number;
 }
 
@@ -80,7 +85,9 @@ export interface OptimizationResultState {
 		specificity: number;
 		structure: number;
 		faithfulness: number;
+		conciseness: number;
 		overall: number;
+		framework_adherence?: number;
 	};
 	is_improvement: boolean;
 	verdict: string;
@@ -153,7 +160,9 @@ export function mapToResultState(
 			specificity: safeNumber(source.specificity_score),
 			structure: safeNumber(source.structure_score),
 			faithfulness: safeNumber(source.faithfulness_score),
+			conciseness: safeNumber(source.conciseness_score),
 			overall: safeNumber(source.overall_score),
+			...(source.framework_adherence_score != null ? { framework_adherence: safeNumber(source.framework_adherence_score) } : {}),
 		},
 		is_improvement: typeof source.is_improvement === 'boolean' ? source.is_improvement : false,
 		verdict: safeString(source.verdict),
@@ -429,6 +438,8 @@ class OptimizationState {
 				this.forgeResult = mapToResultState(event.data || {}, originalPrompt);
 				this.isRunning = false;
 				sessionContext.record(this.forgeResult);
+				// Attach artifact descriptor to active tab for document-aware tab management
+				this._attachArtifactToActiveTab(this.forgeResult);
 				// Mark all steps as complete
 				if (this.currentRun) {
 					this.currentRun.steps = this.currentRun.steps.map((s) => ({
@@ -614,10 +625,12 @@ class OptimizationState {
 		if (valid.length >= 2) {
 			// Load best result and auto-enter compare mode
 			this.forgeResult = valid[0].result;
+			this._attachArtifactToActiveTab(valid[0].result);
 			forgeMachine.compare(valid[0].id, valid[1].id);
 			windowManager.openIDE();
 		} else if (valid.length === 1) {
 			this.forgeResult = valid[0].result;
+			this._attachArtifactToActiveTab(valid[0].result);
 			forgeMachine.enterReview();
 			windowManager.openIDE();
 		}
@@ -640,6 +653,22 @@ class OptimizationState {
 			tags: [...(metadata?.tags || []), 'chained'],
 		};
 		this.startOptimization(result.optimized, chainMeta);
+	}
+
+	/** Attach an artifact descriptor to the active tab for document-aware tab management. */
+	private _attachArtifactToActiveTab(result: OptimizationResultState): void {
+		if (!result.id) return;
+		const tab = forgeSession.activeTab;
+		if (!tab) return;
+		tab.document = createArtifactDescriptor(
+			result.id,
+			toArtifactName(result.title, result.scores.overall),
+			{
+				sourcePromptId: result.prompt_id || null,
+				sourceProjectId: result.project_id || null,
+			},
+		);
+		tab.resultId = result.id;
 	}
 
 	/** Clear only forge-side state, preserving viewResult for detail pages. */

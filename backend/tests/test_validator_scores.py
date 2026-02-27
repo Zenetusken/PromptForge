@@ -4,20 +4,24 @@ import pytest
 
 from app.services.validator import (
     CLARITY_WEIGHT,
+    CONCISENESS_WEIGHT,
     FAITHFULNESS_WEIGHT,
     SPECIFICITY_WEIGHT,
     STRUCTURE_WEIGHT,
 )
 from app.utils.scores import round_score, score_threshold_to_db, score_to_display
 
+ALL_WEIGHTS = (CLARITY_WEIGHT, SPECIFICITY_WEIGHT, STRUCTURE_WEIGHT, FAITHFULNESS_WEIGHT,
+               CONCISENESS_WEIGHT)
+
 
 class TestScoreWeights:
     def test_weights_sum_to_one(self):
-        total = CLARITY_WEIGHT + SPECIFICITY_WEIGHT + STRUCTURE_WEIGHT + FAITHFULNESS_WEIGHT
+        total = sum(ALL_WEIGHTS)
         assert total == pytest.approx(1.0)
 
     def test_all_weights_positive(self):
-        for w in (CLARITY_WEIGHT, SPECIFICITY_WEIGHT, STRUCTURE_WEIGHT, FAITHFULNESS_WEIGHT):
+        for w in ALL_WEIGHTS:
             assert w > 0
 
 
@@ -26,39 +30,60 @@ class TestOverallScoreComputation:
 
     @staticmethod
     def _expected_overall(
-        clarity: float, specificity: float, structure: float, faithfulness: float
+        clarity: float, specificity: float, structure: float,
+        faithfulness: float, conciseness: float,
     ) -> float:
         return round(
             clarity * CLARITY_WEIGHT
             + specificity * SPECIFICITY_WEIGHT
             + structure * STRUCTURE_WEIGHT
-            + faithfulness * FAITHFULNESS_WEIGHT,
+            + faithfulness * FAITHFULNESS_WEIGHT
+            + conciseness * CONCISENESS_WEIGHT,
             4,
         )
 
     def test_uniform_scores(self):
         """When all sub-scores are equal, overall should equal that value."""
         score = 0.8
-        expected = self._expected_overall(score, score, score, score)
+        expected = self._expected_overall(score, score, score, score, score)
         assert expected == pytest.approx(score)
 
     def test_weighted_average_formula(self):
-        """Verify the specific weighted formula: 0.25*C + 0.25*S + 0.20*St + 0.30*F."""
-        c, sp, st, f = 0.9, 0.7, 0.8, 1.0
-        expected = self._expected_overall(c, sp, st, f)
-        assert expected == pytest.approx(0.9 * 0.25 + 0.7 * 0.25 + 0.8 * 0.20 + 1.0 * 0.30)
+        """Verify the specific weighted formula with all 5 dimensions."""
+        c, sp, st, f, cn = 0.9, 0.7, 0.8, 1.0, 0.6
+        expected = self._expected_overall(c, sp, st, f, cn)
+        assert expected == pytest.approx(
+            c * CLARITY_WEIGHT + sp * SPECIFICITY_WEIGHT + st * STRUCTURE_WEIGHT
+            + f * FAITHFULNESS_WEIGHT + cn * CONCISENESS_WEIGHT
+        )
 
     def test_overall_within_sub_score_bounds(self):
         """Overall score must be between min and max of sub-scores."""
-        c, sp, st, f = 0.3, 0.9, 0.5, 0.7
-        overall = self._expected_overall(c, sp, st, f)
-        assert min(c, sp, st, f) <= overall <= max(c, sp, st, f)
+        c, sp, st, f, cn = 0.3, 0.9, 0.5, 0.7, 0.6
+        overall = self._expected_overall(c, sp, st, f, cn)
+        assert min(c, sp, st, f, cn) <= overall <= max(c, sp, st, f, cn)
 
     def test_all_zeros(self):
-        assert self._expected_overall(0.0, 0.0, 0.0, 0.0) == 0.0
+        assert self._expected_overall(0.0, 0.0, 0.0, 0.0, 0.0) == 0.0
 
     def test_all_ones(self):
-        assert self._expected_overall(1.0, 1.0, 1.0, 1.0) == pytest.approx(1.0)
+        assert self._expected_overall(1.0, 1.0, 1.0, 1.0, 1.0) == pytest.approx(1.0)
+
+
+class TestFrameworkAdherenceNotInOverall:
+    """framework_adherence_score must NOT affect the weighted overall_score."""
+
+    def test_adherence_excluded_from_weights(self):
+        """The 5 standard weights sum to 1.0 — no room for a 6th dimension."""
+        total = sum(ALL_WEIGHTS)
+        assert total == pytest.approx(1.0)
+
+    def test_overall_unchanged_regardless_of_adherence(self):
+        """Same 5 sub-scores → same overall, whether adherence is 0 or 1."""
+        c, sp, st, f, cn = 0.8, 0.8, 0.8, 0.8, 0.8
+        expected = TestOverallScoreComputation._expected_overall(c, sp, st, f, cn)
+        # framework_adherence_score is supplementary and never enters the formula
+        assert expected == pytest.approx(0.8)
 
 
 class TestScoreToDisplay:

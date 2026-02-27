@@ -237,11 +237,12 @@ class TestStrategySelector:
     # --- Non-string weakness items (B1) ---
 
     def test_non_string_weakness_does_not_crash(self):
-        """Weaknesses containing ints or None should not crash the selector."""
+        """Weaknesses containing ints or None should not crash the selector.
+        ratio=1/3=0.333 < 0.40 → P2 does not fire, falls to P3 default."""
         result = self.selector.select(
             _make_analysis(task_type="general", weaknesses=[123, None, "vague"])
         )
-        assert result.strategy == "constraint-injection"
+        assert result.strategy == "role-task-format"
 
     def test_empty_string_weakness_does_not_crash(self):
         """An empty-string weakness should not crash or match patterns."""
@@ -265,7 +266,8 @@ class TestStrategySelector:
     # --- Priority interactions ---
 
     def test_high_complexity_non_cot_with_specificity_gets_constraint_focused(self):
-        """High complexity coding (non-CoT) with specificity weakness → P2 fires at 0.80."""
+        """High complexity coding (non-CoT) with specificity weakness → P2 fires.
+        ratio=1/1=1.0 → >=0.75 tier → 0.90."""
         result = self.selector.select(
             _make_analysis(
                 complexity="high",
@@ -274,7 +276,7 @@ class TestStrategySelector:
             )
         )
         assert result.strategy == "constraint-injection"
-        assert result.confidence == 0.80
+        assert result.confidence == 0.90
 
     # --- Issue 2.1: Specificity exemption for chain-of-thought task types ---
 
@@ -403,12 +405,12 @@ class TestStrategySelector:
         result = self.selector.select(_make_analysis(complexity="high", task_type="math"))
         assert result.confidence == 0.95
 
-    def test_specificity_weakness_single_confidence_is_080(self):
-        """Single specificity weakness gets base P2 confidence of 0.80."""
+    def test_specificity_weakness_single_confidence_is_090(self):
+        """Single specificity weakness: ratio=1/1=1.0 → >=0.75 tier → 0.90."""
         result = self.selector.select(
             _make_analysis(task_type="coding", weaknesses=["Instructions are vague"])
         )
-        assert result.confidence == 0.80
+        assert result.confidence == 0.90
 
     def test_known_task_type_confidence_is_075(self):
         result = self.selector.select(_make_analysis(task_type="coding"))
@@ -888,14 +890,16 @@ class TestP2ScaledConfidence:
     def setup_method(self):
         self.selector = HeuristicStrategySelector()
 
-    def test_single_weakness_confidence_080(self):
+    def test_single_weakness_confidence_090(self):
+        """Single weakness: ratio=1/1=1.0 → >=0.75 tier → 0.90."""
         result = self.selector.select(
             _make_analysis(task_type="coding", weaknesses=["Instructions are vague"])
         )
         assert result.strategy == "constraint-injection"
-        assert result.confidence == 0.80
+        assert result.confidence == 0.90
 
-    def test_two_weaknesses_confidence_085(self):
+    def test_two_weaknesses_confidence_090(self):
+        """Two weaknesses, both match: ratio=2/2=1.0 → >=0.75 tier → 0.90."""
         result = self.selector.select(
             _make_analysis(
                 task_type="coding",
@@ -903,7 +907,7 @@ class TestP2ScaledConfidence:
             )
         )
         assert result.strategy == "constraint-injection"
-        assert result.confidence == 0.85
+        assert result.confidence == 0.90
 
     def test_three_weaknesses_confidence_090(self):
         result = self.selector.select(
@@ -936,7 +940,7 @@ class TestP2ScaledConfidence:
         assert result.confidence == 0.90
 
     def test_mixed_matching_and_nonmatching_weaknesses(self):
-        """Only specificity-matching weaknesses count toward the total."""
+        """2/4 specificity matches: ratio=0.50 → >=0.40 tier → 0.80."""
         result = self.selector.select(
             _make_analysis(
                 task_type="coding",
@@ -949,7 +953,130 @@ class TestP2ScaledConfidence:
             )
         )
         assert result.strategy == "constraint-injection"
-        assert result.confidence == 0.85  # 2 matches
+        assert result.confidence == 0.80  # ratio 2/4=0.50 → 0.40-0.59 tier
+
+
+class TestP2ProportionalThreshold:
+    """Tests for P2 proportional ratio threshold.
+
+    P2 now requires specificity_ratio >= 0.40 instead of count > 0.
+    """
+
+    def setup_method(self):
+        self.selector = HeuristicStrategySelector()
+
+    def test_minority_specificity_does_not_trigger_p2(self):
+        """1/6=0.167 < 0.40 → P2 skipped, falls to P3."""
+        result = self.selector.select(
+            _make_analysis(
+                task_type="coding",
+                weaknesses=[
+                    "Instructions are vague",       # specificity match
+                    "Poor formatting",
+                    "Missing error handling",
+                    "No tests mentioned",
+                    "Lacks examples",
+                    "Inconsistent style",
+                ],
+            )
+        )
+        # P2 does NOT fire; P3 selects coding default (structured-output)
+        assert result.strategy != "constraint-injection"
+        assert result.strategy == "structured-output"
+
+    def test_at_threshold_triggers_p2(self):
+        """2/5=0.40 → exactly at threshold → P2 fires."""
+        result = self.selector.select(
+            _make_analysis(
+                task_type="coding",
+                weaknesses=[
+                    "Instructions are vague",       # matches
+                    "Too broad scope",              # matches
+                    "Poor formatting",
+                    "Missing error handling",
+                    "No tests mentioned",
+                ],
+            )
+        )
+        assert result.strategy == "constraint-injection"
+        assert result.confidence == 0.80  # ratio 0.40 → lowest tier
+
+    def test_just_below_threshold_does_not_trigger_p2(self):
+        """2/6=0.333 < 0.40 → P2 skipped."""
+        result = self.selector.select(
+            _make_analysis(
+                task_type="coding",
+                weaknesses=[
+                    "Instructions are vague",       # matches
+                    "Too broad scope",              # matches
+                    "Poor formatting",
+                    "Missing error handling",
+                    "No tests mentioned",
+                    "Inconsistent style",
+                ],
+            )
+        )
+        assert result.strategy != "constraint-injection"
+
+    def test_dominant_specificity_high_confidence(self):
+        """4/5=0.80 → >=0.75 tier → 0.90 confidence."""
+        result = self.selector.select(
+            _make_analysis(
+                task_type="coding",
+                weaknesses=[
+                    "Instructions are vague",
+                    "Too broad scope",
+                    "Lacks specific details",
+                    "Requirements are ambiguous",
+                    "Poor formatting",
+                ],
+            )
+        )
+        assert result.strategy == "constraint-injection"
+        assert result.confidence == 0.90
+
+    def test_majority_specificity_medium_confidence(self):
+        """3/5=0.60 → >=0.60 tier → 0.85 confidence."""
+        result = self.selector.select(
+            _make_analysis(
+                task_type="coding",
+                weaknesses=[
+                    "Instructions are vague",
+                    "Too broad scope",
+                    "Lacks specific details",
+                    "Poor formatting",
+                    "Missing error handling",
+                ],
+            )
+        )
+        assert result.strategy == "constraint-injection"
+        assert result.confidence == 0.85
+
+    def test_meta_eval_scenario(self):
+        """Meta-eval: 4/12=0.333 < 0.40 → P2 skipped (validates the finding)."""
+        result = self.selector.select(
+            _make_analysis(
+                task_type="coding",
+                weaknesses=[
+                    # 4 specificity matches
+                    "Instructions are vague",
+                    "Too broad scope",
+                    "Lacks specific details",
+                    "Requirements are ambiguous",
+                    # 8 non-specificity weaknesses
+                    "Poor formatting",
+                    "Missing error handling",
+                    "No tests mentioned",
+                    "Inconsistent naming",
+                    "Missing documentation",
+                    "No examples provided",
+                    "Inconsistent style",
+                    "Missing edge cases",
+                ],
+            )
+        )
+        # P2 does NOT fire; falls to P3
+        assert result.strategy != "constraint-injection"
 
 
 class TestPromptLengthPenalty:

@@ -197,12 +197,22 @@ class TestPipelineIntegration:
 
     @pytest.mark.asyncio
     async def test_overall_score_is_weighted_average(self):
-        """Overall score should be the server-computed weighted average."""
+        """Overall score should be the server-computed weighted average.
+
+        The default mock validation response provides clarity=0.85, specificity=0.80,
+        structure=0.75, faithfulness=0.90. conciseness defaults to 0.5 when omitted.
+        """
+        from app.services.validator import (
+            CLARITY_WEIGHT, CONCISENESS_WEIGHT, FAITHFULNESS_WEIGHT,
+            SPECIFICITY_WEIGHT, STRUCTURE_WEIGHT,
+        )
         provider = _make_mock_provider()
         result = await run_pipeline("Test prompt", llm_provider=provider)
 
         expected = round(
-            0.85 * 0.25 + 0.80 * 0.25 + 0.75 * 0.20 + 0.90 * 0.30, 4
+            0.85 * CLARITY_WEIGHT + 0.80 * SPECIFICITY_WEIGHT
+            + 0.75 * STRUCTURE_WEIGHT + 0.90 * FAITHFULNESS_WEIGHT
+            + 0.5 * CONCISENESS_WEIGHT, 4
         )
         assert result.overall_score == pytest.approx(expected)
 
@@ -625,6 +635,83 @@ class TestStrategyPropagation:
         result = await run_pipeline("Classify items", llm_provider=provider)
         optimizer_strategy = _get_optimizer_strategy(captured)
         assert result.strategy == optimizer_strategy
+
+
+# ---------------------------------------------------------------------------
+# Strategy passed to validator — verify validator receives the strategy name
+# ---------------------------------------------------------------------------
+
+class TestStrategyPassedToValidator:
+    """Verify the selected strategy is forwarded to the validator for
+    framework_adherence_score evaluation."""
+
+    @pytest.mark.asyncio
+    async def test_validator_receives_strategy_in_payload(self):
+        """Validator's LLM request should contain strategy from selector."""
+        provider, captured = _make_capturing_provider(
+            {"task_type": "coding", "complexity": "medium",
+             "weaknesses": [], "strengths": []},
+            strategy_response={"strategy": "co-star",
+                               "reasoning": "Testing.", "confidence": 0.80},
+        )
+        await run_pipeline("Write a function", llm_provider=provider)
+
+        validator_calls = [(n, r) for n, r in captured if n == "validator"]
+        assert len(validator_calls) == 1
+        parsed = json.loads(validator_calls[0][1].user_message)
+        assert parsed["strategy"] == "co-star"
+
+    @pytest.mark.asyncio
+    async def test_override_strategy_reaches_validator(self):
+        """Strategy override also passes through to the validator."""
+        provider, captured = _make_capturing_provider(
+            {"task_type": "coding", "complexity": "medium",
+             "weaknesses": [], "strengths": []},
+            skip_strategy=True,
+        )
+        await run_pipeline(
+            "Write a function", llm_provider=provider,
+            strategy_override="risen",
+        )
+
+        validator_calls = [(n, r) for n, r in captured if n == "validator"]
+        assert len(validator_calls) == 1
+        parsed = json.loads(validator_calls[0][1].user_message)
+        assert parsed["strategy"] == "risen"
+
+    @pytest.mark.asyncio
+    async def test_framework_adherence_in_pipeline_result(self):
+        """PipelineResult includes framework_adherence_score from validator."""
+        provider = _make_mock_provider(
+            validation_response={
+                "clarity_score": 0.85, "specificity_score": 0.80,
+                "structure_score": 0.75, "faithfulness_score": 0.90,
+                "framework_adherence_score": 0.82,
+                "is_improvement": True,
+                "verdict": "Good.",
+            },
+        )
+        result = await run_pipeline("Test prompt", llm_provider=provider)
+        assert result.framework_adherence_score == 0.82
+
+    @pytest.mark.asyncio
+    async def test_streaming_complete_includes_framework_adherence(self):
+        """Streaming complete event includes framework_adherence_score."""
+        provider = _make_mock_provider(
+            validation_response={
+                "clarity_score": 0.85, "specificity_score": 0.80,
+                "structure_score": 0.75, "faithfulness_score": 0.90,
+                "framework_adherence_score": 0.65,
+                "is_improvement": True,
+                "verdict": "Good.",
+            },
+        )
+        complete_data = None
+        async for event in run_pipeline_streaming("Test prompt", llm_provider=provider):
+            if isinstance(event, PipelineComplete):
+                complete_data = event.data
+        assert complete_data is not None
+        assert complete_data["framework_adherence_score"] == 0.65
 
 
 # ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from app import config
 from app.providers.base import LLMProvider, classify_error, which_claude_cached
 from app.providers.errors import ProviderError, RateLimitError
+from app.providers.types import CompletionRequest, CompletionResponse, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,27 @@ class ClaudeCLIProvider(LLMProvider):
             if "rate_limit_event" in str(exc):
                 raise _handle_rate_limit_event(exc) from exc
             raise classify_error(exc, provider=self.provider_name) from exc
+
+    async def complete(self, request: CompletionRequest) -> CompletionResponse:
+        """Execute a completion with heuristic token estimation.
+
+        The Claude CLI subprocess doesn't expose token counts, so we estimate
+        based on character length (~4 chars per token for English text with
+        Claude's tokenizer). This provides order-of-magnitude visibility into
+        pipeline cost rather than leaving all token fields null.
+        """
+        text = await self.send_message(request.system_prompt, request.user_message)
+        input_chars = len(request.system_prompt) + len(request.user_message)
+        output_chars = len(text)
+        return CompletionResponse(
+            text=text,
+            model=self.model_name,
+            provider=self.provider_name,
+            usage=TokenUsage(
+                input_tokens=max(1, input_chars // 4),
+                output_tokens=max(1, output_chars // 4),
+            ),
+        )
 
     def is_available(self) -> bool:
         """Check if the Claude CLI is available on PATH (cached)."""

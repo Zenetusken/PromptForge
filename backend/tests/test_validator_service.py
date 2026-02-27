@@ -10,6 +10,7 @@ from app.prompts.validator_prompt import VALIDATOR_SYSTEM_PROMPT
 from app.providers.types import TokenUsage
 from app.services.validator import (
     CLARITY_WEIGHT,
+    CONCISENESS_WEIGHT,
     FAITHFULNESS_WEIGHT,
     SPECIFICITY_WEIGHT,
     STRUCTURE_WEIGHT,
@@ -122,32 +123,38 @@ class TestClampScore:
 # ---------------------------------------------------------------------------
 
 class TestValidatorScoreComputation:
-    """Weighted average = C*0.25 + S*0.25 + St*0.20 + F*0.30, rounded to 4 decimals."""
+    """Weighted average = C*0.20 + S*0.20 + St*0.15 + F*0.25 + Cn*0.20, rounded to 4 decimals.
+
+    When conciseness_score is not in the LLM response, it defaults to 0.5.
+    """
 
     @pytest.mark.asyncio
     async def test_weighted_average_formula(self):
         provider = _make_provider({
             "clarity_score": 0.9, "specificity_score": 0.7,
             "structure_score": 0.8, "faithfulness_score": 1.0,
+            "conciseness_score": 0.6,
         })
         result = await PromptValidator(provider).validate("a", "b")
         expected = round(
             0.9 * CLARITY_WEIGHT + 0.7 * SPECIFICITY_WEIGHT
-            + 0.8 * STRUCTURE_WEIGHT + 1.0 * FAITHFULNESS_WEIGHT, 4
+            + 0.8 * STRUCTURE_WEIGHT + 1.0 * FAITHFULNESS_WEIGHT
+            + 0.6 * CONCISENESS_WEIGHT, 4
         )
         assert result.overall_score == pytest.approx(expected)
 
     @pytest.mark.asyncio
     async def test_rounding_to_four_decimals(self):
-        # 0.33 * 0.25 = 0.0825, 0.67 * 0.25 = 0.1675, 0.41 * 0.20 = 0.082,
-        # 0.59 * 0.30 = 0.177  → total 0.509
         provider = _make_provider({
             "clarity_score": 0.33, "specificity_score": 0.67,
             "structure_score": 0.41, "faithfulness_score": 0.59,
+            "conciseness_score": 0.72,
         })
         result = await PromptValidator(provider).validate("a", "b")
         assert result.overall_score == round(
-            0.33 * 0.25 + 0.67 * 0.25 + 0.41 * 0.20 + 0.59 * 0.30, 4
+            0.33 * CLARITY_WEIGHT + 0.67 * SPECIFICITY_WEIGHT
+            + 0.41 * STRUCTURE_WEIGHT + 0.59 * FAITHFULNESS_WEIGHT
+            + 0.72 * CONCISENESS_WEIGHT, 4
         )
 
     @pytest.mark.asyncio
@@ -155,6 +162,7 @@ class TestValidatorScoreComputation:
         provider = _make_provider({
             "clarity_score": 0.0, "specificity_score": 0.0,
             "structure_score": 0.0, "faithfulness_score": 0.0,
+            "conciseness_score": 0.0,
         })
         result = await PromptValidator(provider).validate("a", "b")
         assert result.overall_score == 0.0
@@ -164,6 +172,7 @@ class TestValidatorScoreComputation:
         provider = _make_provider({
             "clarity_score": 1.0, "specificity_score": 1.0,
             "structure_score": 1.0, "faithfulness_score": 1.0,
+            "conciseness_score": 1.0,
         })
         result = await PromptValidator(provider).validate("a", "b")
         assert result.overall_score == pytest.approx(1.0)
@@ -173,9 +182,26 @@ class TestValidatorScoreComputation:
         provider = _make_provider({
             "clarity_score": 0.5, "specificity_score": 0.5,
             "structure_score": 0.5, "faithfulness_score": 0.5,
+            "conciseness_score": 0.5,
         })
         result = await PromptValidator(provider).validate("a", "b")
         assert result.overall_score == pytest.approx(0.5)
+
+    @pytest.mark.asyncio
+    async def test_missing_conciseness_defaults_to_half(self):
+        """When LLM omits conciseness_score, it defaults to 0.5."""
+        provider = _make_provider({
+            "clarity_score": 0.8, "specificity_score": 0.8,
+            "structure_score": 0.8, "faithfulness_score": 0.8,
+        })
+        result = await PromptValidator(provider).validate("a", "b")
+        expected = round(
+            0.8 * CLARITY_WEIGHT + 0.8 * SPECIFICITY_WEIGHT
+            + 0.8 * STRUCTURE_WEIGHT + 0.8 * FAITHFULNESS_WEIGHT
+            + 0.5 * CONCISENESS_WEIGHT, 4
+        )
+        assert result.overall_score == pytest.approx(expected)
+        assert result.conciseness_score == 0.5
 
     @pytest.mark.asyncio
     async def test_clamped_scores_flow_into_average(self):
@@ -183,11 +209,13 @@ class TestValidatorScoreComputation:
         provider = _make_provider({
             "clarity_score": -0.5, "specificity_score": 2.0,
             "structure_score": 0.5, "faithfulness_score": 0.5,
+            "conciseness_score": 0.5,
         })
         result = await PromptValidator(provider).validate("a", "b")
         expected = round(
             0.0 * CLARITY_WEIGHT + 1.0 * SPECIFICITY_WEIGHT
-            + 0.5 * STRUCTURE_WEIGHT + 0.5 * FAITHFULNESS_WEIGHT, 4
+            + 0.5 * STRUCTURE_WEIGHT + 0.5 * FAITHFULNESS_WEIGHT
+            + 0.5 * CONCISENESS_WEIGHT, 4
         )
         assert result.overall_score == pytest.approx(expected)
 
@@ -284,6 +312,8 @@ class TestValidatorFullResponse:
         provider = _make_provider({
             "clarity_score": 0.85, "specificity_score": 0.80,
             "structure_score": 0.75, "faithfulness_score": 0.90,
+            "conciseness_score": 0.70,
+            "detected_patterns": ["chain-of-thought", "structured-output"],
             "is_improvement": True,
             "verdict": "Solid improvement.",
         })
@@ -292,6 +322,8 @@ class TestValidatorFullResponse:
         assert result.specificity_score == 0.80
         assert result.structure_score == 0.75
         assert result.faithfulness_score == 0.90
+        assert result.conciseness_score == 0.70
+        assert result.detected_patterns == ["chain-of-thought", "structured-output"]
         assert result.is_improvement is True
         assert result.verdict == "Solid improvement."
 
@@ -303,6 +335,8 @@ class TestValidatorFullResponse:
         assert result.specificity_score == 0.5
         assert result.structure_score == 0.5
         assert result.faithfulness_score == 0.5
+        assert result.conciseness_score == 0.5
+        assert result.detected_patterns == []
         assert result.is_improvement is False
         assert result.verdict == "No verdict available."
         assert result.overall_score == pytest.approx(0.5)
@@ -422,13 +456,87 @@ class TestIsImprovementCrossCheck:
         assert result.overall_score == pytest.approx(0.5)
         assert result.is_improvement is False
 
+
+# ---------------------------------------------------------------------------
+# TestFrameworkAdherenceScore — supplementary score extraction
+# ---------------------------------------------------------------------------
+
+class TestFrameworkAdherenceScore:
+    """framework_adherence_score is extracted when present, not in overall_score."""
+
+    @pytest.mark.asyncio
+    async def test_extracted_when_present(self):
+        provider = _make_provider({
+            "clarity_score": 0.8, "specificity_score": 0.8,
+            "structure_score": 0.8, "faithfulness_score": 0.8,
+            "framework_adherence_score": 0.75,
+        })
+        result = await PromptValidator(provider).validate("a", "b", strategy="co-star")
+        assert result.framework_adherence_score == 0.75
+
+    @pytest.mark.asyncio
+    async def test_none_when_absent(self):
+        provider = _make_provider({
+            "clarity_score": 0.8, "specificity_score": 0.8,
+            "structure_score": 0.8, "faithfulness_score": 0.8,
+        })
+        result = await PromptValidator(provider).validate("a", "b")
+        assert result.framework_adherence_score is None
+
+    @pytest.mark.asyncio
+    async def test_clamped_to_0_1(self):
+        provider = _make_provider({"framework_adherence_score": 1.5})
+        result = await PromptValidator(provider).validate("a", "b", strategy="risen")
+        assert result.framework_adherence_score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_negative_clamped_to_zero(self):
+        provider = _make_provider({"framework_adherence_score": -0.5})
+        result = await PromptValidator(provider).validate("a", "b", strategy="risen")
+        assert result.framework_adherence_score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_non_numeric_becomes_none(self):
+        provider = _make_provider({"framework_adherence_score": "excellent"})
+        result = await PromptValidator(provider).validate("a", "b", strategy="co-star")
+        assert result.framework_adherence_score is None
+
+    @pytest.mark.asyncio
+    async def test_strategy_in_user_payload(self):
+        """When strategy is passed, it should appear in the validator's user message."""
+        import json
+        provider = _make_provider({})
+        await PromptValidator(provider).validate("a", "b", strategy="co-star")
+        call_args = provider.complete_json.call_args[0][0]
+        parsed = json.loads(call_args.user_message)
+        assert parsed["strategy"] == "co-star"
+
+    @pytest.mark.asyncio
+    async def test_no_strategy_means_no_strategy_key(self):
+        """Without strategy param, the user payload should not contain 'strategy'."""
+        import json
+        provider = _make_provider({})
+        await PromptValidator(provider).validate("a", "b")
+        call_args = provider.complete_json.call_args[0][0]
+        parsed = json.loads(call_args.user_message)
+        assert "strategy" not in parsed
+
+
+# ---------------------------------------------------------------------------
+# (TestIsImprovementCrossCheck continued — additional boundary test)
+# ---------------------------------------------------------------------------
+
+class TestIsImprovementCrossCheckBoundary:
+    """Additional boundary tests for is_improvement cross-check."""
+
     @pytest.mark.asyncio
     async def test_boundary_04_not_overridden(self):
-        """Score exactly at 0.4 is in neutral zone — LLM value passes through."""
-        # Need scores that produce exactly 0.4: e.g. all 0.4
+        """Score at 0.4 is in neutral zone — LLM value passes through."""
+        # All dimensions at 0.4 → overall = 0.4 (conciseness also at 0.4)
         provider = _make_provider({
             "clarity_score": 0.4, "specificity_score": 0.4,
             "structure_score": 0.4, "faithfulness_score": 0.4,
+            "conciseness_score": 0.4,
             "is_improvement": True,
         })
         result = await PromptValidator(provider).validate("a", "b")

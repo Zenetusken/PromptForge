@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import config
 from app.constants import OptimizationStatus
 from app.converters import (
+    compute_score_deltas,
     deserialize_json_field,
+    extract_raw_scores,
     optimization_to_response,
     update_optimization_status,
 )
@@ -142,6 +144,18 @@ def _create_streaming_response(
             yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
             await update_optimization_status(opt_id, error=str(e))
             return
+
+        # Compute score deltas for retries (compare new scores against original)
+        original_scores = (metadata or {}).pop("_original_scores", None)
+        if original_scores and final_data:
+            new_scores = {k: final_data.get(k) for k in original_scores}
+            _deltas, deltas_raw = compute_score_deltas(new_scores, original_scores)
+            if deltas_raw:
+                final_data["score_deltas"] = deltas_raw
+                # Re-render the complete SSE event with deltas included
+                pending_complete_event = (
+                    f"event: complete\ndata: {json.dumps(final_data)}\n\n"
+                )
 
         # Persist to DB BEFORE sending the complete event to the client,
         # so immediate GET /optimize/{id} requests see the updated record.
@@ -646,7 +660,21 @@ async def get_optimization(
         response.headers["Cache-Control"] = "max-age=3600, immutable"
     else:
         response.headers["Cache-Control"] = "no-cache"
-    return optimization_to_response(optimization)
+
+    resp = optimization_to_response(optimization)
+
+    # Compute score deltas for retries on-the-fly
+    retry_of_id = getattr(optimization, "retry_of", None)
+    if retry_of_id and optimization.status == OptimizationStatus.COMPLETED:
+        original = await repo.get_by_id(retry_of_id)
+        if original:
+            _deltas, deltas_raw = compute_score_deltas(
+                extract_raw_scores(optimization), extract_raw_scores(original),
+            )
+            if deltas_raw:
+                resp.score_deltas = deltas_raw
+
+    return resp
 
 
 @router.post("/api/optimize/{optimization_id}/retry")
@@ -696,6 +724,7 @@ async def retry_optimization(
         title=retry_title,
         version=original.version,
         prompt_id=original.prompt_id,
+        retry_of=optimization_id,
     )
     db.add(new_optimization)
 
@@ -729,6 +758,7 @@ async def retry_optimization(
         "project": original.project or "",
         "tags": retry_tags,
         "version": original.version or "",
+        "retry_of": optimization_id,
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id
@@ -736,6 +766,9 @@ async def retry_optimization(
         ctx_dict = context_to_dict(resolved_context)
         if ctx_dict:
             metadata["codebase_context_snapshot"] = ctx_dict
+
+    # Collect original scores for comparative delta computation in the SSE stream
+    metadata["_original_scores"] = extract_raw_scores(original)
     return _create_streaming_response(
         new_id, raw_prompt, start_time, metadata, llm_provider=llm_provider,
         codebase_context=resolved_context,

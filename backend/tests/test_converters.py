@@ -14,10 +14,13 @@ from app.converters import (
     _SCORE_FIELDS,
     _serialize_json_list,
     apply_pipeline_result_to_orm,
+    compute_score_deltas,
     deserialize_json_field,
+    extract_raw_scores,
     optimization_to_response,
     optimization_to_summary,
     update_optimization_status,
+    with_display_and_raw_scores,
     with_display_scores,
 )
 from app.models.optimization import Optimization
@@ -134,13 +137,15 @@ class TestWithDisplayScores:
         result = with_display_scores(fields)
         assert result["task_type"] == "coding"
 
-    def test_all_five_score_fields_converted(self):
+    def test_all_seven_score_fields_converted(self):
         fields = {
             "clarity_score": 0.1,
             "specificity_score": 0.3,
             "structure_score": 0.5,
             "faithfulness_score": 0.7,
+            "conciseness_score": 0.6,
             "overall_score": 0.9,
+            "framework_adherence_score": 0.75,
         }
         result = with_display_scores(fields)
         for key in _SCORE_FIELDS:
@@ -156,6 +161,64 @@ class TestWithDisplayScores:
         fields = {"task_type": "coding"}
         result = with_display_scores(fields)
         assert "clarity_score" not in result
+
+
+# ---------------------------------------------------------------------------
+# TestWithDisplayAndRawScores
+# ---------------------------------------------------------------------------
+
+class TestWithDisplayAndRawScores:
+    def test_both_keys_present(self):
+        fields = {"clarity_score": 0.85, "specificity_score": 0.72}
+        result = with_display_and_raw_scores(fields)
+        assert result["clarity_score"] == 8  # display: round(8.5)=8
+        assert result["clarity_score_raw"] == 0.85
+        assert result["specificity_score"] == 7
+        assert result["specificity_score_raw"] == 0.72
+
+    def test_none_propagation(self):
+        fields = {"clarity_score": None}
+        result = with_display_and_raw_scores(fields)
+        assert result["clarity_score"] is None
+        assert result["clarity_score_raw"] is None
+
+    def test_rounding_to_4dp(self):
+        fields = {"clarity_score": 0.123456789}
+        result = with_display_and_raw_scores(fields)
+        assert result["clarity_score_raw"] == 0.1235
+
+    def test_no_mutation(self):
+        fields = {"clarity_score": 0.85}
+        result = with_display_and_raw_scores(fields)
+        assert result is not fields
+        assert fields["clarity_score"] == 0.85  # original unchanged
+
+    def test_all_score_fields_get_raw_companion(self):
+        fields = {
+            "clarity_score": 0.1,
+            "specificity_score": 0.3,
+            "structure_score": 0.5,
+            "faithfulness_score": 0.7,
+            "conciseness_score": 0.6,
+            "overall_score": 0.9,
+            "framework_adherence_score": 0.75,
+        }
+        result = with_display_and_raw_scores(fields)
+        for key in _SCORE_FIELDS:
+            assert isinstance(result[key], int)
+            assert isinstance(result[f"{key}_raw"], float)
+
+    def test_non_score_fields_unchanged(self):
+        fields = {"task_type": "coding", "clarity_score": 0.9}
+        result = with_display_and_raw_scores(fields)
+        assert result["task_type"] == "coding"
+        assert "task_type_raw" not in result
+
+    def test_missing_score_fields_ignored(self):
+        fields = {"task_type": "coding"}
+        result = with_display_and_raw_scores(fields)
+        assert "clarity_score" not in result
+        assert "clarity_score_raw" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +244,7 @@ class TestApplyPipelineResultToOrm:
             "structure_score": 0.7,
             "faithfulness_score": 0.85,
             "overall_score": 0.82,
+            "framework_adherence_score": 0.78,
             "is_improvement": True,
             "verdict": "Great",
             "model_used": "test-model",
@@ -194,6 +258,7 @@ class TestApplyPipelineResultToOrm:
         assert opt.task_type == "math"
         assert opt.duration_ms == 1500
         assert opt.model_used == "test-model"
+        assert opt.framework_adherence_score == 0.78
 
     def test_status_set_to_completed(self):
         opt = _make_optimization(status=OptimizationStatus.RUNNING)
@@ -380,3 +445,89 @@ class TestUpdateOptimizationStatus:
         stmt = select(Optimization).where(Optimization.id == "upd-003")
         row = (await db_session.execute(stmt)).scalar_one()
         assert row.model_used == "claude-opus-4-6"
+
+
+# ---------------------------------------------------------------------------
+# TestExtractRawScores
+# ---------------------------------------------------------------------------
+
+class TestExtractRawScores:
+    def test_all_seven_fields_extracted(self):
+        opt = _make_optimization(
+            clarity_score=0.9, specificity_score=0.8, structure_score=0.7,
+            faithfulness_score=0.85, conciseness_score=0.6, overall_score=0.82,
+            framework_adherence_score=0.75,
+        )
+        scores = extract_raw_scores(opt)
+        assert len(scores) == 7
+        assert scores["clarity_score"] == 0.9
+        assert scores["framework_adherence_score"] == 0.75
+
+    def test_none_for_missing_fields(self):
+        opt = _make_optimization(clarity_score=0.5)
+        # framework_adherence_score not set in _make_optimization defaults
+        scores = extract_raw_scores(opt)
+        assert scores["clarity_score"] == 0.5
+        # framework_adherence_score defaults to None if not set
+        assert "framework_adherence_score" in scores
+
+
+# ---------------------------------------------------------------------------
+# TestComputeScoreDeltas
+# ---------------------------------------------------------------------------
+
+class TestComputeScoreDeltas:
+    def test_display_vs_raw_scale(self):
+        """Display deltas are integer (1-10 scale), raw deltas are floats."""
+        new = {"clarity_score": 0.9, "overall_score": 0.8}
+        orig = {"clarity_score": 0.7, "overall_score": 0.6}
+        deltas, deltas_raw = compute_score_deltas(new, orig)
+        # 0.9 → display 9, 0.7 → display 7 → delta = 2
+        assert deltas["clarity_score"] == 2
+        assert isinstance(deltas["clarity_score"], int)
+        # Raw: 0.9 - 0.7 = 0.2
+        assert deltas_raw["clarity_score"] == 0.2
+        assert isinstance(deltas_raw["clarity_score"], float)
+
+    def test_framework_adherence_included(self):
+        """framework_adherence_score is included in deltas."""
+        new = {"framework_adherence_score": 0.8}
+        orig = {"framework_adherence_score": 0.6}
+        deltas, deltas_raw = compute_score_deltas(new, orig)
+        assert "framework_adherence_score" in deltas
+        assert "framework_adherence_score" in deltas_raw
+
+    def test_none_values_skipped(self):
+        """Keys with None on either side are excluded."""
+        new = {"clarity_score": 0.9, "specificity_score": None}
+        orig = {"clarity_score": 0.7, "specificity_score": 0.5}
+        deltas, deltas_raw = compute_score_deltas(new, orig)
+        assert "clarity_score" in deltas
+        assert "specificity_score" not in deltas
+        assert "specificity_score" not in deltas_raw
+
+    def test_both_none_skipped(self):
+        new = {"clarity_score": None}
+        orig = {"clarity_score": None}
+        deltas, deltas_raw = compute_score_deltas(new, orig)
+        assert len(deltas) == 0
+        assert len(deltas_raw) == 0
+
+    def test_empty_inputs(self):
+        deltas, deltas_raw = compute_score_deltas({}, {})
+        assert deltas == {}
+        assert deltas_raw == {}
+
+    def test_raw_rounding_to_4dp(self):
+        new = {"clarity_score": 0.123456789}
+        orig = {"clarity_score": 0.1}
+        _deltas, deltas_raw = compute_score_deltas(new, orig)
+        assert deltas_raw["clarity_score"] == round(0.123456789 - 0.1, 4)
+
+    def test_negative_deltas(self):
+        """Score decreases produce negative deltas."""
+        new = {"clarity_score": 0.5}
+        orig = {"clarity_score": 0.9}
+        deltas, deltas_raw = compute_score_deltas(new, orig)
+        assert deltas["clarity_score"] < 0
+        assert deltas_raw["clarity_score"] < 0

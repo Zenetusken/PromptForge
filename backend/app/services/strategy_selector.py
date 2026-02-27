@@ -144,6 +144,10 @@ _SPECIFICITY_EXEMPT_STRATEGIES: frozenset[Strategy] = frozenset({
     Strategy.RISEN,                  # RISEN's "Narrowing constraints" subsumes constraint-injection
 })
 
+# Minimum ratio of specificity-matching weaknesses to total weaknesses for P2 to fire.
+# Prevents P2 from overriding when specificity is a minority concern (e.g. 1/6 weaknesses).
+_SPECIFICITY_RATIO_THRESHOLD = 0.40
+
 # Strengths that make a strategy redundant — if the prompt already has
 # what a strategy would add, fall back instead.
 # Raw patterns kept for test introspection; compiled regex for matching.
@@ -365,11 +369,18 @@ class HeuristicStrategySelector:
         specificity_match_count = sum(
             1 for w in analysis.weaknesses if _SPECIFICITY_RE.search(str(w))
         )
-        if specificity_match_count > 0 and natural_strategy not in _SPECIFICITY_EXEMPT_STRATEGIES:
-            # Scale confidence with severity: more matching weaknesses = higher confidence
-            if specificity_match_count >= 3:
+        total_weaknesses = len(analysis.weaknesses)
+        specificity_ratio = (
+            specificity_match_count / total_weaknesses if total_weaknesses > 0 else 0.0
+        )
+        if (
+            specificity_ratio >= _SPECIFICITY_RATIO_THRESHOLD
+            and natural_strategy not in _SPECIFICITY_EXEMPT_STRATEGIES
+        ):
+            # Scale confidence with ratio: higher proportion = higher confidence
+            if specificity_ratio >= 0.75:
                 p2_confidence = 0.90
-            elif specificity_match_count == 2:
+            elif specificity_ratio >= 0.60:
                 p2_confidence = 0.85
             else:
                 p2_confidence = 0.80
@@ -381,9 +392,10 @@ class HeuristicStrategySelector:
             ][:2]
 
             logger.info(
-                "P2: %d specificity weakness(es) for task_type=%s → constraint-injection "
-                "(confidence=%.2f)",
-                specificity_match_count, task_key, p2_confidence,
+                "P2: %d/%d specificity weakness(es) (ratio=%.2f) for task_type=%s "
+                "→ constraint-injection (confidence=%.2f)",
+                specificity_match_count, total_weaknesses, specificity_ratio,
+                task_key, p2_confidence,
             )
             return StrategySelection(
                 strategy=Strategy.CONSTRAINT_INJECTION,

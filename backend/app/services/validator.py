@@ -2,7 +2,7 @@
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from app.prompts.validator_prompt import VALIDATOR_SYSTEM_PROMPT
@@ -15,10 +15,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Weights for server-side overall_score computation
-CLARITY_WEIGHT = 0.25
-SPECIFICITY_WEIGHT = 0.25
-STRUCTURE_WEIGHT = 0.20
-FAITHFULNESS_WEIGHT = 0.30
+CLARITY_WEIGHT = 0.20
+SPECIFICITY_WEIGHT = 0.20
+STRUCTURE_WEIGHT = 0.15
+FAITHFULNESS_WEIGHT = 0.25
+CONCISENESS_WEIGHT = 0.20
 
 
 @dataclass
@@ -29,9 +30,12 @@ class ValidationResult:
     specificity_score: float
     structure_score: float
     faithfulness_score: float
+    conciseness_score: float
     overall_score: float
     is_improvement: bool
     verdict: str
+    detected_patterns: list[str] = field(default_factory=list)
+    framework_adherence_score: float | None = None
 
 
 def _fallback_verdict() -> str:
@@ -56,6 +60,7 @@ class PromptValidator:
         raw_prompt: str,
         optimized_prompt: str,
         *,
+        strategy: str | None = None,
         codebase_context: CodebaseContext | None = None,
     ) -> ValidationResult:
         """Validate the quality of an optimized prompt against the original.
@@ -63,6 +68,8 @@ class PromptValidator:
         Args:
             raw_prompt: The original prompt text.
             optimized_prompt: The optimized prompt text to validate.
+            strategy: The optimization strategy that was applied (for framework
+                adherence scoring).
             codebase_context: Optional codebase context for scoring calibration.
 
         Returns:
@@ -72,6 +79,8 @@ class PromptValidator:
             "raw_prompt": raw_prompt,
             "optimized_prompt": optimized_prompt,
         }
+        if strategy:
+            payload["strategy"] = strategy
         if codebase_context:
             rendered = codebase_context.render()
             if rendered:
@@ -96,6 +105,7 @@ class PromptValidator:
         specificity = _clamp_score("specificity_score")
         structure = _clamp_score("structure_score")
         faithfulness = _clamp_score("faithfulness_score")
+        conciseness = _clamp_score("conciseness_score")
 
         # Weighted average computed server-side (never trust LLM arithmetic)
         overall = (
@@ -103,7 +113,15 @@ class PromptValidator:
             + specificity * SPECIFICITY_WEIGHT
             + structure * STRUCTURE_WEIGHT
             + faithfulness * FAITHFULNESS_WEIGHT
+            + conciseness * CONCISENESS_WEIGHT
         )
+
+        # Parse detected_patterns from LLM response
+        raw_patterns = response.get("detected_patterns")
+        if isinstance(raw_patterns, list):
+            detected_patterns = [str(p) for p in raw_patterns if p]
+        else:
+            detected_patterns = []
 
         # Cross-check is_improvement against computed overall_score.
         # The LLM judges subjectively, but extreme mismatches indicate
@@ -127,12 +145,25 @@ class PromptValidator:
         else:
             is_improvement = llm_is_improvement
 
+        # Extract framework_adherence_score (supplementary — NOT in weighted overall)
+        raw_adherence = response.get("framework_adherence_score")
+        if raw_adherence is not None:
+            try:
+                framework_adherence = max(0.0, min(1.0, float(raw_adherence)))
+            except (TypeError, ValueError):
+                framework_adherence = None
+        else:
+            framework_adherence = None
+
         return ValidationResult(
             clarity_score=clarity,
             specificity_score=specificity,
             structure_score=structure,
             faithfulness_score=faithfulness,
+            conciseness_score=conciseness,
             overall_score=overall_rounded,
             is_improvement=is_improvement,
             verdict=response.get("verdict") or _fallback_verdict(),
+            detected_patterns=detected_patterns,
+            framework_adherence_score=framework_adherence,
         )

@@ -8,32 +8,36 @@ describe('generateScoreExplanation', () => {
 			specificity: 0.90,
 			structure: 0.97,
 			faithfulness: 0.93,
-			overall: 0.94,
+			conciseness: 0.88,
+			overall: 0.93,
 		});
-		expect(explanation).toContain('overall score of 94');
-		expect(explanation).toContain('Faithfulness highest at 30%');
+		expect(explanation).toContain('overall score of 93');
+		// Faithfulness has the highest weight (25%)
+		expect(explanation).toContain('Faithfulness highest at 25%');
 	});
 
 	it('identifies the top contributor correctly', () => {
-		// faithfulness=100 × 0.30 = 30 pts (highest contribution)
+		// faithfulness=100 × 0.25 = 25 pts (highest contribution)
 		const explanation = generateScoreExplanation({
 			clarity: 0.50,
 			specificity: 0.50,
 			structure: 0.50,
 			faithfulness: 1.0,
-			overall: 0.63,
+			conciseness: 0.50,
+			overall: 0.60,
 		});
 		expect(explanation).toContain('primarily driven by Faithfulness');
 	});
 
 	it('identifies the lowest contributor correctly', () => {
-		// structure=10 × 0.20 = 2 pts (lowest contribution)
+		// structure=10 × 0.15 = 1.5 pts (lowest contribution)
 		const explanation = generateScoreExplanation({
 			clarity: 0.80,
 			specificity: 0.80,
 			structure: 0.10,
 			faithfulness: 0.80,
-			overall: 0.66,
+			conciseness: 0.80,
+			overall: 0.64,
 		});
 		expect(explanation).toContain('Structure');
 		expect(explanation).toContain('lowest contribution');
@@ -45,8 +49,36 @@ describe('generateScoreExplanation', () => {
 			specificity: 70,
 			structure: 90,
 			faithfulness: 85,
-			overall: 81,
+			conciseness: 75,
+			overall: 80,
 		});
-		expect(explanation).toContain('overall score of 81');
+		expect(explanation).toContain('overall score of 80');
+	});
+
+	it('includes framework adherence when present', () => {
+		const explanation = generateScoreExplanation({
+			clarity: 0.80,
+			specificity: 0.70,
+			structure: 0.75,
+			faithfulness: 0.85,
+			conciseness: 0.72,
+			overall: 0.77,
+			framework_adherence: 0.65,
+		});
+		expect(explanation).toContain('Strategy Fit scored 65');
+		expect(explanation).toContain('supplementary, not in weighted average');
+	});
+
+	it('omits framework adherence when absent', () => {
+		const explanation = generateScoreExplanation({
+			clarity: 0.80,
+			specificity: 0.70,
+			structure: 0.75,
+			faithfulness: 0.85,
+			conciseness: 0.72,
+			overall: 0.77,
+		});
+		expect(explanation).not.toContain('Strategy Fit');
+		expect(explanation).not.toContain('supplementary');
 	});
 });

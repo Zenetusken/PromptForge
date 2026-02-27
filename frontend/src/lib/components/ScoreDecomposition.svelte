@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
 	import { normalizeScore, getScoreColorClass, getScoreTierLabel } from '$lib/utils/format';
-	import { SCORE_WEIGHTS, DIMENSION_LABELS, computeContribution, type ScoreDimension } from '$lib/utils/scoreDimensions';
+	import { SCORE_WEIGHTS, DIMENSION_LABELS, ALL_DIMENSIONS, DIMENSION_TOOLTIPS, computeContribution, SUPPLEMENTARY_META, ALL_SUPPLEMENTARY, type ScoreDimension } from '$lib/utils/scoreDimensions';
 	import { generateScoreExplanation } from '$lib/utils/scoreExplanation';
 	import { onMount } from 'svelte';
 	import Icon from './Icon.svelte';
@@ -29,14 +29,8 @@
 		onPin: (dim: ScoreDimension) => void;
 	} = $props();
 
-	const dimensions: ScoreDimension[] = ['faithfulness', 'clarity', 'specificity', 'structure'];
-
-	const DIMENSION_TOOLTIPS: Record<ScoreDimension, string> = {
-		clarity: 'How clearly the prompt communicates intent',
-		specificity: 'How concrete and detailed the instructions are',
-		structure: 'How well-organized the prompt layout is',
-		faithfulness: 'How well the original intent is preserved',
-	};
+	// Display order: faithfulness first (highest weight), then rest
+	const dimensions: ScoreDimension[] = ['faithfulness', ...ALL_DIMENSIONS.filter(d => d !== 'faithfulness')];
 
 	let animated = $state(false);
 	onMount(() => {
@@ -181,6 +175,43 @@
 						></div>
 					</div>
 				</div>
+
+				<!-- Supplementary dimensions (not in weighted average) -->
+				{#each ALL_SUPPLEMENTARY as suppDim (suppDim)}
+					{@const suppScore = scores[suppDim]}
+					{#if suppScore != null}
+						{@const meta = SUPPLEMENTARY_META[suppDim]}
+						{@const suppPct = normalizeScore(suppScore) ?? 0}
+						{@const suppColor = getScoreColorClass(suppScore)}
+						<div class="rounded-lg p-1.5 opacity-70" data-testid="score-bar-{suppDim}">
+							<div class="mb-1 flex items-center justify-between text-xs">
+								<Tooltip text={meta.tooltip} side="right"><span class="italic text-text-secondary">{meta.label}</span></Tooltip>
+								<span class="flex items-center gap-2 font-mono text-xs tabular-nums">
+									<span
+										class="font-bold"
+										class:text-neon-green={suppColor === 'neon-green'}
+										class:text-neon-yellow={suppColor === 'neon-yellow'}
+										class:text-neon-red={suppColor === 'neon-red'}
+									>{suppPct}</span>
+									<span class="text-text-dim italic">(supplementary)</span>
+								</span>
+							</div>
+							<div
+								class="h-1 w-full overflow-hidden rounded-full bg-bg-primary/80"
+								role="meter"
+								aria-label="{meta.label}: {suppPct} out of 100"
+								aria-valuenow={suppPct}
+								aria-valuemin={0}
+								aria-valuemax={100}
+							>
+								<div
+									class="score-fill h-full rounded-full bg-neon-orange transition-[width] duration-700 ease-out"
+									style="width: {animated ? suppPct : 0}%;"
+								></div>
+							</div>
+						</div>
+					{/if}
+				{/each}
 			</div>
 		</div>
 

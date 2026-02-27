@@ -73,9 +73,14 @@ def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
         "specificity_score": opt.specificity_score,
         "structure_score": opt.structure_score,
         "faithfulness_score": opt.faithfulness_score,
+        "conciseness_score": getattr(opt, "conciseness_score", None),
         "overall_score": opt.overall_score,
+        "framework_adherence_score": getattr(opt, "framework_adherence_score", None),
         "is_improvement": opt.is_improvement,
         "verdict": opt.verdict,
+        "detected_patterns": deserialize_json_field(
+            getattr(opt, "detected_patterns", None)
+        ),
         "duration_ms": opt.duration_ms,
         "model_used": opt.model_used,
         "input_tokens": opt.input_tokens,
@@ -89,6 +94,7 @@ def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
         "title": opt.title,
         "version": opt.version,
         "prompt_id": opt.prompt_id,
+        "retry_of": getattr(opt, "retry_of", None),
         "project_id": getattr(opt, "_resolved_project_id", None),
         "project_status": getattr(opt, "_resolved_project_status", None),
         "codebase_context_snapshot": _deserialize_json_dict(
@@ -170,7 +176,8 @@ def optimization_to_summary(opt: Optimization) -> dict[str, Any]:
 
 _SCORE_FIELDS = (
     "clarity_score", "specificity_score", "structure_score",
-    "faithfulness_score", "overall_score",
+    "faithfulness_score", "conciseness_score", "overall_score",
+    "framework_adherence_score",
 )
 
 
@@ -185,6 +192,59 @@ def with_display_scores(fields: dict[str, Any]) -> dict[str, Any]:
         if key in out:
             out[key] = score_to_display(out[key])
     return out
+
+
+def with_display_and_raw_scores(fields: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of *fields* with both display (1-10 int) and raw (float) scores.
+
+    For each score field, produces:
+      - ``clarity_score``: 1-10 integer (display scale)
+      - ``clarity_score_raw``: original 0.0-1.0 float rounded to 4dp
+
+    None values propagate to both keys.  The original dict is never mutated.
+    """
+    out = dict(fields)
+    for key in _SCORE_FIELDS:
+        if key in out:
+            raw_val = out[key]
+            out[key] = score_to_display(raw_val)
+            out[f"{key}_raw"] = round(raw_val, 4) if raw_val is not None else None
+    return out
+
+
+def extract_raw_scores(opt: Optimization) -> dict[str, float | None]:
+    """Extract all score fields from an ORM Optimization as a flat dict.
+
+    Returns raw 0.0-1.0 floats (or None) keyed by ``_SCORE_FIELDS`` names.
+    """
+    return {key: getattr(opt, key, None) for key in _SCORE_FIELDS}
+
+
+def compute_score_deltas(
+    new_scores: dict[str, float | None],
+    orig_scores: dict[str, float | None],
+) -> tuple[dict[str, int], dict[str, float]]:
+    """Compute display-scale and raw-scale score deltas.
+
+    Args:
+        new_scores: Raw 0.0-1.0 scores for the new optimization.
+        orig_scores: Raw 0.0-1.0 scores for the original optimization.
+
+    Returns:
+        ``(deltas, deltas_raw)`` where:
+        - ``deltas``: display-scale (1-10) integer differences per key.
+        - ``deltas_raw``: raw float differences rounded to 4 decimal places per key.
+        Only keys present (non-None) in both dicts are included.
+    """
+    deltas: dict[str, int] = {}
+    deltas_raw: dict[str, float] = {}
+    for key in _SCORE_FIELDS:
+        new_val = new_scores.get(key)
+        orig_val = orig_scores.get(key)
+        if new_val is not None and orig_val is not None:
+            deltas[key] = score_to_display(new_val) - score_to_display(orig_val)
+            deltas_raw[key] = round(new_val - orig_val, 4)
+    return deltas, deltas_raw
 
 
 def apply_pipeline_result_to_orm(
@@ -212,9 +272,12 @@ def apply_pipeline_result_to_orm(
     opt.specificity_score = data.get("specificity_score")
     opt.structure_score = data.get("structure_score")
     opt.faithfulness_score = data.get("faithfulness_score")
+    opt.conciseness_score = data.get("conciseness_score")
     opt.overall_score = data.get("overall_score")
+    opt.framework_adherence_score = data.get("framework_adherence_score")
     opt.is_improvement = data.get("is_improvement")
     opt.verdict = data.get("verdict")
+    opt.detected_patterns = _serialize_json_list(data.get("detected_patterns"))
     opt.duration_ms = elapsed_ms
     opt.model_used = data.get("model_used")
     opt.input_tokens = data.get("input_tokens")

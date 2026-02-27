@@ -7,6 +7,7 @@
 		safeArrayOrUndefined,
 	} from "$lib/utils/safe";
 	import { getComplexityColor } from "$lib/utils/complexity";
+	import { ALL_DIMENSIONS, DIMENSION_ABBREVS, DIMENSION_LABELS } from "$lib/utils/scoreDimensions";
 	import Icon from "./Icon.svelte";
 	import { Tooltip, MetaBadge } from "./ui";
 
@@ -65,14 +66,13 @@
 	let overallScore = $derived(
 		safeNumberOrUndefined(step.data?.overall_score),
 	);
-	let clarityScore = $derived(
-		safeNumberOrUndefined(step.data?.clarity_score),
-	);
-	let specificityScore = $derived(
-		safeNumberOrUndefined(step.data?.specificity_score),
-	);
-	let structureScore = $derived(
-		safeNumberOrUndefined(step.data?.structure_score),
+	let dimensionScores = $derived(
+		ALL_DIMENSIONS.map((dim) => ({
+			dim,
+			abbrev: DIMENSION_ABBREVS[dim],
+			label: DIMENSION_LABELS[dim],
+			score: safeNumberOrUndefined(step.data?.[`${dim}_score`]),
+		})).filter((d) => d.score !== undefined),
 	);
 	let verdict = $derived(safeStringOrUndefined(step.data?.verdict));
 	let isValidateStep = $derived(step.name === "validate");
@@ -691,33 +691,15 @@
 							>
 						</div>
 						<div class="flex flex-wrap justify-center gap-1">
-							{#if clarityScore !== undefined}
-								<Tooltip text="Clarity"
+							{#each dimensionScores as { abbrev, label, score }}
+								<Tooltip text={label}
 									><span
 										class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary"
 									>
-										CLR {formatScore(clarityScore)}
+										{abbrev} {formatScore(score)}
 									</span></Tooltip
 								>
-							{/if}
-							{#if specificityScore !== undefined}
-								<Tooltip text="Specificity"
-									><span
-										class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary"
-									>
-										SPC {formatScore(specificityScore)}
-									</span></Tooltip
-								>
-							{/if}
-							{#if structureScore !== undefined}
-								<Tooltip text="Structure"
-									><span
-										class="rounded-md bg-bg-primary/50 px-1 py-0.5 text-[9px] text-text-secondary"
-									>
-										STR {formatScore(structureScore)}
-									</span></Tooltip
-								>
-							{/if}
+							{/each}
 						</div>
 						{#if verdict}
 							<span

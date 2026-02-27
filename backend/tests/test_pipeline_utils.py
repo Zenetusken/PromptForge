@@ -207,7 +207,7 @@ class TestAssembleResult:
         analysis = AnalysisResult("coding", "high", ["vague"], ["clear"])
         strategy = StrategySelection(Strategy.PERSONA_ASSIGNMENT, "test reasoning", 0.85)
         optimization = OptimizationResult("optimized", "persona-assignment", ["change1"], "notes")
-        validation = ValidationResult(0.9, 0.8, 0.7, 0.85, 0.82, True, "Good")
+        validation = ValidationResult(0.9, 0.8, 0.7, 0.85, 0.75, 0.82, True, "Good")
         return analysis, strategy, optimization, validation
 
     def test_all_fields_mapped(self):

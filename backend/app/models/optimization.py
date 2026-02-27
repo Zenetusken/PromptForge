@@ -52,7 +52,9 @@ class Optimization(Base):
     specificity_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     structure_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     faithfulness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    conciseness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     overall_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    framework_adherence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Validation
     is_improvement: Mapped[bool | None] = mapped_column(nullable=True)
@@ -63,6 +65,7 @@ class Optimization(Base):
     strategy_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     strategy_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     secondary_frameworks: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    detected_patterns: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
 
     # Execution metadata
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -84,6 +87,9 @@ class Optimization(Base):
     prompt_id: Mapped[str | None] = mapped_column(
         Text, ForeignKey("prompts.id", ondelete="SET NULL"), nullable=True,
     )
+
+    # Comparative evaluation: reference to the optimization this retried
+    retry_of: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Snapshot of resolved codebase context used for this optimization run (JSON)
     codebase_context_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)

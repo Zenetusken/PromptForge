@@ -174,9 +174,12 @@ class OptimizationResponse(BaseModel):
     specificity_score: float | None = None
     structure_score: float | None = None
     faithfulness_score: float | None = None
+    conciseness_score: float | None = None
     overall_score: float | None = None
+    framework_adherence_score: float | None = None
     is_improvement: bool | None = None
     verdict: str | None = None
+    detected_patterns: list[str] | None = None
     duration_ms: int | None = None
     model_used: str | None = None
     input_tokens: int | None = None
@@ -192,6 +195,8 @@ class OptimizationResponse(BaseModel):
     prompt_id: str | None = None
     project_id: str | None = None
     project_status: str | None = None
+    retry_of: str | None = None
+    score_deltas: dict[str, float] | None = None
     codebase_context_snapshot: dict | None = None
 
     model_config = {"from_attributes": True}
@@ -241,6 +246,8 @@ class StatsResponse(BaseModel):
     average_specificity_score: float | None = None
     average_structure_score: float | None = None
     average_faithfulness_score: float | None = None
+    average_conciseness_score: float | None = None
+    average_framework_adherence_score: float | None = None
     improvement_rate: float | None = None
     total_projects: int = 0
     most_common_task_type: str | None = None

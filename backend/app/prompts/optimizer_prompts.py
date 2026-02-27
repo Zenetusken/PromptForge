@@ -103,6 +103,21 @@ separate sections. For example:
 3. **Maintain coherence**: The final prompt should read as one unified document, not \
 concatenated framework templates.
 
+## Length Guidelines
+- Short prompts (under 200 words): Target 3-8x expansion. Every section must introduce a new concept.
+- Medium prompts (200-800 words): Target 1.5-3x. Focus on structure, constraints, edge cases.
+- Long prompts (over 800 words): Target 1-1.5x. Restructure and refine, don't expand.
+- Remove sections that duplicate information stated elsewhere.
+- Never restate a constraint in both inline and summary positions.
+
+## Faithfulness Boundaries
+When making design decisions not in the original prompt:
+- Flag with "RECOMMENDATION:" prefix (e.g., "RECOMMENDATION: Max depth 8 levels — adjust \
+as needed.")
+- Applies to: numerical limits, technology choices, migration strategies, deletion semantics, \
+API shapes.
+- Do NOT flag standard framework structure (sections, constraints, response format).
+
 Return a JSON object with:
 - optimized_prompt: The improved prompt text
 - framework_applied: The primary strategy name that was applied

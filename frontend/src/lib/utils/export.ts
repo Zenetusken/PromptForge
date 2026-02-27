@@ -1,5 +1,5 @@
 import { normalizeScore, getScoreTierLabel } from '$lib/utils/format';
-import { SCORE_WEIGHTS, type ScoreDimension } from '$lib/utils/scoreDimensions';
+import { SCORE_WEIGHTS, DIMENSION_LABELS, ALL_DIMENSIONS, SUPPLEMENTARY_META, ALL_SUPPLEMENTARY, type ScoreDimension } from '$lib/utils/scoreDimensions';
 import { generateScoreExplanation } from '$lib/utils/scoreExplanation';
 import type { OptimizationResultState } from '$lib/stores/optimization.svelte';
 
@@ -33,24 +33,28 @@ export function buildScoreTable(scores: OptimizationResultState['scores']): stri
 		'|--------|-------|--------|--------|',
 	];
 
-	const dimensions: { label: string; key: ScoreDimension }[] = [
-		{ label: 'Clarity', key: 'clarity' },
-		{ label: 'Specificity', key: 'specificity' },
-		{ label: 'Structure', key: 'structure' },
-		{ label: 'Faithfulness', key: 'faithfulness' },
-	];
-
-	for (const dim of dimensions) {
-		const score = normalizeScore(scores[dim.key]) ?? 0;
-		const rating = getScoreTierLabel(scores[dim.key]);
-		const weight = `${Math.round(SCORE_WEIGHTS[dim.key] * 100)}%`;
-		rows.push(`| ${dim.label} | ${score}/100 | ${weight} | ${rating} |`);
+	for (const dim of ALL_DIMENSIONS) {
+		const score = normalizeScore(scores[dim]) ?? 0;
+		const rating = getScoreTierLabel(scores[dim]);
+		const weight = `${Math.round(SCORE_WEIGHTS[dim] * 100)}%`;
+		rows.push(`| ${DIMENSION_LABELS[dim]} | ${score}/100 | ${weight} | ${rating} |`);
 	}
 
 	// Overall row (bold, no individual weight — it's the weighted sum)
 	const overall = normalizeScore(scores.overall) ?? 0;
 	const overallRating = getScoreTierLabel(scores.overall);
 	rows.push(`| **Overall** | **${overall}/100** | | **${overallRating}** |`);
+
+	// Supplementary dimensions (italic, not in weighted average)
+	for (const suppDim of ALL_SUPPLEMENTARY) {
+		const suppScore = scores[suppDim as keyof typeof scores];
+		if (suppScore != null) {
+			const suppPct = normalizeScore(suppScore) ?? 0;
+			const suppRating = getScoreTierLabel(suppScore);
+			const meta = SUPPLEMENTARY_META[suppDim];
+			rows.push(`| *${meta.label}* | *${suppPct}/100* | *(supplementary)* | *${suppRating}* |`);
+		}
+	}
 
 	return rows;
 }

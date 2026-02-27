@@ -80,7 +80,7 @@ vi.mock('$lib/stores/sessionContext.svelte', () => ({
     },
 }));
 
-import { optimizationState } from './optimization.svelte';
+import { optimizationState, mapToResultState } from './optimization.svelte';
 import { fetchOptimize, fetchRetry, fetchOptimization, orchestrateAnalyze } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
 import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
@@ -424,7 +424,7 @@ describe('OptimizationState', () => {
             changes_made: [],
             framework_applied: '',
             optimization_notes: '',
-            scores: { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, overall: 0.8 },
+            scores: { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, conciseness: 0, overall: 0.8 },
             is_improvement: true,
             verdict: '',
             duration_ms: 0,
@@ -617,5 +617,51 @@ describe('OptimizationState', () => {
             // Standalone orchestration calls (no active process) show toast directly
             expect(toastState.show).toHaveBeenCalledWith(expect.any(String), 'error');
         });
+    });
+});
+
+describe('mapToResultState', () => {
+    it('maps framework_adherence_score when present', () => {
+        const source = {
+            id: 'test-1',
+            framework_adherence_score: 0.72,
+            clarity_score: 0.9,
+            specificity_score: 0.8,
+            structure_score: 0.7,
+            faithfulness_score: 0.85,
+            conciseness_score: 0.75,
+            overall_score: 0.81,
+        };
+        const result = mapToResultState(source, 'original prompt');
+        expect(result.scores.framework_adherence).toBe(0.72);
+    });
+
+    it('omits framework_adherence when null', () => {
+        const source = {
+            id: 'test-2',
+            framework_adherence_score: null,
+            clarity_score: 0.9,
+            specificity_score: 0.8,
+            structure_score: 0.7,
+            faithfulness_score: 0.85,
+            conciseness_score: 0.75,
+            overall_score: 0.81,
+        };
+        const result = mapToResultState(source, 'original prompt');
+        expect(result.scores.framework_adherence).toBeUndefined();
+    });
+
+    it('omits framework_adherence when not in source', () => {
+        const source = {
+            id: 'test-3',
+            clarity_score: 0.9,
+            specificity_score: 0.8,
+            structure_score: 0.7,
+            faithfulness_score: 0.85,
+            conciseness_score: 0.75,
+            overall_score: 0.81,
+        };
+        const result = mapToResultState(source, 'original prompt');
+        expect(result.scores.framework_adherence).toBeUndefined();
     });
 });

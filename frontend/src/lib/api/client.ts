@@ -22,9 +22,14 @@ export interface HistoryItem {
 	specificity_score: number | null;
 	structure_score: number | null;
 	faithfulness_score: number | null;
+	conciseness_score: number | null;
 	overall_score: number | null;
+	framework_adherence_score: number | null;
 	is_improvement: boolean | null;
 	verdict: string | null;
+	detected_patterns: string[] | null;
+	retry_of: string | null;
+	score_deltas: Record<string, number> | null;
 	duration_ms: number | null;
 	model_used: string | null;
 	input_tokens: number | null;
@@ -162,6 +167,8 @@ export interface StatsResponse {
 	average_specificity_score: number | null;
 	average_structure_score: number | null;
 	average_faithfulness_score: number | null;
+	average_conciseness_score: number | null;
+	average_framework_adherence_score: number | null;
 	improvement_rate: number | null;
 	total_projects: number;
 	most_common_task_type: string | null;
@@ -485,9 +492,11 @@ export interface ValidateResponse {
 	specificity_score: number;
 	structure_score: number;
 	faithfulness_score: number;
+	conciseness_score: number;
 	overall_score: number;
 	is_improvement: boolean;
 	verdict: string;
+	detected_patterns: string[];
 	step_duration_ms?: number;
 }
 
@@ -751,6 +760,8 @@ export interface ProjectSummary {
 	name: string;
 	description: string | null;
 	status: string;
+	parent_id: string | null;
+	depth: number;
 	prompt_count: number;
 	has_context: boolean;
 	created_at: string;
@@ -763,6 +774,8 @@ export interface ProjectDetail {
 	description: string | null;
 	context_profile: CodebaseContext | null;
 	status: string;
+	parent_id: string | null;
+	depth: number;
 	created_at: string;
 	updated_at: string;
 	prompts: ProjectPrompt[];
@@ -808,6 +821,7 @@ export async function createProject(data: {
 	name: string;
 	description?: string;
 	context_profile?: CodebaseContext | null;
+	parent_id?: string | null;
 }): Promise<ProjectDetail | null> {
 	return apiFetch(`${BASE_URL}/projects`, null, {
 		method: 'POST',
@@ -882,6 +896,81 @@ export async function reorderProjectPrompts(projectId: string, promptIds: string
 		method: 'PUT',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ prompt_ids: promptIds }),
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Filesystem API
+// ---------------------------------------------------------------------------
+
+export interface FsNode {
+	id: string;
+	name: string;
+	type: 'folder' | 'prompt';
+	parent_id: string | null;
+	depth: number;
+	children?: FsNode[];
+	content?: string;
+	version?: number;
+	forge_count?: number;
+	latest_forge?: Record<string, unknown>;
+	created_at?: string;
+	updated_at?: string;
+}
+
+export interface PathSegment {
+	id: string;
+	name: string;
+}
+
+export interface FsChildrenResponse {
+	nodes: FsNode[];
+	path: PathSegment[];
+}
+
+export async function fetchFsChildren(parentId?: string | null): Promise<FsChildrenResponse> {
+	const params = new URLSearchParams();
+	if (parentId) params.set('parent_id', parentId);
+	const qs = params.toString();
+	return apiFetch(`${BASE_URL}/fs/children${qs ? '?' + qs : ''}`, { nodes: [], path: [] });
+}
+
+export async function fetchFsTree(rootId?: string | null): Promise<FsNode[]> {
+	const params = new URLSearchParams();
+	if (rootId) params.set('root_id', rootId);
+	const qs = params.toString();
+	const resp = await apiFetch<{ nodes: FsNode[] }>(
+		`${BASE_URL}/fs/tree${qs ? '?' + qs : ''}`,
+		{ nodes: [] },
+	);
+	return resp.nodes;
+}
+
+export async function fetchFsPath(projectId: string): Promise<PathSegment[]> {
+	const resp = await apiFetch<{ segments: PathSegment[] }>(
+		`${BASE_URL}/fs/path/${projectId}`,
+		{ segments: [] },
+	);
+	return resp.segments;
+}
+
+export async function fetchPromptDirect(promptId: string): Promise<FsNode | null> {
+	return apiFetch<FsNode | null>(`${BASE_URL}/fs/prompt/${promptId}`, null);
+}
+
+export async function deletePromptDirect(promptId: string): Promise<boolean> {
+	return apiFetchOk(`${BASE_URL}/fs/prompt/${promptId}`, { method: 'DELETE' });
+}
+
+export async function moveFsNode(
+	type: 'project' | 'prompt',
+	id: string,
+	newParentId: string | null,
+): Promise<{ success: boolean }> {
+	return apiFetch(`${BASE_URL}/fs/move`, { success: false }, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ type, id, new_parent_id: newParentId }),
 	});
 }
 

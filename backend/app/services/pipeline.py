@@ -170,6 +170,7 @@ class ValidateStage(PipelineStage):
         result = await validator.validate(
             context.raw_prompt,
             context.optimization.optimized_prompt,
+            strategy=context.strategy.strategy if context.strategy else None,
             codebase_context=context.codebase_context,
         )
         context.validation = result
@@ -243,6 +244,7 @@ class PipelineResult:
     specificity_score: float
     structure_score: float
     faithfulness_score: float
+    conciseness_score: float
     overall_score: float
     is_improvement: bool
     verdict: str
@@ -254,6 +256,8 @@ class PipelineResult:
     strategy_reasoning: str = ""
     strategy_confidence: float = 0.75
     secondary_frameworks: list[str] = field(default_factory=list)
+    detected_patterns: list[str] = field(default_factory=list)
+    framework_adherence_score: float | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     cache_creation_input_tokens: int | None = None
@@ -341,9 +345,12 @@ def _assemble_result(
         specificity_score=validation.specificity_score,
         structure_score=validation.structure_score,
         faithfulness_score=validation.faithfulness_score,
+        conciseness_score=validation.conciseness_score,
         overall_score=validation.overall_score,
         is_improvement=validation.is_improvement,
         verdict=validation.verdict,
+        detected_patterns=validation.detected_patterns,
+        framework_adherence_score=validation.framework_adherence_score,
         duration_ms=elapsed_ms,
         model_used=model,
         strategy=strategy.strategy,
@@ -405,7 +412,8 @@ async def run_pipeline(
 
     validator = PromptValidator(client)
     validation = await validator.validate(
-        raw_prompt, optimization.optimized_prompt, codebase_context=codebase_context,
+        raw_prompt, optimization.optimized_prompt,
+        strategy=strategy_selection.strategy, codebase_context=codebase_context,
     )
     total_usage = _add_usage(total_usage, validator.last_usage)
 
@@ -428,7 +436,8 @@ async def run_pipeline(
         total_usage = _add_usage(total_usage, optimizer.last_usage)
         validator = PromptValidator(client)
         validation = await validator.validate(
-            raw_prompt, optimization.optimized_prompt, codebase_context=codebase_context,
+            raw_prompt, optimization.optimized_prompt,
+            strategy=strategy_selection.strategy, codebase_context=codebase_context,
         )
         total_usage = _add_usage(total_usage, validator.last_usage)
 
@@ -680,7 +689,9 @@ async def run_pipeline_streaming(
     validation = None
     async for event in _stream_stage(
         validator.validate(
-            raw_prompt, optimization.optimized_prompt, codebase_context=codebase_context,
+            raw_prompt, optimization.optimized_prompt,
+            strategy=strategy.strategy if strategy else None,
+            codebase_context=codebase_context,
         ),
         STAGE_VALIDATE,
     ):
@@ -742,6 +753,7 @@ async def run_pipeline_streaming(
         async for event in _stream_stage(
             validator.validate(
                 raw_prompt, optimization.optimized_prompt,
+                strategy=strategy.strategy if strategy else None,
                 codebase_context=codebase_context,
             ),
             STAGE_VALIDATE,
@@ -780,9 +792,12 @@ async def run_pipeline_streaming(
         "specificity_score": validation.specificity_score,
         "structure_score": validation.structure_score,
         "faithfulness_score": validation.faithfulness_score,
+        "conciseness_score": validation.conciseness_score,
         "overall_score": validation.overall_score,
         "is_improvement": validation.is_improvement,
         "verdict": validation.verdict,
+        "detected_patterns": validation.detected_patterns,
+        "framework_adherence_score": validation.framework_adherence_score,
         # Metadata
         "duration_ms": elapsed_ms,
         "model_used": client.model_name,

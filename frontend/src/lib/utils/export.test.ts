@@ -22,7 +22,7 @@ function makeResult(overrides: Partial<OptimizationResultState> = {}): Optimizat
 		changes_made: [],
 		framework_applied: 'role-based',
 		optimization_notes: '',
-		scores: { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, overall: 0.81 },
+		scores: { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, conciseness: 0.75, overall: 0.81 },
 		is_improvement: true,
 		verdict: '',
 		duration_ms: 1500,
@@ -94,35 +94,37 @@ describe('codeFence', () => {
 });
 
 describe('buildScoreTable', () => {
-	it('produces a markdown table with header, 4 dimension rows, and 1 overall row', () => {
-		const scores = { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, overall: 0.81 };
+	it('produces a markdown table with header, 5 dimension rows, and 1 overall row', () => {
+		const scores = { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, conciseness: 0.75, overall: 0.81 };
 		const rows = buildScoreTable(scores);
-		expect(rows).toHaveLength(7); // header + separator + 4 dimensions + 1 overall
+		expect(rows).toHaveLength(8); // header + separator + 5 dimensions + 1 overall
 		expect(rows[0]).toBe('| Metric | Score | Weight | Rating |');
 		expect(rows[1]).toContain('---');
 	});
 
 	it('lists dimensions first with weights, then bold Overall last', () => {
-		const scores = { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, overall: 0.81 };
+		const scores = { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, conciseness: 0.75, overall: 0.81 };
 		const rows = buildScoreTable(scores);
-		// Dimensions in order: clarity, specificity, structure, faithfulness
+		// Dimensions in order: clarity, specificity, structure, faithfulness, conciseness
 		expect(rows[2]).toContain('Clarity');
 		expect(rows[2]).toContain('90/100');
-		expect(rows[2]).toContain('25%');
+		expect(rows[2]).toContain('20%');
 		expect(rows[3]).toContain('Specificity');
-		expect(rows[3]).toContain('25%');
+		expect(rows[3]).toContain('20%');
 		expect(rows[4]).toContain('Structure');
-		expect(rows[4]).toContain('20%');
+		expect(rows[4]).toContain('15%');
 		expect(rows[5]).toContain('Faithfulness');
-		expect(rows[5]).toContain('30%');
+		expect(rows[5]).toContain('25%');
+		expect(rows[6]).toContain('Conciseness');
+		expect(rows[6]).toContain('20%');
 		// Overall is last and bold
-		expect(rows[6]).toContain('**Overall**');
-		expect(rows[6]).toContain('**81/100**');
-		expect(rows[6]).toContain('**Good**');
+		expect(rows[7]).toContain('**Overall**');
+		expect(rows[7]).toContain('**81/100**');
+		expect(rows[7]).toContain('**Good**');
 	});
 
 	it('includes Rating column with tier labels', () => {
-		const scores = { clarity: 0.3, specificity: 0.5, structure: 0.8, faithfulness: 0.0, overall: 0.45 };
+		const scores = { clarity: 0.3, specificity: 0.5, structure: 0.8, faithfulness: 0.0, conciseness: 0.6, overall: 0.45 };
 		const rows = buildScoreTable(scores);
 		// Clarity 30 => Low
 		expect(rows[2]).toContain('Low');
@@ -131,13 +133,29 @@ describe('buildScoreTable', () => {
 		// Structure 80 => Good
 		expect(rows[4]).toContain('Good');
 		// Overall 45 => Fair
-		expect(rows[6]).toContain('**Fair**');
+		expect(rows[7]).toContain('**Fair**');
 	});
 
 	it('handles zero scores', () => {
-		const scores = { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, overall: 0 };
+		const scores = { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, conciseness: 0, overall: 0 };
 		const rows = buildScoreTable(scores);
-		expect(rows[6]).toContain('**0/100**');
+		expect(rows[7]).toContain('**0/100**');
+	});
+
+	it('includes supplementary Strategy Fit row when framework_adherence present', () => {
+		const scores = { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, conciseness: 0.75, overall: 0.81, framework_adherence: 0.68 };
+		const rows = buildScoreTable(scores);
+		const suppRow = rows.find(r => r.includes('Strategy Fit'));
+		expect(suppRow).toBeDefined();
+		expect(suppRow).toContain('*Strategy Fit*');
+		expect(suppRow).toContain('*68/100*');
+		expect(suppRow).toContain('*(supplementary)*');
+	});
+
+	it('omits supplementary row when framework_adherence absent', () => {
+		const scores = { clarity: 0.9, specificity: 0.8, structure: 0.7, faithfulness: 0.85, conciseness: 0.75, overall: 0.81 };
+		const rows = buildScoreTable(scores);
+		expect(rows.find(r => r.includes('Strategy Fit'))).toBeUndefined();
 	});
 });
 
@@ -334,10 +352,11 @@ describe('generateExportMarkdown', () => {
 		const md = generateExportMarkdown(makeResult());
 		expect(md).toContain('## Scores');
 		expect(md).toContain('| Metric | Score | Weight | Rating |');
-		expect(md).toContain('| Clarity | 90/100 | 25% | Good |');
-		expect(md).toContain('| Specificity | 80/100 | 25% | Good |');
-		expect(md).toContain('| Structure | 70/100 | 20% | Good |');
-		expect(md).toContain('| Faithfulness | 85/100 | 30% | Good |');
+		expect(md).toContain('| Clarity | 90/100 | 20% | Good |');
+		expect(md).toContain('| Specificity | 80/100 | 20% | Good |');
+		expect(md).toContain('| Structure | 70/100 | 15% | Good |');
+		expect(md).toContain('| Faithfulness | 85/100 | 25% | Good |');
+		expect(md).toContain('| Conciseness | 75/100 | 20% | Good |');
 		expect(md).toContain('| **Overall** | **81/100** | | **Good** |');
 	});
 
@@ -467,7 +486,7 @@ describe('generateExportMarkdown', () => {
 
 	it('handles zero scores gracefully', () => {
 		const result = makeResult();
-		result.scores = { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, overall: 0 };
+		result.scores = { clarity: 0, specificity: 0, structure: 0, faithfulness: 0, conciseness: 0, overall: 0 };
 		const md = generateExportMarkdown(result);
 		expect(md).toContain('| **Overall** | **0/100** |');
 	});
