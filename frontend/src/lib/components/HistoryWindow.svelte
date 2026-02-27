@@ -12,7 +12,7 @@
 	import { toastState } from '$lib/stores/toast.svelte';
 	import { clipboardService } from '$lib/services/clipboardService.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
-	import { fetchOptimization, type HistorySummaryItem } from '$lib/api/client';
+	import { fetchOptimization, type HistoryItem, type HistorySummaryItem } from '$lib/api/client';
 	import { formatRelativeTime, truncateText, normalizeScore, getScoreBadgeClass } from '$lib/utils/format';
 
 	let searchInput = $state('');
@@ -47,7 +47,7 @@
 		ctxMenu = { open: false, x: 0, y: 0, targetId: null, actions: [] };
 	}
 
-	async function fetchAndAct(id: string, action: (item: { optimized_prompt: string | null }) => void) {
+	async function fetchAndAct(id: string, action: (item: HistoryItem) => void) {
 		const item = await fetchOptimization(id);
 		if (item) action(item);
 		else toastState.show('Failed to load forge details', 'error');
@@ -72,7 +72,12 @@
 			case 'iterate':
 				fetchAndAct(targetId, (item) => {
 					if (item.optimized_prompt) {
-						forgeSession.loadRequest({ text: item.optimized_prompt });
+						forgeSession.loadRequest({
+							text: item.optimized_prompt,
+							title: item.title ?? undefined,
+							project: item.project ?? undefined,
+							sourceAction: 'reiterate',
+						});
 					} else {
 						toastState.show('No optimized prompt to iterate on', 'info');
 					}

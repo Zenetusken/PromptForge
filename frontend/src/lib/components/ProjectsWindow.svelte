@@ -94,7 +94,13 @@
 			case 'forge': {
 				const prompt = activeProjectData?.prompts.find((p) => p.id === targetId);
 				if (prompt && activeProjectData) {
-					forgeSession.loadRequest({ text: prompt.content, project: activeProjectData.name });
+					forgeSession.loadRequest({
+						text: prompt.content,
+						title: activeProjectData.name,
+						project: activeProjectData.name,
+						promptId: prompt.id,
+						sourceAction: 'optimize',
+					});
 				}
 				break;
 			}

@@ -25,12 +25,16 @@ export async function openPromptInIDE(ctx: PromptOpenerContext): Promise<void> {
 	const prompt = ctx.prompt ?? projectData.prompts.find((p) => p.id === ctx.promptId);
 	if (!prompt) { toastState.show('Prompt not found in project', 'error'); return; }
 
+	// Derive a meaningful tab title
+	const tabTitle = prompt.latest_forge?.title || projectData.name;
+
 	if (prompt.forge_count > 0 && prompt.latest_forge) {
 		// Open latest forge result in IDE review mode
 		await optimizationState.openInIDEFromHistory(prompt.latest_forge.id);
 		// Populate the left pane with the prompt text for reiteration
 		forgeSession.loadRequest({
 			text: prompt.content,
+			title: tabTitle,
 			project: projectData.name,
 			promptId: prompt.id,
 			sourceAction: 'reiterate',
@@ -44,6 +48,7 @@ export async function openPromptInIDE(ctx: PromptOpenerContext): Promise<void> {
 		// loadRequest sets isActive, opens IDE, and populates the draft
 		forgeSession.loadRequest({
 			text: prompt.content,
+			title: tabTitle,
 			project: projectData.name,
 			promptId: prompt.id,
 			sourceAction: 'optimize',
