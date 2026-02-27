@@ -108,17 +108,22 @@ class ForgeSessionState {
 	}
 
 	/**
-	 * Replace the entire draft with a new request.
+	 * Load content into the forge, always in its own tab.
+	 * Reuses an existing empty tab if one exists; otherwise creates a new tab.
 	 * Used when loading a prompt from a project card, history entry, or result action.
 	 */
 	loadRequest(req: Partial<ForgeSessionDraft> & { text: string }): void {
 		this.isActive = true;
 		windowManager.openIDE();
 		const newDraft = { ...createEmptyDraft(), ...req };
+		const tabName = req.title || this._nextUntitledName();
 
-		if (!this.draft.text.trim()) {
-			this.draft = newDraft;
-			this.activeTab.name = req.title || 'Loaded Prompt';
+		// Reuse an existing empty tab, or create a new one
+		const emptyTab = this.tabs.find((t) => this._isTabEmpty(t));
+		if (emptyTab) {
+			emptyTab.draft = newDraft;
+			emptyTab.name = tabName;
+			this.activeTabId = emptyTab.id;
 		} else {
 			// Evict LRU non-active tab when at limit
 			if (this.tabs.length >= MAX_TABS) {
@@ -129,7 +134,7 @@ class ForgeSessionState {
 			}
 			const newTab: WorkspaceTab = {
 				id: typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(),
-				name: req.title || 'New Prompt',
+				name: tabName,
 				draft: newDraft,
 				resultId: null,
 				mode: 'compose',
@@ -226,6 +231,85 @@ class ForgeSessionState {
 		return Object.keys(errors).length === 0;
 	}
 
+	private _lastCreateTime = 0;
+
+	/**
+	 * Create a new tab with MAX_TABS enforcement and numbered naming.
+	 * Includes a debounce guard (200ms) to prevent rapid duplicate creation
+	 * from keyboard auto-repeat or double-clicks.
+	 * Does NOT handle save/restore of tab coherence — callers must do that.
+	 * Returns the new tab, or null if blocked.
+	 */
+	createTab(): WorkspaceTab | null {
+		// Debounce guard — reject calls within 200ms of the last successful creation
+		const now = Date.now();
+		if (now - this._lastCreateTime < 200) return null;
+		this._lastCreateTime = now;
+
+		// Enforce MAX_TABS — evict LRU non-active tab
+		if (this.tabs.length >= MAX_TABS) {
+			const evictIdx = this.tabs.findLastIndex(t => t.id !== this.activeTabId);
+			if (evictIdx >= 0) {
+				this.tabs.splice(evictIdx, 1);
+			} else {
+				return null;
+			}
+		}
+		const tab: WorkspaceTab = {
+			id: typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(),
+			name: this._nextUntitledName(),
+			draft: createEmptyDraft(),
+			resultId: null,
+			mode: 'compose',
+		};
+		this.tabs.push(tab);
+		this.activeTabId = tab.id;
+		this._persistDraft();
+		return tab;
+	}
+
+	/**
+	 * Check if a tab is truly empty — no user-entered content whatsoever.
+	 * An empty tab has: no prompt text, no title, no project, no tags,
+	 * no version, no result, no context, and is in compose mode.
+	 */
+	private _isTabEmpty(tab: WorkspaceTab): boolean {
+		return (
+			tab.draft.text === '' &&
+			tab.draft.title === '' &&
+			tab.draft.project === '' &&
+			tab.draft.tags === '' &&
+			tab.draft.version === '' &&
+			tab.draft.promptId === '' &&
+			tab.draft.contextProfile === null &&
+			tab.resultId === null &&
+			tab.mode === 'compose'
+		);
+	}
+
+	/**
+	 * Return an existing empty tab or create a new one.
+	 * Use this for "New Forge" entry points (Start Menu, desktop context menu)
+	 * that should reuse an idle tab rather than stacking duplicates.
+	 */
+	ensureTab(): WorkspaceTab | null {
+		const fresh = this.tabs.find((t) => this._isTabEmpty(t));
+		if (fresh) {
+			this.activeTabId = fresh.id;
+			return fresh;
+		}
+		return this.createTab();
+	}
+
+	private _nextUntitledName(): string {
+		const existing = new Set(this.tabs.map(t => t.name));
+		for (let i = 1; i <= MAX_TABS + 1; i++) {
+			const name = `Untitled ${i}`;
+			if (!existing.has(name)) return name;
+		}
+		return `Untitled ${this.tabs.length + 1}`;
+	}
+
 	/**
 	 * Reset the entire session to empty state.
 	 */
@@ -239,6 +323,7 @@ class ForgeSessionState {
 		this.showStrategy = false;
 		this.validationErrors = {};
 		this.duplicateTitleWarning = false;
+		this._lastCreateTime = 0;
 		this._clearStorage();
 	}
 

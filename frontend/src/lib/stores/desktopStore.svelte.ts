@@ -602,7 +602,7 @@ class DesktopStoreState {
 				break;
 			}
 			case 'new-tab': {
-				this._newForgeTab();
+				this._newForge();
 				break;
 			}
 			case 'minimize': {
@@ -610,7 +610,7 @@ class DesktopStoreState {
 				break;
 			}
 			case 'new-forge': {
-				this._newForge();
+				this._newForge(true);
 				break;
 			}
 			case 'new-project': {
@@ -835,49 +835,20 @@ class DesktopStoreState {
 		});
 	}
 
-	private _newForge() {
+	private _newForge(focusTextarea = false) {
 		Promise.all([
 			import('$lib/stores/forgeMachine.svelte'),
 			import('$lib/stores/forgeSession.svelte'),
 			import('$lib/stores/tabCoherence'),
-		]).then(([{ forgeMachine }, { forgeSession, createEmptyDraft }, { saveActiveTabState, restoreTabState }]) => {
+		]).then(([{ forgeMachine }, { forgeSession }, { saveActiveTabState, restoreTabState }]) => {
 			if (forgeMachine.mode === 'forging') return;
 			saveActiveTabState();
 			forgeMachine.restore();
-			const tab = {
-				id: crypto.randomUUID(),
-				name: 'Untitled',
-				draft: createEmptyDraft(),
-				resultId: null as string | null,
-				mode: 'compose' as const,
-			};
-			forgeSession.tabs.push(tab);
-			forgeSession.activeTabId = tab.id;
-			restoreTabState(tab);
+			const tab = forgeSession.ensureTab();
+			if (tab) restoreTabState(tab);
 			forgeSession.activate();
 			windowManager.openIDE();
-			forgeSession.focusTextarea();
-		});
-	}
-
-	private _newForgeTab() {
-		Promise.all([
-			import('$lib/stores/forgeSession.svelte'),
-			import('$lib/stores/tabCoherence'),
-		]).then(([{ forgeSession, createEmptyDraft }, { saveActiveTabState, restoreTabState }]) => {
-			saveActiveTabState();
-			const tab = {
-				id: crypto.randomUUID(),
-				name: 'Untitled',
-				draft: createEmptyDraft(),
-				resultId: null as string | null,
-				mode: 'compose' as const,
-			};
-			forgeSession.tabs.push(tab);
-			forgeSession.activeTabId = tab.id;
-			restoreTabState(tab);
-			forgeSession.activate();
-			windowManager.openIDE();
+			if (focusTextarea) forgeSession.focusTextarea();
 		});
 	}
 

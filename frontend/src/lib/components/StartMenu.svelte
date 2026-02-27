@@ -6,7 +6,7 @@
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { historyState } from '$lib/stores/history.svelte';
 	import { projectsState } from '$lib/stores/projects.svelte';
-	import { forgeSession, createEmptyDraft } from '$lib/stores/forgeSession.svelte';
+	import { forgeSession } from '$lib/stores/forgeSession.svelte';
 	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { saveActiveTabState, restoreTabState } from '$lib/stores/tabCoherence';
@@ -45,18 +45,9 @@
 		if (forgeMachine.mode === 'forging') return;
 		saveActiveTabState();
 		forgeMachine.restore();
-		const tab = {
-			id: crypto.randomUUID(),
-			name: 'Untitled',
-			draft: createEmptyDraft(),
-			resultId: null as string | null,
-			mode: 'compose' as const,
-		};
-		forgeSession.tabs.push(tab);
-		forgeSession.activeTabId = tab.id;
-		restoreTabState(tab);
+		const tab = forgeSession.ensureTab();
+		if (tab) restoreTabState(tab);
 		forgeSession.activate();
-		windowManager.openIDE();
 		forgeSession.focusTextarea();
 	}
 

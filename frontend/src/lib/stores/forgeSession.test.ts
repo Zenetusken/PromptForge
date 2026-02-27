@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock providerState before importing forgeSession
 vi.mock('$lib/stores/provider.svelte', () => ({
@@ -111,6 +111,48 @@ describe('ForgeSessionState', () => {
 				strategy: 'co-star',
 			});
 			expect(forgeSession.showStrategy).toBe(true);
+		});
+
+		it('reuses the empty initial tab on first load', () => {
+			expect(forgeSession.tabs.length).toBe(1);
+			const initialId = forgeSession.activeTabId;
+
+			forgeSession.loadRequest({ text: 'first prompt' });
+
+			// Should reuse the empty tab, not create a second one
+			expect(forgeSession.tabs.length).toBe(1);
+			expect(forgeSession.activeTabId).toBe(initialId);
+			expect(forgeSession.draft.text).toBe('first prompt');
+		});
+
+		it('creates a new tab when loading into a non-empty session', () => {
+			forgeSession.loadRequest({ text: 'first prompt' });
+			expect(forgeSession.tabs.length).toBe(1);
+
+			forgeSession.loadRequest({ text: 'second prompt', title: 'Second' });
+
+			// Second load should create a new tab, preserving the first
+			expect(forgeSession.tabs.length).toBe(2);
+			const firstTab = forgeSession.tabs.find(t => t.draft.text === 'first prompt');
+			const secondTab = forgeSession.tabs.find(t => t.draft.text === 'second prompt');
+			expect(firstTab).toBeDefined();
+			expect(secondTab).toBeDefined();
+			expect(secondTab!.name).toBe('Second');
+		});
+
+		it('names loaded tabs using the title or next Untitled number', () => {
+			// Load with title — tab gets that name
+			forgeSession.loadRequest({ text: 'prompt A', title: 'My Prompt' });
+			expect(forgeSession.activeTab.name).toBe('My Prompt');
+
+			// Load without title — tab gets next available "Untitled N"
+			// Since "Untitled 1" isn't taken (renamed to "My Prompt"), it picks "Untitled 1"
+			forgeSession.loadRequest({ text: 'prompt B' });
+			expect(forgeSession.activeTab.name).toBe('Untitled 1');
+
+			// Load a third without title — now "Untitled 1" is taken, picks "Untitled 2"
+			forgeSession.loadRequest({ text: 'prompt C' });
+			expect(forgeSession.activeTab.name).toBe('Untitled 2');
 		});
 	});
 
@@ -480,6 +522,189 @@ describe('ForgeSessionState', () => {
 			expect(forgeSession.tabs.length).toBe(1);
 			expect(forgeSession.draft.text).toBe('my draft');
 			expect(forgeSession.draft.title).toBe('Draft Tab');
+		});
+	});
+
+	describe('createTab', () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		// Helper: advance past debounce guard between createTab calls
+		function advancePastDebounce() {
+			vi.advanceTimersByTime(250);
+		}
+
+		it('creates a new tab and sets it active', () => {
+			const tab = forgeSession.createTab();
+			expect(tab).not.toBeNull();
+			expect(tab!.id).toBe(forgeSession.activeTabId);
+			expect(tab!.draft.text).toBe('');
+			expect(tab!.mode).toBe('compose');
+			expect(tab!.resultId).toBeNull();
+		});
+
+		it('generates sequential "Untitled N" names', () => {
+			// Reset starts with "Untitled 1"
+			expect(forgeSession.activeTab.name).toBe('Untitled 1');
+
+			advancePastDebounce();
+			const tab2 = forgeSession.createTab();
+			expect(tab2!.name).toBe('Untitled 2');
+
+			advancePastDebounce();
+			const tab3 = forgeSession.createTab();
+			expect(tab3!.name).toBe('Untitled 3');
+		});
+
+		it('fills gaps in naming when tabs are closed', () => {
+			advancePastDebounce();
+			const tab2 = forgeSession.createTab();
+			advancePastDebounce();
+			forgeSession.createTab(); // Untitled 3
+
+			// Remove "Untitled 2" — next should reuse the name
+			forgeSession.tabs = forgeSession.tabs.filter(t => t.id !== tab2!.id);
+			advancePastDebounce();
+			const tab4 = forgeSession.createTab();
+			expect(tab4!.name).toBe('Untitled 2');
+		});
+
+		it('enforces MAX_TABS (5) by evicting LRU non-active tab', () => {
+			// Create tabs up to 5 total (1 initial + 4 new)
+			advancePastDebounce(); forgeSession.createTab();
+			advancePastDebounce(); forgeSession.createTab();
+			advancePastDebounce(); forgeSession.createTab();
+			advancePastDebounce(); forgeSession.createTab();
+			expect(forgeSession.tabs.length).toBe(5);
+
+			// Creating a 6th should evict one and stay at 5
+			advancePastDebounce();
+			const tab6 = forgeSession.createTab();
+			expect(tab6).not.toBeNull();
+			expect(forgeSession.tabs.length).toBe(5);
+		});
+
+		it('evicts the last non-active tab when at limit', () => {
+			// Fill to 5 tabs
+			advancePastDebounce(); forgeSession.createTab();
+			advancePastDebounce(); forgeSession.createTab();
+			advancePastDebounce(); forgeSession.createTab();
+			advancePastDebounce(); forgeSession.createTab();
+			expect(forgeSession.tabs.length).toBe(5);
+
+			// The active tab is the last created — eviction should remove a non-active tab
+			const activeId = forgeSession.activeTabId;
+			advancePastDebounce();
+			forgeSession.createTab();
+
+			// One of the earlier tabs was evicted, not the previously active one
+			expect(forgeSession.tabs.length).toBe(5);
+			// New tab is now active
+			expect(forgeSession.activeTabId).not.toBe(activeId);
+		});
+
+		it('persists tabs to sessionStorage', () => {
+			advancePastDebounce();
+			forgeSession.createTab();
+			const stored = storageMap.get('pf_forge_draft');
+			expect(stored).toBeDefined();
+			const parsed = JSON.parse(stored!);
+			expect(parsed.tabs.length).toBe(2);
+		});
+
+		it('debounces rapid calls within 200ms', () => {
+			// First call succeeds
+			const tab1 = forgeSession.createTab();
+			expect(tab1).not.toBeNull();
+			expect(forgeSession.tabs.length).toBe(2);
+
+			// Immediate second call should be blocked
+			const tab2 = forgeSession.createTab();
+			expect(tab2).toBeNull();
+			expect(forgeSession.tabs.length).toBe(2);
+
+			// Third call at 100ms should still be blocked
+			vi.advanceTimersByTime(100);
+			const tab3 = forgeSession.createTab();
+			expect(tab3).toBeNull();
+			expect(forgeSession.tabs.length).toBe(2);
+
+			// After 200ms total, should succeed again
+			vi.advanceTimersByTime(150);
+			const tab4 = forgeSession.createTab();
+			expect(tab4).not.toBeNull();
+			expect(forgeSession.tabs.length).toBe(3);
+		});
+	});
+
+	describe('ensureTab', () => {
+		it('reuses an existing empty tab instead of creating a new one', () => {
+			// Initial state has 1 empty tab ("Untitled 1")
+			expect(forgeSession.tabs.length).toBe(1);
+			const initialTabId = forgeSession.activeTabId;
+
+			const tab = forgeSession.ensureTab();
+			expect(tab).not.toBeNull();
+			expect(tab!.id).toBe(initialTabId);
+			expect(forgeSession.tabs.length).toBe(1);
+		});
+
+		it('creates a new tab when all existing tabs have content', () => {
+			// Put content in the initial tab
+			forgeSession.updateDraft({ text: 'some prompt text' });
+			expect(forgeSession.tabs.length).toBe(1);
+
+			const tab = forgeSession.ensureTab();
+			expect(tab).not.toBeNull();
+			expect(forgeSession.tabs.length).toBe(2);
+			expect(tab!.draft.text).toBe('');
+		});
+
+		it('creates a new tab when existing tab has a result', () => {
+			// Mark the initial tab as having a result
+			forgeSession.activeTab.resultId = 'some-result-id';
+			expect(forgeSession.tabs.length).toBe(1);
+
+			const tab = forgeSession.ensureTab();
+			expect(tab).not.toBeNull();
+			expect(forgeSession.tabs.length).toBe(2);
+		});
+
+		it('does not reuse a tab that has metadata even if text is empty', () => {
+			// Set metadata on the initial empty tab (no text, but has a project)
+			forgeSession.updateDraft({ project: 'My Project' });
+			expect(forgeSession.draft.text).toBe('');
+			expect(forgeSession.tabs.length).toBe(1);
+
+			const tab = forgeSession.ensureTab();
+			expect(tab).not.toBeNull();
+			// Should create a new tab, not reuse the one with metadata
+			expect(forgeSession.tabs.length).toBe(2);
+		});
+
+		it('reuses any empty tab, not just the active one', () => {
+			// Create a second tab with content, then put content in the first
+			vi.useFakeTimers();
+			forgeSession.updateDraft({ text: 'tab 1 content' });
+			vi.advanceTimersByTime(250);
+			forgeSession.createTab(); // Tab 2 — empty
+			vi.advanceTimersByTime(250);
+			forgeSession.createTab(); // Tab 3
+			forgeSession.updateDraft({ text: 'tab 3 content' });
+			vi.useRealTimers();
+
+			expect(forgeSession.tabs.length).toBe(3);
+
+			// ensureTab should find the empty Tab 2
+			const tab = forgeSession.ensureTab();
+			expect(tab).not.toBeNull();
+			expect(forgeSession.tabs.length).toBe(3); // No new tab created
+			expect(tab!.name).toBe('Untitled 2');
 		});
 	});
 

@@ -18,7 +18,7 @@
 	import { historyState } from "$lib/stores/history.svelte";
 	import { optimizationState } from "$lib/stores/optimization.svelte";
 	import { providerState } from "$lib/stores/provider.svelte";
-	import { forgeSession, createEmptyDraft } from "$lib/stores/forgeSession.svelte";
+	import { forgeSession } from "$lib/stores/forgeSession.svelte";
 	import { forgeMachine } from "$lib/stores/forgeMachine.svelte";
 	import { windowManager } from "$lib/stores/windowManager.svelte";
 	import { promptAnalysis } from "$lib/stores/promptAnalysis.svelte";
@@ -32,7 +32,6 @@
 	import { mcpActivityFeed, MCP_WRITE_TOOLS } from "$lib/services/mcpActivityFeed.svelte";
 	import { workspaceManager } from "$lib/stores/workspaceManager.svelte";
 	import { saveActiveTabState, restoreTabState } from "$lib/stores/tabCoherence";
-	import type { WorkspaceTab } from "$lib/stores/forgeSession.svelte";
 	import { onMount } from "svelte";
 
 	// View Transitions API for page navigation crossfade
@@ -48,6 +47,21 @@
 
 	let { children } = $props();
 
+	/** Shared close-tab logic used by command palette tab-close + Ctrl+W shortcut. */
+	function closeActiveTab() {
+		if (!windowManager.ideVisible || forgeMachine.mode === 'forging') return;
+		if (forgeSession.tabs.length <= 1) {
+			optimizationState.resetForge();
+			forgeMachine.reset();
+			forgeSession.reset();
+		} else {
+			const idx = forgeSession.tabs.findIndex(t => t.id === forgeSession.activeTabId);
+			forgeSession.tabs = forgeSession.tabs.filter(t => t.id !== forgeSession.activeTabId);
+			const nextTab = forgeSession.tabs[Math.max(0, idx - 1)];
+			forgeSession.activeTabId = nextTab.id;
+			restoreTabState(nextTab);
+		}
+	}
 
 	onMount(() => {
 		if (!historyState.hasLoaded) {
@@ -121,17 +135,8 @@
 				execute: () => {
 					if (forgeMachine.mode === 'forging') return;
 					saveActiveTabState();
-					const tab: WorkspaceTab = {
-						id: crypto.randomUUID(),
-						name: 'Untitled',
-						draft: createEmptyDraft(),
-						resultId: null,
-						mode: 'compose',
-					};
-					forgeSession.tabs.push(tab);
-					forgeSession.activeTabId = tab.id;
-					restoreTabState(tab);
-					forgeSession.activate();
+					const tab = forgeSession.createTab();
+					if (tab) { restoreTabState(tab); forgeSession.activate(); }
 				},
 			},
 			{
@@ -140,20 +145,7 @@
 				category: 'forge',
 				shortcut: 'Ctrl+W',
 				icon: 'x',
-				execute: () => {
-					if (!windowManager.ideVisible || forgeMachine.mode === 'forging') return;
-					if (forgeSession.tabs.length <= 1) {
-						optimizationState.resetForge();
-						forgeMachine.reset();
-						forgeSession.reset();
-					} else {
-						const idx = forgeSession.tabs.findIndex(t => t.id === forgeSession.activeTabId);
-						forgeSession.tabs = forgeSession.tabs.filter(t => t.id !== forgeSession.activeTabId);
-						const nextTab = forgeSession.tabs[Math.max(0, idx - 1)];
-						forgeSession.activeTabId = nextTab.id;
-						restoreTabState(nextTab);
-					}
-				},
+				execute: closeActiveTab,
 				available: () => windowManager.ideVisible,
 			},
 			{
@@ -358,19 +350,11 @@
 			// Ctrl/Cmd+N — new forge tab
 			if (e.key === "n" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
 				e.preventDefault();
+				if (e.repeat) return;
 				if (forgeMachine.mode === 'forging') return;
 				saveActiveTabState();
-				const tab: WorkspaceTab = {
-					id: crypto.randomUUID(),
-					name: "Untitled",
-					draft: createEmptyDraft(),
-					resultId: null,
-					mode: 'compose',
-				};
-				forgeSession.tabs.push(tab);
-				forgeSession.activeTabId = tab.id;
-				restoreTabState(tab);
-				forgeSession.activate();
+				const tab = forgeSession.createTab();
+				if (tab) { restoreTabState(tab); forgeSession.activate(); }
 				return;
 			}
 
@@ -378,22 +362,7 @@
 			if (e.key === "w" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
 				if (windowManager.ideVisible) {
 					e.preventDefault();
-					if (forgeMachine.mode === 'forging') return;
-					if (forgeSession.tabs.length <= 1) {
-						optimizationState.resetForge();
-						forgeMachine.reset();
-						forgeSession.reset(); // reset() calls windowManager.closeIDE() internally
-					} else {
-						const idx = forgeSession.tabs.findIndex(
-							(t) => t.id === forgeSession.activeTabId,
-						);
-						forgeSession.tabs = forgeSession.tabs.filter(
-							(t) => t.id !== forgeSession.activeTabId,
-						);
-						const nextTab = forgeSession.tabs[Math.max(0, idx - 1)];
-						forgeSession.activeTabId = nextTab.id;
-						restoreTabState(nextTab);
-					}
+					closeActiveTab();
 					return;
 				}
 			}

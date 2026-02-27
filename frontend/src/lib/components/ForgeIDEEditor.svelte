@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { forgeSession, createEmptyDraft } from '$lib/stores/forgeSession.svelte';
+	import { forgeSession } from '$lib/stores/forgeSession.svelte';
 	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 	import { optimizationState } from '$lib/stores/optimization.svelte';
 	import { promptAnalysis } from '$lib/stores/promptAnalysis.svelte';
@@ -7,7 +7,6 @@
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { saveActiveTabState, restoreTabState } from '$lib/stores/tabCoherence';
 	import { ALL_STRATEGIES } from '$lib/utils/strategies';
-	import type { WorkspaceTab } from '$lib/stores/forgeSession.svelte';
 	import ForgeEditor from './ForgeEditor.svelte';
 	import Icon from './Icon.svelte';
 	import { Tooltip, MetaBadge } from './ui';
@@ -61,16 +60,8 @@
 	function newTab() {
 		if (forgeMachine.mode === 'forging') return;
 		saveActiveTabState();
-		const tab: WorkspaceTab = {
-			id: crypto.randomUUID(),
-			name: 'Untitled',
-			draft: createEmptyDraft(),
-			resultId: null,
-			mode: 'compose',
-		};
-		forgeSession.tabs.push(tab);
-		forgeSession.activeTabId = tab.id;
-		restoreTabState(tab);
+		const tab = forgeSession.createTab();
+		if (tab) restoreTabState(tab);
 	}
 
 	function handleSubmit(): boolean {
@@ -138,7 +129,7 @@
 <div class="flex flex-1 flex-col overflow-hidden bg-bg-primary">
 	<!-- Tab Bar -->
 	<div class="flex h-7 shrink-0 items-center border-b border-neon-cyan/10 bg-bg-secondary px-1.5">
-		{#each forgeSession.tabs as tab}
+		{#each forgeSession.tabs as tab (tab.id)}
 			<button
 				onclick={() => switchTab(tab.id)}
 				class="group flex h-full items-center gap-2 border-b-2 px-2 text-[11px] transition-colors {tab.id === forgeSession.activeTabId ? 'border-neon-cyan text-text-primary bg-bg-primary' : 'border-transparent text-text-dim hover:bg-bg-hover hover:text-text-secondary'}"
