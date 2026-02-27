@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { optimizationState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
 	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
-	import { processScheduler } from '$lib/stores/processScheduler.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { forgeSession } from '$lib/stores/forgeSession.svelte';
 	import { normalizeScore, getScoreBadgeClass, formatScore } from '$lib/utils/format';
@@ -42,7 +41,6 @@
 
 	function handleReforge() {
 		if (!result) return;
-		processScheduler.spawn({ title: result.title || 'Re-forge' });
 		const metadata = forgeSession.buildMetadata();
 		optimizationState.startOptimization(result.original, metadata);
 		forgeMachine.enterForging();

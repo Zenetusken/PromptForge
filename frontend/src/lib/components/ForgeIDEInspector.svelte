@@ -2,7 +2,6 @@
     import { forgeSession } from "$lib/stores/forgeSession.svelte";
     import { optimizationState } from "$lib/stores/optimization.svelte";
     import { forgeMachine } from "$lib/stores/forgeMachine.svelte";
-    import { processScheduler } from "$lib/stores/processScheduler.svelte";
     import { windowManager } from "$lib/stores/windowManager.svelte";
     import { promptAnalysis } from "$lib/stores/promptAnalysis.svelte";
     import ForgeStrategySection from "./ForgeStrategySection.svelte";
@@ -25,7 +24,6 @@
             forgeSession.showMetadata = true;
             return;
         }
-        processScheduler.spawn({ title: forgeSession.draft.title || 'Untitled Forge' });
         optimizationState.startOptimization(
             forgeSession.draft.text,
             forgeSession.buildMetadata(),
