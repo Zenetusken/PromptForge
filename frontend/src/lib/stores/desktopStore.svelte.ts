@@ -1,6 +1,8 @@
 import { windowManager } from '$lib/stores/windowManager.svelte';
 import { TASKBAR_HEIGHT } from '$lib/stores/snapLayout';
 import { TYPE_SORT_ORDER } from '$lib/utils/fileTypes';
+import { appRegistry } from '$lib/kernel/services/appRegistry.svelte';
+import type { DesktopIconDef as ManifestDesktopIcon } from '$lib/kernel/types';
 import type { FsNode } from '$lib/api/client';
 
 // ── Grid Geometry ──
@@ -62,6 +64,8 @@ export interface DesktopIconDef {
 	extension?: string;
 	position: GridPosition;
 	contextActions: ContextAction[];
+	/** Action string from manifest (e.g. 'openWindow:ide'). Used for generic dispatch. */
+	action?: string;
 }
 
 export interface RecycleBinItem {
@@ -191,118 +195,36 @@ const DESKTOP_CONTEXT_ACTIONS: ContextAction[] = [
 	{ id: 'refresh-desktop', label: 'Refresh Desktop', icon: 'refresh', separator: true },
 ];
 
+/** Default context action for app-registered desktop icons. */
+const APP_ICON_DEFAULT_ACTIONS: ContextAction[] = [
+	{ id: 'open', label: 'Open', icon: 'box' },
+];
+
+/**
+ * Map a manifest DesktopIconDef to the store's DesktopIconDef.
+ * Uses SYSTEM_CONTEXT_ACTIONS for known icon IDs, falls back to a default Open action.
+ */
+function manifestIconToStore(icon: ManifestDesktopIcon): DesktopIconDef {
+	return {
+		id: icon.id,
+		label: icon.label,
+		icon: icon.icon,
+		color: icon.color ?? 'cyan',
+		type: (icon.type as IconType) ?? 'system',
+		extension: '.app',
+		position: { col: 0, row: 0 },
+		contextActions: SYSTEM_CONTEXT_ACTIONS[icon.id] ?? APP_ICON_DEFAULT_ACTIONS,
+		action: icon.action,
+	};
+}
+
+/**
+ * Kernel-level default icons — not sourced from any app.
+ * App icons are added via syncAppIcons() after the registry is populated.
+ */
 function createDefaultIcons(): DesktopIconDef[] {
-	return [
-		{
-			id: 'sys-forge-ide',
-			label: 'Forge IDE',
-			icon: 'terminal',
-			color: 'cyan',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-forge-ide'],
-		},
-		{
-			id: 'sys-projects',
-			label: 'Projects',
-			icon: 'folder',
-			color: 'yellow',
-			type: 'folder',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-projects'],
-		},
-		{
-			id: 'sys-history',
-			label: 'History',
-			icon: 'folder',
-			color: 'blue',
-			type: 'folder',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-history'],
-		},
-		{
-			id: 'sys-control-panel',
-			label: 'Control Panel',
-			icon: 'settings',
-			color: 'purple',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-control-panel'],
-		},
-		{
-			id: 'sys-task-manager',
-			label: 'Task Manager',
-			icon: 'cpu',
-			color: 'green',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-task-manager'],
-		},
-		{
-			id: 'sys-batch-processor',
-			label: 'Batch Processor',
-			icon: 'layers',
-			color: 'orange',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-batch-processor'],
-		},
-		{
-			id: 'sys-strategy-workshop',
-			label: 'Strategy Workshop',
-			icon: 'bar-chart',
-			color: 'indigo',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-strategy-workshop'],
-		},
-		{
-			id: 'sys-template-library',
-			label: 'Template Library',
-			icon: 'file-text',
-			color: 'teal',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-template-library'],
-		},
-		{
-			id: 'sys-terminal',
-			label: 'Terminal',
-			icon: 'terminal',
-			color: 'cyan',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-terminal'],
-		},
-		{
-			id: 'sys-network-monitor',
-			label: 'Network Monitor',
-			icon: 'activity',
-			color: 'green',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-network-monitor'],
-		},
-		{
-			id: 'sys-workspace-hub',
-			label: 'Workspace Hub',
-			icon: 'git-branch',
-			color: 'green',
-			type: 'system',
-			extension: '.app',
-			position: { col: 0, row: 0 },
-			contextActions: SYSTEM_CONTEXT_ACTIONS['sys-workspace-hub'],
-		},
+	// Kernel icons: Recycle Bin
+	const kernelIcons: DesktopIconDef[] = [
 		{
 			id: RECYCLE_BIN_ID,
 			label: 'Recycle Bin',
@@ -313,6 +235,10 @@ function createDefaultIcons(): DesktopIconDef[] {
 			position: { col: 0, row: 0 },
 			contextActions: SYSTEM_CONTEXT_ACTIONS[RECYCLE_BIN_ID],
 		},
+	];
+
+	// Shortcut files (PromptForge content, but persisted as kernel defaults for backward compat)
+	const shortcuts: DesktopIconDef[] = [
 		{
 			id: 'shortcut-code-review',
 			label: 'Code Review.lnk',
@@ -354,6 +280,11 @@ function createDefaultIcons(): DesktopIconDef[] {
 			contextActions: FILE_CONTEXT_ACTIONS,
 		},
 	];
+
+	// App-registered icons from the registry (may be empty if called before registry is populated)
+	const appIcons: DesktopIconDef[] = appRegistry.allDesktopIcons.map(manifestIconToStore);
+
+	return [...appIcons, ...kernelIcons, ...shortcuts];
 }
 
 // ── Persistence ──
@@ -473,6 +404,46 @@ class DesktopStoreState {
 		} else {
 			this.icons = defaults;
 			this._autoLayout(this.icons);
+		}
+	}
+
+	/**
+	 * Sync app-declared desktop icons from the registry into the desktop.
+	 * Called after the app registry is populated (in +layout.svelte onMount).
+	 * Adds new app icons that don't already exist, preserving user-set positions.
+	 */
+	syncAppIcons() {
+		const registryIcons = appRegistry.allDesktopIcons;
+		const existingIds = new Set(this.icons.map((i) => i.id));
+		const saved = loadPersisted();
+
+		let added = false;
+		for (const manifestIcon of registryIcons) {
+			if (existingIds.has(manifestIcon.id)) continue;
+
+			const storeIcon = manifestIconToStore(manifestIcon);
+
+			// Restore saved position if available
+			if (saved?.iconPositions[storeIcon.id]) {
+				const pos = saved.iconPositions[storeIcon.id];
+				const maxRow = getMaxRow();
+				const maxCol = getMaxCol();
+				storeIcon.position = {
+					col: Math.min(pos.col, maxCol),
+					row: Math.min(pos.row, maxRow),
+				};
+			} else {
+				storeIcon.position = this._findEmptyCell();
+			}
+
+			this.icons.push(storeIcon);
+			added = true;
+		}
+
+		if (added) {
+			this._dedupPositions(this.icons);
+			this._autoLayout(this.icons);
+			this._persist();
 		}
 	}
 
@@ -599,28 +570,10 @@ class DesktopStoreState {
 	private _dispatchAction(targetIconId: string | null, actionId: string) {
 		switch (actionId) {
 			case 'open': {
-				if (targetIconId === 'sys-forge-ide') {
-					this._openForgeIDE();
-				} else if (targetIconId === 'sys-projects') {
-					windowManager.openProjectsWindow();
-				} else if (targetIconId === 'sys-history') {
-					windowManager.openHistoryWindow();
-				} else if (targetIconId === 'sys-control-panel') {
-					windowManager.openWindow({ id: 'control-panel', title: 'Control Panel', icon: 'settings' });
-				} else if (targetIconId === 'sys-task-manager') {
-					windowManager.openWindow({ id: 'task-manager', title: 'Task Manager', icon: 'cpu' });
-				} else if (targetIconId === 'sys-batch-processor') {
-					windowManager.openWindow({ id: 'batch-processor', title: 'Batch Processor', icon: 'layers' });
-				} else if (targetIconId === 'sys-strategy-workshop') {
-					windowManager.openWindow({ id: 'strategy-workshop', title: 'Strategy Workshop', icon: 'bar-chart' });
-				} else if (targetIconId === 'sys-template-library') {
-					windowManager.openWindow({ id: 'template-library', title: 'Template Library', icon: 'file-text' });
-				} else if (targetIconId === 'sys-terminal') {
-					windowManager.openWindow({ id: 'terminal', title: 'Terminal', icon: 'terminal' });
-				} else if (targetIconId === 'sys-network-monitor') {
-					windowManager.openNetworkMonitor();
-				} else if (targetIconId === 'sys-workspace-hub') {
-					windowManager.openWorkspaceHub();
+				// Generic action-based dispatch: check icon's action field first
+				const icon = targetIconId ? this.icons.find((i) => i.id === targetIconId) : null;
+				if (icon?.action) {
+					this._executeIconAction(icon);
 				} else if (targetIconId?.startsWith(DB_FOLDER_PREFIX)) {
 					this._openDbFolder(targetIconId);
 				} else if (targetIconId?.startsWith('shortcut-')) {
@@ -858,6 +811,29 @@ class DesktopStoreState {
 	}
 
 	// ── Private helpers ──
+
+	/**
+	 * Execute a manifest-declared action on a desktop icon.
+	 * Handles `openWindow:*` actions generically via the window manager,
+	 * with special handling for the IDE window.
+	 */
+	private _executeIconAction(icon: DesktopIconDef) {
+		const action = icon.action!;
+		if (action.startsWith('openWindow:')) {
+			const windowId = action.slice('openWindow:'.length);
+			if (windowId === 'ide') {
+				this._openForgeIDE();
+			} else {
+				// Look up window title/icon from registry, fall back to manifest icon data
+				const reg = appRegistry.getWindow(windowId);
+				windowManager.openWindow({
+					id: windowId,
+					title: reg?.title ?? icon.label,
+					icon: reg?.icon ?? icon.icon,
+				});
+			}
+		}
+	}
 
 	private _openForgeIDE() {
 		// Lazy imports to avoid circular dependencies

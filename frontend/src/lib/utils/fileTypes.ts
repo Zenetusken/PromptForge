@@ -1,4 +1,6 @@
-export type FileExtension = '.md' | '.forge' | '.scan' | '.val' | '.strat' | '.tmpl' | '.app' | '.lnk';
+import { appRegistry } from '$lib/kernel/services/appRegistry.svelte';
+
+export type FileExtension = '.md' | '.forge' | '.scan' | '.val' | '.strat' | '.tmpl' | '.app' | '.lnk' | (string & {});
 
 export interface FileTypeMetadata {
 	readonly label: string;
@@ -8,7 +10,8 @@ export interface FileTypeMetadata {
 	readonly versionable: boolean;
 }
 
-export const FILE_EXTENSIONS: Record<FileExtension, FileTypeMetadata> = {
+/** Built-in file types (kernel defaults). Apps can extend via manifest file_types. */
+const BUILTIN_FILE_EXTENSIONS: Record<string, FileTypeMetadata> = {
 	'.md': { label: 'Markdown Prompt', icon: 'file-text', color: 'cyan', editable: true, versionable: true },
 	'.forge': { label: 'Forge Result', icon: 'zap', color: 'purple', editable: false, versionable: false },
 	'.scan': { label: 'Forge Analysis', icon: 'search', color: 'green', editable: false, versionable: false },
@@ -18,6 +21,29 @@ export const FILE_EXTENSIONS: Record<FileExtension, FileTypeMetadata> = {
 	'.app': { label: 'Application', icon: 'monitor', color: 'cyan', editable: false, versionable: false },
 	'.lnk': { label: 'Shortcut', icon: 'link', color: 'blue', editable: false, versionable: false },
 };
+
+/**
+ * Merged file extensions: built-in defaults + app-registered types from the registry.
+ * App-registered types can override built-in types by declaring the same extension.
+ */
+export const FILE_EXTENSIONS: Record<string, FileTypeMetadata> = new Proxy(BUILTIN_FILE_EXTENSIONS, {
+	get(target, prop: string | symbol) {
+		if (typeof prop === 'symbol') return Reflect.get(target, prop);
+		if (prop in target) return target[prop];
+		// Look up in app registry file types
+		const regTypes = appRegistry.allFileTypes;
+		const found = regTypes.find((ft) => ft.extension === prop);
+		if (found) {
+			return { label: found.label, icon: found.icon, color: found.color, editable: false, versionable: false };
+		}
+		return undefined;
+	},
+	has(target, prop: string | symbol) {
+		if (typeof prop === 'symbol') return Reflect.has(target, prop);
+		if (prop in target) return true;
+		return appRegistry.allFileTypes.some((ft) => ft.extension === prop);
+	},
+});
 
 // ── Artifact types (system-produced, immutable records) ──
 

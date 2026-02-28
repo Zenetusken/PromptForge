@@ -12,6 +12,7 @@
 	import { createArtifactDescriptor } from '$lib/utils/fileDescriptor';
 	import { toArtifactName } from '$lib/utils/fileTypes';
 	import { openDocument } from '$lib/utils/documentOpener';
+	import { appRegistry } from '$lib/kernel/services/appRegistry.svelte';
 
 	import { normalizeScore, getScoreBadgeClass } from '$lib/utils/format';
 	import { onMount, tick } from 'svelte';
@@ -36,7 +37,23 @@
 		return all.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 10);
 	});
 
-
+	/** Pinned items derived from the app registry's start_menu declarations. */
+	let pinnedItems = $derived.by(() => {
+		const items: { windowId: string; label: string; icon: string; color: string }[] = [];
+		for (const entry of appRegistry.allStartMenuEntries) {
+			for (const windowId of entry.pinned) {
+				const win = entry.windows.find((w) => w.windowId === windowId);
+				if (win) {
+					// Map accent colors to Tailwind text classes
+					const app = appRegistry.all.find((a) => a.manifest.id === entry.appId);
+					const accent = app?.manifest.accent_color ?? 'neon-cyan';
+					const accentClass = accent.startsWith('neon-') ? `text-${accent}` : 'text-neon-cyan';
+					items.push({ windowId: win.windowId, label: win.title, icon: win.icon, color: accentClass });
+				}
+			}
+		}
+		return items;
+	});
 
 	function close() {
 		windowManager.closeStartMenu();
@@ -57,11 +74,19 @@
 		showCreateProject = true;
 	}
 
-	function handleOpenIDE() {
+	function handleOpenPinnedWindow(windowId: string) {
 		close();
-		forgeMachine.restore();
-		forgeSession.activate();
-		windowManager.openIDE();
+		const reg = appRegistry.getWindow(windowId);
+		if (reg) {
+			if (windowId === 'ide') {
+				// Special case: IDE has its own open flow
+				forgeMachine.restore();
+				forgeSession.activate();
+				windowManager.openIDE();
+			} else {
+				windowManager.openWindow({ id: windowId, title: reg.title, icon: reg.icon });
+			}
+		}
 	}
 
 	function handleForgeClick(id: string) {
@@ -166,24 +191,20 @@
 		<div class="flex min-h-0 max-h-[calc(70vh-120px)]">
 			<!-- Left column: Pinned + Recent -->
 			<div class="w-1/2 border-r border-border-subtle overflow-y-auto {highlightHistory ? 'ring-1 ring-inset ring-neon-blue/20' : ''} transition-shadow">
-				<!-- Pinned items -->
+				<!-- Pinned items (from app registry) -->
 				<div class="px-3 pt-2 pb-1">
 					<p class="section-heading-dim text-[9px] mb-1.5">Pinned</p>
 					<div class="space-y-0.5">
-						<button
-							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-							onclick={handleOpenIDE}
-						>
-							<Icon name="terminal" size={13} class="text-neon-cyan" />
-							Forge IDE
-						</button>
-						<button
-							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-							onclick={() => { windowManager.openWorkspaceHub(); close(); }}
-						>
-							<Icon name="git-branch" size={13} class="text-neon-green" />
-							Workspace Hub
-						</button>
+						{#each pinnedItems as item (item.windowId)}
+							<button
+								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+								onclick={() => handleOpenPinnedWindow(item.windowId)}
+							>
+								<Icon name={item.icon as any} size={13} class={item.color} />
+								{item.label}
+							</button>
+						{/each}
+						<!-- System link: API Docs (not from any app) -->
 						<a
 							href={import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/docs` : '/docs'}
 							target="_blank"

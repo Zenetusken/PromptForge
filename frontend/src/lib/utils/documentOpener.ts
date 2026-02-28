@@ -8,6 +8,8 @@ import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 import { windowManager } from '$lib/stores/windowManager.svelte';
 import { saveActiveTabState, restoreTabState } from '$lib/stores/tabCoherence';
 import { toastState } from '$lib/stores/toast.svelte';
+import { appRegistry } from '$lib/kernel/services/appRegistry.svelte';
+import type { GenericFileDescriptor } from '$lib/kernel/types';
 
 /**
  * Single entry point for opening any document type in the IDE or a folder window.
@@ -47,6 +49,9 @@ async function openFileDocument(descriptor: FileDescriptor): Promise<void> {
 		case 'template':
 			// Future extensibility — no-op for now
 			return;
+		default:
+			// Fallback: route unknown file types through the app registry
+			return openViaRegistry(descriptor);
 	}
 }
 
@@ -169,4 +174,31 @@ async function openArtifact(descriptor: ArtifactDescriptor): Promise<void> {
 /** Open a sub-artifact (analysis, scores, strategy) from a forge result. */
 async function openSubArtifact(descriptor: SubArtifactDescriptor): Promise<void> {
 	return openForgeResult(descriptor.parentForgeId, descriptor);
+}
+
+/**
+ * Fallback: route unknown file types through the app registry.
+ * Finds the app that registered the file extension and delegates to its openFile() method.
+ */
+async function openViaRegistry(descriptor: FileDescriptor): Promise<void> {
+	// Future descriptor kinds may carry an extension property — check safely
+	const raw = descriptor as unknown as Record<string, unknown>;
+	const ext = typeof raw.extension === 'string' ? raw.extension : undefined;
+	if (!ext) return;
+
+	// Find which app registered this file type
+	for (const record of appRegistry.all) {
+		const hasType = record.manifest.file_types.some((ft) => ft.extension === ext);
+		if (hasType && record.instance.openFile) {
+			const generic: GenericFileDescriptor = {
+				kind: descriptor.kind,
+				id: descriptor.id,
+				appId: record.manifest.id,
+				name: descriptor.name,
+				extension: ext,
+			};
+			await record.instance.openFile(generic);
+			return;
+		}
+	}
 }
