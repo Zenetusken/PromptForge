@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+**OS Kernel Architecture**
+- Backend app registry (`kernel/registry/`) — `AppRegistry` discovers `manifest.json` in `apps/`, loads `AppBase` subclasses, manages lifecycle (on_startup/on_shutdown), dynamically mounts routers via `mount_routers()`
+- `AppManifest` Pydantic model — declares backend routers, models, frontend windows, commands, file types, start menu, desktop icons, settings
+- `AppBase` ABC — lifecycle hooks (`on_install`, `on_enable`, `on_startup`, `on_shutdown`, `run_migrations`)
+- Kernel API endpoints — `GET /api/kernel/apps` lists installed apps, `GET /api/kernel/apps/{id}` returns app details and manifest
+- PromptForge app (`backend/apps/promptforge/`) — thin wrapper: `manifest.json`, `PromptForgeApp(AppBase)` with lifecycle hooks and migration delegation
+- Hello World example app (`backend/apps/hello_world/`) — minimal app demonstrating the platform: `manifest.json`, `HelloWorldApp(AppBase)`, router at `/api/apps/hello-world/*`
+- Frontend kernel shell (`frontend/src/lib/kernel/`) — `AppFrontend` interface, `KernelAPI` type, `appRegistry.svelte.ts` for frontend app discovery and registry-driven window rendering
+- Frontend `+layout.svelte` — replaced ~180 lines of hardcoded window blocks with a single registry-driven `{#each appRegistry.allWindows}` loop; apps declare windows in manifests, kernel shell renders them dynamically
+- `DesktopWindow` title resolution — uses `windowManager` state title (dynamically updated via `updateWindowTitle()`) with prop fallback
+- Frontend PromptForge app (`frontend/src/lib/apps/promptforge/`) — `PromptForgeApp` implements `AppFrontend` with `COMPONENT_MAP` for 14 lazy-loaded window components
+- Frontend Hello World app (`frontend/src/lib/apps/hello_world/`) — `HelloWorldApp` with `HelloWorldWindow.svelte`
+
 **PromptForge FileSystem (PFFS)**
 - Hierarchical folder system for projects — `parent_id` self-FK with precomputed `depth` (max 8 via `MAX_FOLDER_DEPTH`), scoped `UNIQUE(name, parent_id)` constraint, nullable `Prompt.project_id` (NULL = desktop/unorganized)
 - 6 filesystem API endpoints — `GET /api/fs/children`, `GET /api/fs/tree`, `GET /api/fs/path/{project_id}`, `GET /api/fs/prompt/{prompt_id}`, `DELETE /api/fs/prompt/{prompt_id}`, `POST /api/fs/move`

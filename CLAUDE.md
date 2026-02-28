@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is PromptForge
 
-An AI-powered prompt optimization web app. Users submit a raw prompt, and a 4-stage pipeline (Analyze → Strategy → Optimize → Validate) rewrites it using Claude, scores the result, and persists everything to a history database. Results stream to the frontend in real time via SSE.
+An AI-powered prompt optimization platform with an OS kernel architecture. PromptForge runs as an installable app on a shared kernel, enabling a community developer ecosystem of LLM-powered applications.
+
+Users submit a raw prompt, and a 4-stage pipeline (Analyze → Strategy → Optimize → Validate) rewrites it using Claude, scores the result, and persists everything to a history database. Results stream to the frontend in real time via SSE.
 
 ## Tech Stack
 
@@ -12,6 +14,7 @@ An AI-powered prompt optimization web app. Users submit a raw prompt, and a 4-st
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
 - **LLM access**: Provider-agnostic via `backend/app/providers/` — Claude CLI (default), Anthropic API, OpenAI, Gemini. Auto-detects or set `LLM_PROVIDER`.
 - **MCP server**: FastMCP (`backend/app/mcp_server.py`) — 22 tools, 4 resources, SSE transport on port 8001. Auto-discoverable via `.mcp.json`.
+- **App Platform**: OS kernel architecture with app registry, manifest-driven discovery, lifecycle hooks.
 
 ## Commands
 
@@ -42,6 +45,57 @@ docker-compose up  # backend (8000) + frontend (5199) + MCP (8001)
 ## Architecture
 
 For the full reference see [ARCHITECTURE.md](ARCHITECTURE.md). This section covers patterns and conventions needed for day-to-day development.
+
+### OS Kernel Architecture
+
+The codebase follows a kernel + apps architecture inspired by Django's app system:
+
+```
+backend/
+  kernel/                          # OS kernel (app discovery + lifecycle)
+    registry/                      # App discovery, manifest, lifecycle
+      app_registry.py              # AppRegistry singleton — discover, mount_routers
+      manifest.py                  # AppManifest Pydantic model
+      hooks.py                     # AppBase ABC (lifecycle hooks)
+    routers/                       # Kernel API (/api/kernel/*)
+
+  apps/
+    promptforge/                   # PromptForge as an installable app
+      manifest.json                # App manifest (windows, routes, commands)
+      app.py                       # PromptForgeApp(AppBase) — lifecycle + migrations
+    hello_world/                   # Example app
+      manifest.json
+      app.py                       # HelloWorldApp(AppBase)
+      router.py                    # /api/apps/hello-world/*
+
+  app/                             # PromptForge host application
+    main.py                        # Entry point — boots kernel, discovers apps, mounts routers
+    database.py config.py          # DB engine, migrations, system config
+    providers/ middleware/          # LLM providers, security middleware
+    routers/ services/ models/     # Business logic (PromptForge-specific)
+
+frontend/src/lib/
+  kernel/                          # Shell (app registry, types)
+    types.ts                       # AppFrontend, KernelAPI, WindowRegistration
+    services/
+      appRegistry.svelte.ts        # Frontend app registry — registry-driven windows
+  apps/
+    promptforge/                   # PromptForge frontend app
+      index.ts                     # PromptForgeApp implements AppFrontend (14 windows)
+    hello_world/                   # Example frontend app
+      index.ts                     # HelloWorldApp implements AppFrontend
+      HelloWorldWindow.svelte
+```
+
+**Key classes:**
+- `AppBase` (ABC) — lifecycle hooks: `on_install`, `on_enable`, `on_startup`, `on_shutdown`, `run_migrations`
+- `AppRegistry` — discovers `manifest.json` in `apps/`, loads entry points, mounts routers (with `exclude` for host app)
+- `AppManifest` — Pydantic model for `manifest.json` (backend routers, frontend windows, commands, file types)
+- `AppFrontend` (interface) — frontend apps implement `init`, `destroy`, `getComponent`
+
+**API convention:** Kernel at `/api/kernel/*`, apps at `/api/apps/{app_id}/*`. PromptForge (host app) keeps its routes at `/api/*` directly.
+
+**Frontend window rendering:** `+layout.svelte` uses a single `{#each appRegistry.allWindows}` loop to render all manifest-declared windows dynamically. IDE window is a special case (static import, custom close handler). Folder windows are dynamically created at runtime (not manifest-declared).
 
 ### Pipeline (`backend/app/services/pipeline.py`)
 
