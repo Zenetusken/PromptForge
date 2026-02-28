@@ -5,7 +5,8 @@ import {
 	safeArray,
 	safeStringOrUndefined,
 	safeNumberOrUndefined,
-	safeArrayOrUndefined
+	safeArrayOrUndefined,
+	toLines
 } from './safe';
 
 describe('safeString', () => {
@@ -117,5 +118,35 @@ describe('safeArrayOrUndefined', () => {
 
 	it('returns empty array (not undefined)', () => {
 		expect(safeArrayOrUndefined([])).toEqual([]);
+	});
+});
+
+describe('toLines', () => {
+	it('joins arrays with newlines', () => {
+		expect(toLines(['a', 'b', 'c'])).toBe('a\nb\nc');
+	});
+
+	it('returns single-element array as-is', () => {
+		expect(toLines(['only'])).toBe('only');
+	});
+
+	it('returns string values as-is', () => {
+		expect(toLines('hello world')).toBe('hello world');
+	});
+
+	it('returns empty string for undefined', () => {
+		expect(toLines(undefined)).toBe('');
+	});
+
+	it('returns empty string for null', () => {
+		expect(toLines(null)).toBe('');
+	});
+
+	it('returns empty string for empty string', () => {
+		expect(toLines('')).toBe('');
+	});
+
+	it('returns empty string for empty array', () => {
+		expect(toLines([])).toBe('');
 	});
 });

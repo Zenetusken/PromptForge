@@ -42,7 +42,7 @@
         </div>
 
         <!-- Strengths -->
-        {#if data.strengths && data.strengths.length > 0}
+        {#if Array.isArray(data.strengths) && data.strengths.length > 0}
             <div class="flex flex-col gap-1.5">
                 <span class="text-[10px] font-medium uppercase tracking-wider text-neon-green">Strengths ({data.strengths.length})</span>
                 <ul class="flex flex-col gap-0.5">
@@ -57,7 +57,7 @@
         {/if}
 
         <!-- Weaknesses -->
-        {#if data.weaknesses && data.weaknesses.length > 0}
+        {#if Array.isArray(data.weaknesses) && data.weaknesses.length > 0}
             <div class="flex flex-col gap-1.5">
                 <span class="text-[10px] font-medium uppercase tracking-wider text-neon-red">Weaknesses ({data.weaknesses.length})</span>
                 <ul class="flex flex-col gap-0.5">

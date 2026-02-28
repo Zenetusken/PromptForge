@@ -26,13 +26,18 @@
 		optimization: "Optimization",
 	} as const;
 
+	let safeStrengths = $derived(Array.isArray(result.strengths) ? result.strengths : []);
+	let safeWeaknesses = $derived(Array.isArray(result.weaknesses) ? result.weaknesses : []);
+	let safeChangesMade = $derived(Array.isArray(result.changes_made) ? result.changes_made : []);
+	let safeSecondary = $derived(Array.isArray(result.secondary_frameworks) ? result.secondary_frameworks : []);
+
 	let findingCount = $derived(
-		result.strengths.length + result.weaknesses.length,
+		safeStrengths.length + safeWeaknesses.length,
 	);
 
 	/** Pre-compute dimension tags for each finding to avoid redundant regex work. */
-	let strengthTags = $derived(result.strengths.map((s) => tagFinding(s)));
-	let weaknessTags = $derived(result.weaknesses.map((w) => tagFinding(w)));
+	let strengthTags = $derived(safeStrengths.map((s) => tagFinding(s)));
+	let weaknessTags = $derived(safeWeaknesses.map((w) => tagFinding(w)));
 
 	function formatConfidence(confidence: number): string {
 		if (confidence <= 1) return `${Math.round(confidence * 100)}%`;
@@ -94,9 +99,9 @@
 						size="xs"
 					/>
 				{/if}
-				{#if result.changes_made.length > 0}
+				{#if safeChangesMade.length > 0}
 					<span class="opacity-50">&middot;</span>
-					{result.changes_made.length} changes
+					{safeChangesMade.length} changes
 				{/if}
 			{/if}
 		</span>
@@ -104,15 +109,15 @@
 
 	<!-- Stage Content -->
 	{#if stage === "analysis"}
-		{#if result.strengths.length > 0 || result.weaknesses.length > 0}
+		{#if safeStrengths.length > 0 || safeWeaknesses.length > 0}
 			<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-				{#if result.strengths.length > 0}
+				{#if safeStrengths.length > 0}
 					<div>
 						<h4 class="mb-1 text-xs font-medium text-neon-green">
-							Strengths ({result.strengths.length})
+							Strengths ({safeStrengths.length})
 						</h4>
 						<ul class="space-y-1.5">
-							{#each result.strengths as strength, idx}
+							{#each safeStrengths as strength, idx}
 								{@const tags = strengthTags[idx]}
 								<li
 									class="flex items-start gap-2 rounded-md px-1 py-0.5 text-xs leading-snug text-text-secondary transition-colors duration-200"
@@ -130,13 +135,13 @@
 						</ul>
 					</div>
 				{/if}
-				{#if result.weaknesses.length > 0}
+				{#if safeWeaknesses.length > 0}
 					<div>
 						<h4 class="mb-1 text-xs font-medium text-neon-red">
-							Weaknesses ({result.weaknesses.length})
+							Weaknesses ({safeWeaknesses.length})
 						</h4>
 						<ul class="space-y-1.5">
-							{#each result.weaknesses as weakness, idx}
+							{#each safeWeaknesses as weakness, idx}
 								{@const tags = weaknessTags[idx]}
 								<li
 									class="flex items-start gap-2 rounded-md px-1 py-0.5 text-xs leading-snug text-text-secondary transition-colors duration-200"
@@ -162,10 +167,10 @@
 				{result.strategy_reasoning}
 			</p>
 		{/if}
-		{#if result.secondary_frameworks.length > 0}
+		{#if safeSecondary.length > 0}
 			<div class="mt-2 flex items-center gap-1.5 flex-wrap">
 				<span class="text-[11px] text-text-dim">Secondary:</span>
-				{#each result.secondary_frameworks as sf}
+				{#each safeSecondary as sf}
 					<MetaBadge
 						type="strategy"
 						value={sf}
@@ -177,9 +182,9 @@
 			</div>
 		{/if}
 	{:else if stage === "optimization"}
-		{#if result.changes_made.length > 0}
+		{#if safeChangesMade.length > 0}
 			<ul class="space-y-1.5">
-				{#each result.changes_made as change}
+				{#each safeChangesMade as change}
 					<li
 						class="flex items-start gap-2 text-xs leading-snug text-text-secondary"
 					>

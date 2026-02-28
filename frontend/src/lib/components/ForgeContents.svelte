@@ -69,7 +69,7 @@
 										</div>
 									{/if}
 								</div>
-								{#if result.strengths && result.strengths.length > 0}
+								{#if Array.isArray(result.strengths) && result.strengths.length > 0}
 									<div>
 										<span class="text-neon-green font-medium">Strengths</span>
 										<ul class="mt-0.5 space-y-0.5 text-text-secondary">
@@ -79,7 +79,7 @@
 										</ul>
 									</div>
 								{/if}
-								{#if result.weaknesses && result.weaknesses.length > 0}
+								{#if Array.isArray(result.weaknesses) && result.weaknesses.length > 0}
 									<div>
 										<span class="text-neon-red font-medium">Weaknesses</span>
 										<ul class="mt-0.5 space-y-0.5 text-text-secondary">
@@ -89,7 +89,7 @@
 										</ul>
 									</div>
 								{/if}
-								{#if result.changes_made && result.changes_made.length > 0}
+								{#if Array.isArray(result.changes_made) && result.changes_made.length > 0}
 									<div>
 										<span class="text-neon-cyan font-medium">Changes Made</span>
 										<ul class="mt-0.5 space-y-0.5 text-text-secondary">
@@ -157,7 +157,7 @@
 										</span>
 									</div>
 								{/if}
-								{#if result.secondary_frameworks && result.secondary_frameworks.length > 0}
+								{#if Array.isArray(result.secondary_frameworks) && result.secondary_frameworks.length > 0}
 									<div>
 										<span class="text-text-dim">Secondary:</span>
 										<span class="text-text-secondary ml-1">{result.secondary_frameworks.join(', ')}</span>

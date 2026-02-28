@@ -34,7 +34,7 @@
 			promptId: result.prompt_id,
 			title: result.title,
 			version: result.version,
-			tags: result.tags.join(', '),
+			tags: Array.isArray(result.tags) ? result.tags.join(', ') : '',
 			strategy: 'auto',
 		});
 		forgeMachine.back();

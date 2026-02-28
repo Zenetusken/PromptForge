@@ -4,6 +4,7 @@
 	import { projectsState } from "$lib/stores/projects.svelte";
 	import type { CodebaseContext } from "$lib/api/client";
 	import { fetchProject } from "$lib/api/client";
+	import { toLines } from "$lib/utils/safe";
 	import { STACK_TEMPLATES } from "$lib/utils/stackTemplates";
 	import Icon from "./Icon.svelte";
 	import { Tooltip } from "./ui";
@@ -44,11 +45,11 @@
 				ctxLanguage = cp.language ?? "";
 				ctxFramework = cp.framework ?? "";
 				ctxDescription = cp.description ?? "";
-				ctxConventions = cp.conventions?.join("\n") ?? "";
-				ctxPatterns = cp.patterns?.join("\n") ?? "";
-				ctxCodeSnippets = cp.code_snippets?.join("\n") ?? "";
+				ctxConventions = toLines(cp.conventions);
+				ctxPatterns = toLines(cp.patterns);
+				ctxCodeSnippets = toLines(cp.code_snippets);
 				ctxTestFramework = cp.test_framework ?? "";
-				ctxTestPatterns = cp.test_patterns?.join("\n") ?? "";
+				ctxTestPatterns = toLines(cp.test_patterns);
 				ctxDocumentation = cp.documentation ?? "";
 			} else {
 				ctxLanguage = "";
@@ -105,11 +106,11 @@
 		ctxLanguage = ctx.language ?? "";
 		ctxFramework = ctx.framework ?? "";
 		ctxDescription = ctx.description ?? "";
-		ctxConventions = ctx.conventions?.join("\n") ?? "";
-		ctxPatterns = ctx.patterns?.join("\n") ?? "";
-		ctxCodeSnippets = ctx.code_snippets?.join("\n") ?? "";
+		ctxConventions = toLines(ctx.conventions);
+		ctxPatterns = toLines(ctx.patterns);
+		ctxCodeSnippets = toLines(ctx.code_snippets);
 		ctxTestFramework = ctx.test_framework ?? "";
-		ctxTestPatterns = ctx.test_patterns?.join("\n") ?? "";
+		ctxTestPatterns = toLines(ctx.test_patterns);
 		ctxDocumentation = ctx.documentation ?? "";
 		forgeSession.updateDraft({
 			contextProfile: ctx,

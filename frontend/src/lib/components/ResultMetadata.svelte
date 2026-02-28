@@ -33,7 +33,7 @@
 	);
 
 	let secondaryFrameworks = $derived(
-		result.secondary_frameworks.length > 0
+		Array.isArray(result.secondary_frameworks) && result.secondary_frameworks.length > 0
 			? result.secondary_frameworks
 			: null,
 	);
@@ -123,7 +123,7 @@
 				</span>
 			{/if}
 		{/if}
-		{#if result.tags.length > 0}
+		{#if Array.isArray(result.tags) && result.tags.length > 0}
 			<div class="flex items-center gap-2">
 				{#each result.tags as tag}
 					<MetaBadge

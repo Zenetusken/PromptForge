@@ -29,3 +29,15 @@ export function safeNumberOrUndefined(value: unknown): number | undefined {
 export function safeArrayOrUndefined(value: unknown): string[] | undefined {
 	return Array.isArray(value) ? value : undefined;
 }
+
+/**
+ * Convert a value that may be a string, string[], or undefined into a
+ * newline-delimited string suitable for textarea display.
+ * Handles the common case where backend JSON fields arrive as a bare string
+ * instead of an array (e.g., CodebaseContext.conventions from workspace sync).
+ */
+export function toLines(value: string | string[] | undefined | null): string {
+	if (!value) return '';
+	if (Array.isArray(value)) return value.join('\n');
+	return String(value);
+}

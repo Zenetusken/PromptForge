@@ -26,9 +26,9 @@
 
 		const hasValidation = hasScores || !!result.verdict;
 		const stageVisible = {
-			analysis: result.strengths.length > 0 || result.weaknesses.length > 0 || !!result.task_type,
+			analysis: (Array.isArray(result.strengths) && result.strengths.length > 0) || (Array.isArray(result.weaknesses) && result.weaknesses.length > 0) || !!result.task_type,
 			strategy: !!result.strategy || !!result.strategy_reasoning,
-			optimization: result.changes_made.length > 0 || !!result.optimization_notes,
+			optimization: (Array.isArray(result.changes_made) && result.changes_made.length > 0) || !!result.optimization_notes,
 		};
 		const visibleStages = stages.filter(s => stageVisible[s.key]);
 		const allEntries: { key: string; color: string }[] = visibleStages.map(s => ({ key: s.key, color: s.color }));
