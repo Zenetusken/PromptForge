@@ -10,125 +10,90 @@ An AI-powered prompt optimization web app. Users submit a raw prompt, and a 4-st
 
 - **Backend**: Python 3.14+ / FastAPI / SQLAlchemy 2.0 async ORM / SQLite (aiosqlite) / Pydantic v2
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
-- **LLM access**: Provider-agnostic via `backend/app/providers/` — supports Claude CLI (default), Anthropic API, OpenAI, and Google Gemini. Auto-detects available provider or set `LLM_PROVIDER` explicitly.
-- **MCP server**: FastMCP-based (`promptforge_mcp`), exposes 22 tools for Claude Code integration (`optimize`, `retry`, `get`, `list`, `get_by_project`, `search`, `tag`, `stats`, `delete`, `bulk_delete`, `list_projects`, `get_project`, `strategies`, `create_project`, `add_prompt`, `update_prompt`, `set_project_context`, `batch`, `cancel`, `sync_workspace`, `get_children`, `move`) and 4 MCP Resources (`promptforge://projects`, `promptforge://projects/{id}/context`, `promptforge://optimizations/{id}`, `promptforge://workspaces`). All tool calls emit activity events to the backend via authenticated internal webhook for real-time visibility in the frontend Network Monitor. Runs as SSE HTTP transport on port 8001 (bound to `127.0.0.1` by default) with uvicorn `--reload` for hot-reload. Optional bearer token auth via `MCP_AUTH_TOKEN`. Managed by `init.sh` alongside backend/frontend. Auto-discoverable via `.mcp.json` (`type: sse`).
+- **LLM access**: Provider-agnostic via `backend/app/providers/` — Claude CLI (default), Anthropic API, OpenAI, Gemini. Auto-detects or set `LLM_PROVIDER`.
+- **MCP server**: FastMCP (`backend/app/mcp_server.py`) — 22 tools, 4 resources, SSE transport on port 8001. Auto-discoverable via `.mcp.json`.
 
 ## Commands
 
 ```bash
-# Full dev setup (installs deps, starts all services)
+# Dev setup (installs deps, starts backend:8000 + frontend:5199 + MCP:8001)
 ./init.sh
 
-# Built mode (pre-built assets, no hot-reload — for local perf testing)
-# For real production deployments, use: docker-compose up
+# Built mode (pre-built assets, no hot-reload)
 ./init.sh build
 
-# Restart built mode (skips deps install, requires prior ./init.sh build)
-./init.sh restart-build
+# Other: stop | restart | restart-build | status | test | seed | mcp | help
 
-# Backend only (from project root)
-cd backend && source venv/bin/activate
-python -m uvicorn app.main:app --reload --port 8000
-
-# Frontend only
-cd frontend && npm run dev
-
-# Backend tests (requires test extras)
+# Backend tests
 cd backend && source venv/bin/activate
 pip install -e ".[test]"
-pytest                              # all tests
-pytest tests/test_strategy_selector.py  # single test file
+pytest                                  # all
+pytest tests/test_strategy_selector.py  # single file
 
 # Frontend tests
 cd frontend
-npm run test          # vitest run
-npm run check         # svelte-check type checking
-
-# MCP server (standalone, for testing — normally managed by init.sh)
-cd backend && source venv/bin/activate
-python -m uvicorn app.mcp_server:app --reload --port 8001
+npm run test    # vitest
+npm run check   # svelte-check
 
 # Docker
-docker-compose up     # starts backend (8000) + frontend (5199) + MCP (8001)
+docker-compose up  # backend (8000) + frontend (5199) + MCP (8001)
 ```
 
 ## Architecture
 
-### Optimization Pipeline (`backend/app/services/pipeline.py`)
+For the full reference see [ARCHITECTURE.md](ARCHITECTURE.md). This section covers patterns and conventions needed for day-to-day development.
 
-Four LLM-calling stages, orchestrated as an async generator that yields SSE events:
+### Pipeline (`backend/app/services/pipeline.py`)
 
-1. **Analyze** (`PromptAnalyzer`) — classifies task type, complexity, weaknesses, strengths
-2. **Strategy Selection** (`StrategySelector`) — LLM-based strategy selection with heuristic fallback. Sends analysis and prompt to the LLM to pick from 10 frameworks: co-star, risen, chain-of-thought, few-shot-scaffolding, role-task-format, structured-output, step-by-step, constraint-injection, context-enrichment, persona-assignment. Returns strategy name, reasoning, and confidence (0.0–1.0). Falls back to `HeuristicStrategySelector` (3-tier priority system with specificity exemptions and redundancy detection) on LLM errors. Users can override strategy via the UI or API (bypasses LLM call).
-3. **Optimize** (`PromptOptimizer`) — rewrites the prompt using the selected strategy
-4. **Validate** (`PromptValidator`) — scores clarity/specificity/structure/faithfulness/conciseness (0.0–1.0), detects applied strategy patterns, generates verdict. Calibrated scoring rubric with anchoring examples makes 0.95+ genuinely rare; 1.0 requires near-perfection. Server-side weighted average: clarity 20% + specificity 20% + structure 15% + faithfulness 25% + conciseness 20% (never trusts LLM arithmetic).
+Four LLM stages orchestrated as an async generator yielding SSE events:
 
-All 4 stages accept an optional `codebase_context` parameter (`CodebaseContext` dataclass from `backend/app/schemas/context.py`). When provided, each stage injects the rendered context into its LLM user message so the optimizer produces prompts grounded in actual codebase patterns, conventions, and architecture. Context is resolved via a **three-layer merge pipeline**: (1) workspace auto-context (from GitHub sync or `sync_workspace` MCP tool, stored on `WorkspaceLink.workspace_context`) serves as the foundation, (2) manual project context profile (stored on `Project.context_profile`) overrides workspace fields, (3) explicit per-request `codebase_context` overrides everything. Two chained `merge_contexts()` calls: `base = merge_contexts(workspace_context, manual_context)`, then `resolved = merge_contexts(base, explicit_context)`. The resolved context is snapshotted as `Optimization.codebase_context_snapshot` (JSON text column) so every optimization is self-documenting. Accepted via the `codebase_context` dict parameter on both the MCP `optimize` tool and the `POST /api/optimize` HTTP endpoint. Fields: `language`, `framework`, `description`, `conventions`, `patterns`, `code_snippets`, `documentation`, `test_framework`, `test_patterns` — all optional, unknown keys silently ignored.
+1. **Analyze** — task type, complexity, weaknesses, strengths
+2. **Strategy** — LLM selects from 10 frameworks (co-star, risen, chain-of-thought, few-shot-scaffolding, role-task-format, structured-output, step-by-step, constraint-injection, context-enrichment, persona-assignment). Heuristic fallback on LLM errors. Users can override via UI/API.
+3. **Optimize** — rewrites the prompt using the selected strategy
+4. **Validate** — scores 5 dimensions, generates verdict
 
-LLM calls go through the provider abstraction (`backend/app/providers/`). `LLMProvider` is the abstract base with `send_message` and `send_message_json` (4-strategy JSON extraction: direct parse → json fence → generic fence → brace match). Concrete providers: `ClaudeCLIProvider` (default, MAX subscription), `AnthropicAPIProvider`, `OpenAIProvider`, `GeminiProvider`. `get_provider()` auto-detects or uses explicit `LLM_PROVIDER` env var. Runtime API key and model overrides are passed via `X-LLM-API-Key` and `X-LLM-Model` HTTP headers (never in request bodies or logs). Model catalog (`backend/app/providers/models.py`) defines 2 models per provider (performance + cost-effective tier). `AnthropicAPIProvider` enables prompt caching (`cache_control={"type": "ephemeral"}`) on all API calls, tracks `cache_creation_input_tokens` and `cache_read_input_tokens` in `TokenUsage`, uses the SDK's typed exception hierarchy (`_classify_anthropic_error`) instead of string matching, and provides async `count_tokens()` via the SDK's `messages.count_tokens()` endpoint with heuristic fallback. `ClaudeCLIProvider` overrides `complete()` with heuristic token estimation (~4 chars/token) since the Claude CLI subprocess doesn't expose token counts natively. `LLMProvider.count_tokens()` is an `async` method across all providers.
+Score weights (server-computed, never trusts LLM arithmetic): clarity 20% + specificity 20% + structure 15% + faithfulness 25% + conciseness 20%. `framework_adherence_score` is supplementary (not in weighted average). DB stores 0.0–1.0 floats; display/API uses 1–10 integers (`backend/app/utils/scores.py`).
 
-### SSE Streaming
+All stages accept optional `codebase_context` (from `backend/app/schemas/context.py`). Context resolved via **three-layer merge**: (1) workspace auto-context → (2) project `context_profile` → (3) per-request `codebase_context`. Resolved context snapshotted as `Optimization.codebase_context_snapshot`.
 
-Backend emits named SSE events: `stage`, `step_progress`, `strategy`, `analysis`, `optimization`, `validation`, `complete`, `error`. Stage lifecycle configs live in `backend/app/constants.py` (`StageConfig` dataclass with progress messages and intervals). The `strategy` event carries structured data: `{strategy, reasoning, task_type, confidence}`.
+### Provider Abstraction (`backend/app/providers/`)
 
-Frontend consumes SSE via `fetch` + `ReadableStream` reader (not native `EventSource`). The mapping from backend events to frontend `PipelineEvent` types is in `frontend/src/lib/api/client.ts:mapSSEEvent`. The `strategy` backend event maps to a dedicated `strategy_selected` frontend event type that preserves all structured fields (confidence, reasoning, task_type).
+`LLMProvider` ABC with `send_message`, `send_message_json` (4-strategy JSON extraction), `complete`, `stream`, `count_tokens`. Concrete: `ClaudeCLIProvider`, `AnthropicAPIProvider`, `OpenAIProvider`, `GeminiProvider`. Runtime API key/model overrides via `X-LLM-API-Key` and `X-LLM-Model` headers (never in bodies or logs).
 
-### MCP Activity Feed
+### SSE Events
 
-Real-time bridge from MCP server tool calls to the PromptForge frontend. When external clients (Claude Code, IDEs) invoke MCP tools, the activity appears live in the Network Monitor window, taskbar indicator, Task Manager, Terminal log, and notifications.
+Backend emits: `stage`, `step_progress`, `strategy`, `analysis`, `optimization`, `validation`, `complete`, `error`. Frontend consumes via `fetch` + `ReadableStream` (not `EventSource`). Event mapping in `frontend/src/lib/api/client.ts:mapSSEEvent`.
 
-**Backend** (`backend/app/services/mcp_activity.py`): `MCPActivityBroadcaster` singleton with in-memory pub/sub. `MCPEventType` enum: `tool_start`, `tool_progress`, `tool_complete`, `tool_error`, `session_connect`, `session_disconnect`. Bounded history, subscriber queues with slow-client eviction. `get_history_after(event_id)` returns events after a known ID for `Last-Event-ID` reconnection gap-fill. Router (`backend/app/routers/mcp_activity.py`): `POST /internal/mcp-event` authenticated internal webhook, `GET /api/mcp/events` SSE stream with `id:` fields and `Last-Event-ID` reconnection support (snapshot + live), `GET /api/mcp/status` REST fallback.
+### MCP Activity Bridge
 
-**MCP Server** (`backend/app/mcp_server.py`): `_mcp_tracked(tool_name)` decorator wraps all 20 tool handlers. Emits `tool_start`/`tool_complete`/`tool_error` events via fire-and-forget webhook to the backend. Never fails the tool call if the webhook is down. `_extract_result_summary()` pulls `id`, `status`, `overall_score`, `total` from results. The `sync_workspace` tool allows Claude Code to push workspace context (repo metadata, file tree, dependencies) for a project, creating/updating workspace links with `sync_source='claude-code'`.
-
-**MCP Resources**: 4 read-only resources via `@mcp.resource()` — `promptforge://projects` (active project list), `promptforge://projects/{id}/context` (project codebase context profile), `promptforge://optimizations/{id}` (full optimization result), `promptforge://workspaces` (all workspace link statuses with staleness info). Claude Code can reference these as `@promptforge:projects/...` for context.
-
-**Frontend** (`frontend/src/lib/services/mcpActivityFeed.svelte.ts`): SSE client with auto-reconnect (exponential backoff 3s→30s) and `Last-Event-ID` tracking for gap-free reconnection. Reactive state: `events`, `activeCalls`, `sessionCount`, `connected`. Emits `mcp:*` events on SystemBus. MCP server availability changes (detected via provider health polling) emit `mcp:session_connect`/`mcp:session_disconnect` bus events, consumed by the NotificationService for persistent tray notifications. Bootstrapped in `+layout.svelte` `onMount`. `NetworkMonitorWindow` component provides 3-tab UI (Live Activity, Event Log, Connections). Taskbar shows activity indicator when feed is connected. TaskManager shows External (MCP) section. Terminal adds `mcp`, `mcp-log`, `netmon` commands. Notifications fire for write-tool completions (`optimize`, `retry`, `batch`, `cancel`, `create_project`, `add_prompt`, `update_prompt`, `set_project_context`, `delete`, `bulk_delete`, `tag`, `sync_workspace`, `move`) with "Open in IDE" actions. History/stats auto-reload on external MCP write-tool completion (debounced 1s).
+MCP tools wrapped with `_mcp_tracked()` → fire-and-forget webhook to `POST /internal/mcp-event` → `MCPActivityBroadcaster` → SSE stream at `GET /api/mcp/events` (supports `Last-Event-ID`) → frontend `MCPActivityFeed` service. Write-tool completions trigger notifications and history/stats reload.
 
 ### Data Layer
 
-- **Repository pattern**: `OptimizationRepository` (`backend/app/repositories/optimization.py`) handles all DB queries; `ProjectRepository` (`backend/app/repositories/project.py`) for projects/prompts; `WorkspaceRepository` (`backend/app/repositories/workspace.py`) for GitHub connections and workspace links
-- **Converters**: `backend/app/converters.py` transforms ORM → Pydantic/dict, handles score normalization
-- **Score normalization**: DB stores 0.0–1.0 floats; display/API uses 1–10 integers (`backend/app/utils/scores.py`). Five weighted dimensions: clarity (20%), specificity (20%), structure (15%), faithfulness (25%), conciseness (20%). Overall is the server-computed weighted average. One supplementary dimension — `framework_adherence_score` — measures strategy fit but is not included in the weighted average.
-- **Comparative evaluation**: `Optimization.retry_of` (nullable FK-like text) links a retry to its parent optimization. Score deltas are computed on-the-fly (not stored) by both the GET endpoint and MCP `get` tool when `retry_of` is set and status is completed. `detected_patterns` (JSON list) records which optimization strategies the validator observed in the output, regardless of what was formally selected.
-- **Legacy migration**: On startup, `_migrate_legacy_projects()` in `database.py` seeds the `projects` table from distinct `optimization.project` string values and imports unique `raw_prompt` values as `Prompt` entries. Idempotent (safe on every restart).
-- **Auto-create projects**: When an optimization is created/retried with a `project` name (via API or MCP), a matching `Project` record is auto-created if it doesn't exist (`ensure_project_by_name` in `repositories/project.py`). Reactivates soft-deleted projects.
-- **Prompt version history**: `PromptVersion` table (`models/project.py`) stores immutable snapshots of prior prompt content. Created automatically by `update_prompt()` when content changes. Current version lives in `prompts.content`; only superseded versions are snapshotted.
-- **Forge result linking**: `Optimization.prompt_id` FK links an optimization to the project prompt that triggered it. Set when forging from a project prompt card. Nullable for legacy/home-page optimizations. DB constraint is `ON DELETE SET NULL`, but application-level `delete_prompt()` explicitly removes linked optimizations before deleting the prompt.
-- **Project deletion cascade**: `delete_project_data()` in `ProjectRepository` recursively deletes child folders (depth-first), then deletes all prompts (reusing `delete_prompt()` per prompt), then sweeps remaining legacy optimizations by project name. The router calls this before soft-deleting the project record.
-- **Hierarchical folders**: Projects support nesting via `parent_id` (self-FK, nullable = root level) and precomputed `depth` (max 8 via `MAX_FOLDER_DEPTH`). `Prompt.project_id` is nullable (NULL = desktop/unorganized). Backend: `get_children()` returns folders + prompts at a level, `get_subtree()` uses recursive CTE, `get_path()` builds breadcrumbs, `move_project()` validates circular refs + depth + name uniqueness, `move_prompt()` updates parent. Frontend: `FilesystemOrchestratorState` (`filesystemOrchestrator.svelte.ts`) provides caching, mutation methods, and drop validation. `FolderWindow.svelte` renders folder contents with breadcrumbs. `DesktopSurface.svelte` syncs root folders as desktop icons and supports drag-and-drop. MCP tools: `get_children`, `move`, `create_project` with `parent_id`.
-- **Project context profiles**: `Project.context_profile` (JSON text column) stores a persistent `CodebaseContext` for each project. When an optimization references a project (by name), the pipeline resolves context via **three-layer merge**: workspace auto-context → manual `context_profile` → per-request `codebase_context` (each layer overrides the previous). The resolved context is snapshotted as `Optimization.codebase_context_snapshot` (JSON text column) so every optimization is self-documenting. Managed via `PUT /api/projects/{id}` (set/clear `context_profile`), MCP `set_project_context` tool, or the `ContextProfileEditor` component on the project detail page. `ProjectSummaryResponse.has_context` boolean drives green-dot indicators in the sidebar. Stack templates (`frontend/src/lib/utils/stackTemplates.ts`) provide 8 pre-built profiles for common stacks.
-- **Workspace Hub** (`backend/app/services/github.py`, `workspace_sync.py`, `models/workspace.py`, `repositories/workspace.py`, `routers/github.py`): GitHub OAuth integration for automatic codebase context extraction. `GitHubConnection` table stores encrypted OAuth tokens; `WorkspaceLink` table links a project to a GitHub repo (one link per project) with sync status, auto-detected `workspace_context` JSON, dependencies snapshot, and file tree snapshot. `workspace_sync.py` performs deterministic extraction (no LLM calls) — detects language/framework from marker files (`package.json`, `pyproject.toml`, `go.mod`, etc.) with dual-language support for multi-ecosystem projects, conventions from linter config content (tsconfig strict mode, Ruff rules, Prettier settings, ESLint plugins), test frameworks from dev dependencies, directory patterns, infrastructure patterns (Docker, CI/CD, monorepo), and README documentation extraction. `sync_source` field distinguishes `'github'` (OAuth flow) from `'claude-code'` (MCP `sync_workspace` tool). Health endpoint includes `workspace` section (`github_configured`, `github_connected`, total_links, synced/stale/error counts). `Project.workspace_synced_at` column tracks last sync timestamp.
-- **GitHub OAuth config management**: `GitHubOAuthConfig` single-row table stores in-app OAuth App credentials (client_id plaintext, client_secret encrypted at rest). `GET/PUT/DELETE /api/github/config` endpoints for CRUD; `GET` returns masked hint, never the secret. Config resolution: DB record takes priority over env vars via `resolve_github_config()`. OAuth CSRF state validation with time-limited, one-time-use semantics.
-- **Extended analytics** (`get_stats()` in `OptimizationRepository`): Beyond basic strategy distribution and score averages, the stats endpoint computes 10 additional DB-driven analytics: score matrix (strategy × task-type avg scores), score variance (min/max/stddev per strategy), confidence averages, combo effectiveness (primary+secondary pair scores), complexity performance, improvement rates per strategy, error rates (includes non-completed records), time trends (7d/30d), token economics (avg input/output tokens and duration), and win rates (best strategy per task type). All respect project-scope filters and legacy alias normalization. Nullable fields default to `None` on empty DB for backward compatibility. The stats endpoint (`GET /api/history/stats`) accepts an optional `project` query parameter to scope all stats to a single project. `total_projects` counts active projects from the `projects` table (not from optimizations) to exclude archived projects.
+- **Repository pattern**: `OptimizationRepository`, `ProjectRepository`, `WorkspaceRepository` — all DB queries isolated from business logic
+- **Hierarchical folders**: `Project.parent_id` (self-FK, max depth 8 via `MAX_FOLDER_DEPTH`). `Prompt.project_id` nullable (NULL = desktop). Backend: `get_children()`, `get_subtree()` (recursive CTE), `get_path()`, `move_project()` (validates circular refs + depth + uniqueness). Frontend: `FilesystemOrchestratorState` provides caching, mutations, and drop validation.
+- **Deletion cascade**: `delete_project_data()` recursively deletes child folders (depth-first), then prompts (which removes linked optimizations), then sweeps legacy optimizations by project name.
+- **Auto-create projects**: Optimizations with a `project` name auto-create matching `Project` records. Reactivates soft-deleted projects.
+- **Prompt versioning**: `PromptVersion` snapshots auto-created by `update_prompt()` before overwriting content.
+- **Forge linking**: `Optimization.prompt_id` FK → `Prompt`. `ON DELETE SET NULL` in DB, but app-level `delete_prompt()` removes linked optimizations first.
+- **Comparative evaluation**: `Optimization.retry_of` links retries; score deltas computed on-the-fly. `detected_patterns` records observed strategies.
 
 ### Frontend
 
-Svelte 5 runes-based stores in `frontend/src/lib/stores/`, shared color/strategy/recommendation utilities in `frontend/src/lib/utils/`, and key components in `frontend/src/lib/components/`. One route: `/` (content dashboard). All project and forge interactions happen through the persistent window system (ProjectsWindow, HistoryWindow, IDE) — there are no detail page routes.
+One route: `/` (content dashboard). All interactions through the persistent window system — no detail page routes.
 
-**OS Metaphor Architecture**: The frontend follows an operating system metaphor — Dashboard = Desktop, Sidebar = Start Menu, IDE = VS Code program.
+**OS Metaphor**: Dashboard = Desktop, Sidebar = Start Menu, IDE = VS Code program.
 
-- **Window Manager** (`windowManager.svelte.ts`): Multi-window system with z-index stacking. **Dual-layer persistence**: sessionStorage (`pf_wm`) for session state (open windows, z-order, active window); localStorage (`pf_window_prefs`) for user preferences (per-window geometry, state, pre-maximize/pre-snap geometry snapshots). On close, window geometry and state are saved to localStorage; on reopen, saved geometry is recalled and viewport-clamped. **3-tier restore fallback**: pre-maximize snapshot → saved geometry prefs → centered default. Geometry writes during drag/resize are debounced (200ms); critical saves (close, pre-maximize) flush immediately. `moveAndResizeWindow()` batches position+size updates for edge-resize. `clampGeometry()` validates all fields with `Number.isFinite()` and clamps to current viewport bounds. `PERSISTENT_WINDOW_IDS` (`ide`, `recycle-bin`, `projects`, `history`) survive route changes and minimize on active taskbar click. Breadcrumb address bar: `setBreadcrumbs(id, segments)` / `getBreadcrumbs(id)`. `WindowNavigation` interface: `set/get/clearNavigation(id, nav)`. Convenience openers: `openIDE()`, `openProjectsWindow()`, `openHistoryWindow()`, `focusDashboard()`. Derived: `ideVisible`, `ideSpawned`. **Snap layouts** (`snapLayout.ts`): Windows 11-style snap zones with 20px edge threshold (corners prioritized), 7 preset layouts (`SNAP_LAYOUTS`), and locked snap groups. `computeSnapZone(clientX, clientY)` detects zones during drag, `SnapPreview.svelte` shows live preview overlay, `SnapAssist.svelte` fills remaining zones after snap, `SnapLayoutPicker.svelte` shows layout thumbnails on maximize button hover (flex-wrap layout with shared hover label). **Magnetic edge snapping**: `computeEdgeSnap()` and `computeResizeEdgeSnap()` provide window-to-window magnetic attraction (12px threshold, `EDGE_SNAP_THRESHOLD`). During drag, viewport snap zones take priority; magnetic snap only activates when cursor is outside viewport zones. Checks 4 edge relationships per axis (adjacent + alignment) with overlap guards. `getSnapCandidateWindows()` filters to normal-state windows with geometry. Snap groups lock windows in position (drag/resize disabled, lock icon in title bar); dissolve when < 2 members remain. Pre-snap geometry saved before zone assignment; unsnap restores via 3-tier fallback. Group indicators in taskbar with sibling highlight on hover. Keyboard shortcuts: `Alt+Arrow` (snap/maximize/minimize), `Ctrl+Alt+Arrow` (top quadrants), `Ctrl+Alt+Shift+Arrow` (bottom quadrants). System bus events: `snap:created/dissolved/window_added/window_removed`.
-- **Scoped Results** (`optimization.svelte.ts`): Two separate result slots prevent clobbering — `forgeResult` (set by SSE pipeline) and `viewResult` (set by `loadFromHistory()`). The `result` getter returns `forgeResult ?? viewResult`. `resetForge()` clears forge-side state while preserving `viewResult`.
-- **Forge Machine** (`forgeMachine.svelte.ts`): IDE mode state machine (`compose` → `forging` → `review` / `compare`). Manages panel width (auto-widen on forge/compare), minimize/restore state, and `ComparisonSlots`. Derived: `runningCount` (from `processScheduler`), `widthTier`, `isCompact`. Mode and isMinimized persisted to sessionStorage (`pf_forge_machine`); panel width persisted to localStorage (`pf_forge_panel_width`) so it survives browser close. Auto-migrates from sessionStorage on first load.
-- **Taskbar** (`ForgeTaskbar.svelte`): Horizontal strip of process buttons shown when IDE is hidden and processes exist. Click running → open IDE, click completed → load result into `forgeResult` and open IDE in review mode.
-- **File Type Architecture**: OS-like type system for IDE documents and desktop entities. `FileDescriptor` discriminated union (`'prompt' | 'artifact' | 'template' | 'sub-artifact'`) in `$lib/utils/fileDescriptor.ts` — `PromptDescriptor` for user-authored prompts, `ArtifactDescriptor` for system-produced forge results, `SubArtifactDescriptor` for forge sub-artifacts (analysis, scores, strategy), `TemplateDescriptor` for future template support. `FileExtension` registry (`.md`, `.forge`, `.scan`, `.val`, `.strat`, `.tmpl`, `.app`, `.lnk`) with `FileTypeMetadata` in `fileTypes.ts`. `ArtifactKind` enum (`'forge-result' | 'forge-analysis' | 'forge-scores' | 'forge-strategy'`) with `ARTIFACT_KINDS` metadata and `ARTIFACT_EXTENSION_MAP`. Helper functions: `toForgeFilename()` (derive `.forge` display name), `toSubArtifactFilename()` (canonical names like `analysis.scan`). Factory helpers: `createPromptDescriptor()`, `createArtifactDescriptor()`, `createSubArtifactDescriptor()`. Type guards: `isPromptDescriptor()`, `isArtifactDescriptor()`, `isSubArtifactDescriptor()`. Desktop icons: system apps use `.app` extension (hidden in label), shortcuts use `.lnk` (visible), DB prompts use `.md`. `TYPE_SORT_ORDER`: system(0) < folder(1) < shortcut(2) < file/prompt(3). Drag-and-drop via `DragPayload` with custom MIME `application/x-promptforge` in `dragPayload.ts`.
-- **Unified Document Opener** (`$lib/utils/documentOpener.ts`): Single `openDocument(descriptor)` entry point replacing the separate `openPromptInIDE()` and `openInIDEFromHistory()` paths. All entry points (HistoryWindow, ProjectsWindow, StartMenu, notifications, TaskManager, drag-and-drop, desktop icons) funnel through this function. `openPrompt()`: fetches project, finds prompt, creates tab with `loadRequest`; if forges exist → fetches latest forge → sets `forgeResult` → enters review mode; if no forges → opens in compose mode. Desktop prompts (empty projectId) use `openDesktopPrompt()` which fetches via `GET /api/fs/prompt/{id}`. `openForgeResult()`: shared helper for artifacts and sub-artifacts — fetches optimization → sets `forgeResult` → creates proper tab → enters review → opens IDE. Attaches `FileDescriptor` to `forgeSession.activeTab.document` for tab identity.
-- **IDE-Native Interactions**: All entry points open results in the IDE via `openDocument()` — no detail page routes exist. HistoryWindow double-click creates an `ArtifactDescriptor` and calls `openDocument()`. StartMenu recent forges do the same. StartMenu project clicks call `projectsState.navigateToProject(id)` + `openProjectsWindow()`. ProjectsWindow prompt double-click creates a `PromptDescriptor` and calls `openDocument()`. Notification actions use `openArtifactInIDE()` helper (dynamic imports to avoid circular deps). TaskManagerWindow uses `openDocument()` for completed process results. Forge completion and tournament completion auto-attach `ArtifactDescriptor` to the active tab via `_attachArtifactToActiveTab()`. Running forges section appears above history list when active.
-- **Prompt Opener** (`$lib/utils/promptOpener.ts`): Deprecated — delegates entirely to `openDocument(createPromptDescriptor(...))`. Retained for backward compatibility.
-- **Tab Bounds & Per-Tab State**: `MAX_TABS = 5` with LRU eviction of non-active tabs. Centralized `forgeSession.createTab()` enforces the limit, generates sequential `"Untitled N"` names (filling gaps), and persists state — all 6 tab creation entry points (tab bar +, Ctrl+N, command palette, Start Menu, desktop context menu) delegate to it. `loadRequest()` has its own inline tab creation for loaded prompts with custom names. Each `WorkspaceTab` carries `resultId` (bound optimization ID), `mode` (`ForgeMode`), and `document` (`FileDescriptor | null`) so switching/closing tabs correctly saves and restores the inspector panel state and tab identity. Document-aware tab icons: cyan `file-text` for prompts, purple `zap` for artifacts, gray `file-text` for untitled. Tab coordination (`tabCoherence.ts`) provides `saveActiveTabState()` and `restoreTabState(tab)` — used by `ForgeIDEEditor` tab operations, keyboard shortcuts (`Ctrl+W`/`Ctrl+N`), and layout `$effect`s. On restore failure, artifact tabs clear their `document` field. Forging guards block tab switching, closing the active tab, and new tab creation during an active forge. Hydration resets `'forging'` to `'compose'`, defaults missing fields, and validates `document` via `_hydrateDocument()`. `ForgeIDEWorkspace.onMount` restores results from the server on page reload. Drag-and-drop: `FileManagerRow` supports optional `dragPayload` prop; IDE tab bar accepts drops via `handleTabBarDrop`.
-- **Compare Robustness**: `ForgeCompare.svelte` has async server fallback with staleness guards — when `resultHistory` misses a slot ID, it fetches from the server via `fetchOptimization()` with loading/error/empty UI states and race-condition protection.
-- **Keyboard Shortcuts**: `Ctrl/Cmd+M` toggles minimize, `Escape` restores/closes IDE, `/` focuses textarea, `Ctrl/Cmd+N` new tab, `Ctrl/Cmd+W` close tab.
-- **Transitions**: IDE open/close uses `fly` transition (window feel) vs `fade` for dashboard content.
-- **System Bus** (`$lib/services/systemBus.svelte.ts`): Decoupled IPC for inter-store events — `forge:started/completed/failed/cancelled`, `window:opened/closed/focused`, `clipboard:copied`, `provider:*`, `history:reload`, `stats:reload`, `notification:show`, `workspace:synced/error/connected/disconnected`, `fs:created/moved/deleted/renamed`. Handlers: `on(type, handler)`, `once()`, wildcard `'*'`. Tracks recent events for debugging.
-- **Services Layer** (`$lib/services/`): `notificationService` (system notifications with read/unread/actions, auto-dismiss, max 50; subscribes to 12 bus events: `forge:completed/failed/cancelled`, `tournament:completed`, `provider:rate_limited/unavailable`, `mcp:tool_complete/tool_error/session_connect/session_disconnect`, `workspace:synced/error`), `clipboardService` (copy with history + bus integration), `commandPalette` (fuzzy-matched commands with Ctrl+K activation).
-- **Process Scheduler** (`processScheduler.svelte.ts`): Single source of truth for all forge process lifecycle. Methods: `spawn(config)`, `complete(id, data)`, `fail(id)`, `cancel(id)`, `dismiss(pid)`, `updateProgress(id, stage, progress)`. Bounded-concurrency queue — `maxConcurrent` (default 2) limits parallel forges. Tracks `queue`, `running`, `completed` process lists, `runningCount`, `canSpawn`, `activeProcess`. Persisted to sessionStorage; running processes become `'error'` on hydrate (can't resume callbacks). Wired into `startOptimization()`, SSE event handlers, and tournament forges. Rate-limit aware via `provider:rate_limited` bus events.
-- **Settings Store** (`settings.svelte.ts`): Persisted user preferences — `accentColor`, `defaultStrategy`, `maxConcurrentForges`, `enableAnimations`, `autoRetryOnRateLimit`, `wallpaperMode` (`WallpaperMode`: `'static'`/`'subtle'`/`'dynamic'`), `wallpaperOpacity` (0.05–0.35), `performanceProfile` (`PerformanceProfile`: `'low'`/`'balanced'`/`'high'`/`'custom'`). Performance presets via `applyPreset(profile)` — patches governed fields (wallpaperMode + wallpaperOpacity + enableAnimations) in one call. Auto-detects profile when governed fields change individually. Exports `NEON_COLORS`, `NEON_COLOR_HEX` (shared hex map for color swatches). Drives reactive CSS custom properties (`--accent-color`, `--wallpaper-opacity`) on `:root`. Persisted to localStorage with schema migration.
-- **Additional Windows**: `ControlPanelWindow` (provider/pipeline/display/system settings), `TaskManagerWindow` (process monitor), `BatchProcessorWindow` (multi-prompt batch optimization), `StrategyWorkshopWindow` (score heatmap, win rates, combo analysis), `TemplateLibraryWindow` (prompt templates with search/categories), `TerminalWindow` (system bus event log), `NetworkMonitorWindow` (real-time MCP tool call activity: live calls, event log, connections), `RecycleBinWindow` (soft-deleted items), `WorkspaceWindow` (GitHub OAuth management, workspace link status table, context inspector with 3-layer merge preview), `DisplaySettingsWindow` (wallpaper animation mode, opacity slider, accent color grid, performance presets Low/Balanced/High with auto-detect Custom).
-- **Workspace Manager** (`workspaceManager.svelte.ts`): Manages GitHub OAuth connection state, repo listing/search, workspace links, sync operations. Reactive state: `githubConnected`, `githubUser`, `repos`, `workspaces`, `selectedId`. Derived: `connectedCount`, `staleCount`, `errorCount`, `filteredRepos`. Initializes from `/api/github/status` + `/api/workspace/status`. Subscribes to `workspace:synced` bus events for live updates.
-- **Token Budget Manager** (backend: `backend/app/services/token_budget.py`): Per-provider token tracking with optional daily limits. Records usage at pipeline completion. Exposes `to_dict()` for health endpoint integration.
-
-For detailed store APIs, component catalog, utility reference, and route descriptions, see [`docs/frontend-internals.md`](docs/frontend-internals.md).
+- **Window Manager** (`windowManager.svelte.ts`): Multi-window with z-index stacking. Dual-layer persistence: sessionStorage for session state, localStorage for geometry prefs. 13 persistent window IDs survive route changes. Snap layouts (`snapLayout.ts`): 7 preset layouts, magnetic edge snapping, snap groups with lock/dissolve.
+- **Forge Machine** (`forgeMachine.svelte.ts`): State machine `compose` → `forging` → `review` / `compare`. Mode + isMinimized persisted to sessionStorage; panel width to localStorage.
+- **PFFS Type System**: `FileDescriptor` discriminated union (`prompt | artifact | sub-artifact | template`) in `fileDescriptor.ts`. `FileExtension` registry (`.md`, `.forge`, `.scan`, `.val`, `.strat`, `.tmpl`, `.app`, `.lnk`). `ArtifactKind` enum in `fileTypes.ts`. Unified document opener (`documentOpener.ts`): single `openDocument(descriptor)` entry point for all contexts.
+- **Tab System**: `MAX_TABS = 5` with LRU eviction. Each `WorkspaceTab` carries `resultId`, `mode`, `document`. `tabCoherence.ts` handles save/restore. Forging guards block tab operations during active forges.
+- **Scoped Results** (`optimization.svelte.ts`): `forgeResult` (from SSE) and `viewResult` (from history) as separate slots. `result` returns `forgeResult ?? viewResult`.
+- **Process Scheduler** (`processScheduler.svelte.ts`): Bounded-concurrency queue (`maxConcurrent` from settings, default 2). Tracks running/queued/completed processes. Persisted to sessionStorage.
+- **System Bus** (`systemBus.svelte.ts`): Decoupled IPC — `forge:*`, `window:*`, `provider:*`, `mcp:*`, `workspace:*`, `fs:*`, `snap:*`, `clipboard:copied`, `history:reload`, `stats:reload`, `notification:show`, `tournament:completed`.
+- **Services**: `notificationService` (subscribes to 13 bus events, max 50, auto-dismiss), `clipboardService`, `commandPalette` (Ctrl+K), `mcpActivityFeed` (SSE with auto-reconnect and `Last-Event-ID`).
+- **Settings** (`settings.svelte.ts`): `accentColor`, `defaultStrategy`, `maxConcurrentForges`, `enableAnimations`, `wallpaperMode`, `wallpaperOpacity`, `performanceProfile`. Drives CSS custom properties on `:root`.
+- **Windows**: ControlPanel, TaskManager, BatchProcessor, StrategyWorkshop, TemplateLibrary, Terminal, NetworkMonitor, RecycleBin, Workspace, DisplaySettings, FolderWindow.
 
 ## Developer Documentation
 
@@ -143,127 +108,68 @@ The following docs contain implementation details that **must be kept in sync** 
 | [`docs/backend-caching.md`](docs/backend-caching.md) | Stats cache, invalidation points, provider staleness, LLM caching | Cache TTLs, new invalidation points, polling behavior |
 | [`docs/pffs-filesystem.md`](docs/pffs-filesystem.md) | PFFS type system, descriptors, document routing, desktop hierarchy, orchestrator, backend API, drag & drop | File extensions, artifact kinds, descriptor types, filesystem endpoints, folder/prompt operations, desktop sync |
 
-## API Endpoints
+### CHANGELOG.md Guidelines
 
-| Method | Path | SSE |
-|--------|------|-----|
-| POST | `/api/optimize` | Yes |
-| GET | `/api/optimize/{id}` | No |
-| POST | `/api/optimize/batch` | No |
-| POST | `/api/optimize/{id}/retry` | Yes |
-| POST | `/api/optimize/{id}/cancel` | No |
-| GET/HEAD | `/api/history` | No |
-| DELETE | `/api/history/{id}` | No |
-| POST | `/api/history/bulk-delete` | No |
-| DELETE | `/api/history/all` | No |
-| GET/HEAD | `/api/history/stats` | No |
-| GET/HEAD | `/api/health` | No |
-| GET | `/api/providers` | No |
-| POST | `/api/providers/validate-key` | No |
-| GET | `/api/projects` | No |
-| POST | `/api/projects` | No |
-| GET | `/api/projects/{id}` | No |
-| PUT | `/api/projects/{id}` | No |
-| DELETE | `/api/projects/{id}` | No |
-| POST | `/api/projects/{id}/archive` | No |
-| POST | `/api/projects/{id}/unarchive` | No |
-| POST | `/api/projects/{id}/prompts` | No |
-| PUT | `/api/projects/{id}/prompts/reorder` | No |
-| GET | `/api/projects/{id}/prompts/{pid}/versions` | No |
-| GET | `/api/projects/{id}/prompts/{pid}/forges` | No |
-| PUT | `/api/projects/{id}/prompts/{pid}` | No |
-| DELETE | `/api/projects/{id}/prompts/{pid}` | No |
-| POST | `/internal/mcp-event` | No |
-| GET | `/api/mcp/events` | Yes |
-| GET | `/api/mcp/status` | No |
-| GET | `/api/github/config` | No |
-| PUT | `/api/github/config` | No |
-| DELETE | `/api/github/config` | No |
-| GET | `/api/github/authorize` | No |
-| GET | `/api/github/callback` | No |
-| GET | `/api/github/status` | No |
-| DELETE | `/api/github/disconnect` | No |
-| GET | `/api/github/repos` | No |
-| POST | `/api/workspace/link` | No |
-| DELETE | `/api/workspace/{id}` | No |
-| POST | `/api/workspace/{id}/sync` | No |
-| GET | `/api/workspace/status` | No |
-| GET | `/api/fs/children` | No |
-| GET | `/api/fs/tree` | No |
-| GET | `/api/fs/path/{project_id}` | No |
-| GET | `/api/fs/prompt/{prompt_id}` | No |
-| DELETE | `/api/fs/prompt/{prompt_id}` | No |
-| POST | `/api/fs/move` | No |
-| POST | `/api/orchestrate/analyze` | No |
-| POST | `/api/orchestrate/strategy` | No |
-| POST | `/api/orchestrate/optimize` | No |
-| POST | `/api/orchestrate/validate` | No |
+Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Update when shipping user-visible changes.
+
+**Format rules:**
+- One `### Added/Changed/Fixed/Removed/Security/Performance` heading per version — never duplicate a heading
+- Group related items under a **bold label** on one line, then bullet details below (e.g., `**Snap Layout System**` followed by feature bullets)
+- Each bullet: one sentence, start with the component or scope, include the key technical detail. No paragraph-length entries.
+- Omit internal refactors, lint fixes, and doc-only changes unless they affect developer workflow
+- New API endpoints: list method + path. New MCP tools: list tool name. New components: list component name. Don't repeat what CLAUDE.md already documents in detail.
+- Keep `[Unreleased]` lean — when it grows past ~200 lines, cut a version release
+
+**Token budget awareness:** CHANGELOG is a historical record, not a design doc. If an entry needs more than 2 lines to explain, the detail belongs in CLAUDE.md or a `docs/` file instead. Link rather than inline.
 
 ## Configuration
 
-Environment defaults (set in `backend/app/config.py`, overridable via `.env`):
-- `FRONTEND_URL` — default `http://localhost:5199`
-- `BACKEND_PORT` — default `8000`
-- `HOST` — default `0.0.0.0`
-- `MCP_PORT` — default `8001` (managed by `init.sh`, not config.py)
-- `MCP_HOST` — default `127.0.0.1` (localhost-only binding for MCP server)
-- `BACKEND_HOST` — default `127.0.0.1` (used by MCP server to reach backend webhook; set to `backend` in Docker)
-- `MCP_AUTH_TOKEN` — bearer token for MCP server authentication (empty = disabled)
-- `INTERNAL_WEBHOOK_SECRET` — shared secret for MCP→backend webhook (auto-generated if empty)
-- `DATABASE_URL` — default `sqlite+aiosqlite:///<project>/data/promptforge.db`
-- `LLM_PROVIDER` — auto-detect when empty; explicit: `claude-cli`, `anthropic`, `openai`, `gemini`
-- `CLAUDE_MODEL` — default `claude-opus-4-6` (used by Claude CLI and Anthropic API providers)
-- `ANTHROPIC_API_KEY` — leave empty to use MAX subscription via Claude CLI
-- `OPENAI_API_KEY` — set to enable OpenAI provider
-- `OPENAI_MODEL` — default `gpt-4.1`
-- `GEMINI_API_KEY` — set to enable Gemini provider
-- `GEMINI_MODEL` — default `gemini-2.5-pro`
-- `GITHUB_CLIENT_ID` — GitHub OAuth App client ID (required for Workspace Hub)
-- `GITHUB_CLIENT_SECRET` — GitHub OAuth App client secret (required for Workspace Hub)
-- `GITHUB_REDIRECT_URI` — default `http://localhost:8000/api/github/callback`
-- `GITHUB_SCOPE` — default `repo` (read-only access to repo contents)
-- `ENCRYPTION_KEY` — symmetric key for token encryption at rest (auto-generated on first use if empty)
+Essential defaults (full list in [ARCHITECTURE.md](ARCHITECTURE.md#section-10-deployment--configuration) and `.env.example`):
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `FRONTEND_URL` | `http://localhost:5199` | CORS origins |
+| `BACKEND_PORT` | `8000` | |
+| `MCP_PORT` | `8001` | Bound to `127.0.0.1` by default |
+| `DATABASE_URL` | `sqlite+aiosqlite:///...data/promptforge.db` | |
+| `LLM_PROVIDER` | *(auto-detect)* | `claude-cli`, `anthropic`, `openai`, `gemini` |
+| `AUTH_TOKEN` | *(disabled)* | API bearer token |
+| `MCP_AUTH_TOKEN` | *(disabled)* | MCP bearer token |
+| `ENCRYPTION_KEY` | *(auto-generated)* | Fernet key for GitHub token encryption |
 
 ## Testing
 
-Run all tests: `./init.sh test`
+Run all: `./init.sh test`
 
 ### Backend (pytest, async)
 
-- **Config**: `pyproject.toml` — `asyncio_mode = "auto"`, extras in `[test]`
-- **Fixtures** (`tests/conftest.py`): `db_engine` (in-memory SQLite), `db_session`, `client` (httpx AsyncClient with FastAPI dependency override)
-- **File naming**: `tests/test_{module}.py` — one file per module/concern
-- **Structure**: Group related tests in classes (`class TestGetById`, `class TestCreate`). Use `@pytest.mark.asyncio` on each async test method. Top-level functions for standalone tests.
-- **Mocking LLM calls**: Create a `FakeProvider(LLMProvider)` that returns canned responses. Patch `get_provider` where needed.
-- **DB tests**: Use `db_session` fixture, write `_seed()` helpers for test data factories.
-- **Router tests**: Use `client` fixture, assert status codes + response JSON.
-- **No external calls**: All tests run offline — LLM providers are mocked, DB is in-memory.
+- **Fixtures** (`tests/conftest.py`): `db_engine` (in-memory SQLite), `db_session`, `client` (httpx AsyncClient with dep override)
+- **File naming**: `tests/test_{module}.py`
+- **Structure**: Group in classes (`class TestGetById`). `@pytest.mark.asyncio` on async methods.
+- **Mocking LLM**: `FakeProvider(LLMProvider)` with canned responses. Patch `get_provider`.
+- **DB tests**: `db_session` fixture + `_seed()` helpers for test data.
+- **No external calls**: All offline — providers mocked, DB in-memory.
 
 ### Frontend (vitest, Svelte 5)
 
-- **Config**: `vite.config.ts` — `test.include: ['src/**/*.test.ts']`, `environment: 'jsdom'`, `svelteTesting()` plugin
-- **File naming**: Co-located `{module}.test.ts` next to source file
-- **Structure**: `describe`/`it` blocks. Use `vi.mock()` for module mocking, `vi.fn()` for stubs.
-- **Store tests**: Import the store, set state in `beforeEach`, assert reactive properties.
-- **Component tests**: Use `@testing-library/svelte` (`render`, `screen`, `fireEvent`). Clear `document.body` in `beforeEach`. Add `data-testid` attributes for querying.
-- **Browser APIs**: Stub `sessionStorage`/`localStorage` with in-memory objects when testing in Node.
+- **File naming**: Co-located `{module}.test.ts` next to source
+- **Structure**: `describe`/`it` with `vi.mock()` and `vi.fn()`.
+- **Store tests**: Import store, set state in `beforeEach`, assert reactive properties.
+- **Component tests**: `@testing-library/svelte` (`render`, `screen`, `fireEvent`). `data-testid` for querying.
+- **Browser APIs**: Stub `sessionStorage`/`localStorage` with in-memory objects.
 
 ## Linting
 
-- **Ruff**: target py314, line-length 100, rules: E/F/I/W (configured in `pyproject.toml`)
-- **Pyright**: basic type checking mode, py314 (configured in `pyproject.toml`)
+- **Ruff**: target py314, line-length 100, rules: E/F/I/W (`pyproject.toml`)
+- **Pyright**: basic type checking, py314 (`pyproject.toml`)
 - **svelte-check**: `npm run check` in frontend
 
 ## Frontend Theme
 
-**Design Philosophy (Absolute Edge):** Strict "flat neon contour" directive. **ZERO glow effects, drop shadows, or text blooms.** Interactions rely purely on sharp 1px borders, vector color shifts, and precise micro-interactions (like an Iguana Bar neon sign). Emulate hardware precision.
-
-Cyberpunk palette defined in `frontend/src/app.css` with CSS custom properties and canonical values in `.claude/skills/brand-guidelines.md`:
+**Design Philosophy:** Strict "flat neon contour" directive. **ZERO glow effects, drop shadows, or text blooms.** Sharp 1px borders, vector color shifts, precise micro-interactions. Canonical values in `.claude/skills/brand-guidelines.md`.
 
 **Neon palette (10 colors):** `neon-cyan` (#00e5ff), `neon-purple` (#a855f7), `neon-green` (#22ff88), `neon-red` (#ff3366), `neon-yellow` (#fbbf24), `neon-orange` (#ff8c00), `neon-blue` (#4d8eff), `neon-pink` (#ff6eb4), `neon-teal` (#00d4aa), `neon-indigo` (#7b61ff).
 
 **Backgrounds:** `bg-primary` (#06060c), `bg-secondary` (#0c0c16), `bg-card` (#11111e), `bg-input` (#0a0a14), `bg-hover` (#16162a), `bg-glass` (rgba(12, 12, 22, 0.7)).
 
 **Text hierarchy:** `text-primary` (#e4e4f0), `text-secondary` (#8b8ba8), `text-dim` (#7a7a9e).
-
-Custom animations: `copy-flash`, `fade-in`, `shimmer`, `shimmer-text` (no glowing pulse effects allowed).
