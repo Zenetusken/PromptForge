@@ -51,7 +51,7 @@ docker compose up -d
 AUTH_TOKEN=your-secret-token docker compose up -d
 
 # With a specific LLM provider
-ANTHROPIC_API_KEY=sk-... docker compose up -d
+ANTHROPIC_API_KEY=sk-ant-... docker compose up -d
 ```
 
 ## Pipeline
@@ -137,7 +137,7 @@ Key environment variables (see [`.env.example`](.env.example) for the full list)
 | `GITHUB_CLIENT_SECRET` | | GitHub OAuth App client secret |
 | `ENCRYPTION_KEY` | *(auto-generated)* | Symmetric key for token encryption at rest |
 
-Ports: backend `8000` (`BACKEND_PORT`), frontend `5199` (`FRONTEND_URL`), MCP `8001` (`MCP_PORT`). Full configuration reference in [ARCHITECTURE.md](ARCHITECTURE.md#section-10-deployment--configuration).
+Ports: backend `8000` (`BACKEND_PORT`), frontend `5199`, MCP `8001` (`MCP_PORT`). Full configuration reference in [ARCHITECTURE.md](ARCHITECTURE.md#section-10-deployment--configuration).
 
 ## Further Reading
 

@@ -515,10 +515,10 @@ Two separate result slots prevent clobbering — `forgeResult` (set by SSE pipel
 
 | Event Category | Events |
 |---------------|--------|
-| `forge:*` | `started`, `completed`, `failed`, `cancelled` |
+| `forge:*` | `started`, `completed`, `failed`, `cancelled`, `progress` |
 | `window:*` | `opened`, `closed`, `focused` |
-| `provider:*` | `rate_limited`, `unavailable` |
-| `mcp:*` | `tool_complete`, `tool_error`, `session_connect`, `session_disconnect` |
+| `provider:*` | `rate_limited`, `unavailable`, `available` |
+| `mcp:*` | `tool_start`, `tool_progress`, `tool_complete`, `tool_error`, `session_connect`, `session_disconnect` |
 | `workspace:*` | `synced`, `error`, `connected`, `disconnected` |
 | `fs:*` | `created`, `moved`, `deleted`, `renamed` |
 | `snap:*` | `created`, `dissolved`, `window_added`, `window_removed` |

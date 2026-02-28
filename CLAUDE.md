@@ -58,11 +58,11 @@ All stages accept optional `codebase_context` (from `backend/app/schemas/context
 
 ### Provider Abstraction (`backend/app/providers/`)
 
-`LLMProvider` ABC with `send_message`, `send_message_json` (4-strategy JSON extraction), `complete`, `stream`, `count_tokens`. Concrete: `ClaudeCLIProvider`, `AnthropicAPIProvider`, `OpenAIProvider`, `GeminiProvider`. Runtime API key/model overrides via `X-LLM-API-Key` and `X-LLM-Model` headers (never in bodies or logs).
+`LLMProvider` ABC with `send_message`, `send_message_json` (4-strategy JSON extraction), `complete`, `stream`, `count_tokens`. Concrete: `ClaudeCLIProvider`, `AnthropicAPIProvider`, `OpenAIProvider`, `GeminiProvider`. Runtime overrides via `X-LLM-API-Key`, `X-LLM-Model`, and `X-LLM-Provider` headers (never in bodies or logs).
 
 ### SSE Events
 
-Backend emits: `stage`, `step_progress`, `strategy`, `analysis`, `optimization`, `validation`, `complete`, `error`. Frontend consumes via `fetch` + `ReadableStream` (not `EventSource`). Event mapping in `frontend/src/lib/api/client.ts:mapSSEEvent`.
+Backend emits: `stage`, `step_progress`, `strategy`, `analysis`, `optimization`, `validation`, `iteration`, `complete`, `error`. Frontend consumes via `fetch` + `ReadableStream` (not `EventSource`). Event mapping in `frontend/src/lib/api/client.ts:mapSSEEvent`.
 
 ### MCP Activity Bridge
 
@@ -90,7 +90,7 @@ One route: `/` (content dashboard). All interactions through the persistent wind
 - **Tab System**: `MAX_TABS = 5` with LRU eviction. Each `WorkspaceTab` carries `resultId`, `mode`, `document`. `tabCoherence.ts` handles save/restore. Forging guards block tab operations during active forges.
 - **Scoped Results** (`optimization.svelte.ts`): `forgeResult` (from SSE) and `viewResult` (from history) as separate slots. `result` returns `forgeResult ?? viewResult`.
 - **Process Scheduler** (`processScheduler.svelte.ts`): Bounded-concurrency queue (`maxConcurrent` from settings, default 2). Tracks running/queued/completed processes. Persisted to sessionStorage.
-- **System Bus** (`systemBus.svelte.ts`): Decoupled IPC — `forge:*`, `window:*`, `provider:*`, `mcp:*`, `workspace:*`, `fs:*`, `snap:*`, `clipboard:copied`, `history:reload`, `stats:reload`, `notification:show`, `tournament:completed`.
+- **System Bus** (`systemBus.svelte.ts`): Decoupled IPC — `forge:*` (started/completed/failed/cancelled/progress), `window:*`, `provider:*` (rate_limited/unavailable/available), `mcp:*` (tool_start/tool_progress/tool_complete/tool_error/session_connect/session_disconnect), `workspace:*`, `fs:*`, `snap:*`, `clipboard:copied`, `history:reload`, `stats:reload`, `notification:show`, `tournament:completed`.
 - **Services**: `notificationService` (subscribes to 13 bus events, max 50, auto-dismiss), `clipboardService`, `commandPalette` (Ctrl+K), `mcpActivityFeed` (SSE with auto-reconnect and `Last-Event-ID`).
 - **Settings** (`settings.svelte.ts`): `accentColor`, `defaultStrategy`, `maxConcurrentForges`, `enableAnimations`, `wallpaperMode`, `wallpaperOpacity`, `performanceProfile`. Drives CSS custom properties on `:root`.
 - **Windows**: ControlPanel, TaskManager, BatchProcessor, StrategyWorkshop, TemplateLibrary, Terminal, NetworkMonitor, RecycleBin, Workspace, DisplaySettings, FolderWindow.
