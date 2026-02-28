@@ -4,17 +4,40 @@
 	import { processScheduler } from '$lib/stores/processScheduler.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { ALL_STRATEGIES } from '$lib/utils/strategies';
+	import { appRegistry } from '$lib/kernel/services/appRegistry.svelte';
+	import type { AnyComponent } from '$lib/kernel/types';
 	import Icon from './Icon.svelte';
 	import { WindowTabStrip } from './ui';
 
 	let activeTab = $state('providers');
 
-	const tabs = [
+	// Static tabs + dynamic app settings tabs
+	const staticTabs = [
 		{ id: 'providers', label: 'Providers', icon: 'cpu' },
 		{ id: 'pipeline', label: 'Pipeline', icon: 'git-branch' },
 		{ id: 'display', label: 'Display', icon: 'monitor' },
 		{ id: 'system', label: 'System', icon: 'settings' },
 	];
+
+	let tabs = $derived([
+		...staticTabs,
+		...appRegistry.appsWithSettings.map(a => ({
+			id: `app-${a.appId}`,
+			label: a.name,
+			icon: a.icon,
+		})),
+	]);
+
+	// Cache resolved settings components per app ID
+	let settingsComponentCache: Record<string, Promise<{ default: AnyComponent }>> = {};
+	function getSettingsComponent(appId: string) {
+		const app = appRegistry.appsWithSettings.find(a => a.appId === appId);
+		if (!app) return null;
+		if (!settingsComponentCache[appId] && app.instance.getSettingsComponent) {
+			settingsComponentCache[appId] = app.instance.getSettingsComponent();
+		}
+		return settingsComponentCache[appId] ?? null;
+	}
 
 	const strategies = ['', ...ALL_STRATEGIES];
 </script>
@@ -195,6 +218,19 @@
 					Reset All Settings
 				</button>
 			</div>
+		{:else if activeTab.startsWith('app-')}
+			{@const appId = activeTab.slice(4)}
+			{@const componentPromise = getSettingsComponent(appId)}
+			{#if componentPromise}
+				{#await componentPromise then mod}
+					{@const SettingsComponent = mod.default}
+					<SettingsComponent />
+				{:catch}
+					<p class="text-xs text-text-secondary">Failed to load settings component.</p>
+				{/await}
+			{:else}
+				<p class="text-xs text-text-secondary">No settings component available.</p>
+			{/if}
 		{/if}
 	</div>
 </div>

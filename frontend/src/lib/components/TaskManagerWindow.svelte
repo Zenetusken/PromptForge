@@ -5,8 +5,15 @@
 	import { createArtifactDescriptor } from '$lib/utils/fileDescriptor';
 	import { toArtifactName } from '$lib/utils/fileTypes';
 	import { openDocument } from '$lib/utils/documentOpener';
+	import { appRegistry } from '$lib/kernel/services/appRegistry.svelte';
 	import Icon from './Icon.svelte';
 	import { StatusDot, InlineProgress, EmptyState } from './ui';
+
+	/** Look up process type metadata from app registry, falling back to forge defaults. */
+	function getProcessTypeMeta(proc: ForgeProcess) {
+		const match = appRegistry.allProcessTypes.find(pt => pt.id === proc.processType);
+		return match ?? { id: 'forge', label: 'Forge', icon: 'zap', stages: ['analyze', 'strategy', 'optimize', 'validate'] };
+	}
 
 	let sortBy: 'pid' | 'status' | 'started' = $state('pid');
 	let sortAsc = $state(false);
@@ -124,6 +131,7 @@
 							PID {sortBy === 'pid' ? (sortAsc ? '\u25B2' : '\u25BC') : ''}
 						</th>
 						<th class="px-3 py-1.5 text-left font-normal">Title</th>
+						<th class="px-3 py-1.5 text-left font-normal">Type</th>
 						<th class="cursor-pointer px-3 py-1.5 text-left font-normal hover:text-neon-cyan" onclick={() => toggleSort('status')}>
 							Status {sortBy === 'status' ? (sortAsc ? '\u25B2' : '\u25BC') : ''}
 						</th>
@@ -137,9 +145,15 @@
 				</thead>
 				<tbody>
 					{#each sorted as proc (proc.id)}
+						{@const ptMeta = getProcessTypeMeta(proc)}
 						<tr class="border-b border-neon-cyan/5 transition-colors hover:bg-bg-hover">
 							<td class="px-3 py-1.5 tabular-nums text-text-dim">{proc.pid}</td>
 							<td class="px-3 py-1.5 truncate max-w-[200px] text-text-primary">{proc.title}</td>
+							<td class="px-3 py-1.5">
+								<span class="text-[10px] text-text-secondary" title={ptMeta.label}>
+									<Icon name={ptMeta.icon as any} size={10} class="inline -mt-px mr-0.5" />{ptMeta.label}
+								</span>
+							</td>
 							<td class="px-3 py-1.5">
 								<span class="{STATUS_COLOR[proc.status]} uppercase text-[10px] tracking-wider">{proc.status}</span>
 							</td>
