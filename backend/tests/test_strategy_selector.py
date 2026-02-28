@@ -1,8 +1,8 @@
 """Tests for the heuristic strategy selector service (pure logic, no mocking needed)."""
 
-from app.constants import Strategy
-from app.services.analyzer import AnalysisResult
-from app.services.strategy_selector import (
+from apps.promptforge.constants import Strategy
+from apps.promptforge.services.analyzer import AnalysisResult
+from apps.promptforge.services.strategy_selector import (
     _COT_NATURAL_TASK_TYPES,
     _SPECIFICITY_EXEMPT_STRATEGIES,
     _SPECIFICITY_PATTERNS,
@@ -558,7 +558,7 @@ class TestTaskTypeStrategyMap:
 
     def test_map_keys_match_analyzer_valid_task_types(self):
         """Strategy map must stay in sync with the analyzer's valid task types."""
-        from app.services.analyzer import _VALID_TASK_TYPES
+        from apps.promptforge.services.analyzer import _VALID_TASK_TYPES
 
         assert set(TASK_TYPE_FRAMEWORK_MAP.keys()) == _VALID_TASK_TYPES
 
@@ -1305,7 +1305,7 @@ class TestContextAwareHeuristic:
 
     def test_strict_types_boosts_structured_output(self):
         """TypeScript strict mode in context → structured-output confidence boost."""
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         ctx = CodebaseContext(
             language="TypeScript",
@@ -1322,7 +1322,7 @@ class TestContextAwareHeuristic:
 
     def test_rust_language_boosts_structured_output(self):
         """Rust language in context → structured-output confidence boost."""
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         ctx = CodebaseContext(language="Rust")
         result = self.selector.select(
@@ -1334,7 +1334,7 @@ class TestContextAwareHeuristic:
 
     def test_context_doesnt_override_p1(self):
         """High complexity math still gets CoT regardless of context."""
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         ctx = CodebaseContext(
             language="TypeScript",
@@ -1350,7 +1350,7 @@ class TestContextAwareHeuristic:
 
     def test_context_doesnt_override_p2(self):
         """Specificity weakness still gets constraint-injection despite context."""
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         ctx = CodebaseContext(
             language="TypeScript",
@@ -1376,7 +1376,7 @@ class TestContextAwareHeuristic:
 
     def test_service_layer_boosts_step_by_step(self):
         """Multi-layer architecture → step-by-step boost when aligned."""
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         ctx = CodebaseContext(
             patterns=["Service layer pattern", "Repository pattern", "Middleware layer"],

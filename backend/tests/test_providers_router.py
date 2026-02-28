@@ -11,7 +11,7 @@ from app.providers import invalidate_detect_cache
 def _clear_caches():
     """Clear provider caches between tests."""
     invalidate_detect_cache()
-    import app.routers.providers as mod
+    import apps.promptforge.routers.providers as mod
 
     mod._cache = []
     mod._cache_time = 0
@@ -24,7 +24,7 @@ def _clear_caches():
 @pytest.mark.asyncio
 async def test_providers_endpoint_returns_list(client):
     """The endpoint returns a list of provider info dicts."""
-    response = await client.get("/api/providers")
+    response = await client.get("/api/apps/promptforge/providers")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -43,7 +43,7 @@ async def test_providers_endpoint_returns_list(client):
 @pytest.mark.asyncio
 async def test_providers_endpoint_contains_known_providers(client):
     """All four known provider names appear in the result."""
-    response = await client.get("/api/providers")
+    response = await client.get("/api/apps/promptforge/providers")
     data = response.json()
     names = {p["name"] for p in data}
     assert "claude-cli" in names
@@ -64,13 +64,13 @@ async def test_providers_endpoint_with_no_available(client):
             "is_default": False,
         }
     ]
-    with patch("app.routers.providers.list_all_providers", return_value=mock_providers):
-        import app.routers.providers as mod
+    with patch("apps.promptforge.routers.providers.list_all_providers", return_value=mock_providers):
+        import apps.promptforge.routers.providers as mod
 
         mod._cache = []
         mod._cache_time = 0
 
-        response = await client.get("/api/providers")
+        response = await client.get("/api/apps/promptforge/providers")
         assert response.status_code == 200
         data = response.json()
         assert len(data) == 1
@@ -90,7 +90,7 @@ async def test_validate_key_response_includes_provider_info(client):
         patch.object(ClaudeCLIProvider, "test_connection", mock_test_connection),
     ):
         response = await client.post(
-            "/api/providers/validate-key",
+            "/api/apps/promptforge/providers/validate-key",
             json={"provider": "claude-cli", "api_key": "unused"},
         )
     data = response.json()
@@ -112,7 +112,7 @@ async def test_validate_key_failure_returns_error(client):
         patch.object(ClaudeCLIProvider, "test_connection", mock_test_connection),
     ):
         response = await client.post(
-            "/api/providers/validate-key",
+            "/api/apps/promptforge/providers/validate-key",
             json={"provider": "claude-cli", "api_key": "bad-key"},
         )
     data = response.json()
@@ -125,7 +125,7 @@ async def test_validate_key_failure_returns_error(client):
 async def test_validate_key_unknown_provider(client):
     """Validating an unknown provider returns an error."""
     response = await client.post(
-        "/api/providers/validate-key",
+        "/api/apps/promptforge/providers/validate-key",
         json={"provider": "nonexistent", "api_key": "any"},
     )
     data = response.json()
@@ -146,7 +146,7 @@ async def test_validate_key_connection_timeout(client):
         patch.object(ClaudeCLIProvider, "test_connection", mock_test_connection),
     ):
         response = await client.post(
-            "/api/providers/validate-key",
+            "/api/apps/promptforge/providers/validate-key",
             json={"provider": "claude-cli", "api_key": "test-key"},
         )
     data = response.json()
@@ -158,7 +158,7 @@ async def test_validate_key_connection_timeout(client):
 async def test_validate_key_missing_fields(client):
     """Missing required fields returns 422."""
     response = await client.post(
-        "/api/providers/validate-key",
+        "/api/apps/promptforge/providers/validate-key",
         json={"provider": "claude-cli"},  # missing api_key
     )
     assert response.status_code == 422
@@ -168,7 +168,7 @@ async def test_validate_key_missing_fields(client):
 async def test_validate_key_empty_body(client):
     """Empty body returns 422."""
     response = await client.post(
-        "/api/providers/validate-key",
+        "/api/apps/promptforge/providers/validate-key",
         json={},
     )
     assert response.status_code == 422
@@ -178,11 +178,11 @@ async def test_validate_key_empty_body(client):
 async def test_validate_key_import_error(client):
     """When provider requires uninstalled SDK, returns valid=False."""
     with patch(
-        "app.routers.providers.get_provider",
+        "apps.promptforge.routers.providers.get_provider",
         side_effect=ImportError("No module named 'openai'"),
     ):
         response = await client.post(
-            "/api/providers/validate-key",
+            "/api/apps/promptforge/providers/validate-key",
             json={"provider": "openai", "api_key": "sk-test"},
         )
     data = response.json()
@@ -194,12 +194,12 @@ async def test_validate_key_import_error(client):
 async def test_providers_cache_hit(client):
     """Second request within TTL uses cached data."""
     # First request populates cache
-    r1 = await client.get("/api/providers")
+    r1 = await client.get("/api/apps/promptforge/providers")
     assert r1.status_code == 200
 
     # Patch list_all_providers to detect if it's called again
-    with patch("app.routers.providers.list_all_providers") as mock_list:
-        r2 = await client.get("/api/providers")
+    with patch("apps.promptforge.routers.providers.list_all_providers") as mock_list:
+        r2 = await client.get("/api/apps/promptforge/providers")
         assert r2.status_code == 200
         # Should NOT have been called because cache is fresh
         mock_list.assert_not_called()

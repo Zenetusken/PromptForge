@@ -7,12 +7,12 @@ import json
 
 import pytest
 
-from app.constants import OptimizationStatus
+from apps.promptforge.constants import OptimizationStatus
 from app.database import get_db
 from app.main import app
-from app.models.optimization import Optimization
-from app.models.project import Project, Prompt, PromptVersion
-from app.repositories.project import ProjectRepository
+from apps.promptforge.models.optimization import Optimization
+from apps.promptforge.models.project import Project, Prompt, PromptVersion
+from apps.promptforge.repositories.project import ProjectRepository
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -88,7 +88,7 @@ async def _seed_optimization(client, *, opt_id: str = "opt-1", raw_prompt: str =
 class TestListProjects:
     @pytest.mark.asyncio
     async def test_empty_list(self, client):
-        resp = await client.get("/api/projects")
+        resp = await client.get("/api/apps/promptforge/projects")
         assert resp.status_code == 200
         data = resp.json()
         assert data["items"] == []
@@ -99,7 +99,7 @@ class TestListProjects:
     async def test_list_returns_projects(self, client):
         await _seed_project(client, project_id="p1", name="Alpha")
         await _seed_project(client, project_id="p2", name="Beta")
-        resp = await client.get("/api/projects")
+        resp = await client.get("/api/apps/promptforge/projects")
         data = resp.json()
         assert data["total"] == 2
         assert len(data["items"]) == 2
@@ -108,7 +108,7 @@ class TestListProjects:
     async def test_pagination(self, client):
         for i in range(5):
             await _seed_project(client, project_id=f"p{i}", name=f"Project {i}")
-        resp = await client.get("/api/projects?page=2&per_page=2")
+        resp = await client.get("/api/apps/promptforge/projects?page=2&per_page=2")
         data = resp.json()
         assert data["total"] == 5
         assert len(data["items"]) == 2
@@ -119,7 +119,7 @@ class TestListProjects:
     async def test_search_filter(self, client):
         await _seed_project(client, project_id="p1", name="PromptForge")
         await _seed_project(client, project_id="p2", name="OtherApp")
-        resp = await client.get("/api/projects?search=Forge")
+        resp = await client.get("/api/apps/promptforge/projects?search=Forge")
         data = resp.json()
         assert data["total"] == 1
         assert data["items"][0]["name"] == "PromptForge"
@@ -129,7 +129,7 @@ class TestListProjects:
         await _seed_project(client, project_id="p1", name="A",
                             description="machine learning project")
         await _seed_project(client, project_id="p2", name="B", description="web app")
-        resp = await client.get("/api/projects?search=machine")
+        resp = await client.get("/api/apps/promptforge/projects?search=machine")
         data = resp.json()
         assert data["total"] == 1
         assert data["items"][0]["name"] == "A"
@@ -138,7 +138,7 @@ class TestListProjects:
     async def test_status_filter(self, client):
         await _seed_project(client, project_id="p1", name="Active", status="active")
         await _seed_project(client, project_id="p2", name="Archived", status="archived")
-        resp = await client.get("/api/projects?status=active")
+        resp = await client.get("/api/apps/promptforge/projects?status=active")
         data = resp.json()
         assert data["total"] == 1
         assert data["items"][0]["name"] == "Active"
@@ -147,7 +147,7 @@ class TestListProjects:
     async def test_deleted_excluded_by_default(self, client):
         await _seed_project(client, project_id="p1", name="Visible")
         await _seed_project(client, project_id="p2", name="Gone", status="deleted")
-        resp = await client.get("/api/projects")
+        resp = await client.get("/api/apps/promptforge/projects")
         data = resp.json()
         assert data["total"] == 1
         assert data["items"][0]["name"] == "Visible"
@@ -156,7 +156,7 @@ class TestListProjects:
     async def test_sort_ascending(self, client):
         await _seed_project(client, project_id="p1", name="AAA")
         await _seed_project(client, project_id="p2", name="ZZZ")
-        resp = await client.get("/api/projects?sort=name&order=asc")
+        resp = await client.get("/api/apps/promptforge/projects?sort=name&order=asc")
         data = resp.json()
         names = [item["name"] for item in data["items"]]
         assert names == ["AAA", "ZZZ"]
@@ -166,7 +166,7 @@ class TestListProjects:
         await _seed_project(client, project_id="p1", name="WithPrompts")
         await _seed_prompt(client, prompt_id="prm-a", project_id="p1", content="a")
         await _seed_prompt(client, prompt_id="prm-b", project_id="p1", content="b")
-        resp = await client.get("/api/projects")
+        resp = await client.get("/api/apps/promptforge/projects")
         data = resp.json()
         assert data["items"][0]["prompt_count"] == 2
 
@@ -178,7 +178,7 @@ class TestListProjects:
 class TestCreateProject:
     @pytest.mark.asyncio
     async def test_create_success(self, client):
-        resp = await client.post("/api/projects", json={"name": "New Project"})
+        resp = await client.post("/api/apps/promptforge/projects", json={"name": "New Project"})
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "New Project"
@@ -189,7 +189,7 @@ class TestCreateProject:
     @pytest.mark.asyncio
     async def test_create_with_description(self, client):
         resp = await client.post(
-            "/api/projects",
+            "/api/apps/promptforge/projects",
             json={"name": "Described", "description": "A great project"},
         )
         assert resp.status_code == 201
@@ -198,30 +198,30 @@ class TestCreateProject:
     @pytest.mark.asyncio
     async def test_duplicate_name_returns_409(self, client):
         await _seed_project(client, project_id="p1", name="Taken")
-        resp = await client.post("/api/projects", json={"name": "Taken"})
+        resp = await client.post("/api/apps/promptforge/projects", json={"name": "Taken"})
         assert resp.status_code == 409
         assert "already exists" in resp.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_duplicate_name_of_deleted_project_succeeds(self, client):
         await _seed_project(client, project_id="p1", name="Recycled", status="deleted")
-        resp = await client.post("/api/projects", json={"name": "Recycled"})
+        resp = await client.post("/api/apps/promptforge/projects", json={"name": "Recycled"})
         # Should succeed since the existing one is soft-deleted
         assert resp.status_code == 201
 
     @pytest.mark.asyncio
     async def test_empty_name_rejected(self, client):
-        resp = await client.post("/api/projects", json={"name": ""})
+        resp = await client.post("/api/apps/promptforge/projects", json={"name": ""})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_whitespace_name_rejected(self, client):
-        resp = await client.post("/api/projects", json={"name": "   "})
+        resp = await client.post("/api/apps/promptforge/projects", json={"name": "   "})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_name_whitespace_stripped(self, client):
-        resp = await client.post("/api/projects", json={"name": "  Trimmed  "})
+        resp = await client.post("/api/apps/promptforge/projects", json={"name": "  Trimmed  "})
         assert resp.status_code == 201
         assert resp.json()["name"] == "Trimmed"
 
@@ -235,7 +235,7 @@ class TestGetProject:
     async def test_get_existing(self, client):
         await _seed_project(client, project_id="p1", name="Detail",
                             description="desc here")
-        resp = await client.get("/api/projects/p1")
+        resp = await client.get("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Detail"
@@ -248,27 +248,27 @@ class TestGetProject:
         await _seed_project(client, project_id="p1", name="WithP")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1",
                            content="first prompt")
-        resp = await client.get("/api/projects/p1")
+        resp = await client.get("/api/apps/promptforge/projects/p1")
         data = resp.json()
         assert len(data["prompts"]) == 1
         assert data["prompts"][0]["content"] == "first prompt"
 
     @pytest.mark.asyncio
     async def test_get_nonexistent_returns_404(self, client):
-        resp = await client.get("/api/projects/no-such-id")
+        resp = await client.get("/api/apps/promptforge/projects/no-such-id")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_get_deleted_returns_404(self, client):
         await _seed_project(client, project_id="p1", name="Deleted", status="deleted")
-        resp = await client.get("/api/projects/p1")
+        resp = await client.get("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_get_archived_allowed(self, client):
         """Archived projects are readable — only mutations are blocked."""
         await _seed_project(client, project_id="p1", name="Frozen", status="archived")
-        resp = await client.get("/api/projects/p1")
+        resp = await client.get("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 200
         assert resp.json()["status"] == "archived"
 
@@ -281,33 +281,33 @@ class TestUpdateProject:
     @pytest.mark.asyncio
     async def test_update_name(self, client):
         await _seed_project(client, project_id="p1", name="OldName")
-        resp = await client.put("/api/projects/p1", json={"name": "NewName"})
+        resp = await client.put("/api/apps/promptforge/projects/p1", json={"name": "NewName"})
         assert resp.status_code == 200
         assert resp.json()["name"] == "NewName"
 
     @pytest.mark.asyncio
     async def test_update_description(self, client):
         await _seed_project(client, project_id="p1", name="P")
-        resp = await client.put("/api/projects/p1", json={"description": "updated desc"})
+        resp = await client.put("/api/apps/promptforge/projects/p1", json={"description": "updated desc"})
         assert resp.status_code == 200
         assert resp.json()["description"] == "updated desc"
 
     @pytest.mark.asyncio
     async def test_update_nonexistent_returns_404(self, client):
-        resp = await client.put("/api/projects/no-such", json={"name": "X"})
+        resp = await client.put("/api/apps/promptforge/projects/no-such", json={"name": "X"})
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_update_deleted_returns_404(self, client):
         await _seed_project(client, project_id="p1", name="Gone", status="deleted")
-        resp = await client.put("/api/projects/p1", json={"name": "X"})
+        resp = await client.put("/api/apps/promptforge/projects/p1", json={"name": "X"})
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_update_name_to_existing_returns_409(self, client):
         await _seed_project(client, project_id="p1", name="Original")
         await _seed_project(client, project_id="p2", name="Taken")
-        resp = await client.put("/api/projects/p1", json={"name": "Taken"})
+        resp = await client.put("/api/apps/promptforge/projects/p1", json={"name": "Taken"})
         assert resp.status_code == 409
         assert "already exists" in resp.json()["detail"]
 
@@ -315,7 +315,7 @@ class TestUpdateProject:
     async def test_update_name_to_same_succeeds(self, client):
         """Renaming to the same name should not trigger a conflict."""
         await _seed_project(client, project_id="p1", name="Same")
-        resp = await client.put("/api/projects/p1", json={"name": "Same"})
+        resp = await client.put("/api/apps/promptforge/projects/p1", json={"name": "Same"})
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -323,11 +323,11 @@ class TestUpdateProject:
         """If-Unmodified-Since header triggers 409 when project was modified."""
         await _seed_project(client, project_id="p1", name="Concurrent")
         # First update — succeeds
-        resp1 = await client.put("/api/projects/p1", json={"name": "Updated"})
+        resp1 = await client.put("/api/apps/promptforge/projects/p1", json={"name": "Updated"})
         assert resp1.status_code == 200
         # Second update with a stale timestamp — should 409
         resp2 = await client.put(
-            "/api/projects/p1",
+            "/api/apps/promptforge/projects/p1",
             json={"name": "Again"},
             headers={"If-Unmodified-Since": "Thu, 01 Jan 2020 00:00:00 GMT"},
         )
@@ -339,7 +339,7 @@ class TestUpdateProject:
         await _seed_project(client, project_id="p1", name="P")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1",
                            content="my prompt")
-        resp = await client.put("/api/projects/p1", json={"description": "d"})
+        resp = await client.put("/api/apps/promptforge/projects/p1", json={"description": "d"})
         assert resp.status_code == 200
         assert len(resp.json()["prompts"]) == 1
 
@@ -352,29 +352,29 @@ class TestDeleteProject:
     @pytest.mark.asyncio
     async def test_delete_success(self, client):
         await _seed_project(client, project_id="p1", name="ToDelete")
-        resp = await client.delete("/api/projects/p1")
+        resp = await client.delete("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 200
         assert resp.json()["id"] == "p1"
         # Verify it's gone from listing
-        list_resp = await client.get("/api/projects")
+        list_resp = await client.get("/api/apps/promptforge/projects")
         assert list_resp.json()["total"] == 0
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_returns_404(self, client):
-        resp = await client.delete("/api/projects/no-such")
+        resp = await client.delete("/api/apps/promptforge/projects/no-such")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_already_deleted_returns_404(self, client):
         await _seed_project(client, project_id="p1", name="AlreadyGone", status="deleted")
-        resp = await client.delete("/api/projects/p1")
+        resp = await client.delete("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_archived_succeeds(self, client):
         """Even archived projects can be deleted (soft-delete is not a mutation guard)."""
         await _seed_project(client, project_id="p1", name="ArchDel", status="archived")
-        resp = await client.delete("/api/projects/p1")
+        resp = await client.delete("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 200
 
 
@@ -386,58 +386,58 @@ class TestArchiveUnarchive:
     @pytest.mark.asyncio
     async def test_archive_success(self, client):
         await _seed_project(client, project_id="p1", name="ToArchive")
-        resp = await client.post("/api/projects/p1/archive")
+        resp = await client.post("/api/apps/promptforge/projects/p1/archive")
         assert resp.status_code == 200
         assert resp.json()["status"] == "archived"
         # Verify via GET
-        get_resp = await client.get("/api/projects/p1")
+        get_resp = await client.get("/api/apps/promptforge/projects/p1")
         assert get_resp.json()["status"] == "archived"
 
     @pytest.mark.asyncio
     async def test_archive_already_archived_returns_400(self, client):
         await _seed_project(client, project_id="p1", name="Frozen", status="archived")
-        resp = await client.post("/api/projects/p1/archive")
+        resp = await client.post("/api/apps/promptforge/projects/p1/archive")
         assert resp.status_code == 400
         assert "already archived" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_archive_nonexistent_returns_404(self, client):
-        resp = await client.post("/api/projects/no-such/archive")
+        resp = await client.post("/api/apps/promptforge/projects/no-such/archive")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_archive_deleted_returns_404(self, client):
         await _seed_project(client, project_id="p1", name="Del", status="deleted")
-        resp = await client.post("/api/projects/p1/archive")
+        resp = await client.post("/api/apps/promptforge/projects/p1/archive")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_unarchive_success(self, client):
         await _seed_project(client, project_id="p1", name="ToRestore", status="archived")
-        resp = await client.post("/api/projects/p1/unarchive")
+        resp = await client.post("/api/apps/promptforge/projects/p1/unarchive")
         assert resp.status_code == 200
         assert resp.json()["status"] == "active"
 
     @pytest.mark.asyncio
     async def test_unarchive_already_active_returns_400(self, client):
         await _seed_project(client, project_id="p1", name="Active")
-        resp = await client.post("/api/projects/p1/unarchive")
+        resp = await client.post("/api/apps/promptforge/projects/p1/unarchive")
         assert resp.status_code == 400
         assert "already active" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_unarchive_nonexistent_returns_404(self, client):
-        resp = await client.post("/api/projects/no-such/unarchive")
+        resp = await client.post("/api/apps/promptforge/projects/no-such/unarchive")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_archive_unarchive_roundtrip(self, client):
         await _seed_project(client, project_id="p1", name="Roundtrip")
         # Archive
-        resp = await client.post("/api/projects/p1/archive")
+        resp = await client.post("/api/apps/promptforge/projects/p1/archive")
         assert resp.status_code == 200
         # Unarchive
-        resp = await client.post("/api/projects/p1/unarchive")
+        resp = await client.post("/api/apps/promptforge/projects/p1/unarchive")
         assert resp.status_code == 200
         assert resp.json()["status"] == "active"
 
@@ -451,7 +451,7 @@ class TestAddPrompt:
     async def test_add_prompt_success(self, client):
         await _seed_project(client, project_id="p1", name="P")
         resp = await client.post(
-            "/api/projects/p1/prompts",
+            "/api/apps/promptforge/projects/p1/prompts",
             json={"content": "Write a haiku about testing"},
         )
         assert resp.status_code == 201
@@ -464,15 +464,15 @@ class TestAddPrompt:
     @pytest.mark.asyncio
     async def test_add_multiple_prompts_increment_order(self, client):
         await _seed_project(client, project_id="p1", name="P")
-        resp1 = await client.post("/api/projects/p1/prompts", json={"content": "first"})
-        resp2 = await client.post("/api/projects/p1/prompts", json={"content": "second"})
+        resp1 = await client.post("/api/apps/promptforge/projects/p1/prompts", json={"content": "first"})
+        resp2 = await client.post("/api/apps/promptforge/projects/p1/prompts", json={"content": "second"})
         assert resp1.json()["order_index"] == 0
         assert resp2.json()["order_index"] == 1
 
     @pytest.mark.asyncio
     async def test_add_prompt_to_nonexistent_project_returns_404(self, client):
         resp = await client.post(
-            "/api/projects/no-such/prompts",
+            "/api/apps/promptforge/projects/no-such/prompts",
             json={"content": "test"},
         )
         assert resp.status_code == 404
@@ -480,13 +480,13 @@ class TestAddPrompt:
     @pytest.mark.asyncio
     async def test_add_empty_content_rejected(self, client):
         await _seed_project(client, project_id="p1", name="P")
-        resp = await client.post("/api/projects/p1/prompts", json={"content": ""})
+        resp = await client.post("/api/apps/promptforge/projects/p1/prompts", json={"content": ""})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_add_whitespace_content_rejected(self, client):
         await _seed_project(client, project_id="p1", name="P")
-        resp = await client.post("/api/projects/p1/prompts", json={"content": "   "})
+        resp = await client.post("/api/apps/promptforge/projects/p1/prompts", json={"content": "   "})
         assert resp.status_code == 422
 
 
@@ -501,7 +501,7 @@ class TestUpdatePrompt:
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1",
                            content="original")
         resp = await client.put(
-            "/api/projects/p1/prompts/prm-1",
+            "/api/apps/promptforge/projects/p1/prompts/prm-1",
             json={"content": "updated content"},
         )
         assert resp.status_code == 200
@@ -517,11 +517,11 @@ class TestUpdatePrompt:
                            content="v1 content")
         # Update to v2
         await client.put(
-            "/api/projects/p1/prompts/prm-1",
+            "/api/apps/promptforge/projects/p1/prompts/prm-1",
             json={"content": "v2 content"},
         )
         # Check versions endpoint
-        resp = await client.get("/api/projects/p1/prompts/prm-1/versions")
+        resp = await client.get("/api/apps/promptforge/projects/p1/prompts/prm-1/versions")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
@@ -532,7 +532,7 @@ class TestUpdatePrompt:
     async def test_update_nonexistent_prompt_returns_404(self, client):
         await _seed_project(client, project_id="p1", name="P")
         resp = await client.put(
-            "/api/projects/p1/prompts/no-such",
+            "/api/apps/promptforge/projects/p1/prompts/no-such",
             json={"content": "x"},
         )
         assert resp.status_code == 404
@@ -544,7 +544,7 @@ class TestUpdatePrompt:
         await _seed_project(client, project_id="p2", name="P2")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1")
         resp = await client.put(
-            "/api/projects/p2/prompts/prm-1",
+            "/api/apps/promptforge/projects/p2/prompts/prm-1",
             json={"content": "x"},
         )
         assert resp.status_code == 404
@@ -559,11 +559,11 @@ class TestDeletePrompt:
     async def test_delete_success(self, client):
         await _seed_project(client, project_id="p1", name="P")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1")
-        resp = await client.delete("/api/projects/p1/prompts/prm-1")
+        resp = await client.delete("/api/apps/promptforge/projects/p1/prompts/prm-1")
         assert resp.status_code == 200
         assert resp.json()["id"] == "prm-1"
         # Verify prompt is gone
-        get_resp = await client.get("/api/projects/p1")
+        get_resp = await client.get("/api/apps/promptforge/projects/p1")
         assert len(get_resp.json()["prompts"]) == 0
 
     @pytest.mark.asyncio
@@ -574,14 +574,14 @@ class TestDeletePrompt:
                            content="my prompt")
         await _seed_optimization(client, opt_id="opt-1", raw_prompt="my prompt",
                                  prompt_id="prm-1", project="P")
-        resp = await client.delete("/api/projects/p1/prompts/prm-1")
+        resp = await client.delete("/api/apps/promptforge/projects/p1/prompts/prm-1")
         assert resp.status_code == 200
         assert resp.json()["deleted_optimizations"] >= 1
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_returns_404(self, client):
         await _seed_project(client, project_id="p1", name="P")
-        resp = await client.delete("/api/projects/p1/prompts/no-such")
+        resp = await client.delete("/api/apps/promptforge/projects/p1/prompts/no-such")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -589,7 +589,7 @@ class TestDeletePrompt:
         await _seed_project(client, project_id="p1", name="P1")
         await _seed_project(client, project_id="p2", name="P2")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1")
-        resp = await client.delete("/api/projects/p2/prompts/prm-1")
+        resp = await client.delete("/api/apps/promptforge/projects/p2/prompts/prm-1")
         assert resp.status_code == 404
 
 
@@ -606,7 +606,7 @@ class TestReorderPrompts:
         await _seed_prompt(client, prompt_id="b", project_id="p1",
                            content="second", order_index=1)
         resp = await client.put(
-            "/api/projects/p1/prompts/reorder",
+            "/api/apps/promptforge/projects/p1/prompts/reorder",
             json={"prompt_ids": ["b", "a"]},
         )
         assert resp.status_code == 200
@@ -621,7 +621,7 @@ class TestReorderPrompts:
         await _seed_project(client, project_id="p1", name="P")
         await _seed_prompt(client, prompt_id="a", project_id="p1")
         resp = await client.put(
-            "/api/projects/p1/prompts/reorder",
+            "/api/apps/promptforge/projects/p1/prompts/reorder",
             json={"prompt_ids": ["a", "nonexistent"]},
         )
         assert resp.status_code == 400
@@ -636,7 +636,7 @@ class TestReorderPrompts:
                            content="second", order_index=1)
         # Only include one of two prompts
         resp = await client.put(
-            "/api/projects/p1/prompts/reorder",
+            "/api/apps/promptforge/projects/p1/prompts/reorder",
             json={"prompt_ids": ["a"]},
         )
         assert resp.status_code == 400
@@ -644,7 +644,7 @@ class TestReorderPrompts:
     @pytest.mark.asyncio
     async def test_reorder_nonexistent_project_returns_404(self, client):
         resp = await client.put(
-            "/api/projects/no-such/prompts/reorder",
+            "/api/apps/promptforge/projects/no-such/prompts/reorder",
             json={"prompt_ids": ["a"]},
         )
         assert resp.status_code == 404
@@ -653,7 +653,7 @@ class TestReorderPrompts:
     async def test_reorder_empty_ids_rejected(self, client):
         await _seed_project(client, project_id="p1", name="P")
         resp = await client.put(
-            "/api/projects/p1/prompts/reorder",
+            "/api/apps/promptforge/projects/p1/prompts/reorder",
             json={"prompt_ids": []},
         )
         assert resp.status_code == 422
@@ -669,7 +669,7 @@ class TestPromptVersions:
         """A prompt with no updates has no version history."""
         await _seed_project(client, project_id="p1", name="P")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1")
-        resp = await client.get("/api/projects/p1/prompts/prm-1/versions")
+        resp = await client.get("/api/apps/promptforge/projects/p1/prompts/prm-1/versions")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 0
@@ -683,15 +683,15 @@ class TestPromptVersions:
                            content="v1")
         # Update to v2
         await client.put(
-            "/api/projects/p1/prompts/prm-1",
+            "/api/apps/promptforge/projects/p1/prompts/prm-1",
             json={"content": "v2"},
         )
         # Update to v3
         await client.put(
-            "/api/projects/p1/prompts/prm-1",
+            "/api/apps/promptforge/projects/p1/prompts/prm-1",
             json={"content": "v3"},
         )
-        resp = await client.get("/api/projects/p1/prompts/prm-1/versions")
+        resp = await client.get("/api/apps/promptforge/projects/p1/prompts/prm-1/versions")
         data = resp.json()
         assert data["total"] == 2
         # Newest first
@@ -712,7 +712,7 @@ class TestPromptVersions:
                 version=i, content=f"v{i}",
             )
         resp = await client.get(
-            "/api/projects/p1/prompts/prm-1/versions?limit=2&offset=0"
+            "/api/apps/promptforge/projects/p1/prompts/prm-1/versions?limit=2&offset=0"
         )
         data = resp.json()
         assert data["total"] == 3
@@ -721,7 +721,7 @@ class TestPromptVersions:
     @pytest.mark.asyncio
     async def test_versions_nonexistent_prompt_returns_404(self, client):
         await _seed_project(client, project_id="p1", name="P")
-        resp = await client.get("/api/projects/p1/prompts/no-such/versions")
+        resp = await client.get("/api/apps/promptforge/projects/p1/prompts/no-such/versions")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -729,7 +729,7 @@ class TestPromptVersions:
         await _seed_project(client, project_id="p1", name="P1")
         await _seed_project(client, project_id="p2", name="P2")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1")
-        resp = await client.get("/api/projects/p2/prompts/prm-1/versions")
+        resp = await client.get("/api/apps/promptforge/projects/p2/prompts/prm-1/versions")
         assert resp.status_code == 404
 
 
@@ -742,7 +742,7 @@ class TestPromptForges:
     async def test_forges_empty(self, client):
         await _seed_project(client, project_id="p1", name="P")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1")
-        resp = await client.get("/api/projects/p1/prompts/prm-1/forges")
+        resp = await client.get("/api/apps/promptforge/projects/p1/prompts/prm-1/forges")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 0
@@ -757,7 +757,7 @@ class TestPromptForges:
             client, opt_id="opt-1", raw_prompt="my prompt",
             prompt_id="prm-1", project="P",
         )
-        resp = await client.get("/api/projects/p1/prompts/prm-1/forges")
+        resp = await client.get("/api/apps/promptforge/projects/p1/prompts/prm-1/forges")
         data = resp.json()
         assert data["total"] >= 1
         assert data["items"][0]["id"] == "opt-1"
@@ -766,7 +766,7 @@ class TestPromptForges:
     @pytest.mark.asyncio
     async def test_forges_nonexistent_prompt_returns_404(self, client):
         await _seed_project(client, project_id="p1", name="P")
-        resp = await client.get("/api/projects/p1/prompts/no-such/forges")
+        resp = await client.get("/api/apps/promptforge/projects/p1/prompts/no-such/forges")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -774,7 +774,7 @@ class TestPromptForges:
         await _seed_project(client, project_id="p1", name="P1")
         await _seed_project(client, project_id="p2", name="P2")
         await _seed_prompt(client, prompt_id="prm-1", project_id="p1")
-        resp = await client.get("/api/projects/p2/prompts/prm-1/forges")
+        resp = await client.get("/api/apps/promptforge/projects/p2/prompts/prm-1/forges")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -788,7 +788,7 @@ class TestPromptForges:
                 prompt_id="prm-1", project="P",
             )
         resp = await client.get(
-            "/api/projects/p1/prompts/prm-1/forges?limit=2&offset=0"
+            "/api/apps/promptforge/projects/p1/prompts/prm-1/forges?limit=2&offset=0"
         )
         data = resp.json()
         assert data["total"] == 5
@@ -818,17 +818,17 @@ class TestDeleteCascade:
                                  prompt_id=None, project="CascadeProject")
 
         # Delete the project
-        resp = await client.delete("/api/projects/p1")
+        resp = await client.delete("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 200
         data = resp.json()
         assert data["deleted_optimizations"] >= 3
 
         # Project should be gone from listing
-        list_resp = await client.get("/api/projects")
+        list_resp = await client.get("/api/apps/promptforge/projects")
         assert list_resp.json()["total"] == 0
 
         # Optimizations should be gone from history
-        history_resp = await client.get("/api/history")
+        history_resp = await client.get("/api/apps/promptforge/history")
         assert history_resp.json()["total"] == 0
 
     @pytest.mark.asyncio
@@ -840,11 +840,11 @@ class TestDeleteCascade:
         await _seed_prompt_version(client, version_id="ver-1", prompt_id="prm-1",
                                    version=1, content="old content")
 
-        resp = await client.delete("/api/projects/p1")
+        resp = await client.delete("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 200
 
         # Project is deleted — get returns 404
-        get_resp = await client.get("/api/projects/p1")
+        get_resp = await client.get("/api/apps/promptforge/projects/p1")
         assert get_resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -862,16 +862,16 @@ class TestDeleteCascade:
                                  prompt_id="prm-2", project="ToKeep")
 
         # Delete only p1
-        resp = await client.delete("/api/projects/p1")
+        resp = await client.delete("/api/apps/promptforge/projects/p1")
         assert resp.status_code == 200
 
         # p2 should still be intact
-        get_resp = await client.get("/api/projects/p2")
+        get_resp = await client.get("/api/apps/promptforge/projects/p2")
         assert get_resp.status_code == 200
         assert len(get_resp.json()["prompts"]) == 1
 
         # History should only contain p2's optimization
-        history_resp = await client.get("/api/history")
+        history_resp = await client.get("/api/apps/promptforge/history")
         assert history_resp.json()["total"] == 1
         assert history_resp.json()["items"][0]["id"] == "opt-keep"
 

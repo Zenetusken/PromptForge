@@ -4,8 +4,8 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import MAX_FOLDER_DEPTH
-from app.repositories.project import ProjectRepository, ensure_project_by_name
+from apps.promptforge.constants import MAX_FOLDER_DEPTH
+from apps.promptforge.repositories.project import ProjectRepository, ensure_project_by_name
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -15,7 +15,7 @@ async def _create_folder(
     client: AsyncClient, name: str, parent_id: str | None = None,
 ) -> dict:
     resp = await client.post(
-        "/api/projects",
+        "/api/apps/promptforge/projects",
         json={"name": name, "parent_id": parent_id},
     )
     assert resp.status_code == 201, resp.text
@@ -24,7 +24,7 @@ async def _create_folder(
 
 async def _add_prompt(client: AsyncClient, project_id: str, content: str) -> dict:
     resp = await client.post(
-        f"/api/projects/{project_id}/prompts",
+        f"/api/apps/promptforge/projects/{project_id}/prompts",
         json={"content": content},
     )
     assert resp.status_code == 201, resp.text
@@ -65,7 +65,7 @@ class TestProjectHierarchy:
         root = await _create_folder(client, "DupParent")
         await _create_folder(client, "Dup", parent_id=root["id"])
         resp = await client.post(
-            "/api/projects",
+            "/api/apps/promptforge/projects",
             json={"name": "Dup", "parent_id": root["id"]},
         )
         assert resp.status_code == 409
@@ -83,7 +83,7 @@ class TestProjectHierarchy:
         # The last folder is at depth MAX_FOLDER_DEPTH; creating one more
         # child should exceed the limit.
         resp = await client.post(
-            "/api/projects",
+            "/api/apps/promptforge/projects",
             json={"name": "Too Deep", "parent_id": parent_id},
         )
         assert resp.status_code == 400
@@ -92,7 +92,7 @@ class TestProjectHierarchy:
     @pytest.mark.asyncio
     async def test_invalid_parent_id(self, client: AsyncClient):
         resp = await client.post(
-            "/api/projects",
+            "/api/apps/promptforge/projects",
             json={"name": "Orphan", "parent_id": "nonexistent-id"},
         )
         assert resp.status_code == 400
@@ -101,7 +101,7 @@ class TestProjectHierarchy:
     async def test_get_project_includes_hierarchy_fields(self, client: AsyncClient):
         root = await _create_folder(client, "HierRoot")
         child = await _create_folder(client, "HierChild", parent_id=root["id"])
-        resp = await client.get(f"/api/projects/{child['id']}")
+        resp = await client.get(f"/api/apps/promptforge/projects/{child['id']}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["parent_id"] == root["id"]
@@ -111,7 +111,7 @@ class TestProjectHierarchy:
     async def test_list_projects_includes_hierarchy_fields(self, client: AsyncClient):
         root = await _create_folder(client, "ListRoot")
         await _create_folder(client, "ListChild", parent_id=root["id"])
-        resp = await client.get("/api/projects")
+        resp = await client.get("/api/apps/promptforge/projects")
         assert resp.status_code == 200
         items = resp.json()["items"]
         for item in items:
@@ -129,7 +129,7 @@ class TestFsChildren:
     async def test_root_children(self, client: AsyncClient):
         await _create_folder(client, "FsRoot1")
         await _create_folder(client, "FsRoot2")
-        resp = await client.get("/api/fs/children")
+        resp = await client.get("/api/apps/promptforge/fs/children")
         assert resp.status_code == 200
         data = resp.json()
         names = [n["name"] for n in data["nodes"]]
@@ -142,7 +142,7 @@ class TestFsChildren:
         root = await _create_folder(client, "FsParent")
         await _create_folder(client, "FsSub", parent_id=root["id"])
         await _add_prompt(client, root["id"], "Hello world")
-        resp = await client.get("/api/fs/children", params={"parent_id": root["id"]})
+        resp = await client.get("/api/apps/promptforge/fs/children", params={"parent_id": root["id"]})
         assert resp.status_code == 200
         data = resp.json()
         types = {n["type"] for n in data["nodes"]}
@@ -154,7 +154,7 @@ class TestFsChildren:
 
     @pytest.mark.asyncio
     async def test_children_of_nonexistent_parent(self, client: AsyncClient):
-        resp = await client.get("/api/fs/children", params={"parent_id": "bad-id"})
+        resp = await client.get("/api/apps/promptforge/fs/children", params={"parent_id": "bad-id"})
         assert resp.status_code == 404
 
 
@@ -166,7 +166,7 @@ class TestFsTree:
         child = await _create_folder(client, "TreeChild", parent_id=root["id"])
         await _create_folder(client, "TreeGrandchild", parent_id=child["id"])
 
-        resp = await client.get("/api/fs/tree", params={"root_id": root["id"]})
+        resp = await client.get("/api/apps/promptforge/fs/tree", params={"root_id": root["id"]})
         assert resp.status_code == 200
         nodes = resp.json()["nodes"]
         names = [n["name"] for n in nodes]
@@ -177,7 +177,7 @@ class TestFsTree:
     @pytest.mark.asyncio
     async def test_root_tree(self, client: AsyncClient):
         await _create_folder(client, "RootTree1")
-        resp = await client.get("/api/fs/tree")
+        resp = await client.get("/api/apps/promptforge/fs/tree")
         assert resp.status_code == 200
         names = [n["name"] for n in resp.json()["nodes"]]
         assert "RootTree1" in names
@@ -191,7 +191,7 @@ class TestFsPath:
         b = await _create_folder(client, "PathB", parent_id=a["id"])
         c = await _create_folder(client, "PathC", parent_id=b["id"])
 
-        resp = await client.get(f"/api/fs/path/{c['id']}")
+        resp = await client.get(f"/api/apps/promptforge/fs/path/{c['id']}")
         assert resp.status_code == 200
         segments = resp.json()["segments"]
         names = [s["name"] for s in segments]
@@ -199,7 +199,7 @@ class TestFsPath:
 
     @pytest.mark.asyncio
     async def test_path_not_found(self, client: AsyncClient):
-        resp = await client.get("/api/fs/path/nonexistent")
+        resp = await client.get("/api/apps/promptforge/fs/path/nonexistent")
         assert resp.status_code == 404
 
 
@@ -214,7 +214,7 @@ class TestFsMove:
         root = await _create_folder(client, "MoveRoot")
         target = await _create_folder(client, "MoveTarget")
         resp = await client.post(
-            "/api/fs/move",
+            "/api/apps/promptforge/fs/move",
             json={"type": "project", "id": root["id"], "new_parent_id": target["id"]},
         )
         assert resp.status_code == 200
@@ -225,7 +225,7 @@ class TestFsMove:
         root = await _create_folder(client, "MoveRootParent")
         child = await _create_folder(client, "MoveRootChild", parent_id=root["id"])
         resp = await client.post(
-            "/api/fs/move",
+            "/api/apps/promptforge/fs/move",
             json={"type": "project", "id": child["id"], "new_parent_id": None},
         )
         assert resp.status_code == 200
@@ -237,7 +237,7 @@ class TestFsMove:
         folder_b = await _create_folder(client, "PromptFolderB")
         prompt = await _add_prompt(client, folder_a["id"], "Move me")
         resp = await client.post(
-            "/api/fs/move",
+            "/api/apps/promptforge/fs/move",
             json={"type": "prompt", "id": prompt["id"], "new_parent_id": folder_b["id"]},
         )
         assert resp.status_code == 200
@@ -248,7 +248,7 @@ class TestFsMove:
         folder = await _create_folder(client, "PromptDesktopFolder")
         prompt = await _add_prompt(client, folder["id"], "To desktop")
         resp = await client.post(
-            "/api/fs/move",
+            "/api/apps/promptforge/fs/move",
             json={"type": "prompt", "id": prompt["id"], "new_parent_id": None},
         )
         assert resp.status_code == 200
@@ -261,7 +261,7 @@ class TestFsMove:
         b = await _create_folder(client, "CircB", parent_id=a["id"])
         c = await _create_folder(client, "CircC", parent_id=b["id"])
         resp = await client.post(
-            "/api/fs/move",
+            "/api/apps/promptforge/fs/move",
             json={"type": "project", "id": a["id"], "new_parent_id": c["id"]},
         )
         assert resp.status_code == 400
@@ -271,7 +271,7 @@ class TestFsMove:
     async def test_self_nesting_rejected(self, client: AsyncClient):
         folder = await _create_folder(client, "SelfNest")
         resp = await client.post(
-            "/api/fs/move",
+            "/api/apps/promptforge/fs/move",
             json={"type": "project", "id": folder["id"], "new_parent_id": folder["id"]},
         )
         assert resp.status_code == 400
@@ -294,7 +294,7 @@ class TestFsMove:
         # Moving X under deep_folder would put X at depth MAX_FOLDER_DEPTH+1
         # which exceeds the limit
         resp = await client.post(
-            "/api/fs/move",
+            "/api/apps/promptforge/fs/move",
             json={"type": "project", "id": x["id"], "new_parent_id": deep_folder["id"]},
         )
         assert resp.status_code == 400
@@ -310,14 +310,14 @@ class TestFsMove:
 
         # Move child to root level
         resp = await client.post(
-            "/api/fs/move",
+            "/api/apps/promptforge/fs/move",
             json={"type": "project", "id": child["id"], "new_parent_id": None},
         )
         assert resp.status_code == 200
         assert resp.json()["node"]["depth"] == 0
 
         # Verify grandchild depth is now 1
-        gc_resp = await client.get(f"/api/projects/{grandchild['id']}")
+        gc_resp = await client.get(f"/api/apps/promptforge/projects/{grandchild['id']}")
         assert gc_resp.status_code == 200
         assert gc_resp.json()["depth"] == 1
 

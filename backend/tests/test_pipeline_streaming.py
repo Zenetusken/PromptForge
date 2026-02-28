@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.constants import StageConfig
-from app.services.pipeline import StageResult, _run_with_progress_stream, _stream_stage
+from apps.promptforge.constants import StageConfig
+from apps.promptforge.services.pipeline import StageResult, _run_with_progress_stream, _stream_stage
 
 
 def _test_stage(interval: float = 0.05) -> StageConfig:

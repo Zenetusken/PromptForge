@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from app.providers.types import TokenUsage
-from app.services.token_budget import TokenBudgetManager
+from apps.promptforge.services.token_budget import TokenBudgetManager
 
 
 @pytest.fixture
@@ -139,7 +139,7 @@ class TestAutoReset:
         assert manager.get_budget("claude").total_tokens_used == 150
 
         # Simulate 25 hours passing
-        with patch("app.services.token_budget.time") as mock_time:
+        with patch("apps.promptforge.services.token_budget.time") as mock_time:
             mock_time.time.return_value = time.time() + 90_000
             budget = manager.get_budget("claude")
             assert budget.total_tokens_used == 0

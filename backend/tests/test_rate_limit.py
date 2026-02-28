@@ -20,7 +20,7 @@ class TestRateLimit:
             last_status = None
             got_429 = False
             for _ in range(20):
-                resp = await client.get("/api/health")
+                resp = await client.get("/api/apps/promptforge/health")
                 last_status = resp.status_code
                 if last_status == 429:
                     got_429 = True
@@ -39,7 +39,7 @@ class TestRateLimit:
 
             # Exhaust the limit
             for _ in range(5):
-                resp = await client.get("/api/health")
+                resp = await client.get("/api/apps/promptforge/health")
                 if resp.status_code == 429:
                     break
 

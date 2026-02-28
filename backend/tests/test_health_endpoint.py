@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.routers.health import _probe_mcp
+from apps.promptforge.routers.health import _probe_mcp
 
 
 @pytest.mark.asyncio
 async def test_health_endpoint(client):
-    response = await client.get("/api/health")
+    response = await client.get("/api/apps/promptforge/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
@@ -28,26 +28,18 @@ async def test_health_endpoint(client):
 @pytest.mark.asyncio
 async def test_health_includes_mcp_connected(client):
     """Health response includes mcp_connected field as a boolean."""
-    with patch("app.routers.health._probe_mcp", return_value=False):
-        response = await client.get("/api/health")
+    with patch("apps.promptforge.routers.health._probe_mcp", return_value=False):
+        response = await client.get("/api/apps/promptforge/health")
     data = response.json()
     assert "mcp_connected" in data
     assert isinstance(data["mcp_connected"], bool)
 
 
 @pytest.mark.asyncio
-async def test_health_alias(client):
-    response = await client.get("/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ok"
-
-
-@pytest.mark.asyncio
 async def test_health_no_provider_available(client):
     """When no LLM provider is available, health still returns ok."""
-    with patch("app.routers.health.get_provider", side_effect=RuntimeError("No provider")):
-        response = await client.get("/api/health")
+    with patch("apps.promptforge.routers.health.get_provider", side_effect=RuntimeError("No provider")):
+        response = await client.get("/api/apps/promptforge/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
@@ -63,8 +55,8 @@ async def test_health_provider_unavailable(client):
     mock_provider.is_available.return_value = False
     mock_provider.provider_name = "Test Provider"
     mock_provider.model_name = "test-model"
-    with patch("app.routers.health.get_provider", return_value=mock_provider):
-        response = await client.get("/api/health")
+    with patch("apps.promptforge.routers.health.get_provider", return_value=mock_provider):
+        response = await client.get("/api/apps/promptforge/health")
     data = response.json()
     assert data["status"] == "ok"
     assert data["llm_available"] is False
@@ -77,8 +69,8 @@ async def test_health_db_failure(client):
     """When DB query fails, db_connected=False but status still ok."""
     from sqlalchemy.exc import SQLAlchemyError
 
-    with patch("app.routers.health.text", side_effect=SQLAlchemyError("DB down")):
-        response = await client.get("/api/health")
+    with patch("apps.promptforge.routers.health.text", side_effect=SQLAlchemyError("DB down")):
+        response = await client.get("/api/apps/promptforge/health")
     data = response.json()
     assert data["status"] == "ok"
     assert data["db_connected"] is False
@@ -87,7 +79,7 @@ async def test_health_db_failure(client):
 @pytest.mark.asyncio
 async def test_health_head_request(client):
     """HEAD request returns 200."""
-    response = await client.head("/api/health")
+    response = await client.head("/api/apps/promptforge/health")
     assert response.status_code == 200
 
 
@@ -100,8 +92,8 @@ class TestHealthMcpConnected:
     @pytest.mark.asyncio
     async def test_health_mcp_connected(self, client):
         """When MCP server is up, mcp_connected=True."""
-        with patch("app.routers.health._probe_mcp", return_value=True):
-            response = await client.get("/api/health")
+        with patch("apps.promptforge.routers.health._probe_mcp", return_value=True):
+            response = await client.get("/api/apps/promptforge/health")
         data = response.json()
         assert data["status"] == "ok"
         assert data["mcp_connected"] is True
@@ -109,8 +101,8 @@ class TestHealthMcpConnected:
     @pytest.mark.asyncio
     async def test_health_mcp_disconnected_does_not_degrade(self, client):
         """When MCP is down, status is still 'ok' — MCP is optional."""
-        with patch("app.routers.health._probe_mcp", return_value=False):
-            response = await client.get("/api/health")
+        with patch("apps.promptforge.routers.health._probe_mcp", return_value=False):
+            response = await client.get("/api/apps/promptforge/health")
         data = response.json()
         assert data["status"] == "ok"
         assert data["mcp_connected"] is False
@@ -126,7 +118,7 @@ class TestProbeMcp:
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "ok", "server": "promptforge_mcp"}
 
-        with patch("app.routers.health._mcp_client") as mock_client:
+        with patch("apps.promptforge.routers.health._mcp_client") as mock_client:
             mock_client.get = AsyncMock(return_value=mock_response)
             result = await _probe_mcp()
         assert result is True
@@ -134,7 +126,7 @@ class TestProbeMcp:
     @pytest.mark.asyncio
     async def test_probe_mcp_connection_refused(self):
         """Returns False when MCP server is not running."""
-        with patch("app.routers.health._mcp_client") as mock_client:
+        with patch("apps.promptforge.routers.health._mcp_client") as mock_client:
             mock_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
             result = await _probe_mcp()
         assert result is False
@@ -142,7 +134,7 @@ class TestProbeMcp:
     @pytest.mark.asyncio
     async def test_probe_mcp_timeout(self):
         """Returns False when MCP server times out."""
-        with patch("app.routers.health._mcp_client") as mock_client:
+        with patch("apps.promptforge.routers.health._mcp_client") as mock_client:
             mock_client.get = AsyncMock(side_effect=httpx.ReadTimeout("Timeout"))
             result = await _probe_mcp()
         assert result is False
@@ -154,7 +146,7 @@ class TestProbeMcp:
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "error"}
 
-        with patch("app.routers.health._mcp_client") as mock_client:
+        with patch("apps.promptforge.routers.health._mcp_client") as mock_client:
             mock_client.get = AsyncMock(return_value=mock_response)
             result = await _probe_mcp()
         assert result is False

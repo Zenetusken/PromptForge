@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.prompts.validator_prompt import VALIDATOR_SYSTEM_PROMPT
+from apps.promptforge.prompts.validator_prompt import VALIDATOR_SYSTEM_PROMPT
 from app.providers.types import TokenUsage
-from app.services.validator import (
+from apps.promptforge.services.validator import (
     CLARITY_WEIGHT,
     CONCISENESS_WEIGHT,
     FAITHFULNESS_WEIGHT,

@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.constants import Strategy
-from app.prompts.strategy_prompt import STRATEGY_SYSTEM_PROMPT
-from app.services.analyzer import AnalysisResult
-from app.services.strategy_selector import (
+from apps.promptforge.constants import Strategy
+from apps.promptforge.prompts.strategy_prompt import STRATEGY_SYSTEM_PROMPT
+from apps.promptforge.services.analyzer import AnalysisResult
+from apps.promptforge.services.strategy_selector import (
     _STRATEGY_DESCRIPTIONS,
     StrategySelector,
 )

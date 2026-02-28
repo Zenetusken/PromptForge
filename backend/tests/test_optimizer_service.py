@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.constants import Strategy
-from app.prompts.optimizer_prompts import OPTIMIZER_SYSTEM_PROMPT
+from apps.promptforge.constants import Strategy
+from apps.promptforge.prompts.optimizer_prompts import OPTIMIZER_SYSTEM_PROMPT
 from app.providers.types import TokenUsage
-from app.services.analyzer import AnalysisResult
-from app.services.optimizer import PromptOptimizer
+from apps.promptforge.services.analyzer import AnalysisResult
+from apps.promptforge.services.optimizer import PromptOptimizer
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -244,7 +244,7 @@ class TestOptimizerCodebaseContext:
 
     @pytest.mark.asyncio
     async def test_context_included_in_user_message(self):
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         provider = _make_provider({})
         ctx = CodebaseContext(language="Python 3.14", framework="FastAPI")
@@ -267,7 +267,7 @@ class TestOptimizerCodebaseContext:
 
     @pytest.mark.asyncio
     async def test_empty_context_means_no_field(self):
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         provider = _make_provider({})
         ctx = CodebaseContext()  # all defaults — render() returns None

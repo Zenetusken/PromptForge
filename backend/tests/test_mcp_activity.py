@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from app.services.mcp_activity import MCPActivityBroadcaster, MCPActivityEvent, MCPEventType
+from apps.promptforge.services.mcp_activity import MCPActivityBroadcaster, MCPActivityEvent, MCPEventType
 
 # ── MCPActivityBroadcaster unit tests ──
 
@@ -222,7 +222,7 @@ class TestSSEGeneratorSnapshot:
     @pytest.mark.asyncio
     async def test_snapshot_includes_id_field(self):
         """SSE generator snapshot output includes 'id:' lines for activity events."""
-        from app.routers.mcp_activity import _sse_generator
+        from apps.promptforge.routers.mcp_activity import _sse_generator
 
         # Use a fresh broadcaster to control the test state
         b = MCPActivityBroadcaster()
@@ -232,7 +232,7 @@ class TestSSEGeneratorSnapshot:
         b.publish(event)
 
         # Monkey-patch the module-level singleton for this test
-        import app.routers.mcp_activity as router_mod
+        import apps.promptforge.routers.mcp_activity as router_mod
 
         original = router_mod.mcp_activity
         router_mod.mcp_activity = b
@@ -257,7 +257,7 @@ class TestSSEGeneratorSnapshot:
     @pytest.mark.asyncio
     async def test_fresh_connect_sends_recent_history(self):
         """Without Last-Event-ID, snapshot sends recent_history."""
-        from app.routers.mcp_activity import _sse_generator
+        from apps.promptforge.routers.mcp_activity import _sse_generator
 
         b = MCPActivityBroadcaster()
         events = []
@@ -268,7 +268,7 @@ class TestSSEGeneratorSnapshot:
             b.publish(e)
             events.append(e)
 
-        import app.routers.mcp_activity as router_mod
+        import apps.promptforge.routers.mcp_activity as router_mod
 
         original = router_mod.mcp_activity
         router_mod.mcp_activity = b
@@ -297,7 +297,7 @@ class TestSSEGeneratorSnapshot:
     @pytest.mark.asyncio
     async def test_last_event_id_sends_gap_fill(self):
         """With Last-Event-ID, snapshot sends only events after that ID."""
-        from app.routers.mcp_activity import _sse_generator
+        from apps.promptforge.routers.mcp_activity import _sse_generator
 
         b = MCPActivityBroadcaster()
         events = []
@@ -308,7 +308,7 @@ class TestSSEGeneratorSnapshot:
             b.publish(e)
             events.append(e)
 
-        import app.routers.mcp_activity as router_mod
+        import apps.promptforge.routers.mcp_activity as router_mod
 
         original = router_mod.mcp_activity
         router_mod.mcp_activity = b
@@ -338,7 +338,7 @@ class TestSSEGeneratorSnapshot:
     @pytest.mark.asyncio
     async def test_last_event_id_unknown_falls_back(self):
         """Unknown Last-Event-ID falls back to recent_history."""
-        from app.routers.mcp_activity import _sse_generator
+        from apps.promptforge.routers.mcp_activity import _sse_generator
 
         b = MCPActivityBroadcaster()
         for i in range(3):
@@ -348,7 +348,7 @@ class TestSSEGeneratorSnapshot:
                 )
             )
 
-        import app.routers.mcp_activity as router_mod
+        import apps.promptforge.routers.mcp_activity as router_mod
 
         original = router_mod.mcp_activity
         router_mod.mcp_activity = b
@@ -383,7 +383,7 @@ class TestRouterEndpoints:
     async def test_webhook_publishes_event(self, client):
         """POST to /internal/mcp-event accepts valid payloads."""
         response = await client.post(
-            "/internal/mcp-event",
+            "/api/apps/promptforge/internal/mcp-event",
             json={
                 "event_type": "tool_complete",
                 "tool_name": "optimize",
@@ -396,7 +396,7 @@ class TestRouterEndpoints:
     async def test_webhook_rejects_unknown_type(self, client):
         """Unknown event types are logged but don't error."""
         response = await client.post(
-            "/internal/mcp-event",
+            "/api/apps/promptforge/internal/mcp-event",
             json={"event_type": "unknown_type"},
         )
         # Returns 204 (no content) even for unknown types — silently drops
@@ -405,7 +405,7 @@ class TestRouterEndpoints:
     @pytest.mark.asyncio
     async def test_mcp_status_endpoint(self, client):
         """GET /api/mcp/status returns status dict with recent_events."""
-        response = await client.get("/api/mcp/status")
+        response = await client.get("/api/apps/promptforge/mcp/status")
         assert response.status_code == 200
         data = response.json()
         assert "subscriber_count" in data
@@ -426,7 +426,7 @@ class TestWebhookAuth:
         from app import config
         monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", self.VALID_SECRET)
         response = await client.post(
-            "/internal/mcp-event",
+            "/api/apps/promptforge/internal/mcp-event",
             json={"event_type": "tool_complete", "tool_name": "test"},
         )
         assert response.status_code == 403
@@ -437,7 +437,7 @@ class TestWebhookAuth:
         from app import config
         monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", self.VALID_SECRET)
         response = await client.post(
-            "/internal/mcp-event",
+            "/api/apps/promptforge/internal/mcp-event",
             json={"event_type": "tool_complete", "tool_name": "test"},
             headers={"X-Webhook-Secret": self.VALID_SECRET},
         )
@@ -449,7 +449,7 @@ class TestWebhookAuth:
         from app import config
         monkeypatch.setattr(config, "INTERNAL_WEBHOOK_SECRET", self.VALID_SECRET)
         response = await client.post(
-            "/internal/mcp-event",
+            "/api/apps/promptforge/internal/mcp-event",
             json={"event_type": "tool_complete", "tool_name": "test"},
             headers={"X-Webhook-Secret": "wrong-secret"},
         )
@@ -460,7 +460,7 @@ class TestWebhookAuth:
         """Dev mode: empty INTERNAL_WEBHOOK_SECRET allows all requests."""
         # conftest sets INTERNAL_WEBHOOK_SECRET="" globally — no header needed
         response = await client.post(
-            "/internal/mcp-event",
+            "/api/apps/promptforge/internal/mcp-event",
             json={"event_type": "tool_complete", "tool_name": "test"},
         )
         assert response.status_code == 204

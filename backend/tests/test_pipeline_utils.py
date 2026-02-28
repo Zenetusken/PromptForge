@@ -5,19 +5,19 @@ import json
 
 import pytest
 
-from app.constants import Strategy, compute_progress
+from apps.promptforge.constants import Strategy, compute_progress
 from app.providers.types import TokenUsage
-from app.services.analyzer import AnalysisResult
-from app.services.optimizer import OptimizationResult
-from app.services.pipeline import (
+from apps.promptforge.services.analyzer import AnalysisResult
+from apps.promptforge.services.optimizer import OptimizationResult
+from apps.promptforge.services.pipeline import (
     PipelineResult,
     _add_usage,
     _assemble_result,
     _select_strategy,
     _sse_event,
 )
-from app.services.strategy_selector import StrategySelection
-from app.services.validator import ValidationResult
+from apps.promptforge.services.strategy_selector import StrategySelection
+from apps.promptforge.services.validator import ValidationResult
 
 # ---------------------------------------------------------------------------
 # TestAddUsage

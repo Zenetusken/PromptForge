@@ -9,7 +9,7 @@ class TestSecurityHeaders:
     @pytest.mark.asyncio
     async def test_headers_present_on_health(self, client):
         """Security headers are present on the health endpoint."""
-        resp = await client.get("/api/health")
+        resp = await client.get("/api/apps/promptforge/health")
         assert resp.status_code == 200
         assert resp.headers["X-Content-Type-Options"] == "nosniff"
         assert resp.headers["X-Frame-Options"] == "DENY"

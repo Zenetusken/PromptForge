@@ -6,15 +6,15 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import OptimizationStatus
-from app.models.optimization import Optimization
-from app.models.project import Project, Prompt
-from app.repositories.optimization import (
+from apps.promptforge.constants import OptimizationStatus
+from apps.promptforge.models.optimization import Optimization
+from apps.promptforge.models.project import Project, Prompt
+from apps.promptforge.repositories.optimization import (
     ListFilters,
     OptimizationRepository,
     Pagination,
 )
-from app.repositories.project import ProjectRepository, ensure_prompt_in_project
+from apps.promptforge.repositories.project import ProjectRepository, ensure_prompt_in_project
 
 # ---------------------------------------------------------------------------
 # Helpers

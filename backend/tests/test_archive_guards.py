@@ -7,10 +7,10 @@ The optimize endpoint should skip linking new optimizations to archived projects
 import pytest
 from sqlalchemy import select
 
-from app.constants import ProjectStatus
+from apps.promptforge.constants import ProjectStatus
 from app.database import get_db
 from app.main import app
-from app.models.project import Project, Prompt
+from apps.promptforge.models.project import Project, Prompt
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -48,7 +48,7 @@ class TestArchiveGuards:
     async def test_update_archived_project_returns_403(self, client):
         project_id, _ = await _seed_archived_project()
         resp = await client.put(
-            f"/api/projects/{project_id}",
+            f"/api/apps/promptforge/projects/{project_id}",
             json={"name": "New Name"},
         )
         assert resp.status_code == 403
@@ -58,7 +58,7 @@ class TestArchiveGuards:
     async def test_add_prompt_to_archived_project_returns_403(self, client):
         project_id, _ = await _seed_archived_project()
         resp = await client.post(
-            f"/api/projects/{project_id}/prompts",
+            f"/api/apps/promptforge/projects/{project_id}/prompts",
             json={"content": "new prompt"},
         )
         assert resp.status_code == 403
@@ -68,7 +68,7 @@ class TestArchiveGuards:
     async def test_update_prompt_in_archived_project_returns_403(self, client):
         project_id, prompt_id = await _seed_archived_project(with_prompt=True)
         resp = await client.put(
-            f"/api/projects/{project_id}/prompts/{prompt_id}",
+            f"/api/apps/promptforge/projects/{project_id}/prompts/{prompt_id}",
             json={"content": "updated content"},
         )
         assert resp.status_code == 403
@@ -78,7 +78,7 @@ class TestArchiveGuards:
     async def test_delete_prompt_in_archived_project_returns_403(self, client):
         project_id, prompt_id = await _seed_archived_project(with_prompt=True)
         resp = await client.delete(
-            f"/api/projects/{project_id}/prompts/{prompt_id}",
+            f"/api/apps/promptforge/projects/{project_id}/prompts/{prompt_id}",
         )
         assert resp.status_code == 403
         assert "archived" in resp.json()["detail"].lower()
@@ -87,7 +87,7 @@ class TestArchiveGuards:
     async def test_reorder_prompts_in_archived_project_returns_403(self, client):
         project_id, prompt_id = await _seed_archived_project(with_prompt=True)
         resp = await client.put(
-            f"/api/projects/{project_id}/prompts/reorder",
+            f"/api/apps/promptforge/projects/{project_id}/prompts/reorder",
             json={"prompt_ids": [prompt_id]},
         )
         assert resp.status_code == 403
@@ -106,8 +106,8 @@ class TestOptimizeArchivedProject:
     async def test_optimize_skips_prompt_linking_for_archived_project(self, client):
         from unittest.mock import AsyncMock, patch
 
-        from app.models.optimization import Optimization as OptModel
-        from app.services.pipeline import PipelineComplete
+        from apps.promptforge.models.optimization import Optimization as OptModel
+        from apps.promptforge.services.pipeline import PipelineComplete
 
         # Seed an archived project
         override_fn = app.dependency_overrides[get_db]
@@ -123,11 +123,11 @@ class TestOptimizeArchivedProject:
             yield PipelineComplete(data={})
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
-            patch("app.routers.optimize.update_optimization_status", new_callable=AsyncMock),
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock),
         ):
             resp = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={"prompt": "test prompt", "project": "ArchivedProj"},
             )
             # Consume the SSE stream
@@ -155,8 +155,8 @@ class TestOptimizeArchivedProject:
         create the retry but NOT auto-link it to the archived project's prompts."""
         from unittest.mock import AsyncMock, patch
 
-        from app.models.optimization import Optimization as OptModel
-        from app.services.pipeline import PipelineComplete
+        from apps.promptforge.models.optimization import Optimization as OptModel
+        from apps.promptforge.services.pipeline import PipelineComplete
 
         # Seed an archived project + original optimization
         override_fn = app.dependency_overrides[get_db]
@@ -180,10 +180,10 @@ class TestOptimizeArchivedProject:
             yield PipelineComplete(data={})
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
-            patch("app.routers.optimize.update_optimization_status", new_callable=AsyncMock),
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock),
         ):
-            resp = await client.post("/api/optimize/orig-001/retry")
+            resp = await client.post("/api/apps/promptforge/optimize/orig-001/retry")
             _ = resp.text
 
         assert resp.status_code == 200

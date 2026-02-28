@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.project import Project
-from app.models.workspace import GitHubConnection, WorkspaceLink
-from app.repositories.workspace import STALENESS_HOURS, WorkspaceRepository
-from app.services.github import (
+from apps.promptforge.models.project import Project
+from apps.promptforge.models.workspace import GitHubConnection, WorkspaceLink
+from apps.promptforge.repositories.workspace import STALENESS_HOURS, WorkspaceRepository
+from apps.promptforge.services.github import (
     _oauth_states,
     create_oauth_state,
     decrypt_token,
@@ -227,7 +227,7 @@ class TestGitHubStatusEndpoint:
     @pytest.mark.asyncio
     async def test_no_connection(self, client):
         """Returns disconnected when no GitHub connection exists."""
-        resp = await client.get("/api/github/status")
+        resp = await client.get("/api/apps/promptforge/github/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["connected"] is False
@@ -237,7 +237,7 @@ class TestWorkspaceStatusEndpoint:
     @pytest.mark.asyncio
     async def test_empty_status(self, client):
         """Returns empty list when no workspace links exist."""
-        resp = await client.get("/api/workspace/status")
+        resp = await client.get("/api/apps/promptforge/workspace/status")
         assert resp.status_code == 200
         assert resp.json() == []
 
@@ -246,7 +246,7 @@ class TestHealthEndpointWorkspace:
     @pytest.mark.asyncio
     async def test_health_includes_workspace(self, client):
         """Health endpoint includes workspace section."""
-        resp = await client.get("/api/health")
+        resp = await client.get("/api/apps/promptforge/health")
         assert resp.status_code == 200
         data = resp.json()
         assert "workspace" in data
@@ -265,22 +265,22 @@ class TestGitHubAuthorizeEndpoint:
     async def test_authorize_no_config(self, client):
         """Returns 501 when GitHub OAuth is not configured."""
         with (
-            patch("app.services.github.config.GITHUB_CLIENT_ID", ""),
-            patch("app.services.github.config.GITHUB_CLIENT_SECRET", ""),
+            patch("apps.promptforge.services.github.config.GITHUB_CLIENT_ID", ""),
+            patch("apps.promptforge.services.github.config.GITHUB_CLIENT_SECRET", ""),
         ):
-            resp = await client.get("/api/github/authorize")
+            resp = await client.get("/api/apps/promptforge/github/authorize")
             assert resp.status_code == 501
 
     @pytest.mark.asyncio
     async def test_authorize_returns_url(self, client):
         """Returns authorization URL when configured via env vars."""
         with (
-            patch("app.services.github.config.GITHUB_CLIENT_ID", "test_client_id"),
-            patch("app.services.github.config.GITHUB_CLIENT_SECRET", "test_secret"),
-            patch("app.services.github.config.GITHUB_REDIRECT_URI", "http://localhost:8000/api/github/callback"),
-            patch("app.services.github.config.GITHUB_SCOPE", "repo"),
+            patch("apps.promptforge.services.github.config.GITHUB_CLIENT_ID", "test_client_id"),
+            patch("apps.promptforge.services.github.config.GITHUB_CLIENT_SECRET", "test_secret"),
+            patch("apps.promptforge.services.github.config.GITHUB_REDIRECT_URI", "http://localhost:8000/api/apps/promptforge/github/callback"),
+            patch("apps.promptforge.services.github.config.GITHUB_SCOPE", "repo"),
         ):
-            resp = await client.get("/api/github/authorize")
+            resp = await client.get("/api/apps/promptforge/github/authorize")
             assert resp.status_code == 200
             data = resp.json()
             assert "url" in data
@@ -292,7 +292,7 @@ class TestGitHubDisconnectEndpoint:
     @pytest.mark.asyncio
     async def test_disconnect_no_connection(self, client):
         """Returns 404 when no connection exists."""
-        resp = await client.delete("/api/github/disconnect")
+        resp = await client.delete("/api/apps/promptforge/github/disconnect")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -301,13 +301,13 @@ class TestGitHubDisconnectEndpoint:
         await _seed_connection(db_session)
         await db_session.commit()
 
-        with patch("app.routers.github.revoke_token", new_callable=AsyncMock, return_value=True):
-            resp = await client.delete("/api/github/disconnect")
+        with patch("apps.promptforge.routers.github.revoke_token", new_callable=AsyncMock, return_value=True):
+            resp = await client.delete("/api/apps/promptforge/github/disconnect")
         assert resp.status_code == 200
         assert resp.json()["status"] == "disconnected"
 
         # Verify connection is deleted
-        check = await client.get("/api/github/status")
+        check = await client.get("/api/apps/promptforge/github/status")
         assert check.json()["connected"] is False
 
 
@@ -315,7 +315,7 @@ class TestGitHubReposEndpoint:
     @pytest.mark.asyncio
     async def test_repos_no_connection(self, client):
         """Returns 401 when no GitHub connection exists."""
-        resp = await client.get("/api/github/repos")
+        resp = await client.get("/api/apps/promptforge/github/repos")
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
@@ -325,7 +325,7 @@ class TestGitHubReposEndpoint:
         conn.token_valid = False
         await db_session.commit()
 
-        resp = await client.get("/api/github/repos")
+        resp = await client.get("/api/apps/promptforge/github/repos")
         assert resp.status_code == 401
 
 
@@ -338,7 +338,7 @@ class TestLinkRepoEndpoint:
         project = await _seed_project(db_session)
         await db_session.commit()
 
-        resp = await client.post("/api/workspace/link", json={
+        resp = await client.post("/api/apps/promptforge/workspace/link", json={
             "project_id": project.id,
             "repo_full_name": "owner/repo",
         })
@@ -351,7 +351,7 @@ class TestLinkRepoEndpoint:
         _conn = await _seed_connection(db_session)
         await db_session.commit()
 
-        resp = await client.post("/api/workspace/link", json={
+        resp = await client.post("/api/apps/promptforge/workspace/link", json={
             "project_id": project.id,
             "repo_full_name": "invalid-no-slash",
         })
@@ -365,7 +365,7 @@ class TestLinkRepoEndpoint:
         await _seed_workspace_link(db_session, project.id, conn.id)
         await db_session.commit()
 
-        resp = await client.post("/api/workspace/link", json={
+        resp = await client.post("/api/apps/promptforge/workspace/link", json={
             "project_id": project.id,
             "repo_full_name": "owner/repo2",
         })
@@ -376,7 +376,7 @@ class TestUnlinkWorkspaceEndpoint:
     @pytest.mark.asyncio
     async def test_unlink_not_found(self, client):
         """Returns 404 for non-existent link ID."""
-        resp = await client.delete("/api/workspace/nonexistent-id")
+        resp = await client.delete("/api/apps/promptforge/workspace/nonexistent-id")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -387,7 +387,7 @@ class TestUnlinkWorkspaceEndpoint:
         link = await _seed_workspace_link(db_session, project.id, conn.id)
         await db_session.commit()
 
-        resp = await client.delete(f"/api/workspace/{link.id}")
+        resp = await client.delete(f"/api/apps/promptforge/workspace/{link.id}")
         assert resp.status_code == 200
         assert resp.json()["status"] == "unlinked"
 
@@ -396,7 +396,7 @@ class TestSyncWorkspaceEndpoint:
     @pytest.mark.asyncio
     async def test_sync_not_found(self, client):
         """Returns 404 for non-existent link ID."""
-        resp = await client.post("/api/workspace/nonexistent-id/sync")
+        resp = await client.post("/api/apps/promptforge/workspace/nonexistent-id/sync")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
@@ -406,7 +406,7 @@ class TestSyncWorkspaceEndpoint:
         link = await _seed_workspace_link(db_session, project.id)
         await db_session.commit()
 
-        resp = await client.post(f"/api/workspace/{link.id}/sync")
+        resp = await client.post(f"/api/apps/promptforge/workspace/{link.id}/sync")
         assert resp.status_code == 401
 
 
@@ -419,7 +419,7 @@ class TestWorkspaceStatusResponse:
         link = await _seed_workspace_link(db_session, project.id, conn.id)
         await db_session.commit()
 
-        resp = await client.get("/api/workspace/status")
+        resp = await client.get("/api/apps/promptforge/workspace/status")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) == 1
@@ -529,7 +529,7 @@ class TestOAuthConfigRepository:
             client_secret_encrypted=encrypt_token("secret_value"),
         )
         assert cfg.client_id == "Iv1.test123"
-        assert cfg.redirect_uri == "http://localhost:8000/api/github/callback"
+        assert cfg.redirect_uri == "http://localhost:8000/api/apps/promptforge/github/callback"
         assert cfg.scope == "repo"
 
     @pytest.mark.asyncio
@@ -572,10 +572,10 @@ class TestGitHubConfigEndpoints:
     @pytest.mark.asyncio
     async def test_get_config_unconfigured(self, client):
         """Returns not configured when no config exists."""
-        with patch("app.routers.github.config") as mock_cfg:
+        with patch("apps.promptforge.routers.github.config") as mock_cfg:
             mock_cfg.GITHUB_CLIENT_ID = ""
             mock_cfg.GITHUB_CLIENT_SECRET = ""
-            resp = await client.get("/api/github/config")
+            resp = await client.get("/api/apps/promptforge/github/config")
         assert resp.status_code == 200
         data = resp.json()
         assert data["configured"] is False
@@ -584,7 +584,7 @@ class TestGitHubConfigEndpoints:
     @pytest.mark.asyncio
     async def test_save_config(self, client):
         """Save config returns configured: true."""
-        resp = await client.put("/api/github/config", json={
+        resp = await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.abc123",
             "client_secret": "secret_value_12345",
         })
@@ -594,11 +594,11 @@ class TestGitHubConfigEndpoints:
     @pytest.mark.asyncio
     async def test_get_config_after_save(self, client):
         """Config is returned after save with masked hint."""
-        await client.put("/api/github/config", json={
+        await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.abc123def456",
             "client_secret": "secret_value",
         })
-        resp = await client.get("/api/github/config")
+        resp = await client.get("/api/apps/promptforge/github/config")
         data = resp.json()
         assert data["configured"] is True
         assert data["source"] == "database"
@@ -610,7 +610,7 @@ class TestGitHubConfigEndpoints:
     @pytest.mark.asyncio
     async def test_save_config_empty_client_id(self, client):
         """Rejects empty client_id."""
-        resp = await client.put("/api/github/config", json={
+        resp = await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "  ",
             "client_secret": "secret",
         })
@@ -619,7 +619,7 @@ class TestGitHubConfigEndpoints:
     @pytest.mark.asyncio
     async def test_save_config_invalid_chars(self, client):
         """Rejects client_id with invalid characters."""
-        resp = await client.put("/api/github/config", json={
+        resp = await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "invalid id with spaces!",
             "client_secret": "secret",
         })
@@ -628,7 +628,7 @@ class TestGitHubConfigEndpoints:
     @pytest.mark.asyncio
     async def test_save_config_empty_secret(self, client):
         """Rejects empty client_secret."""
-        resp = await client.put("/api/github/config", json={
+        resp = await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.test",
             "client_secret": "",
         })
@@ -637,33 +637,33 @@ class TestGitHubConfigEndpoints:
     @pytest.mark.asyncio
     async def test_delete_config(self, client):
         """Delete config removes stored credentials."""
-        await client.put("/api/github/config", json={
+        await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.test",
             "client_secret": "secret",
         })
-        resp = await client.delete("/api/github/config")
+        resp = await client.delete("/api/apps/promptforge/github/config")
         assert resp.status_code == 200
         assert resp.json()["status"] == "deleted"
 
     @pytest.mark.asyncio
     async def test_delete_config_not_found(self, client):
         """Delete when no config exists returns 404."""
-        resp = await client.delete("/api/github/config")
+        resp = await client.delete("/api/apps/promptforge/github/config")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_config_then_get_returns_unconfigured(self, client):
         """After delete, GET shows configured: false (env vars empty)."""
-        await client.put("/api/github/config", json={
+        await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.test",
             "client_secret": "secret",
         })
-        await client.delete("/api/github/config")
+        await client.delete("/api/apps/promptforge/github/config")
         with (
-            patch("app.routers.github.config.GITHUB_CLIENT_ID", ""),
-            patch("app.routers.github.config.GITHUB_CLIENT_SECRET", ""),
+            patch("apps.promptforge.routers.github.config.GITHUB_CLIENT_ID", ""),
+            patch("apps.promptforge.routers.github.config.GITHUB_CLIENT_SECRET", ""),
         ):
-            resp = await client.get("/api/github/config")
+            resp = await client.get("/api/apps/promptforge/github/config")
         data = resp.json()
         assert data["configured"] is False
         assert data["client_id_hint"] == ""
@@ -671,38 +671,38 @@ class TestGitHubConfigEndpoints:
     @pytest.mark.asyncio
     async def test_delete_config_twice_returns_404(self, client):
         """Double delete is safe — second delete returns 404."""
-        await client.put("/api/github/config", json={
+        await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.test",
             "client_secret": "secret",
         })
-        resp1 = await client.delete("/api/github/config")
+        resp1 = await client.delete("/api/apps/promptforge/github/config")
         assert resp1.status_code == 200
-        resp2 = await client.delete("/api/github/config")
+        resp2 = await client.delete("/api/apps/promptforge/github/config")
         assert resp2.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_env_only_config_returns_404(self, client):
         """Env-var-only credentials are not deletable via API — 404."""
         with (
-            patch("app.routers.github.config.GITHUB_CLIENT_ID", "env_id"),
-            patch("app.routers.github.config.GITHUB_CLIENT_SECRET", "env_secret"),
+            patch("apps.promptforge.routers.github.config.GITHUB_CLIENT_ID", "env_id"),
+            patch("apps.promptforge.routers.github.config.GITHUB_CLIENT_SECRET", "env_secret"),
         ):
-            resp = await client.delete("/api/github/config")
+            resp = await client.delete("/api/apps/promptforge/github/config")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_delete_config_then_authorize_returns_501(self, client):
         """After removing DB config + no env vars, authorize fails with 501."""
-        await client.put("/api/github/config", json={
+        await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.test",
             "client_secret": "secret",
         })
-        await client.delete("/api/github/config")
+        await client.delete("/api/apps/promptforge/github/config")
         with (
-            patch("app.services.github.config.GITHUB_CLIENT_ID", ""),
-            patch("app.services.github.config.GITHUB_CLIENT_SECRET", ""),
+            patch("apps.promptforge.services.github.config.GITHUB_CLIENT_ID", ""),
+            patch("apps.promptforge.services.github.config.GITHUB_CLIENT_SECRET", ""),
         ):
-            resp = await client.get("/api/github/authorize")
+            resp = await client.get("/api/apps/promptforge/github/authorize")
         assert resp.status_code == 501
 
     @pytest.mark.asyncio
@@ -711,47 +711,47 @@ class TestGitHubConfigEndpoints:
         await _seed_connection(db_session)
         await db_session.commit()
 
-        await client.put("/api/github/config", json={
+        await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.test",
             "client_secret": "secret",
         })
-        resp = await client.delete("/api/github/config")
+        resp = await client.delete("/api/apps/promptforge/github/config")
         assert resp.status_code == 200
 
-        status = await client.get("/api/github/status")
+        status = await client.get("/api/apps/promptforge/github/status")
         assert status.json()["connected"] is True
 
     @pytest.mark.asyncio
     async def test_delete_config_health_reflects_change(self, client):
         """After delete (no env vars), health shows github_configured: false."""
-        await client.put("/api/github/config", json={
+        await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.test",
             "client_secret": "secret",
         })
-        await client.delete("/api/github/config")
+        await client.delete("/api/apps/promptforge/github/config")
         with (
-            patch("app.repositories.workspace.config.GITHUB_CLIENT_ID", ""),
-            patch("app.repositories.workspace.config.GITHUB_CLIENT_SECRET", ""),
+            patch("apps.promptforge.repositories.workspace.config.GITHUB_CLIENT_ID", ""),
+            patch("apps.promptforge.repositories.workspace.config.GITHUB_CLIENT_SECRET", ""),
         ):
-            resp = await client.get("/api/health")
+            resp = await client.get("/api/apps/promptforge/health")
         assert resp.json()["workspace"]["github_configured"] is False
 
     @pytest.mark.asyncio
     async def test_save_after_delete_works(self, client):
         """Can re-save credentials after deleting them (full lifecycle)."""
-        await client.put("/api/github/config", json={
+        await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.first",
             "client_secret": "secret1",
         })
-        await client.delete("/api/github/config")
-        resp = await client.put("/api/github/config", json={
+        await client.delete("/api/apps/promptforge/github/config")
+        resp = await client.put("/api/apps/promptforge/github/config", json={
             "client_id": "Iv1.second",
             "client_secret": "secret2",
         })
         assert resp.status_code == 200
         assert resp.json()["configured"] is True
 
-        get_resp = await client.get("/api/github/config")
+        get_resp = await client.get("/api/apps/promptforge/github/config")
         data = get_resp.json()
         assert data["configured"] is True
         assert "second" in data["client_id_hint"] or data["client_id_hint"] == "Iv1.****cond"
@@ -764,10 +764,10 @@ class TestHealthGitHubConfigured:
     async def test_health_not_configured(self, client):
         """Health shows github_configured: false when unconfigured."""
         with (
-            patch("app.repositories.workspace.config.GITHUB_CLIENT_ID", ""),
-            patch("app.repositories.workspace.config.GITHUB_CLIENT_SECRET", ""),
+            patch("apps.promptforge.repositories.workspace.config.GITHUB_CLIENT_ID", ""),
+            patch("apps.promptforge.repositories.workspace.config.GITHUB_CLIENT_SECRET", ""),
         ):
-            resp = await client.get("/api/health")
+            resp = await client.get("/api/apps/promptforge/health")
         data = resp.json()
         assert data["workspace"]["github_configured"] is False
 
@@ -775,10 +775,10 @@ class TestHealthGitHubConfigured:
     async def test_health_configured_via_env(self, client):
         """Health shows github_configured: true with env vars."""
         with (
-            patch("app.repositories.workspace.config.GITHUB_CLIENT_ID", "test_id"),
-            patch("app.repositories.workspace.config.GITHUB_CLIENT_SECRET", "test_secret"),
+            patch("apps.promptforge.repositories.workspace.config.GITHUB_CLIENT_ID", "test_id"),
+            patch("apps.promptforge.repositories.workspace.config.GITHUB_CLIENT_SECRET", "test_secret"),
         ):
-            resp = await client.get("/api/health")
+            resp = await client.get("/api/apps/promptforge/health")
         data = resp.json()
         assert data["workspace"]["github_configured"] is True
 
@@ -793,10 +793,10 @@ class TestHealthGitHubConfigured:
         await db_session.commit()
 
         with (
-            patch("app.repositories.workspace.config.GITHUB_CLIENT_ID", ""),
-            patch("app.repositories.workspace.config.GITHUB_CLIENT_SECRET", ""),
+            patch("apps.promptforge.repositories.workspace.config.GITHUB_CLIENT_ID", ""),
+            patch("apps.promptforge.repositories.workspace.config.GITHUB_CLIENT_SECRET", ""),
         ):
-            resp = await client.get("/api/health")
+            resp = await client.get("/api/apps/promptforge/health")
         data = resp.json()
         assert data["workspace"]["github_configured"] is True
 
@@ -808,7 +808,7 @@ class TestCallbackStateValidation:
     async def test_callback_invalid_state(self, client):
         """Callback with invalid state redirects with error."""
         resp = await client.get(
-            "/api/github/callback",
+            "/api/apps/promptforge/github/callback",
             params={"code": "test_code", "state": "bad_state"},
             follow_redirects=False,
         )
@@ -819,7 +819,7 @@ class TestCallbackStateValidation:
     async def test_callback_empty_state(self, client):
         """Callback with empty state redirects with error."""
         resp = await client.get(
-            "/api/github/callback",
+            "/api/apps/promptforge/github/callback",
             params={"code": "test_code", "state": ""},
             follow_redirects=False,
         )
@@ -835,7 +835,7 @@ class TestAuthMiddlewareCallbackExemption:
         """OAuth callback is accessible without auth token."""
         with patch("app.middleware.auth.config.AUTH_TOKEN", "secret_token"):
             resp = await client.get(
-                "/api/github/callback",
+                "/api/apps/promptforge/github/callback",
                 params={"code": "test_code", "state": "invalid"},
                 follow_redirects=False,
             )

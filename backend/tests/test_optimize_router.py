@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.constants import OptimizationStatus
-from app.models.optimization import Optimization
-from app.services.pipeline import PipelineComplete
+from apps.promptforge.constants import OptimizationStatus
+from apps.promptforge.models.optimization import Optimization
+from apps.promptforge.services.pipeline import PipelineComplete
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,7 +49,7 @@ class TestGetOptimization:
     @pytest.mark.asyncio
     async def test_found(self, client):
         await _seed_optimization(client)
-        response = await client.get("/api/optimize/test-opt-001")
+        response = await client.get("/api/apps/promptforge/optimize/test-opt-001")
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == "test-opt-001"
@@ -57,19 +57,19 @@ class TestGetOptimization:
 
     @pytest.mark.asyncio
     async def test_not_found(self, client):
-        response = await client.get("/api/optimize/nonexistent")
+        response = await client.get("/api/apps/promptforge/optimize/nonexistent")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_completed_has_cache_header(self, client):
         await _seed_optimization(client, status=OptimizationStatus.COMPLETED)
-        response = await client.get("/api/optimize/test-opt-001")
+        response = await client.get("/api/apps/promptforge/optimize/test-opt-001")
         assert "max-age=3600" in response.headers.get("cache-control", "")
 
     @pytest.mark.asyncio
     async def test_running_has_no_cache(self, client):
         await _seed_optimization(client, status=OptimizationStatus.RUNNING)
-        response = await client.get("/api/optimize/test-opt-001")
+        response = await client.get("/api/apps/promptforge/optimize/test-opt-001")
         assert "no-cache" in response.headers.get("cache-control", "")
 
 
@@ -87,13 +87,13 @@ class TestPostOptimize:
             yield PipelineComplete(data={"optimized_prompt": "better"})
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
-            patch("app.routers.optimize.update_optimization_status", new_callable=AsyncMock),
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock),
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
             response = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={"prompt": "test prompt"},
             )
         assert response.status_code == 200
@@ -102,7 +102,7 @@ class TestPostOptimize:
     @pytest.mark.asyncio
     async def test_blank_prompt_returns_422(self, client):
         response = await client.post(
-            "/api/optimize",
+            "/api/apps/promptforge/optimize",
             json={"prompt": "   "},
         )
         assert response.status_code == 422
@@ -110,7 +110,7 @@ class TestPostOptimize:
     @pytest.mark.asyncio
     async def test_invalid_strategy_returns_422(self, client):
         response = await client.post(
-            "/api/optimize",
+            "/api/apps/promptforge/optimize",
             json={"prompt": "test", "strategy": "bogus"},
         )
         assert response.status_code == 422
@@ -122,13 +122,13 @@ class TestPostOptimize:
             yield PipelineComplete(data={})
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
-            patch("app.routers.optimize.update_optimization_status", new_callable=AsyncMock),
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock),
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
             response = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={"prompt": "test", "strategy": "chain-of-thought"},
             )
         assert response.status_code == 200
@@ -136,11 +136,11 @@ class TestPostOptimize:
     @pytest.mark.asyncio
     async def test_invalid_provider_returns_400(self, client):
         with patch(
-            "app.routers.optimize._resolve_provider",
+            "apps.promptforge.routers.optimize._resolve_provider",
             side_effect=ValueError("Unknown provider"),
         ):
             response = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={"prompt": "test", "provider": "nonexistent"},
             )
         assert response.status_code == 400
@@ -154,10 +154,10 @@ class TestRetryOptimization:
     @pytest.mark.asyncio
     async def test_retry_not_found(self, client):
         with (
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
-            response = await client.post("/api/optimize/nonexistent/retry")
+            response = await client.post("/api/apps/promptforge/optimize/nonexistent/retry")
         assert response.status_code == 404
 
     @pytest.mark.asyncio
@@ -168,12 +168,12 @@ class TestRetryOptimization:
             yield PipelineComplete(data={})
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
-            patch("app.routers.optimize.update_optimization_status", new_callable=AsyncMock),
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock),
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
-            response = await client.post("/api/optimize/test-opt-001/retry")
+            response = await client.post("/api/apps/promptforge/optimize/test-opt-001/retry")
         assert response.status_code == 200
         assert "text/event-stream" in response.headers.get("content-type", "")
 
@@ -200,15 +200,15 @@ class TestEventStreamDBPersistence:
             yield PipelineComplete(data=complete_data)
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
             patch(
-                "app.routers.optimize.update_optimization_status", new_callable=AsyncMock,
+                "apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock,
             ) as mock_update,
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
             response = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={"prompt": "test prompt"},
             )
             # Consume the full response body to drive the async generator
@@ -231,15 +231,15 @@ class TestEventStreamDBPersistence:
             yield  # noqa: unreachable  # pragma: no cover
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_failing_stream),
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_failing_stream),
             patch(
-                "app.routers.optimize.update_optimization_status", new_callable=AsyncMock,
+                "apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock,
             ) as mock_update,
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
             response = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={"prompt": "test prompt"},
             )
             body = response.text
@@ -262,17 +262,17 @@ class TestEventStreamDBPersistence:
             yield PipelineComplete(data={"optimized_prompt": "better"})
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
             patch(
-                "app.routers.optimize.update_optimization_status",
+                "apps.promptforge.routers.optimize.update_optimization_status",
                 new_callable=AsyncMock,
                 side_effect=Exception("DB connection lost"),
             ),
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
             response = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={"prompt": "test prompt"},
             )
             body = response.text
@@ -297,13 +297,13 @@ class TestAutoPromptCreation:
             yield PipelineComplete(data={"optimized_prompt": "better"})
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
-            patch("app.routers.optimize.update_optimization_status", new_callable=AsyncMock),
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock),
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
             response = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={"prompt": "my test prompt", "project": "AutoProject"},
             )
             _ = response.text
@@ -315,8 +315,8 @@ class TestAutoPromptCreation:
 
         from app.database import get_db
         from app.main import app
-        from app.models.optimization import Optimization as OptModel
-        from app.models.project import Project, Prompt
+        from apps.promptforge.models.optimization import Optimization as OptModel
+        from apps.promptforge.models.project import Project, Prompt
 
         override_fn = app.dependency_overrides[get_db]
         gen = override_fn()
@@ -345,7 +345,7 @@ class TestAutoPromptCreation:
         """When prompt_id is explicitly provided, no auto-prompt is created."""
         from app.database import get_db
         from app.main import app
-        from app.models.project import Project, Prompt
+        from apps.promptforge.models.project import Project, Prompt
 
         # Seed a project + prompt first
         override_fn = app.dependency_overrides[get_db]
@@ -363,13 +363,13 @@ class TestAutoPromptCreation:
             yield PipelineComplete(data={})
 
         with (
-            patch("app.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
-            patch("app.routers.optimize.update_optimization_status", new_callable=AsyncMock),
-            patch("app.routers.optimize.get_provider") as mock_gp,
+            patch("apps.promptforge.routers.optimize.run_pipeline_streaming", side_effect=_fake_stream),
+            patch("apps.promptforge.routers.optimize.update_optimization_status", new_callable=AsyncMock),
+            patch("apps.promptforge.routers.optimize.get_provider") as mock_gp,
         ):
             mock_gp.return_value.model_name = "test-model"
             response = await client.post(
-                "/api/optimize",
+                "/api/apps/promptforge/optimize",
                 json={
                     "prompt": "existing prompt",
                     "project": "ExistingProject",

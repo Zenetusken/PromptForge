@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.constants import Strategy
-from app.services.pipeline import PipelineComplete, run_pipeline, run_pipeline_streaming
+from apps.promptforge.constants import Strategy
+from apps.promptforge.services.pipeline import PipelineComplete, run_pipeline, run_pipeline_streaming
 
 
 def _make_mock_provider(
@@ -202,7 +202,7 @@ class TestPipelineIntegration:
         The default mock validation response provides clarity=0.85, specificity=0.80,
         structure=0.75, faithfulness=0.90. conciseness defaults to 0.5 when omitted.
         """
-        from app.services.validator import (
+        from apps.promptforge.services.validator import (
             CLARITY_WEIGHT,
             CONCISENESS_WEIGHT,
             FAITHFULNESS_WEIGHT,
@@ -727,7 +727,7 @@ class TestCodebaseContextThreading:
     @pytest.mark.asyncio
     async def test_context_reaches_all_stages_via_run_pipeline(self):
         """When codebase_context is provided, all 4 stages should see it in their request."""
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         provider, captured = _make_capturing_provider(
             {"task_type": "coding", "complexity": "medium",
@@ -773,7 +773,7 @@ class TestCodebaseContextThreading:
     @pytest.mark.asyncio
     async def test_context_reaches_stages_via_streaming_pipeline(self):
         """Streaming pipeline should also thread context through all stages."""
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         provider, captured = _make_capturing_provider(
             {"task_type": "coding", "complexity": "medium",
@@ -803,7 +803,7 @@ class TestCodebaseContextThreading:
     @pytest.mark.asyncio
     async def test_context_with_strategy_override(self):
         """Context should thread through even when strategy_override bypasses the selector."""
-        from app.schemas.context import CodebaseContext
+        from apps.promptforge.schemas.context import CodebaseContext
 
         provider, captured = _make_capturing_provider(
             {"task_type": "coding", "complexity": "medium",

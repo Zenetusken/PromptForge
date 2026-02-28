@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.prompts.analyzer_prompt import ANALYZER_SYSTEM_PROMPT
+from apps.promptforge.prompts.analyzer_prompt import ANALYZER_SYSTEM_PROMPT
 from app.providers.types import TokenUsage
-from app.services.analyzer import (
+from apps.promptforge.services.analyzer import (
     _VALID_COMPLEXITIES,
     _VALID_TASK_TYPES,
     PromptAnalyzer,

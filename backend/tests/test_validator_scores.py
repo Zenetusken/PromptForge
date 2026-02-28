@@ -2,14 +2,14 @@
 
 import pytest
 
-from app.services.validator import (
+from apps.promptforge.services.validator import (
     CLARITY_WEIGHT,
     CONCISENESS_WEIGHT,
     FAITHFULNESS_WEIGHT,
     SPECIFICITY_WEIGHT,
     STRUCTURE_WEIGHT,
 )
-from app.utils.scores import round_score, score_threshold_to_db, score_to_display
+from apps.promptforge.utils.scores import round_score, score_threshold_to_db, score_to_display
 
 ALL_WEIGHTS = (CLARITY_WEIGHT, SPECIFICITY_WEIGHT, STRUCTURE_WEIGHT, FAITHFULNESS_WEIGHT,
                CONCISENESS_WEIGHT)

@@ -19,7 +19,7 @@ class TestAuthDisabled:
         """Requests succeed without Authorization header when AUTH_TOKEN is empty."""
         with patch("app.middleware.auth.config") as mock_config:
             mock_config.AUTH_TOKEN = ""
-            resp = await client.get("/api/health")
+            resp = await client.get("/api/apps/promptforge/health")
             assert resp.status_code == 200
 
 
@@ -31,7 +31,7 @@ class TestAuthEnabled:
         """Health endpoint is always accessible without auth."""
         with patch("app.middleware.auth.config") as mock_config:
             mock_config.AUTH_TOKEN = "secret123"
-            resp = await client.get("/api/health")
+            resp = await client.get("/api/apps/promptforge/health")
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
@@ -47,7 +47,7 @@ class TestAuthEnabled:
         """Returns 401 when Authorization header is missing."""
         with patch("app.middleware.auth.config") as mock_config:
             mock_config.AUTH_TOKEN = "secret123"
-            resp = await client.get("/api/history")
+            resp = await client.get("/api/apps/promptforge/history")
             assert resp.status_code == 401
             assert "Missing" in resp.json()["detail"]
 
@@ -57,7 +57,7 @@ class TestAuthEnabled:
         with patch("app.middleware.auth.config") as mock_config:
             mock_config.AUTH_TOKEN = "secret123"
             resp = await client.get(
-                "/api/history",
+                "/api/apps/promptforge/history",
                 headers={"Authorization": "Bearer wrongtoken"},
             )
             assert resp.status_code == 401
@@ -69,7 +69,7 @@ class TestAuthEnabled:
         with patch("app.middleware.auth.config") as mock_config:
             mock_config.AUTH_TOKEN = "secret123"
             resp = await client.get(
-                "/api/history",
+                "/api/apps/promptforge/history",
                 headers={"Authorization": "Bearer secret123"},
             )
             assert resp.status_code == 200
@@ -80,7 +80,7 @@ class TestAuthEnabled:
         with patch("app.middleware.auth.config") as mock_config:
             mock_config.AUTH_TOKEN = "secret123"
             resp = await client.get(
-                "/api/history",
+                "/api/apps/promptforge/history",
                 headers={"Authorization": "Basic dXNlcjpwYXNz"},
             )
             assert resp.status_code == 401

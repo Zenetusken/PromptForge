@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.providers.errors import ProviderError, RateLimitError
-from app.services.pipeline import run_pipeline, run_pipeline_streaming
+from apps.promptforge.services.pipeline import run_pipeline, run_pipeline_streaming
 
 # ---------------------------------------------------------------------------
 # Helpers

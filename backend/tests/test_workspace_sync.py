@@ -2,8 +2,8 @@
 
 import json
 
-from app.schemas.context import CodebaseContext, merge_contexts
-from app.services.workspace_sync import (
+from apps.promptforge.schemas.context import CodebaseContext, merge_contexts
+from apps.promptforge.services.workspace_sync import (
     _README_MAX_CHARS,
     extract_context_from_repo,
     extract_context_from_workspace_info,

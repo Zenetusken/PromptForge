@@ -7,10 +7,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants import ProjectStatus
-from app.database import _backfill_missing_prompts, _backfill_prompt_ids, _migrate_legacy_projects
-from app.models.project import Project
-from app.repositories.project import ProjectRepository, ensure_project_by_name
+from apps.promptforge.constants import ProjectStatus
+from apps.promptforge.database import backfill_missing_prompts, backfill_prompt_ids, migrate_legacy_projects
+from apps.promptforge.models.project import Project
+from apps.promptforge.repositories.project import ProjectRepository, ensure_project_by_name
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +99,7 @@ class TestEnsureProjectByName:
 
 
 # ---------------------------------------------------------------------------
-# _migrate_legacy_projects
+# migrate_legacy_projects
 # ---------------------------------------------------------------------------
 
 class TestMigrateLegacyProjects:
@@ -108,7 +108,7 @@ class TestMigrateLegacyProjects:
     async def test_no_op_when_no_legacy_data(self, db_engine):
         """Migration does nothing if optimizations table has no project strings."""
         async with db_engine.begin() as conn:
-            await _migrate_legacy_projects(conn)
+            await migrate_legacy_projects(conn)
 
         # No projects created
         async with db_engine.begin() as conn:
@@ -134,7 +134,7 @@ class TestMigrateLegacyProjects:
 
         # Run migration
         async with db_engine.begin() as conn:
-            await _migrate_legacy_projects(conn)
+            await migrate_legacy_projects(conn)
 
         # Verify 2 projects created
         async with db_engine.begin() as conn:
@@ -159,7 +159,7 @@ class TestMigrateLegacyProjects:
                 )
 
         async with db_engine.begin() as conn:
-            await _migrate_legacy_projects(conn)
+            await migrate_legacy_projects(conn)
 
         async with db_engine.begin() as conn:
             result = await conn.execute(text("SELECT content FROM prompts ORDER BY order_index"))
@@ -179,9 +179,9 @@ class TestMigrateLegacyProjects:
 
         # Run twice
         async with db_engine.begin() as conn:
-            await _migrate_legacy_projects(conn)
+            await migrate_legacy_projects(conn)
         async with db_engine.begin() as conn:
-            await _migrate_legacy_projects(conn)
+            await migrate_legacy_projects(conn)
 
         # Still only 1 project
         async with db_engine.begin() as conn:
@@ -219,7 +219,7 @@ class TestMigrateLegacyProjects:
             )
 
         async with db_engine.begin() as conn:
-            await _migrate_legacy_projects(conn)
+            await migrate_legacy_projects(conn)
 
         async with db_engine.begin() as conn:
             result = await conn.execute(text("SELECT name FROM projects"))
@@ -228,7 +228,7 @@ class TestMigrateLegacyProjects:
 
 
 # ---------------------------------------------------------------------------
-# _backfill_missing_prompts
+# backfill_missing_prompts
 # ---------------------------------------------------------------------------
 
 class TestBackfillMissingPrompts:
@@ -242,7 +242,7 @@ class TestBackfillMissingPrompts:
             cols = ", ".join(params.keys())
             vals = ", ".join(f":{k}" for k in params)
             await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
-            await _migrate_legacy_projects(conn)
+            await migrate_legacy_projects(conn)
 
             # Now add a second optimization with different content (simulates
             # an optimization added after the initial migration)
@@ -256,7 +256,7 @@ class TestBackfillMissingPrompts:
 
         # Run backfill
         async with db_engine.begin() as conn:
-            await _backfill_missing_prompts(conn)
+            await backfill_missing_prompts(conn)
 
         # Verify: 2 prompts now exist
         async with db_engine.begin() as conn:
@@ -276,8 +276,8 @@ class TestBackfillMissingPrompts:
             cols = ", ".join(params.keys())
             vals = ", ".join(f":{k}" for k in params)
             await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
-            await _migrate_legacy_projects(conn)
-            await _backfill_prompt_ids(conn)
+            await migrate_legacy_projects(conn)
+            await backfill_prompt_ids(conn)
 
             # Add orphaned optimization
             orphan = _opt("proj", "orphaned content")
@@ -290,8 +290,8 @@ class TestBackfillMissingPrompts:
 
         # Run backfill_missing_prompts + backfill_prompt_ids
         async with db_engine.begin() as conn:
-            await _backfill_missing_prompts(conn)
-            await _backfill_prompt_ids(conn)
+            await backfill_missing_prompts(conn)
+            await backfill_prompt_ids(conn)
 
         # Verify: orphaned optimization now has prompt_id set
         async with db_engine.begin() as conn:
@@ -309,7 +309,7 @@ class TestBackfillMissingPrompts:
             cols = ", ".join(params.keys())
             vals = ", ".join(f":{k}" for k in params)
             await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
-            await _migrate_legacy_projects(conn)
+            await migrate_legacy_projects(conn)
 
             # Add orphan
             orphan = _opt("proj", "orphan-once")
@@ -322,9 +322,9 @@ class TestBackfillMissingPrompts:
 
         # Run twice
         async with db_engine.begin() as conn:
-            await _backfill_missing_prompts(conn)
+            await backfill_missing_prompts(conn)
         async with db_engine.begin() as conn:
-            await _backfill_missing_prompts(conn)
+            await backfill_missing_prompts(conn)
 
         # Still only 2 prompts total
         async with db_engine.begin() as conn:
@@ -354,7 +354,7 @@ class TestBackfillMissingPrompts:
             )
 
         async with db_engine.begin() as conn:
-            await _backfill_missing_prompts(conn)
+            await backfill_missing_prompts(conn)
 
         # No prompts created
         async with db_engine.begin() as conn:
@@ -371,8 +371,8 @@ class TestBackfillMissingPrompts:
             cols = ", ".join(params.keys())
             vals = ", ".join(f":{k}" for k in params)
             await conn.execute(text(f"INSERT INTO optimizations ({cols}) VALUES ({vals})"), params)
-            await _migrate_legacy_projects(conn)
-            await _backfill_prompt_ids(conn)
+            await migrate_legacy_projects(conn)
+            await backfill_prompt_ids(conn)
 
             # Simulate editing the prompt content (diverges from raw_prompt)
             await conn.execute(
@@ -385,7 +385,7 @@ class TestBackfillMissingPrompts:
         # Now raw_prompt='original content' doesn't match any prompt content,
         # but the optimization has prompt_id set — backfill should skip it
         async with db_engine.begin() as conn:
-            await _backfill_missing_prompts(conn)
+            await backfill_missing_prompts(conn)
 
         # Should NOT create a new prompt for the old raw_prompt
         async with db_engine.begin() as conn:
@@ -405,14 +405,14 @@ class TestOptimizeAutoCreatesProject:
     async def test_optimize_with_project_creates_record(self, client):
         """POST /api/optimize with a project name auto-creates a Project record."""
         response = await client.post(
-            "/api/optimize",
+            "/api/apps/promptforge/optimize",
             json={"prompt": "Test prompt for auto-create", "project": "new-auto-project"},
         )
         # SSE endpoint returns 200
         assert response.status_code == 200
 
         # Verify project was created
-        resp = await client.get("/api/projects", params={"search": "new-auto-project"})
+        resp = await client.get("/api/apps/promptforge/projects", params={"search": "new-auto-project"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] >= 1
@@ -421,13 +421,13 @@ class TestOptimizeAutoCreatesProject:
     @pytest.mark.asyncio
     async def test_optimize_without_project_no_creation(self, client):
         """POST /api/optimize without project name doesn't create any project."""
-        resp_before = await client.get("/api/projects")
+        resp_before = await client.get("/api/apps/promptforge/projects")
         count_before = resp_before.json()["total"]
 
         await client.post(
-            "/api/optimize",
+            "/api/apps/promptforge/optimize",
             json={"prompt": "Test prompt no project"},
         )
 
-        resp_after = await client.get("/api/projects")
+        resp_after = await client.get("/api/apps/promptforge/projects")
         assert resp_after.json()["total"] == count_before

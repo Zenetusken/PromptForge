@@ -37,7 +37,7 @@ async def test_cors_allows_configured_origin(client):
     """The app responds with CORS headers for the configured origin."""
     origins = [o.strip() for o in config.FRONTEND_URL.split(",")]
     response = await client.options(
-        "/api/health",
+        "/api/apps/promptforge/health",
         headers={
             "Origin": origins[0],
             "Access-Control-Request-Method": "GET",
@@ -52,7 +52,7 @@ async def test_cors_allows_configured_origin(client):
 async def test_cors_rejects_unknown_origin(client):
     """The app does not return CORS headers for an unknown origin."""
     response = await client.options(
-        "/api/health",
+        "/api/apps/promptforge/health",
         headers={
             "Origin": "http://evil.example.com",
             "Access-Control-Request-Method": "GET",

@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select
 
-from app.constants import OptimizationStatus
-from app.converters import (
+from apps.promptforge.constants import OptimizationStatus
+from apps.promptforge.converters import (
     _SCORE_FIELDS,
     _serialize_json_list,
     apply_pipeline_result_to_orm,
@@ -23,7 +23,7 @@ from app.converters import (
     with_display_and_raw_scores,
     with_display_scores,
 )
-from app.models.optimization import Optimization
+from apps.promptforge.models.optimization import Optimization
 
 # ---------------------------------------------------------------------------
 # Helpers

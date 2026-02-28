@@ -1,7 +1,7 @@
 """Tests for CodebaseContext dataclass — render(), truncation, and dict conversion."""
 
 
-from app.schemas.context import (
+from apps.promptforge.schemas.context import (
     MAX_CONTEXT_CHARS,
     CodebaseContext,
     codebase_context_from_dict,

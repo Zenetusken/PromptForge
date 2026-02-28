@@ -6,16 +6,16 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.constants import OptimizationStatus
-from app.database import (
-    Base,
-    _backfill_prompt_ids,
-    _cleanup_stale_running,
-    _migrate_legacy_strategies,
-    _run_migrations,
+from apps.promptforge.constants import OptimizationStatus
+from app.database import Base
+from apps.promptforge.database import (
+    backfill_prompt_ids,
+    cleanup_stale_running,
+    migrate_legacy_strategies,
+    run_migrations,
 )
-from app.models.optimization import Optimization
-from app.models.project import Project, Prompt
+from apps.promptforge.models.optimization import Optimization
+from apps.promptforge.models.project import Project, Prompt
 
 
 @pytest.fixture()
@@ -36,10 +36,10 @@ class TestRunMigrations:
     async def test_migrations_idempotent(self, fresh_engine):
         """Running migrations twice should not raise errors."""
         async with fresh_engine.begin() as conn:
-            await _run_migrations(conn)
+            await run_migrations(conn)
         # Second run — all should be silently skipped
         async with fresh_engine.begin() as conn:
-            await _run_migrations(conn)
+            await run_migrations(conn)
 
 
 class TestCleanupStaleRunning:
@@ -58,7 +58,7 @@ class TestCleanupStaleRunning:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _cleanup_stale_running(conn)
+            await cleanup_stale_running(conn)
 
         async with factory() as session:
             row = (await session.execute(
@@ -82,7 +82,7 @@ class TestCleanupStaleRunning:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _cleanup_stale_running(conn)
+            await cleanup_stale_running(conn)
 
         async with factory() as session:
             row = (await session.execute(
@@ -105,7 +105,7 @@ class TestCleanupStaleRunning:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _cleanup_stale_running(conn)
+            await cleanup_stale_running(conn)
 
         async with factory() as session:
             row = (await session.execute(
@@ -135,7 +135,7 @@ class TestBackfillPromptIds:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _backfill_prompt_ids(conn)
+            await backfill_prompt_ids(conn)
 
         async with factory() as session:
             row = (await session.execute(
@@ -164,7 +164,7 @@ class TestBackfillPromptIds:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _backfill_prompt_ids(conn)
+            await backfill_prompt_ids(conn)
 
         async with factory() as session:
             row = (await session.execute(
@@ -186,7 +186,7 @@ class TestBackfillPromptIds:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _backfill_prompt_ids(conn)
+            await backfill_prompt_ids(conn)
 
         async with factory() as session:
             row = (await session.execute(
@@ -213,7 +213,7 @@ class TestBackfillPromptIds:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _backfill_prompt_ids(conn)
+            await backfill_prompt_ids(conn)
 
         async with factory() as session:
             row = (await session.execute(
@@ -243,7 +243,7 @@ class TestMigrateLegacyStrategies:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _migrate_legacy_strategies(conn)
+            await migrate_legacy_strategies(conn)
 
         async with factory() as session:
             row1 = (await session.execute(
@@ -275,7 +275,7 @@ class TestMigrateLegacyStrategies:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _migrate_legacy_strategies(conn)
+            await migrate_legacy_strategies(conn)
 
         async with factory() as session:
             row3 = (await session.execute(
@@ -302,9 +302,9 @@ class TestMigrateLegacyStrategies:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _migrate_legacy_strategies(conn)
+            await migrate_legacy_strategies(conn)
         async with fresh_engine.begin() as conn:
-            await _migrate_legacy_strategies(conn)
+            await migrate_legacy_strategies(conn)
 
         async with factory() as session:
             row = (await session.execute(
@@ -328,7 +328,7 @@ class TestMigrateLegacyStrategies:
             await session.commit()
 
         async with fresh_engine.begin() as conn:
-            await _migrate_legacy_strategies(conn)
+            await migrate_legacy_strategies(conn)
 
         async with factory() as session:
             row = (await session.execute(
