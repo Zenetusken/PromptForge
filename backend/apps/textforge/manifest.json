@@ -1,0 +1,100 @@
+{
+    "id": "textforge",
+    "version": "0.1.0",
+    "name": "TextForge",
+    "icon": "type",
+    "accent_color": "neon-orange",
+    "python_module": "apps.textforge.app",
+    "entry_point": "TextForgeApp",
+    "requires_services": ["llm", "storage"],
+    "backend": {
+        "routers": [
+            {
+                "module": "apps.textforge.router",
+                "prefix": "/api/apps/textforge",
+                "tags": ["textforge"]
+            }
+        ],
+        "models": [],
+        "mcp_tools": null,
+        "migrations_module": null
+    },
+    "frontend": {
+        "windows": [
+            {
+                "id": "textforge",
+                "title": "TextForge",
+                "icon": "type",
+                "component": "TextForgeWindow",
+                "persistent": true
+            },
+            {
+                "id": "textforge-history",
+                "title": "Transform History",
+                "icon": "clock",
+                "component": "TextForgeHistoryWindow",
+                "persistent": true
+            }
+        ],
+        "file_types": [
+            {
+                "extension": ".txf",
+                "label": "Transform Result",
+                "icon": "type",
+                "color": "neon-orange",
+                "artifact_kind": "transform"
+            }
+        ],
+        "commands": [
+            {
+                "id": "textforge:open",
+                "label": "Open TextForge",
+                "category": "apps",
+                "shortcut": "",
+                "icon": "type"
+            },
+            {
+                "id": "textforge:history",
+                "label": "Transform History",
+                "category": "apps",
+                "shortcut": "",
+                "icon": "clock"
+            }
+        ],
+        "bus_events": [
+            "transform:started",
+            "transform:completed",
+            "transform:failed"
+        ],
+        "process_types": [
+            {
+                "id": "transform",
+                "label": "Transform",
+                "icon": "type",
+                "stages": ["analyze", "transform", "validate"]
+            }
+        ],
+        "start_menu": {
+            "pinned": ["textforge"],
+            "section": "Apps"
+        },
+        "desktop_icons": [
+            {
+                "id": "textforge-icon",
+                "label": "TextForge",
+                "icon": "type",
+                "action": "window:textforge",
+                "color": "neon-orange",
+                "type": "system"
+            }
+        ],
+        "settings": {
+            "schema": {
+                "defaultTransform": { "type": "string", "default": "summarize" },
+                "outputFormat": { "type": "string", "default": "plain" },
+                "preserveFormatting": { "type": "boolean", "default": true }
+            },
+            "component": "TextForgeSettings"
+        }
+    }
+}
