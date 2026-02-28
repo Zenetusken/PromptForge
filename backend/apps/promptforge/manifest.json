@@ -57,20 +57,41 @@
       { "extension": ".lnk", "label": "Shortcut", "icon": "external-link", "color": "dim", "artifact_kind": "shortcut" }
     ],
     "commands": [
-      { "id": "promptforge:new-forge", "label": "New Forge", "category": "forge", "shortcut": "/", "icon": "zap" },
-      { "id": "promptforge:open-history", "label": "Open History", "category": "navigation", "shortcut": "Ctrl+H", "icon": "clock" },
-      { "id": "promptforge:open-projects", "label": "Open Projects", "category": "navigation", "shortcut": "Ctrl+P", "icon": "folder" }
+      { "id": "ide-open", "label": "Open Forge IDE", "category": "window", "shortcut": "/", "icon": "terminal" },
+      { "id": "ide-minimize", "label": "Toggle Minimize IDE", "category": "window", "shortcut": "Ctrl+M", "icon": "minus" },
+      { "id": "tab-new", "label": "New Tab", "category": "forge", "shortcut": "Ctrl+N", "icon": "plus" },
+      { "id": "tab-close", "label": "Close Tab", "category": "forge", "shortcut": "Ctrl+W", "icon": "x" },
+      { "id": "window-projects", "label": "Open Projects", "category": "window", "shortcut": "", "icon": "folder" },
+      { "id": "window-history", "label": "Open History", "category": "window", "shortcut": "", "icon": "clock" },
+      { "id": "window-control-panel", "label": "Open Control Panel", "category": "settings", "shortcut": "", "icon": "settings" },
+      { "id": "window-task-manager", "label": "Open Task Manager", "category": "window", "shortcut": "Ctrl+Shift+Esc", "icon": "cpu" },
+      { "id": "window-batch-processor", "label": "Open Batch Processor", "category": "forge", "shortcut": "", "icon": "layers" },
+      { "id": "window-strategy-workshop", "label": "Open Strategy Workshop", "category": "forge", "shortcut": "", "icon": "bar-chart" },
+      { "id": "window-template-library", "label": "Open Template Library", "category": "forge", "shortcut": "", "icon": "file-text" },
+      { "id": "window-terminal", "label": "Open Terminal", "category": "window", "shortcut": "Ctrl+`", "icon": "terminal" },
+      { "id": "window-network-monitor", "label": "Open Network Monitor", "category": "window", "shortcut": "", "icon": "activity" },
+      { "id": "window-display-settings", "label": "Display Settings", "category": "settings", "shortcut": "", "icon": "monitor" }
     ],
     "bus_events": ["forge:started", "forge:completed", "forge:failed", "forge:cancelled", "forge:progress"],
     "process_types": [
       { "id": "forge", "label": "Forge Pipeline", "icon": "zap", "stages": ["analyze", "strategy", "optimize", "validate"] }
     ],
     "start_menu": {
-      "pinned": ["ide", "projects", "history"],
+      "pinned": ["ide", "workspace-manager"],
       "section": "Tools"
     },
     "desktop_icons": [
-      { "id": "promptforge-ide", "label": "Forge IDE", "icon": "terminal", "action": "openWindow:ide" }
+      { "id": "sys-forge-ide", "label": "Forge IDE", "icon": "terminal", "action": "openWindow:ide", "color": "cyan" },
+      { "id": "sys-projects", "label": "Projects", "icon": "folder", "action": "openWindow:projects", "color": "yellow", "type": "folder" },
+      { "id": "sys-history", "label": "History", "icon": "folder", "action": "openWindow:history", "color": "blue", "type": "folder" },
+      { "id": "sys-control-panel", "label": "Control Panel", "icon": "settings", "action": "openWindow:control-panel", "color": "purple" },
+      { "id": "sys-task-manager", "label": "Task Manager", "icon": "cpu", "action": "openWindow:task-manager", "color": "green" },
+      { "id": "sys-batch-processor", "label": "Batch Processor", "icon": "layers", "action": "openWindow:batch-processor", "color": "orange" },
+      { "id": "sys-strategy-workshop", "label": "Strategy Workshop", "icon": "bar-chart", "action": "openWindow:strategy-workshop", "color": "indigo" },
+      { "id": "sys-template-library", "label": "Template Library", "icon": "file-text", "action": "openWindow:template-library", "color": "teal" },
+      { "id": "sys-terminal", "label": "Terminal", "icon": "terminal", "action": "openWindow:terminal", "color": "cyan" },
+      { "id": "sys-network-monitor", "label": "Network Monitor", "icon": "activity", "action": "openWindow:network-monitor", "color": "green" },
+      { "id": "sys-workspace-hub", "label": "Workspace Hub", "icon": "git-branch", "action": "openWindow:workspace-manager", "color": "green" }
     ]
   }
 }

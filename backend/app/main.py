@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     registry = get_app_registry()
     registry.discover()
 
-    await init_db()
+    await init_db(app_registry=registry)
 
     # Validate configured LLM provider early so operators get immediate feedback
     env_provider = config.LLM_PROVIDER

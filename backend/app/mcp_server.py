@@ -323,8 +323,25 @@ def _prompt_to_dict(prompt: Prompt) -> dict[str, object]:
 
 @asynccontextmanager
 async def lifespan(server: FastMCP):
-    """Initialize database on startup, dispose engine on shutdown."""
-    await init_db()
+    """Initialize database on startup, register app MCP tools, dispose engine on shutdown."""
+    from kernel.registry.app_registry import get_app_registry
+
+    registry = get_app_registry()
+    if not registry.list_all():
+        registry.discover()
+
+    await init_db(app_registry=registry)
+
+    # Register MCP tools from installed apps
+    app_tools = registry.collect_mcp_tools()
+    for tool_fn in app_tools:
+        try:
+            server.tool()(tool_fn)
+        except Exception as exc:
+            logger.warning("Failed to register app MCP tool %s: %s", getattr(tool_fn, "__name__", "?"), exc)
+    if app_tools:
+        logger.info("Registered %d app MCP tool(s)", len(app_tools))
+
     try:
         yield {}
     finally:

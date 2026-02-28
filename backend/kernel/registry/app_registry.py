@@ -140,6 +140,32 @@ class AppRegistry:
         """Return only enabled app records."""
         return [r for r in self._apps.values() if r.status == AppStatus.ENABLED]
 
+    def collect_mcp_tools(self) -> list:
+        """Collect MCP tool definitions from all enabled apps.
+
+        Calls ``get_mcp_tools()`` on each enabled app instance and returns
+        the combined list. Apps return tool callables that can be registered
+        with a FastMCP server via ``server.tool()(fn)``.
+        """
+        tools: list = []
+        for record in self.list_enabled():
+            try:
+                app_tools = record.instance.get_mcp_tools()
+                if app_tools:
+                    tools.extend(app_tools)
+                    logger.info(
+                        "Collected %d MCP tool(s) from app %r",
+                        len(app_tools),
+                        record.manifest.id,
+                    )
+            except Exception as exc:
+                logger.error(
+                    "Failed to collect MCP tools from app %r: %s",
+                    record.manifest.id,
+                    exc,
+                )
+        return tools
+
     def mount_routers(
         self, fastapi_app: FastAPI, exclude: set[str] | None = None
     ) -> None:

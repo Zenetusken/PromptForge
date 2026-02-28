@@ -75,6 +75,8 @@ class DesktopIconDef(BaseModel):
     label: str
     icon: str = ""
     action: str = ""
+    color: str = ""
+    type: str = ""
 
 
 class SettingsDef(BaseModel):

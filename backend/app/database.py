@@ -599,8 +599,13 @@ def _harden_data_dir() -> None:
             logger.warning("Could not set data directory permissions: %s", exc)
 
 
-async def init_db() -> None:
-    """Create all tables and apply pending migrations."""
+async def init_db(app_registry=None) -> None:
+    """Create all tables and apply pending migrations.
+
+    Args:
+        app_registry: Optional AppRegistry instance. If provided, calls
+            ``run_migrations()`` on each enabled app after kernel migrations.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _run_migrations(conn)
@@ -612,6 +617,15 @@ async def init_db() -> None:
         # Single backfill pass after missing prompts are created
         await _backfill_prompt_ids(conn)
         await _cleanup_stale_running(conn)
+
+        # Run per-app migrations after kernel migrations
+        if app_registry is not None:
+            for rec in app_registry.list_enabled():
+                try:
+                    await rec.instance.run_migrations(conn)
+                    logger.info("App %r migrations completed", rec.manifest.id)
+                except Exception as exc:
+                    logger.error("App %r migrations failed: %s", rec.manifest.id, exc)
 
     _harden_data_dir()
 
