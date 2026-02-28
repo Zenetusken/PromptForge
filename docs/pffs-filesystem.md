@@ -100,7 +100,7 @@ openDocument(descriptor: NodeDescriptor) → void
 |-----------------|---------|----------|
 | `folder` | — | Opens `FolderWindow` via window manager |
 | `prompt` (with projectId) | `openPrompt()` | Fetches project → finds prompt → compose or review (if forges exist) |
-| `prompt` (empty projectId) | `openDesktopPrompt()` | Fetches via `GET /api/fs/prompt/{id}` → compose mode |
+| `prompt` (empty projectId) | `openDesktopPrompt()` | Fetches via `GET /api/apps/promptforge/fs/prompt/{id}` → compose mode |
 | `artifact` | `openArtifact()` → `openForgeResult()` | Fetches optimization → review mode |
 | `sub-artifact` | `openSubArtifact()` → `openForgeResult()` | Fetches parent optimization → review mode |
 | `template` | — | Not yet implemented (placeholder) |
@@ -200,20 +200,20 @@ Central state manager in `frontend/src/lib/stores/filesystemOrchestrator.svelte.
 
 ### Endpoints
 
-All in `backend/app/routers/filesystem.py`:
+All in `backend/apps/promptforge/routers/filesystem.py`:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/fs/children?parent_id={id\|null}` | List folder contents (folders + prompts) + breadcrumbs |
-| GET | `/api/fs/tree?root_id={id\|null}` | Recursive folder tree (folders only) |
-| GET | `/api/fs/path/{project_id}` | Ancestor breadcrumb path |
-| GET | `/api/fs/prompt/{prompt_id}` | Single prompt by ID (any prompt, incl. desktop) |
-| DELETE | `/api/fs/prompt/{prompt_id}` | Delete prompt + cascade optimizations |
-| POST | `/api/fs/move` | Move folder or prompt to new parent |
+| GET | `/api/apps/promptforge/fs/children?parent_id={id\|null}` | List folder contents (folders + prompts) + breadcrumbs |
+| GET | `/api/apps/promptforge/fs/tree?root_id={id\|null}` | Recursive folder tree (folders only) |
+| GET | `/api/apps/promptforge/fs/path/{project_id}` | Ancestor breadcrumb path |
+| GET | `/api/apps/promptforge/fs/prompt/{prompt_id}` | Single prompt by ID (any prompt, incl. desktop) |
+| DELETE | `/api/apps/promptforge/fs/prompt/{prompt_id}` | Delete prompt + cascade optimizations |
+| POST | `/api/apps/promptforge/fs/move` | Move folder or prompt to new parent |
 
 ### Schemas
 
-In `backend/app/schemas/filesystem.py`:
+In `backend/apps/promptforge/schemas/filesystem.py`:
 
 ```python
 FsNode:
@@ -238,7 +238,7 @@ MoveRequest:
 
 ### Repository Layer
 
-Key methods in `backend/app/repositories/project.py`:
+Key methods in `backend/apps/promptforge/repositories/project.py`:
 
 | Method | Purpose |
 |--------|---------|
@@ -265,12 +265,12 @@ Key methods in `backend/app/repositories/project.py`:
 
 ## MCP Integration
 
-Two MCP tools in `backend/app/mcp_server.py` support the filesystem:
+Two MCP tools in `backend/apps/promptforge/mcp_server.py` support the filesystem:
 
 | Tool | Purpose |
 |------|---------|
-| `get_children` | List direct children of a folder or root (mirrors `GET /api/fs/children`) |
-| `move` | Move a folder or prompt to a new parent (mirrors `POST /api/fs/move`) |
+| `get_children` | List direct children of a folder or root (mirrors `GET /api/apps/promptforge/fs/children`) |
+| `move` | Move a folder or prompt to a new parent (mirrors `POST /api/apps/promptforge/fs/move`) |
 
 ---
 

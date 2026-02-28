@@ -13,7 +13,7 @@ Users submit a raw prompt, and a 4-stage pipeline (Analyze → Strategy → Opti
 - **Backend**: Python 3.14+ / FastAPI / SQLAlchemy 2.0 async ORM / SQLite (aiosqlite) / Pydantic v2
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
 - **LLM access**: Provider-agnostic via `backend/app/providers/` — Claude CLI (default), Anthropic API, OpenAI, Gemini. Auto-detects or set `LLM_PROVIDER`.
-- **MCP server**: FastMCP (`backend/app/mcp_server.py`) — 22 tools, 4 resources, SSE transport on port 8001. Auto-discoverable via `.mcp.json`.
+- **MCP server**: FastMCP (`backend/apps/promptforge/mcp_server.py`) — 22 tools, 4 resources, SSE transport on port 8001. Auto-discoverable via `.mcp.json`.
 - **App Platform**: OS kernel architecture with app registry, manifest-driven discovery, lifecycle hooks.
 
 ## Commands
@@ -63,19 +63,35 @@ backend/
     models/                        # Kernel-owned ORM models
       app_settings.py              # AppSettings (per-app key-value)
       app_document.py              # AppCollection + AppDocument (per-app doc store)
+      vfs.py                       # VfsFolder + VfsFile + VfsFileVersion (virtual filesystem)
+      audit.py                     # AuditLog + AppUsage (audit + quota tracking)
     repositories/                  # Kernel data access
       app_settings.py              # AppSettingsRepository
       app_storage.py               # AppStorageRepository
+      vfs.py                       # VfsRepository (folder/file CRUD, versioning, search)
+      audit.py                     # AuditRepository (audit log, usage tracking)
     routers/                       # Kernel API (/api/kernel/*)
       apps.py                      # GET /api/kernel/apps (with services_satisfied)
       settings.py                  # GET/PUT/DELETE /api/kernel/settings/{app_id}
       storage.py                   # CRUD /api/kernel/storage/{app_id}/*
+      vfs.py                       # CRUD /api/kernel/vfs/{app_id}/* (folders, files, versions, search)
+      audit.py                     # GET /api/kernel/audit/{app_id}, GET /api/kernel/audit/usage/{app_id}
+      bus.py                       # GET /api/kernel/bus/contracts, subscriptions, events (SSE)
+    security/                      # Access control
+      access.py                    # AppContext, check_capability(), check_quota()
+    bus/                           # Inter-app communication
+      event_bus.py                 # EventBus — pub/sub + request/response
+      contracts.py                 # ContractRegistry — typed event schemas
     database.py                    # Kernel migrations (CREATE TABLE IF NOT EXISTS)
 
   apps/
     promptforge/                   # PromptForge as an installable app
       manifest.json                # App manifest (windows, routes, commands)
       app.py                       # PromptForgeApp(AppBase) — lifecycle + migrations
+      routers/ services/ models/   # All PF business logic (moved from app/)
+      schemas/ repositories/       # PF data layer
+      database.py                  # PF-specific migrations
+      mcp_server.py                # FastMCP server (22 tools, SSE on port 8001)
     hello_world/                   # Example app
       manifest.json
       app.py                       # HelloWorldApp(AppBase)
@@ -85,11 +101,10 @@ backend/
       app.py                       # TextForgeApp(AppBase) — validates required services
       router.py                    # /api/apps/textforge/* (7 transform types)
 
-  app/                             # PromptForge host application
+  app/                             # Kernel host application
     main.py                        # Entry point — boots kernel, constructs Kernel, registers services
-    database.py config.py          # DB engine, migrations, system config
+    database.py config.py          # DB engine, system config
     providers/ middleware/          # LLM providers, security middleware
-    routers/ services/ models/     # Business logic (PromptForge-specific)
 
 frontend/src/lib/
   kernel/                          # Shell (app registry, types, shared services)
@@ -98,6 +113,7 @@ frontend/src/lib/
       appRegistry.svelte.ts        # Frontend app registry — registry-driven windows
       appSettings.svelte.ts        # Per-app settings client (reactive $state cache)
       appStorage.ts                # Per-app document storage client
+      vfs.ts                       # VFS client (folders, files, versioning, search)
   apps/
     promptforge/                   # PromptForge frontend app
       index.ts                     # PromptForgeApp implements AppFrontend (14 windows)
@@ -113,19 +129,22 @@ frontend/src/lib/
 
 **Key classes:**
 - `Kernel` (dataclass) — service locator passed to apps on startup: `app_registry`, `db_session_factory`, `services` (ServiceRegistry), `get_provider()` for LLM access
-- `ServiceRegistry` — DI container with `register(name, service)`, `get(name)`, `has(name)`, `validate_requirements(required)`. Core services: `llm`, `db`, `storage`
-- `AppBase` (ABC) — lifecycle hooks: `on_install`, `on_enable`, `on_startup(kernel)`, `on_shutdown(kernel)`, `run_migrations`
-- `AppRegistry` — discovers `manifest.json` in `apps/`, loads entry points, mounts routers (with `exclude` for host app)
-- `AppManifest` — Pydantic model for `manifest.json` (backend routers, frontend windows, commands, file types, process types, settings, desktop icons, start menu)
+- `ServiceRegistry` — DI container with `register(name, service)`, `get(name)`, `has(name)`, `validate_requirements(required)`. Core services: `llm`, `db`, `storage`, `vfs`, `bus`, `contracts`
+- `AppBase` (ABC) — lifecycle hooks: `on_install`, `on_enable`, `on_startup(kernel)`, `on_shutdown(kernel)`, `run_migrations`, `get_event_contracts`, `get_event_handlers`
+- `AppRegistry` — discovers `manifest.json` in `apps/`, loads entry points, mounts routers
+- `AppManifest` — Pydantic model for `manifest.json` (backend routers, frontend windows, commands, file types, process types, settings, desktop icons, start menu, capabilities, resource_quotas)
+- `EventBus` — async pub/sub + request/response for inter-app communication
+- `ContractRegistry` — typed Pydantic schemas for event validation
+- `AppContext` — request-scoped context for capability checking and quota enforcement
 - `AppFrontend` (interface) — frontend apps implement `init`, `destroy`, `getComponent`, `getSettingsComponent`
 
-**API convention:** Kernel at `/api/kernel/*`, apps at `/api/apps/{app_id}/*`. PromptForge (host app) keeps its routes at `/api/*` directly.
+**API convention:** Kernel at `/api/kernel/*`, apps at `/api/apps/{app_id}/*`. All apps (including PromptForge) use the `/api/apps/{app_id}/*` convention.
 
 **Frontend window rendering:** `+layout.svelte` uses a single `{#each appRegistry.allWindows}` loop to render all manifest-declared windows dynamically. IDE window is a special case (static import, custom close handler). Folder windows are dynamically created at runtime (not manifest-declared).
 
 **Dynamic settings tabs:** `ControlPanelWindow` appends tabs from `appRegistry.appsWithSettings`, loading each app's settings component via `getSettingsComponent()`. Backed by `appSettings` service calling kernel REST API.
 
-### Pipeline (`backend/app/services/pipeline.py`)
+### Pipeline (`backend/apps/promptforge/services/pipeline.py`)
 
 Four LLM stages orchestrated as an async generator yielding SSE events:
 
@@ -134,9 +153,9 @@ Four LLM stages orchestrated as an async generator yielding SSE events:
 3. **Optimize** — rewrites the prompt using the selected strategy
 4. **Validate** — scores 5 dimensions, generates verdict
 
-Score weights (server-computed, never trusts LLM arithmetic): clarity 20% + specificity 20% + structure 15% + faithfulness 25% + conciseness 20%. `framework_adherence_score` is supplementary (not in weighted average). DB stores 0.0–1.0 floats; display/API uses 1–10 integers (`backend/app/utils/scores.py`).
+Score weights (server-computed, never trusts LLM arithmetic): clarity 20% + specificity 20% + structure 15% + faithfulness 25% + conciseness 20%. `framework_adherence_score` is supplementary (not in weighted average). DB stores 0.0–1.0 floats; display/API uses 1–10 integers (`backend/apps/promptforge/utils/scores.py`).
 
-All stages accept optional `codebase_context` (from `backend/app/schemas/context.py`). Context resolved via **three-layer merge**: (1) workspace auto-context → (2) project `context_profile` → (3) per-request `codebase_context`. Resolved context snapshotted as `Optimization.codebase_context_snapshot`.
+All stages accept optional `codebase_context` (from `backend/apps/promptforge/schemas/context.py`). Context resolved via **three-layer merge**: (1) workspace auto-context → (2) project `context_profile` → (3) per-request `codebase_context`. Resolved context snapshotted as `Optimization.codebase_context_snapshot`.
 
 ### Provider Abstraction (`backend/app/providers/`)
 
@@ -148,7 +167,7 @@ Backend emits: `stage`, `step_progress`, `strategy`, `analysis`, `optimization`,
 
 ### MCP Activity Bridge
 
-MCP tools wrapped with `_mcp_tracked()` → fire-and-forget webhook to `POST /internal/mcp-event` → `MCPActivityBroadcaster` → SSE stream at `GET /api/mcp/events` (supports `Last-Event-ID`) → frontend `MCPActivityFeed` service. Write-tool completions trigger notifications and history/stats reload.
+MCP tools wrapped with `_mcp_tracked()` → fire-and-forget webhook to `POST /api/apps/promptforge/internal/mcp-event` → `MCPActivityBroadcaster` → SSE stream at `GET /api/apps/promptforge/mcp/events` (supports `Last-Event-ID`) → frontend `MCPActivityFeed` service. Write-tool completions trigger notifications and history/stats reload.
 
 ### Data Layer
 

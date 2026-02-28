@@ -23,16 +23,13 @@ Tests use `:memory:` SQLite — PRAGMAs are applied but most are no-ops there.
 `init_db()` runs on app startup (via lifespan handler in `main.py`):
 
 1. **`create_all`** — creates tables from ORM models
-2. **`_run_migrations`** — applies column-add and index migrations (skips already-applied via `IF NOT EXISTS` / `OperationalError` catch)
-3. **`_migrate_legacy_strategies`** — normalizes strategy names via `LEGACY_STRATEGY_ALIASES`
-4. **`_migrate_legacy_projects`** — seeds `projects` table from legacy `optimization.project` strings, imports unique `raw_prompt` values as `Prompt` entries
-5. **`_backfill_missing_prompts`** — creates `Prompt` records for orphaned optimizations (prompt_id IS NULL)
-6. **`_backfill_prompt_ids`** — links optimizations to prompts by matching content within same project
-7. **`_cleanup_stale_running`** — marks RUNNING records >30 min old as ERROR
-
-8. **`_harden_data_dir`** — restricts filesystem permissions on the data directory and database file (owner-only access). Logs a warning on `OSError` (e.g., non-owner process).
+2. **`run_kernel_migrations`** — applies kernel table migrations (settings, storage, VFS, audit)
+3. **Per-app migrations** — each app's `run_migrations()` runs (e.g. PromptForge's column-add, index, and data migrations in `apps/promptforge/database.py`)
+4. **`_harden_data_dir`** — restricts filesystem permissions on the data directory and database file (owner-only access). Logs a warning on `OSError` (e.g., non-owner process).
 
 All steps are idempotent — safe to run on every restart.
+
+PromptForge-specific migrations (in `apps/promptforge/database.py`): `run_migrations` (27 column/index migrations), `migrate_legacy_strategies`, `migrate_legacy_projects`, `backfill_missing_prompts`, `backfill_prompt_ids`, `cleanup_stale_running`.
 
 ## Migration List
 
@@ -48,17 +45,21 @@ New databases get indexes at CREATE TABLE time; migrations apply them for pre-ex
 
 | Table | File | Key Fields |
 |-------|------|------------|
-| `optimizations` | `models/optimization.py` | `raw_prompt`, `optimized_prompt`, `status`, `overall_score`, `conciseness_score`, `framework_adherence_score`, `detected_patterns` (JSON list), `strategy`, `project`, `prompt_id` FK, `retry_of`, `codebase_context_snapshot` |
-| `projects` | `models/project.py` | `name` (unique), `status` (active/archived/deleted), `context_profile` (JSON text) |
-| `prompts` | `models/project.py` | `content`, `version`, `project_id` FK, `order_index` |
-| `prompt_versions` | `models/project.py` | `prompt_id` FK, `version`, `content`, `optimization_id` FK (immutable snapshots) |
+| `optimizations` | `apps/promptforge/models/optimization.py` | `raw_prompt`, `optimized_prompt`, `status`, `overall_score`, `conciseness_score`, `framework_adherence_score`, `detected_patterns` (JSON list), `strategy`, `project`, `prompt_id` FK, `retry_of`, `codebase_context_snapshot` |
+| `projects` | `apps/promptforge/models/project.py` | `name` (unique), `status` (active/archived/deleted), `context_profile` (JSON text) |
+| `prompts` | `apps/promptforge/models/project.py` | `content`, `version`, `project_id` FK, `order_index` |
+| `prompt_versions` | `apps/promptforge/models/project.py` | `prompt_id` FK, `version`, `content`, `optimization_id` FK (immutable snapshots) |
+| `github_connections` | `apps/promptforge/models/workspace.py` | `github_user_id`, `github_username`, `access_token_encrypted`, `avatar_url`, `scopes`, `token_valid` |
+| `github_oauth_config` | `apps/promptforge/models/workspace.py` | `client_id`, `client_secret_encrypted`, `redirect_uri`, `scope` (single-row table) |
+| `workspace_links` | `apps/promptforge/models/workspace.py` | `project_id` FK, `github_connection_id` FK, `repo_full_name`, `repo_url`, `default_branch`, `sync_status`, `workspace_context` (JSON), `file_tree_snapshot` (JSON) |
 
 ## Repositories
 
 | Repository | File | Scope |
 |------------|------|-------|
-| `OptimizationRepository` | `repositories/optimization.py` | All optimization queries: CRUD, list with filters/pagination/sorting, stats (10+ analytics), tag management |
-| `ProjectRepository` | `repositories/project.py` | Project/prompt CRUD, prompt versioning, cascade deletion, context profiles |
+| `OptimizationRepository` | `apps/promptforge/repositories/optimization.py` | All optimization queries: CRUD, list with filters/pagination/sorting, stats (10+ analytics), tag management |
+| `ProjectRepository` | `apps/promptforge/repositories/project.py` | Project/prompt CRUD, prompt versioning, cascade deletion, context profiles |
+| `WorkspaceRepository` | `apps/promptforge/repositories/workspace.py` | GitHub connections CRUD, OAuth config, workspace links, sync status, context resolution (3-layer merge: workspace → project → request), health summary |
 
 Standalone helpers: `ensure_project_by_name()` (returns `ProjectInfo(id, status)` — avoids redundant follow-up query for archive checks), `ensure_prompt_in_project()` (3-tier matching: exact → SQL fuzzy → Python fallback with LIMIT 100).
 
@@ -71,6 +72,11 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 | `app_settings` | `kernel/models/app_settings.py` | `id`, `app_id`, `key`, `value` (JSON text), `created_at`, `updated_at`. `UNIQUE(app_id, key)` |
 | `app_collections` | `kernel/models/app_document.py` | `id`, `app_id`, `name`, `parent_id` (self-FK, `CASCADE`). `UNIQUE(app_id, name, parent_id)` |
 | `app_documents` | `kernel/models/app_document.py` | `id`, `app_id`, `collection_id` FK (`CASCADE`), `name`, `content_type`, `content`, `metadata_json`, `created_at`, `updated_at`. Index on `(app_id, collection_id)` |
+| `vfs_folders` | `kernel/models/vfs.py` | `id`, `app_id`, `name`, `parent_id` (self-FK, `CASCADE`), `depth`, `metadata_json`, `created_at`, `updated_at`. `UNIQUE(app_id, name, parent_id)` |
+| `vfs_files` | `kernel/models/vfs.py` | `id`, `app_id`, `folder_id` FK (`SET NULL`), `name`, `content`, `content_type`, `version`, `metadata_json`, `created_at`, `updated_at`. Index on `(app_id, folder_id)` |
+| `vfs_file_versions` | `kernel/models/vfs.py` | `id`, `file_id` FK (`CASCADE`), `version`, `content`, `change_source`, `created_at`. Auto-created on content changes. |
+| `audit_log` | `kernel/models/audit.py` | `id`, `app_id`, `action`, `resource_type`, `resource_id`, `details_json`, `timestamp`. Index on `(app_id, timestamp)` |
+| `app_usage` | `kernel/models/audit.py` | `id`, `app_id`, `resource`, `period` (hourly), `count`, `updated_at`. `UNIQUE(app_id, resource, period)` |
 
 ### Kernel Repositories
 
@@ -78,6 +84,8 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 |------------|------|-------|
 | `AppSettingsRepository` | `kernel/repositories/app_settings.py` | Per-app key-value settings: `get_all`, `get`, `set` (upsert), `set_all`, `delete`, `reset`. JSON serialization for values. |
 | `AppStorageRepository` | `kernel/repositories/app_storage.py` | Per-app document store: collections CRUD (`list_collections`, `create_collection`, `delete_collection`), documents CRUD (`list_documents`, `get_document`, `create_document`, `update_document`, `delete_document`). Scoped by `app_id`. |
+| `VfsRepository` | `kernel/repositories/vfs.py` | Virtual filesystem: folder CRUD with depth validation (max 8), file CRUD with auto-versioning, breadcrumb path traversal, file search by name. Scoped by `app_id`. |
+| `AuditRepository` | `kernel/repositories/audit.py` | Audit log: `log_action`, `list_logs`, `count_logs`. Usage tracking: `get_usage`, `increment_usage`, `get_all_usage`. Hourly period-based quota tracking. |
 
 ### Kernel REST Endpoints
 
@@ -86,6 +94,9 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 | `kernel/routers/settings.py` | `/api/kernel/settings/{app_id}` | `GET` (all settings), `PUT` (merge settings), `DELETE` (reset all) |
 | `kernel/routers/storage.py` | `/api/kernel/storage/{app_id}` | Collections: `GET/POST .../collections`, `DELETE .../collections/{id}`. Documents: `GET/POST .../documents`, `GET/PUT/DELETE .../documents/{id}` |
 | `kernel/routers/apps.py` | `/api/kernel/apps` | `GET` (list apps with `services_satisfied`), `GET .../{id}` (app details + manifest) |
+| `kernel/routers/vfs.py` | `/api/kernel/vfs/{app_id}` | Children: `GET .../children`. Folders: `POST/GET/DELETE .../folders/{id}`, `GET .../folders/{id}/path`. Files: `POST/GET/PUT/DELETE .../files/{id}`, `GET .../files/{id}/versions`. Search: `GET .../search?q=` |
+| `kernel/routers/audit.py` | `/api/kernel/audit` | `GET /{app_id}` (audit logs with pagination), `GET /usage/{app_id}` (current quota usage) |
+| `kernel/routers/bus.py` | `/api/kernel/bus` | `GET /contracts` (registered event contracts), `GET /subscriptions` (active subscriptions), `GET /events` (SSE stream) |
 
 All kernel routers are aggregated into `kernel_router` in `kernel/routers/__init__.py` and mounted once in `main.py`.
 

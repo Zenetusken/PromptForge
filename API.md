@@ -4,7 +4,7 @@ PromptForge exposes a REST API on port 8000. Interactive documentation is availa
 
 ## Authentication
 
-When `AUTH_TOKEN` is set, all endpoints (except `/api/health`) require a `Bearer` token:
+When `AUTH_TOKEN` is set, all endpoints (except health and kernel routes) require a `Bearer` token:
 
 ```
 Authorization: Bearer <your-token>
@@ -26,10 +26,10 @@ The optimize and retry endpoints accept optional headers to override the LLM pro
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/optimize` | Start optimization pipeline (SSE stream) |
-| GET | `/api/optimize/check-duplicate` | Check if a title already exists in a project |
-| GET | `/api/optimize/{id}` | Get optimization by ID |
-| POST | `/api/optimize/{id}/retry` | Re-run optimization with same prompt |
+| POST | `/api/apps/promptforge/optimize` | Start optimization pipeline (SSE stream) |
+| GET | `/api/apps/promptforge/optimize/check-duplicate` | Check if a title already exists in a project |
+| GET | `/api/apps/promptforge/optimize/{id}` | Get optimization by ID |
+| POST | `/api/apps/promptforge/optimize/{id}/retry` | Re-run optimization with same prompt |
 
 #### `POST /api/optimize`
 
@@ -80,11 +80,11 @@ Creates a new optimization using the original prompt. Returns an SSE stream like
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET/HEAD | `/api/history` | List optimizations (paginated, filterable) |
-| DELETE | `/api/history/{id}` | Delete a single optimization |
-| POST | `/api/history/bulk-delete` | Delete multiple optimizations by ID |
-| DELETE | `/api/history/all` | Clear all history |
-| GET/HEAD | `/api/history/stats` | Aggregated statistics |
+| GET/HEAD | `/api/apps/promptforge/history` | List optimizations (paginated, filterable) |
+| DELETE | `/api/apps/promptforge/history/{id}` | Delete a single optimization |
+| POST | `/api/apps/promptforge/history/bulk-delete` | Delete multiple optimizations by ID |
+| DELETE | `/api/apps/promptforge/history/all` | Clear all history |
+| GET/HEAD | `/api/apps/promptforge/history/stats` | Aggregated statistics |
 
 #### `GET /api/history`
 
@@ -133,13 +133,13 @@ Requires `X-Confirm-Delete: yes` header as a safety guard.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/projects` | List projects (paginated, filterable) |
-| POST | `/api/projects` | Create project |
-| GET | `/api/projects/{id}` | Get project with prompts |
-| PUT | `/api/projects/{id}` | Update project |
-| DELETE | `/api/projects/{id}` | Soft-delete project |
-| POST | `/api/projects/{id}/archive` | Archive project |
-| POST | `/api/projects/{id}/unarchive` | Restore archived project |
+| GET | `/api/apps/promptforge/projects` | List projects (paginated, filterable) |
+| POST | `/api/apps/promptforge/projects` | Create project |
+| GET | `/api/apps/promptforge/projects/{id}` | Get project with prompts |
+| PUT | `/api/apps/promptforge/projects/{id}` | Update project |
+| DELETE | `/api/apps/promptforge/projects/{id}` | Soft-delete project |
+| POST | `/api/apps/promptforge/projects/{id}/archive` | Archive project |
+| POST | `/api/apps/promptforge/projects/{id}/unarchive` | Restore archived project |
 
 #### `GET /api/projects`
 
@@ -159,12 +159,12 @@ Requires `X-Confirm-Delete: yes` header as a safety guard.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/projects/{id}/prompts` | Add prompt to project |
-| PUT | `/api/projects/{id}/prompts/reorder` | Reorder prompts |
-| GET | `/api/projects/{id}/prompts/{pid}/versions` | Prompt version history |
-| GET | `/api/projects/{id}/prompts/{pid}/forges` | Forge results for prompt |
-| PUT | `/api/projects/{id}/prompts/{pid}` | Update prompt content |
-| DELETE | `/api/projects/{id}/prompts/{pid}` | Delete prompt |
+| POST | `/api/apps/promptforge/projects/{id}/prompts` | Add prompt to project |
+| PUT | `/api/apps/promptforge/projects/{id}/prompts/reorder` | Reorder prompts |
+| GET | `/api/apps/promptforge/projects/{id}/prompts/{pid}/versions` | Prompt version history |
+| GET | `/api/apps/promptforge/projects/{id}/prompts/{pid}/forges` | Forge results for prompt |
+| PUT | `/api/apps/promptforge/projects/{id}/prompts/{pid}` | Update prompt content |
+| DELETE | `/api/apps/promptforge/projects/{id}/prompts/{pid}` | Delete prompt |
 
 #### `POST /api/projects/{id}/prompts`
 
@@ -184,8 +184,8 @@ Requires `X-Confirm-Delete: yes` header as a safety guard.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/providers` | List registered LLM providers with availability status |
-| POST | `/api/providers/validate-key` | Test an API key against a provider |
+| GET | `/api/apps/promptforge/providers` | List registered LLM providers with availability status |
+| POST | `/api/apps/promptforge/providers/validate-key` | Test an API key against a provider |
 
 #### `POST /api/providers/validate-key`
 
@@ -197,7 +197,6 @@ Requires `X-Confirm-Delete: yes` header as a safety guard.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET/HEAD | `/api/health` | Service health check |
-| GET/HEAD | `/health` | Alias for monitoring tools |
+| GET/HEAD | `/api/apps/promptforge/health` | Service health check |
 
 Returns database connection status, LLM provider availability, and app version.

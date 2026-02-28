@@ -8,6 +8,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+**Kernel VFS (Virtual Filesystem)**
+- `vfs_folders`, `vfs_files`, `vfs_file_versions` kernel tables with per-app scoping and auto-versioning
+- `VfsRepository` — folder CRUD with depth validation (max 8), file CRUD with auto-version snapshots, breadcrumb path, search
+- REST API at `/api/kernel/vfs/{app_id}/*` — children, folders, files, versions, search
+- Frontend `VfsClient` (`kernel/services/vfs.ts`) — full VFS operations for any app
+- `vfs` service registered in kernel ServiceRegistry
+
+**Access Control**
+- `CapabilitiesDef` and `ResourceQuota` added to `AppManifest` — apps declare required/optional capabilities and resource quotas
+- `AppContext` dataclass — request-scoped context built from manifest with capability list and quota limits
+- `check_capability()` — raises 403 if app lacks a required capability
+- `check_quota()` — raises 429 if app exceeds hourly usage limit, with `AuditRepository` usage tracking
+- `audit_log` and `app_usage` kernel tables for audit logging and quota tracking
+- `AuditRepository` — `log_action`, `list_logs`, `count_logs`, `increment_usage`, `get_usage`, `get_all_usage`
+- REST API at `/api/kernel/audit/{app_id}` and `/api/kernel/audit/usage/{app_id}`
+
+**App-to-App RPC (Event Bus)**
+- `EventBus` — async pub/sub with `subscribe`, `unsubscribe`, `publish` (fire-and-forget), `request` (with timeout)
+- `ContractRegistry` — typed event schemas via Pydantic models, `register`, `validate_publish`, `to_json`
+- `EventContract` frozen dataclass — `event_type`, `source_app`, `payload_schema`, optional `response_schema`
+- `AppBase` extended with `get_event_contracts()` and `get_event_handlers()` lifecycle hooks
+- Kernel auto-wires contracts and handlers from all apps during startup
+- REST API at `/api/kernel/bus/*` — `GET /contracts`, `GET /subscriptions`, `GET /events` (SSE stream)
+- `bus` and `contracts` services registered in kernel ServiceRegistry
+
+### Changed
+
+**PromptForge Code Migration**
+- All PF business logic moved from `backend/app/` to `backend/apps/promptforge/` — routers, services, models, schemas, repositories, utils, prompts, constants, converters, database migrations, MCP server
+- PF routes migrated from `/api/*` to `/api/apps/promptforge/*` via manifest prefix
+- Frontend `BASE_URL` updated to `/api/apps/promptforge`
+- MCP server module moved to `apps.promptforge.mcp_server`
+- `app/database.py` slimmed to kernel-only; PF migrations extracted to `apps/promptforge/database.py`
+- Removed `exclude="promptforge"` hack from `registry.mount_routers()` — all apps auto-mounted via manifest
+
 **OS Kernel Architecture**
 - Backend app registry (`kernel/registry/`) — `AppRegistry` discovers `manifest.json` in `apps/`, loads `AppBase` subclasses, manages lifecycle (on_startup/on_shutdown), dynamically mounts routers via `mount_routers()`
 - `AppManifest` Pydantic model — declares backend routers, models, frontend windows, commands, file types, start menu, desktop icons, settings
@@ -34,7 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `AppStorageRepository` — full CRUD for collections and documents
 - Storage REST API — `CRUD /api/kernel/storage/{app_id}/collections`, `CRUD /api/kernel/storage/{app_id}/documents`
 - Kernel-level database migrations (`kernel/database.py`) — `CREATE TABLE/INDEX IF NOT EXISTS`, runs before app migrations in `init_db()`
-- Kernel router aggregation — 3 sub-routers (apps, settings, storage) aggregated into single `kernel_router` mounted once
+- Kernel router aggregation — 6 sub-routers (apps, audit, bus, settings, storage, vfs) aggregated into single `kernel_router` mounted once
 
 **Process Types from Manifest**
 - `ForgeProcess.processType` field (default `'forge'`) — manifest-declared process types flow through spawn/display

@@ -4,7 +4,7 @@ Server-side caching strategies used across the backend. All caches are in-proces
 
 ## Stats Cache
 
-**Location:** `backend/app/services/stats_cache.py`
+**Location:** `backend/apps/promptforge/services/stats_cache.py`
 
 Caches the expensive `repo.get_stats()` query (10+ DB analytics across strategy distribution, score variance, combo effectiveness, time trends, etc).
 
@@ -18,7 +18,7 @@ Caches the expensive `repo.get_stats()` query (10+ DB analytics across strategy 
 ### Public API
 
 ```python
-from app.services.stats_cache import get_stats_cached, invalidate_stats_cache
+from apps.promptforge.services.stats_cache import get_stats_cached, invalidate_stats_cache
 
 # Read (creates OptimizationRepository from session internally)
 stats = await get_stats_cached(project_name_or_none, db_session)
@@ -34,14 +34,14 @@ Every mutation that affects stats data calls `invalidate_stats_cache()`:
 
 | Router/Module | Endpoints |
 |---------------|-----------|
-| `routers/optimize.py` | `POST /api/optimize`, `POST /api/optimize/{id}/retry` |
-| `routers/history.py` | `DELETE /api/history/{id}`, `POST /api/history/bulk-delete`, `DELETE /api/history/all` |
-| `routers/projects.py` | `POST /api/projects`, `DELETE /api/projects/{id}`, `POST .../archive`, `POST .../unarchive`, `DELETE .../prompts/{pid}` |
+| `routers/optimize.py` | `POST /api/apps/promptforge/optimize`, `POST /api/apps/promptforge/optimize/{id}/retry` |
+| `routers/history.py` | `DELETE /api/apps/promptforge/history/{id}`, `POST /api/apps/promptforge/history/bulk-delete`, `DELETE /api/apps/promptforge/history/all` |
+| `routers/projects.py` | `POST /api/apps/promptforge/projects`, `DELETE /api/apps/promptforge/projects/{id}`, `POST .../archive`, `POST .../unarchive`, `DELETE .../prompts/{pid}` |
 | `mcp_server.py` | `optimize`, `tag` (when project changes), `delete`, `bulk_delete`, `create_project` |
 
 ### HTTP Cache Headers
 
-`GET /api/history/stats` returns a `Cache-Control: max-age` header for browser caching. The server-side TTL is longer than the browser cache; between the two windows the client re-fetches but the server serves from cache.
+`GET /api/apps/promptforge/history/stats` returns a `Cache-Control: max-age` header for browser caching. The server-side TTL is longer than the browser cache; between the two windows the client re-fetches but the server serves from cache.
 
 ## Provider Staleness (Frontend)
 

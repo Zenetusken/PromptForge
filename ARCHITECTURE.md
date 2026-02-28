@@ -226,7 +226,7 @@ The pipeline runs as an async generator yielding named SSE events:
 | `complete` | Pipeline done | Full result with metadata and token counts |
 | `error` | Failure | Error message |
 
-Progress timing: `StageConfig` in `backend/app/constants.py` defines per-stage progress intervals (1.0–1.5s) and cycling progress messages. Progress values computed as `min(0.4 + 0.1 * msg_index, 0.9)`.
+Progress timing: `StageConfig` in `backend/apps/promptforge/constants.py` defines per-stage progress intervals (1.0–1.5s) and cycling progress messages. Progress values computed as `min(0.4 + 0.1 * msg_index, 0.9)`.
 
 ### 4.4 Iterative Refinement
 
@@ -252,7 +252,7 @@ The overall score is always server-computed (never trusts LLM arithmetic). One s
 
 ### 4.6 Token Budget Manager
 
-`TokenBudgetManager` (`backend/app/services/token_budget.py`) tracks per-provider token usage with optional daily limits:
+`TokenBudgetManager` (`backend/apps/promptforge/services/token_budget.py`) tracks per-provider token usage with optional daily limits:
 
 - Records `input_tokens`, `output_tokens`, `request_count` per provider
 - Auto-resets counters every 24 hours (preserves daily limits)
@@ -304,7 +304,7 @@ Three repositories isolate all DB queries from business logic:
 
 ### 5.4 Score Normalization
 
-DB stores 0.0–1.0 floats. API/MCP/UI displays 1–10 integers. Conversion logic in `backend/app/utils/scores.py`. The `converters.py` module transforms ORM models to Pydantic/dict with scores normalized for display.
+DB stores 0.0–1.0 floats. API/MCP/UI displays 1–10 integers. Conversion logic in `backend/apps/promptforge/utils/scores.py`. The `apps/promptforge/converters.py` module transforms ORM models to Pydantic/dict with scores normalized for display.
 
 ### 5.5 SQLite Configuration
 
@@ -343,7 +343,7 @@ Schema versions tracked in a `_schema_version` table for idempotent table rebuil
 
 ### 6.1 Overview
 
-FastMCP-based server (`backend/app/mcp_server.py`) exposing 22 tools and 4 resources over SSE HTTP transport on port 8001. Provides full programmatic access to PromptForge for external clients (Claude Code, IDEs). Auto-discoverable via `.mcp.json`.
+FastMCP-based server (`backend/apps/promptforge/mcp_server.py`) exposing 22 tools and 4 resources over SSE HTTP transport on port 8001. Provides full programmatic access to PromptForge for external clients (Claude Code, IDEs). Auto-discoverable via `.mcp.json`.
 
 ### 6.2 Tools
 
@@ -396,7 +396,7 @@ External Client ──MCP──► MCP Server ──webhook──► Backend ─
 - Webhook uses `X-Webhook-Secret` header when `INTERNAL_WEBHOOK_SECRET` is configured
 - Tool calls never fail if the webhook is unreachable
 - Backend `MCPActivityBroadcaster` singleton provides in-memory pub/sub with bounded history
-- SSE stream (`GET /api/mcp/events`) supports `Last-Event-ID` for gap-free reconnection
+- SSE stream (`GET /api/apps/promptforge/mcp/events`) supports `Last-Event-ID` for gap-free reconnection
 
 ### 6.5 Authentication
 
@@ -442,7 +442,7 @@ All fields are optional; unknown keys are silently ignored:
 
 **Claude Code** (`sync_source='claude-code'`): The `sync_workspace` MCP tool accepts workspace metadata (repo URL, git branch, file tree, dependencies) and creates/updates a workspace link.
 
-**Manual**: `context_profile` on the Project record, managed via `PUT /api/projects/{id}`, MCP `set_project_context`, or the `ContextProfileEditor` component. Stack templates provide 8 pre-built profiles for common technology stacks.
+**Manual**: `context_profile` on the Project record, managed via `PUT /api/apps/promptforge/projects/{id}`, MCP `set_project_context`, or the `ContextProfileEditor` component. Stack templates provide 8 pre-built profiles for common technology stacks.
 
 ### 7.4 Pipeline Integration
 
@@ -604,7 +604,7 @@ Request → GZip → SecurityHeaders → CORS → CSRF → RateLimit → Auth �
 
 ### 9.3 Authentication
 
-- **Backend API**: Bearer token via `Authorization` header. Exempt: `/api/health`, `/api/github/callback`, `/docs`, `/internal/`
+- **Backend API**: Bearer token via `Authorization` header. Exempt: `/api/apps/promptforge/health`, `/api/apps/promptforge/github/callback`, `/docs`, `/internal/`
 - **MCP Server**: Separate `MCPAuthMiddleware` with `MCP_AUTH_TOKEN`. Exempt: `/health`
 - **MCP Webhook**: `X-Webhook-Secret` header with `INTERNAL_WEBHOOK_SECRET`
 
@@ -742,7 +742,7 @@ All configuration via environment variables with sensible defaults:
 | `GEMINI_MODEL` | `gemini-2.5-pro` | Gemini model selection |
 | `GITHUB_CLIENT_ID` | (empty) | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | (empty) | GitHub OAuth App client secret |
-| `GITHUB_REDIRECT_URI` | `http://localhost:8000/api/github/callback` | OAuth callback URL |
+| `GITHUB_REDIRECT_URI` | `http://localhost:8000/api/apps/promptforge/github/callback` | OAuth callback URL |
 | `GITHUB_SCOPE` | `repo` | GitHub OAuth scope |
 | `ENCRYPTION_KEY` | (auto-generated) | Fernet key for token encryption at rest |
 
@@ -798,14 +798,14 @@ Triggered on push to `main` and pull requests.
 | `backend/app/providers/errors.py` | Typed error hierarchy |
 | `backend/app/providers/types.py` | CompletionRequest/Response/TokenUsage |
 | `backend/app/providers/models.py` | Static model catalog |
-| `backend/app/services/pipeline.py` | Pipeline orchestration (SSE generator) |
-| `backend/app/services/token_budget.py` | Per-provider token tracking with daily limits |
-| `backend/app/services/mcp_activity.py` | MCPActivityBroadcaster for real-time MCP event feed |
-| `backend/app/services/workspace_sync.py` | Deterministic codebase context extraction |
-| `backend/app/mcp_server.py` | FastMCP server (22 tools, 4 resources) |
+| `backend/apps/promptforge/services/pipeline.py` | Pipeline orchestration (SSE generator) |
+| `backend/apps/promptforge/services/token_budget.py` | Per-provider token tracking with daily limits |
+| `backend/apps/promptforge/services/mcp_activity.py` | MCPActivityBroadcaster for real-time MCP event feed |
+| `backend/apps/promptforge/services/workspace_sync.py` | Deterministic codebase context extraction |
+| `backend/apps/promptforge/mcp_server.py` | FastMCP server (22 tools, 4 resources) |
 | `backend/app/database.py` | SQLAlchemy setup, PRAGMAs, migration sequence |
-| `backend/app/constants.py` | Strategies enum, stage configs, score weights |
-| `backend/app/converters.py` | ORM → Pydantic/dict with score normalization |
+| `backend/apps/promptforge/constants.py` | Strategies enum, stage configs, score weights |
+| `backend/apps/promptforge/converters.py` | ORM → Pydantic/dict with score normalization |
 | `frontend/src/lib/stores/windowManager.svelte.ts` | Multi-window manager with snap layouts |
 | `frontend/src/lib/stores/forgeMachine.svelte.ts` | IDE mode state machine |
 | `frontend/src/lib/stores/processScheduler.svelte.ts` | Forge process lifecycle queue |

@@ -14,8 +14,8 @@ GZip → SecurityHeaders → CORS → CSRF → RateLimit → Auth → Audit → 
 | SecurityHeaders | `middleware/security_headers.py` | Adds `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, strict CSP. Relaxes CSP for Swagger/ReDoc paths. |
 | CORS | `fastapi.middleware.cors` | Origins from `FRONTEND_URL` (comma-separated). Exposes `X-LLM-*`, `X-Confirm-Delete`, `If-Unmodified-Since` headers. |
 | CSRF | `middleware/csrf.py` | Origin-based validation for state-changing methods (POST/PUT/DELETE/PATCH). Allows requests without `Origin` header (curl/non-browser clients). |
-| RateLimit | `middleware/rate_limit.py` | Per-IP sliding window. Limits from config: `RATE_LIMIT_RPM` (general), `RATE_LIMIT_OPTIMIZE_RPM` (`POST /api/optimize`). Internal service traffic exempt. Returns 429 + `Retry-After`. `reset()` for testing. |
-| Auth | `middleware/auth.py` | Optional bearer token. Active when `AUTH_TOKEN` config is set. Exempts health checks, documentation paths, and internal service endpoints. Constant-time comparison. |
+| RateLimit | `middleware/rate_limit.py` | Per-IP sliding window. Limits from config: `RATE_LIMIT_RPM` (general), `RATE_LIMIT_OPTIMIZE_RPM` (`POST /api/apps/promptforge/optimize`). Internal service traffic exempt. Returns 429 + `Retry-After`. `reset()` for testing. |
+| Auth | `middleware/auth.py` | Optional bearer token. Active when `AUTH_TOKEN` config is set. Exempts `/api/kernel/` routes (kernel has its own access control), health checks, documentation paths, and internal service endpoints. Constant-time comparison. |
 | Audit | `middleware/audit.py` | Logs state-changing requests (POST/PUT/DELETE/PATCH): method, path, status, client IP, provider name. Logger: `promptforge.audit`. Never logs API keys. |
 
 ## Shared Utilities
@@ -27,7 +27,7 @@ GZip → SecurityHeaders → CORS → CSRF → RateLimit → Auth → Audit → 
 
 ## MCP Server Middleware Stack
 
-The MCP server (`backend/app/mcp_server.py`) has its own Starlette middleware stack, separate from the main FastAPI app. Registered at the bottom of `mcp_server.py` using `app.add_middleware()` (LIFO order).
+The MCP server (`backend/apps/promptforge/mcp_server.py`) has its own Starlette middleware stack, separate from the main FastAPI app. Registered at the bottom of `mcp_server.py` using `app.add_middleware()` (LIFO order).
 
 ### Stack Order (outermost → innermost)
 
