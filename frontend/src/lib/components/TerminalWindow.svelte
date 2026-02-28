@@ -336,6 +336,7 @@
 	<div class="flex items-center gap-2 border-t border-neon-cyan/10 px-3 py-2">
 		<span class="text-[11px] text-neon-cyan shrink-0">$</span>
 		<input
+			id="terminal-input"
 			bind:this={inputRef}
 			bind:value={inputValue}
 			type="text"

@@ -68,6 +68,7 @@
 			<div class="flex items-center gap-2 border-b border-neon-cyan/10 px-3 py-2">
 				<Icon name="search" size={14} class="text-neon-cyan/60 shrink-0" />
 				<input
+					id="command-palette-search"
 					bind:this={inputRef}
 					bind:value={commandPalette.searchQuery}
 					type="text"

@@ -41,6 +41,7 @@
 	<p class="mb-1.5 text-[11px] font-medium text-neon-cyan">New Project</p>
 	<div class="space-y-1.5">
 		<input
+			id="create-project-name"
 			type="text"
 			bind:value={name}
 			placeholder="Project name"
@@ -49,6 +50,7 @@
 			class="input-field w-full py-1.5 text-[12px]"
 		/>
 		<textarea
+			id="create-project-description"
 			bind:value={description}
 			placeholder="Description (optional)"
 			aria-label="Project description"

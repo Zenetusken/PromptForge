@@ -139,6 +139,7 @@
 	<!-- LABEL: separate clickable/editable text -->
 	{#if editing}
 		<input
+			id="desktop-icon-rename-{id}"
 			class="desktop-icon-label-input"
 			type="text"
 			maxlength={40}

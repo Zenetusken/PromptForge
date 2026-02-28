@@ -320,6 +320,7 @@
 						</div>
 
 						<input
+							id="workspace-repo-search"
 							type="text"
 							placeholder="Search repos..."
 							class="w-full bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1.5 outline-none focus:border-neon-cyan/30"
@@ -334,6 +335,7 @@
 
 						<!-- Project selector for linking -->
 						<select
+							id="workspace-link-project"
 							class="w-full bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1.5 outline-none focus:border-neon-cyan/30"
 							bind:value={linkProjectId}
 							disabled={projectsLoading}

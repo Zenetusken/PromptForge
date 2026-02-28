@@ -52,6 +52,7 @@
 					<label class="flex items-center justify-between">
 						<span class="text-xs text-text-secondary">Default Strategy</span>
 						<select
+							id="cp-default-strategy"
 							class="bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none focus:border-neon-cyan/30"
 							value={settingsState.defaultStrategy}
 							onchange={(e) => settingsState.update({ defaultStrategy: (e.target as HTMLSelectElement).value })}
@@ -64,6 +65,7 @@
 					<label class="flex items-center justify-between">
 						<span class="text-xs text-text-secondary">Max Concurrent Forges</span>
 						<input
+							id="cp-max-concurrent"
 							type="number"
 							min="1"
 							max="5"
@@ -78,6 +80,7 @@
 					<label class="flex items-center justify-between">
 						<span class="text-xs text-text-secondary">Auto-retry on Rate Limit</span>
 						<input
+							id="cp-auto-retry"
 							type="checkbox"
 							class="accent-neon-cyan"
 							checked={settingsState.autoRetryOnRateLimit}

@@ -52,6 +52,7 @@
 			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-4'}">
 				<div>
 					<input
+						id="meta-title"
 						type="text"
 						bind:value={forgeSession.draft.title}
 						placeholder="Title"
@@ -74,6 +75,7 @@
 				</div>
 				<div class="{compact ? '' : 'max-w-[100px]'}">
 					<input
+						id="meta-version"
 						type="text"
 						bind:value={forgeSession.draft.version}
 						placeholder="Version"
@@ -91,6 +93,7 @@
 				</div>
 				<div>
 					<input
+						id="meta-project"
 						type="text"
 						bind:value={forgeSession.draft.project}
 						placeholder="Project"
@@ -112,6 +115,7 @@
 				</div>
 				<div>
 					<input
+						id="meta-tags"
 						type="text"
 						bind:value={forgeSession.draft.tags}
 						placeholder="Tags (comma-separated)"

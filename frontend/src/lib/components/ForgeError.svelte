@@ -81,6 +81,7 @@
 				{#if optimizationState.errorType === 'rate_limit'}
 					<label class="mt-1.5 flex items-center gap-1.5 cursor-pointer">
 						<input
+							id="forge-error-auto-retry"
 							type="checkbox"
 							bind:checked={forgeSession.autoRetryOnRateLimit}
 							class="accent-neon-cyan"

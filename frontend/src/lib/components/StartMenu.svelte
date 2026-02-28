@@ -231,6 +231,7 @@
 				<div class="px-3 pt-2 pb-2">
 					<p class="section-heading-dim text-[9px] mb-1.5">Projects</p>
 					<input
+						id="start-project-search"
 						bind:this={projectSearchInput}
 						type="text"
 						placeholder="Search..."

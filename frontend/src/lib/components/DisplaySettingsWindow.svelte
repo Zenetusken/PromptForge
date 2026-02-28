@@ -84,6 +84,7 @@
 					<span class="text-[10px] font-mono text-neon-cyan">{opacityPercent}%</span>
 				</div>
 				<input
+					id="display-wallpaper-opacity"
 					type="range"
 					class="cyber-range"
 					min="5"
@@ -125,6 +126,7 @@
 			<h3 class="section-heading mb-2">Visual Effects</h3>
 			<label class="flex items-center gap-2 cursor-pointer">
 				<input
+					id="display-enable-animations"
 					type="checkbox"
 					class="accent-neon-cyan"
 					checked={settingsState.enableAnimations}

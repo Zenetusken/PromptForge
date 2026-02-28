@@ -398,6 +398,7 @@
 		{#snippet toolbar()}
 			<div class="relative">
 				<input
+					id="projects-search"
 					type="text"
 					placeholder="Search..."
 					class="h-6 w-32 rounded border border-border-subtle bg-bg-input px-2 text-[10px] text-text-primary placeholder:text-text-dim/40 focus:border-neon-cyan/30 focus:outline-none"
@@ -460,6 +461,7 @@
 		{#snippet toolbar()}
 			{#if newFolderInput}
 				<input
+					id="projects-new-folder"
 					class="h-6 w-36 rounded border border-white/10 bg-bg-input px-2 text-[10px] text-text-primary outline-none focus:border-neon-cyan/40"
 					placeholder="Folder name..."
 					use:autoFocus

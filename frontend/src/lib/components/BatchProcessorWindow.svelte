@@ -184,6 +184,7 @@
 				Enter multiple prompts separated by blank lines or <code class="text-neon-cyan">---</code>. Max 20 prompts.
 			</p>
 			<textarea
+				id="batch-prompts"
 				class="w-full h-48 bg-bg-input border border-neon-cyan/10 text-xs text-text-primary p-3 outline-none resize-none focus:border-neon-cyan/30 font-mono"
 				placeholder="First prompt here...
 
@@ -198,6 +199,7 @@ Third prompt here..."
 				<label class="flex items-center gap-2">
 					<span class="text-[11px] text-text-secondary">Strategy:</span>
 					<select
+						id="batch-strategy"
 						class="bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none focus:border-neon-cyan/30"
 						bind:value={strategy}
 					>

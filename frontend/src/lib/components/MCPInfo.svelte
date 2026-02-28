@@ -258,6 +258,7 @@
 				<div class="relative mb-2">
 					<Icon name="search" size={10} class="absolute left-2 top-1/2 -translate-y-1/2 text-text-dim pointer-events-none" />
 					<input
+						id="mcp-tool-search"
 						type="text"
 						class="input-field w-full pl-6 pr-6 py-1 text-[10px]"
 						placeholder="Filter tools..."

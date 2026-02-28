@@ -240,6 +240,7 @@
 		<div class="flex items-center gap-1.5 flex-1 bg-bg-input border border-neon-cyan/10 px-2 py-1">
 			<Icon name="search" size={11} class="text-text-dim shrink-0" />
 			<input
+				id="template-search"
 				type="text"
 				placeholder="Search templates..."
 				class="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-dim outline-none"
@@ -247,6 +248,7 @@
 			/>
 		</div>
 		<select
+			id="template-category"
 			class="bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none"
 			bind:value={selectedCategory}
 		>
@@ -277,12 +279,14 @@
 			<div class="text-[10px] text-neon-green uppercase tracking-wider font-medium">Save Template</div>
 			<div class="flex gap-2">
 				<input
+					id="template-save-name"
 					type="text"
 					placeholder="Template name"
 					class="flex-1 bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none"
 					bind:value={saveTemplateName}
 				/>
 				<input
+					id="template-save-category"
 					type="text"
 					placeholder="Category"
 					class="w-28 bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none"
@@ -290,6 +294,7 @@
 				/>
 			</div>
 			<textarea
+				id="template-save-prompt"
 				placeholder="Prompt text..."
 				class="w-full bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1.5 outline-none resize-none h-16"
 				bind:value={saveTemplatePrompt}

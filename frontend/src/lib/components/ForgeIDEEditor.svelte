@@ -243,6 +243,7 @@
 			<!-- Auto-refine toggle -->
 			<label class="flex items-center gap-1.5 cursor-pointer">
 				<input
+					id="ide-auto-refine"
 					type="checkbox"
 					class="accent-neon-cyan"
 					bind:checked={autoRefine}
@@ -253,6 +254,7 @@
 				<label class="flex items-center gap-1">
 					<span class="text-[10px] text-text-dim">Min score:</span>
 					<input
+						id="ide-score-threshold"
 						type="range"
 						min="5"
 						max="9"
@@ -266,6 +268,7 @@
 			{#if sessionContext.hasContext}
 				<label class="flex items-center gap-1.5 cursor-pointer">
 					<input
+						id="ide-session-context"
 						type="checkbox"
 						class="accent-neon-purple"
 						bind:checked={useSessionContext}
