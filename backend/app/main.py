@@ -24,6 +24,7 @@ from app.routers import (
     projects,
     providers,
 )
+from kernel.routers import apps as kernel_apps
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,7 +38,14 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler - initializes database on startup."""
+    # Discover and initialize apps via kernel registry
+    from kernel.registry.app_registry import get_app_registry
+
+    registry = get_app_registry()
+    registry.discover()
+
     await init_db()
+
     # Validate configured LLM provider early so operators get immediate feedback
     env_provider = config.LLM_PROVIDER
     if env_provider:
@@ -51,10 +59,25 @@ async def lifespan(app: FastAPI):
                 "Startup: LLM_PROVIDER=%r is invalid or unavailable: %s",
                 env_provider, exc,
             )
+
+    # Mount routers from discovered apps (skip promptforge — its routers are hardcoded below)
+    registry.mount_routers(app, exclude={"promptforge"})
+
+    # Call on_startup for all enabled apps
+    for rec in registry.list_enabled():
+        try:
+            await rec.instance.on_startup(None)
+        except Exception as exc:
+            logger.error("App %r on_startup failed: %s", rec.manifest.id, exc)
+
     yield
-    # Shutdown: close persistent HTTP clients
-    from app.routers.health import _mcp_client
-    await _mcp_client.aclose()
+
+    # Shutdown: call on_shutdown for all enabled apps
+    for rec in registry.list_enabled():
+        try:
+            await rec.instance.on_shutdown(None)
+        except Exception as exc:
+            logger.error("App %r on_shutdown failed: %s", rec.manifest.id, exc)
 
 
 app = FastAPI(
@@ -65,8 +88,8 @@ app = FastAPI(
 )
 
 # ---------------------------------------------------------------------------
-# Middleware stack (outermost → innermost)
-# Order: GZip → SecurityHeaders → CORS → CSRF → RateLimit → Auth → Audit → Router
+# Middleware stack (outermost -> innermost)
+# Order: GZip -> SecurityHeaders -> CORS -> CSRF -> RateLimit -> Auth -> Audit -> Router
 # ---------------------------------------------------------------------------
 
 # Audit (innermost — logs after route handling)
@@ -101,7 +124,7 @@ app.add_middleware(
 # Security headers
 app.add_middleware(SecurityHeadersMiddleware)
 
-# GZip compression (outermost — compresses responses ≥4KB, avoids CPU waste on small payloads)
+# GZip compression (outermost — compresses responses >=4KB, avoids CPU waste on small payloads)
 app.add_middleware(GZipMiddleware, minimum_size=4096)
 
 # Include routers
@@ -113,6 +136,7 @@ app.include_router(filesystem.router)
 app.include_router(providers.router)
 app.include_router(mcp_activity.router)
 app.include_router(github.router)
+app.include_router(kernel_apps.router)
 
 
 @app.get("/")
