@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from kernel.repositories.app_storage import AppStorageRepository
+from kernel.repositories.audit import AuditRepository
+from kernel.security.access import AppContext, check_capability
+from kernel.security.dependencies import get_app_context, get_audit_repo
 
 router = APIRouter(prefix="/api/kernel/storage", tags=["kernel-storage"])
 
@@ -42,9 +45,11 @@ class UpdateDocumentRequest(BaseModel):
 async def list_collections(
     app_id: str,
     parent_id: str | None = None,
+    ctx: AppContext = Depends(get_app_context),
     repo: AppStorageRepository = Depends(_get_repo),
 ):
     """List collections for an app."""
+    check_capability(ctx, "storage:read")
     collections = await repo.list_collections(app_id, parent_id=parent_id)
     return {"app_id": app_id, "collections": collections}
 
@@ -53,12 +58,16 @@ async def list_collections(
 async def create_collection(
     app_id: str,
     body: CreateCollectionRequest,
+    ctx: AppContext = Depends(get_app_context),
     repo: AppStorageRepository = Depends(_get_repo),
+    audit: AuditRepository = Depends(get_audit_repo),
 ):
     """Create a new collection."""
+    check_capability(ctx, "storage:write")
     collection = await repo.create_collection(
         app_id, body.name, parent_id=body.parent_id
     )
+    await audit.log_action(app_id, "create", "collection", resource_id=collection["id"])
     return collection
 
 
@@ -66,12 +75,16 @@ async def create_collection(
 async def delete_collection(
     app_id: str,
     collection_id: str,
+    ctx: AppContext = Depends(get_app_context),
     repo: AppStorageRepository = Depends(_get_repo),
+    audit: AuditRepository = Depends(get_audit_repo),
 ):
     """Delete a collection and all its documents."""
+    check_capability(ctx, "storage:write")
     deleted = await repo.delete_collection(app_id, collection_id)
     if not deleted:
-        raise HTTPException(404, "Collection not found")
+        raise HTTPException(status_code=404, detail="Collection not found")
+    await audit.log_action(app_id, "delete", "collection", resource_id=collection_id)
     return {"deleted": True}
 
 
@@ -81,9 +94,11 @@ async def delete_collection(
 async def list_documents(
     app_id: str,
     collection_id: str | None = None,
+    ctx: AppContext = Depends(get_app_context),
     repo: AppStorageRepository = Depends(_get_repo),
 ):
     """List documents for an app, optionally filtered by collection."""
+    check_capability(ctx, "storage:read")
     documents = await repo.list_documents(app_id, collection_id=collection_id)
     return {"app_id": app_id, "documents": documents}
 
@@ -92,12 +107,14 @@ async def list_documents(
 async def get_document(
     app_id: str,
     document_id: str,
+    ctx: AppContext = Depends(get_app_context),
     repo: AppStorageRepository = Depends(_get_repo),
 ):
     """Get a single document."""
+    check_capability(ctx, "storage:read")
     doc = await repo.get_document(app_id, document_id)
     if not doc:
-        raise HTTPException(404, "Document not found")
+        raise HTTPException(status_code=404, detail="Document not found")
     return doc
 
 
@@ -105,9 +122,12 @@ async def get_document(
 async def create_document(
     app_id: str,
     body: CreateDocumentRequest,
+    ctx: AppContext = Depends(get_app_context),
     repo: AppStorageRepository = Depends(_get_repo),
+    audit: AuditRepository = Depends(get_audit_repo),
 ):
     """Create a new document."""
+    check_capability(ctx, "storage:write")
     doc = await repo.create_document(
         app_id,
         body.name,
@@ -116,6 +136,7 @@ async def create_document(
         content_type=body.content_type,
         metadata=body.metadata,
     )
+    await audit.log_action(app_id, "create", "document", resource_id=doc["id"])
     return doc
 
 
@@ -124,9 +145,12 @@ async def update_document(
     app_id: str,
     document_id: str,
     body: UpdateDocumentRequest,
+    ctx: AppContext = Depends(get_app_context),
     repo: AppStorageRepository = Depends(_get_repo),
+    audit: AuditRepository = Depends(get_audit_repo),
 ):
     """Update a document."""
+    check_capability(ctx, "storage:write")
     doc = await repo.update_document(
         app_id,
         document_id,
@@ -136,7 +160,8 @@ async def update_document(
         metadata=body.metadata,
     )
     if not doc:
-        raise HTTPException(404, "Document not found")
+        raise HTTPException(status_code=404, detail="Document not found")
+    await audit.log_action(app_id, "update", "document", resource_id=document_id)
     return doc
 
 
@@ -144,10 +169,14 @@ async def update_document(
 async def delete_document(
     app_id: str,
     document_id: str,
+    ctx: AppContext = Depends(get_app_context),
     repo: AppStorageRepository = Depends(_get_repo),
+    audit: AuditRepository = Depends(get_audit_repo),
 ):
     """Delete a document."""
+    check_capability(ctx, "storage:write")
     deleted = await repo.delete_document(app_id, document_id)
     if not deleted:
-        raise HTTPException(404, "Document not found")
+        raise HTTPException(status_code=404, detail="Document not found")
+    await audit.log_action(app_id, "delete", "document", resource_id=document_id)
     return {"deleted": True}

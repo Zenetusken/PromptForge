@@ -99,6 +99,21 @@ class FrontendManifest(BaseModel):
     settings: SettingsDef | None = None
 
 
+class CapabilitiesDef(BaseModel):
+    """Per-app capability declarations for access control."""
+
+    required: list[str] = Field(default_factory=list)
+    optional: list[str] = Field(default_factory=list)
+
+
+class ResourceQuota(BaseModel):
+    """Per-app resource quotas."""
+
+    max_storage_mb: int = 100
+    max_api_calls_per_hour: int = 1000
+    max_documents: int = 10000
+
+
 class AppManifest(BaseModel):
     """Complete app manifest parsed from manifest.json."""
 
@@ -110,6 +125,8 @@ class AppManifest(BaseModel):
     python_module: str = Field(min_length=1)
     entry_point: str = Field(min_length=1)
     requires_services: list[str] = Field(default_factory=list)
+    capabilities: CapabilitiesDef = Field(default_factory=CapabilitiesDef)
+    resource_quotas: ResourceQuota = Field(default_factory=ResourceQuota)
 
     backend: BackendManifest = Field(default_factory=BackendManifest)
     frontend: FrontendManifest = Field(default_factory=FrontendManifest)

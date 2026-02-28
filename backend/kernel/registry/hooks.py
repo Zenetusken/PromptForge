@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncConnection
 
+    from kernel.bus.contracts import EventContract
     from kernel.core import Kernel
 
 
@@ -58,3 +59,20 @@ class AppBase(ABC):
         Override to expose tools via the kernel's MCP aggregator.
         """
         return []
+
+    def get_event_contracts(self) -> list[EventContract]:
+        """Return event contracts published by this app.
+
+        Override to declare typed event schemas for inter-app communication.
+        Contracts are registered during kernel startup.
+        """
+        return []
+
+    def get_event_handlers(self) -> dict[str, Callable]:
+        """Return event handlers this app subscribes to.
+
+        Override to register handlers for events from other apps.
+        Keys are event type strings, values are async callables
+        with signature ``(data: dict, source_app: str) -> Any``.
+        """
+        return {}
