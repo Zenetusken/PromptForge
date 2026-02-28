@@ -8,8 +8,6 @@
 	import StartMenu from "$lib/components/StartMenu.svelte";
 	import Toast from "$lib/components/Toast.svelte";
 	import ForgeIDEWorkspace from "$lib/components/ForgeIDEWorkspace.svelte";
-	import ProjectsWindow from "$lib/components/ProjectsWindow.svelte";
-	import HistoryWindow from "$lib/components/HistoryWindow.svelte";
 	import CommandPaletteUI from "$lib/components/CommandPaletteUI.svelte";
 	import ConfirmModal from "$lib/components/ConfirmModal.svelte";
 	import SnapPreview from "$lib/components/SnapPreview.svelte";
@@ -33,6 +31,9 @@
 	import { workspaceManager } from "$lib/stores/workspaceManager.svelte";
 	import { saveActiveTabState, restoreTabState, closeIDE } from "$lib/stores/tabCoherence";
 	import { onMount } from "svelte";
+	import { appRegistry } from "$lib/kernel/services/appRegistry.svelte";
+	import { promptForgeApp } from "$lib/apps/promptforge";
+	import { helloWorldApp } from "$lib/apps/hello_world";
 
 	// View Transitions API for page navigation crossfade
 	onNavigate((navigation) => {
@@ -64,6 +65,18 @@
 	}
 
 	onMount(() => {
+		// --- OS Bootstrap: App Registry ---
+		appRegistry.register(promptForgeApp);
+		appRegistry.register(helloWorldApp);
+		appRegistry.setKernel({
+			bus: systemBus,
+			windowManager,
+			commandPalette,
+			processScheduler,
+			settings: settingsState,
+			clipboard: clipboardService,
+		});
+
 		if (!historyState.hasLoaded) {
 			historyState.loadHistory();
 		}
@@ -582,7 +595,7 @@
 				<!-- Snap Preview (z-index: 9, below windows) -->
 				<SnapPreview />
 
-				<!-- IDE Window -->
+				<!-- IDE Window (special case — static import, custom close handler) -->
 				{#if windowManager.ideVisible}
 					<DesktopWindow
 						windowId="ide"
@@ -596,169 +609,30 @@
 					</DesktopWindow>
 				{/if}
 
-				<!-- Recycle Bin Window (dynamic import) -->
-				{#if windowManager.getWindow('recycle-bin')}
-					{#await import("$lib/components/RecycleBinWindow.svelte") then mod}
-						<DesktopWindow
-							windowId="recycle-bin"
-							title="Recycle Bin ({desktopStore.binItemCount})"
-							icon="trash-2"
-						>
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="recycle-bin" title="Recycle Bin" icon="trash-2">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
+				<!-- Registry-driven app windows (all manifest-declared windows except IDE) -->
+				{#each appRegistry.allWindows.filter(w => w.windowId !== 'ide') as reg (reg.windowId)}
+					{#if windowManager.getWindow(reg.windowId)}
+						{#await reg.loadComponent() then mod}
+							{@const Component = mod.default}
+							<DesktopWindow windowId={reg.windowId} title={reg.title} icon={reg.icon}>
+								<Component />
+							</DesktopWindow>
+						{:catch}
+							<DesktopWindow windowId={reg.windowId} title={reg.title} icon={reg.icon}>
+								<p class="p-4 text-text-secondary">Failed to load component.</p>
+							</DesktopWindow>
+						{/await}
+					{/if}
+				{/each}
 
-				<!-- Projects Window (static — frequently used) -->
-				{#if windowManager.getWindow('projects')}
-					<DesktopWindow
-						windowId="projects"
-						title="Projects"
-						icon="folder"
-					>
-						<ProjectsWindow />
-					</DesktopWindow>
-				{/if}
-
-				<!-- History Window (static — frequently used) -->
-				{#if windowManager.getWindow('history')}
-					<DesktopWindow
-						windowId="history"
-						title="History"
-						icon="clock"
-					>
-						<HistoryWindow />
-					</DesktopWindow>
-				{/if}
-
-				<!-- Control Panel Window (dynamic import) -->
-				{#if windowManager.getWindow('control-panel')}
-					{#await import("$lib/components/ControlPanelWindow.svelte") then mod}
-						<DesktopWindow windowId="control-panel" title="Control Panel" icon="settings">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="control-panel" title="Control Panel" icon="settings">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Task Manager Window (dynamic import) -->
-				{#if windowManager.getWindow('task-manager')}
-					{#await import("$lib/components/TaskManagerWindow.svelte") then mod}
-						<DesktopWindow windowId="task-manager" title="Task Manager" icon="cpu">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="task-manager" title="Task Manager" icon="cpu">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Batch Processor Window (dynamic import) -->
-				{#if windowManager.getWindow('batch-processor')}
-					{#await import("$lib/components/BatchProcessorWindow.svelte") then mod}
-						<DesktopWindow windowId="batch-processor" title="Batch Processor" icon="layers">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="batch-processor" title="Batch Processor" icon="layers">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Strategy Workshop Window (dynamic import) -->
-				{#if windowManager.getWindow('strategy-workshop')}
-					{#await import("$lib/components/StrategyWorkshopWindow.svelte") then mod}
-						<DesktopWindow windowId="strategy-workshop" title="Strategy Workshop" icon="bar-chart">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="strategy-workshop" title="Strategy Workshop" icon="bar-chart">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Template Library Window (dynamic import) -->
-				{#if windowManager.getWindow('template-library')}
-					{#await import("$lib/components/TemplateLibraryWindow.svelte") then mod}
-						<DesktopWindow windowId="template-library" title="Template Library" icon="file-text">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="template-library" title="Template Library" icon="file-text">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Terminal Window (dynamic import) -->
-				{#if windowManager.getWindow('terminal')}
-					{#await import("$lib/components/TerminalWindow.svelte") then mod}
-						<DesktopWindow windowId="terminal" title="Terminal" icon="terminal">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="terminal" title="Terminal" icon="terminal">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Network Monitor Window (dynamic import) -->
-				{#if windowManager.getWindow('network-monitor')}
-					{#await import("$lib/components/NetworkMonitorWindow.svelte") then mod}
-						<DesktopWindow windowId="network-monitor" title="Network Monitor" icon="activity">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="network-monitor" title="Network Monitor" icon="activity">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Workspace Hub Window (dynamic import) -->
-				{#if windowManager.getWindow('workspace-manager')}
-					{#await import("$lib/components/WorkspaceWindow.svelte") then mod}
-						<DesktopWindow windowId="workspace-manager" title="Workspace Hub" icon="git-branch">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="workspace-manager" title="Workspace Hub" icon="git-branch">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Display Settings Window (dynamic import) -->
-				{#if windowManager.getWindow('display-settings')}
-					{#await import("$lib/components/DisplaySettingsWindow.svelte") then mod}
-						<DesktopWindow windowId="display-settings" title="Display Settings" icon="monitor">
-							<mod.default />
-						</DesktopWindow>
-					{:catch}
-						<DesktopWindow windowId="display-settings" title="Display Settings" icon="monitor">
-							<p class="p-4 text-text-secondary">Failed to load component.</p>
-						</DesktopWindow>
-					{/await}
-				{/if}
-
-				<!-- Dynamic Folder Windows -->
+				<!-- Dynamic Folder Windows (not manifest-declared, created at runtime) -->
 				{#each windowManager.windows.filter(w => w.id.startsWith('folder-')) as entry (entry.id)}
 					{@const folderId = entry.data?.folderId as string}
 					{#if folderId}
 						{#await import("$lib/components/FolderWindow.svelte") then mod}
+							{@const FolderWindow = mod.default}
 							<DesktopWindow windowId={entry.id} title={entry.title} icon="folder">
-								<mod.default {folderId} />
+								<FolderWindow {folderId} />
 							</DesktopWindow>
 						{:catch}
 							<DesktopWindow windowId={entry.id} title={entry.title} icon="folder">

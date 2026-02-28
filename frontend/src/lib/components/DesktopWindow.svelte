@@ -32,6 +32,8 @@
 	} = $props();
 
 	let win = $derived(windowManager.getWindow(windowId));
+	/** Use windowManager state title (dynamically updated) if available, otherwise fall back to prop. */
+	let displayTitle = $derived(win?.title ?? title);
 	let isFocused = $derived(windowManager.activeWindowId === windowId);
 	let isMaximized = $derived(win?.state === 'maximized');
 	let isNormal = $derived(win?.state === 'normal');
@@ -376,11 +378,11 @@
 
 			{#if !hasNav}
 				<span class="flex-1 truncate text-[11px] font-medium {isFocused ? 'text-text-primary' : 'text-text-dim'}">
-					{title}
+					{displayTitle}
 				</span>
 			{:else}
 				<span class="shrink-0 text-[11px] font-medium {isFocused ? 'text-text-primary' : 'text-text-dim'}">
-					{title}
+					{displayTitle}
 				</span>
 
 				<!-- Center: nav chevrons + breadcrumbs -->
