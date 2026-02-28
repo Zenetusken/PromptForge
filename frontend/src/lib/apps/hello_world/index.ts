@@ -46,6 +46,7 @@ const manifest: AppManifestFrontend = {
 			label: "Hello World",
 			icon: "smile",
 			action: "openWindow:hello-world",
+			color: "green",
 		},
 	],
 };
@@ -60,9 +61,43 @@ const COMPONENT_MAP: Record<
 
 export class HelloWorldApp implements AppFrontend {
 	readonly manifest = manifest;
+	private _cleanup: (() => void)[] = [];
 
-	init(_kernel: KernelAPI): void {}
-	destroy(): void {}
+	init(kernel: KernelAPI): void {
+		// Build commands from manifest metadata + execute functions
+		const executeMap: Record<string, { execute: () => void }> = {
+			"hello-world:greet": {
+				execute: () => kernel.windowManager.openWindow({
+					id: "hello-world",
+					title: "Hello World",
+					icon: "smile",
+				}),
+			},
+		};
+
+		const commands = manifest.commands
+			.filter((cmd) => executeMap[cmd.id])
+			.map((cmd) => ({
+				id: cmd.id,
+				label: cmd.label,
+				category: cmd.category,
+				...(cmd.shortcut ? { shortcut: cmd.shortcut } : {}),
+				...(cmd.icon ? { icon: cmd.icon } : {}),
+				...executeMap[cmd.id],
+			}));
+
+		kernel.commandPalette.registerAll(commands);
+
+		const commandIds = commands.map(c => c.id);
+		this._cleanup.push(() => {
+			for (const id of commandIds) kernel.commandPalette.unregister(id);
+		});
+	}
+
+	destroy(): void {
+		for (const fn of this._cleanup) fn();
+		this._cleanup = [];
+	}
 
 	async getComponent(name: string): Promise<{ default: AnyComponent }> {
 		const loader = COMPONENT_MAP[name];

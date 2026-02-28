@@ -32,7 +32,7 @@
 	import { saveActiveTabState, restoreTabState, closeIDE } from "$lib/stores/tabCoherence";
 	import { onMount } from "svelte";
 	import { appRegistry } from "$lib/kernel/services/appRegistry.svelte";
-	import { promptForgeApp } from "$lib/apps/promptforge";
+	import { promptForgeApp, closeActiveTab } from "$lib/apps/promptforge";
 	import { helloWorldApp } from "$lib/apps/hello_world";
 
 	// View Transitions API for page navigation crossfade
@@ -48,22 +48,6 @@
 
 	let { children } = $props();
 
-	/** Shared close-tab logic used by command palette tab-close + Ctrl+W shortcut. */
-	function closeActiveTab() {
-		if (!windowManager.ideVisible || forgeMachine.mode === 'forging') return;
-		if (forgeSession.tabs.length <= 1) {
-			optimizationState.resetForge();
-			forgeMachine.reset();
-			forgeSession.reset();
-		} else {
-			const idx = forgeSession.tabs.findIndex(t => t.id === forgeSession.activeTabId);
-			forgeSession.tabs = forgeSession.tabs.filter(t => t.id !== forgeSession.activeTabId);
-			const nextTab = forgeSession.tabs[Math.max(0, idx - 1)];
-			forgeSession.activeTabId = nextTab.id;
-			restoreTabState(nextTab);
-		}
-	}
-
 	onMount(() => {
 		// --- OS Bootstrap: App Registry ---
 		appRegistry.register(promptForgeApp);
@@ -76,6 +60,9 @@
 			settings: settingsState,
 			clipboard: clipboardService,
 		});
+
+		// Sync app-declared desktop icons after registry is populated
+		desktopStore.syncAppIcons();
 
 		if (!historyState.hasLoaded) {
 			historyState.loadHistory();
@@ -115,124 +102,10 @@
 			}, 1000);
 		});
 
-		// --- OS Bootstrap: Command Registry ---
+		// --- OS Bootstrap: Kernel Command Registry ---
+		// App-specific commands are registered by each app's init() (called by setKernel above).
+		// Only kernel-level commands (palette toggle, snap/tile) remain here.
 		commandPalette.registerAll([
-			{
-				id: 'ide-open',
-				label: 'Open Forge IDE',
-				category: 'window',
-				shortcut: '/',
-				icon: 'terminal',
-				execute: () => { windowManager.openIDE(); forgeSession.focusTextarea(); },
-			},
-			{
-				id: 'ide-minimize',
-				label: 'Toggle Minimize IDE',
-				category: 'window',
-				shortcut: 'Ctrl+M',
-				icon: 'minus',
-				execute: () => {
-					if (windowManager.ideSpawned) {
-						if (windowManager.ideVisible) windowManager.minimizeWindow('ide');
-						else windowManager.focusWindow('ide');
-					}
-				},
-				available: () => windowManager.ideSpawned,
-			},
-			{
-				id: 'tab-new',
-				label: 'New Tab',
-				category: 'forge',
-				shortcut: 'Ctrl+N',
-				icon: 'plus',
-				execute: () => {
-					if (forgeMachine.mode === 'forging') return;
-					saveActiveTabState();
-					const tab = forgeSession.createTab();
-					if (tab) { restoreTabState(tab); forgeSession.activate(); }
-				},
-			},
-			{
-				id: 'tab-close',
-				label: 'Close Tab',
-				category: 'forge',
-				shortcut: 'Ctrl+W',
-				icon: 'x',
-				execute: closeActiveTab,
-				available: () => windowManager.ideVisible,
-			},
-			{
-				id: 'window-projects',
-				label: 'Open Projects',
-				category: 'window',
-				icon: 'folder',
-				execute: () => windowManager.openProjectsWindow(),
-			},
-			{
-				id: 'window-history',
-				label: 'Open History',
-				category: 'window',
-				icon: 'clock',
-				execute: () => windowManager.openHistoryWindow(),
-			},
-			{
-				id: 'window-control-panel',
-				label: 'Open Control Panel',
-				category: 'settings',
-				icon: 'settings',
-				execute: () => windowManager.openWindow({ id: 'control-panel', title: 'Control Panel', icon: 'settings' }),
-			},
-			{
-				id: 'window-task-manager',
-				label: 'Open Task Manager',
-				category: 'window',
-				shortcut: 'Ctrl+Shift+Esc',
-				icon: 'cpu',
-				execute: () => windowManager.openWindow({ id: 'task-manager', title: 'Task Manager', icon: 'cpu' }),
-			},
-			{
-				id: 'window-batch-processor',
-				label: 'Open Batch Processor',
-				category: 'forge',
-				icon: 'layers',
-				execute: () => windowManager.openWindow({ id: 'batch-processor', title: 'Batch Processor', icon: 'layers' }),
-			},
-			{
-				id: 'window-strategy-workshop',
-				label: 'Open Strategy Workshop',
-				category: 'forge',
-				icon: 'bar-chart',
-				execute: () => windowManager.openWindow({ id: 'strategy-workshop', title: 'Strategy Workshop', icon: 'bar-chart' }),
-			},
-			{
-				id: 'window-template-library',
-				label: 'Open Template Library',
-				category: 'forge',
-				icon: 'file-text',
-				execute: () => windowManager.openWindow({ id: 'template-library', title: 'Template Library', icon: 'file-text' }),
-			},
-			{
-				id: 'window-terminal',
-				label: 'Open Terminal',
-				category: 'window',
-				shortcut: 'Ctrl+`',
-				icon: 'terminal',
-				execute: () => windowManager.openWindow({ id: 'terminal', title: 'Terminal', icon: 'terminal' }),
-			},
-			{
-				id: 'window-network-monitor',
-				label: 'Open Network Monitor',
-				category: 'window',
-				icon: 'activity',
-				execute: () => windowManager.openNetworkMonitor(),
-			},
-			{
-				id: 'window-display-settings',
-				label: 'Display Settings',
-				category: 'settings',
-				icon: 'monitor',
-				execute: () => windowManager.openDisplaySettings(),
-			},
 			{
 				id: 'command-palette-toggle',
 				label: 'Command Palette',
@@ -373,7 +246,7 @@
 			if (e.key === "w" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
 				if (windowManager.ideVisible) {
 					e.preventDefault();
-					closeActiveTab();
+					closeActiveTab().catch(() => {});
 					return;
 				}
 			}

@@ -1,7 +1,7 @@
 /**
  * PromptForge app — implements AppFrontend for the kernel shell.
  *
- * Registers windows, commands, and file handlers with the kernel.
+ * Registers windows, commands, desktop icons, and file handlers with the kernel.
  */
 
 import type {
@@ -170,27 +170,20 @@ const manifest: AppManifestFrontend = {
 		},
 	],
 	commands: [
-		{
-			id: "promptforge:new-forge",
-			label: "New Forge",
-			category: "forge",
-			shortcut: "/",
-			icon: "zap",
-		},
-		{
-			id: "promptforge:open-history",
-			label: "Open History",
-			category: "navigation",
-			shortcut: "Ctrl+H",
-			icon: "clock",
-		},
-		{
-			id: "promptforge:open-projects",
-			label: "Open Projects",
-			category: "navigation",
-			shortcut: "Ctrl+P",
-			icon: "folder",
-		},
+		{ id: "ide-open", label: "Open Forge IDE", category: "window", shortcut: "/", icon: "terminal" },
+		{ id: "ide-minimize", label: "Toggle Minimize IDE", category: "window", shortcut: "Ctrl+M", icon: "minus" },
+		{ id: "tab-new", label: "New Tab", category: "forge", shortcut: "Ctrl+N", icon: "plus" },
+		{ id: "tab-close", label: "Close Tab", category: "forge", shortcut: "Ctrl+W", icon: "x" },
+		{ id: "window-projects", label: "Open Projects", category: "window", shortcut: "", icon: "folder" },
+		{ id: "window-history", label: "Open History", category: "window", shortcut: "", icon: "clock" },
+		{ id: "window-control-panel", label: "Open Control Panel", category: "settings", shortcut: "", icon: "settings" },
+		{ id: "window-task-manager", label: "Open Task Manager", category: "window", shortcut: "Ctrl+Shift+Esc", icon: "cpu" },
+		{ id: "window-batch-processor", label: "Open Batch Processor", category: "forge", shortcut: "", icon: "layers" },
+		{ id: "window-strategy-workshop", label: "Open Strategy Workshop", category: "forge", shortcut: "", icon: "bar-chart" },
+		{ id: "window-template-library", label: "Open Template Library", category: "forge", shortcut: "", icon: "file-text" },
+		{ id: "window-terminal", label: "Open Terminal", category: "window", shortcut: "Ctrl+`", icon: "terminal" },
+		{ id: "window-network-monitor", label: "Open Network Monitor", category: "window", shortcut: "", icon: "activity" },
+		{ id: "window-display-settings", label: "Display Settings", category: "settings", shortcut: "", icon: "monitor" },
 	],
 	bus_events: [
 		"forge:started",
@@ -208,16 +201,21 @@ const manifest: AppManifestFrontend = {
 		},
 	],
 	start_menu: {
-		pinned: ["ide", "projects", "history"],
+		pinned: ["ide", "workspace-manager"],
 		section: "Tools",
 	},
 	desktop_icons: [
-		{
-			id: "promptforge-ide",
-			label: "Forge IDE",
-			icon: "terminal",
-			action: "openWindow:ide",
-		},
+		{ id: "sys-forge-ide", label: "Forge IDE", icon: "terminal", action: "openWindow:ide", color: "cyan" },
+		{ id: "sys-projects", label: "Projects", icon: "folder", action: "openWindow:projects", color: "yellow", type: "folder" },
+		{ id: "sys-history", label: "History", icon: "folder", action: "openWindow:history", color: "blue", type: "folder" },
+		{ id: "sys-control-panel", label: "Control Panel", icon: "settings", action: "openWindow:control-panel", color: "purple" },
+		{ id: "sys-task-manager", label: "Task Manager", icon: "cpu", action: "openWindow:task-manager", color: "green" },
+		{ id: "sys-batch-processor", label: "Batch Processor", icon: "layers", action: "openWindow:batch-processor", color: "orange" },
+		{ id: "sys-strategy-workshop", label: "Strategy Workshop", icon: "bar-chart", action: "openWindow:strategy-workshop", color: "indigo" },
+		{ id: "sys-template-library", label: "Template Library", icon: "file-text", action: "openWindow:template-library", color: "teal" },
+		{ id: "sys-terminal", label: "Terminal", icon: "terminal", action: "openWindow:terminal", color: "cyan" },
+		{ id: "sys-network-monitor", label: "Network Monitor", icon: "activity", action: "openWindow:network-monitor", color: "green" },
+		{ id: "sys-workspace-hub", label: "Workspace Hub", icon: "git-branch", action: "openWindow:workspace-manager", color: "green" },
 	],
 };
 
@@ -248,16 +246,135 @@ const COMPONENT_MAP: Record<
 	FolderWindow: () => import("$lib/components/FolderWindow.svelte"),
 };
 
+/**
+ * Close the active forge tab. Exported so +layout.svelte's keyboard handler
+ * can reuse the same logic without duplication.
+ */
+export async function closeActiveTab(): Promise<void> {
+	const [{ forgeMachine }, { forgeSession }, { optimizationState }, { restoreTabState }] =
+		await Promise.all([
+			import("$lib/stores/forgeMachine.svelte"),
+			import("$lib/stores/forgeSession.svelte"),
+			import("$lib/stores/optimization.svelte"),
+			import("$lib/stores/tabCoherence"),
+		]);
+
+	const { windowManager } = await import("$lib/stores/windowManager.svelte");
+	if (!windowManager.ideVisible || forgeMachine.mode === 'forging') return;
+
+	if (forgeSession.tabs.length <= 1) {
+		optimizationState.resetForge();
+		forgeMachine.reset();
+		forgeSession.reset();
+	} else {
+		const idx = forgeSession.tabs.findIndex((t: { id: string }) => t.id === forgeSession.activeTabId);
+		forgeSession.tabs = forgeSession.tabs.filter((t: { id: string }) => t.id !== forgeSession.activeTabId);
+		const nextTab = forgeSession.tabs[Math.max(0, idx - 1)];
+		forgeSession.activeTabId = nextTab.id;
+		restoreTabState(nextTab);
+	}
+}
+
+/** Helper: open a manifest-declared window via windowManager. */
+function openWindowCmd(windowManager: KernelAPI['windowManager'], windowId: string) {
+	const win = manifest.windows.find((w) => w.id === windowId);
+	if (win) {
+		windowManager.openWindow({ id: win.id, title: win.title, icon: win.icon });
+	}
+}
+
 export class PromptForgeApp implements AppFrontend {
 	readonly manifest = manifest;
+	private _cleanup: (() => void)[] = [];
 
-	init(_kernel: KernelAPI): void {
-		// App-specific initialization (bus subscriptions, etc.)
-		// Currently handled by +layout.svelte during transition
+	init(kernel: KernelAPI): void {
+		const { commandPalette, windowManager } = kernel;
+
+		// Lazy-load forge stores to avoid circular deps at module scope
+		const getForgeStores = () =>
+			Promise.all([
+				import("$lib/stores/forgeMachine.svelte"),
+				import("$lib/stores/forgeSession.svelte"),
+				import("$lib/stores/optimization.svelte"),
+				import("$lib/stores/tabCoherence"),
+			]);
+
+		// Cache the resolved stores after first load
+		let _stores: Awaited<ReturnType<typeof getForgeStores>> | null = null;
+		const stores = async () => {
+			if (!_stores) _stores = await getForgeStores();
+			return _stores;
+		};
+
+		// Execute function map — keyed by manifest command ID.
+		// Only non-trivial commands need entries; window-* commands are auto-generated below.
+		const executeMap: Record<string, { execute: () => void; available?: () => boolean }> = {
+			'ide-open': {
+				execute: () => {
+					windowManager.openIDE();
+					stores().then(([, { forgeSession }]) => forgeSession.focusTextarea());
+				},
+			},
+			'ide-minimize': {
+				execute: () => {
+					if (windowManager.ideSpawned) {
+						if (windowManager.ideVisible) windowManager.minimizeWindow('ide');
+						else windowManager.focusWindow('ide');
+					}
+				},
+				available: () => windowManager.ideSpawned,
+			},
+			'tab-new': {
+				execute: () => {
+					stores().then(([{ forgeMachine }, { forgeSession }, , { saveActiveTabState, restoreTabState }]) => {
+						if (forgeMachine.mode === 'forging') return;
+						saveActiveTabState();
+						const tab = forgeSession.createTab();
+						if (tab) { restoreTabState(tab); forgeSession.activate(); }
+					});
+				},
+			},
+			'tab-close': {
+				execute: () => { closeActiveTab(); },
+				available: () => windowManager.ideVisible,
+			},
+		};
+
+		// Auto-generate execute functions for window-* commands from manifest windows.
+		// Pattern: "window-{windowId}" → open the corresponding window.
+		for (const cmd of manifest.commands) {
+			if (cmd.id.startsWith('window-') && !executeMap[cmd.id]) {
+				const windowId = cmd.id.slice('window-'.length);
+				executeMap[cmd.id] = {
+					execute: () => openWindowCmd(windowManager, windowId),
+				};
+			}
+		}
+
+		// Build full command objects by merging manifest metadata + execute functions
+		const commands = manifest.commands
+			.filter((cmd) => executeMap[cmd.id])
+			.map((cmd) => ({
+				id: cmd.id,
+				label: cmd.label,
+				category: cmd.category,
+				...(cmd.shortcut ? { shortcut: cmd.shortcut } : {}),
+				...(cmd.icon ? { icon: cmd.icon } : {}),
+				...executeMap[cmd.id],
+			}));
+
+		commandPalette.registerAll(commands);
+
+		// Track registered command IDs for cleanup
+		const commandIds = commands.map(c => c.id);
+		this._cleanup.push(() => {
+			for (const id of commandIds) commandPalette.unregister(id);
+		});
 	}
 
 	destroy(): void {
-		// Cleanup
+		for (const fn of this._cleanup) fn();
+		this._cleanup = [];
 	}
 
 	async getComponent(name: string): Promise<{ default: AnyComponent }> {
@@ -270,9 +387,15 @@ export class PromptForgeApp implements AppFrontend {
 		return loader();
 	}
 
-	async openFile(_descriptor: GenericFileDescriptor): Promise<void> {
-		// Delegate to the existing documentOpener
-		// Will be wired up when we migrate stores
+	async openFile(descriptor: GenericFileDescriptor): Promise<void> {
+		const { openDocument } = await import("$lib/utils/documentOpener");
+		const { createPromptDescriptor, createArtifactDescriptor } = await import("$lib/utils/fileDescriptor");
+
+		if (descriptor.extension === '.md' || descriptor.kind === 'prompt') {
+			openDocument(createPromptDescriptor(descriptor.id, descriptor.metadata?.projectId as string ?? '', descriptor.name));
+		} else if (descriptor.extension === '.forge' || descriptor.kind === 'artifact') {
+			openDocument(createArtifactDescriptor(descriptor.id, descriptor.name));
+		}
 	}
 }
 
