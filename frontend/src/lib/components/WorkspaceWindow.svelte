@@ -475,7 +475,7 @@
 									<span class="text-neon-cyan font-medium shrink-0">4.</span>
 									<div>
 										Set <span class="text-text-primary">Authorization callback URL</span> to:
-										<code class="block text-[9px] text-neon-cyan bg-bg-input px-2 py-1 mt-0.5 border border-neon-cyan/10 select-all">http://localhost:8000/api/github/callback</code>
+										<code class="block text-[9px] text-neon-cyan bg-bg-input px-2 py-1 mt-0.5 border border-neon-cyan/10 select-all">http://localhost:8000/api/apps/promptforge/github/callback</code>
 									</div>
 								</div>
 								<div class="flex items-start gap-2">

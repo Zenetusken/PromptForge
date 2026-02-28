@@ -13,13 +13,13 @@ const manifest: AppManifestFrontend = {
 	id: "hello-world",
 	version: "0.1.0",
 	name: "Hello World",
-	icon: "smile",
+	icon: "sparkles",
 	accent_color: "neon-green",
 	windows: [
 		{
 			id: "hello-world",
 			title: "Hello World",
-			icon: "smile",
+			icon: "sparkles",
 			component: "HelloWorldWindow",
 			persistent: false,
 		},
@@ -31,7 +31,7 @@ const manifest: AppManifestFrontend = {
 			label: "Say Hello",
 			category: "apps",
 			shortcut: "",
-			icon: "smile",
+			icon: "sparkles",
 		},
 	],
 	bus_events: [],
@@ -44,7 +44,7 @@ const manifest: AppManifestFrontend = {
 		{
 			id: "hello-world",
 			label: "Hello World",
-			icon: "smile",
+			icon: "sparkles",
 			action: "openWindow:hello-world",
 			color: "green",
 		},
@@ -70,7 +70,7 @@ export class HelloWorldApp implements AppFrontend {
 				execute: () => kernel.windowManager.openWindow({
 					id: "hello-world",
 					title: "Hello World",
-					icon: "smile",
+					icon: "sparkles",
 				}),
 			},
 		};

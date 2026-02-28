@@ -567,17 +567,17 @@ class OptimizationState {
 				priority: 'interactive',
 				promptHash: tournamentId,
 				metadata: tourneyMeta,
-				onExecute: () => {
+				onExecute: (p) => {
 					fetchOptimize(
 						prompt,
 						(event) => {
 							if (event.type === 'step_start' && event.step) {
 								const stageProgress: Record<string, number> = { analyze: 0.1, strategy: 0.3, optimize: 0.5, validate: 0.8 };
-								processScheduler.updateProgress(proc.id, event.step, stageProgress[event.step] ?? 0);
+								processScheduler.updateProgress(p.id, event.step, stageProgress[event.step] ?? 0);
 							}
 							if (event.type === 'result') {
 								const resultState = mapToResultState(event.data || {}, prompt);
-								processScheduler.complete(proc.id, {
+								processScheduler.complete(p.id, {
 									score: resultState.scores.overall,
 									strategy,
 									optimizationId: resultState.id,
@@ -598,7 +598,7 @@ class OptimizationState {
 									this._onTournamentComplete(tournamentResults);
 								}
 							} else if (event.type === 'error') {
-								processScheduler.fail(proc.id, event.error || 'Failed');
+								processScheduler.fail(p.id, event.error || 'Failed');
 								tournamentResults.push({ strategy, score: 0, id: '', result: null as any });
 								if (tournamentResults.length === totalStrategies) {
 									this._onTournamentComplete(tournamentResults);
@@ -606,7 +606,7 @@ class OptimizationState {
 							}
 						},
 						(err) => {
-							processScheduler.fail(proc.id, err.message);
+							processScheduler.fail(p.id, err.message);
 							tournamentResults.push({ strategy, score: 0, id: '', result: null as any });
 							if (tournamentResults.length === totalStrategies) {
 								this._onTournamentComplete(tournamentResults);

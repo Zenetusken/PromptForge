@@ -17,13 +17,13 @@ const manifest: AppManifestFrontend = {
 	id: "textforge",
 	version: "0.1.0",
 	name: "TextForge",
-	icon: "type",
+	icon: "zap",
 	accent_color: "neon-orange",
 	windows: [
 		{
 			id: "textforge",
 			title: "TextForge",
-			icon: "type",
+			icon: "zap",
 			component: "TextForgeWindow",
 			persistent: true,
 		},
@@ -39,7 +39,7 @@ const manifest: AppManifestFrontend = {
 		{
 			extension: ".txf",
 			label: "Transform Result",
-			icon: "type",
+			icon: "zap",
 			color: "neon-orange",
 			artifact_kind: "transform",
 		},
@@ -50,7 +50,7 @@ const manifest: AppManifestFrontend = {
 			label: "Open TextForge",
 			category: "apps",
 			shortcut: "",
-			icon: "type",
+			icon: "zap",
 		},
 		{
 			id: "textforge:history",
@@ -69,7 +69,7 @@ const manifest: AppManifestFrontend = {
 		{
 			id: "transform",
 			label: "Transform",
-			icon: "type",
+			icon: "zap",
 			stages: ["analyze", "transform", "validate"],
 		},
 	],
@@ -81,8 +81,8 @@ const manifest: AppManifestFrontend = {
 		{
 			id: "textforge-icon",
 			label: "TextForge",
-			icon: "type",
-			action: "window:textforge",
+			icon: "zap",
+			action: "openWindow:textforge",
 			color: "neon-orange",
 			type: "system",
 		},
@@ -120,7 +120,7 @@ export class TextForgeApp implements AppFrontend {
 					kernel.windowManager.openWindow({
 						id: "textforge",
 						title: "TextForge",
-						icon: "type",
+						icon: "zap",
 					}),
 			},
 			"textforge:history": {
@@ -171,9 +171,14 @@ export class TextForgeApp implements AppFrontend {
 
 	async openFile(descriptor: GenericFileDescriptor): Promise<void> {
 		if (descriptor.extension === ".txf") {
-			// Open the transform result in the history window
-			// Apps can use windowManager via kernel reference in a real implementation
-			console.log("TextForge: open file", descriptor);
+			const { windowManager } = await import(
+				"$lib/stores/windowManager.svelte"
+			);
+			windowManager.openWindow({
+				id: "textforge",
+				title: "TextForge",
+				icon: "zap",
+			});
 		}
 	}
 }

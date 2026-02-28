@@ -209,7 +209,7 @@ function manifestIconToStore(icon: ManifestDesktopIcon): DesktopIconDef {
 		id: icon.id,
 		label: icon.label,
 		icon: icon.icon,
-		color: icon.color ?? 'cyan',
+		color: icon.color?.replace(/^neon-/, '') ?? 'cyan',
 		type: (icon.type as IconType) ?? 'system',
 		extension: '.app',
 		position: { col: 0, row: 0 },
@@ -819,8 +819,8 @@ class DesktopStoreState {
 	 */
 	private _executeIconAction(icon: DesktopIconDef) {
 		const action = icon.action!;
-		if (action.startsWith('openWindow:')) {
-			const windowId = action.slice('openWindow:'.length);
+		if (action.startsWith('openWindow:') || action.startsWith('window:')) {
+			const windowId = action.replace(/^(openWindow:|window:)/, '');
 			if (windowId === 'ide') {
 				this._openForgeIDE();
 			} else {
@@ -832,6 +832,8 @@ class DesktopStoreState {
 					icon: reg?.icon ?? icon.icon,
 				});
 			}
+		} else {
+			console.warn(`[DesktopStore] Unrecognized icon action format: "${action}"`);
 		}
 	}
 

@@ -56,10 +56,19 @@ describe("TextForgeApp", () => {
 		expect(app.manifest.settings!.schema.defaultTransform).toBeDefined();
 	});
 
-	it("declares desktop icon", () => {
+	it("declares desktop icon with correct action and icon", () => {
 		const app = new TextForgeApp();
 		expect(app.manifest.desktop_icons).toHaveLength(1);
 		expect(app.manifest.desktop_icons[0].id).toBe("textforge-icon");
+		expect(app.manifest.desktop_icons[0].icon).toBe("zap");
+		expect(app.manifest.desktop_icons[0].action).toBe("openWindow:textforge");
+	});
+
+	it("uses zap icon consistently", () => {
+		const app = new TextForgeApp();
+		expect(app.manifest.icon).toBe("zap");
+		expect(app.manifest.windows[0].icon).toBe("zap");
+		expect(app.manifest.desktop_icons[0].icon).toBe("zap");
 	});
 
 	it("declares start menu entry", () => {

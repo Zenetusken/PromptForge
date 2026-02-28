@@ -44,7 +44,7 @@ export interface SpawnConfig {
 	processType?: string;
 	metadata?: OptimizeMetadata;
 	/** Called when process transitions to 'running' (immediately or after promotion from queue). */
-	onExecute?: () => void;
+	onExecute?: (process: ForgeProcess) => void;
 }
 
 const MAX_PROCESSES = 10;
@@ -90,7 +90,7 @@ class ProcessScheduler {
 	maxConcurrent: number = $state(settingsState.maxConcurrentForges);
 
 	/** Non-serialized execution callbacks keyed by process id. */
-	private _onExecute: Map<string, () => void> = new Map();
+	private _onExecute: Map<string, (process: ForgeProcess) => void> = new Map();
 
 	/** Timestamp (ms) when rate limit cooldown expires. */
 	rateLimitedUntil: number = $state(0);
@@ -216,7 +216,7 @@ class ProcessScheduler {
 
 		// If immediately running, invoke the execution callback
 		if (status === 'running') {
-			this._onExecute.get(id)?.();
+			this._onExecute.get(id)?.(process);
 		}
 
 		return process;
@@ -396,7 +396,7 @@ class ProcessScheduler {
 			});
 
 			// Execute the deferred work (starts the SSE stream)
-			this._onExecute.get(next.id)?.();
+			this._onExecute.get(next.id)?.(next);
 		}
 	}
 

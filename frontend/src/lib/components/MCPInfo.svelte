@@ -12,7 +12,7 @@
 	// ── Constants ──
 	const SSE_ENDPOINT = 'http://localhost:8001/sse';
 	const MCP_PORT = ':8001';
-	const QUICK_START_CMD = 'python -m app.mcp_server';
+	const QUICK_START_CMD = 'python -m apps.promptforge.mcp_server';
 	const TOOL_COPY_FLASH_MS = 1500;
 
 	const configSnippet = `{

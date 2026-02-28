@@ -184,7 +184,7 @@ class MCPActivityFeed {
 			if (this._lastEventId) {
 				headers['Last-Event-ID'] = this._lastEventId;
 			}
-			const response = await fetch(`${API_BASE}/api/mcp/events`, {
+			const response = await fetch(`${API_BASE}/api/apps/promptforge/mcp/events`, {
 				signal,
 				headers,
 			});

@@ -44,6 +44,10 @@
 		red: { text: 'text-neon-red', bg: 'bg-neon-red/8', bgHover: 'hover:bg-neon-red/15' },
 		yellow: { text: 'text-neon-yellow', bg: 'bg-neon-yellow/8', bgHover: 'hover:bg-neon-yellow/15' },
 		blue: { text: 'text-neon-blue', bg: 'bg-neon-blue/8', bgHover: 'hover:bg-neon-blue/15' },
+		orange: { text: 'text-neon-orange', bg: 'bg-neon-orange/8', bgHover: 'hover:bg-neon-orange/15' },
+		teal: { text: 'text-neon-teal', bg: 'bg-neon-teal/8', bgHover: 'hover:bg-neon-teal/15' },
+		indigo: { text: 'text-neon-indigo', bg: 'bg-neon-indigo/8', bgHover: 'hover:bg-neon-indigo/15' },
+		pink: { text: 'text-neon-pink', bg: 'bg-neon-pink/8', bgHover: 'hover:bg-neon-pink/15' },
 	};
 
 	let colors = $derived(colorMap[color] ?? colorMap.cyan);

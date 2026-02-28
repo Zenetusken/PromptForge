@@ -50,7 +50,7 @@
 		const proc = processScheduler.spawn({
 			title: `Transform: ${capturedType}`,
 			processType: 'transform',
-			onExecute: () => executeTransform(proc.id, capturedInput, capturedType, capturedTone, capturedLanguage),
+			onExecute: (p) => executeTransform(p.id, capturedInput, capturedType, capturedTone, capturedLanguage),
 		});
 		activeProcessId = proc.id;
 	}

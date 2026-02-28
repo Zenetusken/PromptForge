@@ -6,7 +6,7 @@
 
 import { API_BASE } from "$lib/api/client";
 
-const BASE = `${API_BASE}/kernel/settings`;
+const BASE = `${API_BASE}/api/kernel/settings`;
 
 class AppSettingsService {
 	/** Cache of loaded settings keyed by app ID. */

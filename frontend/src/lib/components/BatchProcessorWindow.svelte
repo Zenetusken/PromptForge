@@ -75,7 +75,7 @@
 				priority: 'batch' as const,
 				promptHash: batchGroupId,
 				metadata: meta,
-				onExecute: () => {
+				onExecute: (p) => {
 					item.status = 'running';
 					items = [...items];
 
@@ -88,7 +88,7 @@
 								item.score = safeNumber(data.overall_score) ? Math.round(safeNumber(data.overall_score) * 10) : null;
 								item.optimizationId = (data.id as string) ?? null;
 								items = [...items];
-								processScheduler.complete(proc.id, {
+								processScheduler.complete(p.id, {
 									score: item.score,
 									strategy: (data.strategy as string) ?? null,
 									optimizationId: item.optimizationId,
@@ -98,7 +98,7 @@
 								item.status = 'error';
 								item.error = event.error ?? 'Failed';
 								items = [...items];
-								processScheduler.fail(proc.id, item.error ?? undefined);
+								processScheduler.fail(p.id, item.error ?? undefined);
 								checkBatchDone();
 							}
 						},
@@ -106,7 +106,7 @@
 							item.status = 'error';
 							item.error = err.message;
 							items = [...items];
-							processScheduler.fail(proc.id, err.message);
+							processScheduler.fail(p.id, err.message);
 							checkBatchDone();
 						},
 						meta,

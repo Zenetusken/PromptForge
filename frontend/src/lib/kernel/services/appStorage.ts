@@ -6,7 +6,7 @@
 
 import { API_BASE } from "$lib/api/client";
 
-const BASE = `${API_BASE}/kernel/storage`;
+const BASE = `${API_BASE}/api/kernel/storage`;
 
 export interface StorageCollection {
 	id: string;
