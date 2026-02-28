@@ -18,12 +18,13 @@ from app import config
 
 # Paths that never require authentication
 _EXEMPT_PREFIXES = (
-    "/api/health",
-    "/api/github/callback",
+    "/api/kernel/",
+    "/api/apps/promptforge/health",
+    "/api/apps/promptforge/github/callback",
     "/docs",
     "/openapi.json",
     "/redoc",
-    "/internal/",
+    "/api/apps/promptforge/internal/",
 )
 
 

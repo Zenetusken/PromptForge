@@ -72,7 +72,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Determine limit based on endpoint
         is_optimize = (
             request.method == "POST"
-            and request.url.path.rstrip("/") in ("/api/optimize",)
+            and request.url.path.rstrip("/") in ("/api/apps/promptforge/optimize",)
         )
         limit = config.RATE_LIMIT_OPTIMIZE_RPM if is_optimize else config.RATE_LIMIT_RPM
 

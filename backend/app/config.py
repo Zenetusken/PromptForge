@@ -54,7 +54,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = os.getenv(
-    "GITHUB_REDIRECT_URI", "http://localhost:8000/api/github/callback"
+    "GITHUB_REDIRECT_URI", "http://localhost:8000/api/apps/promptforge/github/callback"
 )
 GITHUB_SCOPE = os.getenv("GITHUB_SCOPE", "repo")
 

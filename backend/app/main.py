@@ -14,16 +14,6 @@ from app.middleware.auth import AuthMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import (
-    filesystem,
-    github,
-    health,
-    history,
-    mcp_activity,
-    optimize,
-    projects,
-    providers,
-)
 from kernel.routers import kernel_router
 
 logging.basicConfig(
@@ -82,6 +72,16 @@ async def lifespan(app: FastAPI):
     from kernel.repositories.app_storage import AppStorageRepository
     services.register("storage", AppStorageRepository)
 
+    from kernel.repositories.vfs import VfsRepository
+    services.register("vfs", VfsRepository)
+
+    from kernel.bus.event_bus import EventBus
+    from kernel.bus.contracts import ContractRegistry
+    event_bus = EventBus()
+    contract_registry = ContractRegistry()
+    services.register("bus", event_bus)
+    services.register("contracts", contract_registry)
+
     # Validate each app's requires_services against registry
     for rec in registry.list_enabled():
         missing = services.validate_requirements(rec.manifest.requires_services)
@@ -91,15 +91,23 @@ async def lifespan(app: FastAPI):
                 rec.manifest.id, missing,
             )
 
-    # Mount routers from discovered apps (skip promptforge — its routers are hardcoded below)
-    registry.mount_routers(app, exclude={"promptforge"})
+    # Mount routers from discovered apps
+    registry.mount_routers(app)
 
-    # Call on_startup for all enabled apps
+    # Call on_startup for all enabled apps and wire event bus
     for rec in registry.list_enabled():
         try:
             await rec.instance.on_startup(kernel)
         except Exception as exc:
             logger.error("App %r on_startup failed: %s", rec.manifest.id, exc)
+
+        # Auto-register event contracts from apps
+        for contract in rec.instance.get_event_contracts():
+            contract_registry.register(contract)
+
+        # Auto-register event handlers from apps
+        for event_type, handler in rec.instance.get_event_handlers().items():
+            event_bus.subscribe(event_type, handler, app_id=rec.manifest.id)
 
     yield
 
@@ -158,15 +166,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 # GZip compression (outermost — compresses responses >=4KB, avoids CPU waste on small payloads)
 app.add_middleware(GZipMiddleware, minimum_size=4096)
 
-# Include routers
-app.include_router(health.router)
-app.include_router(optimize.router)
-app.include_router(history.router)
-app.include_router(projects.router)
-app.include_router(filesystem.router)
-app.include_router(providers.router)
-app.include_router(mcp_activity.router)
-app.include_router(github.router)
+# Include kernel router (app routers are auto-mounted via registry)
 app.include_router(kernel_router)
 
 

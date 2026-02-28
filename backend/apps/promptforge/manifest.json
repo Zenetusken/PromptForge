@@ -10,23 +10,23 @@
 
   "backend": {
     "routers": [
-      { "module": "app.routers.health", "prefix": "", "tags": ["system"] },
-      { "module": "app.routers.optimize", "prefix": "", "tags": ["promptforge"] },
-      { "module": "app.routers.history", "prefix": "", "tags": ["promptforge"] },
-      { "module": "app.routers.projects", "prefix": "", "tags": ["promptforge"] },
-      { "module": "app.routers.filesystem", "prefix": "", "tags": ["promptforge"] },
-      { "module": "app.routers.providers", "prefix": "", "tags": ["system"] },
-      { "module": "app.routers.mcp_activity", "prefix": "", "tags": ["system"] },
-      { "module": "app.routers.github", "prefix": "", "tags": ["promptforge"] }
+      { "module": "apps.promptforge.routers.health", "prefix": "/api/apps/promptforge", "tags": ["system"] },
+      { "module": "apps.promptforge.routers.optimize", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] },
+      { "module": "apps.promptforge.routers.history", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] },
+      { "module": "apps.promptforge.routers.projects", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] },
+      { "module": "apps.promptforge.routers.filesystem", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] },
+      { "module": "apps.promptforge.routers.providers", "prefix": "/api/apps/promptforge", "tags": ["system"] },
+      { "module": "apps.promptforge.routers.mcp_activity", "prefix": "/api/apps/promptforge", "tags": ["system"] },
+      { "module": "apps.promptforge.routers.github", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] }
     ],
     "models": [
-      "app.models.optimization:Optimization",
-      "app.models.project:Project",
-      "app.models.project:Prompt",
-      "app.models.project:PromptVersion",
-      "app.models.workspace:GitHubConnection",
-      "app.models.workspace:WorkspaceLink",
-      "app.models.workspace:GitHubOAuthConfig"
+      "apps.promptforge.models.optimization:Optimization",
+      "apps.promptforge.models.project:Project",
+      "apps.promptforge.models.project:Prompt",
+      "apps.promptforge.models.project:PromptVersion",
+      "apps.promptforge.models.workspace:GitHubConnection",
+      "apps.promptforge.models.workspace:WorkspaceLink",
+      "apps.promptforge.models.workspace:GitHubOAuthConfig"
     ]
   },
 
