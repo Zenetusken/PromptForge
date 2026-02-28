@@ -203,8 +203,11 @@ class TestPipelineIntegration:
         structure=0.75, faithfulness=0.90. conciseness defaults to 0.5 when omitted.
         """
         from app.services.validator import (
-            CLARITY_WEIGHT, CONCISENESS_WEIGHT, FAITHFULNESS_WEIGHT,
-            SPECIFICITY_WEIGHT, STRUCTURE_WEIGHT,
+            CLARITY_WEIGHT,
+            CONCISENESS_WEIGHT,
+            FAITHFULNESS_WEIGHT,
+            SPECIFICITY_WEIGHT,
+            STRUCTURE_WEIGHT,
         )
         provider = _make_mock_provider()
         result = await run_pipeline("Test prompt", llm_provider=provider)

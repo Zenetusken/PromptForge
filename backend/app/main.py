@@ -15,7 +15,14 @@ from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import (
-    filesystem, github, health, history, mcp_activity, optimize, projects, providers,
+    filesystem,
+    github,
+    health,
+    history,
+    mcp_activity,
+    optimize,
+    projects,
+    providers,
 )
 
 logging.basicConfig(

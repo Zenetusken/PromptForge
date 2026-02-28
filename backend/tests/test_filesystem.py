@@ -5,9 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import MAX_FOLDER_DEPTH
-from app.models.project import Project, Prompt
 from app.repositories.project import ProjectRepository, ensure_project_by_name
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -291,7 +289,7 @@ class TestFsMove:
 
         # Create a separate small chain: X -> Y (X at depth 0, Y at depth 1)
         x = await _create_folder(client, "X")
-        y = await _create_folder(client, "Y", parent_id=x["id"])
+        await _create_folder(client, "Y", parent_id=x["id"])
 
         # Moving X under deep_folder would put X at depth MAX_FOLDER_DEPTH+1
         # which exceeds the limit
@@ -339,7 +337,7 @@ class TestMCPCompat:
         await db_session.flush()
 
         # Create a subfolder with the same name
-        child = await repo.create(name="mcp-proj", parent_id=root.id)
+        await repo.create(name="mcp-proj", parent_id=root.id)
         await db_session.flush()
 
         # ensure_project_by_name should return the root one

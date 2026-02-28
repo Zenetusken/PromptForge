@@ -8,8 +8,8 @@ You will receive a JSON object with:
 - raw_prompt: The original prompt text
 - optimized_prompt: The optimized version to evaluate
 - strategy (optional): The optimization strategy that was applied (e.g., "co-star", "risen"). \
-When present, use it to score framework_adherence_score. When absent, set framework_adherence_score \
-to 0.0.
+When present, use it to score framework_adherence_score. When absent, \
+set framework_adherence_score to 0.0.
 - codebase_context (optional): Details about the caller's codebase. When present, factor \
 it into scoring: score faithfulness higher when the optimized prompt correctly references \
 codebase patterns, conventions, and architecture from the context; score specificity higher \

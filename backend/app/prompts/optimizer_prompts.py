@@ -104,7 +104,8 @@ separate sections. For example:
 concatenated framework templates.
 
 ## Length Guidelines
-- Short prompts (under 200 words): Target 3-8x expansion. Every section must introduce a new concept.
+- Short prompts (under 200 words): Target 3-8x expansion. Every section must add
+  a new concept.
 - Medium prompts (200-800 words): Target 1.5-3x. Focus on structure, constraints, edge cases.
 - Long prompts (over 800 words): Target 1-1.5x. Restructure and refine, don't expand.
 - Remove sections that duplicate information stated elsewhere.
