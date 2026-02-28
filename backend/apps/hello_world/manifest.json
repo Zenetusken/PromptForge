@@ -1,0 +1,36 @@
+{
+  "id": "hello-world",
+  "version": "0.1.0",
+  "name": "Hello World",
+  "icon": "smile",
+  "accent_color": "neon-green",
+  "python_module": "apps.hello_world",
+  "entry_point": "HelloWorldApp",
+  "requires_services": [],
+
+  "backend": {
+    "routers": [
+      { "module": "apps.hello_world.router", "prefix": "/api/apps/hello-world", "tags": ["hello-world"] }
+    ],
+    "models": []
+  },
+
+  "frontend": {
+    "windows": [
+      { "id": "hello-world", "title": "Hello World", "icon": "smile", "component": "HelloWorldWindow", "persistent": false }
+    ],
+    "file_types": [],
+    "commands": [
+      { "id": "hello-world:greet", "label": "Say Hello", "category": "apps", "shortcut": "", "icon": "smile" }
+    ],
+    "bus_events": [],
+    "process_types": [],
+    "start_menu": {
+      "pinned": ["hello-world"],
+      "section": "Apps"
+    },
+    "desktop_icons": [
+      { "id": "hello-world", "label": "Hello World", "icon": "smile", "action": "openWindow:hello-world" }
+    ]
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "id": "promptforge",
+  "version": "0.2.0",
+  "name": "PromptForge",
+  "icon": "zap",
+  "accent_color": "neon-purple",
+  "python_module": "apps.promptforge",
+  "entry_point": "PromptForgeApp",
+  "requires_services": ["llm"],
+
+  "backend": {
+    "routers": [
+      { "module": "app.routers.health", "prefix": "", "tags": ["system"] },
+      { "module": "app.routers.optimize", "prefix": "", "tags": ["promptforge"] },
+      { "module": "app.routers.history", "prefix": "", "tags": ["promptforge"] },
+      { "module": "app.routers.projects", "prefix": "", "tags": ["promptforge"] },
+      { "module": "app.routers.filesystem", "prefix": "", "tags": ["promptforge"] },
+      { "module": "app.routers.providers", "prefix": "", "tags": ["system"] },
+      { "module": "app.routers.mcp_activity", "prefix": "", "tags": ["system"] },
+      { "module": "app.routers.github", "prefix": "", "tags": ["promptforge"] }
+    ],
+    "models": [
+      "app.models.optimization:Optimization",
+      "app.models.project:Project",
+      "app.models.project:Prompt",
+      "app.models.project:PromptVersion",
+      "app.models.workspace:GitHubConnection",
+      "app.models.workspace:WorkspaceLink",
+      "app.models.workspace:GitHubOAuthConfig"
+    ]
+  },
+
+  "frontend": {
+    "windows": [
+      { "id": "ide", "title": "Forge IDE", "icon": "terminal", "component": "ForgeIDEWorkspace", "persistent": true },
+      { "id": "projects", "title": "Projects", "icon": "folder", "component": "ProjectsWindow", "persistent": true },
+      { "id": "history", "title": "History", "icon": "clock", "component": "HistoryWindow", "persistent": true },
+      { "id": "control-panel", "title": "Control Panel", "icon": "settings", "component": "ControlPanelWindow", "persistent": true },
+      { "id": "task-manager", "title": "Task Manager", "icon": "cpu", "component": "TaskManagerWindow", "persistent": true },
+      { "id": "batch-processor", "title": "Batch Processor", "icon": "layers", "component": "BatchProcessorWindow", "persistent": true },
+      { "id": "strategy-workshop", "title": "Strategy Workshop", "icon": "bar-chart", "component": "StrategyWorkshopWindow", "persistent": true },
+      { "id": "template-library", "title": "Template Library", "icon": "file-text", "component": "TemplateLibraryWindow", "persistent": true },
+      { "id": "terminal", "title": "Terminal", "icon": "terminal", "component": "TerminalWindow", "persistent": true },
+      { "id": "network-monitor", "title": "Network Monitor", "icon": "activity", "component": "NetworkMonitorWindow", "persistent": true },
+      { "id": "recycle-bin", "title": "Recycle Bin", "icon": "trash-2", "component": "RecycleBinWindow", "persistent": true },
+      { "id": "workspace-manager", "title": "Workspace Hub", "icon": "git-branch", "component": "WorkspaceWindow", "persistent": true },
+      { "id": "display-settings", "title": "Display Settings", "icon": "monitor", "component": "DisplaySettingsWindow", "persistent": true }
+    ],
+    "file_types": [
+      { "extension": ".forge", "label": "Forge Result", "icon": "zap", "color": "purple", "artifact_kind": "forge-result" },
+      { "extension": ".scan", "label": "Analysis", "icon": "search", "color": "cyan", "artifact_kind": "analysis" },
+      { "extension": ".val", "label": "Validation", "icon": "check-circle", "color": "green", "artifact_kind": "validation" },
+      { "extension": ".strat", "label": "Strategy", "icon": "compass", "color": "yellow", "artifact_kind": "strategy" },
+      { "extension": ".md", "label": "Prompt", "icon": "file-text", "color": "blue", "artifact_kind": "prompt" },
+      { "extension": ".tmpl", "label": "Template", "icon": "book-open", "color": "teal", "artifact_kind": "template" },
+      { "extension": ".app", "label": "Application", "icon": "box", "color": "indigo", "artifact_kind": "application" },
+      { "extension": ".lnk", "label": "Shortcut", "icon": "external-link", "color": "dim", "artifact_kind": "shortcut" }
+    ],
+    "commands": [
+      { "id": "promptforge:new-forge", "label": "New Forge", "category": "forge", "shortcut": "/", "icon": "zap" },
+      { "id": "promptforge:open-history", "label": "Open History", "category": "navigation", "shortcut": "Ctrl+H", "icon": "clock" },
+      { "id": "promptforge:open-projects", "label": "Open Projects", "category": "navigation", "shortcut": "Ctrl+P", "icon": "folder" }
+    ],
+    "bus_events": ["forge:started", "forge:completed", "forge:failed", "forge:cancelled", "forge:progress"],
+    "process_types": [
+      { "id": "forge", "label": "Forge Pipeline", "icon": "zap", "stages": ["analyze", "strategy", "optimize", "validate"] }
+    ],
+    "start_menu": {
+      "pinned": ["ide", "projects", "history"],
+      "section": "Tools"
+    },
+    "desktop_icons": [
+      { "id": "promptforge-ide", "label": "Forge IDE", "icon": "terminal", "action": "openWindow:ide" }
+    ]
+  }
+}
