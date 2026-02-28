@@ -175,6 +175,7 @@
 				id="history-search"
 				type="text"
 				placeholder="Search..."
+				aria-label="Search history"
 				class="h-6 w-32 rounded border border-border-subtle bg-bg-input px-2 text-[10px] text-text-primary placeholder:text-text-dim/40 focus:border-neon-cyan/30 focus:outline-none"
 				value={searchInput}
 				oninput={(e) => handleSearch(e.currentTarget.value)}

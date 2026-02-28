@@ -185,6 +185,7 @@
 			</p>
 			<textarea
 				id="batch-prompts"
+				aria-label="Batch prompts"
 				class="w-full h-48 bg-bg-input border border-neon-cyan/10 text-xs text-text-primary p-3 outline-none resize-none focus:border-neon-cyan/30 font-mono"
 				placeholder="First prompt here...
 
@@ -203,7 +204,7 @@ Third prompt here..."
 						class="bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none focus:border-neon-cyan/30"
 						bind:value={strategy}
 					>
-						{#each strategies as s}
+						{#each strategies as s (s)}
 							<option value={s}>{s || 'Auto-select'}</option>
 						{/each}
 					</select>

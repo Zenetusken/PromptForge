@@ -185,6 +185,7 @@
 	{#if newFolderInput}
 		<input
 			id="folder-new-name"
+			aria-label="New folder name"
 			class="bg-bg-input border border-white/10 rounded px-2 py-0.5 text-xs text-text-primary w-40 outline-none focus:border-neon-cyan/40"
 			placeholder="Folder name..."
 			use:autoFocus

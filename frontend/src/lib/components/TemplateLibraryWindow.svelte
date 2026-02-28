@@ -243,17 +243,19 @@
 				id="template-search"
 				type="text"
 				placeholder="Search templates..."
+				aria-label="Search templates"
 				class="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-dim outline-none"
 				bind:value={searchQuery}
 			/>
 		</div>
 		<select
 			id="template-category"
+			aria-label="Filter by category"
 			class="bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none"
 			bind:value={selectedCategory}
 		>
 			<option value="">All Categories</option>
-			{#each categories as cat}
+			{#each categories as cat (cat)}
 				<option value={cat}>{cat}</option>
 			{/each}
 		</select>
@@ -282,6 +284,7 @@
 					id="template-save-name"
 					type="text"
 					placeholder="Template name"
+					aria-label="Template name"
 					class="flex-1 bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none"
 					bind:value={saveTemplateName}
 				/>
@@ -289,6 +292,7 @@
 					id="template-save-category"
 					type="text"
 					placeholder="Category"
+					aria-label="Template category"
 					class="w-28 bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1 outline-none"
 					bind:value={saveTemplateCategory}
 				/>
@@ -296,6 +300,7 @@
 			<textarea
 				id="template-save-prompt"
 				placeholder="Prompt text..."
+				aria-label="Template prompt text"
 				class="w-full bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1.5 outline-none resize-none h-16"
 				bind:value={saveTemplatePrompt}
 			></textarea>

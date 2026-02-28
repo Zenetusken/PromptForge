@@ -323,6 +323,7 @@
 							id="workspace-repo-search"
 							type="text"
 							placeholder="Search repos..."
+							aria-label="Search repositories"
 							class="w-full bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1.5 outline-none focus:border-neon-cyan/30"
 							bind:value={workspaceManager.reposSearch}
 						/>
@@ -336,6 +337,7 @@
 						<!-- Project selector for linking -->
 						<select
 							id="workspace-link-project"
+							aria-label="Select project to link"
 							class="w-full bg-bg-input border border-neon-cyan/10 text-xs text-text-primary px-2 py-1.5 outline-none focus:border-neon-cyan/30"
 							bind:value={linkProjectId}
 							disabled={projectsLoading}

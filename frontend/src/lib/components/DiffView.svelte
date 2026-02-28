@@ -79,7 +79,7 @@
 
 	{#if viewMode === 'unified'}
 		<div class="whitespace-pre-wrap rounded-xl bg-bg-input/60 p-4 font-mono text-sm leading-relaxed" data-testid="diff-inline">
-			{#each segments as segment}
+			{#each segments as segment, i (i)}
 				{#if segment.type === 'removed'}
 					<span class="rounded-sm bg-neon-red/15 text-neon-red line-through decoration-neon-red/30">{segment.value}</span>
 				{:else if segment.type === 'added'}
@@ -100,7 +100,7 @@
 					style="max-height: 460px;"
 					data-testid="diff-left-panel"
 				>
-					{#each lineDiff.left as line}
+					{#each lineDiff.left as line (line.lineNumber)}
 						<div class="flex {line.type === 'removed' ? 'bg-neon-red/12 -mx-2 px-2 rounded' : ''}">
 							<span class="mr-3 inline-block w-6 shrink-0 select-none text-right text-text-dim/40 text-xs leading-relaxed tabular-nums" data-testid="line-number">{line.lineNumber}</span>
 							{#if line.type === 'removed'}
@@ -121,7 +121,7 @@
 					style="max-height: 460px;"
 					data-testid="diff-right-panel"
 				>
-					{#each lineDiff.right as line}
+					{#each lineDiff.right as line (line.lineNumber)}
 						<div class="flex {line.type === 'added' ? 'bg-neon-green/12 -mx-2 px-2 rounded' : ''}">
 							<span class="mr-3 inline-block w-6 shrink-0 select-none text-right text-text-dim/40 text-xs leading-relaxed tabular-nums" data-testid="line-number">{line.lineNumber}</span>
 							{#if line.type === 'added'}

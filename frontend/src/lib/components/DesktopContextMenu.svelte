@@ -71,7 +71,7 @@
 		onmousedown={(e: MouseEvent) => e.stopPropagation()}
 		data-testid="desktop-context-menu"
 	>
-		{#each actions as action}
+		{#each actions as action (action.id)}
 			{#if action.separator}
 				<div class="mx-2 my-1 h-px bg-border-subtle"></div>
 			{/if}

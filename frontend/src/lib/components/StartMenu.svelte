@@ -202,7 +202,7 @@
 					<div class="px-3 pt-2 pb-2">
 						<p class="section-heading-dim text-[9px] mb-1.5">Recent</p>
 						<div class="space-y-0.5">
-							{#each recentForges as forge}
+							{#each recentForges as forge (forge.id)}
 								<button
 									class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-bg-hover group"
 									onclick={() => handleForgeClick(forge.id)}
@@ -235,11 +235,12 @@
 						bind:this={projectSearchInput}
 						type="text"
 						placeholder="Search..."
+						aria-label="Search projects"
 						class="input-field mb-1.5 text-[10px] py-1"
 						bind:value={projectSearch}
 					/>
 					<div class="space-y-0.5">
-						{#each filteredProjects as project}
+						{#each filteredProjects as project (project.id)}
 							<button
 								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-bg-hover group"
 								onclick={() => handleProjectClick(project.id)}

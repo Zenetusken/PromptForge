@@ -197,6 +197,7 @@
 	<div class="relative flex-1">
 		<textarea
 			id="forge-editor-prompt"
+			aria-label="Prompt editor"
 			bind:this={textareaEl}
 			bind:value={forgeSession.draft.text}
 			onkeydown={handleKeydown}

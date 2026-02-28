@@ -63,7 +63,7 @@
 				<div>
 					<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Conventions</span>
 					<div class="flex flex-wrap gap-1 mt-0.5">
-						{#each context.conventions as conv}
+						{#each context.conventions as conv, i (i)}
 							<span class="rounded-sm px-1 py-0.5 text-[9px] text-text-secondary bg-bg-hover border border-white/[0.06]">
 								{conv}
 							</span>
@@ -77,7 +77,7 @@
 				<div>
 					<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Patterns</span>
 					<div class="flex flex-wrap gap-1 mt-0.5">
-						{#each context.patterns as pattern}
+						{#each context.patterns as pattern, i (i)}
 							<span class="rounded-sm px-1 py-0.5 text-[9px] text-text-secondary bg-bg-hover border border-white/[0.06]">
 								{pattern}
 							</span>
@@ -91,7 +91,7 @@
 				<div>
 					<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Test Patterns</span>
 					<div class="flex flex-wrap gap-1 mt-0.5">
-						{#each context.test_patterns as tp}
+						{#each context.test_patterns as tp, i (i)}
 							<span class="rounded-sm px-1 py-0.5 text-[9px] text-text-secondary bg-bg-hover border border-white/[0.06]">
 								{tp}
 							</span>
@@ -104,7 +104,7 @@
 			{#if context.code_snippets?.length}
 				<div>
 					<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Code Snippets</span>
-					{#each context.code_snippets as snippet}
+					{#each context.code_snippets as snippet, i (i)}
 						<pre class="mt-0.5 rounded-sm bg-bg-primary p-1.5 text-[9px] font-mono text-text-secondary leading-tight overflow-x-auto border border-white/[0.06]">{snippet}</pre>
 					{/each}
 				</div>

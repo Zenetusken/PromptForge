@@ -262,6 +262,7 @@
 						type="text"
 						class="input-field w-full pl-6 pr-6 py-1 text-[10px]"
 						placeholder="Filter tools..."
+						aria-label="Filter MCP tools"
 						bind:value={searchQuery}
 					/>
 					{#if searchQuery}

@@ -57,7 +57,7 @@
 							value={settingsState.defaultStrategy}
 							onchange={(e) => settingsState.update({ defaultStrategy: (e.target as HTMLSelectElement).value })}
 						>
-							{#each strategies as s}
+							{#each strategies as s (s)}
 								<option value={s}>{s || 'Auto-select'}</option>
 							{/each}
 						</select>

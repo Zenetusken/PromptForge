@@ -73,6 +73,7 @@
 					bind:value={commandPalette.searchQuery}
 					type="text"
 					placeholder="Type a command..."
+					aria-label="Command search"
 					class="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-dim outline-none"
 				/>
 				<span class="text-[10px] text-text-dim/40 border border-text-dim/20 px-1 py-0.5">ESC</span>

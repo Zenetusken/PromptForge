@@ -337,6 +337,7 @@
 		<span class="text-[11px] text-neon-cyan shrink-0">$</span>
 		<input
 			id="terminal-input"
+			aria-label="Terminal command"
 			bind:this={inputRef}
 			bind:value={inputValue}
 			type="text"
