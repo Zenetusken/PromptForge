@@ -21,6 +21,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Frontend PromptForge app (`frontend/src/lib/apps/promptforge/`) — `PromptForgeApp` implements `AppFrontend` with `COMPONENT_MAP` for 14 lazy-loaded window components
 - Frontend Hello World app (`frontend/src/lib/apps/hello_world/`) — `HelloWorldApp` with `HelloWorldWindow.svelte`
 
+**Kernel Wiring — Manifest-to-Consumer Integration**
+- Desktop icons from registry — `desktopStore.createDefaultIcons()` now sources app icons from `appRegistry.allDesktopIcons` via `manifestIconToStore()` mapping; `syncAppIcons()` merges icons after registry population; generic `_executeIconAction()` dispatches `openWindow:*` action strings replacing 12 hardcoded if/else branches
+- Start menu from registry — `StartMenu.svelte` pinned section now reads from `appRegistry.allStartMenuEntries` mapped to window registrations for labels/icons; API Docs kept as system link
+- Command palette from registry — 14 PromptForge-specific commands moved from `+layout.svelte` `registerAll()` into `PromptForgeApp.init(kernel)` via `kernel.commandPalette.registerAll()`; HelloWorld registers its "Say Hello" command in `init()`; 8 kernel commands remain in layout
+- Typed `KernelAPI` — replaced all `unknown` fields with 8 proper interfaces (`KernelBus`, `KernelWindowManager`, `KernelCommandPalette`, `KernelProcessScheduler`, `KernelSettings`, `KernelClipboard`); apps can now call kernel methods without casting
+- `CommandCategory` widened from closed union to open union with `(string & {})` for app-defined categories
+- App migrations wired into `init_db()` — optional `app_registry` parameter; after kernel migrations, iterates `registry.list_enabled()` and calls `run_migrations(conn)` per app
+- File type registry integration — `FILE_EXTENSIONS` backed by a `Proxy` that falls back to `appRegistry.allFileTypes`; `documentOpener.ts` routes unknown file types to `appRegistry` via `openViaRegistry()` fallback
+- MCP tool aggregation — `AppRegistry.collect_mcp_tools()` calls `get_mcp_tools()` on all enabled apps; MCP server lifespan registers collected tools at startup
+- `FileExtension` type widened with `(string & {})` for app-defined extensions
+- Backend `DesktopIconDef` model — added optional `color` and `type` fields to match frontend types
+- Backend `manifest.json` synced — PromptForge backend manifest now mirrors frontend manifest for desktop_icons (11), commands (14), and start_menu pinned items
+
 **PromptForge FileSystem (PFFS)**
 - Hierarchical folder system for projects — `parent_id` self-FK with precomputed `depth` (max 8 via `MAX_FOLDER_DEPTH`), scoped `UNIQUE(name, parent_id)` constraint, nullable `Prompt.project_id` (NULL = desktop/unorganized)
 - 6 filesystem API endpoints — `GET /api/fs/children`, `GET /api/fs/tree`, `GET /api/fs/path/{project_id}`, `GET /api/fs/prompt/{prompt_id}`, `DELETE /api/fs/prompt/{prompt_id}`, `POST /api/fs/move`
@@ -154,6 +167,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- App command registration DRYed — `PromptForgeApp.init()` and `HelloWorldApp.init()` now build commands from `manifest.commands` metadata merged with an execute function map, eliminating duplicated id/label/category/icon/shortcut across 14+ command definitions
+- `closeActiveTab()` extracted from `+layout.svelte` into `PromptForgeApp` module as a shared export; layout keyboard handler and command palette both use the same function
+- Window-open commands auto-generated — `window-*` command IDs automatically derive their execute function from the corresponding manifest window, replacing 10 near-identical manual entries
 - License changed from MIT to Apache 2.0
 - Homepage transformed from forge-only into content dashboard (RecentForges + RecentProjects + StrategyInsights)
 - Route-based detail pages removed — `/projects/[id]` and `/optimize/[id]` routes deleted; all interactions through the persistent window system
@@ -170,6 +186,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Header bolt icon removed; HeaderStats fills full header width
 
 ### Fixed
+
+**Kernel Robustness**
+- AppRegistry double-init guard — `setKernel()` now tracks per-record `initialized` flag; prevents `init()` being called twice when an app registers after kernel is already set; `destroyAll()` resets flags and kernel reference
+- StartMenu accent color derivation — replaced hardcoded 5-color map with dynamic `text-${accent}` class derivation from `manifest.accent_color`, supporting all 10 neon palette colors
+- `FILE_EXTENSIONS` Proxy — added `Symbol` type guards to `get`/`has` traps preventing runtime errors from framework introspection (Svelte/Vite calling `Symbol.toPrimitive` etc.)
+- `documentOpener` type safety — `openViaRegistry()` uses `as unknown as Record<string, unknown>` with runtime `typeof` check instead of unsafe direct cast
+- `closeActiveTab()` async safety — keyboard handler in `+layout.svelte` now catches rejected promise instead of firing and forgetting
 
 **Notification System**
 - `forge:completed` "Open in IDE" dead action — handler read `event.payload.openInIDE` (always undefined); now self-contained via lazy `import()` callback

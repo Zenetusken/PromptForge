@@ -29,12 +29,22 @@ Object.defineProperty(globalThis, 'crypto', {
 
 import { desktopStore, CELL_WIDTH, CELL_HEIGHT, GRID_PADDING, getMaxRow, getMaxCol, TASKBAR_HEIGHT } from './desktopStore.svelte';
 import { windowManager } from './windowManager.svelte';
+import { appRegistry } from '$lib/kernel/services/appRegistry.svelte';
+import { promptForgeApp } from '$lib/apps/promptforge';
+import { helloWorldApp } from '$lib/apps/hello_world';
 
 describe('DesktopStore', () => {
 	beforeEach(() => {
 		storage.clear();
 		localStore.clear();
 		uuidCounter = 0;
+		// Register apps so desktop icons are sourced from the registry
+		if (!appRegistry.get('promptforge')) {
+			appRegistry.register(promptForgeApp);
+		}
+		if (!appRegistry.get('hello-world')) {
+			appRegistry.register(helloWorldApp);
+		}
 		desktopStore.resetDesktop();
 		desktopStore.recycleBin = [];
 		desktopStore.closeContextMenu();
@@ -42,12 +52,12 @@ describe('DesktopStore', () => {
 	});
 
 	describe('initial state', () => {
-		it('starts with 10 system + 2 folder + 4 file icons', () => {
-			expect(desktopStore.icons).toHaveLength(16);
+		it('starts with 11 system + 2 folder + 4 file icons (registry-driven)', () => {
+			expect(desktopStore.icons).toHaveLength(17);
 			const systemIcons = desktopStore.icons.filter((i) => i.type === 'system');
 			const folderIcons = desktopStore.icons.filter((i) => i.type === 'folder');
 			const fileIcons = desktopStore.icons.filter((i) => i.type === 'file');
-			expect(systemIcons).toHaveLength(10);
+			expect(systemIcons).toHaveLength(11); // 9 PF system + 1 HW + 1 Recycle Bin
 			expect(folderIcons).toHaveLength(2);
 			expect(fileIcons).toHaveLength(4);
 		});
@@ -56,7 +66,8 @@ describe('DesktopStore', () => {
 			const ids = desktopStore.icons.filter((i) => i.type === 'system').map((i) => i.id);
 			expect(ids).toContain('sys-forge-ide');
 			expect(ids).toContain('sys-recycle-bin');
-			expect(ids).not.toContain('sys-projects');
+			expect(ids).toContain('hello-world'); // from HelloWorld app
+			expect(ids).not.toContain('sys-projects'); // these are 'folder' type
 			expect(ids).not.toContain('sys-history');
 		});
 
@@ -406,7 +417,7 @@ describe('DesktopStore', () => {
 
 	describe('occupiedCells', () => {
 		it('maps all icon positions', () => {
-			expect(desktopStore.occupiedCells.size).toBe(16);
+			expect(desktopStore.occupiedCells.size).toBe(17);
 			expect(desktopStore.occupiedCells.get('0,0')).toBe('sys-forge-ide');
 			expect(desktopStore.occupiedCells.get('0,1')).toBe('sys-projects');
 		});
@@ -450,10 +461,10 @@ describe('DesktopStore', () => {
 		it('restores all default icons', () => {
 			desktopStore.trashIcon('shortcut-code-review');
 			desktopStore.trashIcon('shortcut-marketing-email');
-			expect(desktopStore.icons).toHaveLength(14);
+			expect(desktopStore.icons).toHaveLength(15);
 
 			desktopStore.resetDesktop();
-			expect(desktopStore.icons).toHaveLength(16);
+			expect(desktopStore.icons).toHaveLength(17);
 		});
 
 		it('clears selection and drag state', () => {
@@ -627,7 +638,7 @@ describe('DesktopStore', () => {
 			desktopStore.trashIcon('shortcut-code-review');
 			desktopStore.openContextMenu(100, 200, null);
 			desktopStore.executeContextAction('refresh-desktop');
-			expect(desktopStore.icons).toHaveLength(16);
+			expect(desktopStore.icons).toHaveLength(17);
 		});
 	});
 
@@ -943,11 +954,11 @@ describe('DesktopStore', () => {
 		});
 
 		it('first load (no persistence) produces valid layout', () => {
-			// After resetDesktop (simulates first load), all 16 icons present
-			expect(desktopStore.icons).toHaveLength(16);
+			// After resetDesktop (simulates first load), all 17 icons present (11 PF + 1 HW + 1 bin + 4 shortcuts)
+			expect(desktopStore.icons).toHaveLength(17);
 			const positions = desktopStore.icons.map((i) => `${i.position.col},${i.position.row}`);
 			// All unique
-			expect(new Set(positions).size).toBe(16);
+			expect(new Set(positions).size).toBe(17);
 			// All in bounds
 			for (const icon of desktopStore.icons) {
 				expect(icon.position.col).toBeLessThanOrEqual(getMaxCol());
