@@ -24,7 +24,7 @@ from app.routers import (
     projects,
     providers,
 )
-from kernel.routers import apps as kernel_apps
+from kernel.routers import kernel_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,7 +39,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan handler - initializes database on startup."""
     # Discover and initialize apps via kernel registry
+    from kernel.core import Kernel
     from kernel.registry.app_registry import get_app_registry
+    from kernel.services.registry import ServiceRegistry
+
+    from app.database import async_session_factory
 
     registry = get_app_registry()
     registry.discover()
@@ -60,13 +64,40 @@ async def lifespan(app: FastAPI):
                 env_provider, exc,
             )
 
+    # Construct kernel object with service registry
+    services = ServiceRegistry()
+    kernel = Kernel(
+        app_registry=registry,
+        db_session_factory=async_session_factory,
+        services=services,
+    )
+
+    # Store kernel reference on registry for access by kernel routers
+    registry.kernel = kernel
+
+    # Register core services
+    services.register("llm", kernel.get_provider)
+    services.register("db", async_session_factory)
+
+    from kernel.repositories.app_storage import AppStorageRepository
+    services.register("storage", AppStorageRepository)
+
+    # Validate each app's requires_services against registry
+    for rec in registry.list_enabled():
+        missing = services.validate_requirements(rec.manifest.requires_services)
+        if missing:
+            logger.warning(
+                "App %r requires services %s which are not registered",
+                rec.manifest.id, missing,
+            )
+
     # Mount routers from discovered apps (skip promptforge — its routers are hardcoded below)
     registry.mount_routers(app, exclude={"promptforge"})
 
     # Call on_startup for all enabled apps
     for rec in registry.list_enabled():
         try:
-            await rec.instance.on_startup(None)
+            await rec.instance.on_startup(kernel)
         except Exception as exc:
             logger.error("App %r on_startup failed: %s", rec.manifest.id, exc)
 
@@ -75,7 +106,7 @@ async def lifespan(app: FastAPI):
     # Shutdown: call on_shutdown for all enabled apps
     for rec in registry.list_enabled():
         try:
-            await rec.instance.on_shutdown(None)
+            await rec.instance.on_shutdown(kernel)
         except Exception as exc:
             logger.error("App %r on_shutdown failed: %s", rec.manifest.id, exc)
 
@@ -136,7 +167,7 @@ app.include_router(filesystem.router)
 app.include_router(providers.router)
 app.include_router(mcp_activity.router)
 app.include_router(github.router)
-app.include_router(kernel_apps.router)
+app.include_router(kernel_router)
 
 
 @app.get("/")

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncConnection
+
+    from kernel.core import Kernel
 
 
 class AppBase(ABC):
@@ -15,8 +17,8 @@ class AppBase(ABC):
     Apps implement lifecycle hooks that the kernel calls during
     discovery, installation, and runtime.
 
-    The ``kernel`` parameter is reserved for future use (will provide
-    access to shared services). Currently passed as ``None``.
+    The ``kernel`` parameter provides access to shared infrastructure:
+    app registry, database sessions, service registry, and LLM providers.
     """
 
     @property
@@ -25,22 +27,22 @@ class AppBase(ABC):
         """Unique identifier matching manifest.json ``id`` field."""
         ...
 
-    async def on_install(self, kernel: Any) -> None:
+    async def on_install(self, kernel: Kernel | None) -> None:
         """Called once when the app is first installed.
 
         Use for one-time setup like seeding initial data.
         """
 
-    async def on_enable(self, kernel: Any) -> None:
+    async def on_enable(self, kernel: Kernel | None) -> None:
         """Called each time the app is enabled."""
 
-    async def on_startup(self, kernel: Any) -> None:
+    async def on_startup(self, kernel: Kernel | None) -> None:
         """Called on each server start for enabled apps.
 
         Use for registering event handlers, starting background tasks, etc.
         """
 
-    async def on_shutdown(self, kernel: Any) -> None:
+    async def on_shutdown(self, kernel: Kernel | None) -> None:
         """Called on server shutdown for enabled apps."""
 
     async def run_migrations(self, conn: AsyncConnection) -> None:

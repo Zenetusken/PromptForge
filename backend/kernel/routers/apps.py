@@ -7,6 +7,17 @@ from kernel.registry.app_registry import get_app_registry
 router = APIRouter(prefix="/api/kernel", tags=["kernel"])
 
 
+def _check_services_satisfied(required: list[str]) -> bool:
+    """Check if all required services are registered in the kernel."""
+    if not required:
+        return True
+    registry = get_app_registry()
+    kernel = registry.kernel
+    if kernel is not None and hasattr(kernel, "services"):
+        return len(kernel.services.validate_requirements(required)) == 0
+    return True  # Assume satisfied if kernel not yet booted
+
+
 @router.get("/apps")
 async def list_apps():
     """List all installed apps and their status."""
@@ -22,6 +33,9 @@ async def list_apps():
                 "status": rec.status,
                 "error": rec.error,
                 "requires_services": rec.manifest.requires_services,
+                "services_satisfied": _check_services_satisfied(
+                    rec.manifest.requires_services,
+                ),
                 "windows": len(rec.manifest.frontend.windows),
                 "routers": len(rec.manifest.backend.routers),
             }
@@ -48,5 +62,8 @@ async def get_app(app_id: str):
         "status": rec.status,
         "error": rec.error,
         "requires_services": rec.manifest.requires_services,
+        "services_satisfied": _check_services_satisfied(
+            rec.manifest.requires_services,
+        ),
         "manifest": rec.manifest.model_dump(),
     }

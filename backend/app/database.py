@@ -608,6 +608,11 @@ async def init_db(app_registry=None) -> None:
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        # Kernel-owned tables first (app_settings, app_collections, app_documents)
+        from kernel.database import run_kernel_migrations
+        await run_kernel_migrations(conn)
+
         await _run_migrations(conn)
         await _rebuild_projects_table(conn)
         await _rebuild_prompts_table(conn)

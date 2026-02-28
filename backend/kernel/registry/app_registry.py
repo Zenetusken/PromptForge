@@ -51,6 +51,7 @@ class AppRegistry:
     def __init__(self) -> None:
         self._apps: dict[str, AppRecord] = {}
         self._discovered = False
+        self.kernel: object | None = None  # Set by main.py lifespan after construction
 
     def discover(self, apps_dir: Path | None = None) -> None:
         """Scan apps/ directory for manifest.json files.
