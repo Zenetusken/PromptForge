@@ -23,6 +23,10 @@ vi.mock('$lib/stores/forgeSession.svelte', () => ({
 	forgeSession: {
 		loadRequest: vi.fn(),
 		activeTab: { document: null, resultId: null },
+		findTabByDocument: vi.fn(() => null),
+		tabs: [],
+		activeTabId: '',
+		isActive: false,
 	},
 }));
 
@@ -36,7 +40,13 @@ vi.mock('$lib/stores/forgeMachine.svelte', () => ({
 vi.mock('$lib/stores/windowManager.svelte', () => ({
 	windowManager: {
 		openIDE: vi.fn(),
+		closeIDE: vi.fn(),
 	},
+}));
+
+vi.mock('$lib/stores/tabCoherence', () => ({
+	saveActiveTabState: vi.fn(),
+	restoreTabState: vi.fn(),
 }));
 
 vi.mock('$lib/stores/toast.svelte', () => ({
@@ -57,6 +67,7 @@ import { optimizationState } from '$lib/stores/optimization.svelte';
 import { forgeSession } from '$lib/stores/forgeSession.svelte';
 import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 import { windowManager } from '$lib/stores/windowManager.svelte';
+import { saveActiveTabState, restoreTabState } from '$lib/stores/tabCoherence';
 import { toastState } from '$lib/stores/toast.svelte';
 import type { PromptDescriptor, ArtifactDescriptor, SubArtifactDescriptor } from './fileDescriptor';
 
@@ -230,7 +241,6 @@ describe('openDocument', () => {
 				expect.objectContaining({ text: 'original' }),
 			);
 			expect(forgeMachine.enterReview).toHaveBeenCalled();
-			expect(windowManager.openIDE).toHaveBeenCalled();
 			expect(forgeSession.activeTab.document).toBe(descriptor);
 			expect(forgeSession.activeTab.resultId).toBe('opt-1');
 		});
@@ -269,7 +279,6 @@ describe('openDocument', () => {
 				expect.objectContaining({ text: 'original' }),
 			);
 			expect(forgeMachine.enterReview).toHaveBeenCalled();
-			expect(windowManager.openIDE).toHaveBeenCalled();
 			expect(forgeSession.activeTab.document).toBe(descriptor);
 			expect(forgeSession.activeTab.resultId).toBe('opt-1');
 		});
@@ -296,6 +305,50 @@ describe('openDocument', () => {
 
 			expect(forgeSession.loadRequest).not.toHaveBeenCalled();
 			expect(forgeMachine.enterReview).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('deduplication', () => {
+		const descriptor: PromptDescriptor = {
+			kind: 'prompt',
+			id: 'prompt-1',
+			projectId: 'proj-1',
+			name: 'Test.md',
+			extension: '.md',
+		};
+
+		it('focuses existing tab instead of creating a new one', async () => {
+			const existingTab = {
+				id: 'tab-existing',
+				name: 'Test.md',
+				draft: { text: 'content' },
+				resultId: null,
+				mode: 'compose' as const,
+				document: descriptor,
+			};
+			vi.mocked(forgeSession.findTabByDocument).mockReturnValue(existingTab as any);
+
+			await openDocument(descriptor);
+
+			expect(saveActiveTabState).toHaveBeenCalled();
+			expect(restoreTabState).toHaveBeenCalledWith(existingTab);
+			expect(windowManager.openIDE).toHaveBeenCalled();
+			expect(forgeSession.loadRequest).not.toHaveBeenCalled();
+		});
+
+		it('proceeds normally when no existing tab found', async () => {
+			vi.mocked(forgeSession.findTabByDocument).mockReturnValue(null);
+			const prompt = {
+				id: 'prompt-1', content: 'Write a haiku', version: 1,
+				project_id: 'proj-1', order_index: 0,
+				created_at: '2026-01-01', updated_at: '2026-01-01',
+				forge_count: 0, latest_forge: null,
+			};
+			vi.mocked(fetchProject).mockResolvedValue(makeProject([prompt]));
+
+			await openDocument(descriptor);
+
+			expect(forgeSession.loadRequest).toHaveBeenCalled();
 		});
 	});
 });

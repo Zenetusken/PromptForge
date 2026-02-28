@@ -9,6 +9,7 @@ import {
 	isTemplateDescriptor,
 	isSubArtifactDescriptor,
 	isFolderDescriptor,
+	descriptorsMatch,
 	FILE_DESCRIPTOR_KINDS,
 	type FileDescriptor,
 	type NodeDescriptor,
@@ -166,5 +167,37 @@ describe('isFolderDescriptor', () => {
 		const prompt = createPromptDescriptor('p-1', 'proj-1', 'Test');
 		expect(isFolderDescriptor(folder)).toBe(true);
 		expect(isFolderDescriptor(prompt)).toBe(false);
+	});
+});
+
+describe('descriptorsMatch', () => {
+	it('returns true for same prompt ID', () => {
+		const a = createPromptDescriptor('p-1', 'proj-1', 'A');
+		const b = createPromptDescriptor('p-1', 'proj-2', 'B');
+		expect(descriptorsMatch(a, b)).toBe(true);
+	});
+
+	it('returns false for different prompt IDs', () => {
+		const a = createPromptDescriptor('p-1', 'proj-1', 'A');
+		const b = createPromptDescriptor('p-2', 'proj-1', 'B');
+		expect(descriptorsMatch(a, b)).toBe(false);
+	});
+
+	it('returns false for cross-kind (prompt vs artifact with same ID)', () => {
+		const prompt = createPromptDescriptor('id-1', 'proj-1', 'A');
+		const artifact = createArtifactDescriptor('id-1', 'A');
+		expect(descriptorsMatch(prompt, artifact)).toBe(false);
+	});
+
+	it('returns true for same sub-artifact (parentForgeId + artifactKind)', () => {
+		const a = createSubArtifactDescriptor('forge-1', 'forge-analysis');
+		const b = createSubArtifactDescriptor('forge-1', 'forge-analysis', 'custom-name.scan');
+		expect(descriptorsMatch(a, b)).toBe(true);
+	});
+
+	it('returns false for different sub-artifact kinds on same parent', () => {
+		const a = createSubArtifactDescriptor('forge-1', 'forge-analysis');
+		const b = createSubArtifactDescriptor('forge-1', 'forge-scores');
+		expect(descriptorsMatch(a, b)).toBe(false);
 	});
 });

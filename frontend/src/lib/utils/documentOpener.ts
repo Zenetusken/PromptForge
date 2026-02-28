@@ -6,6 +6,7 @@ import { optimizationState, mapToResultState } from '$lib/stores/optimization.sv
 import { forgeSession } from '$lib/stores/forgeSession.svelte';
 import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 import { windowManager } from '$lib/stores/windowManager.svelte';
+import { saveActiveTabState, restoreTabState } from '$lib/stores/tabCoherence';
 import { toastState } from '$lib/stores/toast.svelte';
 
 /**
@@ -25,6 +26,17 @@ export async function openDocument(descriptor: NodeDescriptor): Promise<void> {
 
 /** Handle file descriptors (prompt/artifact/template) — opens in IDE. */
 async function openFileDocument(descriptor: FileDescriptor): Promise<void> {
+	// Dedup: if a tab already has this document, focus it instead of creating a new one
+	const existingTab = forgeSession.findTabByDocument(descriptor);
+	if (existingTab) {
+		saveActiveTabState();
+		forgeSession.activeTabId = existingTab.id;
+		forgeSession.isActive = true;
+		windowManager.openIDE();
+		restoreTabState(existingTab);
+		return;
+	}
+
 	switch (descriptor.kind) {
 		case 'prompt':
 			return openPrompt(descriptor);
@@ -118,7 +130,6 @@ async function openDesktopPrompt(descriptor: PromptDescriptor): Promise<void> {
 	});
 
 	forgeSession.activeTab.document = descriptor;
-	windowManager.openIDE();
 }
 
 /**
@@ -148,7 +159,6 @@ async function openForgeResult(optimizationId: string, descriptor: ArtifactDescr
 	forgeSession.activeTab.resultId = result.id;
 
 	forgeMachine.enterReview();
-	windowManager.openIDE();
 }
 
 /** Open a forge result artifact in the IDE, creating a proper tab for it. */

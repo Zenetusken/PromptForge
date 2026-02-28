@@ -1,7 +1,7 @@
 import type { CodebaseContext, OptimizeMetadata } from '$lib/api/client';
 import type { ForgeMode } from '$lib/stores/forgeMachine.svelte';
 import type { FileDescriptor } from '$lib/utils/fileDescriptor';
-import { FILE_DESCRIPTOR_KINDS } from '$lib/utils/fileDescriptor';
+import { FILE_DESCRIPTOR_KINDS, descriptorsMatch } from '$lib/utils/fileDescriptor';
 import { providerState } from '$lib/stores/provider.svelte';
 import { settingsState } from '$lib/stores/settings.svelte';
 import { windowManager } from '$lib/stores/windowManager.svelte';
@@ -315,6 +315,13 @@ class ForgeSessionState {
 			return fresh;
 		}
 		return this.createTab();
+	}
+
+	/** Find an existing tab whose document matches the given descriptor, or null. */
+	findTabByDocument(descriptor: FileDescriptor): WorkspaceTab | null {
+		return this.tabs.find(
+			(t) => t.document !== null && descriptorsMatch(t.document, descriptor)
+		) ?? null;
 	}
 
 	private _nextUntitledName(): string {

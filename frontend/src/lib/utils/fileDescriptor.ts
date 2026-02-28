@@ -127,3 +127,21 @@ export function isSubArtifactDescriptor(d: FileDescriptor): d is SubArtifactDesc
 export function isFolderDescriptor(d: NodeDescriptor): d is FolderDescriptor {
 	return d.kind === 'folder';
 }
+
+/** Identity comparison: do two descriptors refer to the same document? */
+export function descriptorsMatch(a: FileDescriptor, b: FileDescriptor): boolean {
+	if (a.kind !== b.kind) return false;
+	switch (a.kind) {
+		case 'prompt':
+			return a.id === (b as PromptDescriptor).id;
+		case 'artifact':
+			return a.id === (b as ArtifactDescriptor).id;
+		case 'sub-artifact':
+			return (
+				a.parentForgeId === (b as SubArtifactDescriptor).parentForgeId &&
+				a.artifactKind === (b as SubArtifactDescriptor).artifactKind
+			);
+		case 'template':
+			return a.id === (b as TemplateDescriptor).id;
+	}
+}

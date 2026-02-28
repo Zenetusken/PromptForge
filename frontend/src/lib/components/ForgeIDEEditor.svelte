@@ -5,7 +5,7 @@
 	import { promptAnalysis } from '$lib/stores/promptAnalysis.svelte';
 	import { sessionContext } from '$lib/stores/sessionContext.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
-	import { saveActiveTabState, restoreTabState } from '$lib/stores/tabCoherence';
+	import { saveActiveTabState, restoreTabState, closeIDE } from '$lib/stores/tabCoherence';
 	import { ALL_STRATEGIES } from '$lib/utils/strategies';
 	import { FILE_EXTENSIONS, ARTIFACT_KINDS } from '$lib/utils/fileTypes';
 	import { DRAG_MIME, decodeDragPayload } from '$lib/utils/dragPayload';
@@ -82,10 +82,7 @@
 	let useSessionContext = $state(false);
 
 	function exitIDE() {
-		saveActiveTabState();
-		forgeSession.isActive = false;
-		forgeMachine.reset();
-		windowManager.closeIDE();
+		closeIDE();
 	}
 
 	function switchTab(id: string) {

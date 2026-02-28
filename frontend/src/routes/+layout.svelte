@@ -31,7 +31,7 @@
 	import { clipboardService } from "$lib/services/clipboardService.svelte";
 	import { mcpActivityFeed, MCP_WRITE_TOOLS } from "$lib/services/mcpActivityFeed.svelte";
 	import { workspaceManager } from "$lib/stores/workspaceManager.svelte";
-	import { saveActiveTabState, restoreTabState } from "$lib/stores/tabCoherence";
+	import { saveActiveTabState, restoreTabState, closeIDE } from "$lib/stores/tabCoherence";
 	import { onMount } from "svelte";
 
 	// View Transitions API for page navigation crossfade
@@ -327,9 +327,7 @@
 				}
 				if (windowManager.ideVisible && windowManager.activeWindowId === 'ide' && forgeMachine.mode === "compose") {
 					e.preventDefault();
-					saveActiveTabState();
-					forgeSession.isActive = false;
-					windowManager.closeIDE();
+					closeIDE();
 					return;
 				}
 			}
@@ -591,9 +589,7 @@
 						title="Forge IDE"
 						icon="terminal"
 						onclose={() => {
-							saveActiveTabState();
-							forgeSession.isActive = false;
-							windowManager.closeIDE();
+							closeIDE();
 						}}
 					>
 						<ForgeIDEWorkspace />

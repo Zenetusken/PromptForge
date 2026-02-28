@@ -1,6 +1,7 @@
 import { forgeSession } from '$lib/stores/forgeSession.svelte';
 import { optimizationState } from '$lib/stores/optimization.svelte';
 import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
+import { windowManager } from '$lib/stores/windowManager.svelte';
 import { toastState } from '$lib/stores/toast.svelte';
 import type { WorkspaceTab } from '$lib/stores/forgeSession.svelte';
 
@@ -59,4 +60,15 @@ export function restoreTabState(tab: WorkspaceTab): void {
 			forgeMachine.back();
 		}
 	}
+}
+
+/**
+ * Canonical IDE close: save tab state, deactivate session, reset machine, close window.
+ * All IDE close paths (X button, Escape, editor exit) should use this.
+ */
+export function closeIDE(): void {
+	saveActiveTabState();
+	forgeSession.isActive = false;
+	forgeMachine.reset();
+	windowManager.closeIDE();
 }

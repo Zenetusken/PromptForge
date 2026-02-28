@@ -49,10 +49,11 @@ vi.mock('$lib/api/client', () => ({
 	orchestrateAnalyze: vi.fn(),
 }));
 
-import { saveActiveTabState, restoreTabState } from './tabCoherence';
+import { saveActiveTabState, restoreTabState, closeIDE } from './tabCoherence';
 import { forgeSession, createEmptyDraft } from './forgeSession.svelte';
 import { optimizationState } from './optimization.svelte';
 import { forgeMachine } from './forgeMachine.svelte';
+import { windowManager } from './windowManager.svelte';
 import type { WorkspaceTab } from './forgeSession.svelte';
 import type { OptimizationResultState } from './optimization.svelte';
 
@@ -350,5 +351,40 @@ describe('tabCoherence', () => {
 
 			restoreSpy.mockRestore();
 		});
+	});
+});
+
+describe('closeIDE', () => {
+	beforeEach(() => {
+		forgeSession.reset();
+		optimizationState.reset();
+		forgeMachine.reset();
+		storageMap.clear();
+		vi.clearAllMocks();
+	});
+
+	it('saves tab state, deactivates session, resets machine, and closes window', () => {
+		// Set up non-default state
+		forgeSession.isActive = true;
+		forgeMachine.enterReview();
+
+		closeIDE();
+
+		expect(forgeSession.isActive).toBe(false);
+		expect(forgeMachine.mode).toBe('compose');
+		expect(windowManager.closeIDE).toHaveBeenCalled();
+	});
+
+	it('persists tab state before closing', () => {
+		const result = makeResult('res-close');
+		optimizationState.forgeResult = result;
+		forgeMachine.enterReview();
+		forgeSession.isActive = true;
+
+		closeIDE();
+
+		// saveActiveTabState should have captured the result
+		expect(forgeSession.activeTab.resultId).toBe('res-close');
+		expect(forgeSession.activeTab.mode).toBe('review');
 	});
 });
