@@ -52,12 +52,25 @@ The codebase follows a kernel + apps architecture inspired by Django's app syste
 
 ```
 backend/
-  kernel/                          # OS kernel (app discovery + lifecycle)
+  kernel/                          # OS kernel (app discovery + lifecycle + shared services)
+    core.py                        # Kernel dataclass — service locator passed to apps
     registry/                      # App discovery, manifest, lifecycle
       app_registry.py              # AppRegistry singleton — discover, mount_routers
       manifest.py                  # AppManifest Pydantic model
       hooks.py                     # AppBase ABC (lifecycle hooks)
+    services/                      # Kernel DI
+      registry.py                  # ServiceRegistry — register/get/has/validate
+    models/                        # Kernel-owned ORM models
+      app_settings.py              # AppSettings (per-app key-value)
+      app_document.py              # AppCollection + AppDocument (per-app doc store)
+    repositories/                  # Kernel data access
+      app_settings.py              # AppSettingsRepository
+      app_storage.py               # AppStorageRepository
     routers/                       # Kernel API (/api/kernel/*)
+      apps.py                      # GET /api/kernel/apps (with services_satisfied)
+      settings.py                  # GET/PUT/DELETE /api/kernel/settings/{app_id}
+      storage.py                   # CRUD /api/kernel/storage/{app_id}/*
+    database.py                    # Kernel migrations (CREATE TABLE IF NOT EXISTS)
 
   apps/
     promptforge/                   # PromptForge as an installable app
@@ -67,35 +80,50 @@ backend/
       manifest.json
       app.py                       # HelloWorldApp(AppBase)
       router.py                    # /api/apps/hello-world/*
+    textforge/                     # Text transformation app (exercises all kernel services)
+      manifest.json                # 2 windows, 2 commands, 1 file type, 1 process type
+      app.py                       # TextForgeApp(AppBase) — validates required services
+      router.py                    # /api/apps/textforge/* (7 transform types)
 
   app/                             # PromptForge host application
-    main.py                        # Entry point — boots kernel, discovers apps, mounts routers
+    main.py                        # Entry point — boots kernel, constructs Kernel, registers services
     database.py config.py          # DB engine, migrations, system config
     providers/ middleware/          # LLM providers, security middleware
     routers/ services/ models/     # Business logic (PromptForge-specific)
 
 frontend/src/lib/
-  kernel/                          # Shell (app registry, types)
+  kernel/                          # Shell (app registry, types, shared services)
     types.ts                       # AppFrontend, KernelAPI, WindowRegistration
     services/
       appRegistry.svelte.ts        # Frontend app registry — registry-driven windows
+      appSettings.svelte.ts        # Per-app settings client (reactive $state cache)
+      appStorage.ts                # Per-app document storage client
   apps/
     promptforge/                   # PromptForge frontend app
       index.ts                     # PromptForgeApp implements AppFrontend (14 windows)
     hello_world/                   # Example frontend app
       index.ts                     # HelloWorldApp implements AppFrontend
       HelloWorldWindow.svelte
+    textforge/                     # TextForge frontend app
+      index.ts                     # TextForgeApp implements AppFrontend (2 windows)
+      TextForgeWindow.svelte       # Main transform UI
+      TextForgeHistoryWindow.svelte
+      TextForgeSettings.svelte     # Settings panel for ControlPanel dynamic tab
 ```
 
 **Key classes:**
-- `AppBase` (ABC) — lifecycle hooks: `on_install`, `on_enable`, `on_startup`, `on_shutdown`, `run_migrations`
+- `Kernel` (dataclass) — service locator passed to apps on startup: `app_registry`, `db_session_factory`, `services` (ServiceRegistry), `get_provider()` for LLM access
+- `ServiceRegistry` — DI container with `register(name, service)`, `get(name)`, `has(name)`, `validate_requirements(required)`. Core services: `llm`, `db`, `storage`
+- `AppBase` (ABC) — lifecycle hooks: `on_install`, `on_enable`, `on_startup(kernel)`, `on_shutdown(kernel)`, `run_migrations`
 - `AppRegistry` — discovers `manifest.json` in `apps/`, loads entry points, mounts routers (with `exclude` for host app)
-- `AppManifest` — Pydantic model for `manifest.json` (backend routers, frontend windows, commands, file types)
-- `AppFrontend` (interface) — frontend apps implement `init`, `destroy`, `getComponent`
+- `AppManifest` — Pydantic model for `manifest.json` (backend routers, frontend windows, commands, file types, process types, settings, desktop icons, start menu)
+- `AppFrontend` (interface) — frontend apps implement `init`, `destroy`, `getComponent`, `getSettingsComponent`
 
 **API convention:** Kernel at `/api/kernel/*`, apps at `/api/apps/{app_id}/*`. PromptForge (host app) keeps its routes at `/api/*` directly.
 
 **Frontend window rendering:** `+layout.svelte` uses a single `{#each appRegistry.allWindows}` loop to render all manifest-declared windows dynamically. IDE window is a special case (static import, custom close handler). Folder windows are dynamically created at runtime (not manifest-declared).
+
+**Dynamic settings tabs:** `ControlPanelWindow` appends tabs from `appRegistry.appsWithSettings`, loading each app's settings component via `getSettingsComponent()`. Backed by `appSettings` service calling kernel REST API.
 
 ### Pipeline (`backend/app/services/pipeline.py`)
 

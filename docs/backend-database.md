@@ -62,6 +62,33 @@ New databases get indexes at CREATE TABLE time; migrations apply them for pre-ex
 
 Standalone helpers: `ensure_project_by_name()` (returns `ProjectInfo(id, status)` — avoids redundant follow-up query for archive checks), `ensure_prompt_in_project()` (3-tier matching: exact → SQL fuzzy → Python fallback with LIMIT 100).
 
+## Kernel Tables
+
+Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migrations()` in `kernel/database.py`. All use `CREATE TABLE IF NOT EXISTS` for idempotency. Migrations run before app-specific migrations in `init_db()`.
+
+| Table | File | Key Fields |
+|-------|------|------------|
+| `app_settings` | `kernel/models/app_settings.py` | `id`, `app_id`, `key`, `value` (JSON text), `created_at`, `updated_at`. `UNIQUE(app_id, key)` |
+| `app_collections` | `kernel/models/app_document.py` | `id`, `app_id`, `name`, `parent_id` (self-FK, `CASCADE`). `UNIQUE(app_id, name, parent_id)` |
+| `app_documents` | `kernel/models/app_document.py` | `id`, `app_id`, `collection_id` FK (`CASCADE`), `name`, `content_type`, `content`, `metadata_json`, `created_at`, `updated_at`. Index on `(app_id, collection_id)` |
+
+### Kernel Repositories
+
+| Repository | File | Scope |
+|------------|------|-------|
+| `AppSettingsRepository` | `kernel/repositories/app_settings.py` | Per-app key-value settings: `get_all`, `get`, `set` (upsert), `set_all`, `delete`, `reset`. JSON serialization for values. |
+| `AppStorageRepository` | `kernel/repositories/app_storage.py` | Per-app document store: collections CRUD (`list_collections`, `create_collection`, `delete_collection`), documents CRUD (`list_documents`, `get_document`, `create_document`, `update_document`, `delete_document`). Scoped by `app_id`. |
+
+### Kernel REST Endpoints
+
+| Router | Prefix | Endpoints |
+|--------|--------|-----------|
+| `kernel/routers/settings.py` | `/api/kernel/settings/{app_id}` | `GET` (all settings), `PUT` (merge settings), `DELETE` (reset all) |
+| `kernel/routers/storage.py` | `/api/kernel/storage/{app_id}` | Collections: `GET/POST .../collections`, `DELETE .../collections/{id}`. Documents: `GET/POST .../documents`, `GET/PUT/DELETE .../documents/{id}` |
+| `kernel/routers/apps.py` | `/api/kernel/apps` | `GET` (list apps with `services_satisfied`), `GET .../{id}` (app details + manifest) |
+
+All kernel routers are aggregated into `kernel_router` in `kernel/routers/__init__.py` and mounted once in `main.py`.
+
 ## Session Management
 
 Two FastAPI dependencies:

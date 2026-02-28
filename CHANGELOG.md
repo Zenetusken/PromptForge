@@ -21,6 +21,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Frontend PromptForge app (`frontend/src/lib/apps/promptforge/`) — `PromptForgeApp` implements `AppFrontend` with `COMPONENT_MAP` for 14 lazy-loaded window components
 - Frontend Hello World app (`frontend/src/lib/apps/hello_world/`) — `HelloWorldApp` with `HelloWorldWindow.svelte`
 
+**Backend Kernel Object & Service Registry**
+- `Kernel` dataclass (`kernel/core.py`) — service locator passed to apps via `on_startup(kernel)` and `on_shutdown(kernel)`, providing `app_registry`, `db_session_factory`, `services`, and `get_provider()` for LLM access
+- `ServiceRegistry` (`kernel/services/registry.py`) — DI container with `register`, `get`, `has`, `validate_requirements`. Core services registered at startup: `llm`, `db`, `storage`
+- `GET /api/kernel/apps` now includes `services_satisfied` boolean per app, computed from `ServiceRegistry.validate_requirements()`
+
+**Per-App Settings & Document Storage**
+- `app_settings` kernel table — per-app key-value settings with `UNIQUE(app_id, key)`, JSON-serialized values
+- `AppSettingsRepository` — `get_all`, `get`, `set` (upsert), `set_all`, `delete`, `reset`
+- Settings REST API — `GET/PUT/DELETE /api/kernel/settings/{app_id}`
+- `app_collections` + `app_documents` kernel tables — per-app scoped document store with collections and documents, `ON DELETE CASCADE` foreign keys
+- `AppStorageRepository` — full CRUD for collections and documents
+- Storage REST API — `CRUD /api/kernel/storage/{app_id}/collections`, `CRUD /api/kernel/storage/{app_id}/documents`
+- Kernel-level database migrations (`kernel/database.py`) — `CREATE TABLE/INDEX IF NOT EXISTS`, runs before app migrations in `init_db()`
+- Kernel router aggregation — 3 sub-routers (apps, settings, storage) aggregated into single `kernel_router` mounted once
+
+**Process Types from Manifest**
+- `ForgeProcess.processType` field (default `'forge'`) — manifest-declared process types flow through spawn/display
+- `TaskManagerWindow` "Type" column — looks up process type metadata from `appRegistry.allProcessTypes` for icon/label display
+- `appRegistry.allProcessTypes` getter — flat-maps process types from all registered apps with `appId` injection
+
+**Dynamic App Settings UI**
+- `appSettings` frontend service (`appSettings.svelte.ts`) — reactive `$state` cache wrapping `GET/PUT/DELETE /api/kernel/settings/{appId}`
+- `ControlPanelWindow` dynamic tabs — appends one tab per app from `appRegistry.appsWithSettings`, lazy-loads settings component via `getSettingsComponent()`
+- `KernelAPI` expanded — `KernelAppSettings` (load/save/reset/get/isLoading), `KernelStorage` (full CRUD), `KernelProcessScheduler` (spawn/complete/fail/updateProgress/cancel)
+- `appStorage` frontend client (`appStorage.ts`) — wraps kernel document storage REST API
+
+**TextForge App — Second Real App**
+- Backend (`apps/textforge/`) — 7 transform types (summarize, expand, rewrite, simplify, translate, extract_keywords, fix_grammar) with system prompts and LLM prompt templates; uses `CompletionRequest`/`CompletionResponse` provider API; proper error classification (`RateLimitError`, `AuthenticationError`, `ProviderError`); stores transforms in kernel document storage
+- `manifest.json` — 2 windows, 2 commands, 1 file type (`.txf`), 1 process type (`transform` with stages `analyze`/`transform`/`validate`), desktop icon, start menu, settings schema, `requires_services: ["llm", "storage"]`
+- Frontend (`apps/textforge/`) — `TextForgeWindow` (split input/output with type selector, tone/language options, process scheduler integration), `TextForgeHistoryWindow` (list+detail with type-colored badges), `TextForgeSettings` (default transform, output format, preserve formatting)
+- Brand-guideline styled — flat neon contour aesthetic with neon-orange accent
+
 **Kernel Wiring — Manifest-to-Consumer Integration**
 - Desktop icons from registry — `desktopStore.createDefaultIcons()` now sources app icons from `appRegistry.allDesktopIcons` via `manifestIconToStore()` mapping; `syncAppIcons()` merges icons after registry population; generic `_executeIconAction()` dispatches `openWindow:*` action strings replacing 12 hardcoded if/else branches
 - Start menu from registry — `StartMenu.svelte` pinned section now reads from `appRegistry.allStartMenuEntries` mapped to window registrations for labels/icons; API Docs kept as system link
@@ -112,7 +144,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Command Palette — fuzzy-matched command registry with `Ctrl+K` activation, categories, recent commands
 - Process Scheduler (`processScheduler.svelte.ts`) — bounded-concurrency queue (default `maxConcurrent` 2), spawn/complete/fail/cancel/dismiss lifecycle, rate-limit aware via `provider:rate_limited` bus events, sessionStorage persistence
 - Settings Store (`settings.svelte.ts`) — persisted preferences (accent color, default strategy, max concurrent forges, animations, wallpaper mode/opacity, performance profile), localStorage with schema migration
-- `ControlPanelWindow` — 4 tabs: Providers, Pipeline, Display, System
+- `ControlPanelWindow` — 4 static tabs (Providers, Pipeline, Display, System) + dynamic app settings tabs from `appRegistry.appsWithSettings`
 - `TaskManagerWindow` — process monitor for running/queued/completed forges
 - `BatchProcessorWindow` — multi-prompt batch optimization (up to 20) with progress tracking and JSON export
 - `StrategyWorkshopWindow` — score heatmap (strategy x task type), win rates, combo analysis
