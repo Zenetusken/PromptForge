@@ -78,7 +78,7 @@ jobs:
             -e DATABASE_URL=sqlite+aiosqlite:////app/data/promptforge.db \
             promptforge-backend
           sleep 8
-          curl -f http://localhost:8000/api/health || (docker logs pf-backend && exit 1)
+          curl -f http://localhost:8000/api/apps/promptforge/health || (docker logs pf-backend && exit 1)
 
       - name: Smoke test frontend
         run: |

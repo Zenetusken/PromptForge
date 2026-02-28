@@ -407,7 +407,7 @@ do_start() {
     cd "$SCRIPT_DIR/backend"
     source venv/bin/activate
 
-    nohup python -m uvicorn app.mcp_server:app \
+    nohup python -m uvicorn apps.promptforge.mcp_server:app \
         --host "$MCP_HOST" \
         --port "$MCP_PORT" \
         --reload \
@@ -424,7 +424,7 @@ do_start() {
     log "Waiting for services to be healthy..."
     local backend_ok=false frontend_ok=false mcp_ok=false
 
-    (wait_for_url "http://localhost:$BACKEND_PORT/api/health" "Backend" 30) &
+    (wait_for_url "http://localhost:$BACKEND_PORT/api/apps/promptforge/health" "Backend" 30) &
     local hc_bg=$!
     
     (wait_for_url "http://localhost:$FRONTEND_PORT" "Frontend" 30) &
@@ -440,7 +440,7 @@ do_start() {
     # Fetch provider info from health endpoint
     local provider_info=""
     if $backend_ok; then
-        provider_info=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null \
+        provider_info=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/apps/promptforge/health" 2>/dev/null \
             | python3 -c "
 import sys, json
 try:
@@ -463,7 +463,7 @@ except Exception: pass
     echo -e "  API Docs:       ${GREEN}http://localhost:$BACKEND_PORT/docs${NC}"
     echo -e "  Frontend:       ${GREEN}http://localhost:$FRONTEND_PORT${NC}"
     echo -e "  MCP Server:     ${GREEN}http://localhost:$MCP_PORT/sse${NC}"
-    echo -e "  Health Check:   ${GREEN}http://localhost:$BACKEND_PORT/api/health${NC}"
+    echo -e "  Health Check:   ${GREEN}http://localhost:$BACKEND_PORT/api/apps/promptforge/health${NC}"
     if [ -n "$provider_info" ]; then
         echo -e "  LLM Provider:   ${GREEN}$provider_info${NC}"
     fi
@@ -592,7 +592,7 @@ do_start_built() {
     cd "$SCRIPT_DIR/backend"
     source venv/bin/activate
 
-    nohup python -m uvicorn app.mcp_server:app \
+    nohup python -m uvicorn apps.promptforge.mcp_server:app \
         --host "$MCP_HOST" \
         --port "$MCP_PORT" \
         > "$LOGS_DIR/mcp.log" 2>&1 &
@@ -608,7 +608,7 @@ do_start_built() {
     log "Waiting for services to be healthy..."
     local backend_ok=false frontend_ok=false mcp_ok=false
 
-    (wait_for_url "http://localhost:$BACKEND_PORT/api/health" "Backend" 30) &
+    (wait_for_url "http://localhost:$BACKEND_PORT/api/apps/promptforge/health" "Backend" 30) &
     local hc_bg=$!
 
     (wait_for_url "http://localhost:$FRONTEND_PORT" "Frontend" 30) &
@@ -623,7 +623,7 @@ do_start_built() {
 
     local provider_info=""
     if $backend_ok; then
-        provider_info=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null \
+        provider_info=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/apps/promptforge/health" 2>/dev/null \
             | python3 -c "
 import sys, json
 try:
@@ -749,7 +749,7 @@ do_status() {
     # Health details (single curl call)
     echo ""
     local health_json
-    health_json=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/health" 2>/dev/null || true)
+    health_json=$(curl -sf --max-time 5 "http://localhost:$BACKEND_PORT/api/apps/promptforge/health" 2>/dev/null || true)
     if [ -n "$health_json" ]; then
         echo -e "  ${BOLD}Health endpoint:${NC}"
         echo "$health_json" | python3 -c "

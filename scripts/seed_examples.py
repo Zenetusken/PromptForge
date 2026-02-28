@@ -12,8 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 from app.database import async_session_factory, init_db
-from app.models.optimization import Optimization
 from app import config
+from apps.promptforge.models.optimization import Optimization
 
 
 EXAMPLE_OPTIMIZATIONS = [
