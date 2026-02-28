@@ -41,7 +41,9 @@ export type BusEventType =
 	| 'fs:moved'
 	| 'fs:created'
 	| 'fs:deleted'
-	| 'fs:renamed';
+	| 'fs:renamed'
+	| 'transform:completed'
+	| 'transform:failed';
 
 export interface BusEvent {
 	type: BusEventType;

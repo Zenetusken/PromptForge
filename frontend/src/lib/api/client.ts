@@ -2,6 +2,9 @@ const BASE_URL = import.meta.env.VITE_API_URL
 	? `${import.meta.env.VITE_API_URL}/api`
 	: '/api';
 
+/** Base URL without /api suffix — for kernel and app endpoints. */
+export const API_BASE = import.meta.env.VITE_API_URL || '';
+
 export interface HistoryItem {
 	id: string;
 	created_at: string;

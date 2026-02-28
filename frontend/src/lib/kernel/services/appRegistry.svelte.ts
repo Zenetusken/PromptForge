@@ -101,6 +101,26 @@ class AppRegistryState {
 		return this._records.flatMap((a) => a.manifest.file_types);
 	}
 
+	/** Get all process types from all apps. */
+	get allProcessTypes() {
+		return this._records.flatMap((a) =>
+			a.manifest.process_types.map((pt) => ({ ...pt, appId: a.manifest.id })),
+		);
+	}
+
+	/** Get apps that declare settings. */
+	get appsWithSettings() {
+		return this._records
+			.filter((a) => a.manifest.settings)
+			.map((a) => ({
+				appId: a.manifest.id,
+				name: a.manifest.name,
+				icon: a.manifest.icon,
+				settings: a.manifest.settings!,
+				instance: a.instance,
+			}));
+	}
+
 	/** Get all desktop icons from all apps. */
 	get allDesktopIcons() {
 		return this._records.flatMap((a) => a.manifest.desktop_icons);

@@ -21,6 +21,8 @@ export interface ForgeProcess {
 	priority: ProcessPriority;
 	title: string;
 	promptHash: string;
+	/** App-defined process type (e.g. 'forge', 'transform'). Defaults to 'forge'. */
+	processType: string;
 	currentStage: string | null;
 	progress: number;
 	result: OptimizationResultState | null;
@@ -38,6 +40,8 @@ export interface SpawnConfig {
 	priority?: ProcessPriority;
 	parentPid?: number | null;
 	promptHash?: string;
+	/** App-defined process type (e.g. 'forge', 'transform'). Defaults to 'forge'. */
+	processType?: string;
 	metadata?: OptimizeMetadata;
 	/** Called when process transitions to 'running' (immediately or after promotion from queue). */
 	onExecute?: () => void;
@@ -171,6 +175,7 @@ class ProcessScheduler {
 			priority: config.priority ?? 'interactive',
 			title: config.title || 'Untitled Forge',
 			promptHash: config.promptHash ?? '',
+			processType: config.processType ?? 'forge',
 			currentStage: null,
 			progress: 0,
 			result: null,

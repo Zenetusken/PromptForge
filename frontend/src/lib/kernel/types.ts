@@ -160,6 +160,24 @@ export interface KernelCommandPalette {
 /** Process scheduler interface exposed to apps. */
 export interface KernelProcessScheduler {
 	readonly maxConcurrent: number;
+	spawn(config: {
+		title: string;
+		processType?: string;
+		priority?: "interactive" | "background" | "batch";
+		onExecute?: () => void;
+	}): { id: string; pid: number; status: string };
+	complete(
+		id: string,
+		data: {
+			score?: number | null;
+			strategy?: string | null;
+			optimizationId?: string | null;
+			result?: unknown | null;
+		},
+	): void;
+	fail(id: string, error?: string): void;
+	updateProgress(id: string, stage: string, progress: number): void;
+	cancel(pid: number): void;
 }
 
 /** Settings interface exposed to apps. */
@@ -173,6 +191,45 @@ export interface KernelClipboard {
 	copy(text: string, label?: string): void;
 }
 
+/** Per-app settings interface exposed to apps. */
+export interface KernelAppSettings {
+	load(appId: string): Promise<Record<string, unknown>>;
+	save(appId: string, settings: Record<string, unknown>): Promise<void>;
+	reset(appId: string): Promise<void>;
+	get(appId: string): Record<string, unknown>;
+	isLoading(appId: string): boolean;
+}
+
+/** Per-app storage interface exposed to apps. */
+export interface KernelStorage {
+	listCollections(appId: string, parentId?: string): Promise<unknown[]>;
+	createCollection(appId: string, name: string, parentId?: string): Promise<unknown>;
+	deleteCollection(appId: string, collectionId: string): Promise<void>;
+	listDocuments(appId: string, collectionId?: string): Promise<unknown[]>;
+	getDocument(appId: string, documentId: string): Promise<unknown>;
+	createDocument(
+		appId: string,
+		opts: {
+			name: string;
+			content: string;
+			collectionId?: string;
+			contentType?: string;
+			metadata?: Record<string, unknown>;
+		},
+	): Promise<unknown>;
+	updateDocument(
+		appId: string,
+		documentId: string,
+		opts: {
+			name?: string;
+			content?: string;
+			contentType?: string;
+			metadata?: Record<string, unknown>;
+		},
+	): Promise<unknown>;
+	deleteDocument(appId: string, documentId: string): Promise<void>;
+}
+
 /** Kernel API provided to apps during init. */
 export interface KernelAPI {
 	readonly bus: KernelBus;
@@ -181,4 +238,6 @@ export interface KernelAPI {
 	readonly processScheduler: KernelProcessScheduler;
 	readonly settings: KernelSettings;
 	readonly clipboard: KernelClipboard;
+	readonly appSettings: KernelAppSettings;
+	readonly storage: KernelStorage;
 }

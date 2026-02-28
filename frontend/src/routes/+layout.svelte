@@ -32,8 +32,11 @@
 	import { saveActiveTabState, restoreTabState, closeIDE } from "$lib/stores/tabCoherence";
 	import { onMount } from "svelte";
 	import { appRegistry } from "$lib/kernel/services/appRegistry.svelte";
+	import { appSettings } from "$lib/kernel/services/appSettings.svelte";
+	import { appStorage } from "$lib/kernel/services/appStorage";
 	import { promptForgeApp, closeActiveTab } from "$lib/apps/promptforge";
 	import { helloWorldApp } from "$lib/apps/hello_world";
+	import { textForgeApp } from "$lib/apps/textforge";
 
 	// View Transitions API for page navigation crossfade
 	onNavigate((navigation) => {
@@ -52,6 +55,7 @@
 		// --- OS Bootstrap: App Registry ---
 		appRegistry.register(promptForgeApp);
 		appRegistry.register(helloWorldApp);
+		appRegistry.register(textForgeApp);
 		appRegistry.setKernel({
 			bus: systemBus,
 			windowManager,
@@ -59,6 +63,8 @@
 			processScheduler,
 			settings: settingsState,
 			clipboard: clipboardService,
+			appSettings,
+			storage: appStorage,
 		});
 
 		// Sync app-declared desktop icons after registry is populated
