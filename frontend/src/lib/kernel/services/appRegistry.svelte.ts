@@ -17,6 +17,7 @@ interface AppRecord {
 	manifest: AppManifestFrontend;
 	instance: AppFrontend;
 	windows: WindowRegistration[];
+	initialized: boolean;
 }
 
 class AppRegistryState {
@@ -49,10 +50,12 @@ class AppRegistryState {
 			};
 		});
 
-		this._records.push({ manifest, instance: app, windows });
+		const record: AppRecord = { manifest, instance: app, windows, initialized: false };
+		this._records.push(record);
 
 		// Initialize app with kernel API if available
 		if (this._kernel) {
+			record.initialized = true;
 			app.init(this._kernel);
 		}
 	}
@@ -60,9 +63,12 @@ class AppRegistryState {
 	/** Set the kernel API reference (called once during shell boot). */
 	setKernel(kernel: KernelAPI): void {
 		this._kernel = kernel;
-		// Init any already-registered apps
+		// Init any already-registered apps (skip already-initialized ones)
 		for (const record of this._records) {
-			record.instance.init(kernel);
+			if (!record.initialized) {
+				record.initialized = true;
+				record.instance.init(kernel);
+			}
 		}
 	}
 
@@ -115,8 +121,10 @@ class AppRegistryState {
 	destroyAll(): void {
 		for (const record of this._records) {
 			record.instance.destroy();
+			record.initialized = false;
 		}
 		this._records = [];
+		this._kernel = null;
 	}
 }
 

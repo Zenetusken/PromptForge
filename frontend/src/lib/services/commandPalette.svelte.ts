@@ -5,7 +5,8 @@
  * All user-invocable actions register here. The Command Palette UI (Phase 2) queries this registry.
  */
 
-export type CommandCategory = 'forge' | 'window' | 'navigation' | 'settings' | 'edit';
+/** Command category. Known values kept for autocomplete; apps can register any string. */
+export type CommandCategory = 'forge' | 'window' | 'navigation' | 'settings' | 'edit' | 'apps' | (string & {});
 
 export interface Command {
 	id: string;

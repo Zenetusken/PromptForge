@@ -63,6 +63,9 @@ export interface DesktopIconDef {
 	label: string;
 	icon: string;
 	action: string;
+	color?: string;
+	/** 'system' icons can't be trashed; 'folder' icons can. Defaults to 'system'. */
+	type?: string;
 }
 
 export interface SettingsDef {
@@ -101,12 +104,81 @@ export interface WindowRegistration {
 	loadComponent: () => Promise<{ default: AnyComponent }>;
 }
 
+/** Bus event passed to handlers. */
+export interface KernelBusEvent {
+	type: string;
+	source: string;
+	payload: Record<string, unknown>;
+	timestamp: number;
+	id: string;
+}
+
+/** System bus interface exposed to apps. */
+export interface KernelBus {
+	on(eventType: string, handler: (event: KernelBusEvent) => void): () => void;
+	emit(type: string, source: string, payload?: Record<string, unknown>): void;
+}
+
+/** Window open options. */
+export interface WindowOpenOptions {
+	id: string;
+	title: string;
+	icon: string;
+	data?: Record<string, unknown>;
+}
+
+/** Window manager interface exposed to apps. */
+export interface KernelWindowManager {
+	openWindow(opts: WindowOpenOptions): void;
+	closeWindow(id: string): void;
+	focusWindow(id: string): void;
+	minimizeWindow(id: string): void;
+	openIDE(): void;
+	readonly ideSpawned: boolean;
+	readonly ideVisible: boolean;
+	readonly activeWindowId: string | null;
+}
+
+/** Command registration for the command palette. */
+export interface KernelCommand {
+	id: string;
+	label: string;
+	category: string;
+	shortcut?: string;
+	icon?: string;
+	execute: () => void;
+	available?: () => boolean;
+}
+
+/** Command palette interface exposed to apps. */
+export interface KernelCommandPalette {
+	register(command: KernelCommand): void;
+	registerAll(commands: KernelCommand[]): void;
+	unregister(id: string): void;
+}
+
+/** Process scheduler interface exposed to apps. */
+export interface KernelProcessScheduler {
+	readonly maxConcurrent: number;
+}
+
+/** Settings interface exposed to apps. */
+export interface KernelSettings {
+	readonly accentColor: string;
+	readonly enableAnimations: boolean;
+}
+
+/** Clipboard interface exposed to apps. */
+export interface KernelClipboard {
+	copy(text: string, label?: string): void;
+}
+
 /** Kernel API provided to apps during init. */
 export interface KernelAPI {
-	readonly bus: unknown; // SystemBus
-	readonly windowManager: unknown;
-	readonly commandPalette: unknown;
-	readonly processScheduler: unknown;
-	readonly settings: unknown;
-	readonly clipboard: unknown;
+	readonly bus: KernelBus;
+	readonly windowManager: KernelWindowManager;
+	readonly commandPalette: KernelCommandPalette;
+	readonly processScheduler: KernelProcessScheduler;
+	readonly settings: KernelSettings;
+	readonly clipboard: KernelClipboard;
 }
