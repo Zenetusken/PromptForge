@@ -259,7 +259,10 @@ async def rename_folder(
     try:
         folder = await repo.rename_folder(app_id, folder_id, body.name)
     except IntegrityError:
-        raise HTTPException(status_code=409, detail="A folder with that name already exists in the same parent")
+        raise HTTPException(
+            status_code=409,
+            detail="A folder with that name already exists in the same parent",
+        )
     if not folder:
         raise HTTPException(status_code=404, detail="Folder not found")
     await audit.log_action(app_id, "rename", "vfs_folder", resource_id=folder_id)
@@ -303,7 +306,10 @@ async def rename_file(
     try:
         file = await repo.rename_file(app_id, file_id, body.name)
     except IntegrityError:
-        raise HTTPException(status_code=409, detail="A file with that name already exists in the same folder")
+        raise HTTPException(
+            status_code=409,
+            detail="A file with that name already exists in the same folder",
+        )
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
     await audit.log_action(app_id, "rename", "vfs_file", resource_id=file_id)

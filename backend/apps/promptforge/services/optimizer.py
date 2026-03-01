@@ -5,10 +5,10 @@ import logging
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
-from apps.promptforge.constants import Strategy
-from apps.promptforge.prompts.optimizer_prompts import OPTIMIZER_SYSTEM_PROMPT
 from app.providers import LLMProvider, get_provider
 from app.providers.types import CompletionRequest, TokenUsage
+from apps.promptforge.constants import Strategy
+from apps.promptforge.prompts.optimizer_prompts import OPTIMIZER_SYSTEM_PROMPT
 from apps.promptforge.services.analyzer import AnalysisResult, _ensure_string_list
 
 if TYPE_CHECKING:

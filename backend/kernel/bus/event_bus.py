@@ -10,8 +10,8 @@ import asyncio
 import logging
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from kernel.bus.contracts import ContractRegistry

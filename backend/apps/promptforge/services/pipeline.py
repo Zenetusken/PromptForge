@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
+from app.providers import LLMProvider, get_provider
+from app.providers.types import TokenUsage
 from apps.promptforge.constants import (
     STAGE_ANALYZE,
     STAGE_OPTIMIZE,
@@ -21,8 +23,6 @@ from apps.promptforge.constants import (
     Strategy,
     compute_progress,
 )
-from app.providers import LLMProvider, get_provider
-from app.providers.types import TokenUsage
 from apps.promptforge.services.analyzer import AnalysisResult, PromptAnalyzer
 from apps.promptforge.services.optimizer import OptimizationResult, PromptOptimizer
 from apps.promptforge.services.strategy_selector import StrategySelection, StrategySelector

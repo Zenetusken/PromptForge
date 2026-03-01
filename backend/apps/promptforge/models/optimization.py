@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from apps.promptforge.constants import OptimizationStatus
 from app.database import Base
+from apps.promptforge.constants import OptimizationStatus
 
 
 def generate_uuid() -> str:

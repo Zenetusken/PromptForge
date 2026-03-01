@@ -4,9 +4,9 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from kernel.bus.helpers import publish_event
 from kernel.registry.app_registry import AppStatus, get_app_registry
 from kernel.repositories.audit import AuditRepository
-from kernel.bus.helpers import publish_event
 from kernel.security.dependencies import get_audit_repo
 
 logger = logging.getLogger(__name__)

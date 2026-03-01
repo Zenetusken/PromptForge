@@ -4,9 +4,9 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from apps.promptforge.prompts.analyzer_prompt import ANALYZER_SYSTEM_PROMPT
 from app.providers import LLMProvider, get_provider
 from app.providers.types import CompletionRequest, TokenUsage
+from apps.promptforge.prompts.analyzer_prompt import ANALYZER_SYSTEM_PROMPT
 
 if TYPE_CHECKING:
     from apps.promptforge.schemas.context import CodebaseContext

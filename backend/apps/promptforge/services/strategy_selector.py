@@ -6,10 +6,10 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING
 
-from apps.promptforge.constants import LEGACY_STRATEGY_ALIASES, Strategy
-from apps.promptforge.prompts.strategy_prompt import STRATEGY_SYSTEM_PROMPT
 from app.providers import LLMProvider, get_provider
 from app.providers.types import CompletionRequest, TokenUsage
+from apps.promptforge.constants import LEGACY_STRATEGY_ALIASES, Strategy
+from apps.promptforge.prompts.strategy_prompt import STRATEGY_SYSTEM_PROMPT
 from apps.promptforge.services.analyzer import AnalysisResult
 
 if TYPE_CHECKING:

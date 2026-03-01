@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.promptforge.constants import OptimizationStatus
 from app.database import async_session_factory
+from apps.promptforge.constants import OptimizationStatus
 from apps.promptforge.models.optimization import Optimization
 from apps.promptforge.schemas.optimization import HistorySummaryResponse, OptimizationResponse
 from apps.promptforge.utils.scores import score_to_display

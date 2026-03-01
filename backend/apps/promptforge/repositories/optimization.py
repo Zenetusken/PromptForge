@@ -13,7 +13,11 @@ from sqlalchemy import ColumnElement, and_, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-from apps.promptforge.constants import ALLOWED_SORT_FIELDS, LEGACY_STRATEGY_ALIASES, OptimizationStatus
+from apps.promptforge.constants import (
+    ALLOWED_SORT_FIELDS,
+    LEGACY_STRATEGY_ALIASES,
+    OptimizationStatus,
+)
 from apps.promptforge.converters import deserialize_json_field
 from apps.promptforge.models.optimization import Optimization
 from apps.promptforge.models.project import Project, Prompt

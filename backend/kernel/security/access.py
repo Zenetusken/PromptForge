@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 
 if TYPE_CHECKING:
     from kernel.registry.manifest import AppManifest

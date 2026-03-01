@@ -163,7 +163,10 @@ class TextForgeApp(AppBase):
                 row = result.first()
                 return row[0] if row else None
         except Exception:
-            logger.debug("TextForge: failed to fetch optimization %s", optimization_id, exc_info=True)
+            logger.debug(
+                "TextForge: failed to fetch optimization %s",
+                optimization_id, exc_info=True,
+            )
             return None
 
     async def _run_simplify(self, text_input: str) -> str | None:
