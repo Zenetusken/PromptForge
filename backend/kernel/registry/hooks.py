@@ -83,3 +83,12 @@ class AppBase(ABC):
         with signature ``(data: dict, source_app: str) -> Any``.
         """
         return {}
+
+    def get_job_handlers(self) -> dict[str, Callable]:
+        """Return background job handlers for the kernel job queue.
+
+        Override to register async callables that process background jobs.
+        Keys are job type strings, values are async callables with
+        signature ``(job: Job) -> dict | Any``.
+        """
+        return {}

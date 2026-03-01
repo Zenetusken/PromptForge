@@ -117,6 +117,25 @@ KERNEL_MIGRATIONS: list[str] = [
     "  UNIQUE(app_id, resource, period)"
     ")",
     "CREATE INDEX IF NOT EXISTS ix_app_usage_app_id ON app_usage (app_id)",
+    # --- Kernel jobs (background job queue) ---
+    "CREATE TABLE IF NOT EXISTS kernel_jobs ("
+    "  id TEXT PRIMARY KEY,"
+    "  app_id TEXT NOT NULL,"
+    "  job_type TEXT NOT NULL,"
+    "  payload_json TEXT DEFAULT '{}',"
+    "  priority INTEGER DEFAULT 0,"
+    "  status TEXT DEFAULT 'pending',"
+    "  result_json TEXT,"
+    "  error TEXT,"
+    "  progress REAL DEFAULT 0.0,"
+    "  max_retries INTEGER DEFAULT 0,"
+    "  retry_count INTEGER DEFAULT 0,"
+    "  created_at TIMESTAMP NOT NULL,"
+    "  started_at TIMESTAMP,"
+    "  completed_at TIMESTAMP"
+    ")",
+    "CREATE INDEX IF NOT EXISTS ix_kernel_jobs_app_id ON kernel_jobs (app_id)",
+    "CREATE INDEX IF NOT EXISTS ix_kernel_jobs_status ON kernel_jobs (status)",
 ]
 
 

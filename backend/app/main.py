@@ -89,6 +89,11 @@ async def lifespan(app: FastAPI):
     services.register("bus", event_bus)
     services.register("contracts", contract_registry)
 
+    # Create and register the background job queue
+    from kernel.services.job_queue import JobQueue
+    job_queue = JobQueue(max_workers=3, bus=event_bus, db_session_factory=async_session_factory)
+    services.register("jobs", job_queue)
+
     # Validate each app's requires_services against registry
     for rec in registry.list_enabled():
         missing = services.validate_requirements(rec.manifest.requires_services)
@@ -116,14 +121,26 @@ async def lifespan(app: FastAPI):
         for event_type, handler in rec.instance.get_event_handlers().items():
             event_bus.subscribe(event_type, handler, app_id=rec.manifest.id)
 
+        # Auto-register job handlers from apps
+        for job_type, handler in rec.instance.get_job_handlers().items():
+            job_queue.register_handler(job_type, handler)
+
+    # Start the job queue workers and recover any pending jobs from DB
+    await job_queue.start()
+    await job_queue.recover_pending()
+
     yield
 
-    # Shutdown: call on_shutdown for all enabled apps
+    # Shutdown: call on_shutdown for all enabled apps before stopping the
+    # job queue, since apps may have running jobs that need to finish.
     for rec in registry.list_enabled():
         try:
             await rec.instance.on_shutdown(kernel)
         except Exception as exc:
             logger.error("App %r on_shutdown failed: %s", rec.manifest.id, exc)
+
+    # Stop the job queue after apps have shut down
+    await job_queue.stop()
 
 
 app = FastAPI(
