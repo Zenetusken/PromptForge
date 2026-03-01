@@ -1536,9 +1536,16 @@ async def promptforge_batch(
                     ctx_dict = context_to_dict(resolved_context)
                     if ctx_dict:
                         opt.codebase_context_snapshot = json.dumps(ctx_dict)
-                session.add(opt)
+                # Auto-create prompt record (same as single optimize)
                 if project:
-                    await ensure_project_by_name(session, project)
+                    project_info = await ensure_project_by_name(session, project)
+                    if project_info and project_info.status != "archived":
+                        auto_prompt_id = await ensure_prompt_in_project(
+                            session, project_info.id, prompt_text,
+                        )
+                        if auto_prompt_id:
+                            opt.prompt_id = auto_prompt_id
+                session.add(opt)
                 await session.commit()
 
             result = await run_pipeline(
