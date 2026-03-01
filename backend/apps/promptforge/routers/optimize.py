@@ -362,11 +362,13 @@ from pydantic import BaseModel  # noqa: E402
 
 class AnalyzeRequest(BaseModel):
     prompt: str
+    project: str | None = None
     codebase_context: dict[str, Any] | None = None
 
 class StrategyRequest(BaseModel):
     prompt: str
     analysis: dict[str, Any]
+    project: str | None = None
     codebase_context: dict[str, Any] | None = None
 
 class OptimizeGenerateRequest(BaseModel):
@@ -374,11 +376,14 @@ class OptimizeGenerateRequest(BaseModel):
     analysis: dict[str, Any]
     strategy: str
     secondary_frameworks: list[str] | None = None
+    project: str | None = None
     codebase_context: dict[str, Any] | None = None
 
 class ValidateRequest(BaseModel):
     original_prompt: str
     optimized_prompt: str
+    strategy: str | None = None
+    project: str | None = None
     codebase_context: dict[str, Any] | None = None
 
 def _timed_result(result: object, start: float) -> dict[str, Any]:
@@ -400,6 +405,23 @@ def _resolve_orchestration_provider(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+async def _resolve_orchestration_context(
+    project: str | None,
+    explicit_dict: dict[str, Any] | None,
+) -> CodebaseContext | None:
+    """Three-layer resolution for orchestration endpoints.
+
+    When ``project`` is provided, resolves workspace + manual profile layers
+    before merging with the explicit dict. Falls back to explicit-only when
+    no project is given (backward-compatible).
+    """
+    if not project:
+        return codebase_context_from_dict(explicit_dict)
+    from app.database import async_session_factory
+    async with async_session_factory() as session:
+        return await _resolve_context(session, project, explicit_dict)
+
+
 @router.post("/orchestrate/analyze")
 async def orchestrate_analyze(
     request: AnalyzeRequest,
@@ -411,7 +433,7 @@ async def orchestrate_analyze(
 
     provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
     sanitized_prompt, _ = sanitize_text(request.prompt)
-    context = codebase_context_from_dict(request.codebase_context)
+    context = await _resolve_orchestration_context(request.project, request.codebase_context)
     start = time.time()
     try:
         result = await PromptAnalyzer(provider).analyze(sanitized_prompt, codebase_context=context)
@@ -434,7 +456,7 @@ async def orchestrate_strategy(
 
     provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
     sanitized_prompt, _ = sanitize_text(request.prompt)
-    context = codebase_context_from_dict(request.codebase_context)
+    context = await _resolve_orchestration_context(request.project, request.codebase_context)
     try:
         analysis = AnalysisResult(**request.analysis)
     except TypeError as exc:
@@ -466,7 +488,7 @@ async def orchestrate_optimize(
 
     provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
     sanitized_prompt, _ = sanitize_text(request.prompt)
-    context = codebase_context_from_dict(request.codebase_context)
+    context = await _resolve_orchestration_context(request.project, request.codebase_context)
     try:
         analysis = AnalysisResult(**request.analysis)
     except TypeError as exc:
@@ -499,11 +521,12 @@ async def orchestrate_validate(
     provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
     sanitized_orig, _ = sanitize_text(request.original_prompt)
     sanitized_opt, _ = sanitize_text(request.optimized_prompt)
-    context = codebase_context_from_dict(request.codebase_context)
+    context = await _resolve_orchestration_context(request.project, request.codebase_context)
     start = time.time()
     try:
         result = await PromptValidator(provider).validate(
-            sanitized_orig, sanitized_opt, codebase_context=context,
+            sanitized_orig, sanitized_opt,
+            strategy=request.strategy, codebase_context=context,
         )
     except (ProviderError, Exception) as exc:
         logger.exception("Orchestrate validate failed")
@@ -643,6 +666,15 @@ async def batch_optimize(
                 tags=json.dumps(request.tags or ["batch"]),
                 title=f"Batch #{i + 1}",
             )
+            # Auto-create prompt record (same as single optimize)
+            if request.project:
+                project_info = await ensure_project_by_name(db, request.project)
+                if project_info and project_info.status != "archived":
+                    auto_prompt_id = await ensure_prompt_in_project(
+                        db, project_info.id, sanitized,
+                    )
+                    if auto_prompt_id:
+                        optimization.prompt_id = auto_prompt_id
             # Snapshot resolved context on the optimization record
             if resolved_context:
                 ctx_dict = context_to_dict(resolved_context)
@@ -765,9 +797,17 @@ async def get_optimization(
     return resp
 
 
+class RetryRequest(BaseModel):
+    """Optional body for retry — allows overriding context on re-run."""
+    strategy: str | None = None
+    secondary_frameworks: list[str] | None = None
+    codebase_context: dict[str, Any] | None = None
+
+
 @router.post("/optimize/{optimization_id}/retry")
 async def retry_optimization(
     optimization_id: str,
+    request: RetryRequest | None = None,
     db: AsyncSession = Depends(get_db),
     x_llm_api_key: str | None = Header(None, alias="X-LLM-API-Key"),
     x_llm_model: str | None = Header(None, alias="X-LLM-Model"),
@@ -776,13 +816,16 @@ async def retry_optimization(
     """Re-run an existing optimization using the same raw prompt.
 
     Retrieves the original prompt and runs the pipeline again,
-    returning a new SSE stream.
+    returning a new SSE stream. Accepts an optional JSON body with
+    ``strategy``, ``secondary_frameworks``, and ``codebase_context``
+    overrides.
 
     Optional headers:
     - ``X-LLM-API-Key``: Runtime API key override (never logged)
     - ``X-LLM-Model``: Runtime model override
     - ``X-LLM-Provider``: Provider name for retry
     """
+    request = request or RetryRequest()
     # Quota enforcement for retry
     try:
         from kernel.repositories.audit import AuditRepository as _AR
@@ -845,7 +888,8 @@ async def retry_optimization(
                     new_optimization.prompt_id = auto_prompt_id
 
     # Re-resolve context from workspace + manual profile (picks up updates since original)
-    resolved_context = await _resolve_context(db, original.project)
+    # Layer 3: explicit codebase_context from retry request body overrides layers 1+2
+    resolved_context = await _resolve_context(db, original.project, request.codebase_context)
 
     if resolved_context:
         ctx_dict = context_to_dict(resolved_context)
@@ -872,5 +916,7 @@ async def retry_optimization(
     metadata["_original_scores"] = extract_raw_scores(original)
     return _create_streaming_response(
         new_id, raw_prompt, start_time, metadata, llm_provider=llm_provider,
+        strategy_override=request.strategy,
+        secondary_frameworks_override=request.secondary_frameworks,
         codebase_context=resolved_context,
     )
