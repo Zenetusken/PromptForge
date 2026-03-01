@@ -5,6 +5,7 @@
  */
 
 import { API_BASE } from "$lib/api/client";
+import { throwIfNotOk } from "$lib/kernel/utils/errors";
 
 const BASE = `${API_BASE}/api/kernel/vfs`;
 
@@ -59,7 +60,7 @@ class VfsClient {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/children${params}`,
 		);
-		if (!res.ok) throw new Error(`Failed to list children: ${res.status}`);
+		await throwIfNotOk(res, "list children");
 		return res.json();
 	}
 
@@ -82,7 +83,7 @@ class VfsClient {
 				}),
 			},
 		);
-		if (!res.ok) throw new Error(`Failed to create folder: ${res.status}`);
+		await throwIfNotOk(res, "create folder");
 		return res.json();
 	}
 
@@ -90,7 +91,7 @@ class VfsClient {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/folders/${encodeURIComponent(folderId)}`,
 		);
-		if (!res.ok) throw new Error(`Failed to get folder: ${res.status}`);
+		await throwIfNotOk(res, "get folder");
 		return res.json();
 	}
 
@@ -99,14 +100,14 @@ class VfsClient {
 			`${BASE}/${encodeURIComponent(appId)}/folders/${encodeURIComponent(folderId)}`,
 			{ method: "DELETE" },
 		);
-		if (!res.ok) throw new Error(`Failed to delete folder: ${res.status}`);
+		await throwIfNotOk(res, "delete folder");
 	}
 
 	async getFolderPath(appId: string, folderId: string): Promise<VfsFolder[]> {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/folders/${encodeURIComponent(folderId)}/path`,
 		);
-		if (!res.ok) throw new Error(`Failed to get folder path: ${res.status}`);
+		await throwIfNotOk(res, "get folder path");
 		const data = await res.json();
 		return data.path;
 	}
@@ -137,7 +138,7 @@ class VfsClient {
 				}),
 			},
 		);
-		if (!res.ok) throw new Error(`Failed to create file: ${res.status}`);
+		await throwIfNotOk(res, "create file");
 		return res.json();
 	}
 
@@ -145,7 +146,7 @@ class VfsClient {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/files/${encodeURIComponent(fileId)}`,
 		);
-		if (!res.ok) throw new Error(`Failed to get file: ${res.status}`);
+		await throwIfNotOk(res, "get file");
 		return res.json();
 	}
 
@@ -174,7 +175,7 @@ class VfsClient {
 				}),
 			},
 		);
-		if (!res.ok) throw new Error(`Failed to update file: ${res.status}`);
+		await throwIfNotOk(res, "update file");
 		return res.json();
 	}
 
@@ -183,7 +184,77 @@ class VfsClient {
 			`${BASE}/${encodeURIComponent(appId)}/files/${encodeURIComponent(fileId)}`,
 			{ method: "DELETE" },
 		);
-		if (!res.ok) throw new Error(`Failed to delete file: ${res.status}`);
+		await throwIfNotOk(res, "delete file");
+	}
+
+	// --- Move / Rename ---
+
+	async moveFolder(
+		appId: string,
+		folderId: string,
+		newParentId: string | null,
+	): Promise<VfsFolder> {
+		const res = await fetch(
+			`${BASE}/${encodeURIComponent(appId)}/folders/${encodeURIComponent(folderId)}/move`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ new_parent_id: newParentId }),
+			},
+		);
+		await throwIfNotOk(res, "move folder");
+		return res.json();
+	}
+
+	async renameFolder(
+		appId: string,
+		folderId: string,
+		name: string,
+	): Promise<VfsFolder> {
+		const res = await fetch(
+			`${BASE}/${encodeURIComponent(appId)}/folders/${encodeURIComponent(folderId)}/rename`,
+			{
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name }),
+			},
+		);
+		await throwIfNotOk(res, "rename folder");
+		return res.json();
+	}
+
+	async moveFile(
+		appId: string,
+		fileId: string,
+		newFolderId: string | null,
+	): Promise<VfsFile> {
+		const res = await fetch(
+			`${BASE}/${encodeURIComponent(appId)}/files/${encodeURIComponent(fileId)}/move`,
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ new_folder_id: newFolderId }),
+			},
+		);
+		await throwIfNotOk(res, "move file");
+		return res.json();
+	}
+
+	async renameFile(
+		appId: string,
+		fileId: string,
+		name: string,
+	): Promise<VfsFile> {
+		const res = await fetch(
+			`${BASE}/${encodeURIComponent(appId)}/files/${encodeURIComponent(fileId)}/rename`,
+			{
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name }),
+			},
+		);
+		await throwIfNotOk(res, "rename file");
+		return res.json();
 	}
 
 	// --- Versions ---
@@ -195,10 +266,22 @@ class VfsClient {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/files/${encodeURIComponent(fileId)}/versions`,
 		);
-		if (!res.ok)
-			throw new Error(`Failed to list file versions: ${res.status}`);
+		await throwIfNotOk(res, "list file versions");
 		const data = await res.json();
 		return data.versions;
+	}
+
+	async restoreVersion(
+		appId: string,
+		fileId: string,
+		versionId: string,
+	): Promise<VfsFile> {
+		const res = await fetch(
+			`${BASE}/${encodeURIComponent(appId)}/files/${encodeURIComponent(fileId)}/versions/${encodeURIComponent(versionId)}/restore`,
+			{ method: "POST" },
+		);
+		await throwIfNotOk(res, "restore version");
+		return res.json();
 	}
 
 	// --- Search ---
@@ -207,7 +290,7 @@ class VfsClient {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/search?q=${encodeURIComponent(query)}`,
 		);
-		if (!res.ok) throw new Error(`Failed to search files: ${res.status}`);
+		await throwIfNotOk(res, "search files");
 		const data = await res.json();
 		return data.results;
 	}

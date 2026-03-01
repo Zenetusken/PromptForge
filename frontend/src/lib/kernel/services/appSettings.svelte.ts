@@ -5,6 +5,7 @@
  */
 
 import { API_BASE } from "$lib/api/client";
+import { throwIfNotOk } from "$lib/kernel/utils/errors";
 
 const BASE = `${API_BASE}/api/kernel/settings`;
 
@@ -30,7 +31,7 @@ class AppSettingsService {
 		this._loading[appId] = true;
 		try {
 			const res = await fetch(`${BASE}/${encodeURIComponent(appId)}`);
-			if (!res.ok) throw new Error(`Failed to load settings: ${res.status}`);
+			await throwIfNotOk(res, "load settings");
 			const data = await res.json();
 			this._cache[appId] = data.settings ?? {};
 			return this._cache[appId];
@@ -46,7 +47,7 @@ class AppSettingsService {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ settings }),
 		});
-		if (!res.ok) throw new Error(`Failed to save settings: ${res.status}`);
+		await throwIfNotOk(res, "save settings");
 		const data = await res.json();
 		this._cache[appId] = data.settings ?? {};
 	}
@@ -56,7 +57,8 @@ class AppSettingsService {
 		const res = await fetch(`${BASE}/${encodeURIComponent(appId)}`, {
 			method: "DELETE",
 		});
-		if (!res.ok) throw new Error(`Failed to reset settings: ${res.status}`);
+		await throwIfNotOk(res, "reset settings");
+		await res.json(); // Consume response body
 		this._cache[appId] = {};
 	}
 }

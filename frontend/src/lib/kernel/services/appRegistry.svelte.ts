@@ -143,7 +143,7 @@ class AppRegistryState {
 			record.instance.destroy();
 			record.initialized = false;
 		}
-		this._records = [];
+		this._records.length = 0;
 		this._kernel = null;
 	}
 }

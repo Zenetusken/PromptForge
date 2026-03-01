@@ -21,3 +21,9 @@ export type {
 
 // Services
 export { appRegistry } from "./services/appRegistry.svelte";
+export { appSettings } from "./services/appSettings.svelte";
+export { appStorage } from "./services/appStorage";
+export { vfs } from "./services/vfs";
+
+// Errors
+export { KernelError, throwIfNotOk } from "./utils/errors";

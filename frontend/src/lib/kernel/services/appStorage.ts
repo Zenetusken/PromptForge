@@ -5,6 +5,7 @@
  */
 
 import { API_BASE } from "$lib/api/client";
+import { throwIfNotOk } from "$lib/kernel/utils/errors";
 
 const BASE = `${API_BASE}/api/kernel/storage`;
 
@@ -40,7 +41,7 @@ class AppStorageClient {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/collections${params}`,
 		);
-		if (!res.ok) throw new Error(`Failed to list collections: ${res.status}`);
+		await throwIfNotOk(res, "list collections");
 		const data = await res.json();
 		return data.collections;
 	}
@@ -58,7 +59,7 @@ class AppStorageClient {
 				body: JSON.stringify({ name, parent_id: parentId ?? null }),
 			},
 		);
-		if (!res.ok) throw new Error(`Failed to create collection: ${res.status}`);
+		await throwIfNotOk(res, "create collection");
 		return res.json();
 	}
 
@@ -67,7 +68,7 @@ class AppStorageClient {
 			`${BASE}/${encodeURIComponent(appId)}/collections/${encodeURIComponent(collectionId)}`,
 			{ method: "DELETE" },
 		);
-		if (!res.ok) throw new Error(`Failed to delete collection: ${res.status}`);
+		await throwIfNotOk(res, "delete collection");
 	}
 
 	// --- Documents ---
@@ -82,7 +83,7 @@ class AppStorageClient {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/documents${params}`,
 		);
-		if (!res.ok) throw new Error(`Failed to list documents: ${res.status}`);
+		await throwIfNotOk(res, "list documents");
 		const data = await res.json();
 		return data.documents;
 	}
@@ -94,7 +95,7 @@ class AppStorageClient {
 		const res = await fetch(
 			`${BASE}/${encodeURIComponent(appId)}/documents/${encodeURIComponent(documentId)}`,
 		);
-		if (!res.ok) throw new Error(`Failed to get document: ${res.status}`);
+		await throwIfNotOk(res, "get document");
 		return res.json();
 	}
 
@@ -122,7 +123,7 @@ class AppStorageClient {
 				}),
 			},
 		);
-		if (!res.ok) throw new Error(`Failed to create document: ${res.status}`);
+		await throwIfNotOk(res, "create document");
 		return res.json();
 	}
 
@@ -149,7 +150,7 @@ class AppStorageClient {
 				}),
 			},
 		);
-		if (!res.ok) throw new Error(`Failed to update document: ${res.status}`);
+		await throwIfNotOk(res, "update document");
 		return res.json();
 	}
 
@@ -158,7 +159,7 @@ class AppStorageClient {
 			`${BASE}/${encodeURIComponent(appId)}/documents/${encodeURIComponent(documentId)}`,
 			{ method: "DELETE" },
 		);
-		if (!res.ok) throw new Error(`Failed to delete document: ${res.status}`);
+		await throwIfNotOk(res, "delete document");
 	}
 }
 
