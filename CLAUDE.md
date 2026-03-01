@@ -13,7 +13,7 @@ Users submit a raw prompt, and a 4-stage pipeline (Analyze → Strategy → Opti
 - **Backend**: Python 3.14+ / FastAPI / SQLAlchemy 2.0 async ORM / SQLite (aiosqlite) / Pydantic v2
 - **Frontend**: SvelteKit 2 / Svelte 5 (runes: `$state`, `$derived`, `$effect`) / Tailwind CSS 4 / TypeScript 5.7+ / Vite 6
 - **LLM access**: Provider-agnostic via `backend/app/providers/` — Claude CLI (default), Anthropic API, OpenAI, Gemini. Auto-detects or set `LLM_PROVIDER`.
-- **MCP server**: FastMCP (`backend/apps/promptforge/mcp_server.py`) — 22 tools, 4 resources, SSE transport on port 8001. Auto-discoverable via `.mcp.json`.
+- **MCP server**: FastMCP (`backend/apps/promptforge/mcp_server.py`) — 26 tools, 4 resources, SSE transport on port 8001. Auto-discoverable via `.mcp.json`.
 - **App Platform**: OS kernel architecture with app registry, manifest-driven discovery, lifecycle hooks.
 
 ## Commands
@@ -65,11 +65,13 @@ backend/
       app_document.py              # AppCollection + AppDocument (per-app doc store)
       vfs.py                       # VfsFolder + VfsFile + VfsFileVersion (virtual filesystem)
       audit.py                     # AuditLog + AppUsage (audit + quota tracking)
+      knowledge.py                 # KnowledgeProfile + KnowledgeSource (shared knowledge base)
     repositories/                  # Kernel data access
       app_settings.py              # AppSettingsRepository
       app_storage.py               # AppStorageRepository
       vfs.py                       # VfsRepository (folder/file CRUD, versioning, search)
       audit.py                     # AuditRepository (audit log, usage tracking)
+      knowledge.py                 # KnowledgeRepository (profile + source CRUD, resolve with auto-detect merge)
     routers/                       # Kernel API (/api/kernel/*)
       apps.py                      # GET /api/kernel/apps (with services_satisfied)
       settings.py                  # GET/PUT/DELETE /api/kernel/settings/{app_id}
@@ -78,6 +80,7 @@ backend/
       audit.py                     # GET /api/kernel/audit/{app_id}, /audit/all, /audit/summary, /audit/usage
       bus.py                       # GET /api/kernel/bus/contracts, subscriptions, events (SSE), POST publish
       jobs.py                      # POST /api/kernel/jobs/submit, GET /jobs/{id}, POST cancel, GET list
+      knowledge.py                 # CRUD /api/kernel/knowledge/{app_id}/{entity_id} (profiles, sources, sync)
     security/                      # Access control (deny-by-default for unknown apps)
       access.py                    # AppContext, check_capability(), require_capability(), check_quota()
       dependencies.py              # get_app_context (deny-by-default), get_kernel_context (permissive), get_audit_repo
@@ -85,6 +88,8 @@ backend/
       event_bus.py                 # EventBus — pub/sub + request/response + contract validation
       contracts.py                 # ContractRegistry — typed event schemas
       helpers.py                   # publish_event() — convenience wrapper resolving bus from kernel
+    events/
+      knowledge.py                 # Knowledge event contracts (4 events: profile_updated, source_added/updated/removed)
     services/                      # Kernel DI + background services
       registry.py                  # ServiceRegistry — register/get/has/validate
       job_queue.py                 # JobQueue — async background job execution with DB persistence + retry
@@ -101,7 +106,7 @@ backend/
       routers/ services/ models/   # All PF business logic (moved from app/)
       schemas/ repositories/       # PF data layer
       database.py                  # PF-specific migrations
-      mcp_server.py                # FastMCP server (22 tools, SSE on port 8001)
+      mcp_server.py                # FastMCP server (26 tools, SSE on port 8001)
     hello_world/                   # Example app
       manifest.json
       app.py                       # HelloWorldApp(AppBase)
@@ -126,6 +131,7 @@ frontend/src/lib/
       appStorage.ts                # Per-app document storage client
       vfs.ts                       # VFS client (folders, files, versioning, move/rename, restore, search)
       kernelBusBridge.svelte.ts    # SSE bridge: backend EventBus → frontend SystemBus (reconnect, replay)
+      knowledge.svelte.ts          # Kernel Knowledge Base client (profile + source CRUD, reactive $state cache)
       appManagerClient.ts          # App lifecycle client (list, enable, disable apps)
       auditClient.ts               # Audit log + usage tracking client
       jobClient.ts                 # Background job queue client (submit, cancel, list)
@@ -149,7 +155,7 @@ frontend/src/lib/
 
 **Key classes:**
 - `Kernel` (dataclass) — service locator passed to apps on startup: `app_registry`, `db_session_factory`, `services` (ServiceRegistry), `get_provider()` for LLM access
-- `ServiceRegistry` — DI container with `register(name, service)`, `get(name)`, `has(name)`, `validate_requirements(required)`. Core services: `llm`, `db`, `storage`, `vfs`, `bus`, `contracts`, `jobs`
+- `ServiceRegistry` — DI container with `register(name, service)`, `get(name)`, `has(name)`, `validate_requirements(required)`. Core services: `llm`, `db`, `storage`, `vfs`, `bus`, `contracts`, `jobs`, `knowledge`
 - `AppBase` (ABC) — lifecycle hooks: `on_install`, `on_enable`, `on_startup(kernel)`, `on_shutdown(kernel)`, `run_migrations`, `get_event_contracts`, `get_event_handlers`, `get_job_handlers`
 - `AppRegistry` — discovers `manifest.json` in `apps/`, loads entry points, mounts routers
 - `AppManifest` — Pydantic model for `manifest.json` (backend routers, frontend windows, commands, file types, process types, settings, desktop icons, start menu, capabilities, resource_quotas, extension_slots, extensions)
@@ -180,7 +186,7 @@ Four LLM stages orchestrated as an async generator yielding SSE events:
 
 Score weights (server-computed, never trusts LLM arithmetic): clarity 20% + specificity 20% + structure 15% + faithfulness 25% + conciseness 20%. `framework_adherence_score` is supplementary (not in weighted average). DB stores 0.0–1.0 floats; display/API uses 1–10 integers (`backend/apps/promptforge/utils/scores.py`).
 
-All stages accept optional `codebase_context` (from `backend/apps/promptforge/schemas/context.py`). Context resolved via **three-layer merge**: (1) workspace auto-context → (2) project `context_profile` → (3) per-request `codebase_context`. Resolved context snapshotted as `Optimization.codebase_context_snapshot`.
+All stages accept optional `codebase_context` (from `backend/apps/promptforge/schemas/context.py`). Context resolved via **kernel Knowledge Base**: `KnowledgeRepository.resolve()` merges profile identity fields (manual > auto-detected) + metadata + enabled sources, then `merge_contexts()` applies any per-request override. Resolved context snapshotted as `Optimization.codebase_context_snapshot`.
 
 ### Provider Abstraction (`backend/app/providers/`)
 
@@ -216,7 +222,7 @@ One route: `/` (content dashboard). All interactions through the persistent wind
 - **Tab System**: `MAX_TABS = 5` with LRU eviction. Each `WorkspaceTab` carries `resultId`, `mode`, `document`. `tabCoherence.ts` handles save/restore. Forging guards block tab operations during active forges.
 - **Scoped Results** (`optimization.svelte.ts`): `forgeResult` (from SSE) and `viewResult` (from history) as separate slots. `result` returns `forgeResult ?? viewResult`.
 - **Process Scheduler** (`processScheduler.svelte.ts`): Bounded-concurrency queue (`maxConcurrent` from settings, default 2). Tracks running/queued/completed processes. Persisted to sessionStorage.
-- **System Bus** (`systemBus.svelte.ts`): Decoupled IPC — `forge:*`, `window:*`, `provider:*`, `mcp:*`, `workspace:*`, `fs:*`, `snap:*`, `kernel:*` (app_enabled/disabled, audit_logged, job_submitted/started/progress/completed/failed, event), `transform:*`, `textforge:prefill`, `clipboard:copied`, `history:reload`, `stats:reload`, `notification:show`, `tournament:completed`.
+- **System Bus** (`systemBus.svelte.ts`): Decoupled IPC — `forge:*`, `window:*`, `provider:*`, `mcp:*`, `workspace:*`, `fs:*`, `snap:*`, `kernel:*` (app_enabled/disabled, audit_logged, job_submitted/started/progress/completed/failed, knowledge_profile_updated, knowledge_source_added/updated/removed, event), `transform:*`, `textforge:prefill`, `clipboard:copied`, `history:reload`, `stats:reload`, `notification:show`, `tournament:completed`.
 - **Services**: `notificationService` (subscribes to 13 bus events, max 50, auto-dismiss), `clipboardService`, `commandPalette` (Ctrl+K), `mcpActivityFeed` (SSE with auto-reconnect and `Last-Event-ID`), `kernelBusBridge` (SSE bridge from backend EventBus).
 - **Settings** (`settings.svelte.ts`): `accentColor`, `defaultStrategy`, `maxConcurrentForges`, `enableAnimations`, `wallpaperMode`, `wallpaperOpacity`, `performanceProfile`. Drives CSS custom properties on `:root`.
 - **Windows**: ControlPanel, TaskManager, BatchProcessor, StrategyWorkshop, TemplateLibrary, Terminal, NetworkMonitor, RecycleBin, Workspace, DisplaySettings, FolderWindow, AppManagerWindow, AuditLogWindow.
@@ -233,6 +239,7 @@ The following docs contain implementation details that **must be kept in sync** 
 | [`docs/backend-database.md`](docs/backend-database.md) | PRAGMAs, migrations, startup sequence, models, repositories | Schema changes, new migrations, startup hooks, repository methods |
 | [`docs/backend-caching.md`](docs/backend-caching.md) | Stats cache, invalidation points, provider staleness, LLM caching | Cache TTLs, new invalidation points, polling behavior |
 | [`docs/pffs-filesystem.md`](docs/pffs-filesystem.md) | PFFS type system, descriptors, document routing, desktop hierarchy, orchestrator, backend API, drag & drop | File extensions, artifact kinds, descriptor types, filesystem endpoints, folder/prompt operations, desktop sync |
+| [`docs/context-system.md`](docs/context-system.md) | Three-layer context merge, Knowledge Sources, budget allocation, render tiers, pipeline injection, snapshot storage, frontend display | Context resolution logic, source CRUD, render format, budget constants, merge behavior, LLM prompt directives |
 
 ### CHANGELOG.md Guidelines
 

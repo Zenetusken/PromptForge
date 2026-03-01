@@ -29,15 +29,15 @@ Tests use `:memory:` SQLite — PRAGMAs are applied but most are no-ops there.
 
 All steps are idempotent — safe to run on every restart.
 
-PromptForge-specific migrations (in `apps/promptforge/database.py`): `run_migrations` (27 column/index migrations), `migrate_legacy_strategies`, `migrate_legacy_projects`, `backfill_missing_prompts`, `backfill_prompt_ids`, `cleanup_stale_running`.
+PromptForge-specific migrations (in `apps/promptforge/database.py`): `run_migrations` (30 column/index migrations), `migrate_legacy_strategies`, `migrate_legacy_projects`, `backfill_missing_prompts`, `backfill_prompt_ids`, `cleanup_stale_running`.
 
 ## Migration List
 
-27 migrations in `_MIGRATIONS` covering:
+30 migrations in `_MIGRATIONS` covering:
 
 - Column additions: `strategy_reasoning`, `input_tokens`, `output_tokens`, `strategy_confidence`, `prompt_id`, `strategy`, `secondary_frameworks`, `version`, `context_profile`, `codebase_context_snapshot`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `conciseness_score`, `detected_patterns`, `retry_of`, `framework_adherence_score`
-- Table creation: `projects`, `prompts`, `prompt_versions`
-- Indexes: 13 single/composite indexes on `optimizations`, `projects`, `prompts`, `prompt_versions`
+- Table creation: `projects`, `prompts`, `prompt_versions`, `project_sources`
+- Indexes: 15 single/composite indexes on `optimizations`, `projects`, `prompts`, `prompt_versions`, `project_sources`
 
 New databases get indexes at CREATE TABLE time; migrations apply them for pre-existing databases.
 
@@ -52,6 +52,7 @@ New databases get indexes at CREATE TABLE time; migrations apply them for pre-ex
 | `github_connections` | `apps/promptforge/models/workspace.py` | `github_user_id`, `github_username`, `access_token_encrypted`, `avatar_url`, `scopes`, `token_valid` |
 | `github_oauth_config` | `apps/promptforge/models/workspace.py` | `client_id`, `client_secret_encrypted`, `redirect_uri`, `scope` (single-row table) |
 | `workspace_links` | `apps/promptforge/models/workspace.py` | `project_id` FK, `github_connection_id` FK, `repo_full_name`, `repo_url`, `default_branch`, `sync_status`, `workspace_context` (JSON), `file_tree_snapshot` (JSON) |
+| `project_sources` | `apps/promptforge/models/source.py` | `project_id` FK CASCADE, `title`, `content`, `source_type`, `char_count`, `enabled`, `order_index` |
 
 ## Repositories
 
@@ -60,6 +61,7 @@ New databases get indexes at CREATE TABLE time; migrations apply them for pre-ex
 | `OptimizationRepository` | `apps/promptforge/repositories/optimization.py` | All optimization queries: CRUD, list with filters/pagination/sorting, stats (10+ analytics), tag management |
 | `ProjectRepository` | `apps/promptforge/repositories/project.py` | Project/prompt CRUD, prompt versioning, cascade deletion, context profiles |
 | `WorkspaceRepository` | `apps/promptforge/repositories/workspace.py` | GitHub connections CRUD, OAuth config, workspace links, sync status, context resolution (3-layer merge: workspace → project → request), health summary |
+| `SourceRepository` | `apps/promptforge/repositories/source.py` | Knowledge source CRUD, enable/disable toggle, reorder, batch counts, project-name lookup for pipeline resolution |
 
 Standalone helpers: `ensure_project_by_name()` (returns `ProjectInfo(id, status)` — avoids redundant follow-up query for archive checks), `ensure_prompt_in_project()` (3-tier matching: exact → SQL fuzzy → Python fallback with LIMIT 100).
 
@@ -78,6 +80,8 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 | `audit_log` | `kernel/models/audit.py` | `id`, `app_id`, `action`, `resource_type`, `resource_id`, `details_json`, `timestamp`. Index on `(app_id, timestamp)` |
 | `app_usage` | `kernel/models/audit.py` | `id`, `app_id`, `resource`, `period` (hourly), `count`, `updated_at`. `UNIQUE(app_id, resource, period)` |
 | `kernel_jobs` | `kernel/database.py` | `id`, `app_id`, `job_type`, `payload_json`, `priority`, `status` (pending/running/completed/failed/cancelled), `result_json`, `error`, `progress`, `max_retries`, `retry_count`, `created_at`, `started_at`, `completed_at`. Indexes on `(app_id)`, `(status)` |
+| `kernel_knowledge_profiles` | `kernel/models/knowledge.py` | `id`, `app_id`, `entity_id`, `name`, `language`, `framework`, `description`, `test_framework`, `metadata_json`, `auto_detected_json`, `created_at`, `updated_at`. `UNIQUE(app_id, entity_id)`. Indexes on `(app_id)`, `(app_id, entity_id)` |
+| `kernel_knowledge_sources` | `kernel/models/knowledge.py` | `id`, `profile_id` FK (`CASCADE`), `title`, `content`, `source_type`, `char_count`, `enabled`, `order_index`, `created_at`, `updated_at`. Indexes on `(profile_id)`, `(profile_id, enabled)` |
 
 ### Kernel Repositories
 
@@ -88,6 +92,7 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 | `VfsRepository` | `kernel/repositories/vfs.py` | Virtual filesystem: folder CRUD with depth validation (max 8), file CRUD with auto-versioning, breadcrumb path traversal, file search by name. Scoped by `app_id`. |
 | `AuditRepository` | `kernel/repositories/audit.py` | Audit log: `log_action`, `list_logs`, `count_logs`, `list_all_logs`, `count_all_logs`, `get_summary`. Usage tracking: `get_usage`, `increment_usage`, `get_all_usage`, `get_all_apps_usage`. Hourly period-based quota tracking. |
 | `JobQueueRepository` | `kernel/repositories/job_queue.py` | Job persistence: `create_job`, `update_job`, `list_jobs` (filter by app_id/status), `get_pending_jobs` (crash recovery). JSON serialization for payload/result. |
+| `KnowledgeRepository` | `kernel/repositories/knowledge.py` | Profile CRUD: `get_profile`, `get_or_create_profile`, `update_profile`, `update_auto_detected`, `delete_profile`, `list_profiles`, `resolve_profile`. Source CRUD: `list_sources`, `get_source`, `create_source`, `update_source`, `delete_source`, `get_source_count`, `reorder_sources`. Combined: `resolve(app_id, entity_id)` returns merged profile + enabled sources. MAX_SOURCES (50) enforcement. |
 
 ### Kernel REST Endpoints
 
@@ -100,6 +105,7 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 | `kernel/routers/audit.py` | `/api/kernel/audit` | `GET /{app_id}` (per-app logs), `GET /all` (cross-app), `GET /summary` (aggregate counts), `GET /usage/{app_id}`, `GET /usage` (all apps) |
 | `kernel/routers/bus.py` | `/api/kernel/bus` | `GET /contracts`, `GET /subscriptions`, `GET /events` (SSE with `Last-Event-ID` replay), `POST /publish` (validated event publishing) |
 | `kernel/routers/jobs.py` | `/api/kernel/jobs` | `POST /submit` (202), `GET /{job_id}`, `POST /{job_id}/cancel`, `GET` (list with filters) |
+| `kernel/routers/knowledge.py` | `/api/kernel/knowledge` | `GET /{app_id}/{entity_id}` (resolve), `PUT` (upsert profile), `DELETE` (cascade), `POST .../sync` (auto-detect), `GET/POST .../sources`, `PATCH/DELETE/POST toggle /sources/{id}`, `PUT .../sources/reorder` |
 
 All kernel routers are aggregated into `kernel_router` in `kernel/routers/__init__.py` and mounted once in `main.py`.
 

@@ -8,6 +8,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+**Context Observability**
+- Pre-forge context preview: `POST /api/apps/promptforge/context/preview` endpoint returns resolved context with field count and rendered char estimate; `ContextPreviewRequest` schema in `schemas/optimization.py`
+- `fetchContextPreview()` API client function in `client.ts`
+- Preview button in `ForgeContextSection.svelte` — shows resolved context via `ContextSnapshotPanel` before forging
+- Cross-project context coverage bar in `ProjectsWindow.svelte` list view: shows project count with knowledge + total source count
+- Technical Hints collapsible section in `ProjectsWindow.svelte` (conventions, patterns, test_patterns) — edits metadata via kernel Knowledge Base
+- `knowledge.svelte.ts` `updateProfile` now accepts `metadata_json` for metadata field writes
+- Context Inspector in `WorkspaceWindow.svelte` shows actual field values with provenance badges (`[manual]` neon-purple, `[auto]` neon-green, `[n/a]` dim) — loads kernel profile per workspace
+- Source content expand-in-place in `SourceManager.svelte` — click title to toggle inline content preview (2K char truncation, max-h-48 scroll)
+
+### Added
+
+**Kernel Knowledge Base**
+- Kernel-level Knowledge Base service (`kernel/models/knowledge.py`, `kernel/repositories/knowledge.py`) — shared "brain" of the OS accessible to all apps, replacing PromptForge-specific context storage
+- `kernel_knowledge_profiles` table: project identity (language, framework, description, test_framework) + `metadata_json` for app-specific extensions + `auto_detected_json` for workspace auto-fill shadow fields
+- `kernel_knowledge_sources` table: reference documents with enabled toggle, ordering, source types — replaces `project_sources` table
+- `KnowledgeRepository` with profile CRUD, source CRUD, `resolve()` method (manual > auto-detected merge + enabled sources), `get_source_count()`, `reorder_sources()`, MAX_SOURCES (50) enforcement
+- REST API at `/api/kernel/knowledge/`: 10 endpoints for profile CRUD, source CRUD, sync, toggle, reorder
+- 4 kernel event contracts: `knowledge.profile_updated`, `knowledge.source_added`, `knowledge.source_updated`, `knowledge.source_removed`
+- `knowledge:read`, `knowledge:write` capabilities added to permissive set
+- `knowledge` service registered in kernel ServiceRegistry
+- Frontend `knowledge.svelte.ts` kernel service: reactive `$state` caches, profile and source CRUD methods
+- `KnowledgeProfile`, `KnowledgeSource`, `KernelKnowledge` TypeScript interfaces in `kernel/types.ts`
+- Knowledge bus event bridge: 4 backend event types mapped in `kernelBusBridge.svelte.ts` + 4 new `BusEventType` entries in `systemBus.svelte.ts`
+- Backend tests: `test_knowledge_service.py` (33 tests — profile CRUD, source CRUD, resolve logic, cascade delete, router endpoints)
+
+**PromptForge Knowledge Migration**
+- `migrate_context_to_kernel()` data migration: moves `projects.context_profile` → kernel profiles, `workspace_links.workspace_context` → `auto_detected_json`, `project_sources` → kernel sources
+- `documentation` field promoted to Knowledge Source (type=document) during migration; `code_snippets` entries promoted to individual Knowledge Sources (type=paste)
+- `codebase_context_from_kernel()` factory: maps kernel resolve output to `CodebaseContext` dataclass
+- PromptForge context resolution now uses kernel `KnowledgeRepository.resolve()` + per-request override (was three-layer merge)
+- PromptForge source REST endpoints proxy to kernel Knowledge Base (backward-compatible response shapes)
+- MCP tools (`sync_workspace`, `set_project_context`, source CRUD) delegate to kernel Knowledge Base
+- Project source counts fetched from kernel via `KnowledgeRepository` instead of legacy `SourceRepository`
+- Backend tests: `test_context_migration.py` (13 tests — migration fidelity, idempotency), `test_context.py` additions (9 tests — kernel context factory), `test_pipeline_integration.py` addition (1 test)
+
+**Knowledge Sources System**
+- Multi-source knowledge base for NotebookLM-style project grounding: named reference documents automatically flow through all 4 pipeline stages
+- New `ProjectSource` ORM model (`project_sources` table) with UUID PK, FK to projects with CASCADE delete, enabled toggle, ordering
+- `SourceRepository` with full CRUD, batch source counts, and `get_enabled_by_project_name()` for pipeline resolution
+- REST CRUD at `/projects/{id}/sources`: POST, GET, PATCH, DELETE, toggle, reorder (7 endpoints)
+- 4 MCP tools: `add_source`, `update_source`, `delete_source`, `list_sources`
+- `SourceDocument` dataclass + `## Knowledge Sources` render tier between Identity and Technical Details
+- Context budget raised to 80K chars (50K for sources, 30K for Identity + Technical Details)
+- Sources auto-resolved during `_resolve_context()` — attached after three-layer merge, snapshotted on optimization records
+- `source_count` in `ProjectSummaryResponse` and `ProjectDetailResponse`
+- LLM directive updates: optimizer Section E (Knowledge Sources), validator source-aware faithfulness scoring, analyzer source classification, strategy source-aware framework selection
+- Frontend: `SourceManager.svelte` component, source count badge in `ForgeContextSection`, source titles in `ContextSnapshotPanel`
+- Frontend API client: `ProjectSource` type, `fetchSources`, `createSource`, `updateSource`, `deleteSource`, `toggleSource`
+- Backend tests: `test_sources.py` (repository + API), `test_context.py` additions (render + serialization with sources)
+
 **Comprehensive Audit Logging**
 - `kernel_audit_log()` helper (`kernel/bus/helpers.py`) — app-agnostic fire-and-forget audit logging shared across all apps
 - PromptForge `audit_log()` simplified to thin wrapper delegating to kernel helper
@@ -100,6 +151,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Quota enforcement on batch and retry endpoints (not just single optimize)
 
 ### Fixed
+
+**Context System — Project Context as Universal Knowledge Source**
+- `CodebaseContext.render()` now produces two-tier output: "## Project Identity" (description, language, framework — always relevant) and "## Technical Details" (conventions, patterns, code snippets — relevant for coding, source material for all). LLM can distinguish what's universally applicable vs. code-specific.
+- Optimizer prompt: replaced "Codebase Context Integration" with "Project Context Integration" — context treated as a knowledge base (like NotebookLM's uploaded documents) that informs ALL prompt types. "Ignore irrelevant context" replaced with tier-aware guidance: Project Identity always applied, Technical Details used as source material for essays/analysis/marketing, not just coding.
+- Analyzer prompt: added "Project Context Awareness" section — identifies as weakness when prompt doesn't reference the actual product described in context, for any task type
+- Analyzer context injection: changed "codebase environment" framing to "project context as a knowledge source" to avoid priming LLM to treat it as code-only
+- Validator prompt: faithfulness and specificity scoring now penalize ignoring project identity (e.g., using generic/fictional product instead of the real one described in context)
+- Strategy prompt: added guidance to prefer `context-enrichment` as secondary when project has a description and task is non-coding
+- Strategy selector heuristic: `_context_strategy_preference()` now boosts `context-enrichment` when project has a rich description (>50 chars), checked before code-specific signals
+
+**Context System — Universal Knowledge Source (Phase 2)**
+- `CodebaseContext.render()` promotes `documentation` from Technical Details to Project Identity tier — documentation is now the richest knowledge source, rendered alongside description/language/framework
+- LLM-facing payload key renamed from `codebase_context` to `project_context` in optimizer, validator, and strategy selector user messages — stops priming LLMs to treat context as code-only
+- System prompt references updated: `codebase_context (optional)` → `project_context (optional)` in strategy and validator prompts
+- Optimizer prompt: added section D "Project-About Prompts" for meta prompts whose subject IS the project (essays, blog posts, architecture summaries) — all context tiers become primary source material
+- Strategy prompt: added directive to ALWAYS include `context-enrichment` as secondary when project context includes rich documentation or detailed description
+- MCP tool descriptions (10 locations) and REST schema descriptions updated: "codebase context" → "project context" throughout user-facing text
+- Frontend user-facing text updated: `ForgeContextSection` tooltip, `ContextSnapshotPanel` header, `MCPInfo` tool description, `WorkspaceWindow` OAuth text — all now say "project context"
+- Validator prompt: "codebase patterns" → "project-specific patterns" for scoring guidance consistency
+- Service docstrings (optimizer, validator, strategy selector, pipeline, analyzer) updated to say "project context" in parameter descriptions
+- `docs/frontend-components.md`: component descriptions updated from "codebase context" to "project context"
+- Zero breaking changes: all API field names (`codebase_context`), Python parameter names, DB columns, and class names (`CodebaseContext`) unchanged
 
 **Three-Tier Context Injection**
 - `codebase_context_from_dict()` no longer crashes on non-dict input (e.g. JSON arrays); returns `None` instead of `AttributeError`
