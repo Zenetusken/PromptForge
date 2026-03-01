@@ -198,18 +198,26 @@ class ProjectRepository:
     async def get_context_by_name(self, name: str) -> CodebaseContext | None:
         """Fetch a project's context profile by name (lightweight, no joins).
 
+        Resolves nested projects too (no parent_id filter). Excludes deleted
+        projects. When duplicates exist, uses the most recently updated.
+
         Injects ``Project.description`` as a fallback for
         ``CodebaseContext.description`` when the context profile doesn't
         already provide one, so the LLM knows what the project is about
         without requiring users to duplicate their description into the
         context profile.
         """
-        stmt = select(Project.context_profile, Project.description).where(
-            Project.name == name,
-            Project.parent_id.is_(None),
+        stmt = (
+            select(Project.context_profile, Project.description)
+            .where(
+                Project.name == name,
+                Project.status != ProjectStatus.DELETED,
+            )
+            .order_by(Project.updated_at.desc())
+            .limit(1)
         )
         result = await self._session.execute(stmt)
-        row = result.one_or_none()
+        row = result.first()
         if row is None:
             return None
         ctx_json, project_description = row

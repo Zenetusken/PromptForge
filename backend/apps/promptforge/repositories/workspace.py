@@ -162,11 +162,16 @@ class WorkspaceRepository:
         return result.scalar_one_or_none()
 
     async def get_link_by_project_name(self, name: str) -> WorkspaceLink | None:
-        """Get workspace link by project name (joins through projects table)."""
+        """Get workspace link by project name (joins through projects table).
+
+        Uses most-recently-synced link when duplicate project names exist.
+        """
         result = await self._session.execute(
             select(WorkspaceLink)
             .join(Project, WorkspaceLink.project_id == Project.id)
             .where(Project.name == name, Project.status != "deleted")
+            .order_by(WorkspaceLink.updated_at.desc())
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
