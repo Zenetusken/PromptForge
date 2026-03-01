@@ -749,8 +749,8 @@ class TestCodebaseContextThreading:
                 assert "Python 3.14" in msg, f"{stage_name} missing context"
             else:
                 parsed = json.loads(msg)
-                assert "codebase_context" in parsed, f"{stage_name} missing context field"
-                assert "Python 3.14" in parsed["codebase_context"]
+                assert "project_context" in parsed, f"{stage_name} missing context field"
+                assert "Python 3.14" in parsed["project_context"]
 
     @pytest.mark.asyncio
     async def test_no_context_means_no_injection(self):
@@ -768,7 +768,7 @@ class TestCodebaseContextThreading:
                 assert "codebase environment" not in msg
             else:
                 parsed = json.loads(msg)
-                assert "codebase_context" not in parsed
+                assert "project_context" not in parsed
 
     @pytest.mark.asyncio
     async def test_context_reaches_stages_via_streaming_pipeline(self):
@@ -798,7 +798,7 @@ class TestCodebaseContextThreading:
                 assert "Rust" in msg, f"streaming {stage_name} missing context"
             else:
                 parsed = json.loads(msg)
-                assert "codebase_context" in parsed, f"streaming {stage_name} missing context"
+                assert "project_context" in parsed, f"streaming {stage_name} missing context"
 
     @pytest.mark.asyncio
     async def test_context_with_strategy_override(self):
@@ -826,4 +826,48 @@ class TestCodebaseContextThreading:
                 assert "Go" in msg
             else:
                 parsed = json.loads(msg)
-                assert "codebase_context" in parsed
+                assert "project_context" in parsed
+
+    @pytest.mark.asyncio
+    async def test_context_from_kernel_resolution_threads_through(self):
+        """Context built from kernel resolve result should thread through pipeline."""
+        from apps.promptforge.schemas.context import codebase_context_from_kernel
+
+        resolved = {
+            "profile": {
+                "language": "Rust",
+                "framework": "Axum",
+                "description": "A web server",
+                "test_framework": "cargo test",
+            },
+            "metadata": {
+                "conventions": ["clippy"],
+                "patterns": ["hexagonal"],
+            },
+            "sources": [
+                {"title": "API Spec", "content": "REST API spec", "source_type": "specification"},
+            ],
+        }
+        ctx = codebase_context_from_kernel(resolved)
+        assert ctx is not None
+
+        provider, captured = _make_capturing_provider(
+            {"task_type": "coding", "complexity": "medium",
+             "weaknesses": [], "strengths": []},
+        )
+        await run_pipeline(
+            "Write a handler",
+            llm_provider=provider,
+            codebase_context=ctx,
+        )
+
+        assert len(captured) == 4
+        for stage_name, request in captured:
+            msg = request.user_message
+            if stage_name == "analyzer":
+                assert "Rust" in msg
+                assert "Axum" in msg
+            else:
+                parsed = json.loads(msg)
+                assert "project_context" in parsed
+                assert "Rust" in parsed["project_context"]

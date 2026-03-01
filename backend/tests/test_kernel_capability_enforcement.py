@@ -95,7 +95,8 @@ class TestLegacyPermissiveCapabilities:
 
     def test_legacy_set_has_expected_capabilities(self):
         expected = {"settings:read", "settings:write", "storage:read", "storage:write",
-                    "vfs:read", "vfs:write", "audit:read", "llm:invoke"}
+                    "vfs:read", "vfs:write", "audit:read", "llm:invoke",
+                    "knowledge:read", "knowledge:write"}
         assert LEGACY_PERMISSIVE_CAPABILITIES == expected
 
 

@@ -105,6 +105,7 @@ describe('createFolder', () => {
 			id: 'new-id', name: 'New Folder', description: null,
 			context_profile: null, status: 'active', parent_id: null, depth: 0,
 			created_at: '2026-01-01', updated_at: '2026-01-01', prompts: [],
+			source_count: 0,
 		});
 
 		const node = await fsOrchestrator.createFolder('New Folder', null);

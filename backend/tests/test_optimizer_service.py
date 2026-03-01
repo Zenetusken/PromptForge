@@ -253,9 +253,9 @@ class TestOptimizerCodebaseContext:
         )
         call_args = provider.complete_json.call_args[0][0]
         parsed = json.loads(call_args.user_message)
-        assert "codebase_context" in parsed
-        assert "Python 3.14" in parsed["codebase_context"]
-        assert "FastAPI" in parsed["codebase_context"]
+        assert "project_context" in parsed
+        assert "Python 3.14" in parsed["project_context"]
+        assert "FastAPI" in parsed["project_context"]
 
     @pytest.mark.asyncio
     async def test_no_context_means_no_field(self):
@@ -263,7 +263,7 @@ class TestOptimizerCodebaseContext:
         await PromptOptimizer(provider).optimize("raw", _default_analysis())
         call_args = provider.complete_json.call_args[0][0]
         parsed = json.loads(call_args.user_message)
-        assert "codebase_context" not in parsed
+        assert "project_context" not in parsed
 
     @pytest.mark.asyncio
     async def test_empty_context_means_no_field(self):
@@ -276,4 +276,4 @@ class TestOptimizerCodebaseContext:
         )
         call_args = provider.complete_json.call_args[0][0]
         parsed = json.loads(call_args.user_message)
-        assert "codebase_context" not in parsed
+        assert "project_context" not in parsed
