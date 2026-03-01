@@ -86,6 +86,23 @@ class SettingsDef(BaseModel):
     component: str = ""
 
 
+class ExtensionSlotDef(BaseModel):
+    """An extension point that a host app declares for guest apps to contribute to."""
+
+    id: str
+    label: str = ""
+    max_extensions: int = 10
+
+
+class ExtensionDef(BaseModel):
+    """A contribution from a guest app to a host app's extension slot."""
+
+    slot: str  # Target slot as "{app_id}:{slot_id}"
+    component: str  # Component name to load via getComponent()
+    priority: int = 0
+    label: str = ""
+
+
 class FrontendManifest(BaseModel):
     """Frontend-specific manifest entries."""
 
@@ -97,6 +114,8 @@ class FrontendManifest(BaseModel):
     start_menu: StartMenuDef | None = None
     desktop_icons: list[DesktopIconDef] = Field(default_factory=list)
     settings: SettingsDef | None = None
+    extension_slots: list[ExtensionSlotDef] = Field(default_factory=list)
+    extensions: list[ExtensionDef] = Field(default_factory=list)
 
 
 class CapabilitiesDef(BaseModel):

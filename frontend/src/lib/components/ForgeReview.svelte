@@ -11,6 +11,7 @@
 	import ForgeIterationTimeline from './ForgeIterationTimeline.svelte';
 	import ContextSnapshotPanel from './ContextSnapshotPanel.svelte';
 	import ForgeContents from './ForgeContents.svelte';
+	import ExtensionSlot from '$lib/kernel/components/ExtensionSlot.svelte';
 
 	let result = $derived(optimizationState.forgeResult);
 
@@ -203,6 +204,11 @@
 					Compare
 				</button>
 			{/if}
+			<!-- Extension point: apps can inject actions here -->
+			<ExtensionSlot
+				slotId="promptforge:review-actions"
+				context={{ resultId: result.id, optimizedPrompt: result.optimized }}
+			/>
 		</div>
 	</div>
 {:else}

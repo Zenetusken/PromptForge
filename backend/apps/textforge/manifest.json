@@ -8,7 +8,7 @@
     "entry_point": "TextForgeApp",
     "requires_services": ["llm", "storage"],
     "capabilities": {
-        "required": ["storage:read", "storage:write", "settings:read", "settings:write"],
+        "required": ["storage:read", "storage:write", "settings:read", "settings:write", "vfs:read", "vfs:write"],
         "optional": ["llm:invoke", "audit:read"]
     },
     "resource_quotas": {
@@ -104,6 +104,14 @@
                 "preserveFormatting": { "type": "boolean", "default": true }
             },
             "component": "TextForgeSettings"
-        }
+        },
+        "extensions": [
+            {
+                "slot": "promptforge:review-actions",
+                "component": "SimplifyAction",
+                "priority": 10,
+                "label": "Simplify with TextForge"
+            }
+        ]
     }
 }

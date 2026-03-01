@@ -95,6 +95,14 @@ const manifest: AppManifestFrontend = {
 		},
 		component: "TextForgeSettings",
 	},
+	extensions: [
+		{
+			slot: "promptforge:review-actions",
+			component: "SimplifyAction",
+			priority: 10,
+			label: "Simplify with TextForge",
+		},
+	],
 };
 
 const COMPONENT_MAP: Record<
@@ -107,6 +115,8 @@ const COMPONENT_MAP: Record<
 		import("$lib/apps/textforge/TextForgeHistoryWindow.svelte"),
 	TextForgeSettings: () =>
 		import("$lib/apps/textforge/TextForgeSettings.svelte"),
+	SimplifyAction: () =>
+		import("$lib/apps/textforge/SimplifyAction.svelte"),
 };
 
 export class TextForgeApp implements AppFrontend {

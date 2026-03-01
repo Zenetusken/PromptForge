@@ -6,6 +6,65 @@
 	import { systemBus } from '$lib/services/systemBus.svelte';
 	import { appSettings } from '$lib/kernel/services/appSettings.svelte';
 
+	interface Simplification {
+		id: string;
+		optimization_id: string | null;
+		original_text: string;
+		simplified_text: string;
+		/** Full text for actions (not truncated) */
+		simplified_text_full: string;
+		original_score: number | null;
+		created_at: string;
+	}
+
+	let simplifications: Simplification[] = $state([]);
+	let showSimplifications = $state(false);
+
+	async function loadSimplifications() {
+		try {
+			const res = await fetch(`${API_BASE}/api/kernel/storage/textforge/documents?collection=auto-simplify`);
+			if (!res.ok) return;
+			const data = await res.json();
+			simplifications = (data.documents ?? []).map((doc: any) => {
+				try {
+					const content = JSON.parse(doc.content);
+					return {
+						id: doc.id,
+						optimization_id: content.optimization_id,
+						original_text: content.original_text?.slice(0, 200) ?? '',
+						simplified_text: content.simplified_text?.slice(0, 200) ?? '',
+						simplified_text_full: content.simplified_text ?? '',
+						original_score: content.original_score,
+						created_at: doc.created_at,
+					};
+				} catch { return null; }
+			}).filter(Boolean);
+		} catch {
+			// silent — may not be available yet
+		}
+	}
+
+	// Reload when auto-simplify completes
+	$effect(() => {
+		const unsub = systemBus.on('kernel:job_completed', (data: any) => {
+			if (data?.job_type === 'textforge:auto-simplify') loadSimplifications();
+		});
+		return unsub;
+	});
+
+	// Listen for prefill from cross-app extensions (e.g., SimplifyAction in PromptForge)
+	$effect(() => {
+		const unsub = systemBus.on('textforge:prefill', (data: any) => {
+			if (data?.text) {
+				inputText = data.text;
+			}
+			if (data?.autoTransform) {
+				selectedType = data.autoTransform;
+			}
+		});
+		return unsub;
+	});
+
 	const TRANSFORM_TYPES = [
 		{ id: 'summarize', label: 'Summarize', icon: 'minimize-2' },
 		{ id: 'expand', label: 'Expand', icon: 'maximize-2' },
@@ -226,6 +285,38 @@
 		</div>
 	</div>
 
+	<!-- Suggested Simplifications -->
+	{#if showSimplifications && simplifications.length > 0}
+		<div class="border-t border-neon-purple/10 max-h-[150px] overflow-y-auto">
+			<div class="flex items-center gap-2 px-3 py-1.5">
+				<Icon name="layers" size={10} class="text-neon-purple" />
+				<span class="text-[10px] text-neon-purple uppercase tracking-wider">Suggested Simplifications</span>
+				<span class="text-[10px] text-text-dim ml-auto">{simplifications.length}</span>
+				<button
+					class="text-[10px] text-text-dim hover:text-text-secondary"
+					onclick={() => { showSimplifications = false; }}
+				>
+					<Icon name="x" size={10} />
+				</button>
+			</div>
+			{#each simplifications as s (s.id)}
+				<div class="px-3 py-1.5 border-t border-neon-purple/5 hover:bg-bg-hover transition-colors">
+					<div class="flex items-center gap-2 text-[10px]">
+						<span class="text-text-dim">Score: <span class="text-neon-red">{s.original_score?.toFixed(1) ?? '?'}</span></span>
+						<span class="text-text-dim truncate">{s.simplified_text}</span>
+						<button
+							class="ml-auto shrink-0 text-neon-purple hover:text-neon-purple/80"
+							onclick={() => { inputText = s.simplified_text_full; }}
+							title="Use as input"
+						>
+							<Icon name="arrow-up-right" size={10} />
+						</button>
+					</div>
+				</div>
+			{/each}
+		</div>
+	{/if}
+
 	<!-- Action bar -->
 	<div class="flex items-center gap-2 border-t border-neon-orange/10 px-3 py-2">
 		<button
@@ -242,6 +333,15 @@
 			onclick={clearAll}
 		>
 			Clear
+		</button>
+		<button
+			class="flex items-center gap-1 px-2 py-1.5 text-[11px] border transition-colors
+				{showSimplifications ? 'border-neon-purple/30 text-neon-purple' : 'border-border-subtle text-text-dim hover:text-neon-purple hover:border-neon-purple/20'}"
+			onclick={() => { showSimplifications = !showSimplifications; if (showSimplifications) loadSimplifications(); }}
+			title="Show suggested simplifications from PromptForge"
+		>
+			<Icon name="layers" size={10} />
+			Suggestions
 		</button>
 		<span class="ml-auto text-[10px] text-text-dim">
 			{selectedType.replace('_', ' ')}

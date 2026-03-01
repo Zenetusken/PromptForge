@@ -9,6 +9,7 @@ import type {
 	AnyComponent,
 	AppFrontend,
 	AppManifestFrontend,
+	ExtensionSlotDef,
 	KernelAPI,
 	WindowRegistration,
 } from "$lib/kernel/types";
@@ -20,10 +21,25 @@ interface AppRecord {
 	initialized: boolean;
 }
 
+/** Resolved extension entry with a component loader. */
+export interface ResolvedExtension {
+	slotId: string;
+	appId: string;
+	component: string;
+	priority: number;
+	label: string;
+	loadComponent: () => Promise<{ default: AnyComponent }>;
+}
+
 class AppRegistryState {
 	/** App records stored as $state array — guaranteed reactive on .push(). */
 	private _records = $state<AppRecord[]>([]);
 	private _kernel: KernelAPI | null = null;
+
+	/** Extension slot definitions indexed by full slot ID ("{appId}:{slotId}"). */
+	private _slots = new Map<string, ExtensionSlotDef & { appId: string }>();
+	/** Extensions indexed by slot ID. */
+	private _extensions = new Map<string, ResolvedExtension[]>();
 
 	/** Register an app with the kernel. Idempotent — skips if already registered. */
 	register(app: AppFrontend): void {
@@ -52,6 +68,41 @@ class AppRegistryState {
 
 		const record: AppRecord = { manifest, instance: app, windows, initialized: false };
 		this._records.push(record);
+
+		// Index extension slots declared by this app
+		for (const slot of manifest.extension_slots ?? []) {
+			const fullId = `${manifest.id}:${slot.id}`;
+			this._slots.set(fullId, { ...slot, appId: manifest.id });
+			if (!this._extensions.has(fullId)) {
+				this._extensions.set(fullId, []);
+			}
+		}
+
+		// Index extension contributions from this app
+		for (const ext of manifest.extensions ?? []) {
+			let cached: Promise<{ default: AnyComponent }> | null = null;
+			const resolved: ResolvedExtension = {
+				slotId: ext.slot,
+				appId: manifest.id,
+				component: ext.component,
+				priority: ext.priority,
+				label: ext.label,
+				loadComponent: () => {
+					if (!cached) cached = app.getComponent(ext.component);
+					return cached;
+				},
+			};
+
+			const existing = this._extensions.get(ext.slot) ?? [];
+			// Enforce max_extensions limit
+			const slotDef = this._slots.get(ext.slot);
+			if (slotDef && existing.length >= slotDef.max_extensions) continue;
+
+			existing.push(resolved);
+			// Sort by priority descending (higher priority first)
+			existing.sort((a, b) => b.priority - a.priority);
+			this._extensions.set(ext.slot, existing);
+		}
 
 		// Initialize app with kernel API if available
 		if (this._kernel) {
@@ -137,6 +188,16 @@ class AppRegistryState {
 			}));
 	}
 
+	/** Get all resolved extensions for a slot, sorted by priority (descending). */
+	getExtensions(slotId: string): ResolvedExtension[] {
+		return this._extensions.get(slotId) ?? [];
+	}
+
+	/** Get all declared extension slots across all apps. */
+	get allExtensionSlots() {
+		return [...this._slots.values()];
+	}
+
 	/** Destroy all apps (cleanup). */
 	destroyAll(): void {
 		for (const record of this._records) {
@@ -144,6 +205,8 @@ class AppRegistryState {
 			record.initialized = false;
 		}
 		this._records.length = 0;
+		this._slots.clear();
+		this._extensions.clear();
 		this._kernel = null;
 	}
 }

@@ -16,10 +16,23 @@ class TransformCompletedPayload(BaseModel):
     output_length: int = 0
 
 
+class AutoSimplifyCompletedPayload(BaseModel):
+    """Payload for textforge:auto-simplify.completed."""
+
+    optimization_id: str
+    transform_id: str
+    improvement_delta: float = 0.0
+
+
 TEXTFORGE_CONTRACTS: list[EventContract] = [
     EventContract(
         event_type="textforge:transform.completed",
         source_app="textforge",
         payload_schema=TransformCompletedPayload,
+    ),
+    EventContract(
+        event_type="textforge:auto-simplify.completed",
+        source_app="textforge",
+        payload_schema=AutoSimplifyCompletedPayload,
     ),
 ]

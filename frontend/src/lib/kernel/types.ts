@@ -20,6 +20,8 @@ export interface AppManifestFrontend {
 	start_menu?: StartMenuDef;
 	desktop_icons: DesktopIconDef[];
 	settings?: SettingsDef;
+	extension_slots?: ExtensionSlotDef[];
+	extensions?: ExtensionDef[];
 }
 
 export interface WindowDef {
@@ -71,6 +73,23 @@ export interface DesktopIconDef {
 export interface SettingsDef {
 	schema: Record<string, { type: string; default: unknown }>;
 	component: string;
+}
+
+/** Extension slot declared by a host app. */
+export interface ExtensionSlotDef {
+	id: string;
+	label: string;
+	max_extensions: number;
+}
+
+/** Extension contribution from a guest app to a host app's slot. */
+export interface ExtensionDef {
+	/** Target slot as "{app_id}:{slot_id}" */
+	slot: string;
+	/** Component name to load via getComponent() */
+	component: string;
+	priority: number;
+	label: string;
 }
 
 /** Frontend app interface — apps implement this to integrate with the shell. */
