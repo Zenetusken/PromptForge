@@ -1,7 +1,7 @@
 """Codebase context schema for enriching prompt optimization with project awareness."""
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 MAX_CONTEXT_CHARS = 50_000
 
@@ -77,9 +77,11 @@ def merge_contexts(
     if base is None and override is None:
         return None
     if base is None:
-        return override
+        # Return a shallow copy to prevent aliasing — callers may mutate the result
+        # (e.g. get_context_by_name injects Project.description as fallback).
+        return replace(override)
     if override is None:
-        return base
+        return replace(base)
 
     merged_kwargs = {}
     for f in CodebaseContext.__dataclass_fields__.values():
@@ -120,17 +122,33 @@ def codebase_context_from_dict(data: dict | None) -> CodebaseContext | None:
     """Convert a raw dict (from MCP/API) to a CodebaseContext, or None.
 
     Unknown keys are silently ignored so callers can evolve freely.
-    Strings are coerced to single-element lists for list fields.
+    Scalar fields are coerced to str; list fields accept str or list[str].
+    Non-dict input (e.g. from ``json.loads("[1,2]")``) returns None.
     """
-    if not data:
+    if not data or not isinstance(data, dict):
         return None
     known_fields = {f.name for f in CodebaseContext.__dataclass_fields__.values()}
     filtered = {k: v for k, v in data.items() if k in known_fields}
     if not filtered:
         return None
-    # Coerce string → list for list-typed fields (MCP clients may send strings)
+
+    # Coerce scalar fields to str (guards against e.g. {"language": 42})
+    _scalar_fields = {"language", "framework", "description", "documentation", "test_framework"}
+    for k in _scalar_fields:
+        if k in filtered and filtered[k] is not None:
+            filtered[k] = str(filtered[k])
+
+    # Coerce list fields: str → [str], list items → str, invalid types dropped
     _list_fields = {"conventions", "patterns", "code_snippets", "test_patterns"}
     for k in _list_fields:
-        if k in filtered and isinstance(filtered[k], str):
-            filtered[k] = [filtered[k]]
+        val = filtered.get(k)
+        if val is None:
+            continue
+        if isinstance(val, str):
+            filtered[k] = [val]
+        elif isinstance(val, list):
+            filtered[k] = [str(item) for item in val if item is not None]
+        else:
+            del filtered[k]
+
     return CodebaseContext(**filtered)
