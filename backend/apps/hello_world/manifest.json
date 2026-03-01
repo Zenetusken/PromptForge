@@ -7,6 +7,15 @@
   "python_module": "apps.hello_world",
   "entry_point": "HelloWorldApp",
   "requires_services": [],
+  "capabilities": {
+    "required": ["settings:read"],
+    "optional": ["storage:read", "audit:read"]
+  },
+  "resource_quotas": {
+    "max_storage_mb": 10,
+    "max_api_calls_per_hour": 100,
+    "max_documents": 100
+  },
 
   "backend": {
     "routers": [

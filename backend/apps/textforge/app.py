@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from kernel.registry.hooks import AppBase
 
 if TYPE_CHECKING:
+    from kernel.bus.contracts import EventContract
     from kernel.core import Kernel
 
 logger = logging.getLogger(__name__)
@@ -31,3 +32,20 @@ class TextForgeApp(AppBase):
 
     async def on_shutdown(self, kernel: Kernel | None) -> None:
         logger.info("TextForge app stopped")
+
+    def get_event_contracts(self) -> list[EventContract]:
+        from apps.textforge.events import TEXTFORGE_CONTRACTS
+        return list(TEXTFORGE_CONTRACTS)
+
+    def get_event_handlers(self) -> dict[str, Callable]:
+        async def on_optimization_completed(data: dict, source_app: str) -> None:
+            logger.info(
+                "TextForge received optimization.completed from %s: optimization_id=%s score=%s",
+                source_app,
+                data.get("optimization_id"),
+                data.get("overall_score"),
+            )
+
+        return {
+            "promptforge:optimization.completed": on_optimization_completed,
+        }

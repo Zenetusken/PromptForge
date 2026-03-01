@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from kernel.registry.hooks import AppBase
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncConnection
+
+    from kernel.bus.contracts import EventContract
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,13 @@ class PromptForgeApp(AppBase):
 
     async def on_startup(self, kernel) -> None:
         logger.info("PromptForge app starting up")
+
+    def get_event_contracts(self) -> list[EventContract]:
+        from apps.promptforge.events import PROMPTFORGE_CONTRACTS
+        return list(PROMPTFORGE_CONTRACTS)
+
+    def get_event_handlers(self) -> dict[str, Callable]:
+        return {}
 
     async def on_shutdown(self, kernel: object) -> None:
         # Close persistent HTTP clients

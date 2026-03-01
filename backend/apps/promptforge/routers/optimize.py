@@ -41,6 +41,7 @@ from apps.promptforge.schemas.context import (
 from apps.promptforge.schemas.optimization import OptimizationResponse, OptimizeRequest
 from apps.promptforge.services.pipeline import PipelineComplete, run_pipeline, run_pipeline_streaming
 from apps.promptforge.services.stats_cache import invalidate_stats_cache
+from kernel.bus.helpers import publish_event
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +179,15 @@ def _create_streaming_response(
             yield f"event: error\ndata: {err_payload}\n\n"
             return
 
+        # Publish optimization.completed event
+        publish_event("promptforge:optimization.completed", {
+            "optimization_id": opt_id,
+            "overall_score": final_data.get("overall_score"),
+            "strategy": final_data.get("strategy"),
+            "project": (metadata or {}).get("project"),
+            "duration_ms": final_data.get("duration_ms"),
+        }, "promptforge")
+
         # Now send the complete event after DB is updated
         if pending_complete_event:
             yield pending_complete_event
@@ -278,6 +288,14 @@ async def optimize_prompt(
             optimization.codebase_context_snapshot = json.dumps(ctx_dict)
 
     await db.commit()
+
+    # Publish optimization.started event
+    publish_event("promptforge:optimization.started", {
+        "optimization_id": optimization_id,
+        "raw_prompt": sanitized_prompt[:200],
+        "project": request.project,
+        "strategy": request.strategy,
+    }, "promptforge")
 
     metadata: dict[str, Any] = {
         "title": request.title or "",
@@ -581,6 +599,13 @@ async def batch_optimize(
             db.add(optimization)
             await db.commit()
 
+            publish_event("promptforge:optimization.started", {
+                "optimization_id": optimization_id,
+                "raw_prompt": sanitized[:200],
+                "project": request.project,
+                "strategy": request.strategy,
+            }, "promptforge")
+
             # Run pipeline (non-streaming — returns PipelineResult dataclass)
             pipeline_result = await run_pipeline(
                 sanitized,
@@ -596,6 +621,14 @@ async def batch_optimize(
                 model_fallback=model_fallback,
                 session=db,
             )
+            publish_event("promptforge:optimization.completed", {
+                "optimization_id": optimization_id,
+                "overall_score": pipeline_result.overall_score,
+                "strategy": pipeline_result.strategy,
+                "project": request.project,
+                "duration_ms": int((time.time() - start_time) * 1000),
+            }, "promptforge")
+
             results.append(BatchItemResult(
                 index=i,
                 optimization_id=optimization_id,

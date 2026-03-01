@@ -7,6 +7,15 @@
   "python_module": "apps.promptforge",
   "entry_point": "PromptForgeApp",
   "requires_services": ["llm"],
+  "capabilities": {
+    "required": ["storage:read", "storage:write", "vfs:read", "vfs:write", "settings:read", "settings:write"],
+    "optional": ["llm:invoke", "audit:read"]
+  },
+  "resource_quotas": {
+    "max_storage_mb": 500,
+    "max_api_calls_per_hour": 5000,
+    "max_documents": 50000
+  },
 
   "backend": {
     "routers": [

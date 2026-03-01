@@ -20,6 +20,7 @@ from app.providers.errors import (
     RateLimitError,
 )
 from app.providers.types import CompletionRequest
+from kernel.bus.helpers import publish_event
 from kernel.repositories.app_storage import AppStorageRepository
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,14 @@ async def create_transform(
         content_type="application/json",
         metadata={"transform_type": body.transform_type},
     )
+
+    # Publish transform.completed event
+    publish_event("textforge:transform.completed", {
+        "transform_id": doc["id"],
+        "transform_type": body.transform_type,
+        "input_length": len(body.input_text),
+        "output_length": len(output_text),
+    }, "textforge")
 
     return TransformResponse(
         id=doc["id"],

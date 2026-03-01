@@ -7,6 +7,15 @@
     "python_module": "apps.textforge.app",
     "entry_point": "TextForgeApp",
     "requires_services": ["llm", "storage"],
+    "capabilities": {
+        "required": ["storage:read", "storage:write", "settings:read", "settings:write"],
+        "optional": ["llm:invoke", "audit:read"]
+    },
+    "resource_quotas": {
+        "max_storage_mb": 50,
+        "max_api_calls_per_hour": 500,
+        "max_documents": 5000
+    },
     "backend": {
         "routers": [
             {
