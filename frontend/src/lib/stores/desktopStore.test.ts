@@ -1085,4 +1085,171 @@ describe('DesktopStore', () => {
 			expect(actionIds).toContain('delete');
 		});
 	});
+
+	describe('multi-select', () => {
+		it('toggleIconSelection adds and removes from selection', () => {
+			desktopStore.toggleIconSelection('sys-forge-ide');
+			expect(desktopStore.selectedIconIds.has('sys-forge-ide')).toBe(true);
+			expect(desktopStore.selectionCount).toBe(1);
+
+			desktopStore.toggleIconSelection('sys-projects');
+			expect(desktopStore.selectedIconIds.has('sys-forge-ide')).toBe(true);
+			expect(desktopStore.selectedIconIds.has('sys-projects')).toBe(true);
+			expect(desktopStore.selectionCount).toBe(2);
+
+			// Toggle off
+			desktopStore.toggleIconSelection('sys-forge-ide');
+			expect(desktopStore.selectedIconIds.has('sys-forge-ide')).toBe(false);
+			expect(desktopStore.selectionCount).toBe(1);
+		});
+
+		it('selectIcons replaces entire selection', () => {
+			desktopStore.selectIcon('sys-forge-ide');
+			desktopStore.selectIcons(['sys-projects', 'sys-history']);
+			expect(desktopStore.selectedIconIds.has('sys-forge-ide')).toBe(false);
+			expect(desktopStore.selectedIconIds.has('sys-projects')).toBe(true);
+			expect(desktopStore.selectedIconIds.has('sys-history')).toBe(true);
+			expect(desktopStore.selectionCount).toBe(2);
+		});
+
+		it('selectAll selects all icons', () => {
+			desktopStore.selectAll();
+			expect(desktopStore.selectionCount).toBe(desktopStore.icons.length);
+		});
+
+		it('selectedIconId is null when multiple selected', () => {
+			desktopStore.selectIcons(['sys-forge-ide', 'sys-projects']);
+			expect(desktopStore.selectedIconId).toBeNull();
+		});
+
+		it('selectedIcon is undefined when multiple selected', () => {
+			desktopStore.selectIcons(['sys-forge-ide', 'sys-projects']);
+			expect(desktopStore.selectedIcon).toBeUndefined();
+		});
+
+		it('selectedIcons returns all selected icon objects', () => {
+			desktopStore.selectIcons(['sys-forge-ide', 'sys-projects']);
+			expect(desktopStore.selectedIcons).toHaveLength(2);
+			expect(desktopStore.selectedIcons.map((i) => i.id)).toContain('sys-forge-ide');
+			expect(desktopStore.selectedIcons.map((i) => i.id)).toContain('sys-projects');
+		});
+
+		it('isMultiSelect is true for 2+ selections, false for 0 or 1', () => {
+			expect(desktopStore.isMultiSelect).toBe(false);
+			desktopStore.selectIcon('sys-forge-ide');
+			expect(desktopStore.isMultiSelect).toBe(false);
+			desktopStore.toggleIconSelection('sys-projects');
+			expect(desktopStore.isMultiSelect).toBe(true);
+		});
+
+		it('deselectAll clears multi-selection', () => {
+			desktopStore.selectIcons(['sys-forge-ide', 'sys-projects', 'sys-history']);
+			desktopStore.deselectAll();
+			expect(desktopStore.selectionCount).toBe(0);
+			expect(desktopStore.selectedIconIds.size).toBe(0);
+		});
+
+		it('selectIcon replaces multi-selection with single', () => {
+			desktopStore.selectIcons(['sys-forge-ide', 'sys-projects']);
+			desktopStore.selectIcon('sys-history');
+			expect(desktopStore.selectionCount).toBe(1);
+			expect(desktopStore.selectedIconId).toBe('sys-history');
+		});
+	});
+
+	describe('batch context menu', () => {
+		beforeEach(() => {
+			// Add DB icons for batch action testing
+			desktopStore.syncDbFolders([
+				{ id: 'bf1', name: 'BatchFolder1', type: 'folder' } as any,
+				{ id: 'bf2', name: 'BatchFolder2', type: 'folder' } as any,
+			]);
+			desktopStore.syncDbPrompts([
+				{ id: 'bp1', name: 'BatchPrompt1', type: 'prompt' } as any,
+			]);
+		});
+
+		it('multi-selection of DB items shows batch actions', () => {
+			desktopStore.selectIcons(['db-folder-bf1', 'db-folder-bf2']);
+			desktopStore.openContextMenu(100, 200, 'db-folder-bf1');
+			expect(desktopStore.contextMenu.open).toBe(true);
+			const actionIds = desktopStore.contextMenu.actions.map((a) => a.id);
+			expect(actionIds).toContain('batch-move-to');
+			expect(actionIds).toContain('batch-delete');
+		});
+
+		it('batch action labels include count', () => {
+			desktopStore.selectIcons(['db-folder-bf1', 'db-folder-bf2', 'db-prompt-bp1']);
+			desktopStore.openContextMenu(100, 200, 'db-folder-bf1');
+			const moveAction = desktopStore.contextMenu.actions.find((a) => a.id === 'batch-move-to');
+			const deleteAction = desktopStore.contextMenu.actions.find((a) => a.id === 'batch-delete');
+			expect(moveAction?.label).toBe('Move 3 items to...');
+			expect(deleteAction?.label).toBe('Delete 3 items');
+		});
+
+		it('intersection logic: system-only multi-select yields no batch move', () => {
+			desktopStore.selectIcons(['sys-forge-ide', 'sys-control-panel']);
+			desktopStore.openContextMenu(100, 200, 'sys-forge-ide');
+			const actionIds = desktopStore.contextMenu.actions.map((a) => a.id);
+			// System icons don't have move-to or delete
+			expect(actionIds).not.toContain('batch-move-to');
+			expect(actionIds).not.toContain('batch-delete');
+		});
+
+		it('mixed system + DB multi-select: no common move-to', () => {
+			desktopStore.selectIcons(['sys-forge-ide', 'db-folder-bf1']);
+			desktopStore.openContextMenu(100, 200, 'sys-forge-ide');
+			const actionIds = desktopStore.contextMenu.actions.map((a) => a.id);
+			// system icons don't have 'move-to' or 'delete', so intersection is empty
+			expect(actionIds).not.toContain('batch-move-to');
+			expect(actionIds).not.toContain('batch-delete');
+		});
+
+		it('single-selection right-click shows normal actions, not batch', () => {
+			desktopStore.selectIcon('db-folder-bf1');
+			desktopStore.openContextMenu(100, 200, 'db-folder-bf1');
+			const actionIds = desktopStore.contextMenu.actions.map((a) => a.id);
+			expect(actionIds).toContain('open');
+			expect(actionIds).toContain('move-to');
+			expect(actionIds).not.toContain('batch-move-to');
+		});
+	});
+
+	describe('batch-move-to dispatch', () => {
+		beforeEach(() => {
+			desktopStore.syncDbFolders([
+				{ id: 'mf1', name: 'MoveFolder1', type: 'folder' } as any,
+			]);
+			desktopStore.syncDbPrompts([
+				{ id: 'mp1', name: 'MovePrompt1', type: 'prompt' } as any,
+			]);
+		});
+
+		it('opens moveToDialog with batchItems from selected DB icons', () => {
+			desktopStore.selectIcons(['db-folder-mf1', 'db-prompt-mp1']);
+			desktopStore.openContextMenu(100, 200, 'db-folder-mf1');
+			desktopStore.executeContextAction('batch-move-to');
+			expect(desktopStore.moveToDialog.open).toBe(true);
+			expect(desktopStore.moveToDialog.batchItems).toHaveLength(2);
+			expect(desktopStore.moveToDialog.batchItems).toContainEqual({ type: 'project', id: 'mf1' });
+			expect(desktopStore.moveToDialog.batchItems).toContainEqual({ type: 'prompt', id: 'mp1' });
+		});
+
+		it('closeMoveToDialog clears batchItems', () => {
+			desktopStore.moveToDialog = { open: true, iconId: null, batchItems: [{ type: 'project', id: 'x' }] };
+			desktopStore.closeMoveToDialog();
+			expect(desktopStore.moveToDialog.batchItems).toBeUndefined();
+		});
+	});
+
+	describe('batch-delete dispatch', () => {
+		it('opens confirmDialog with correct count', () => {
+			desktopStore.selectIcons(['shortcut-code-review', 'shortcut-marketing-email']);
+			desktopStore.openContextMenu(100, 200, 'shortcut-code-review');
+			desktopStore.executeContextAction('batch-delete');
+			expect(desktopStore.confirmDialog.open).toBe(true);
+			expect(desktopStore.confirmDialog.title).toBe('Delete 2 Items');
+			expect(desktopStore.confirmDialog.message).toContain('2 selected items');
+		});
+	});
 });
