@@ -51,6 +51,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - REST API at `/api/kernel/bus/*` — `GET /contracts`, `GET /subscriptions`, `GET /events` (SSE stream)
 - `bus` and `contracts` services registered in kernel ServiceRegistry
 
+**Backend-to-Frontend Bus Bridge**
+- `EventReplayBuffer` in `bus.py` — ring buffer (max 200) with sequential IDs for SSE replay on reconnect
+- `POST /api/kernel/bus/publish` — validated event publishing (checks ContractRegistry), returns 202
+- `GET /api/kernel/bus/events` SSE stream now includes `id:` field, supports `Last-Event-ID` header for replay after disconnect
+- Frontend `kernelBusBridge.svelte.ts` — SSE client with exponential backoff + jitter (3s→30s), `Last-Event-ID` replay, 2-second snapshot phase suppression, `EVENT_TYPE_MAP` (backend dot-notation → frontend underscore)
+- Bus bridge auto-connects on layout mount, disconnects on cleanup
+
+**Background Job Queue**
+- `JobQueue` service (`kernel/services/job_queue.py`) — async `PriorityQueue` with configurable `max_workers` (default 3), DB persistence via `JobQueueRepository`, retry logic with `max_retries`, progress tracking with 10% debounce
+- `kernel_jobs` table with full lifecycle tracking (pending → running → completed/failed/cancelled)
+- `JobQueueRepository` — `create_job`, `update_job`, `list_jobs`, `get_pending_jobs` for crash recovery
+- REST API at `/api/kernel/jobs/*` — `POST /submit` (202), `GET /{job_id}`, `POST /{job_id}/cancel`, `GET` (list with filters)
+- `AppBase.get_job_handlers()` lifecycle hook — apps register async job handlers, kernel auto-wires them on startup
+- `recover_pending()` on startup restores in-flight jobs from DB
+- Bus events: `kernel:job.submitted`, `kernel:job.started`, `kernel:job.progress`, `kernel:job.completed`, `kernel:job.failed`
+- Frontend `jobClient.ts` — `submitJob`, `getJob`, `cancelJob`, `listJobs`
+
+**Cross-App Integration (TextForge ↔ PromptForge)**
+- TextForge auto-simplify: `promptforge:optimization.completed` with `overall_score < 7.0` triggers a `textforge:auto-simplify` background job
+- Auto-simplify handler: fetches optimized prompt, runs LLM simplification, stores result in app storage, computes real `improvement_delta`
+- TextForge window: "Suggested Simplifications" section shows auto-generated transforms linked to PF optimizations, with "Use as input" action
+- Cross-app prefill: `SimplifyAction` extension emits `textforge:prefill` bus event → TextForge window auto-fills input
+
+**Extension Points Framework**
+- `ExtensionSlotDef` and `ExtensionDef` in backend manifests and frontend types — host apps declare slots, guest apps declare contributions
+- `appRegistry` indexes extensions during `register()`, `getExtensions(slotId)` returns `ResolvedExtension[]` sorted by priority
+- `ExtensionSlot.svelte` — lazy-loads guest components with error handling and context spreading
+- PromptForge declares `review-actions` slot; TextForge contributes `SimplifyAction` with priority 10
+- `max_extensions` enforcement and late binding support (guest can register before host)
+
+**App Manager & Quota Dashboard**
+- `AppManagerWindow.svelte` — grid of installed apps with status badges, enable/disable toggles, service satisfaction, resource usage vs. quota progress bars (green/yellow/red)
+- `AuditLogWindow.svelte` — cross-app audit log table with app filter, action color coding, relative timestamps, pagination, live updates
+- Frontend clients: `appManagerClient.ts`, `auditClient.ts` wrapping kernel REST endpoints
+- Audit logging in PromptForge (optimize, batch, retry) and TextForge (transforms) via `_audit_log_optimization()` DRY helper
+- `GET /api/kernel/audit/all`, `GET .../summary`, `GET .../usage` — cross-app audit and usage endpoints
+- `GET /api/kernel/apps` now includes `resource_quotas` per app
+- Quota enforcement on batch and retry endpoints (not just single optimize)
+
 ### Fixed
 
 **Kernel Bug Fixes & Polish**

@@ -75,15 +75,23 @@ backend/
       settings.py                  # GET/PUT/DELETE /api/kernel/settings/{app_id}
       storage.py                   # CRUD /api/kernel/storage/{app_id}/*
       vfs.py                       # CRUD /api/kernel/vfs/{app_id}/* (folders, files, versions, search)
-      audit.py                     # GET /api/kernel/audit/{app_id}, GET /api/kernel/audit/usage/{app_id}
-      bus.py                       # GET /api/kernel/bus/contracts, subscriptions, events (SSE)
-    security/                      # Access control
-      access.py                    # AppContext, check_capability(), check_quota()
+      audit.py                     # GET /api/kernel/audit/{app_id}, /audit/all, /audit/summary, /audit/usage
+      bus.py                       # GET /api/kernel/bus/contracts, subscriptions, events (SSE), POST publish
+      jobs.py                      # POST /api/kernel/jobs/submit, GET /jobs/{id}, POST cancel, GET list
+    security/                      # Access control (deny-by-default for unknown apps)
+      access.py                    # AppContext, check_capability(), require_capability(), check_quota()
+      dependencies.py              # get_app_context (deny-by-default), get_kernel_context (permissive), get_audit_repo
     bus/                           # Inter-app communication
       event_bus.py                 # EventBus — pub/sub + request/response + contract validation
       contracts.py                 # ContractRegistry — typed event schemas
       helpers.py                   # publish_event() — convenience wrapper resolving bus from kernel
-    database.py                    # Kernel migrations (CREATE TABLE IF NOT EXISTS)
+    services/                      # Kernel DI + background services
+      registry.py                  # ServiceRegistry — register/get/has/validate
+      job_queue.py                 # JobQueue — async background job execution with DB persistence + retry
+    repositories/                  # Kernel data access
+      job_queue.py                 # JobQueueRepository — CRUD for kernel_jobs table
+      audit.py                     # AuditRepository — audit log, usage tracking, quota enforcement
+    database.py                    # Kernel migrations (kernel_jobs, audit, vfs, etc.)
 
   apps/
     promptforge/                   # PromptForge as an installable app
@@ -111,12 +119,18 @@ backend/
 
 frontend/src/lib/
   kernel/                          # Shell (app registry, types, shared services)
-    types.ts                       # AppFrontend, KernelAPI, WindowRegistration
+    types.ts                       # AppFrontend, KernelAPI, WindowRegistration, ExtensionSlotDef, ExtensionDef
     services/
-      appRegistry.svelte.ts        # Frontend app registry — registry-driven windows
+      appRegistry.svelte.ts        # Frontend app registry — registry-driven windows + extension points
       appSettings.svelte.ts        # Per-app settings client (reactive $state cache)
       appStorage.ts                # Per-app document storage client
       vfs.ts                       # VFS client (folders, files, versioning, move/rename, restore, search)
+      kernelBusBridge.svelte.ts    # SSE bridge: backend EventBus → frontend SystemBus (reconnect, replay)
+      appManagerClient.ts          # App lifecycle client (list, enable, disable apps)
+      auditClient.ts               # Audit log + usage tracking client
+      jobClient.ts                 # Background job queue client (submit, cancel, list)
+    components/
+      ExtensionSlot.svelte         # Dynamic extension point renderer (lazy-loads guest app components)
     utils/
       errors.ts                    # KernelError + throwIfNotOk — shared error handling for kernel services
   apps/
@@ -126,22 +140,28 @@ frontend/src/lib/
       index.ts                     # HelloWorldApp implements AppFrontend
       HelloWorldWindow.svelte
     textforge/                     # TextForge frontend app
-      index.ts                     # TextForgeApp implements AppFrontend (2 windows)
-      TextForgeWindow.svelte       # Main transform UI
+      index.ts                     # TextForgeApp implements AppFrontend (2 windows + 1 extension)
+      TextForgeWindow.svelte       # Main transform UI (with auto-simplify suggestions + prefill)
       TextForgeHistoryWindow.svelte
       TextForgeSettings.svelte     # Settings panel for ControlPanel dynamic tab
+      SimplifyAction.svelte        # Extension: "Simplify with TextForge" button for PF review
 ```
 
 **Key classes:**
 - `Kernel` (dataclass) — service locator passed to apps on startup: `app_registry`, `db_session_factory`, `services` (ServiceRegistry), `get_provider()` for LLM access
-- `ServiceRegistry` — DI container with `register(name, service)`, `get(name)`, `has(name)`, `validate_requirements(required)`. Core services: `llm`, `db`, `storage`, `vfs`, `bus`, `contracts`
-- `AppBase` (ABC) — lifecycle hooks: `on_install`, `on_enable`, `on_startup(kernel)`, `on_shutdown(kernel)`, `run_migrations`, `get_event_contracts`, `get_event_handlers`
+- `ServiceRegistry` — DI container with `register(name, service)`, `get(name)`, `has(name)`, `validate_requirements(required)`. Core services: `llm`, `db`, `storage`, `vfs`, `bus`, `contracts`, `jobs`
+- `AppBase` (ABC) — lifecycle hooks: `on_install`, `on_enable`, `on_startup(kernel)`, `on_shutdown(kernel)`, `run_migrations`, `get_event_contracts`, `get_event_handlers`, `get_job_handlers`
 - `AppRegistry` — discovers `manifest.json` in `apps/`, loads entry points, mounts routers
-- `AppManifest` — Pydantic model for `manifest.json` (backend routers, frontend windows, commands, file types, process types, settings, desktop icons, start menu, capabilities, resource_quotas)
+- `AppManifest` — Pydantic model for `manifest.json` (backend routers, frontend windows, commands, file types, process types, settings, desktop icons, start menu, capabilities, resource_quotas, extension_slots, extensions)
 - `EventBus` — async pub/sub + request/response for inter-app communication
 - `ContractRegistry` — typed Pydantic schemas for event validation
-- `AppContext` — request-scoped context for capability checking and quota enforcement
+- `JobQueue` — async background job execution with priority queue, DB persistence, retry logic, bus event publishing. Apps register handlers via `get_job_handlers()`
+- `AppContext` — request-scoped context for capability checking and quota enforcement. Deny-by-default for unknown apps (empty capabilities)
 - `AppFrontend` (interface) — frontend apps implement `init`, `destroy`, `getComponent`, `getSettingsComponent`
+
+**Extension points:** Host apps declare `extension_slots` in manifests; guest apps declare `extensions` targeting `"{app_id}:{slot_id}"`. Frontend `appRegistry` indexes extensions on registration, `ExtensionSlot.svelte` renders them via lazy-loaded components sorted by priority. Example: TextForge contributes `SimplifyAction` to PromptForge's `review-actions` slot.
+
+**Bus bridge:** Backend `EventBus` events relay to frontend `SystemBus` via SSE at `/api/kernel/bus/events`. `KernelBusBridge` handles reconnection with exponential backoff + jitter, `Last-Event-ID` replay, and snapshot phase suppression. Backend event names use dots (`kernel:app.enabled`), frontend uses underscores (`kernel:app_enabled`), mapped by `EVENT_TYPE_MAP`.
 
 **API convention:** Kernel at `/api/kernel/*`, apps at `/api/apps/{app_id}/*`. All apps (including PromptForge) use the `/api/apps/{app_id}/*` convention.
 
@@ -196,10 +216,10 @@ One route: `/` (content dashboard). All interactions through the persistent wind
 - **Tab System**: `MAX_TABS = 5` with LRU eviction. Each `WorkspaceTab` carries `resultId`, `mode`, `document`. `tabCoherence.ts` handles save/restore. Forging guards block tab operations during active forges.
 - **Scoped Results** (`optimization.svelte.ts`): `forgeResult` (from SSE) and `viewResult` (from history) as separate slots. `result` returns `forgeResult ?? viewResult`.
 - **Process Scheduler** (`processScheduler.svelte.ts`): Bounded-concurrency queue (`maxConcurrent` from settings, default 2). Tracks running/queued/completed processes. Persisted to sessionStorage.
-- **System Bus** (`systemBus.svelte.ts`): Decoupled IPC — `forge:*` (started/completed/failed/cancelled/progress), `window:*`, `provider:*` (rate_limited/unavailable/available), `mcp:*` (tool_start/tool_progress/tool_complete/tool_error/session_connect/session_disconnect), `workspace:*`, `fs:*`, `snap:*`, `clipboard:copied`, `history:reload`, `stats:reload`, `notification:show`, `tournament:completed`.
-- **Services**: `notificationService` (subscribes to 13 bus events, max 50, auto-dismiss), `clipboardService`, `commandPalette` (Ctrl+K), `mcpActivityFeed` (SSE with auto-reconnect and `Last-Event-ID`).
+- **System Bus** (`systemBus.svelte.ts`): Decoupled IPC — `forge:*`, `window:*`, `provider:*`, `mcp:*`, `workspace:*`, `fs:*`, `snap:*`, `kernel:*` (app_enabled/disabled, audit_logged, job_submitted/started/progress/completed/failed, event), `transform:*`, `textforge:prefill`, `clipboard:copied`, `history:reload`, `stats:reload`, `notification:show`, `tournament:completed`.
+- **Services**: `notificationService` (subscribes to 13 bus events, max 50, auto-dismiss), `clipboardService`, `commandPalette` (Ctrl+K), `mcpActivityFeed` (SSE with auto-reconnect and `Last-Event-ID`), `kernelBusBridge` (SSE bridge from backend EventBus).
 - **Settings** (`settings.svelte.ts`): `accentColor`, `defaultStrategy`, `maxConcurrentForges`, `enableAnimations`, `wallpaperMode`, `wallpaperOpacity`, `performanceProfile`. Drives CSS custom properties on `:root`.
-- **Windows**: ControlPanel, TaskManager, BatchProcessor, StrategyWorkshop, TemplateLibrary, Terminal, NetworkMonitor, RecycleBin, Workspace, DisplaySettings, FolderWindow.
+- **Windows**: ControlPanel, TaskManager, BatchProcessor, StrategyWorkshop, TemplateLibrary, Terminal, NetworkMonitor, RecycleBin, Workspace, DisplaySettings, FolderWindow, AppManagerWindow, AuditLogWindow.
 
 ## Developer Documentation
 

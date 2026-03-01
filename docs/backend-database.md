@@ -77,6 +77,7 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 | `vfs_file_versions` | `kernel/models/vfs.py` | `id`, `file_id` FK (`CASCADE`), `version`, `content`, `change_source`, `created_at`. Auto-created on content changes. |
 | `audit_log` | `kernel/models/audit.py` | `id`, `app_id`, `action`, `resource_type`, `resource_id`, `details_json`, `timestamp`. Index on `(app_id, timestamp)` |
 | `app_usage` | `kernel/models/audit.py` | `id`, `app_id`, `resource`, `period` (hourly), `count`, `updated_at`. `UNIQUE(app_id, resource, period)` |
+| `kernel_jobs` | `kernel/database.py` | `id`, `app_id`, `job_type`, `payload_json`, `priority`, `status` (pending/running/completed/failed/cancelled), `result_json`, `error`, `progress`, `max_retries`, `retry_count`, `created_at`, `started_at`, `completed_at`. Indexes on `(app_id)`, `(status)` |
 
 ### Kernel Repositories
 
@@ -85,7 +86,8 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 | `AppSettingsRepository` | `kernel/repositories/app_settings.py` | Per-app key-value settings: `get_all`, `get`, `set` (upsert), `set_all`, `delete`, `reset`. JSON serialization for values. |
 | `AppStorageRepository` | `kernel/repositories/app_storage.py` | Per-app document store: collections CRUD (`list_collections`, `create_collection`, `delete_collection`), documents CRUD (`list_documents`, `get_document`, `create_document`, `update_document`, `delete_document`). Scoped by `app_id`. |
 | `VfsRepository` | `kernel/repositories/vfs.py` | Virtual filesystem: folder CRUD with depth validation (max 8), file CRUD with auto-versioning, breadcrumb path traversal, file search by name. Scoped by `app_id`. |
-| `AuditRepository` | `kernel/repositories/audit.py` | Audit log: `log_action`, `list_logs`, `count_logs`. Usage tracking: `get_usage`, `increment_usage`, `get_all_usage`. Hourly period-based quota tracking. |
+| `AuditRepository` | `kernel/repositories/audit.py` | Audit log: `log_action`, `list_logs`, `count_logs`, `list_all_logs`, `count_all_logs`, `get_summary`. Usage tracking: `get_usage`, `increment_usage`, `get_all_usage`, `get_all_apps_usage`. Hourly period-based quota tracking. |
+| `JobQueueRepository` | `kernel/repositories/job_queue.py` | Job persistence: `create_job`, `update_job`, `list_jobs` (filter by app_id/status), `get_pending_jobs` (crash recovery). JSON serialization for payload/result. |
 
 ### Kernel REST Endpoints
 
@@ -93,10 +95,11 @@ Tables owned by the OS kernel (`backend/kernel/`), created via `run_kernel_migra
 |--------|--------|-----------|
 | `kernel/routers/settings.py` | `/api/kernel/settings/{app_id}` | `GET` (all settings), `PUT` (merge settings), `DELETE` (reset all) |
 | `kernel/routers/storage.py` | `/api/kernel/storage/{app_id}` | Collections: `GET/POST .../collections`, `DELETE .../collections/{id}`. Documents: `GET/POST .../documents`, `GET/PUT/DELETE .../documents/{id}` |
-| `kernel/routers/apps.py` | `/api/kernel/apps` | `GET` (list apps with `services_satisfied`), `GET .../{id}` (app details + manifest) |
+| `kernel/routers/apps.py` | `/api/kernel/apps` | `GET` (list apps with `services_satisfied`, `resource_quotas`), `GET .../{id}` (details + manifest), `GET .../{id}/status` (quotas + capabilities), `POST .../{id}/enable`, `POST .../{id}/disable` |
 | `kernel/routers/vfs.py` | `/api/kernel/vfs/{app_id}` | Children: `GET .../children`. Folders: `POST/GET/DELETE .../folders/{id}`, `GET .../folders/{id}/path`. Files: `POST/GET/PUT/DELETE .../files/{id}`, `GET .../files/{id}/versions`. Search: `GET .../search?q=` |
-| `kernel/routers/audit.py` | `/api/kernel/audit` | `GET /{app_id}` (audit logs with pagination), `GET /usage/{app_id}` (current quota usage) |
-| `kernel/routers/bus.py` | `/api/kernel/bus` | `GET /contracts` (registered event contracts), `GET /subscriptions` (active subscriptions), `GET /events` (SSE stream) |
+| `kernel/routers/audit.py` | `/api/kernel/audit` | `GET /{app_id}` (per-app logs), `GET /all` (cross-app), `GET /summary` (aggregate counts), `GET /usage/{app_id}`, `GET /usage` (all apps) |
+| `kernel/routers/bus.py` | `/api/kernel/bus` | `GET /contracts`, `GET /subscriptions`, `GET /events` (SSE with `Last-Event-ID` replay), `POST /publish` (validated event publishing) |
+| `kernel/routers/jobs.py` | `/api/kernel/jobs` | `POST /submit` (202), `GET /{job_id}`, `POST /{job_id}/cancel`, `GET` (list with filters) |
 
 All kernel routers are aggregated into `kernel_router` in `kernel/routers/__init__.py` and mounted once in `main.py`.
 
