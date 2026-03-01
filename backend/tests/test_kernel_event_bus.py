@@ -322,3 +322,176 @@ class TestBusRouter:
         assert resp.status_code == 200
         data = resp.json()
         assert "subscriptions" in data
+
+
+# ── Contract Validation in EventBus.publish ──────────────────────────
+
+
+class TestContractValidationInPublish:
+    """Tests for contract validation during publish()."""
+
+    @pytest.mark.asyncio
+    async def test_valid_payload_dispatches(self):
+        from kernel.bus.contracts import ContractRegistry
+        reg = ContractRegistry()
+        reg.register(EventContract(
+            event_type="test:valid",
+            source_app="test-app",
+            payload_schema=ExamplePayload,
+        ))
+        bus = EventBus(contract_registry=reg)
+        received = []
+
+        async def handler(data, source_app):
+            received.append(data)
+
+        bus.subscribe("test:valid", handler)
+        bus.publish("test:valid", {"message": "hello", "count": 1}, "test-app")
+
+        await asyncio.sleep(0.05)
+        assert len(received) == 1
+
+    @pytest.mark.asyncio
+    async def test_invalid_payload_blocked(self):
+        from kernel.bus.contracts import ContractRegistry
+        reg = ContractRegistry()
+        reg.register(EventContract(
+            event_type="test:strict",
+            source_app="test-app",
+            payload_schema=ExamplePayload,
+        ))
+        bus = EventBus(contract_registry=reg)
+        received = []
+
+        async def handler(data, source_app):
+            received.append(data)
+
+        bus.subscribe("test:strict", handler)
+        # Missing required "message" field
+        bus.publish("test:strict", {"wrong": "data"}, "test-app")
+
+        await asyncio.sleep(0.05)
+        assert len(received) == 0  # Handler never called
+
+    @pytest.mark.asyncio
+    async def test_no_contract_still_publishes(self):
+        from kernel.bus.contracts import ContractRegistry
+        reg = ContractRegistry()
+        bus = EventBus(contract_registry=reg)
+        received = []
+
+        async def handler(data, source_app):
+            received.append(data)
+
+        bus.subscribe("unregistered:event", handler)
+        bus.publish("unregistered:event", {"anything": True}, "test-app")
+
+        await asyncio.sleep(0.05)
+        assert len(received) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_registry_still_publishes(self):
+        bus = EventBus()  # No contract_registry
+        received = []
+
+        async def handler(data, source_app):
+            received.append(data)
+
+        bus.subscribe("any:event", handler)
+        bus.publish("any:event", {"data": 1}, "test-app")
+
+        await asyncio.sleep(0.05)
+        assert len(received) == 1
+
+
+# ── PromptForge Contracts ────────────────────────────────────────────
+
+
+class TestPromptForgeContracts:
+    """Tests that PromptForge event contracts are valid."""
+
+    def test_contracts_are_valid(self):
+        from apps.promptforge.events import PROMPTFORGE_CONTRACTS
+        assert len(PROMPTFORGE_CONTRACTS) == 4
+
+        types = {c.event_type for c in PROMPTFORGE_CONTRACTS}
+        assert "promptforge:optimization.started" in types
+        assert "promptforge:optimization.completed" in types
+        assert "promptforge:prompt.created" in types
+        assert "promptforge:prompt.updated" in types
+
+    def test_contracts_validate_payloads(self):
+        from apps.promptforge.events import PROMPTFORGE_CONTRACTS
+        from kernel.bus.contracts import ContractRegistry
+
+        reg = ContractRegistry()
+        for c in PROMPTFORGE_CONTRACTS:
+            reg.register(c)
+
+        # Valid payload
+        reg.validate_publish("promptforge:optimization.started", {
+            "optimization_id": "abc-123",
+            "raw_prompt": "test prompt",
+        })
+
+        # Invalid payload
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            reg.validate_publish("promptforge:optimization.started", {
+                "wrong_field": True,
+            })
+
+
+class TestTextForgeContracts:
+    """Tests that TextForge event contracts are valid."""
+
+    def test_contracts_are_valid(self):
+        from apps.textforge.events import TEXTFORGE_CONTRACTS
+        assert len(TEXTFORGE_CONTRACTS) == 1
+        assert TEXTFORGE_CONTRACTS[0].event_type == "textforge:transform.completed"
+
+
+# ── Cross-App Handlers ───────────────────────────────────────────────
+
+
+class TestCrossAppHandlers:
+    """Tests for cross-app event handler registration."""
+
+    def test_textforge_subscribes_to_promptforge_events(self):
+        from apps.textforge.app import TextForgeApp
+        app = TextForgeApp()
+        handlers = app.get_event_handlers()
+        assert "promptforge:optimization.completed" in handlers
+
+    def test_promptforge_publishes_contracts(self):
+        from apps.promptforge.app import PromptForgeApp
+        app = PromptForgeApp()
+        contracts = app.get_event_contracts()
+        assert len(contracts) == 4
+
+    @pytest.mark.asyncio
+    async def test_cross_app_event_delivery(self):
+        from kernel.bus.contracts import ContractRegistry
+        from apps.promptforge.events import PROMPTFORGE_CONTRACTS
+
+        reg = ContractRegistry()
+        for c in PROMPTFORGE_CONTRACTS:
+            reg.register(c)
+
+        bus = EventBus(contract_registry=reg)
+        received = []
+
+        async def handler(data, source_app):
+            received.append({"data": data, "source": source_app})
+
+        bus.subscribe("promptforge:optimization.completed", handler, app_id="textforge")
+        bus.publish("promptforge:optimization.completed", {
+            "optimization_id": "test-123",
+            "overall_score": 8.5,
+            "strategy": "chain-of-thought",
+        }, "promptforge")
+
+        await asyncio.sleep(0.05)
+        assert len(received) == 1
+        assert received[0]["data"]["optimization_id"] == "test-123"
+        assert received[0]["source"] == "promptforge"

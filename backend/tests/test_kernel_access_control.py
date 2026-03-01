@@ -259,3 +259,64 @@ class TestAuditRepository:
 
         assert await repo.get_usage("app-a", "api_calls") == 1
         assert await repo.get_usage("app-b", "api_calls") == 1
+
+
+# ── Permissive fallback ─────────────────────────────────────────────
+
+
+class TestPermissiveFallbackWarning:
+    """Test that unknown apps get permissive access with a warning."""
+
+    def test_unknown_app_gets_permissive_context(self):
+        from kernel.security.dependencies import get_app_context
+        from kernel.security.access import PERMISSIVE_CAPABILITIES
+
+        ctx = get_app_context("unknown-nonexistent-app")
+        assert ctx.app_id == "unknown-nonexistent-app"
+        assert set(ctx.capabilities) == set(PERMISSIVE_CAPABILITIES)
+
+    def test_unknown_app_logs_warning(self, caplog):
+        import logging
+        from kernel.security.dependencies import get_app_context
+
+        with caplog.at_level(logging.WARNING, logger="kernel.security.dependencies"):
+            get_app_context("another-unknown-app")
+        assert any("not found in registry" in r.message for r in caplog.records)
+
+
+# ── Disabled app access ─────────────────────────────────────────────
+
+
+class TestDisabledAppAccess:
+    """Test that disabled apps raise 503 via get_app_context."""
+
+    def test_disabled_app_raises_503(self):
+        from fastapi import HTTPException
+        from kernel.registry.app_registry import (
+            AppRecord,
+            AppStatus,
+            get_app_registry,
+        )
+        from kernel.registry.hooks import AppBase
+        from kernel.security.dependencies import get_app_context
+
+        class _DisabledApp(AppBase):
+            @property
+            def app_id(self):
+                return "disabled-test"
+
+        manifest = AppManifest(
+            id="disabled-test",
+            python_module="apps.test",
+            entry_point="TestApp",
+        )
+        registry = get_app_registry()
+        registry._apps["disabled-test"] = AppRecord(
+            manifest=manifest,
+            instance=_DisabledApp(),
+            status=AppStatus.DISABLED,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_app_context("disabled-test")
+        assert exc_info.value.status_code == 503
