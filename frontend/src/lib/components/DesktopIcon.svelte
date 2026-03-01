@@ -33,7 +33,7 @@
 		binIndicator?: boolean;
 		binEmpty?: boolean;
 		draggable?: boolean;
-		onselect?: () => void;
+		onselect?: (e: MouseEvent) => void;
 		ondblclick?: () => void;
 		oncontextmenu?: (e: MouseEvent) => void;
 		onmousedown?: (e: MouseEvent) => void;
@@ -77,13 +77,13 @@
 
 	function handleIconClick(e: MouseEvent) {
 		e.stopPropagation();
-		onselect?.();
+		onselect?.(e);
 	}
 
 	function handleContextMenu(e: MouseEvent) {
 		e.preventDefault();
 		e.stopPropagation();
-		onselect?.();
+		// Don't call onselect here — DesktopSurface handles selection preservation for multi-select
 		oncontextmenu?.(e);
 	}
 

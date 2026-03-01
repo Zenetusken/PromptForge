@@ -15,6 +15,22 @@
 	let dropTargetIconId: string | null = $state(null);
 	let draggingDesktopIconId: string | null = $state(null);
 
+	// ── Marquee selection state (transient UI — does not belong in store) ──
+	let marqueeActive = $state(false);
+	let marqueeStartX = $state(0);
+	let marqueeStartY = $state(0);
+	let marqueeEndX = $state(0);
+	let marqueeEndY = $state(0);
+	let marqueeCtrl = $state(false);
+	let preMarqueeSelection = $state<Set<string>>(new Set());
+
+	const marqueeRect = $derived({
+		left: Math.min(marqueeStartX, marqueeEndX),
+		top: Math.min(marqueeStartY, marqueeEndY),
+		width: Math.abs(marqueeEndX - marqueeStartX),
+		height: Math.abs(marqueeEndY - marqueeStartY),
+	});
+
 	function isDbIcon(iconId: string): boolean {
 		return iconId.startsWith(DB_FOLDER_PREFIX) || iconId.startsWith(DB_PROMPT_PREFIX);
 	}
@@ -30,9 +46,29 @@
 	function handleSurfaceClick(e: MouseEvent) {
 		// Only deselect if clicking the surface itself, not an icon
 		if (e.target === surfaceEl || (e.target as HTMLElement)?.closest?.('.desktop-wallpaper')) {
-			desktopStore.deselectAll();
+			if (!(e.ctrlKey || e.metaKey)) {
+				desktopStore.deselectAll();
+			}
 			editingIconId = null;
 		}
+	}
+
+	function handleSurfaceMouseDown(e: MouseEvent) {
+		// Only start marquee on left-click on empty surface (not on icons), not during grid drag
+		if (e.button !== 0) return;
+		if (desktopStore.dragState) return;
+		const iconEl = (e.target as HTMLElement)?.closest?.('[data-desktop-icon]');
+		if (iconEl) return;
+		if (!surfaceEl) return;
+
+		const rect = surfaceEl.getBoundingClientRect();
+		marqueeStartX = e.clientX - rect.left;
+		marqueeStartY = e.clientY - rect.top;
+		marqueeEndX = marqueeStartX;
+		marqueeEndY = marqueeStartY;
+		marqueeCtrl = e.ctrlKey || e.metaKey;
+		preMarqueeSelection = new Set(marqueeCtrl ? desktopStore.selectedIconIds : []);
+		marqueeActive = true;
 	}
 
 	function handleSurfaceContextMenu(e: MouseEvent) {
@@ -44,7 +80,54 @@
 		}
 	}
 
+	function updateMarqueeSelection() {
+		if (!surfaceEl) return;
+		const rect = marqueeRect;
+		// Skip tiny marquees (< 5px) — treat as click
+		if (rect.width < 5 && rect.height < 5) return;
+
+		const intersected = new Set<string>();
+		for (const icon of desktopStore.icons) {
+			const iconLeft = icon.position.col * CELL_WIDTH + GRID_PADDING;
+			const iconTop = icon.position.row * CELL_HEIGHT + GRID_PADDING;
+			const iconRight = iconLeft + CELL_WIDTH;
+			const iconBottom = iconTop + CELL_HEIGHT;
+
+			// AABB intersection test
+			if (
+				iconLeft < rect.left + rect.width &&
+				iconRight > rect.left &&
+				iconTop < rect.top + rect.height &&
+				iconBottom > rect.top
+			) {
+				intersected.add(icon.id);
+			}
+		}
+
+		if (marqueeCtrl) {
+			// Toggle: start from pre-marquee selection, toggle intersected
+			const next = new Set(preMarqueeSelection);
+			for (const id of intersected) {
+				if (preMarqueeSelection.has(id)) {
+					next.delete(id);
+				} else {
+					next.add(id);
+				}
+			}
+			desktopStore.selectedIconIds = next;
+		} else {
+			desktopStore.selectedIconIds = intersected;
+		}
+	}
+
 	function handleMouseMove(e: MouseEvent) {
+		if (marqueeActive && surfaceEl) {
+			const rect = surfaceEl.getBoundingClientRect();
+			marqueeEndX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+			marqueeEndY = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
+			updateMarqueeSelection();
+			return;
+		}
 		if (desktopStore.dragState && surfaceEl) {
 			e.preventDefault();
 			desktopStore.updateDragGhost(e.clientX, e.clientY, surfaceEl.getBoundingClientRect());
@@ -52,17 +135,25 @@
 	}
 
 	function handleMouseUp() {
+		if (marqueeActive) {
+			marqueeActive = false;
+			return;
+		}
 		if (desktopStore.dragState) {
 			desktopStore.endDrag();
 		}
 	}
 
-	function handleIconSelect(id: string) {
+	function handleIconSelect(id: string, e?: MouseEvent) {
 		// Selecting a different icon exits rename mode
 		if (editingIconId && editingIconId !== id) {
 			editingIconId = null;
 		}
-		desktopStore.selectIcon(id);
+		if (e && (e.ctrlKey || e.metaKey)) {
+			desktopStore.toggleIconSelection(id);
+		} else {
+			desktopStore.selectIcon(id);
+		}
 	}
 
 	function handleIconDblClick(id: string) {
@@ -76,6 +167,10 @@
 
 	function handleIconContextMenu(e: MouseEvent, id: string) {
 		editingIconId = null;
+		// If icon is already in multi-selection, preserve selection
+		if (!desktopStore.selectedIconIds.has(id)) {
+			desktopStore.selectIcon(id);
+		}
 		desktopStore.openContextMenu(e.clientX, e.clientY, id);
 	}
 
@@ -90,9 +185,9 @@
 	}
 
 	function handleLabelClick(id: string) {
-		// Only enter rename if icon is already selected AND is non-system
+		// Only enter rename if icon is already selected, single-selected, AND is non-system
 		const icon = desktopStore.icons.find((i) => i.id === id);
-		if (desktopStore.selectedIconId === id && icon?.type !== 'system') {
+		if (desktopStore.selectedIconId === id && !desktopStore.isMultiSelect && icon?.type !== 'system') {
 			editingIconId = id;
 		}
 	}
@@ -110,15 +205,20 @@
 		desktopStore.closeContextMenu();
 	}
 
-	// End drag even if mouse leaves the surface element
+	// End drag/marquee even if mouse leaves the surface element
 	$effect(() => {
-		if (!desktopStore.dragState) return;
-		function endDragGlobal() { desktopStore.endDrag(); }
-		function onLeave(e: MouseEvent) { if (!e.relatedTarget) desktopStore.endDrag(); }
-		document.addEventListener('mouseup', endDragGlobal);
+		if (!desktopStore.dragState && !marqueeActive) return;
+		function endGlobal() {
+			if (marqueeActive) marqueeActive = false;
+			if (desktopStore.dragState) desktopStore.endDrag();
+		}
+		function onLeave(e: MouseEvent) {
+			if (!e.relatedTarget) endGlobal();
+		}
+		document.addEventListener('mouseup', endGlobal);
 		document.addEventListener('mouseleave', onLeave);
 		return () => {
-			document.removeEventListener('mouseup', endDragGlobal);
+			document.removeEventListener('mouseup', endGlobal);
 			document.removeEventListener('mouseleave', onLeave);
 		};
 	});
@@ -185,19 +285,26 @@
 
 	function handleExternalDragOver(e: DragEvent) {
 		if (!e.dataTransfer?.types.includes(DRAG_MIME)) return;
-		e.preventDefault();
-		e.dataTransfer.dropEffect = 'move';
 
-		// Detect if hovering over a DB folder icon
+		// Detect if hovering over a desktop icon
 		const iconEl = (e.target as HTMLElement)?.closest?.('[data-desktop-icon]');
 		if (iconEl) {
 			const iconId = iconEl.getAttribute('data-desktop-icon') ?? '';
-			// Only highlight folder drop targets; skip the icon being dragged
+			// Only folder icons are valid drop targets; skip the icon being dragged
 			if (iconId.startsWith(DB_FOLDER_PREFIX) && iconId !== draggingDesktopIconId) {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = 'move';
 				dropTargetIconId = iconId;
 				return;
 			}
+			// Non-folder icon — not a valid drop target, don't accept
+			dropTargetIconId = null;
+			return;
 		}
+
+		// Empty desktop surface — valid drop target (move to root)
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'move';
 		dropTargetIconId = null;
 	}
 
@@ -219,7 +326,7 @@
 		if (!payload) return;
 
 		const desc = payload.descriptor;
-		const type = desc.kind === 'folder' ? 'project' : 'prompt';
+		const type: 'project' | 'prompt' = desc.kind === 'folder' ? 'project' : 'prompt';
 
 		if (targetIcon) {
 			// Drop on a folder icon → move into that folder
@@ -227,13 +334,17 @@
 			if (folderId) {
 				// Prevent dropping a folder on itself
 				if (desc.kind === 'folder' && desc.id === folderId) return;
-				await fsOrchestrator.move(type as 'project' | 'prompt', desc.id, folderId);
+				await fsOrchestrator.move(type, desc.id, folderId);
 			}
 		} else {
+			// If drop landed on a non-folder icon, ignore (not a valid target)
+			const iconEl = (e.target as HTMLElement)?.closest?.('[data-desktop-icon]');
+			if (iconEl) return;
+
 			// Skip if already at root (desktop → desktop empty space is a no-op)
 			if (payload.source === 'desktop') return;
 			// Drop on empty desktop → move to root
-			await fsOrchestrator.move(type as 'project' | 'prompt', desc.id, null);
+			await fsOrchestrator.move(type, desc.id, null);
 		}
 	}
 </script>
@@ -245,6 +356,7 @@
 	bind:this={surfaceEl}
 	onclick={handleSurfaceClick}
 	oncontextmenu={handleSurfaceContextMenu}
+	onmousedown={handleSurfaceMouseDown}
 	onmousemove={handleMouseMove}
 	onmouseup={handleMouseUp}
 	ondragover={handleExternalDragOver}
@@ -272,14 +384,14 @@
 					label={icon.label}
 					icon={icon.icon}
 					color={icon.color}
-					selected={desktopStore.selectedIconId === icon.id}
+					selected={desktopStore.selectedIconIds.has(icon.id)}
 					dragging={isDragTarget || isNativeDragging}
 					editing={editingIconId === icon.id}
 					renameable={icon.type !== 'system'}
 					binIndicator={icon.id === RECYCLE_BIN_ID}
 					binEmpty={desktopStore.binIsEmpty}
 					draggable={isDbIcon(icon.id) && editingIconId !== icon.id}
-					onselect={() => handleIconSelect(icon.id)}
+					onselect={(e) => handleIconSelect(icon.id, e)}
 					ondblclick={() => handleIconDblClick(icon.id)}
 					oncontextmenu={(e) => handleIconContextMenu(e, icon.id)}
 					onmousedown={(e) => handleIconMouseDown(e, icon.id)}
@@ -299,6 +411,14 @@
 			></div>
 		{/if}
 	</div>
+
+	<!-- Marquee selection rectangle -->
+	{#if marqueeActive && (marqueeRect.width > 5 || marqueeRect.height > 5)}
+		<div
+			class="absolute pointer-events-none border border-neon-cyan/40 bg-neon-cyan/5 z-20"
+			style="left:{marqueeRect.left}px;top:{marqueeRect.top}px;width:{marqueeRect.width}px;height:{marqueeRect.height}px;"
+		></div>
+	{/if}
 
 	<!-- Context Menu -->
 	<DesktopContextMenu

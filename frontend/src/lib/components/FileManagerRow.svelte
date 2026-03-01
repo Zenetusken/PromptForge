@@ -14,7 +14,7 @@
 		testId,
 		dragPayload,
 	}: {
-		onselect?: () => void;
+		onselect?: (e: MouseEvent) => void;
 		onopen?: () => void;
 		oncontextmenu?: (e: MouseEvent) => void;
 		ondrop?: (payload: DragPayload) => void;
@@ -29,7 +29,7 @@
 
 	function handleClick(e: MouseEvent) {
 		e.stopPropagation();
-		onselect?.();
+		onselect?.(e);
 	}
 
 	function handleDblClick() {
@@ -40,7 +40,7 @@
 		if (oncontextmenu) {
 			e.preventDefault();
 			e.stopPropagation();
-			onselect?.();
+			// Don't call onselect here — parent handles selection preservation for multi-select
 			oncontextmenu(e);
 		}
 	}
