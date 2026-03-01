@@ -43,7 +43,17 @@ export type BusEventType =
 	| 'fs:deleted'
 	| 'fs:renamed'
 	| 'transform:completed'
-	| 'transform:failed';
+	| 'transform:failed'
+	| 'kernel:app_enabled'
+	| 'kernel:app_disabled'
+	| 'kernel:audit_logged'
+	| 'kernel:job_submitted'
+	| 'kernel:job_started'
+	| 'kernel:job_progress'
+	| 'kernel:job_completed'
+	| 'kernel:job_failed'
+	| 'kernel:event'
+	| 'textforge:prefill';
 
 export interface BusEvent {
 	type: BusEventType;

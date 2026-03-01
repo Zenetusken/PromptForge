@@ -39,6 +39,7 @@
 	import { promptForgeApp, closeActiveTab } from "$lib/apps/promptforge";
 	import { helloWorldApp } from "$lib/apps/hello_world";
 	import { textForgeApp } from "$lib/apps/textforge";
+	import { kernelBusBridge } from "$lib/kernel/services/kernelBusBridge.svelte";
 
 	// View Transitions API for page navigation crossfade
 	onNavigate((navigation) => {
@@ -94,6 +95,9 @@
 
 		// --- OS Bootstrap: System Bus subscriptions ---
 		notificationService.subscribeToBus();
+
+		// --- OS Bootstrap: Kernel Bus Bridge (backend EventBus → frontend SystemBus) ---
+		kernelBusBridge.connect();
 
 		// MCP Activity Feed connection is managed reactively via $effect below.
 
@@ -365,6 +369,7 @@
 			unsubMCPComplete();
 			cleanupScheduler();
 			cleanupOptimization();
+			kernelBusBridge.disconnect();
 			mcpActivityFeed.disconnect();
 			clearTimeout(mcpReloadTimer);
 			document.removeEventListener("keydown", handleGlobalKeydown);
