@@ -285,6 +285,8 @@ Hierarchical folder browser rendered inside `DesktopWindow`.
 - **Forge count badge**: Shown on prompts with `forge_count > 0` in neon-purple
 - **Expandable forges**: Disclosure chevron → lazy-fetches forge list → renders `.forge` rows with score badges
 - **Drag & drop**: Move folders/prompts between folders; drop validation via `fsOrchestrator.validateDrop()`
+- **Context menu**: Single-item (Open / Move to... / Delete) and batch (Move N items to... / Delete N items) via `Ctrl/Cmd+click` multi-selection
+- **Move to... dialog**: Local `MoveToDialog` instance for single-item and batch moves from context menu
 - **New Folder**: Inline input with Enter/Escape keyboard handling
 - **Live reload**: Subscribes to `fs:created`/`fs:moved`/`fs:deleted`/`fs:renamed` bus events
 
@@ -398,4 +400,4 @@ Custom MIME type: `application/x-promptforge`
 | Desktop (DB prompt icon) | `PromptDescriptor`, source `'desktop'` | — |
 | Desktop (empty surface) | — | Yes (moves to root; no-op for `source: 'desktop'`) |
 
-Guards: self-drop (folder onto itself) is a no-op; desktop→desktop empty space is a no-op. System/shortcut icons use grid-repositioning drag (not HTML5 drag). "Move to..." context menu provides a non-drag alternative for DB-backed icons.
+Guards: self-drop (folder onto itself) is a no-op; desktop→desktop empty space is a no-op. System/shortcut icons use grid-repositioning drag (not HTML5 drag). "Move to..." context menu provides a non-drag alternative — available in both desktop icon context menus and FolderWindow context menus (single and batch). The `MoveToDialog` offers both named folders and a "Desktop" root-level target.
