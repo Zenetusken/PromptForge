@@ -322,7 +322,7 @@ function loadPersisted(): PersistedDesktop | null {
 
 class DesktopStoreState {
 	icons: DesktopIconDef[] = $state([]);
-	selectedIconId: string | null = $state(null);
+	selectedIconIds: Set<string> = $state(new Set());
 	dragState: DragState | null = $state(null);
 	recycleBin: RecycleBinItem[] = $state([]);
 	contextMenu: ContextMenuState = $state({
@@ -340,13 +340,37 @@ class DesktopStoreState {
 		onConfirm: () => {},
 	});
 	requestRename: string | null = $state(null);
-	moveToDialog = $state<{ open: boolean; iconId: string | null }>({ open: false, iconId: null });
+	moveToDialog = $state<{
+		open: boolean;
+		iconId: string | null;
+		batchItems?: Array<{ type: 'project' | 'prompt'; id: string }>;
+	}>({ open: false, iconId: null });
+	batchOperation = $state<{ active: boolean; type: 'move' | 'delete' | null; total: number; completed: number }>({ active: false, type: null, total: 0, completed: 0 });
 
 	// ── Derived ──
 
-	selectedIcon: DesktopIconDef | undefined = $derived(
-		this.icons.find((i) => i.id === this.selectedIconId)
+	/** Backward-compatible: returns single selected ID when exactly one is selected. */
+	selectedIconId: string | null = $derived(
+		this.selectedIconIds.size === 1 ? [...this.selectedIconIds][0] : null
 	);
+
+	/** Backward-compatible: returns single selected icon when exactly one is selected. */
+	selectedIcon: DesktopIconDef | undefined = $derived(
+		this.selectedIconIds.size === 1
+			? this.icons.find((i) => this.selectedIconIds.has(i.id))
+			: undefined
+	);
+
+	/** All currently selected icons. */
+	selectedIcons: DesktopIconDef[] = $derived(
+		this.icons.filter((i) => this.selectedIconIds.has(i.id))
+	);
+
+	/** Number of selected icons. */
+	selectionCount: number = $derived(this.selectedIconIds.size);
+
+	/** True when more than one icon is selected. */
+	isMultiSelect: boolean = $derived(this.selectedIconIds.size > 1);
 
 	isDragging: boolean = $derived(this.dragState !== null && this.dragState.hasMoved);
 
@@ -453,11 +477,25 @@ class DesktopStoreState {
 	// ── Selection ──
 
 	selectIcon(id: string) {
-		this.selectedIconId = id;
+		this.selectedIconIds = new Set([id]);
+	}
+
+	toggleIconSelection(id: string) {
+		const next = new Set(this.selectedIconIds);
+		next.has(id) ? next.delete(id) : next.add(id);
+		this.selectedIconIds = next;
+	}
+
+	selectIcons(ids: string[]) {
+		this.selectedIconIds = new Set(ids);
+	}
+
+	selectAll() {
+		this.selectedIconIds = new Set(this.icons.map((i) => i.id));
 	}
 
 	deselectAll() {
-		this.selectedIconId = null;
+		this.selectedIconIds = new Set();
 	}
 
 	// ── Drag ──
@@ -529,6 +567,17 @@ class DesktopStoreState {
 
 	openContextMenu(x: number, y: number, iconId: string | null) {
 		if (iconId) {
+			// If right-clicking an icon that's part of a multi-selection, show batch actions
+			if (this.selectedIconIds.has(iconId) && this.selectedIconIds.size > 1) {
+				this.contextMenu = {
+					open: true,
+					x,
+					y,
+					targetIconId: iconId,
+					actions: this._computeBatchActions(),
+				};
+				return;
+			}
 			const icon = this.icons.find((i) => i.id === iconId);
 			if (icon) {
 				// Selection is handled by the component (DesktopIcon calls onselect before oncontextmenu)
@@ -677,6 +726,50 @@ class DesktopStoreState {
 				this.resetDesktop();
 				break;
 			}
+			case 'batch-move-to': {
+				const batchItems: Array<{ type: 'project' | 'prompt'; id: string }> = [];
+				for (const icon of this.selectedIcons) {
+					const info = this.getDbNodeInfo(icon.id);
+					if (info) batchItems.push(info);
+				}
+				if (batchItems.length > 0) {
+					this.moveToDialog = { open: true, iconId: null, batchItems };
+				}
+				break;
+			}
+			case 'batch-delete': {
+				const selected = this.selectedIcons;
+				const count = selected.length;
+				this.confirmDialog = {
+					open: true,
+					title: `Delete ${count} Items`,
+					message: `Permanently delete ${count} selected item${count === 1 ? '' : 's'}? This cannot be undone.`,
+					confirmLabel: 'Delete All',
+					onConfirm: async () => {
+						this.batchOperation = { active: true, type: 'delete', total: count, completed: 0 };
+						const { fsOrchestrator } = await import('$lib/stores/filesystemOrchestrator.svelte');
+						for (const icon of selected) {
+							if (icon.id.startsWith(DB_FOLDER_PREFIX)) {
+								const folderId = icon.id.slice(DB_FOLDER_PREFIX.length);
+								await fsOrchestrator.deleteFolder(folderId);
+								this.icons = this.icons.filter((i) => i.id !== icon.id);
+							} else if (icon.id.startsWith(DB_PROMPT_PREFIX)) {
+								const promptId = icon.id.slice(DB_PROMPT_PREFIX.length);
+								await fsOrchestrator.deletePrompt(promptId);
+								this.icons = this.icons.filter((i) => i.id !== icon.id);
+							} else {
+								this.trashIcon(icon.id);
+							}
+							this.batchOperation.completed++;
+						}
+						this.deselectAll();
+						this._persist();
+						this.batchOperation = { active: false, type: null, total: 0, completed: 0 };
+						this.confirmDialog.open = false;
+					},
+				};
+				break;
+			}
 		}
 	}
 
@@ -723,8 +816,10 @@ class DesktopStoreState {
 
 		this.recycleBin.push(binItem);
 		this.icons = this.icons.filter((i) => i.id !== id);
-		if (this.selectedIconId === id) {
-			this.selectedIconId = null;
+		if (this.selectedIconIds.has(id)) {
+			const next = new Set(this.selectedIconIds);
+			next.delete(id);
+			this.selectedIconIds = next;
 		}
 		this._persist();
 	}
@@ -811,13 +906,44 @@ class DesktopStoreState {
 		);
 		this.icons = [...createDefaultIcons(), ...dbIcons];
 		this._autoLayout(this.icons);
-		this.selectedIconId = null;
+		this.selectedIconIds = new Set();
 		this.dragState = null;
 		this.requestRename = null;
 		this._persist();
 	}
 
 	// ── Private helpers ──
+
+	private _computeBatchActions(): ContextAction[] {
+		const selected = this.selectedIcons;
+		if (selected.length < 2) return [];
+
+		const actionSets = selected.map((icon) => new Set(icon.contextActions.map((a) => a.id)));
+		const common = actionSets.reduce((acc, set) => {
+			const r = new Set<string>();
+			for (const id of acc) if (set.has(id)) r.add(id);
+			return r;
+		});
+
+		const actions: ContextAction[] = [];
+		if (common.has('move-to')) {
+			actions.push({
+				id: 'batch-move-to',
+				label: `Move ${selected.length} items to...`,
+				icon: 'arrow-up-right',
+			});
+		}
+		if (common.has('delete')) {
+			actions.push({
+				id: 'batch-delete',
+				label: `Delete ${selected.length} items`,
+				icon: 'trash-2',
+				separator: true,
+				danger: true,
+			});
+		}
+		return actions;
+	}
 
 	/**
 	 * Execute a manifest-declared action on a desktop icon.
@@ -897,7 +1023,11 @@ class DesktopStoreState {
 				const ok = await fsOrchestrator.deleteFolder(folderId);
 				if (ok) {
 					this.icons = this.icons.filter((i) => i.id !== iconId);
-					if (this.selectedIconId === iconId) this.selectedIconId = null;
+					if (this.selectedIconIds.has(iconId)) {
+						const next = new Set(this.selectedIconIds);
+						next.delete(iconId);
+						this.selectedIconIds = next;
+					}
 					this._persist();
 				}
 				this.confirmDialog.open = false;
@@ -980,7 +1110,7 @@ class DesktopStoreState {
 	}
 
 	closeMoveToDialog() {
-		this.moveToDialog = { open: false, iconId: null };
+		this.moveToDialog = { open: false, iconId: null, batchItems: undefined };
 	}
 
 	/**
@@ -1056,7 +1186,11 @@ class DesktopStoreState {
 				const { fsOrchestrator } = await import('$lib/stores/filesystemOrchestrator.svelte');
 				await fsOrchestrator.deletePrompt(promptId);
 				this.icons = this.icons.filter((i) => i.id !== iconId);
-				if (this.selectedIconId === iconId) this.selectedIconId = null;
+				if (this.selectedIconIds.has(iconId)) {
+					const next = new Set(this.selectedIconIds);
+					next.delete(iconId);
+					this.selectedIconIds = next;
+				}
 				this._persist();
 				this.confirmDialog.open = false;
 			},
