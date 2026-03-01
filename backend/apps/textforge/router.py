@@ -207,6 +207,19 @@ async def create_transform(
         "output_length": len(output_text),
     }, "textforge")
 
+    # Audit log
+    try:
+        from kernel.repositories.audit import AuditRepository
+        audit_repo = AuditRepository(session)
+        await audit_repo.log_action(
+            "textforge", "transform", "transform",
+            resource_id=doc["id"],
+            details={"transform_type": body.transform_type},
+        )
+        await session.flush()
+    except Exception:
+        logger.debug("Audit log failed for transform %s", doc["id"], exc_info=True)
+
     return TransformResponse(
         id=doc["id"],
         transform_type=body.transform_type,

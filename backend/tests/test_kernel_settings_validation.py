@@ -119,13 +119,13 @@ class TestSettingsSchemaValidation:
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_unknown_app_accepts_anything(self, client):
-        # Apps not in registry get permissive access
+    async def test_unknown_app_denied_by_default(self, client):
+        # Unknown apps get empty capabilities (deny-by-default)
         resp = await client.put(
             "/api/kernel/settings/nonexistent-app",
             json={"settings": {"key": "val"}},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_boolean_false_accepted(self, client):

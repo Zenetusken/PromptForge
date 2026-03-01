@@ -11,37 +11,37 @@ class TestAppStorageRepository:
 
     async def test_list_collections_empty(self, db_session):
         repo = AppStorageRepository(db_session)
-        result = await repo.list_collections("test-app")
+        result = await repo.list_collections("promptforge")
         assert result == []
 
     async def test_create_and_list_collection(self, db_session):
         repo = AppStorageRepository(db_session)
-        created = await repo.create_collection("test-app", "notes")
+        created = await repo.create_collection("promptforge", "notes")
         await db_session.commit()
 
         assert created["name"] == "notes"
-        assert created["app_id"] == "test-app"
+        assert created["app_id"] == "promptforge"
 
-        collections = await repo.list_collections("test-app")
+        collections = await repo.list_collections("promptforge")
         assert len(collections) == 1
         assert collections[0]["name"] == "notes"
 
     async def test_delete_collection(self, db_session):
         repo = AppStorageRepository(db_session)
-        created = await repo.create_collection("test-app", "temp")
+        created = await repo.create_collection("promptforge", "temp")
         await db_session.commit()
 
-        deleted = await repo.delete_collection("test-app", created["id"])
+        deleted = await repo.delete_collection("promptforge", created["id"])
         await db_session.commit()
         assert deleted is True
 
-        collections = await repo.list_collections("test-app")
+        collections = await repo.list_collections("promptforge")
         assert len(collections) == 0
 
     async def test_create_and_get_document(self, db_session):
         repo = AppStorageRepository(db_session)
         doc = await repo.create_document(
-            "test-app", "test-doc", '{"key": "value"}',
+            "promptforge", "test-doc", '{"key": "value"}',
             content_type="application/json",
         )
         await db_session.commit()
@@ -49,17 +49,17 @@ class TestAppStorageRepository:
         assert doc["name"] == "test-doc"
         assert doc["content"] == '{"key": "value"}'
 
-        fetched = await repo.get_document("test-app", doc["id"])
+        fetched = await repo.get_document("promptforge", doc["id"])
         assert fetched is not None
         assert fetched["name"] == "test-doc"
 
     async def test_update_document(self, db_session):
         repo = AppStorageRepository(db_session)
-        doc = await repo.create_document("test-app", "doc1", "original")
+        doc = await repo.create_document("promptforge", "doc1", "original")
         await db_session.commit()
 
         updated = await repo.update_document(
-            "test-app", doc["id"], content="updated"
+            "promptforge", doc["id"], content="updated"
         )
         await db_session.commit()
         assert updated is not None
@@ -67,32 +67,32 @@ class TestAppStorageRepository:
 
     async def test_delete_document(self, db_session):
         repo = AppStorageRepository(db_session)
-        doc = await repo.create_document("test-app", "doc1", "data")
+        doc = await repo.create_document("promptforge", "doc1", "data")
         await db_session.commit()
 
-        deleted = await repo.delete_document("test-app", doc["id"])
+        deleted = await repo.delete_document("promptforge", doc["id"])
         await db_session.commit()
         assert deleted is True
 
-        fetched = await repo.get_document("test-app", doc["id"])
+        fetched = await repo.get_document("promptforge", doc["id"])
         assert fetched is None
 
     async def test_list_documents_with_collection(self, db_session):
         repo = AppStorageRepository(db_session)
-        coll = await repo.create_collection("test-app", "bucket")
+        coll = await repo.create_collection("promptforge", "bucket")
         await repo.create_document(
-            "test-app", "doc-in-bucket", "data",
+            "promptforge", "doc-in-bucket", "data",
             collection_id=coll["id"],
         )
-        await repo.create_document("test-app", "doc-outside", "data")
+        await repo.create_document("promptforge", "doc-outside", "data")
         await db_session.commit()
 
         # List all
-        all_docs = await repo.list_documents("test-app")
+        all_docs = await repo.list_documents("promptforge")
         assert len(all_docs) == 2
 
         # List filtered by collection
-        bucket_docs = await repo.list_documents("test-app", collection_id=coll["id"])
+        bucket_docs = await repo.list_documents("promptforge", collection_id=coll["id"])
         assert len(bucket_docs) == 1
         assert bucket_docs[0]["name"] == "doc-in-bucket"
 
@@ -115,13 +115,13 @@ class TestAppStorageEndpoints:
     """HTTP endpoint tests for /api/kernel/storage."""
 
     async def test_list_collections_empty(self, client):
-        resp = await client.get("/api/kernel/storage/test-app/collections")
+        resp = await client.get("/api/kernel/storage/promptforge/collections")
         assert resp.status_code == 200
         assert resp.json()["collections"] == []
 
     async def test_create_collection(self, client):
         resp = await client.post(
-            "/api/kernel/storage/test-app/collections",
+            "/api/kernel/storage/promptforge/collections",
             json={"name": "transforms"},
         )
         assert resp.status_code == 201
@@ -129,25 +129,25 @@ class TestAppStorageEndpoints:
 
     async def test_create_and_get_document(self, client):
         resp = await client.post(
-            "/api/kernel/storage/test-app/documents",
+            "/api/kernel/storage/promptforge/documents",
             json={"name": "doc1", "content": '{"hello": "world"}'},
         )
         assert resp.status_code == 201
         doc_id = resp.json()["id"]
 
-        resp = await client.get(f"/api/kernel/storage/test-app/documents/{doc_id}")
+        resp = await client.get(f"/api/kernel/storage/promptforge/documents/{doc_id}")
         assert resp.status_code == 200
         assert resp.json()["name"] == "doc1"
 
     async def test_update_document(self, client):
         resp = await client.post(
-            "/api/kernel/storage/test-app/documents",
+            "/api/kernel/storage/promptforge/documents",
             json={"name": "doc1", "content": "original"},
         )
         doc_id = resp.json()["id"]
 
         resp = await client.put(
-            f"/api/kernel/storage/test-app/documents/{doc_id}",
+            f"/api/kernel/storage/promptforge/documents/{doc_id}",
             json={"content": "updated"},
         )
         assert resp.status_code == 200
@@ -155,15 +155,15 @@ class TestAppStorageEndpoints:
 
     async def test_delete_document(self, client):
         resp = await client.post(
-            "/api/kernel/storage/test-app/documents",
+            "/api/kernel/storage/promptforge/documents",
             json={"name": "doc1", "content": "data"},
         )
         doc_id = resp.json()["id"]
 
-        resp = await client.delete(f"/api/kernel/storage/test-app/documents/{doc_id}")
+        resp = await client.delete(f"/api/kernel/storage/promptforge/documents/{doc_id}")
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
 
     async def test_delete_nonexistent_document(self, client):
-        resp = await client.delete("/api/kernel/storage/test-app/documents/nonexistent")
+        resp = await client.delete("/api/kernel/storage/promptforge/documents/nonexistent")
         assert resp.status_code == 404

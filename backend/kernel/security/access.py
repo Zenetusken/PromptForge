@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 
 if TYPE_CHECKING:
     from kernel.registry.manifest import AppManifest
@@ -18,14 +18,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Capabilities granted to unknown/unregistered apps (backward compat, tests, ad-hoc API).
-PERMISSIVE_CAPABILITIES: frozenset[str] = frozenset({
+# Legacy permissive capabilities — opt-in escape hatch for backward compatibility.
+# Use for kernel-level contexts and testing, NOT for unknown external apps.
+LEGACY_PERMISSIVE_CAPABILITIES: frozenset[str] = frozenset({
     "settings:read", "settings:write",
     "storage:read", "storage:write",
     "vfs:read", "vfs:write",
     "audit:read",
     "llm:invoke",
 })
+
+# Backward-compatible alias — existing code referencing PERMISSIVE_CAPABILITIES
+# still works, but new code should use LEGACY_PERMISSIVE_CAPABILITIES explicitly.
+PERMISSIVE_CAPABILITIES = LEGACY_PERMISSIVE_CAPABILITIES
 
 
 @dataclass(frozen=True)
@@ -70,6 +75,26 @@ def check_capability(ctx: AppContext, required: str) -> None:
             status_code=403,
             detail=f"App '{ctx.app_id}' lacks required capability: {required}",
         )
+
+
+def require_capability(cap: str):
+    """FastAPI dependency factory that enforces a capability on the calling app.
+
+    Usage in a router::
+
+        @router.get("/data/{app_id}")
+        async def get_data(ctx: AppContext = Depends(require_capability("storage:read"))):
+            ...
+
+    This composes with ``get_app_context`` so the ``app_id`` path parameter
+    is resolved automatically.
+    """
+    def dep(app_id: str) -> AppContext:
+        from kernel.security.dependencies import get_app_context
+        ctx = get_app_context(app_id)
+        check_capability(ctx, cap)
+        return ctx
+    return dep
 
 
 async def check_quota(

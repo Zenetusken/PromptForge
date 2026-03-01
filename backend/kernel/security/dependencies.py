@@ -39,13 +39,23 @@ def get_app_context(app_id: str) -> AppContext:
                 detail=f"App '{app_id}' is currently disabled",
             )
         return AppContext.from_manifest(record.manifest)
-    # Unknown app — permissive (backward compat, tests, ad-hoc API calls)
+    # Unknown app — deny-by-default (empty capabilities).
+    # Only registered apps with manifests get capabilities.
     logger.warning(
-        "App %r not found in registry — granting permissive capabilities. "
-        "Register the app with a manifest to enforce access control.",
+        "App %r not found in registry — granting empty capabilities (deny-by-default). "
+        "Register the app with a manifest to enable access.",
         app_id,
     )
-    return AppContext(app_id=app_id, capabilities=list(PERMISSIVE_CAPABILITIES))
+    return AppContext(app_id=app_id, capabilities=[])
+
+
+def get_kernel_context() -> AppContext:
+    """Return a permissive kernel-level context for cross-app endpoints.
+
+    Used by endpoints that don't have an ``app_id`` path parameter
+    (e.g., ``/api/kernel/audit/all``, ``/api/kernel/audit/summary``).
+    """
+    return AppContext(app_id="kernel", capabilities=list(PERMISSIVE_CAPABILITIES))
 
 
 def get_audit_repo(session: AsyncSession = Depends(get_db)) -> AuditRepository:

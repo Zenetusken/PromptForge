@@ -163,19 +163,20 @@ class TestAuditRouter:
 
     @pytest.mark.asyncio
     async def test_list_audit_logs_empty(self, client):
-        resp = await client.get("/api/kernel/audit/test-app")
+        # Use a registered app (promptforge has audit:read capability)
+        resp = await client.get("/api/kernel/audit/promptforge")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["app_id"] == "test-app"
+        assert data["app_id"] == "promptforge"
         assert data["logs"] == []
         assert data["total"] == 0
 
     @pytest.mark.asyncio
     async def test_get_usage_empty(self, client):
-        resp = await client.get("/api/kernel/audit/usage/test-app")
+        resp = await client.get("/api/kernel/audit/usage/promptforge")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["app_id"] == "test-app"
+        assert data["app_id"] == "promptforge"
         assert data["usage"] == []
 
 
@@ -264,16 +265,24 @@ class TestAuditRepository:
 # ── Permissive fallback ─────────────────────────────────────────────
 
 
-class TestPermissiveFallbackWarning:
-    """Test that unknown apps get permissive access with a warning."""
+class TestDenyByDefaultForUnknownApps:
+    """Test that unknown apps get empty capabilities (deny-by-default)."""
 
-    def test_unknown_app_gets_permissive_context(self):
+    def test_unknown_app_gets_empty_capabilities(self):
         from kernel.security.dependencies import get_app_context
-        from kernel.security.access import PERMISSIVE_CAPABILITIES
 
         ctx = get_app_context("unknown-nonexistent-app")
         assert ctx.app_id == "unknown-nonexistent-app"
-        assert set(ctx.capabilities) == set(PERMISSIVE_CAPABILITIES)
+        assert ctx.capabilities == []
+
+    def test_unknown_app_denied_storage_read(self):
+        from fastapi import HTTPException
+        from kernel.security.dependencies import get_app_context
+
+        ctx = get_app_context("unknown-nonexistent-app")
+        with pytest.raises(HTTPException) as exc_info:
+            check_capability(ctx, "storage:read")
+        assert exc_info.value.status_code == 403
 
     def test_unknown_app_logs_warning(self, caplog):
         import logging

@@ -447,8 +447,10 @@ class TestTextForgeContracts:
 
     def test_contracts_are_valid(self):
         from apps.textforge.events import TEXTFORGE_CONTRACTS
-        assert len(TEXTFORGE_CONTRACTS) == 1
-        assert TEXTFORGE_CONTRACTS[0].event_type == "textforge:transform.completed"
+        assert len(TEXTFORGE_CONTRACTS) == 2
+        event_types = [c.event_type for c in TEXTFORGE_CONTRACTS]
+        assert "textforge:transform.completed" in event_types
+        assert "textforge:auto-simplify.completed" in event_types
 
 
 # ── Cross-App Handlers ───────────────────────────────────────────────

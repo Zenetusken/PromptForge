@@ -77,6 +77,35 @@ async def _resolve_context(
     return merge_contexts(base, explicit)
 
 
+async def _audit_log_optimization(opt_id: str, final_data: dict) -> None:
+    """Log an optimization audit entry and publish bus event for live updates."""
+    try:
+        from app.database import async_session_factory
+        from kernel.repositories.audit import AuditRepository
+
+        async with async_session_factory() as session:
+            repo = AuditRepository(session)
+            await repo.log_action(
+                "promptforge", "optimize", "optimization",
+                resource_id=opt_id,
+                details={
+                    "strategy": final_data.get("strategy"),
+                    "score": final_data.get("overall_score"),
+                },
+            )
+            await session.commit()
+
+        # Publish bus event so AuditLogWindow auto-refreshes
+        publish_event("kernel:audit.logged", {
+            "app_id": "promptforge",
+            "action": "optimize",
+            "resource_type": "optimization",
+            "resource_id": opt_id,
+        }, "kernel")
+    except Exception:
+        logger.debug("Audit log failed for optimization %s", opt_id, exc_info=True)
+
+
 def _create_streaming_response(
     opt_id: str,
     raw_prompt: str,
@@ -188,6 +217,9 @@ def _create_streaming_response(
             "duration_ms": final_data.get("duration_ms"),
         }, "promptforge")
 
+        # Audit log + bus event for live AuditLogWindow updates
+        await _audit_log_optimization(opt_id, final_data)
+
         # Now send the complete event after DB is updated
         if pending_complete_event:
             yield pending_complete_event
@@ -232,6 +264,19 @@ async def optimize_prompt(
             llm_provider = _resolve_provider(provider_name, x_llm_api_key, x_llm_model)
         except (ValueError, RuntimeError, ImportError, ProviderError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Quota enforcement — check before creating any DB record
+    try:
+        from kernel.repositories.audit import AuditRepository
+        from kernel.security.access import AppContext, check_quota
+        from kernel.security.dependencies import get_app_context
+        ctx = get_app_context("promptforge")
+        audit_repo = AuditRepository(db)
+        await check_quota(ctx, "api_calls", audit_repo)
+    except HTTPException:
+        raise  # Re-raise 429 quota exceeded
+    except Exception:
+        logger.debug("Quota check skipped (kernel not available)", exc_info=True)
 
     # Sanitize input (warn-only — never blocks)
     sanitized_prompt, _sanitize_warnings = sanitize_text(request.prompt)
@@ -554,6 +599,19 @@ async def batch_optimize(
     """
     from dataclasses import asdict
 
+    # Quota enforcement for batch — check once for the entire batch
+    try:
+        from kernel.repositories.audit import AuditRepository as _AR
+        from kernel.security.access import check_quota as _check_quota
+        from kernel.security.dependencies import get_app_context as _get_ctx
+        _ctx = _get_ctx("promptforge")
+        _audit = _AR(db)
+        await _check_quota(_ctx, "api_calls", _audit)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.debug("Batch quota check skipped", exc_info=True)
+
     llm_provider = _resolve_provider(x_llm_provider, x_llm_api_key, x_llm_model)
 
     # Pre-compute model fallback (same pattern as _create_streaming_response)
@@ -628,6 +686,9 @@ async def batch_optimize(
                 "project": request.project,
                 "duration_ms": int((time.time() - start_time) * 1000),
             }, "promptforge")
+
+            # Audit log for batch item
+            await _audit_log_optimization(optimization_id, asdict(pipeline_result))
 
             results.append(BatchItemResult(
                 index=i,
@@ -728,6 +789,19 @@ async def retry_optimization(
     - ``X-LLM-Model``: Runtime model override
     - ``X-LLM-Provider``: Provider name for retry
     """
+    # Quota enforcement for retry
+    try:
+        from kernel.repositories.audit import AuditRepository as _AR
+        from kernel.security.access import check_quota as _check_quota
+        from kernel.security.dependencies import get_app_context as _get_ctx
+        _ctx = _get_ctx("promptforge")
+        _audit = _AR(db)
+        await _check_quota(_ctx, "api_calls", _audit)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.debug("Retry quota check skipped", exc_info=True)
+
     repo = OptimizationRepository(db)
     original = await repo.get_by_id(optimization_id)
 

@@ -128,6 +128,75 @@ class AuditRepository:
             for u in result.scalars().all()
         ]
 
+    # --- Cross-app queries ---
+
+    async def list_all_logs(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        action: str | None = None,
+        resource_type: str | None = None,
+    ) -> list[dict]:
+        """List audit log entries across all apps, most recent first."""
+        query = select(AuditLog)
+        if action:
+            query = query.where(AuditLog.action == action)
+        if resource_type:
+            query = query.where(AuditLog.resource_type == resource_type)
+        query = query.order_by(AuditLog.timestamp.desc()).offset(offset).limit(limit)
+        result = await self.session.execute(query)
+        return [self._log_to_dict(entry) for entry in result.scalars().all()]
+
+    async def count_all_logs(
+        self,
+        action: str | None = None,
+        resource_type: str | None = None,
+    ) -> int:
+        """Count total audit log entries across all apps."""
+        query = select(func.count()).select_from(AuditLog)
+        if action:
+            query = query.where(AuditLog.action == action)
+        if resource_type:
+            query = query.where(AuditLog.resource_type == resource_type)
+        result = await self.session.execute(query)
+        return result.scalar_one()
+
+    async def get_summary(self) -> list[dict]:
+        """Get aggregate counts grouped by app_id and action."""
+        result = await self.session.execute(
+            select(
+                AuditLog.app_id,
+                AuditLog.action,
+                func.count().label("count"),
+            )
+            .group_by(AuditLog.app_id, AuditLog.action)
+            .order_by(AuditLog.app_id, AuditLog.action)
+        )
+        return [
+            {"app_id": row.app_id, "action": row.action, "count": row.count}
+            for row in result.all()
+        ]
+
+    async def get_all_apps_usage(self) -> list[dict]:
+        """Get all current-period usage entries across all apps."""
+        period = _current_period()
+        result = await self.session.execute(
+            select(AppUsage)
+            .where(AppUsage.period == period)
+            .order_by(AppUsage.app_id, AppUsage.resource)
+        )
+        return [
+            {
+                "app_id": u.app_id,
+                "resource": u.resource,
+                "count": u.count,
+                "period": u.period,
+                "updated_at": u.updated_at.isoformat(),
+            }
+            for u in result.scalars().all()
+        ]
+
     # --- Helpers ---
 
     def _log_to_dict(self, entry: AuditLog) -> dict:
