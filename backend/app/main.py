@@ -29,11 +29,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan handler - initializes database on startup."""
     # Discover and initialize apps via kernel registry
+    from app.database import async_session_factory
     from kernel.core import Kernel
     from kernel.registry.app_registry import get_app_registry
     from kernel.services.registry import ServiceRegistry
-
-    from app.database import async_session_factory
 
     registry = get_app_registry()
     registry.discover()
@@ -82,12 +81,20 @@ async def lifespan(app: FastAPI):
     from kernel.repositories.vfs import VfsRepository
     services.register("vfs", VfsRepository)
 
-    from kernel.bus.event_bus import EventBus
+    from kernel.repositories.knowledge import KnowledgeRepository
+    services.register("knowledge", KnowledgeRepository)
+
     from kernel.bus.contracts import ContractRegistry
+    from kernel.bus.event_bus import EventBus
     contract_registry = ContractRegistry()
     event_bus = EventBus(contract_registry=contract_registry)
     services.register("bus", event_bus)
     services.register("contracts", contract_registry)
+
+    # Register kernel-level event contracts (Knowledge Base)
+    from kernel.events.knowledge import KNOWLEDGE_CONTRACTS
+    for contract in KNOWLEDGE_CONTRACTS:
+        contract_registry.register(contract)
 
     # Create and register the background job queue
     from kernel.services.job_queue import JobQueue

@@ -136,6 +136,42 @@ KERNEL_MIGRATIONS: list[str] = [
     ")",
     "CREATE INDEX IF NOT EXISTS ix_kernel_jobs_app_id ON kernel_jobs (app_id)",
     "CREATE INDEX IF NOT EXISTS ix_kernel_jobs_status ON kernel_jobs (status)",
+    # --- Knowledge Base profiles ---
+    "CREATE TABLE IF NOT EXISTS kernel_knowledge_profiles ("
+    "  id TEXT PRIMARY KEY,"
+    "  app_id TEXT NOT NULL,"
+    "  entity_id TEXT NOT NULL,"
+    "  name TEXT NOT NULL,"
+    "  language TEXT,"
+    "  framework TEXT,"
+    "  description TEXT,"
+    "  test_framework TEXT,"
+    "  metadata_json TEXT,"
+    "  auto_detected_json TEXT,"
+    "  created_at TIMESTAMP NOT NULL,"
+    "  updated_at TIMESTAMP NOT NULL,"
+    "  UNIQUE(app_id, entity_id)"
+    ")",
+    "CREATE INDEX IF NOT EXISTS ix_knowledge_profiles_app_id"
+    " ON kernel_knowledge_profiles (app_id)",
+    # --- Knowledge Base sources ---
+    "CREATE TABLE IF NOT EXISTS kernel_knowledge_sources ("
+    "  id TEXT PRIMARY KEY,"
+    "  profile_id TEXT NOT NULL"
+    "    REFERENCES kernel_knowledge_profiles(id) ON DELETE CASCADE,"
+    "  title TEXT NOT NULL,"
+    "  content TEXT NOT NULL,"
+    "  source_type TEXT NOT NULL DEFAULT 'document',"
+    "  char_count INTEGER NOT NULL DEFAULT 0,"
+    "  enabled BOOLEAN NOT NULL DEFAULT 1,"
+    "  order_index INTEGER NOT NULL DEFAULT 0,"
+    "  created_at TIMESTAMP NOT NULL,"
+    "  updated_at TIMESTAMP NOT NULL"
+    ")",
+    "CREATE INDEX IF NOT EXISTS ix_knowledge_sources_profile_id"
+    " ON kernel_knowledge_sources (profile_id)",
+    "CREATE INDEX IF NOT EXISTS ix_knowledge_sources_enabled"
+    " ON kernel_knowledge_sources (enabled)",
 ]
 
 

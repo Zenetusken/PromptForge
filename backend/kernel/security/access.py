@@ -24,6 +24,7 @@ LEGACY_PERMISSIVE_CAPABILITIES: frozenset[str] = frozenset({
     "settings:read", "settings:write",
     "storage:read", "storage:write",
     "vfs:read", "vfs:write",
+    "knowledge:read", "knowledge:write",
     "audit:read",
     "llm:invoke",
 })
