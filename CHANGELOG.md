@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+**Comprehensive Audit Logging**
+- `kernel_audit_log()` helper (`kernel/bus/helpers.py`) — app-agnostic fire-and-forget audit logging shared across all apps
+- PromptForge `audit_log()` simplified to thin wrapper delegating to kernel helper
+- Audit logging on all 24 PromptForge REST mutation endpoints and all 12 MCP write tools (delete, bulk_delete, tag, create_project, add_prompt, update_prompt, set_project_context, batch, cancel, sync_workspace, move)
+- TextForge `delete_transform` endpoint now audited; inline audit replaced with `kernel_audit_log()` call
+- `AuditLogWindow` improvements: dynamic app filter via `fetchApps()`, expandable detail rows, resource ID tooltip, 20 action color mappings (added `batch_optimize`, `sync_workspace`), live connection indicator
+- Backend test suite for `audit_log()` and `kernel_audit_log()` (`test_audit_logging_coverage.py`)
+- Frontend test suite for `AuditLogWindow` component (`AuditLogWindow.test.ts`)
+
 **Kernel Infrastructure Hardening**
 - VFS move/rename: `POST /vfs/{app_id}/folders/{id}/move`, `PATCH .../rename`, `POST /vfs/{app_id}/files/{id}/move`, `PATCH .../rename` with circular-reference and depth-limit validation
 - VFS version restore: `POST /vfs/{app_id}/files/{id}/versions/{version_id}/restore` — snapshots current content before overwriting

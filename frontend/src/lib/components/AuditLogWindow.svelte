@@ -2,6 +2,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { systemBus } from '$lib/services/systemBus.svelte';
 	import { fetchAuditLogs, type AuditLogEntry } from '$lib/kernel/services/auditClient';
+	import { fetchApps } from '$lib/kernel/services/appManagerClient';
+	import { kernelBusBridge } from '$lib/kernel/services/kernelBusBridge.svelte';
 
 	let logs: AuditLogEntry[] = $state([]);
 	let total = $state(0);
@@ -9,9 +11,22 @@
 	let error: string | null = $state(null);
 	let selectedApp = $state('');
 	let page = $state(0);
+	let expandedId: number | null = $state(null);
+	let busConnected = $derived(kernelBusBridge.connected);
 	const pageSize = 50;
 
-	const appOptions = ['', 'promptforge', 'textforge', 'hello-world'];
+	const fallbackApps = ['promptforge', 'textforge', 'hello-world'];
+	let appOptions: string[] = $state(fallbackApps);
+
+	async function loadApps() {
+		try {
+			const result = await fetchApps();
+			const ids = result.apps.map((a) => a.id).filter(Boolean);
+			if (ids.length > 0) appOptions = ids;
+		} catch {
+			// Keep fallback list
+		}
+	}
 
 	async function loadLogs() {
 		loading = true;
@@ -40,17 +55,35 @@
 
 	const actionColors: Record<string, string> = {
 		optimize: 'text-neon-cyan',
+		optimize_step: 'text-neon-cyan',
+		analyze: 'text-neon-cyan',
+		strategy: 'text-neon-cyan',
+		validate: 'text-neon-cyan',
 		transform: 'text-neon-green',
-		delete: 'text-neon-red',
 		create: 'text-neon-purple',
 		update: 'text-neon-yellow',
+		delete: 'text-neon-red',
+		bulk_delete: 'text-neon-red',
+		clear_all: 'text-neon-red',
+		archive: 'text-neon-orange',
+		unarchive: 'text-neon-teal',
+		cancel: 'text-neon-orange',
+		batch_optimize: 'text-neon-purple',
+		sync_workspace: 'text-neon-teal',
+		move: 'text-neon-blue',
+		reorder: 'text-neon-blue',
+		disconnect: 'text-neon-red',
 	};
+
+	function toggleExpand(id: number) {
+		expandedId = expandedId === id ? null : id;
+	}
 
 	let unsubAudit: (() => void) | null = null;
 
 	onMount(() => {
+		loadApps();
 		loadLogs();
-		// Auto-refresh when audit events arrive via bus bridge
 		unsubAudit = systemBus.on('kernel:audit_logged', () => {
 			loadLogs();
 		});
@@ -84,14 +117,20 @@
 				onchange={handleAppChange}
 			>
 				<option value="">All Apps</option>
-				{#each appOptions.filter(a => a) as app}
+				{#each appOptions as app}
 					<option value={app}>{app}</option>
 				{/each}
 			</select>
 			<button
-				class="rounded border border-white/10 px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
+				class="flex items-center gap-1.5 rounded border border-white/10 px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
 				onclick={loadLogs}
 			>
+				{#if busConnected}
+					<span class="relative flex h-1.5 w-1.5">
+						<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-neon-green opacity-75"></span>
+						<span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-neon-green"></span>
+					</span>
+				{/if}
 				Refresh
 			</button>
 		</div>
@@ -122,15 +161,35 @@
 				</thead>
 				<tbody>
 					{#each logs as entry (entry.id)}
-						<tr class="border-b border-white/5 hover:bg-bg-hover">
+						<tr
+							class="border-b border-white/5 hover:bg-bg-hover cursor-pointer"
+							onclick={() => toggleExpand(entry.id)}
+						>
 							<td class="py-1.5 pr-3 text-text-dim whitespace-nowrap">{formatTimestamp(entry.timestamp)}</td>
 							<td class="py-1.5 pr-3 text-neon-blue">{entry.app_id}</td>
 							<td class="py-1.5 pr-3">
 								<span class={actionColors[entry.action] ?? 'text-text-secondary'}>{entry.action}</span>
 							</td>
 							<td class="py-1.5 pr-3 text-text-secondary">{entry.resource_type}</td>
-							<td class="py-1.5 font-mono text-text-dim max-w-[120px] truncate">{entry.resource_id ?? '—'}</td>
+							<td
+								class="py-1.5 font-mono text-text-dim max-w-[120px] truncate"
+								title={entry.resource_id ?? undefined}
+							>{entry.resource_id ?? '\u2014'}</td>
 						</tr>
+						{#if expandedId === entry.id && entry.details}
+							<tr class="border-b border-white/5 bg-bg-secondary">
+								<td colspan="5" class="px-3 py-2">
+									<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+										{#each Object.entries(entry.details) as [key, value]}
+											<span>
+												<span class="text-text-dim">{key}:</span>
+												<span class="text-text-secondary font-mono">{value ?? '\u2014'}</span>
+											</span>
+										{/each}
+									</div>
+								</td>
+							</tr>
+						{/if}
 					{/each}
 				</tbody>
 			</table>
