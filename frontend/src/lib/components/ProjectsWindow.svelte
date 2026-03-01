@@ -42,7 +42,7 @@
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// ── Selection ──
-	let selectedId: string | null = $state(null);
+	let selectedIds: Set<string> = $state(new Set());
 
 	// ── New folder ──
 	let newFolderInput = $state(false);
@@ -53,7 +53,7 @@
 
 	// ── Context menu ──
 	let ctxMenu = $state({ open: false, x: 0, y: 0, targetId: null as string | null, actions: [] as ContextAction[] });
-	let confirmAction: { type: 'delete-project' | 'delete-prompt' | 'delete-folder'; id: string; label: string } | null = $state(null);
+	let confirmAction: { type: 'delete-project' | 'delete-prompt' | 'delete-folder' | 'batch-delete'; id: string; label: string; batchIds?: string[] } | null = $state(null);
 
 	function projectActions(project: { id: string; status: string }): ContextAction[] {
 		const actions: ContextAction[] = [
@@ -80,7 +80,28 @@
 		{ id: 'delete-prompt', label: 'Delete Prompt', icon: 'trash-2', separator: true, danger: true },
 	];
 
+	function handleSelect(id: string, e: MouseEvent) {
+		if (e.ctrlKey || e.metaKey) {
+			const next = new Set(selectedIds);
+			next.has(id) ? next.delete(id) : next.add(id);
+			selectedIds = next;
+		} else {
+			selectedIds = new Set([id]);
+		}
+	}
+
 	function openCtxMenu(e: MouseEvent, id: string, actions: ContextAction[]) {
+		// If clicking within multi-selection, show batch actions
+		if (selectedIds.has(id) && selectedIds.size > 1) {
+			const count = selectedIds.size;
+			const batchActions: ContextAction[] = [
+				{ id: 'batch-delete', label: `Delete ${count} items`, icon: 'trash-2', danger: true },
+			];
+			ctxMenu = { open: true, x: e.clientX, y: e.clientY, targetId: id, actions: batchActions };
+			return;
+		}
+		// Single-select the item
+		selectedIds = new Set([id]);
 		ctxMenu = { open: true, x: e.clientX, y: e.clientY, targetId: id, actions };
 	}
 
@@ -148,14 +169,38 @@
 				confirmAction = { type: 'delete-prompt', id: targetId, label: truncateText(node?.content ?? 'this prompt', 40) };
 				break;
 			}
+			case 'batch-delete': {
+				const ids = [...selectedIds];
+				const count = ids.length;
+				confirmAction = { type: 'batch-delete', id: '', label: `${count} selected items`, batchIds: ids };
+				break;
+			}
 		}
 	}
 
 	async function handleConfirmAction() {
 		if (!confirmAction) return;
-		const { type, id } = confirmAction;
+		const { type, id, batchIds } = confirmAction;
 		confirmAction = null;
-		if (type === 'delete-project') {
+		if (type === 'batch-delete' && batchIds) {
+			if (currentView === 'list') {
+				for (const bid of batchIds) {
+					await projectsState.remove(bid);
+				}
+			} else {
+				for (const bid of batchIds) {
+					const node = folderNodes.find((n) => n.id === bid);
+					if (node?.type === 'folder') {
+						await fsOrchestrator.deleteFolder(bid);
+					} else {
+						await projectsState.removePrompt(activeFolderId ?? '', bid);
+					}
+				}
+				if (activeFolderId) await loadFolderContents(activeFolderId);
+			}
+			selectedIds = new Set();
+			toastState.show(`Deleted ${batchIds.length} items`, 'success');
+		} else if (type === 'delete-project') {
 			const ok = await projectsState.remove(id);
 			if (ok) toastState.show('Project deleted', 'success');
 			else toastState.show('Failed to delete project', 'error');
@@ -197,7 +242,7 @@
 		forwardStack = [];
 		currentView = view;
 		activeFolderId = folderId;
-		selectedId = null;
+		selectedIds = new Set();
 		newFolderInput = false;
 		if (view === 'folder' && folderId) loadFolderContents(folderId);
 		syncBreadcrumbs();
@@ -211,7 +256,7 @@
 		forwardStack = [...forwardStack, { view: currentView, folderId: activeFolderId }];
 		currentView = prev.view;
 		activeFolderId = prev.folderId;
-		selectedId = null;
+		selectedIds = new Set();
 		newFolderInput = false;
 		if (prev.view === 'folder' && prev.folderId) loadFolderContents(prev.folderId);
 		syncBreadcrumbs();
@@ -225,7 +270,7 @@
 		backStack = [...backStack, { view: currentView, folderId: activeFolderId }];
 		currentView = next.view;
 		activeFolderId = next.folderId;
-		selectedId = null;
+		selectedIds = new Set();
 		newFolderInput = false;
 		if (next.view === 'folder' && next.folderId) loadFolderContents(next.folderId);
 		syncBreadcrumbs();
@@ -319,8 +364,8 @@
 		if (!payload) return;
 		const desc = payload.descriptor;
 		const type = desc.kind === 'folder' ? 'project' : 'prompt';
-		await fsOrchestrator.move(type as 'project' | 'prompt', desc.id, targetNodeId);
-		if (activeFolderId) await loadFolderContents(activeFolderId);
+		await fsOrchestrator.move(type, desc.id, targetNodeId);
+		// Reload handled by systemBus 'fs:moved' listener
 	}
 
 	// ── Search/filter ──
@@ -351,6 +396,19 @@
 		}
 	});
 
+	function handleKeydown(e: KeyboardEvent) {
+		if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+			const tag = (e.target as HTMLElement)?.tagName;
+			if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+			e.preventDefault();
+			if (currentView === 'list') {
+				selectedIds = new Set(projectsState.items.map((p) => p.id));
+			} else {
+				selectedIds = new Set(folderNodes.map((n) => n.id));
+			}
+		}
+	}
+
 	// ── Lifecycle ──
 	onMount(() => {
 		if (!projectsState.hasLoaded) projectsState.loadProjects();
@@ -379,6 +437,8 @@
 	});
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="h-full" onkeydown={handleKeydown}>
 {#if currentView === 'list'}
 	<!-- Project list view -->
 	<FileManagerView
@@ -391,7 +451,7 @@
 		isLoading={projectsState.isLoading && !projectsState.hasLoaded}
 		hasMore={projectsState.items.length < projectsState.total}
 		onloadmore={() => projectsState.loadProjects({ page: projectsState.page + 1 })}
-		onbackgroundclick={() => selectedId = null}
+		onbackgroundclick={() => { selectedIds = new Set(); }}
 		emptyIcon="folder"
 		emptyMessage={projectsState.searchQuery ? 'No matching projects' : 'No projects yet'}
 	>
@@ -419,7 +479,7 @@
 
 		{#snippet rows()}
 			{#each projectsState.items as project (project.id)}
-				<FileManagerRow onselect={() => selectedId = project.id} onopen={() => navigateTo('folder', project.id)} oncontextmenu={(e) => openCtxMenu(e, project.id, projectActions(project))} active={selectedId === project.id} testId="project-row-{project.id}">
+				<FileManagerRow onselect={(e) => handleSelect(project.id, e)} onopen={() => navigateTo('folder', project.id)} oncontextmenu={(e) => openCtxMenu(e, project.id, projectActions(project))} active={selectedIds.has(project.id)} testId="project-row-{project.id}">
 					<div class="flex flex-1 min-w-0 items-center gap-3">
 						<Icon
 							name="folder"
@@ -455,7 +515,7 @@
 		itemCount={folderNodes.length}
 		itemLabel="item"
 		isLoading={folderLoading}
-		onbackgroundclick={() => selectedId = null}
+		onbackgroundclick={() => { selectedIds = new Set(); }}
 		emptyIcon="folder"
 		emptyMessage="This folder is empty"
 	>
@@ -490,8 +550,8 @@
 					ondrop={(e) => { if (isFolder) { e.stopPropagation(); handleRowDrop(e, node.id); } }}
 				>
 					<FileManagerRow
-						active={selectedId === node.id}
-						onselect={() => { selectedId = node.id; }}
+						active={selectedIds.has(node.id)}
+						onselect={(e) => handleSelect(node.id, e)}
 						onopen={() => handleNodeOpen(node)}
 						oncontextmenu={(e) => openCtxMenu(e, node.id, isFolder ? subfolderActions : promptActions)}
 						dragPayload={isFolder
@@ -526,6 +586,7 @@
 		{/snippet}
 	</FileManagerView>
 {/if}
+</div>
 
 <DesktopContextMenu
 	open={ctxMenu.open}
@@ -538,7 +599,7 @@
 
 <ConfirmModal
 	open={confirmAction !== null}
-	title={confirmAction?.type === 'delete-project' ? 'Delete Project' : confirmAction?.type === 'delete-folder' ? 'Delete Folder' : 'Delete Prompt'}
+	title={confirmAction?.type === 'batch-delete' ? `Delete ${confirmAction?.batchIds?.length ?? 0} Items` : confirmAction?.type === 'delete-project' ? 'Delete Project' : confirmAction?.type === 'delete-folder' ? 'Delete Folder' : 'Delete Prompt'}
 	message={confirmAction ? `Permanently delete "${confirmAction.label}"? This cannot be undone.` : ''}
 	confirmLabel="Delete"
 	onconfirm={handleConfirmAction}

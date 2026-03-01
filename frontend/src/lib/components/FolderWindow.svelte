@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import FileManagerRow from './FileManagerRow.svelte';
+	import DesktopContextMenu from './DesktopContextMenu.svelte';
+	import ConfirmModal from './ConfirmModal.svelte';
+	import MoveToDialog from './MoveToDialog.svelte';
 	import Icon from './Icon.svelte';
+	import type { ContextAction } from '$lib/stores/desktopStore.svelte';
 	import { fsOrchestrator } from '$lib/stores/filesystemOrchestrator.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { systemBus } from '$lib/services/systemBus.svelte';
@@ -26,7 +30,7 @@
 	let path: PathSegment[] = $state([]);
 	let loading = $state(true);
 	let error = $state(false);
-	let selectedId: string | null = $state(null);
+	let selectedIds: Set<string> = $state(new Set());
 	let newFolderInput = $state(false);
 	let newFolderName = $state('');
 	let dropTargetId: string | null = $state(null);
@@ -35,6 +39,117 @@
 	let expandedPrompts: Set<string> = $state(new Set());
 	let forgeCache: Map<string, ForgeResultSummary[]> = $state(new Map());
 	let forgeLoading: Set<string> = $state(new Set());
+
+	// ── Context menu + batch actions ──
+	let ctxMenu = $state({ open: false, x: 0, y: 0, actions: [] as ContextAction[] });
+	let confirmAction: { type: 'batch-delete'; items: Array<{ type: 'folder' | 'prompt'; id: string; name: string }> } | null = $state(null);
+	let moveDialog = $state<{
+		open: boolean;
+		nodeType: 'project' | 'prompt' | null;
+		nodeId: string | null;
+		batchItems: Array<{ type: 'project' | 'prompt'; id: string }>;
+	}>({ open: false, nodeType: null, nodeId: null, batchItems: [] });
+
+	const folderRowActions: ContextAction[] = [
+		{ id: 'open', label: 'Open', icon: 'folder-open' },
+		{ id: 'move-to', label: 'Move to...', icon: 'arrow-up-right' },
+		{ id: 'delete', label: 'Delete', icon: 'trash-2', separator: true, danger: true },
+	];
+	const promptRowActions: ContextAction[] = [
+		{ id: 'open', label: 'Open', icon: 'file-text' },
+		{ id: 'move-to', label: 'Move to...', icon: 'arrow-up-right' },
+		{ id: 'delete', label: 'Delete', icon: 'trash-2', separator: true, danger: true },
+	];
+
+	function handleSelect(id: string, e: MouseEvent) {
+		if (e.ctrlKey || e.metaKey) {
+			const next = new Set(selectedIds);
+			next.has(id) ? next.delete(id) : next.add(id);
+			selectedIds = next;
+		} else {
+			selectedIds = new Set([id]);
+		}
+	}
+
+	function handleContextMenu(e: MouseEvent, node: FsNode) {
+		// If node is in multi-selection, preserve and show batch actions
+		if (selectedIds.has(node.id) && selectedIds.size > 1) {
+			const selectedNodes = nodes.filter((n) => selectedIds.has(n.id));
+			const actions: ContextAction[] = [];
+			// All items can be moved
+			actions.push({ id: 'batch-move-to', label: `Move ${selectedNodes.length} items to...`, icon: 'arrow-up-right' });
+			actions.push({ id: 'batch-delete', label: `Delete ${selectedNodes.length} items`, icon: 'trash-2', separator: true, danger: true });
+			ctxMenu = { open: true, x: e.clientX, y: e.clientY, actions };
+			return;
+		}
+		// Single-selection: select it and show single-item actions
+		selectedIds = new Set([node.id]);
+		ctxMenu = {
+			open: true,
+			x: e.clientX,
+			y: e.clientY,
+			actions: node.type === 'folder' ? folderRowActions : promptRowActions,
+		};
+	}
+
+	function handleCtxAction(actionId: string) {
+		const targetIds = [...selectedIds];
+		ctxMenu = { open: false, x: 0, y: 0, actions: [] };
+
+		if (actionId === 'open' && targetIds.length === 1) {
+			const node = nodes.find((n) => n.id === targetIds[0]);
+			if (node) handleOpen(node);
+		} else if (actionId === 'delete' && targetIds.length === 1) {
+			const node = nodes.find((n) => n.id === targetIds[0]);
+			if (node) {
+				confirmAction = {
+					type: 'batch-delete',
+					items: [{ type: node.type === 'folder' ? 'folder' : 'prompt', id: node.id, name: node.name }],
+				};
+			}
+		} else if (actionId === 'batch-delete') {
+			const items = nodes
+				.filter((n) => selectedIds.has(n.id))
+				.map((n): { type: 'folder' | 'prompt'; id: string; name: string } => ({ type: n.type === 'folder' ? 'folder' : 'prompt', id: n.id, name: n.name }));
+			confirmAction = { type: 'batch-delete', items };
+		} else if (actionId === 'batch-move-to') {
+			const items = nodes
+				.filter((n) => selectedIds.has(n.id))
+				.map((n) => ({ type: n.type === 'folder' ? 'project' as const : 'prompt' as const, id: n.id }));
+			moveDialog = { open: true, nodeType: null, nodeId: null, batchItems: items };
+		} else if (actionId === 'move-to' && targetIds.length === 1) {
+			const node = nodes.find((n) => n.id === targetIds[0]);
+			if (node) {
+				moveDialog = {
+					open: true,
+					nodeType: node.type === 'folder' ? 'project' : 'prompt',
+					nodeId: node.id,
+					batchItems: [],
+				};
+			}
+		}
+	}
+
+	async function handleConfirmBatch() {
+		if (!confirmAction) return;
+		const { items } = confirmAction;
+		confirmAction = null;
+		for (const item of items) {
+			if (item.type === 'folder') {
+				await fsOrchestrator.deleteFolder(item.id);
+			} else {
+				await fsOrchestrator.deletePrompt(item.id);
+			}
+		}
+		selectedIds = new Set();
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+			e.preventDefault();
+			selectedIds = new Set(nodes.map((n) => n.id));
+		}
+	}
 
 	async function loadContents() {
 		loading = true;
@@ -111,8 +226,20 @@
 		const payload = decodeDragPayload(raw);
 		if (!payload) return;
 		const desc = payload.descriptor;
-		const type = desc.kind === 'folder' ? 'project' : 'prompt';
-		await fsOrchestrator.move(type as 'project' | 'prompt', desc.id, targetNodeId);
+
+		// No-op: dropping a folder on itself
+		if (desc.kind === 'folder' && desc.id === targetNodeId) return;
+
+		// No-op: item is already in this folder (same parent)
+		const currentParent = desc.kind === 'folder'
+			? desc.parentId
+			: desc.kind === 'prompt' ? desc.projectId : null;
+		if (currentParent === targetNodeId) return;
+		// Also catch root → root: both might be null/undefined/empty-string
+		if (!currentParent && !targetNodeId) return;
+
+		const type: 'project' | 'prompt' = desc.kind === 'folder' ? 'project' : 'prompt';
+		await fsOrchestrator.move(type, desc.id, targetNodeId);
 	}
 
 	function folderDragPayload(node: FsNode): DragPayload {
@@ -203,9 +330,13 @@
 <!-- Content -->
 <div
 	class="flex-1 overflow-y-auto"
-	role="list"
+	role="listbox"
+	tabindex="0"
+	aria-label="Folder contents"
 	ondragover={(e) => { e.preventDefault(); }}
 	ondrop={(e) => handleDrop(e, folderId)}
+	onclick={(e) => { if (!(e.ctrlKey || e.metaKey) && e.target === e.currentTarget) selectedIds = new Set(); }}
+	onkeydown={handleKeydown}
 >
 	{#if loading}
 		<div class="p-4 text-text-secondary text-sm text-center">Loading...</div>
@@ -227,9 +358,10 @@
 				ondrop={(e) => { if (isFolder) { e.stopPropagation(); handleDrop(e, node.id); } }}
 			>
 				<FileManagerRow
-					active={selectedId === node.id}
-					onselect={() => { selectedId = node.id; }}
+					active={selectedIds.has(node.id)}
+					onselect={(e) => handleSelect(node.id, e)}
 					onopen={() => handleOpen(node)}
+					oncontextmenu={(e) => handleContextMenu(e, node)}
 					dragPayload={isFolder ? folderDragPayload(node) : promptDragPayload(node)}
 				>
 					{#if isFolder}
@@ -275,8 +407,8 @@
 							{:else}
 								{#each forges as forge (forge.id)}
 									<FileManagerRow
-										active={selectedId === forge.id}
-										onselect={() => { selectedId = forge.id; }}
+										active={selectedIds.has(forge.id)}
+										onselect={(e) => handleSelect(forge.id, e)}
 										onopen={() => handleForgeClick(forge)}
 									>
 										<Icon name="zap" size={14} class="text-neon-purple shrink-0" />
@@ -298,3 +430,42 @@
 		{/each}
 	{/if}
 </div>
+
+<DesktopContextMenu
+	open={ctxMenu.open}
+	x={ctxMenu.x}
+	y={ctxMenu.y}
+	actions={ctxMenu.actions}
+	onaction={handleCtxAction}
+	onclose={() => ctxMenu = { open: false, x: 0, y: 0, actions: [] }}
+/>
+
+<ConfirmModal
+	open={confirmAction !== null}
+	title={confirmAction?.items.length === 1 ? 'Delete Item' : `Delete ${confirmAction?.items.length ?? 0} Items`}
+	message={confirmAction?.items.length === 1
+		? `Permanently delete "${confirmAction?.items[0]?.name}"? This cannot be undone.`
+		: `Permanently delete ${confirmAction?.items.length ?? 0} items? This cannot be undone.`}
+	confirmLabel="Delete"
+	onconfirm={handleConfirmBatch}
+	oncancel={() => confirmAction = null}
+/>
+
+<MoveToDialog
+	bind:open={moveDialog.open}
+	nodeType={moveDialog.nodeType}
+	nodeId={moveDialog.nodeId}
+	batchItems={moveDialog.batchItems}
+	onmove={async (type, id, targetFolderId) => {
+		await fsOrchestrator.move(type, id, targetFolderId);
+		moveDialog = { open: false, nodeType: null, nodeId: null, batchItems: [] };
+	}}
+	onmovebatch={async (items, targetFolderId) => {
+		for (const item of items) {
+			await fsOrchestrator.move(item.type, item.id, targetFolderId);
+		}
+		moveDialog = { open: false, nodeType: null, nodeId: null, batchItems: [] };
+		selectedIds = new Set();
+	}}
+	oncancel={() => moveDialog = { open: false, nodeType: null, nodeId: null, batchItems: [] }}
+/>

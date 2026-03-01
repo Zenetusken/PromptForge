@@ -59,6 +59,7 @@
 			? desktopStore.getDbNodeInfo(desktopStore.moveToDialog.iconId)
 			: null
 	);
+	const moveBatchItems = $derived(desktopStore.moveToDialog.batchItems ?? []);
 
 	onMount(() => {
 		// --- OS Bootstrap: App Registry ---
@@ -339,6 +340,16 @@
 				}
 			}
 
+			// Ctrl/Cmd+A — select all desktop icons (only when desktop has focus)
+			if (e.key === "a" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+				// Only if no window is active (desktop has focus)
+				if (!windowManager.activeWindowId) {
+					e.preventDefault();
+					desktopStore.selectAll();
+					return;
+				}
+			}
+
 			// `/` — open/restore IDE and focus textarea
 			if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
 				e.preventDefault();
@@ -563,9 +574,17 @@
 		bind:open={desktopStore.moveToDialog.open}
 		nodeType={moveNodeInfo?.type ?? null}
 		nodeId={moveNodeInfo?.id ?? null}
+		batchItems={moveBatchItems}
 		onmove={async (type, id, targetFolderId) => {
 			await fsOrchestrator.move(type, id, targetFolderId);
 			desktopStore.closeMoveToDialog();
+		}}
+		onmovebatch={async (items, targetFolderId) => {
+			for (const item of items) {
+				await fsOrchestrator.move(item.type, item.id, targetFolderId);
+			}
+			desktopStore.closeMoveToDialog();
+			desktopStore.deselectAll();
 		}}
 		oncancel={() => desktopStore.closeMoveToDialog()}
 	/>

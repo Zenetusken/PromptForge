@@ -8,13 +8,17 @@
 		open = $bindable(false),
 		nodeType = null,
 		nodeId = null,
+		batchItems = [],
 		onmove,
+		onmovebatch,
 		oncancel,
 	}: {
 		open: boolean;
 		nodeType: 'project' | 'prompt' | null;
 		nodeId: string | null;
+		batchItems?: Array<{ type: 'project' | 'prompt'; id: string }>;
 		onmove?: (type: 'project' | 'prompt', id: string, targetFolderId: string | null) => void;
+		onmovebatch?: (items: Array<{ type: 'project' | 'prompt'; id: string }>, targetFolderId: string | null) => void;
 		oncancel?: () => void;
 	} = $props();
 
@@ -22,7 +26,20 @@
 	let selectedFolderId: string | null | undefined = $state(undefined);
 	let loading = $state(false);
 
+	const isBatch = $derived((batchItems?.length ?? 0) > 0);
 	const hasSelection = $derived(selectedFolderId !== undefined);
+
+	// Collect all folder IDs to exclude from target list (self-references)
+	const excludedFolderIds = $derived.by(() => {
+		const ids = new Set<string>();
+		if (nodeType === 'project' && nodeId) ids.add(nodeId);
+		if (batchItems) {
+			for (const item of batchItems) {
+				if (item.type === 'project') ids.add(item.id);
+			}
+		}
+		return ids;
+	});
 
 	// Load root folders when dialog opens
 	$effect(() => {
@@ -30,10 +47,10 @@
 			selectedFolderId = undefined;
 			loading = true;
 			fsOrchestrator.loadChildren(null).then((children) => {
-				// Filter to folders, exclude self if moving a folder
+				// Filter to folders, exclude self/batch folder items
 				folders = children.filter((n) => {
 					if (n.type !== 'folder') return false;
-					if (nodeType === 'project' && nodeId === n.id) return false;
+					if (excludedFolderIds.has(n.id)) return false;
 					return true;
 				});
 				loading = false;
@@ -45,8 +62,12 @@
 	});
 
 	function handleMove() {
-		if (!nodeType || !nodeId || !hasSelection) return;
-		onmove?.(nodeType, nodeId, selectedFolderId ?? null);
+		if (!hasSelection) return;
+		if (isBatch && batchItems) {
+			onmovebatch?.(batchItems, selectedFolderId ?? null);
+		} else if (nodeType && nodeId) {
+			onmove?.(nodeType, nodeId, selectedFolderId ?? null);
+		}
 	}
 </script>
 
@@ -63,7 +84,7 @@
 				</div>
 				<div class="min-w-0">
 					<AlertDialog.Title class="text-sm font-semibold text-text-primary">
-						Move to...
+						{isBatch ? `Move ${batchItems?.length} items to...` : 'Move to...'}
 					</AlertDialog.Title>
 					<AlertDialog.Description class="mt-1 text-xs text-text-secondary">
 						Select a destination folder.
@@ -74,21 +95,34 @@
 			<div class="max-h-48 overflow-y-auto rounded-lg border border-border-subtle bg-bg-input">
 				{#if loading}
 					<div class="px-3 py-3 text-xs text-text-dim text-center">Loading...</div>
-				{:else if folders.length === 0}
-					<div class="px-3 py-3 text-xs text-text-dim text-center">No folders available</div>
 				{:else}
-					{#each folders as folder (folder.id)}
-						<button
-							type="button"
-							class="flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors
-								{selectedFolderId === folder.id ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'}"
-							onclick={() => selectedFolderId = folder.id}
-							data-testid="move-to-folder-{folder.id}"
-						>
-							<Icon name="folder" size={14} class={selectedFolderId === folder.id ? 'text-neon-yellow' : 'text-text-dim'} />
-							<span>{folder.name}</span>
-						</button>
-					{/each}
+					<!-- Desktop (root) target -->
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors border-b border-white/5
+							{selectedFolderId === null ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'}"
+						onclick={() => selectedFolderId = null}
+						data-testid="move-to-desktop"
+					>
+						<Icon name="monitor" size={14} class={selectedFolderId === null ? 'text-neon-cyan' : 'text-text-dim'} />
+						<span>Desktop</span>
+					</button>
+					{#if folders.length === 0}
+						<div class="px-3 py-3 text-xs text-text-dim text-center">No folders available</div>
+					{:else}
+						{#each folders as folder (folder.id)}
+							<button
+								type="button"
+								class="flex w-full items-center gap-2 px-3 py-2 text-xs transition-colors
+									{selectedFolderId === folder.id ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'}"
+								onclick={() => selectedFolderId = folder.id}
+								data-testid="move-to-folder-{folder.id}"
+							>
+								<Icon name="folder" size={14} class={selectedFolderId === folder.id ? 'text-neon-yellow' : 'text-text-dim'} />
+								<span>{folder.name}</span>
+							</button>
+						{/each}
+					{/if}
 				{/if}
 			</div>
 
