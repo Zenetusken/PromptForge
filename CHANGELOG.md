@@ -101,6 +101,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+**Three-Tier Context Injection**
+- `codebase_context_from_dict()` no longer crashes on non-dict input (e.g. JSON arrays); returns `None` instead of `AttributeError`
+- `codebase_context_from_dict()` now coerces scalar fields to `str` and validates list field types, preventing garbage renders from `{"language": 42}` or `{"conventions": {"a": 1}}`
+- `get_context_by_name()` resolves nested projects (removed `parent_id.is_(None)` filter); excludes deleted projects; handles name duplicates via `updated_at` ordering
+- `/orchestrate/validate` now accepts `strategy` field and passes it to the validator for `framework_adherence_score` computation (previously always `None`)
+- `/optimize/{id}/retry` now accepts optional JSON body with `strategy`, `secondary_frameworks`, and `codebase_context` overrides — REST parity with MCP `retry` tool
+- `merge_contexts()` now returns shallow copies instead of identity references — prevents aliasing bugs where callers (e.g. description fallback injection) mutate the original workspace/project context objects
+- `get_link_by_project_name()` no longer crashes with `MultipleResultsFound` when duplicate project names exist — uses `ORDER BY updated_at DESC LIMIT 1`
+- All 4 `/orchestrate/*` endpoints now accept optional `project` field for full 3-layer context resolution (workspace → manual → explicit) — previously only used explicit layer
+- REST and MCP `batch` endpoints now auto-link batch items to `Prompt` records via `ensure_prompt_in_project()` — previously skipped prompt linking unlike single optimize
+
 **Kernel Bug Fixes & Polish**
 - VFS `move_folder` now cascades depth updates to all descendant folders via `_cascade_depth()` — previously only the moved folder's depth was updated, leaving children with stale depth values
 - `batch_optimize` event publishing now uses `pipeline_result.strategy` (actual strategy used) instead of `request.strategy` (user override), and includes `duration_ms` matching the streaming path
