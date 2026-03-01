@@ -7,7 +7,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import StreamingResponse
 
 if TYPE_CHECKING:
@@ -23,6 +23,8 @@ def _get_bus(request: Request) -> EventBus:
     """Retrieve the EventBus from the app registry's kernel reference."""
     from kernel.registry.app_registry import get_app_registry
     registry = get_app_registry()
+    if not registry.kernel or not registry.kernel.services.has("bus"):
+        raise HTTPException(status_code=503, detail="Event bus not available")
     return registry.kernel.services.get("bus")
 
 
@@ -30,6 +32,8 @@ def _get_contracts(request: Request) -> ContractRegistry:
     """Retrieve the ContractRegistry from the kernel services."""
     from kernel.registry.app_registry import get_app_registry
     registry = get_app_registry()
+    if not registry.kernel or not registry.kernel.services.has("contracts"):
+        raise HTTPException(status_code=503, detail="Contract registry not available")
     return registry.kernel.services.get("contracts")
 
 

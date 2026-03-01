@@ -43,6 +43,13 @@ class AppBase(ABC):
         Use for registering event handlers, starting background tasks, etc.
         """
 
+    async def on_disable(self, kernel: Kernel | None) -> None:
+        """Called when the app is disabled at runtime.
+
+        Use for releasing resources, unsubscribing from events, etc.
+        Called after ``on_shutdown()`` during a disable operation.
+        """
+
     async def on_shutdown(self, kernel: Kernel | None) -> None:
         """Called on server shutdown for enabled apps."""
 

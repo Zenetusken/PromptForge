@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -28,13 +28,23 @@ def get_app_context(app_id: str) -> AppContext:
     allows all operations. Access control only restricts apps that
     explicitly declare limited capabilities in their manifest.
     """
-    from kernel.registry.app_registry import get_app_registry
+    from kernel.registry.app_registry import AppStatus, get_app_registry
 
     registry = get_app_registry()
     record = registry.get(app_id)
     if record:
+        if record.status == AppStatus.DISABLED:
+            raise HTTPException(
+                status_code=503,
+                detail=f"App '{app_id}' is currently disabled",
+            )
         return AppContext.from_manifest(record.manifest)
     # Unknown app — permissive (backward compat, tests, ad-hoc API calls)
+    logger.warning(
+        "App %r not found in registry — granting permissive capabilities. "
+        "Register the app with a manifest to enforce access control.",
+        app_id,
+    )
     return AppContext(app_id=app_id, capabilities=list(PERMISSIVE_CAPABILITIES))
 
 

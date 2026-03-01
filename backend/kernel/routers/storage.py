@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from kernel.repositories.app_storage import AppStorageRepository
 from kernel.repositories.audit import AuditRepository
-from kernel.security.access import AppContext, check_capability
+from kernel.security.access import AppContext, check_capability, check_quota
 from kernel.security.dependencies import get_app_context, get_audit_repo
 
 router = APIRouter(prefix="/api/kernel/storage", tags=["kernel-storage"])
@@ -64,6 +64,7 @@ async def create_collection(
 ):
     """Create a new collection."""
     check_capability(ctx, "storage:write")
+    await check_quota(ctx, "api_calls", audit)
     collection = await repo.create_collection(
         app_id, body.name, parent_id=body.parent_id
     )
@@ -81,6 +82,7 @@ async def delete_collection(
 ):
     """Delete a collection and all its documents."""
     check_capability(ctx, "storage:write")
+    await check_quota(ctx, "api_calls", audit)
     deleted = await repo.delete_collection(app_id, collection_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Collection not found")
@@ -128,6 +130,7 @@ async def create_document(
 ):
     """Create a new document."""
     check_capability(ctx, "storage:write")
+    await check_quota(ctx, "api_calls", audit)
     doc = await repo.create_document(
         app_id,
         body.name,
@@ -151,6 +154,7 @@ async def update_document(
 ):
     """Update a document."""
     check_capability(ctx, "storage:write")
+    await check_quota(ctx, "api_calls", audit)
     doc = await repo.update_document(
         app_id,
         document_id,
@@ -175,6 +179,7 @@ async def delete_document(
 ):
     """Delete a document."""
     check_capability(ctx, "storage:write")
+    await check_quota(ctx, "api_calls", audit)
     deleted = await repo.delete_document(app_id, document_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found")

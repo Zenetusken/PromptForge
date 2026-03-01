@@ -40,6 +40,10 @@ async def lifespan(app: FastAPI):
 
     await init_db(app_registry=registry)
 
+    # Restore persisted app enable/disable states from the database.
+    # Disabled apps won't get routers mounted or on_startup() called.
+    await registry.restore_app_states(async_session_factory)
+
     # Validate configured LLM provider early so operators get immediate feedback
     env_provider = config.LLM_PROVIDER
     if env_provider:
@@ -65,7 +69,10 @@ async def lifespan(app: FastAPI):
     # Store kernel reference on registry for access by kernel routers
     registry.kernel = kernel
 
-    # Register core services
+    # Register core services.
+    # Note: "storage" and "vfs" are registered as *classes* (not instances)
+    # because they require a per-request AsyncSession. Apps and routers
+    # instantiate them via RepoClass(session) in each request handler.
     services.register("llm", kernel.get_provider)
     services.register("db", async_session_factory)
 
@@ -77,8 +84,8 @@ async def lifespan(app: FastAPI):
 
     from kernel.bus.event_bus import EventBus
     from kernel.bus.contracts import ContractRegistry
-    event_bus = EventBus()
     contract_registry = ContractRegistry()
+    event_bus = EventBus(contract_registry=contract_registry)
     services.register("bus", event_bus)
     services.register("contracts", contract_registry)
 

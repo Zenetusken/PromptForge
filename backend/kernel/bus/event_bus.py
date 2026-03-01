@@ -11,7 +11,10 @@ import logging
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from kernel.bus.contracts import ContractRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +35,10 @@ class EventBus:
     Thread-safe for concurrent async operations within a single event loop.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, contract_registry: ContractRegistry | None = None) -> None:
         self._subscriptions: dict[str, list[Subscription]] = defaultdict(list)
         self._all_subscriptions: dict[str, Subscription] = {}
+        self._contract_registry = contract_registry
 
     def subscribe(
         self,
@@ -79,10 +83,32 @@ class EventBus:
     def publish(self, event_type: str, data: dict, source_app: str) -> None:
         """Publish an event to all subscribers (fire-and-forget).
 
+        If a ContractRegistry is set and has a contract for this event type,
+        the payload is validated before dispatch. Invalid payloads are blocked.
+        Events without contracts publish with a debug-level warning.
+
         Handlers are scheduled as asyncio tasks. Exceptions are logged
         but do not propagate. Events are also forwarded to the SSE relay
         channel so the frontend bridge receives them.
         """
+        # Contract validation
+        if self._contract_registry and event_type != self.SSE_RELAY_CHANNEL:
+            contract = self._contract_registry.get_contract(event_type)
+            if contract:
+                try:
+                    self._contract_registry.validate_publish(event_type, data)
+                except Exception:
+                    logger.error(
+                        "Event %r from %r blocked: payload failed contract validation",
+                        event_type, source_app, exc_info=True,
+                    )
+                    return
+            else:
+                logger.debug(
+                    "Event %r from %r has no registered contract — publishing unvalidated",
+                    event_type, source_app,
+                )
+
         subs = self._subscriptions.get(event_type, [])
         for sub in subs:
             asyncio.create_task(

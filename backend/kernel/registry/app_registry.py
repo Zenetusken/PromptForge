@@ -167,6 +167,57 @@ class AppRegistry:
                 )
         return tools
 
+    def enable_app(self, app_id: str) -> AppRecord | None:
+        """Enable a previously disabled app."""
+        record = self._apps.get(app_id)
+        if not record:
+            return None
+        record.status = AppStatus.ENABLED
+        record.error = None
+        logger.info("Enabled app %r", app_id)
+        return record
+
+    def disable_app(self, app_id: str) -> AppRecord | None:
+        """Disable an enabled app."""
+        record = self._apps.get(app_id)
+        if not record:
+            return None
+        record.status = AppStatus.DISABLED
+        logger.info("Disabled app %r", app_id)
+        return record
+
+    async def persist_app_states(self, session_factory) -> None:
+        """Persist current app states to the database via kernel settings."""
+        states = {
+            app_id: record.status
+            for app_id, record in self._apps.items()
+        }
+        async with session_factory() as session:
+            from kernel.repositories.app_settings import AppSettingsRepository
+            repo = AppSettingsRepository(session)
+            await repo.set_all("__kernel__", {"app_states": json.dumps(states)})
+            await session.commit()
+        logger.debug("Persisted app states: %s", states)
+
+    async def restore_app_states(self, session_factory) -> None:
+        """Restore persisted app states from the database."""
+        try:
+            async with session_factory() as session:
+                from kernel.repositories.app_settings import AppSettingsRepository
+                repo = AppSettingsRepository(session)
+                settings = await repo.get_all("__kernel__")
+                raw = settings.get("app_states")
+                if not raw:
+                    return
+                states = json.loads(raw)
+                for app_id, status in states.items():
+                    record = self._apps.get(app_id)
+                    if record and status == AppStatus.DISABLED:
+                        record.status = AppStatus.DISABLED
+                        logger.info("Restored app %r as DISABLED", app_id)
+        except Exception:
+            logger.debug("Could not restore app states (first boot?)", exc_info=True)
+
     def mount_routers(
         self, fastapi_app: FastAPI, exclude: set[str] | None = None
     ) -> None:
