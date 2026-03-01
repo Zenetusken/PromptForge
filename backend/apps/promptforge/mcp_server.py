@@ -20,10 +20,16 @@ Tools:
   - create_project: Create a new project
   - add_prompt: Add a prompt to a project
   - update_prompt: Update prompt content (auto-versions)
-  - set_project_context: Set or clear codebase context profile on a project
+  - set_project_context: Set or clear project context profile on a project
   - batch: Optimize multiple prompts in one call
   - cancel: Cancel a running optimization
   - sync_workspace: Sync workspace context from Claude Code or external tools
+  - get_children: List direct children (folders and prompts) of a folder or root
+  - move: Move a folder or prompt to a new parent folder (or root)
+  - add_source: Add a knowledge source document to a project
+  - update_source: Update a knowledge source (title, content, enabled)
+  - delete_source: Delete a knowledge source
+  - list_sources: List knowledge sources for a project
 """
 
 import contextvars
@@ -81,7 +87,6 @@ from apps.promptforge.routers._audit import audit_log
 from apps.promptforge.schemas.context import (
     codebase_context_from_dict,
     context_to_dict,
-    merge_contexts,
 )
 from apps.promptforge.services.mcp_activity import MCPEventType
 from apps.promptforge.services.pipeline import run_pipeline
@@ -413,7 +418,7 @@ async def promptforge_optimize(
     secondary_frameworks: Annotated[list[str] | None, Field(description="Secondary frameworks (max 2) to combine with strategy. Use the strategies tool for valid values.")] = None,  # noqa: E501
     prompt_id: Annotated[str | None, Field(description="UUID of an existing project prompt to link this optimization to")] = None,  # noqa: E501
     version: Annotated[str | None, Field(description="Version label in 'v<number>' format (e.g. 'v1', 'v2')")] = None,  # noqa: E501
-    codebase_context: Annotated[dict | None, Field(description="Optional codebase context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in a real project.")] = None,  # noqa: E501
+    codebase_context: Annotated[dict | None, Field(description="Optional project context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in project knowledge.")] = None,  # noqa: E501
     max_iterations: Annotated[int | None, Field(description="Max refinement iterations (1-5). Pipeline loops optimize+validate until score_threshold met.")] = None,  # noqa: E501
     score_threshold: Annotated[float | None, Field(description="Target overall score (0.0-1.0). Pipeline iterates until reached.")] = None,  # noqa: E501
 ) -> dict[str, object]:
@@ -500,17 +505,9 @@ async def promptforge_optimize(
                 if auto_prompt_id:
                     opt_record.prompt_id = auto_prompt_id
 
-        # Context resolution: workspace auto-context → manual profile → explicit request
-        from apps.promptforge.repositories.workspace import WorkspaceRepository
-        explicit_context = codebase_context_from_dict(codebase_context)
-        workspace_context = None
-        project_context = None
-        if project:
-            ws_repo = WorkspaceRepository(session)
-            workspace_context = await ws_repo.get_workspace_context_by_project_name(project)
-            project_context = await ProjectRepository(session).get_context_by_name(project)
-        base_context = merge_contexts(workspace_context, project_context)  # manual wins
-        resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
+        # Context resolution: kernel Knowledge Base → per-request override
+        from apps.promptforge.services.context_resolver import resolve_project_context
+        resolved_context = await resolve_project_context(session, project, codebase_context)
 
         # Snapshot on optimization record
         if resolved_context:
@@ -587,7 +584,7 @@ async def promptforge_retry(
     ctx: Context,
     strategy: Annotated[str | None, Field(description="Override strategy for the retry. Use the strategies tool for valid values.")] = None,  # noqa: E501
     secondary_frameworks: Annotated[list[str] | None, Field(description="Override secondary frameworks (max 2). Use the strategies tool for valid values.")] = None,  # noqa: E501
-    codebase_context: Annotated[dict | None, Field(description="Optional codebase context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in a real project.")] = None,  # noqa: E501
+    codebase_context: Annotated[dict | None, Field(description="Optional project context dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns. Grounds the optimization in project knowledge.")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Re-run an optimization, optionally with a different strategy.
 
@@ -1225,7 +1222,7 @@ async def promptforge_create_project(
     name: Annotated[str, Field(description="Unique project name (1-100 chars)")],
     description: Annotated[str | None, Field(description="Project description (max 2000 chars)")] = None,  # noqa: E501
     parent_id: Annotated[str | None, Field(description="Parent folder ID. Null or omit for root-level.")] = None,  # noqa: E501
-    context_profile: Annotated[dict | None, Field(description="Codebase context profile dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,  # noqa: E501
+    context_profile: Annotated[dict | None, Field(description="Project context profile dict with keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,  # noqa: E501
 ) -> dict[str, object]:
     """Create a new project or reactivate a soft-deleted one with the same name.
 
@@ -1263,6 +1260,10 @@ async def promptforge_create_project(
                         existing.context_profile = ctx_json
                     existing.updated_at = datetime.now(timezone.utc)
                     await session.flush()
+                    if context_profile:
+                        await _sync_context_to_kernel(
+                            session, existing.id, name, context_profile,
+                        )
                     await session.commit()
                     invalidate_stats_cache()
                     await audit_log(
@@ -1279,6 +1280,10 @@ async def promptforge_create_project(
             )
         except ValueError as exc:
             raise ToolError(str(exc)) from exc
+        if context_profile:
+            await _sync_context_to_kernel(
+                session, project.id, name, context_profile,
+            )
         await session.commit()
         invalidate_stats_cache()
         await audit_log("create", "project", resource_id=project.id, details={"name": name})
@@ -1394,7 +1399,7 @@ async def promptforge_update_prompt(
 @mcp.tool(
     name="set_project_context",
     description=(
-        "Set or clear the codebase context profile on a project. "
+        "Set or clear the project context profile on a project. "
         "Context profiles are automatically resolved during optimization "
         "when a project name is specified."
     ),
@@ -1408,14 +1413,17 @@ async def promptforge_update_prompt(
 @_mcp_tracked("set_project_context")
 async def promptforge_set_project_context(
     project_id: Annotated[str, Field(description="UUID of the project to update")],
-    context_profile: Annotated[dict | None, Field(description="Codebase context profile dict. Pass null to clear. Keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,  # noqa: E501
+    context_profile: Annotated[dict | None, Field(description="Project context profile dict. Pass null to clear. Keys: language, framework, description, conventions, patterns, code_snippets, documentation, test_framework, test_patterns.")] = None,  # noqa: E501
 ) -> dict[str, object]:
-    """Set or clear the codebase context profile on a project.
+    """Set or clear the project context profile.
 
-    Returns the updated project record with context_profile included.
+    Writes identity fields to the kernel Knowledge Base profile and
+    app-specific hints (conventions, patterns, test_patterns) to metadata_json.
+    Also updates the legacy context_profile column for backward compatibility.
     """
     _validate_uuid(project_id, "project_id")
 
+    # Legacy: keep context_profile in sync
     ctx_json: str | None = None
     if context_profile:
         ctx = codebase_context_from_dict(context_profile)
@@ -1431,7 +1439,14 @@ async def promptforge_set_project_context(
         if project.status == ProjectStatus.ARCHIVED:
             raise ToolError(f"Cannot modify archived project: {project.name}")
 
+        # Legacy update
         await proj_repo.update(project, context_profile=ctx_json)
+
+        # Kernel Knowledge Base update
+        await _sync_context_to_kernel(
+            session, project_id, project.name, context_profile,
+        )
+
         await session.commit()
         await audit_log("update", "project", resource_id=project_id)
 
@@ -1463,7 +1478,7 @@ async def promptforge_batch(
     tags: Annotated[list[str] | None, Field(description="Tags for all results")] = None,
     codebase_context: Annotated[
         dict | None,
-        Field(description="Codebase context for all prompts in the batch"),
+        Field(description="Project context for all prompts in the batch"),
     ] = None,
 ) -> dict[str, object]:
     """Optimize multiple prompts sequentially. Failed items don't stop the batch.
@@ -1488,19 +1503,10 @@ async def promptforge_batch(
                 f" Valid: {', '.join(sorted(valid_strategies))}"
             )
 
-    # Resolve project context once for the entire batch (3-layer: workspace → manual → explicit)
-    from apps.promptforge.repositories.workspace import WorkspaceRepository
-    explicit_context = codebase_context_from_dict(codebase_context)
-    resolved_context = None
-    if project:
-        async with _repo_session() as (_repo, session):
-            ws_repo = WorkspaceRepository(session)
-            workspace_context = await ws_repo.get_workspace_context_by_project_name(project)
-            project_context = await ProjectRepository(session).get_context_by_name(project)
-            base_context = merge_contexts(workspace_context, project_context)  # manual wins
-            resolved_context = merge_contexts(base_context, explicit_context)  # per-request wins
-    elif explicit_context:
-        resolved_context = explicit_context
+    # Resolve project context once for the entire batch
+    from apps.promptforge.services.context_resolver import resolve_project_context
+    async with _repo_session() as (_repo, session):
+        resolved_context = await resolve_project_context(session, project, codebase_context)
 
     results: list[dict[str, object]] = []
     completed = 0
@@ -1645,7 +1651,7 @@ async def promptforge_cancel(
     description=(
         "Sync workspace context from a local codebase to a PromptForge project. "
         "For Claude Code CLI users: pass repo metadata, file tree, and dependencies. "
-        "Creates or updates a workspace link with auto-detected codebase context. "
+        "Creates or updates a workspace link with auto-detected project context. "
         "This context serves as the base layer — manual context overrides it."
     ),
     annotations=ToolAnnotations(
@@ -1736,6 +1742,17 @@ async def promptforge_sync_workspace(
             dependencies_snapshot=deps or None,
             file_tree_snapshot=file_tree[:500] if file_tree else None,
         )
+
+        # Sync to kernel Knowledge Base auto_detected_json
+        from kernel.repositories.knowledge import KnowledgeRepository
+
+        knowledge_repo = KnowledgeRepository(session)
+        kp = await knowledge_repo.get_or_create_profile(
+            "promptforge", project_info.id, project,
+        )
+        if ctx_dict:
+            await knowledge_repo.update_auto_detected(kp["id"], ctx_dict)
+
         await session.commit()
 
     await audit_log("sync_workspace", "workspace", details={"project": project})
@@ -1871,6 +1888,281 @@ async def promptforge_move(
         return {"success": True, "node": node}
 
 
+async def _sync_context_to_kernel(
+    session, project_id: str, project_name: str,
+    context_profile: dict | None,
+) -> None:
+    """Write context_profile fields to the kernel Knowledge Base.
+
+    Shared helper used by both ``create_project`` and ``set_project_context``
+    to avoid duplicated kernel-write logic.
+    """
+    from kernel.repositories.knowledge import KnowledgeRepository
+
+    knowledge_repo = KnowledgeRepository(session)
+    kp = await knowledge_repo.get_or_create_profile(
+        "promptforge", project_id, project_name,
+    )
+
+    if context_profile:
+        identity_fields = {}
+        for key in ("language", "framework", "description", "test_framework"):
+            if key in context_profile:
+                identity_fields[key] = context_profile[key]
+
+        metadata = {}
+        for key in ("conventions", "patterns", "test_patterns"):
+            val = context_profile.get(key)
+            if val:
+                metadata[key] = val
+
+        if identity_fields:
+            await knowledge_repo.update_profile(kp["id"], **identity_fields)
+        if metadata:
+            await knowledge_repo.update_profile(kp["id"], metadata_json=metadata)
+    else:
+        # Clear: reset identity and metadata
+        await knowledge_repo.update_profile(
+            kp["id"],
+            language=None, framework=None, description=None, test_framework=None,
+            metadata_json={},
+        )
+
+
+def _mcp_source_response(source: dict, project_id: str | None = None) -> dict[str, object]:
+    """Standard MCP response shape for a knowledge source.
+
+    The kernel stores ``profile_id`` but MCP clients expect ``project_id``
+    (the PromptForge entity_id). When ``project_id`` is not given, the
+    ``profile_id`` field from the source dict is omitted from the response
+    (callers that know the project_id should pass it explicitly).
+    """
+    resp: dict[str, object] = {
+        "id": source["id"],
+        "title": source["title"],
+        "source_type": source["source_type"],
+        "char_count": source["char_count"],
+        "enabled": source["enabled"],
+        "order_index": source["order_index"],
+        "created_at": source["created_at"],
+        "updated_at": source["updated_at"],
+    }
+    if project_id is not None:
+        resp["project_id"] = project_id
+    return resp
+
+
+# --- Tool 23: add_source ---
+
+@mcp.tool(
+    name="add_source",
+    description=(
+        "Add a knowledge source document to a project. Sources are named "
+        "reference documents (like NotebookLM sources) that automatically "
+        "flow through all 4 pipeline stages."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
+@_mcp_tracked("add_source")
+async def promptforge_add_source(
+    project_id: Annotated[str, Field(description="UUID of the project")],
+    title: Annotated[str, Field(description="Source title (1-200 chars)")],
+    content: Annotated[str, Field(description="Source content (1-100,000 chars)")],
+    source_type: Annotated[
+        str | None,
+        Field(description="Type: document, paste, api_reference, specification, notes"),
+    ] = None,
+) -> dict[str, object]:
+    """Add a knowledge source to a project. Returns the source record."""
+    _validate_uuid(project_id, "project_id")
+    if not title or not title.strip():
+        raise ToolError("Source title must not be empty")
+    if len(title) > 200:
+        raise ToolError("Source title must be 200 characters or fewer")
+    if not content or not content.strip():
+        raise ToolError("Source content must not be empty")
+    if len(content) > 100_000:
+        raise ToolError("Source content must be 100,000 characters or fewer")
+
+    async with async_session_factory() as session:
+        proj_repo = ProjectRepository(session)
+        project = await proj_repo.get_by_id(project_id, load_prompts=False)
+        if not project or project.status == ProjectStatus.DELETED:
+            raise ToolError(f"Project not found: {project_id}")
+        if project.status == ProjectStatus.ARCHIVED:
+            raise ToolError(f"Cannot add sources to archived project: {project.name}")
+
+        from kernel.repositories.knowledge import KnowledgeRepository
+
+        knowledge_repo = KnowledgeRepository(session)
+        kp = await knowledge_repo.get_or_create_profile(
+            "promptforge", project_id, project.name,
+        )
+        try:
+            source = await knowledge_repo.create_source(
+                profile_id=kp["id"],
+                title=title.strip(),
+                content=content,
+                source_type=source_type or "document",
+            )
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+
+        await session.commit()
+        await audit_log(
+            "create", "source",
+            resource_id=source["id"], details={"project_id": project_id},
+        )
+        return _mcp_source_response(source, project_id=project_id)
+
+
+# --- Tool 24: update_source ---
+
+@mcp.tool(
+    name="update_source",
+    description=(
+        "Update a knowledge source's title, content, or enabled state."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
+@_mcp_tracked("update_source")
+async def promptforge_update_source(
+    source_id: Annotated[str, Field(description="UUID of the source to update")],
+    title: Annotated[str | None, Field(description="New title (1-200 chars)")] = None,
+    content: Annotated[str | None, Field(description="New content (1-100,000 chars)")] = None,
+    enabled: Annotated[bool | None, Field(description="Enable or disable the source")] = None,
+) -> dict[str, object]:
+    """Update a knowledge source. Returns the updated record."""
+    _validate_uuid(source_id, "source_id")
+    if title is not None and (not title.strip() or len(title) > 200):
+        raise ToolError("Source title must be 1-200 characters")
+    if content is not None and (not content.strip() or len(content) > 100_000):
+        raise ToolError("Source content must be 1-100,000 characters")
+
+    async with async_session_factory() as session:
+        from kernel.repositories.knowledge import KnowledgeRepository
+
+        knowledge_repo = KnowledgeRepository(session)
+        source = await knowledge_repo.get_source(source_id)
+        if not source:
+            raise ToolError(f"Source not found: {source_id}")
+
+        updates = {}
+        if title is not None:
+            updates["title"] = title.strip()
+        if content is not None:
+            updates["content"] = content
+        if enabled is not None:
+            updates["enabled"] = enabled
+
+        if updates:
+            try:
+                source = await knowledge_repo.update_source(source_id, **updates)
+            except ValueError as exc:
+                raise ToolError(str(exc)) from exc
+        await session.commit()
+        await audit_log("update", "source", resource_id=source_id)
+        return _mcp_source_response(source)
+
+
+# --- Tool 25: delete_source ---
+
+@mcp.tool(
+    name="delete_source",
+    description="Permanently delete a knowledge source from a project.",
+    annotations=ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=True,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
+@_mcp_tracked("delete_source")
+async def promptforge_delete_source(
+    source_id: Annotated[str, Field(description="UUID of the source to delete")],
+) -> dict[str, object]:
+    """Delete a knowledge source. Returns confirmation."""
+    _validate_uuid(source_id, "source_id")
+
+    async with async_session_factory() as session:
+        from kernel.repositories.knowledge import KnowledgeRepository
+
+        knowledge_repo = KnowledgeRepository(session)
+        source = await knowledge_repo.get_source(source_id)
+        if not source:
+            raise ToolError(f"Source not found: {source_id}")
+
+        await knowledge_repo.delete_source(source_id)
+        await session.commit()
+        await audit_log("delete", "source", resource_id=source_id)
+        return {"deleted": True, "id": source_id}
+
+
+# --- Tool 26: list_sources ---
+
+@mcp.tool(
+    name="list_sources",
+    description=(
+        "List knowledge sources for a project with optional filtering "
+        "by enabled state. Returns items, total count, and total characters."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+@_mcp_tracked("list_sources")
+async def promptforge_list_sources(
+    project_id: Annotated[str, Field(description="UUID of the project")],
+    enabled_only: Annotated[bool, Field(description="Only return enabled sources")] = False,
+) -> dict[str, object]:
+    """List knowledge sources for a project."""
+    _validate_uuid(project_id, "project_id")
+
+    async with async_session_factory() as session:
+        proj_repo = ProjectRepository(session)
+        project = await proj_repo.get_by_id(project_id, load_prompts=False)
+        if not project or project.status == ProjectStatus.DELETED:
+            raise ToolError(f"Project not found: {project_id}")
+
+        from kernel.repositories.knowledge import KnowledgeRepository
+
+        knowledge_repo = KnowledgeRepository(session)
+        kp = await knowledge_repo.get_profile("promptforge", project_id)
+        if not kp:
+            return {"items": [], "total": 0, "total_chars": 0}
+
+        items = await knowledge_repo.list_sources(kp["id"], enabled_only=enabled_only)
+        total_chars = sum(s["char_count"] for s in items)
+        return {
+            "items": [
+                {
+                    "id": s["id"],
+                    "title": s["title"],
+                    "source_type": s["source_type"],
+                    "char_count": s["char_count"],
+                    "enabled": s["enabled"],
+                    "order_index": s["order_index"],
+                }
+                for s in items
+            ],
+            "total": len(items),
+            "total_chars": total_chars,
+        }
+
+
 # --- MCP Resources ---
 # Expose PromptForge data for bi-directional context flow with Claude Code.
 
@@ -1889,7 +2181,7 @@ async def resource_projects() -> str:
 
 @mcp.resource("promptforge://projects/{project_id}/context")
 async def resource_project_context(project_id: str) -> str:
-    """Single project's codebase context profile as JSON."""
+    """Single project's context profile as JSON."""
     _validate_uuid(project_id, "project_id")
     async with async_session_factory() as session:
         proj_repo = ProjectRepository(session)
