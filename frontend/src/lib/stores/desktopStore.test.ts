@@ -1010,4 +1010,79 @@ describe('DesktopStore', () => {
 			expect(windowManager.startMenuOpen).toBe(false);
 		});
 	});
+
+	describe('getDbNodeInfo', () => {
+		it('returns project type for db-folder- prefixed IDs', () => {
+			const result = desktopStore.getDbNodeInfo('db-folder-abc-123');
+			expect(result).toEqual({ type: 'project', id: 'abc-123' });
+		});
+
+		it('returns prompt type for db-prompt- prefixed IDs', () => {
+			const result = desktopStore.getDbNodeInfo('db-prompt-xyz-456');
+			expect(result).toEqual({ type: 'prompt', id: 'xyz-456' });
+		});
+
+		it('returns null for system icons', () => {
+			expect(desktopStore.getDbNodeInfo('sys-forge-ide')).toBeNull();
+		});
+
+		it('returns null for shortcut icons', () => {
+			expect(desktopStore.getDbNodeInfo('shortcut-code-review')).toBeNull();
+		});
+	});
+
+	describe('moveToDialog', () => {
+		it('starts closed with null iconId', () => {
+			expect(desktopStore.moveToDialog.open).toBe(false);
+			expect(desktopStore.moveToDialog.iconId).toBeNull();
+		});
+
+		it('closeMoveToDialog resets state', () => {
+			desktopStore.moveToDialog = { open: true, iconId: 'db-folder-test' };
+			desktopStore.closeMoveToDialog();
+			expect(desktopStore.moveToDialog.open).toBe(false);
+			expect(desktopStore.moveToDialog.iconId).toBeNull();
+		});
+
+		it('move-to context action opens dialog for DB folder icons', () => {
+			// Add a DB folder icon first
+			desktopStore.syncDbFolders([{ id: 'folder-1', name: 'Test Folder', type: 'folder' } as any]);
+			const iconId = 'db-folder-folder-1';
+			desktopStore.openContextMenu(100, 200, iconId);
+			desktopStore.executeContextAction('move-to');
+			expect(desktopStore.moveToDialog.open).toBe(true);
+			expect(desktopStore.moveToDialog.iconId).toBe(iconId);
+		});
+
+		it('move-to context action opens dialog for DB prompt icons', () => {
+			desktopStore.syncDbPrompts([{ id: 'prompt-1', name: 'Test Prompt', type: 'prompt' } as any]);
+			const iconId = 'db-prompt-prompt-1';
+			desktopStore.openContextMenu(100, 200, iconId);
+			desktopStore.executeContextAction('move-to');
+			expect(desktopStore.moveToDialog.open).toBe(true);
+			expect(desktopStore.moveToDialog.iconId).toBe(iconId);
+		});
+	});
+
+	describe('DB icon context actions', () => {
+		it('DB folder icons have move-to action', () => {
+			desktopStore.syncDbFolders([{ id: 'f1', name: 'Folder', type: 'folder' } as any]);
+			const icon = desktopStore.icons.find((i) => i.id === 'db-folder-f1');
+			const actionIds = icon?.contextActions.map((a) => a.id);
+			expect(actionIds).toContain('move-to');
+			expect(actionIds).toContain('open');
+			expect(actionIds).toContain('rename');
+			expect(actionIds).toContain('delete');
+		});
+
+		it('DB prompt icons have move-to action', () => {
+			desktopStore.syncDbPrompts([{ id: 'p1', name: 'Prompt', type: 'prompt' } as any]);
+			const icon = desktopStore.icons.find((i) => i.id === 'db-prompt-p1');
+			const actionIds = icon?.contextActions.map((a) => a.id);
+			expect(actionIds).toContain('move-to');
+			expect(actionIds).toContain('open');
+			expect(actionIds).toContain('rename');
+			expect(actionIds).toContain('delete');
+		});
+	});
 });
