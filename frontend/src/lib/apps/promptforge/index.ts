@@ -110,6 +110,20 @@ const manifest: AppManifestFrontend = {
 			component: "DisplaySettingsWindow",
 			persistent: true,
 		},
+		{
+			id: "audit-log",
+			title: "Audit Log",
+			icon: "shield",
+			component: "AuditLogWindow",
+			persistent: true,
+		},
+		{
+			id: "app-manager",
+			title: "App Manager",
+			icon: "box",
+			component: "AppManagerWindow",
+			persistent: true,
+		},
 	],
 	file_types: [
 		{
@@ -216,6 +230,11 @@ const manifest: AppManifestFrontend = {
 		{ id: "sys-terminal", label: "Terminal", icon: "terminal", action: "openWindow:terminal", color: "cyan" },
 		{ id: "sys-network-monitor", label: "Network Monitor", icon: "activity", action: "openWindow:network-monitor", color: "green" },
 		{ id: "sys-workspace-hub", label: "Workspace Hub", icon: "git-branch", action: "openWindow:workspace-manager", color: "green" },
+		{ id: "sys-audit-log", label: "Audit Log", icon: "shield", action: "openWindow:audit-log", color: "red" },
+		{ id: "sys-app-manager", label: "App Manager", icon: "box", action: "openWindow:app-manager", color: "indigo" },
+	],
+	extension_slots: [
+		{ id: "review-actions", label: "Review Actions", max_extensions: 5 },
 	],
 };
 
@@ -244,6 +263,8 @@ const COMPONENT_MAP: Record<
 	DisplaySettingsWindow: () =>
 		import("$lib/components/DisplaySettingsWindow.svelte"),
 	FolderWindow: () => import("$lib/components/FolderWindow.svelte"),
+	AuditLogWindow: () => import("$lib/components/AuditLogWindow.svelte"),
+	AppManagerWindow: () => import("$lib/components/AppManagerWindow.svelte"),
 };
 
 /**

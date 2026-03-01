@@ -53,7 +53,9 @@
       { "id": "network-monitor", "title": "Network Monitor", "icon": "activity", "component": "NetworkMonitorWindow", "persistent": true },
       { "id": "recycle-bin", "title": "Recycle Bin", "icon": "trash-2", "component": "RecycleBinWindow", "persistent": true },
       { "id": "workspace-manager", "title": "Workspace Hub", "icon": "git-branch", "component": "WorkspaceWindow", "persistent": true },
-      { "id": "display-settings", "title": "Display Settings", "icon": "monitor", "component": "DisplaySettingsWindow", "persistent": true }
+      { "id": "display-settings", "title": "Display Settings", "icon": "monitor", "component": "DisplaySettingsWindow", "persistent": true },
+      { "id": "audit-log", "title": "Audit Log", "icon": "shield", "component": "AuditLogWindow", "persistent": true },
+      { "id": "app-manager", "title": "App Manager", "icon": "box", "component": "AppManagerWindow", "persistent": true }
     ],
     "file_types": [
       { "extension": ".forge", "label": "Forge Result", "icon": "zap", "color": "purple", "artifact_kind": "forge-result" },
@@ -79,7 +81,9 @@
       { "id": "window-template-library", "label": "Open Template Library", "category": "forge", "shortcut": "", "icon": "file-text" },
       { "id": "window-terminal", "label": "Open Terminal", "category": "window", "shortcut": "Ctrl+`", "icon": "terminal" },
       { "id": "window-network-monitor", "label": "Open Network Monitor", "category": "window", "shortcut": "", "icon": "activity" },
-      { "id": "window-display-settings", "label": "Display Settings", "category": "settings", "shortcut": "", "icon": "monitor" }
+      { "id": "window-display-settings", "label": "Display Settings", "category": "settings", "shortcut": "", "icon": "monitor" },
+      { "id": "window-audit-log", "label": "Open Audit Log", "category": "window", "shortcut": "", "icon": "shield" },
+      { "id": "window-app-manager", "label": "Open App Manager", "category": "window", "shortcut": "", "icon": "box" }
     ],
     "bus_events": ["forge:started", "forge:completed", "forge:failed", "forge:cancelled", "forge:progress"],
     "process_types": [
@@ -100,7 +104,12 @@
       { "id": "sys-template-library", "label": "Template Library", "icon": "file-text", "action": "openWindow:template-library", "color": "teal" },
       { "id": "sys-terminal", "label": "Terminal", "icon": "terminal", "action": "openWindow:terminal", "color": "cyan" },
       { "id": "sys-network-monitor", "label": "Network Monitor", "icon": "activity", "action": "openWindow:network-monitor", "color": "green" },
-      { "id": "sys-workspace-hub", "label": "Workspace Hub", "icon": "git-branch", "action": "openWindow:workspace-manager", "color": "green" }
+      { "id": "sys-workspace-hub", "label": "Workspace Hub", "icon": "git-branch", "action": "openWindow:workspace-manager", "color": "green" },
+      { "id": "sys-audit-log", "label": "Audit Log", "icon": "shield", "action": "openWindow:audit-log", "color": "red" },
+      { "id": "sys-app-manager", "label": "App Manager", "icon": "box", "action": "openWindow:app-manager", "color": "indigo" }
+    ],
+    "extension_slots": [
+      { "id": "review-actions", "label": "Review Actions", "max_extensions": 5 }
     ]
   }
 }

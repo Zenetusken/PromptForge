@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from kernel.registry.app_registry import AppStatus, get_app_registry
 from kernel.repositories.audit import AuditRepository
+from kernel.bus.helpers import publish_event
 from kernel.security.dependencies import get_audit_repo
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,11 @@ async def list_apps():
                 "services_satisfied": _check_services_satisfied(
                     rec.manifest.requires_services,
                 ),
+                "resource_quotas": {
+                    "max_storage_mb": rec.manifest.resource_quotas.max_storage_mb,
+                    "max_api_calls_per_hour": rec.manifest.resource_quotas.max_api_calls_per_hour,
+                    "max_documents": rec.manifest.resource_quotas.max_documents,
+                },
                 "windows": len(rec.manifest.frontend.windows),
                 "routers": len(rec.manifest.backend.routers),
             }
@@ -139,6 +145,11 @@ async def enable_app(
     await _persist_app_states(registry, kernel)
     await audit.log_action(app_id, "enable", "app", resource_id=app_id)
 
+    publish_event("kernel:app.enabled", {"app_id": app_id, "status": rec.status}, "kernel")
+    publish_event("kernel:audit.logged", {
+        "app_id": app_id, "action": "enable", "resource_type": "app",
+    }, "kernel")
+
     return {"id": app_id, "status": rec.status}
 
 
@@ -173,5 +184,10 @@ async def disable_app(
 
     await _persist_app_states(registry, kernel)
     await audit.log_action(app_id, "disable", "app", resource_id=app_id)
+
+    publish_event("kernel:app.disabled", {"app_id": app_id, "status": rec.status}, "kernel")
+    publish_event("kernel:audit.logged", {
+        "app_id": app_id, "action": "disable", "resource_type": "app",
+    }, "kernel")
 
     return {"id": app_id, "status": rec.status}
