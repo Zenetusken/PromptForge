@@ -389,9 +389,13 @@ Custom MIME type: `application/x-promptforge`
 
 | Source | Creates Payload | Accepts Drop |
 |--------|----------------|--------------|
-| FolderWindow (folder row) | `FolderDescriptor` | Yes (folders accept children) |
+| FolderWindow (folder row) | `FolderDescriptor` | Yes (folders accept children from any source) |
 | FolderWindow (prompt row) | `PromptDescriptor` | — |
 | HistoryWindow (row) | `ArtifactDescriptor` | — |
 | ProjectsWindow (prompt row) | `PromptDescriptor` | — |
 | IDE tab bar | — | Yes (opens document) |
-| Desktop | — | Yes (moves to root/desktop) |
+| Desktop (DB folder icon) | `FolderDescriptor`, source `'desktop'` | Yes (folder icons accept children) |
+| Desktop (DB prompt icon) | `PromptDescriptor`, source `'desktop'` | — |
+| Desktop (empty surface) | — | Yes (moves to root; no-op for `source: 'desktop'`) |
+
+Guards: self-drop (folder onto itself) is a no-op; desktop→desktop empty space is a no-op. System/shortcut icons use grid-repositioning drag (not HTML5 drag). "Move to..." context menu provides a non-drag alternative for DB-backed icons.

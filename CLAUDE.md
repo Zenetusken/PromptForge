@@ -80,14 +80,16 @@ backend/
     security/                      # Access control
       access.py                    # AppContext, check_capability(), check_quota()
     bus/                           # Inter-app communication
-      event_bus.py                 # EventBus — pub/sub + request/response
+      event_bus.py                 # EventBus — pub/sub + request/response + contract validation
       contracts.py                 # ContractRegistry — typed event schemas
+      helpers.py                   # publish_event() — convenience wrapper resolving bus from kernel
     database.py                    # Kernel migrations (CREATE TABLE IF NOT EXISTS)
 
   apps/
     promptforge/                   # PromptForge as an installable app
-      manifest.json                # App manifest (windows, routes, commands)
-      app.py                       # PromptForgeApp(AppBase) — lifecycle + migrations
+      manifest.json                # App manifest (windows, routes, commands, capabilities, quotas)
+      app.py                       # PromptForgeApp(AppBase) — lifecycle + migrations + event contracts
+      events.py                    # Event payload schemas + PROMPTFORGE_CONTRACTS (4 event types)
       routers/ services/ models/   # All PF business logic (moved from app/)
       schemas/ repositories/       # PF data layer
       database.py                  # PF-specific migrations
@@ -98,7 +100,8 @@ backend/
       router.py                    # /api/apps/hello-world/*
     textforge/                     # Text transformation app (exercises all kernel services)
       manifest.json                # 2 windows, 2 commands, 1 file type, 1 process type
-      app.py                       # TextForgeApp(AppBase) — validates required services
+      app.py                       # TextForgeApp(AppBase) — validates required services + event handlers
+      events.py                    # Event payload schemas + TEXTFORGE_CONTRACTS (1 event type)
       router.py                    # /api/apps/textforge/* (7 transform types)
 
   app/                             # Kernel host application
@@ -113,7 +116,9 @@ frontend/src/lib/
       appRegistry.svelte.ts        # Frontend app registry — registry-driven windows
       appSettings.svelte.ts        # Per-app settings client (reactive $state cache)
       appStorage.ts                # Per-app document storage client
-      vfs.ts                       # VFS client (folders, files, versioning, search)
+      vfs.ts                       # VFS client (folders, files, versioning, move/rename, restore, search)
+    utils/
+      errors.ts                    # KernelError + throwIfNotOk — shared error handling for kernel services
   apps/
     promptforge/                   # PromptForge frontend app
       index.ts                     # PromptForgeApp implements AppFrontend (14 windows)

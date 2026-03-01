@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+**Kernel Infrastructure Hardening**
+- VFS move/rename: `POST /vfs/{app_id}/folders/{id}/move`, `PATCH .../rename`, `POST /vfs/{app_id}/files/{id}/move`, `PATCH .../rename` with circular-reference and depth-limit validation
+- VFS version restore: `POST /vfs/{app_id}/files/{id}/versions/{version_id}/restore` — snapshots current content before overwriting
+- Frontend VFS client: `moveFolder()`, `renameFolder()`, `moveFile()`, `renameFile()`, `restoreVersion()`
+- App lifecycle API: `POST /api/kernel/apps/{id}/enable`, `POST .../disable`, `GET .../status` — invokes `on_enable`/`on_disable`/`on_shutdown`/`on_startup` hooks in correct order, persists state across restarts
+- `on_disable` lifecycle hook added to `AppBase` (no-op default)
+- Event payload schemas: `apps/promptforge/events.py` (4 contracts), `apps/textforge/events.py` (1 contract)
+- `publish_event()` helper (`kernel/bus/helpers.py`) — resolves EventBus from kernel, graceful no-op on failure
+- EventBus contract validation: `publish()` validates payloads against registered `ContractRegistry`, blocks invalid payloads
+- PromptForge publishes `optimization.started` and `optimization.completed` events; TextForge publishes `transform.completed`
+- TextForge subscribes to `promptforge:optimization.completed` (cross-app handler)
+- Capabilities and resource quotas in all app manifests (`promptforge`, `textforge`, `hello_world`)
+- Settings schema validation: PUT `/api/kernel/settings/{app_id}` rejects unknown keys (422) and type mismatches when manifest declares a schema
+- Quota enforcement (`check_quota`) in all VFS, Storage, and Settings mutation endpoints
+- Permissive fallback warning: unknown `app_id` in `get_app_context()` logs warning before granting permissive capabilities
+- Disabled apps raise 503 on all kernel service endpoints (VFS, Storage, Settings)
+- `AppRegistry.persist_app_states()` / `restore_app_states()` — disabled apps remembered and restored on boot
+
 **Kernel VFS (Virtual Filesystem)**
 - `vfs_folders`, `vfs_files`, `vfs_file_versions` kernel tables with per-app scoping and auto-versioning
 - `VfsRepository` — folder CRUD with depth validation (max 8), file CRUD with auto-version snapshots, breadcrumb path, search
@@ -32,6 +50,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Kernel auto-wires contracts and handlers from all apps during startup
 - REST API at `/api/kernel/bus/*` — `GET /contracts`, `GET /subscriptions`, `GET /events` (SSE stream)
 - `bus` and `contracts` services registered in kernel ServiceRegistry
+
+### Fixed
+
+**Kernel Bug Fixes & Polish**
+- VFS `move_folder` now cascades depth updates to all descendant folders via `_cascade_depth()` — previously only the moved folder's depth was updated, leaving children with stale depth values
+- `batch_optimize` event publishing now uses `pipeline_result.strategy` (actual strategy used) instead of `request.strategy` (user override), and includes `duration_ms` matching the streaming path
+- VFS rename endpoints (`PATCH .../rename`) catch `IntegrityError` from UNIQUE constraint violations and return 409 instead of 500
+- `bus.py` service retrieval (`_get_bus`, `_get_contracts`) now returns 503 with a clear message if EventBus or ContractRegistry services are not available, instead of crashing on `None`
+- Audit router endpoints (`GET /api/kernel/audit/{app_id}`, `GET .../usage/{app_id}`) now require `audit:read` capability — previously had no access control
+- `audit:read` added to `PERMISSIVE_CAPABILITIES` and all app manifests' optional capabilities
+- Frontend `appRegistry.destroyAll()` uses `.length = 0` instead of array reassignment for correct Svelte 5 `$state` reactivity
+- Frontend `appSettings.reset()` now consumes the response body for consistent cleanup
+- Frontend `kernel/index.ts` exports all service singletons (`appSettings`, `appStorage`, `vfs`) alongside `appRegistry`
 
 ### Changed
 
