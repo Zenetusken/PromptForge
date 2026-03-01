@@ -5,9 +5,14 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.promptforge.converters import optimization_to_summary_response
 from app.database import get_db, get_db_readonly
-from apps.promptforge.repositories.optimization import ListFilters, OptimizationRepository, Pagination
+from apps.promptforge.converters import optimization_to_summary_response
+from apps.promptforge.repositories.optimization import (
+    ListFilters,
+    OptimizationRepository,
+    Pagination,
+)
+from apps.promptforge.routers._audit import audit_log
 from apps.promptforge.schemas.optimization import (
     BulkDeleteRequest,
     BulkDeleteResponse,
@@ -132,6 +137,7 @@ async def clear_all_history(
     if count == 0:
         return {"message": "No records to delete", "deleted_count": 0}
 
+    await audit_log("clear_all", "optimization", details={"count": count})
     return {"message": f"Deleted {count} records", "deleted_count": count}
 
 
@@ -145,6 +151,7 @@ async def bulk_delete_optimizations(
     deleted_ids, not_found_ids = await repo.delete_by_ids(payload.ids)
     if deleted_ids:
         invalidate_stats_cache()
+        await audit_log("bulk_delete", "optimization", details={"count": len(deleted_ids)})
     return BulkDeleteResponse(
         deleted_count=len(deleted_ids),
         deleted_ids=deleted_ids,
@@ -165,6 +172,7 @@ async def delete_optimization(
         raise HTTPException(status_code=404, detail="Optimization not found")
 
     invalidate_stats_cache()
+    await audit_log("delete", "optimization", resource_id=optimization_id)
     return {"message": "Optimization deleted", "id": optimization_id}
 
 

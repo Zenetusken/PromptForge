@@ -12,6 +12,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config
+from app.database import get_db, get_db_readonly
+from app.middleware.sanitize import sanitize_text
+from app.providers import LLMProvider, get_provider
+from app.providers.errors import ProviderError
 from apps.promptforge.constants import OptimizationStatus
 from apps.promptforge.converters import (
     compute_score_deltas,
@@ -20,11 +24,7 @@ from apps.promptforge.converters import (
     optimization_to_response,
     update_optimization_status,
 )
-from app.database import get_db, get_db_readonly
-from app.middleware.sanitize import sanitize_text
 from apps.promptforge.models.optimization import Optimization
-from app.providers import LLMProvider, get_provider
-from app.providers.errors import ProviderError
 from apps.promptforge.repositories.optimization import OptimizationRepository
 from apps.promptforge.repositories.project import (
     ProjectRepository,
@@ -32,6 +32,7 @@ from apps.promptforge.repositories.project import (
     ensure_prompt_in_project,
 )
 from apps.promptforge.repositories.workspace import WorkspaceRepository
+from apps.promptforge.routers._audit import audit_log
 from apps.promptforge.schemas.context import (
     CodebaseContext,
     codebase_context_from_dict,
@@ -39,7 +40,11 @@ from apps.promptforge.schemas.context import (
     merge_contexts,
 )
 from apps.promptforge.schemas.optimization import OptimizationResponse, OptimizeRequest
-from apps.promptforge.services.pipeline import PipelineComplete, run_pipeline, run_pipeline_streaming
+from apps.promptforge.services.pipeline import (
+    PipelineComplete,
+    run_pipeline,
+    run_pipeline_streaming,
+)
 from apps.promptforge.services.stats_cache import invalidate_stats_cache
 from kernel.bus.helpers import publish_event
 
@@ -79,31 +84,15 @@ async def _resolve_context(
 
 async def _audit_log_optimization(opt_id: str, final_data: dict) -> None:
     """Log an optimization audit entry and publish bus event for live updates."""
-    try:
-        from app.database import async_session_factory
-        from kernel.repositories.audit import AuditRepository
-
-        async with async_session_factory() as session:
-            repo = AuditRepository(session)
-            await repo.log_action(
-                "promptforge", "optimize", "optimization",
-                resource_id=opt_id,
-                details={
-                    "strategy": final_data.get("strategy"),
-                    "score": final_data.get("overall_score"),
-                },
-            )
-            await session.commit()
-
-        # Publish bus event so AuditLogWindow auto-refreshes
-        publish_event("kernel:audit.logged", {
-            "app_id": "promptforge",
-            "action": "optimize",
-            "resource_type": "optimization",
-            "resource_id": opt_id,
-        }, "kernel")
-    except Exception:
-        logger.debug("Audit log failed for optimization %s", opt_id, exc_info=True)
+    await audit_log(
+        "optimize",
+        "optimization",
+        resource_id=opt_id,
+        details={
+            "strategy": final_data.get("strategy"),
+            "score": final_data.get("overall_score"),
+        },
+    )
 
 
 def _create_streaming_response(
@@ -268,7 +257,7 @@ async def optimize_prompt(
     # Quota enforcement — check before creating any DB record
     try:
         from kernel.repositories.audit import AuditRepository
-        from kernel.security.access import AppContext, check_quota
+        from kernel.security.access import check_quota
         from kernel.security.dependencies import get_app_context
         ctx = get_app_context("promptforge")
         audit_repo = AuditRepository(db)
@@ -429,6 +418,7 @@ async def orchestrate_analyze(
     except (ProviderError, Exception) as exc:
         logger.exception("Orchestrate analyze failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    await audit_log("analyze", "pipeline_step")
     return _timed_result(result, start)
 
 
@@ -460,6 +450,7 @@ async def orchestrate_strategy(
     except (ProviderError, Exception) as exc:
         logger.exception("Orchestrate strategy failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    await audit_log("strategy", "pipeline_step")
     return _timed_result(result, start)
 
 
@@ -492,6 +483,7 @@ async def orchestrate_optimize(
     except (ProviderError, Exception) as exc:
         logger.exception("Orchestrate optimize failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    await audit_log("optimize_step", "pipeline_step")
     return _timed_result(result, start)
 
 
@@ -516,6 +508,7 @@ async def orchestrate_validate(
     except (ProviderError, Exception) as exc:
         logger.exception("Orchestrate validate failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    await audit_log("validate", "pipeline_step")
     return _timed_result(result, start)
 
 
@@ -546,6 +539,7 @@ async def cancel_optimization(
     await db.commit()
     invalidate_stats_cache()
 
+    await audit_log("cancel", "optimization", resource_id=optimization_id)
     return {"id": optimization_id, "status": "cancelled"}
 
 

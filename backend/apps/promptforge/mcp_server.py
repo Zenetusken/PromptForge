@@ -44,7 +44,14 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from apps.promptforge.constants import LEGACY_STRATEGY_ALIASES, OptimizationStatus, ProjectStatus, Strategy
+from app.database import async_session_factory, engine, init_db
+from app.providers.errors import ProviderError
+from apps.promptforge.constants import (
+    LEGACY_STRATEGY_ALIASES,
+    OptimizationStatus,
+    ProjectStatus,
+    Strategy,
+)
 from apps.promptforge.converters import (
     _SCORE_FIELDS,
     compute_score_deltas,
@@ -55,10 +62,8 @@ from apps.promptforge.converters import (
     update_optimization_status,
     with_display_and_raw_scores,
 )
-from app.database import async_session_factory, engine, init_db
 from apps.promptforge.models.optimization import Optimization
 from apps.promptforge.models.project import Project, Prompt
-from app.providers.errors import ProviderError
 from apps.promptforge.repositories.optimization import (
     _UNSET,
     ListFilters,
@@ -72,6 +77,7 @@ from apps.promptforge.repositories.project import (
     ensure_project_by_name,
     ensure_prompt_in_project,
 )
+from apps.promptforge.routers._audit import audit_log
 from apps.promptforge.schemas.context import (
     codebase_context_from_dict,
     context_to_dict,
@@ -80,7 +86,10 @@ from apps.promptforge.schemas.context import (
 from apps.promptforge.services.mcp_activity import MCPEventType
 from apps.promptforge.services.pipeline import run_pipeline
 from apps.promptforge.services.stats_cache import get_stats_cached, invalidate_stats_cache
-from apps.promptforge.services.strategy_selector import _STRATEGY_DESCRIPTIONS, _STRATEGY_REASON_MAP
+from apps.promptforge.services.strategy_selector import (
+    _STRATEGY_DESCRIPTIONS,
+    _STRATEGY_REASON_MAP,
+)
 from apps.promptforge.utils.scores import score_to_display
 
 logger = logging.getLogger(__name__)
@@ -338,7 +347,10 @@ async def lifespan(server: FastMCP):
         try:
             server.tool()(tool_fn)
         except Exception as exc:
-            logger.warning("Failed to register app MCP tool %s: %s", getattr(tool_fn, "__name__", "?"), exc)
+            logger.warning(
+                "Failed to register app MCP tool %s: %s",
+                getattr(tool_fn, "__name__", "?"), exc,
+            )
     if app_tools:
         logger.info("Registered %d app MCP tool(s)", len(app_tools))
 
@@ -933,6 +945,7 @@ async def promptforge_tag(
         await session.commit()
         if project is not None:
             invalidate_stats_cache()
+        await audit_log("update", "optimization", resource_id=optimization_id)
         return result
 
 
@@ -1004,6 +1017,7 @@ async def promptforge_delete(
 
         await session.commit()
         invalidate_stats_cache()
+        await audit_log("delete", "optimization", resource_id=optimization_id)
         return {"deleted": True, "id": optimization_id}
 
 
@@ -1041,6 +1055,10 @@ async def promptforge_bulk_delete(
         await session.commit()
         if deleted_ids:
             invalidate_stats_cache()
+            await audit_log(
+                "bulk_delete", "optimization",
+                details={"count": len(deleted_ids)},
+            )
         return {
             "deleted_count": len(deleted_ids),
             "deleted_ids": deleted_ids,
@@ -1247,6 +1265,10 @@ async def promptforge_create_project(
                     await session.flush()
                     await session.commit()
                     invalidate_stats_cache()
+                    await audit_log(
+                        "create", "project",
+                        resource_id=existing.id, details={"name": name},
+                    )
                     return _project_to_dict(existing, include_context=True)
                 raise ToolError(f"Project already exists: {name!r}")
 
@@ -1259,6 +1281,7 @@ async def promptforge_create_project(
             raise ToolError(str(exc)) from exc
         await session.commit()
         invalidate_stats_cache()
+        await audit_log("create", "project", resource_id=project.id, details={"name": name})
         return _project_to_dict(project, include_context=True)
 
 
@@ -1303,6 +1326,10 @@ async def promptforge_add_prompt(
 
         prompt = await proj_repo.add_prompt(project, content)
         await session.commit()
+        await audit_log(
+            "create", "prompt",
+            resource_id=prompt.id, details={"project_id": project_id},
+        )
         return _prompt_to_dict(prompt)
 
 
@@ -1358,6 +1385,7 @@ async def promptforge_update_prompt(
             prompt, content=content, optimization_id=optimization_id,
         )
         await session.commit()
+        await audit_log("update", "prompt", resource_id=prompt_id)
         return _prompt_to_dict(prompt)
 
 
@@ -1405,6 +1433,7 @@ async def promptforge_set_project_context(
 
         await proj_repo.update(project, context_profile=ctx_json)
         await session.commit()
+        await audit_log("update", "project", resource_id=project_id)
 
         return _project_to_dict(project, include_context=True)
 
@@ -1549,6 +1578,7 @@ async def promptforge_batch(
 
     if completed > 0:
         invalidate_stats_cache()
+        await audit_log("batch_optimize", "optimization", details={"count": len(prompts)})
 
     await ctx.report_progress(1.0, 1.0, "Batch complete")
     await _emit_tool_progress(1.0, "Batch complete")
@@ -1597,6 +1627,7 @@ async def promptforge_cancel(
         await session.commit()
         invalidate_stats_cache()
 
+    await audit_log("cancel", "optimization", resource_id=optimization_id)
     return {"id": optimization_id, "status": "cancelled"}
 
 
@@ -1700,6 +1731,7 @@ async def promptforge_sync_workspace(
         )
         await session.commit()
 
+    await audit_log("sync_workspace", "workspace", details={"project": project})
     return {
         "id": link.id,
         "project": project,
@@ -1828,6 +1860,7 @@ async def promptforge_move(
             raise ToolError(str(exc)) from exc
 
         await session.commit()
+        await audit_log("move", type, resource_id=id, details={"new_parent_id": new_parent_id})
         return {"success": True, "node": node}
 
 

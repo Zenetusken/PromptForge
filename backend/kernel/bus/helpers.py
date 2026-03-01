@@ -44,3 +44,51 @@ def publish_event(event_type: str, data: dict, source_app: str) -> None:
         bus.publish(event_type, data, source_app)
     except Exception:
         logger.debug("publish_event: failed to publish %r", event_type, exc_info=True)
+
+
+async def kernel_audit_log(
+    app_id: str,
+    action: str,
+    resource_type: str,
+    resource_id: str | None = None,
+    details: dict | None = None,
+) -> None:
+    """Log an audit entry for any app and publish a bus event.
+
+    Opens its own DB session (fire-and-forget). Never raises — audit failures
+    are logged at debug level so they never block the caller's request.
+    """
+    try:
+        from app.database import async_session_factory
+        from kernel.repositories.audit import AuditRepository
+
+        async with async_session_factory() as session:
+            repo = AuditRepository(session)
+            await repo.log_action(
+                app_id,
+                action,
+                resource_type,
+                resource_id=resource_id,
+                details=details,
+            )
+            await session.commit()
+
+        publish_event(
+            "kernel:audit.logged",
+            {
+                "app_id": app_id,
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+            },
+            "kernel",
+        )
+    except Exception:
+        logger.debug(
+            "Audit log failed: app=%s action=%s resource_type=%s resource_id=%s",
+            app_id,
+            action,
+            resource_type,
+            resource_id,
+            exc_info=True,
+        )

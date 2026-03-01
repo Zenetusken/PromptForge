@@ -14,6 +14,7 @@ from app import config
 from app.database import get_db, get_db_readonly
 from apps.promptforge.models.workspace import GitHubConnection, WorkspaceLink
 from apps.promptforge.repositories.workspace import WorkspaceRepository
+from apps.promptforge.routers._audit import audit_log
 from apps.promptforge.schemas.context import context_to_dict
 from apps.promptforge.services.github import (
     GitHubAPI,
@@ -124,6 +125,7 @@ async def save_github_config(
         client_secret_encrypted=encrypt_token(client_secret),
     )
 
+    await audit_log("update", "github_config")
     return {"configured": True}
 
 
@@ -137,6 +139,7 @@ async def delete_github_config(db: AsyncSession = Depends(get_db)):
     deleted = await repo.delete_oauth_config()
     if not deleted:
         raise HTTPException(status_code=404, detail="No stored GitHub OAuth config found")
+    await audit_log("delete", "github_config")
     return {"status": "deleted"}
 
 
@@ -258,6 +261,7 @@ async def github_disconnect(db: AsyncSession = Depends(get_db)):
             await revoke_token(token, client_id=gh_config[0], client_secret=gh_config[1])
 
     await repo.delete_connection(conn.id)
+    await audit_log("disconnect", "github_connection")
     return {"status": "disconnected"}
 
 
@@ -357,6 +361,10 @@ async def link_repo(
         logger.error("Initial workspace sync failed for %s: %s", link.id, exc)
         await ws_repo.update_sync_status(link, "error", error=str(exc))
 
+    await audit_log(
+        "create", "workspace_link", resource_id=link.id,
+        details={"repo": request.repo_full_name},
+    )
     return {
         "id": link.id,
         "project_id": link.project_id,
@@ -377,6 +385,7 @@ async def unlink_workspace(
     deleted = await ws_repo.delete_link(link_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Workspace link not found")
+    await audit_log("delete", "workspace_link", resource_id=link_id)
     return {"status": "unlinked"}
 
 

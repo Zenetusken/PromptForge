@@ -9,11 +9,16 @@ from typing import TYPE_CHECKING, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import get_db, get_db_readonly
 from apps.promptforge.constants import ProjectStatus
 from apps.promptforge.converters import deserialize_json_field
-from app.database import get_db, get_db_readonly
 from apps.promptforge.repositories.optimization import OptimizationRepository
-from apps.promptforge.repositories.project import ProjectFilters, ProjectPagination, ProjectRepository
+from apps.promptforge.repositories.project import (
+    ProjectFilters,
+    ProjectPagination,
+    ProjectRepository,
+)
+from apps.promptforge.routers._audit import audit_log
 from apps.promptforge.schemas.context import codebase_context_from_dict, context_to_dict
 from apps.promptforge.schemas.project import (
     ForgeResultListResponse,
@@ -199,6 +204,10 @@ async def create_project(
                         pass
 
                 invalidate_stats_cache()
+                await audit_log(
+                    "create", "project",
+                    resource_id=project.id, details={"name": body.name},
+                )
                 return ProjectDetailResponse(
                     id=project.id,
                     name=project.name,
@@ -231,6 +240,7 @@ async def create_project(
             pass
 
     invalidate_stats_cache()
+    await audit_log("create", "project", resource_id=project.id, details={"name": body.name})
     return ProjectDetailResponse(
         id=project.id,
         name=project.name,
@@ -345,6 +355,10 @@ async def update_project(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    await audit_log(
+        "update", "project", resource_id=project_id,
+        details={"fields": list(body.model_fields_set)},
+    )
     return ProjectDetailResponse(
         id=reloaded.id,
         name=reloaded.name,
@@ -373,6 +387,7 @@ async def delete_project(
     deleted_optimizations = await repo.delete_project_data(project)
     await repo.soft_delete(project)
     invalidate_stats_cache()
+    await audit_log("delete", "project", resource_id=project_id)
     return {
         "message": "Project deleted",
         "id": project_id,
@@ -395,6 +410,7 @@ async def archive_project(
 
     await repo.archive(project)
     invalidate_stats_cache()
+    await audit_log("archive", "project", resource_id=project_id)
     return {
         "message": "Project archived",
         "id": project_id,
@@ -418,6 +434,7 @@ async def unarchive_project(
 
     await repo.unarchive(project)
     invalidate_stats_cache()
+    await audit_log("unarchive", "project", resource_id=project_id)
     return {
         "message": "Project unarchived",
         "id": project_id,
@@ -446,6 +463,7 @@ async def add_prompt(
     project = await _get_mutable_project(repo, project_id)
 
     prompt = await repo.add_prompt(project, body.content)
+    await audit_log("create", "prompt", resource_id=prompt.id, details={"project_id": project_id})
     return PromptResponse.model_validate(prompt)
 
 
@@ -464,6 +482,10 @@ async def reorder_prompts(
         ordered = await repo.reorder_prompts(project_id, body.prompt_ids)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    await audit_log(
+        "reorder", "prompt",
+        details={"project_id": project_id, "count": len(body.prompt_ids)},
+    )
     return {
         "message": "Prompts reordered",
         "prompts": [PromptResponse.model_validate(p) for p in ordered],
@@ -559,6 +581,7 @@ async def update_prompt(
     await _get_mutable_project(repo, project_id)
 
     prompt = await repo.update_prompt(prompt, content=body.content)
+    await audit_log("update", "prompt", resource_id=prompt_id, details={"project_id": project_id})
     return PromptResponse.model_validate(prompt)
 
 
@@ -578,6 +601,7 @@ async def delete_prompt(
     deleted_optimizations = await repo.delete_prompt(prompt)
     if deleted_optimizations:
         invalidate_stats_cache()
+    await audit_log("delete", "prompt", resource_id=prompt_id, details={"project_id": project_id})
     return {
         "message": "Prompt deleted",
         "id": prompt_id,

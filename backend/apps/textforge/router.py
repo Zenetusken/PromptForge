@@ -20,7 +20,7 @@ from app.providers.errors import (
     RateLimitError,
 )
 from app.providers.types import CompletionRequest
-from kernel.bus.helpers import publish_event
+from kernel.bus.helpers import kernel_audit_log, publish_event
 from kernel.repositories.app_storage import AppStorageRepository
 
 logger = logging.getLogger(__name__)
@@ -33,13 +33,34 @@ COLLECTION_NAME = "transforms"
 # --- Transform type templates ---
 
 TRANSFORM_SYSTEM_PROMPTS: dict[str, str] = {
-    "summarize": "You are an expert summarizer. Provide concise, accurate summaries that preserve key information.",
-    "expand": "You are a skilled technical writer. Expand content with clear explanations and relevant examples.",
-    "rewrite": "You are a versatile editor. Rewrite text in the requested tone while preserving the original meaning.",
-    "simplify": "You are a clarity expert. Simplify text for a general audience using shorter sentences and simpler vocabulary.",
-    "translate": "You are a professional translator. Translate text accurately while preserving the original meaning and tone.",
-    "extract_keywords": "You are an information extraction specialist. Identify and extract the most important terms and concepts.",
-    "fix_grammar": "You are a meticulous proofreader. Fix all grammar, spelling, and punctuation errors while preserving the original style.",
+    "summarize": (
+        "You are an expert summarizer. Provide concise, accurate summaries "
+        "that preserve key information."
+    ),
+    "expand": (
+        "You are a skilled technical writer. Expand content with clear "
+        "explanations and relevant examples."
+    ),
+    "rewrite": (
+        "You are a versatile editor. Rewrite text in the requested tone "
+        "while preserving the original meaning."
+    ),
+    "simplify": (
+        "You are a clarity expert. Simplify text for a general audience "
+        "using shorter sentences and simpler vocabulary."
+    ),
+    "translate": (
+        "You are a professional translator. Translate text accurately "
+        "while preserving the original meaning and tone."
+    ),
+    "extract_keywords": (
+        "You are an information extraction specialist. Identify and extract "
+        "the most important terms and concepts."
+    ),
+    "fix_grammar": (
+        "You are a meticulous proofreader. Fix all grammar, spelling, and "
+        "punctuation errors while preserving the original style."
+    ),
 }
 
 TRANSFORM_TEMPLATES: dict[str, str] = {
@@ -208,17 +229,11 @@ async def create_transform(
     }, "textforge")
 
     # Audit log
-    try:
-        from kernel.repositories.audit import AuditRepository
-        audit_repo = AuditRepository(session)
-        await audit_repo.log_action(
-            "textforge", "transform", "transform",
-            resource_id=doc["id"],
-            details={"transform_type": body.transform_type},
-        )
-        await session.flush()
-    except Exception:
-        logger.debug("Audit log failed for transform %s", doc["id"], exc_info=True)
+    await kernel_audit_log(
+        "textforge", "transform", "transform",
+        resource_id=doc["id"],
+        details={"transform_type": body.transform_type},
+    )
 
     return TransformResponse(
         id=doc["id"],
@@ -294,6 +309,7 @@ async def delete_transform(transform_id: str, session: AsyncSession = Depends(ge
     deleted = await repo.delete_document(APP_ID, transform_id)
     if not deleted:
         raise HTTPException(404, "Transform not found")
+    await kernel_audit_log("textforge", "delete", "transform", resource_id=transform_id)
     return {"deleted": True}
 
 

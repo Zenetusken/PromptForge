@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, get_db_readonly
 from apps.promptforge.models.optimization import Optimization
 from apps.promptforge.repositories.project import ProjectRepository
+from apps.promptforge.routers._audit import audit_log
 from apps.promptforge.schemas.filesystem import (
     FsChildrenResponse,
     FsNode,
@@ -178,6 +179,7 @@ async def delete_prompt_direct(
         raise HTTPException(status_code=404, detail="Prompt not found")
     deleted_count = await repo.delete_prompt(prompt)
     await db.commit()
+    await audit_log("delete", "prompt", resource_id=prompt_id)
     return {"success": True, "deleted_optimizations": deleted_count}
 
 
@@ -199,4 +201,8 @@ async def move_node(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    await audit_log(
+        "move", body.type, resource_id=body.id,
+        details={"target": body.new_parent_id},
+    )
     return MoveResponse(success=True, node=node)
