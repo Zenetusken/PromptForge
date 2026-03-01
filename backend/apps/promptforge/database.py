@@ -145,6 +145,23 @@ _MIGRATIONS: list[str] = [
     "  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
     "  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
     ")",
+    # --- Knowledge Sources (multi-document context per project) ---
+    "CREATE TABLE IF NOT EXISTS project_sources ("
+    "  id TEXT PRIMARY KEY,"
+    "  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,"
+    "  title TEXT NOT NULL,"
+    "  content TEXT NOT NULL,"
+    "  source_type TEXT NOT NULL DEFAULT 'document',"
+    "  char_count INTEGER NOT NULL DEFAULT 0,"
+    "  enabled BOOLEAN NOT NULL DEFAULT 1,"
+    "  order_index INTEGER NOT NULL DEFAULT 0,"
+    "  created_at TIMESTAMP NOT NULL,"
+    "  updated_at TIMESTAMP NOT NULL"
+    ")",
+    "CREATE INDEX IF NOT EXISTS ix_project_sources_project_id"
+    " ON project_sources (project_id)",
+    "CREATE INDEX IF NOT EXISTS ix_project_sources_enabled"
+    " ON project_sources (project_id, enabled)",
 ]
 
 
@@ -492,6 +509,192 @@ async def backfill_missing_prompts(conn) -> None:
             inserts,
         )
         logger.info("Backfilled %d missing prompt record(s)", len(inserts))
+
+
+async def migrate_context_to_kernel(conn) -> None:
+    """Copy existing PF context data into kernel Knowledge Base tables.
+
+    Schema version 3 guard — runs once and is idempotent. Migrates:
+    - projects.context_profile → kernel_knowledge_profiles (identity + metadata_json)
+    - workspace_links.workspace_context → auto_detected_json
+    - project_sources → kernel_knowledge_sources
+    - context_profile.documentation → Knowledge Source (type=document)
+    - context_profile.code_snippets → Knowledge Sources (type=paste)
+    """
+    import json as _json
+
+    await _ensure_schema_version_table(conn)
+    if await _has_schema_version(conn, 3):
+        return
+
+    logger.info("Schema v3: migrating context data to kernel Knowledge Base")
+
+    # Fetch all active/non-deleted projects
+    result = await conn.execute(text(
+        "SELECT id, name, description, context_profile FROM projects "
+        "WHERE status != 'deleted'"
+    ))
+    projects = result.fetchall()
+
+    for row in projects:
+        proj_id, proj_name, proj_desc, ctx_json = row[0], row[1], row[2], row[3]
+
+        # Check if kernel profile already exists (idempotent)
+        existing = await conn.execute(
+            text(
+                "SELECT id FROM kernel_knowledge_profiles "
+                "WHERE app_id = 'promptforge' AND entity_id = :eid"
+            ),
+            {"eid": proj_id},
+        )
+        if existing.scalar():
+            continue
+
+        # Parse context_profile JSON
+        ctx = {}
+        if ctx_json:
+            try:
+                ctx = _json.loads(ctx_json)
+            except (_json.JSONDecodeError, TypeError):
+                pass
+
+        now = datetime.now(timezone.utc)
+        profile_id = str(uuid.uuid4())
+
+        # Build metadata_json from app-specific fields
+        metadata = {}
+        for key in ("conventions", "patterns", "test_patterns"):
+            val = ctx.get(key)
+            if val:
+                metadata[key] = val
+
+        # Use description from context_profile, falling back to Project.description
+        description = ctx.get("description") or proj_desc
+
+        await conn.execute(
+            text(
+                "INSERT INTO kernel_knowledge_profiles "
+                "(id, app_id, entity_id, name, language, framework, description, "
+                " test_framework, metadata_json, auto_detected_json, created_at, updated_at) "
+                "VALUES (:id, 'promptforge', :entity_id, :name, :language, :framework, "
+                " :description, :test_framework, :metadata_json, :auto_json, :now, :now)"
+            ),
+            {
+                "id": profile_id,
+                "entity_id": proj_id,
+                "name": proj_name,
+                "language": ctx.get("language"),
+                "framework": ctx.get("framework"),
+                "description": description,
+                "test_framework": ctx.get("test_framework"),
+                "metadata_json": _json.dumps(metadata) if metadata else None,
+                "auto_json": None,  # populated from workspace_links below
+                "now": now,
+            },
+        )
+
+        # Migrate workspace_links.workspace_context → auto_detected_json
+        ws_result = await conn.execute(
+            text(
+                "SELECT workspace_context FROM workspace_links WHERE project_id = :pid"
+            ),
+            {"pid": proj_id},
+        )
+        ws_row = ws_result.fetchone()
+        if ws_row and ws_row[0]:
+            await conn.execute(
+                text(
+                    "UPDATE kernel_knowledge_profiles "
+                    "SET auto_detected_json = :auto_json WHERE id = :pid"
+                ),
+                {"auto_json": ws_row[0], "pid": profile_id},
+            )
+
+        # Migrate project_sources → kernel_knowledge_sources
+        src_result = await conn.execute(
+            text(
+                "SELECT id, title, content, source_type, char_count, enabled, "
+                "  order_index, created_at, updated_at "
+                "FROM project_sources WHERE project_id = :pid "
+                "ORDER BY order_index"
+            ),
+            {"pid": proj_id},
+        )
+        source_rows = src_result.fetchall()
+
+        next_order = len(source_rows)
+        for srow in source_rows:
+            await conn.execute(
+                text(
+                    "INSERT INTO kernel_knowledge_sources "
+                    "(id, profile_id, title, content, source_type, char_count, "
+                    " enabled, order_index, created_at, updated_at) "
+                    "VALUES (:id, :pid, :title, :content, :stype, :chars, "
+                    " :enabled, :order_idx, :created, :updated)"
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "pid": profile_id,
+                    "title": srow[1],
+                    "content": srow[2],
+                    "stype": srow[3],
+                    "chars": srow[4],
+                    "enabled": srow[5],
+                    "order_idx": srow[6],
+                    "created": srow[7],
+                    "updated": srow[8],
+                },
+            )
+
+        # Promote documentation field → Knowledge Source
+        documentation = ctx.get("documentation")
+        if documentation and documentation.strip():
+            await conn.execute(
+                text(
+                    "INSERT INTO kernel_knowledge_sources "
+                    "(id, profile_id, title, content, source_type, char_count, "
+                    " enabled, order_index, created_at, updated_at) "
+                    "VALUES (:id, :pid, 'Documentation', :content, 'document', "
+                    " :chars, 1, :order_idx, :now, :now)"
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "pid": profile_id,
+                    "content": documentation,
+                    "chars": len(documentation),
+                    "order_idx": next_order,
+                    "now": now,
+                },
+            )
+            next_order += 1
+
+        # Promote code_snippets → Knowledge Sources
+        code_snippets = ctx.get("code_snippets", [])
+        if isinstance(code_snippets, list):
+            for i, snippet in enumerate(code_snippets):
+                if snippet and isinstance(snippet, str) and snippet.strip():
+                    await conn.execute(
+                        text(
+                            "INSERT INTO kernel_knowledge_sources "
+                            "(id, profile_id, title, content, source_type, char_count, "
+                            " enabled, order_index, created_at, updated_at) "
+                            "VALUES (:id, :pid, :title, :content, 'paste', "
+                            " :chars, 1, :order_idx, :now, :now)"
+                        ),
+                        {
+                            "id": str(uuid.uuid4()),
+                            "pid": profile_id,
+                            "title": f"Code Snippet {i + 1}",
+                            "content": snippet,
+                            "chars": len(snippet),
+                            "order_idx": next_order,
+                            "now": now,
+                        },
+                    )
+                    next_order += 1
+
+    await _mark_schema_version(conn, 3)
+    logger.info("Schema v3: migrated %d project(s) to kernel Knowledge Base", len(projects))
 
 
 async def cleanup_stale_running(conn) -> None:

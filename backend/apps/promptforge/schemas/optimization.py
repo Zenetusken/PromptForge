@@ -44,7 +44,7 @@ class OptimizeRequest(BaseModel):
     codebase_context: dict | None = Field(
         None,
         description=(
-            "Optional codebase context for grounding the optimization in a real project. "
+            "Optional project context for grounding the optimization in project knowledge. "
             "Accepted keys: language, framework, description, conventions, patterns, "
             "code_snippets, documentation, test_framework, test_patterns."
         ),
@@ -269,6 +269,15 @@ class StatsResponse(BaseModel):
     trend_30d: dict[str, float | int | None] | None = None
     token_economics: dict[str, dict[str, int | None]] | None = None
     win_rates: dict[str, dict[str, str | float | int]] | None = None
+
+
+class ContextPreviewRequest(BaseModel):
+    """Request body for the context preview endpoint."""
+
+    project: str | None = Field(
+        None, max_length=100, description="Project name to resolve context for",
+    )
+    codebase_context: dict | None = Field(None, description="Optional per-request context override")
 
 
 class BulkDeleteRequest(BaseModel):

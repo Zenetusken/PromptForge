@@ -37,6 +37,7 @@ from apps.promptforge.schemas.project import (
     ReorderRequest,
 )
 from apps.promptforge.services.stats_cache import invalidate_stats_cache
+from kernel.repositories.knowledge import KnowledgeRepository
 
 if TYPE_CHECKING:
     from apps.promptforge.models.project import Project
@@ -66,6 +67,41 @@ async def _get_mutable_project(
     if project.status == ProjectStatus.ARCHIVED:
         raise HTTPException(status_code=403, detail="Cannot modify an archived project")
     return project
+
+
+async def _kernel_source_count(db: AsyncSession, project_id: str) -> int:
+    """Get source count from the kernel Knowledge Base for a project."""
+    repo = KnowledgeRepository(db)
+    kp = await repo.get_profile("promptforge", project_id)
+    if not kp:
+        return 0
+    return await repo.get_source_count(kp["id"])
+
+
+async def _kernel_knowledge_batch(
+    db: AsyncSession, project_ids: list[str],
+) -> tuple[dict[str, int], set[str]]:
+    """Batch-fetch source counts and profile existence from kernel Knowledge Base.
+
+    Returns (source_counts_by_project_id, set_of_project_ids_with_kernel_profiles).
+    """
+    if not project_ids:
+        return {}, set()
+    repo = KnowledgeRepository(db)
+    profiles = await repo.list_profiles("promptforge")
+    profile_map = {p["entity_id"]: p["id"] for p in profiles}
+
+    has_profile = {pid for pid in project_ids if pid in profile_map}
+
+    # Collect profile IDs that exist, batch-fetch counts in one query
+    prof_ids = [profile_map[pid] for pid in project_ids if pid in profile_map]
+    source_counts = await repo.get_source_counts(prof_ids) if prof_ids else {}
+
+    counts = {
+        pid: source_counts.get(profile_map[pid], 0) if pid in profile_map else 0
+        for pid in project_ids
+    }
+    return counts, has_profile
 
 
 async def _build_prompt_responses(
@@ -141,8 +177,11 @@ async def list_projects(
 
     items, total = await repo.list(filters=filters, pagination=pagination)
 
-    # Single query for all prompt counts instead of N+1
-    prompt_counts = await repo.get_prompt_counts([p.id for p in items])
+    # Single query for all prompt/source counts instead of N+1
+    project_ids = [p.id for p in items]
+    prompt_counts = await repo.get_prompt_counts(project_ids)
+
+    source_counts, has_kernel_profile = await _kernel_knowledge_batch(db, project_ids)
 
     summaries = [
         ProjectSummaryResponse(
@@ -153,7 +192,8 @@ async def list_projects(
             parent_id=p.parent_id,
             depth=p.depth,
             prompt_count=prompt_counts.get(p.id, 0),
-            has_context=bool(p.context_profile),
+            source_count=source_counts.get(p.id, 0),
+            has_context=bool(p.context_profile) or p.id in has_kernel_profile,
             created_at=p.created_at,
             updated_at=p.updated_at,
         )
@@ -203,6 +243,8 @@ async def create_project(
                     except (json.JSONDecodeError, TypeError):
                         pass
 
+                sc = await _kernel_source_count(db, project.id)
+
                 invalidate_stats_cache()
                 await audit_log(
                     "create", "project",
@@ -216,6 +258,7 @@ async def create_project(
                     status=project.status,
                     parent_id=project.parent_id,
                     depth=project.depth,
+                    source_count=sc,
                     created_at=project.created_at,
                     updated_at=project.updated_at,
                     prompts=[],
@@ -273,6 +316,8 @@ async def get_project(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    sc = await _kernel_source_count(db, project_id)
+
     return ProjectDetailResponse(
         id=project.id,
         name=project.name,
@@ -281,6 +326,7 @@ async def get_project(
         status=project.status,
         parent_id=project.parent_id,
         depth=project.depth,
+        source_count=sc,
         created_at=project.created_at,
         updated_at=project.updated_at,
         prompts=await _build_prompt_responses(db, project.prompts, project_name=project.name),
@@ -355,6 +401,8 @@ async def update_project(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    sc = await _kernel_source_count(db, project_id)
+
     await audit_log(
         "update", "project", resource_id=project_id,
         details={"fields": list(body.model_fields_set)},
@@ -367,6 +415,7 @@ async def update_project(
         status=reloaded.status,
         parent_id=reloaded.parent_id,
         depth=reloaded.depth,
+        source_count=sc,
         created_at=reloaded.created_at,
         updated_at=reloaded.updated_at,
         prompts=await _build_prompt_responses(db, reloaded.prompts, project_name=reloaded.name),

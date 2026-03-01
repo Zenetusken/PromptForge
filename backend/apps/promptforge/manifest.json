@@ -6,9 +6,9 @@
   "accent_color": "neon-purple",
   "python_module": "apps.promptforge",
   "entry_point": "PromptForgeApp",
-  "requires_services": ["llm"],
+  "requires_services": ["llm", "knowledge"],
   "capabilities": {
-    "required": ["storage:read", "storage:write", "vfs:read", "vfs:write", "settings:read", "settings:write"],
+    "required": ["storage:read", "storage:write", "vfs:read", "vfs:write", "settings:read", "settings:write", "knowledge:read", "knowledge:write"],
     "optional": ["llm:invoke", "audit:read"]
   },
   "resource_quotas": {
@@ -26,7 +26,8 @@
       { "module": "apps.promptforge.routers.filesystem", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] },
       { "module": "apps.promptforge.routers.providers", "prefix": "/api/apps/promptforge", "tags": ["system"] },
       { "module": "apps.promptforge.routers.mcp_activity", "prefix": "/api/apps/promptforge", "tags": ["system"] },
-      { "module": "apps.promptforge.routers.github", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] }
+      { "module": "apps.promptforge.routers.github", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] },
+      { "module": "apps.promptforge.routers.sources", "prefix": "/api/apps/promptforge", "tags": ["promptforge"] }
     ],
     "models": [
       "apps.promptforge.models.optimization:Optimization",
@@ -35,7 +36,8 @@
       "apps.promptforge.models.project:PromptVersion",
       "apps.promptforge.models.workspace:GitHubConnection",
       "apps.promptforge.models.workspace:WorkspaceLink",
-      "apps.promptforge.models.workspace:GitHubOAuthConfig"
+      "apps.promptforge.models.workspace:GitHubOAuthConfig",
+      "apps.promptforge.models.source:ProjectSource"
     ]
   },
 

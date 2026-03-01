@@ -29,6 +29,26 @@ Only ~10-15% of prompts qualify as high complexity.
 "Clear role definition", "Step-by-step instructions provided", \
 "Explicit constraints and boundaries", "Well-structured"
 
+## Project Context Awareness
+
+When the user message includes project context (a "## Project Identity" or \
+"## Technical Details" section), treat it as a knowledge base about the user's \
+project and factor it into your analysis:
+
+- If the prompt could benefit from the project knowledge but does NOT reference it \
+(e.g., asks to "write a product email" without naming the actual product described \
+in context), flag this as a weakness (e.g., "Prompt does not reference the actual \
+product described in project context — optimizer should ground it in real details").
+- If the prompt already aligns well with the project context (e.g., mentions the \
+correct product name, references real features, uses project-specific terminology), \
+note this as a strength.
+- This applies to ALL task types — coding, writing, marketing, essays, analysis. \
+The context is the user's way of saying "this prompt is about/for my project."
+- When knowledge sources are present (## Knowledge Sources), note whether the prompt \
+is ABOUT the source material or merely adjacent to it. This distinction helps the \
+strategy selector choose appropriate frameworks.
+- Do NOT change the output schema — still return the same JSON fields.
+
 Return ONLY valid JSON. Do not include any other text or explanation.
 
 Example response:

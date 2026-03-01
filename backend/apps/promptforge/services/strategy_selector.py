@@ -277,7 +277,7 @@ class HeuristicStrategySelector:
             analysis: The analysis result from PromptAnalyzer.
             prompt_length: Length of the raw prompt in characters. When < 50,
                 a small confidence penalty is applied.
-            codebase_context: Optional codebase context for context-aware
+            codebase_context: Optional project context for context-aware
                 strategy preference adjustments at P3 level.
 
         Returns:
@@ -489,7 +489,7 @@ class HeuristicStrategySelector:
         if is_high:
             confidence = min(confidence + 0.10, 0.95)
 
-        # Context-aware adjustment: boost confidence when codebase context
+        # Context-aware adjustment: boost confidence when project context
         # aligns with the selected strategy.
         ctx_pref = _context_strategy_preference(codebase_context)
         if ctx_pref:
@@ -517,7 +517,7 @@ class HeuristicStrategySelector:
 def _context_strategy_preference(
     ctx: CodebaseContext | None,
 ) -> tuple[Strategy, float, str] | None:
-    """Map codebase context signals to a strategy preference.
+    """Map project context signals to a strategy preference.
 
     Returns (preferred_strategy, confidence_boost, reason) or None.
     Only used to boost confidence when the context aligns with the already-
@@ -525,6 +525,17 @@ def _context_strategy_preference(
     """
     if not ctx:
         return None
+
+    # Rich project description → context-enrichment boost.
+    # Checked first because all subsequent signals are code-specific and would
+    # override for coding tasks anyway.  A rich description signals that the
+    # project has identity information worth weaving into any prompt type.
+    if ctx.description and len(ctx.description) > 50:
+        return (
+            Strategy.CONTEXT_ENRICHMENT,
+            0.05,
+            "Rich project description available for context grounding.",
+        )
 
     lang = (ctx.language or "").lower()
     framework = (ctx.framework or "").lower()
@@ -628,7 +639,7 @@ class StrategySelector:
         if codebase_context:
             rendered = codebase_context.render()
             if rendered:
-                user_payload["codebase_context"] = rendered
+                user_payload["project_context"] = rendered
         request = CompletionRequest(
             system_prompt=STRATEGY_SYSTEM_PROMPT,
             user_message=json.dumps(user_payload),

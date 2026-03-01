@@ -10,11 +10,21 @@ You will receive a JSON object with:
 - strategy (optional): The optimization strategy that was applied (e.g., "co-star", "risen"). \
 When present, use it to score framework_adherence_score. When absent, \
 set framework_adherence_score to 0.0.
-- codebase_context (optional): Details about the caller's codebase. When present, factor \
-it into scoring: score faithfulness higher when the optimized prompt correctly references \
-codebase patterns, conventions, and architecture from the context; score specificity higher \
-when the prompt uses codebase-specific terminology, types, or interfaces \
-rather than generic phrasing.
+- project_context (optional): Details about the caller's project. When present, factor \
+it into scoring:
+  - **Faithfulness**: Score higher when the optimized prompt correctly references the \
+project's identity (name, description, capabilities) from context. Score LOWER when \
+context describes a specific product/project but the optimized prompt uses generic or \
+fictional examples instead of the real product.
+  - **Specificity**: Score higher when the prompt uses project-specific details from \
+context (product name, actual features, real tech stack) rather than generic placeholders. \
+A prompt about "your product" when context names a specific product is less specific.
+  - For coding prompts, also factor in project-specific patterns, conventions, types, and \
+architecture references as before.
+  - **Knowledge Sources**: When project context includes `## Knowledge Sources`, score \
+faithfulness HIGHER when the optimized prompt grounds itself in source material — citing \
+source-specific terminology, examples, or details. Score LOWER when sources provide \
+specific information but the optimized prompt uses generic alternatives instead.
 
 ## Scoring Calibration
 

@@ -31,15 +31,18 @@ from apps.promptforge.repositories.project import (
     ensure_project_by_name,
     ensure_prompt_in_project,
 )
-from apps.promptforge.repositories.workspace import WorkspaceRepository
 from apps.promptforge.routers._audit import audit_log
 from apps.promptforge.schemas.context import (
     CodebaseContext,
     codebase_context_from_dict,
     context_to_dict,
-    merge_contexts,
 )
-from apps.promptforge.schemas.optimization import OptimizationResponse, OptimizeRequest
+from apps.promptforge.schemas.optimization import (
+    ContextPreviewRequest,
+    OptimizationResponse,
+    OptimizeRequest,
+)
+from apps.promptforge.services.context_resolver import resolve_project_context
 from apps.promptforge.services.pipeline import (
     PipelineComplete,
     run_pipeline,
@@ -69,17 +72,11 @@ async def _resolve_context(
     project_name: str | None,
     explicit_dict: dict[str, Any] | None = None,
 ) -> CodebaseContext | None:
-    """Three-layer context resolution: workspace → manual profile → explicit request."""
-    explicit = codebase_context_from_dict(explicit_dict)
-    workspace = None
-    manual = None
-    if project_name:
-        workspace = await WorkspaceRepository(db).get_workspace_context_by_project_name(
-            project_name,
-        )
-        manual = await ProjectRepository(db).get_context_by_name(project_name)
-    base = merge_contexts(workspace, manual)
-    return merge_contexts(base, explicit)
+    """Context resolution: kernel Knowledge Base → per-request override.
+
+    Delegates to the shared context_resolver module used by both REST and MCP paths.
+    """
+    return await resolve_project_context(db, project_name, explicit_dict)
 
 
 async def _audit_log_optimization(opt_id: str, final_data: dict) -> None:
@@ -222,6 +219,35 @@ def _create_streaming_response(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/context/preview")
+async def preview_context(
+    request: ContextPreviewRequest,
+    db: AsyncSession = Depends(get_db_readonly),
+):
+    """Preview the fully resolved context for a project before forging.
+
+    Read-only, no LLM calls. Returns the merged context from all layers
+    (workspace auto-detect, manual profile, per-request override).
+    """
+    if not request.project and not request.codebase_context:
+        return {"context": None, "field_count": 0, "rendered_chars": 0}
+
+    resolved = await resolve_project_context(db, request.project, request.codebase_context)
+    if not resolved:
+        return {"context": None, "field_count": 0, "rendered_chars": 0}
+
+    ctx_dict = context_to_dict(resolved)
+    if not ctx_dict:
+        return {"context": None, "field_count": 0, "rendered_chars": 0}
+
+    # Count populated fields
+    field_count = sum(1 for v in ctx_dict.values() if v)
+    # Estimate rendered character count
+    rendered_chars = len(json.dumps(ctx_dict, default=str))
+
+    return {"context": ctx_dict, "field_count": field_count, "rendered_chars": rendered_chars}
 
 
 @router.post("/optimize")
@@ -583,7 +609,7 @@ class BatchOptimizeRequest(BaseModel):
     project: str | None = PydanticField(None, description="Project to associate results with")
     tags: list[str] | None = PydanticField(None, description="Tags for all results")
     codebase_context: dict[str, Any] | None = PydanticField(
-        None, description="Codebase context for all prompts in the batch",
+        None, description="Project context for all prompts in the batch",
     )
 
 class BatchItemResult(BaseModel):

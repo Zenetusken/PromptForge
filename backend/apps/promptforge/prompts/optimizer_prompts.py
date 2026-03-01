@@ -67,25 +67,91 @@ Assign a specific professional identity with relevant expertise and credentials.
 Describe the persona's experience level and specialization. Best combined with \
 constraint-injection (professional standards) or context-enrichment (domain background).
 
-## Codebase Context Integration
+## Project Context Integration
 
-When a `codebase_context` field is present in the input, use it to ground the optimized prompt \
-in the caller's actual project:
+When a `project_context` field is present in the input, treat it as a **knowledge base** \
+about the user's project — like a reference document that should inform and ground ANY type \
+of prompt. This context is the user's way of saying "optimize this prompt WITH knowledge of \
+my project." It contains two tiers of information:
 
-- **Reference actual patterns**: If the context mentions "repository pattern" or "async ORM", \
-the optimized prompt should reference these patterns by name rather than using generic phrasing.
-- **Include relevant types/imports**: If code snippets show function signatures or class \
-definitions, incorporate them into the prompt so the LLM receiving the prompt knows the \
-exact interfaces to work with.
-- **Match conventions**: If the context specifies "PEP 8", "Google docstrings", or "pytest", \
-include these as explicit requirements in the optimized prompt.
-- **Match testing conventions**: If test_framework or test_patterns are provided, reference \
-them when the prompt involves writing or modifying tests.
-- **Synthesize naturally**: Weave context details into the prompt structure — don't copy-paste \
-the raw context block. The optimized prompt should read as a self-contained instruction that \
-happens to be grounded in real project details.
-- **Ignore irrelevant context**: If the codebase context is unrelated to the prompt's intent \
-(e.g., Python context for a SQL query prompt), focus on the prompt itself and disregard the context.
+### A. Project Identity (ALWAYS apply — for ALL prompt types)
+
+The "## Project Identity" section (description, language, framework) tells you what the \
+real product or project IS. **This is always relevant, regardless of task type:**
+
+- **Marketing, writing, creative, general prompts**: The description tells you what the \
+actual product/project IS — its name, purpose, capabilities, and value proposition. Reference \
+it by name. A "product launch email" for a project described as "an AI-powered prompt \
+optimization platform" must be about that platform, not a made-up product. An essay about \
+the project should draw on the real description, not invent details.
+- **Analysis, reasoning, education prompts**: Use the project identity as grounding material — \
+the user wants analysis/reasoning ABOUT or IN THE CONTEXT OF their project.
+- **Coding prompts**: The language and framework identify the tech stack. Reference them \
+as explicit requirements.
+- **The user attached this context intentionally** — it is always relevant to their \
+optimization. Never discard Project Identity information. Never invent fictional products \
+or generic placeholders when real project details are available.
+
+### B. Technical Details (richest for coding, but useful for all)
+
+The "## Technical Details" section (conventions, patterns, code snippets, test framework, \
+test patterns) provides deep project knowledge:
+
+- **For coding/technical prompts**: Reference actual patterns, types, imports, conventions, \
+and testing frameworks by name. Weave them naturally into the prompt structure.
+- **For writing/essays about the project**: Technical details are source material. An essay \
+about the codebase should reference its actual architecture, patterns, and conventions. A \
+technical blog post should cite real implementation details.
+- **For marketing/creative prompts**: Technical details can inform positioning and \
+differentiation (e.g., "built on a modern async Python + SvelteKit stack", "uses a \
+4-stage AI pipeline"). Extract what's compelling.
+- **For analysis prompts**: Technical details provide the facts to analyze. Don't ignore \
+them — they're the substance.
+- Only for prompts where technical details are genuinely inapplicable (e.g., a haiku about \
+nature) is it appropriate to set them aside.
+
+### C. Synthesis
+
+- Weave context details naturally into the prompt structure — don't copy-paste the raw \
+context block. The optimized prompt should read as a self-contained instruction grounded \
+in real project knowledge.
+- When the original prompt is vague about the product/project but context provides a \
+description, **replace generic references with specific ones** from the context.
+- Think of the context as the user's "uploaded documents" — always consult them.
+
+### D. Project-About Prompts (meta prompts)
+
+When the prompt's subject IS the project itself — "Write an essay about our architecture," \
+"Explain how the pipeline works," "Create a technical blog post about our platform," \
+"Summarize this project for investors" — apply special handling:
+
+- **ALL context tiers become primary source material**, not just background. The Project \
+Identity section provides the thesis; Technical Details provide the evidence and specifics.
+- **Cite by name**: reference specific patterns, frameworks, conventions, architectural \
+decisions, and implementation details from the context. A blog post about "our 4-stage \
+pipeline" should name the stages; an architecture essay should reference actual patterns \
+like "repository pattern" or "async-first design."
+- **Documentation is your primary source**: when the context includes documentation, treat \
+it as the authoritative reference — the user attached it specifically because the prompt \
+is ABOUT this material.
+- **Never invent details**: if the context doesn't cover a topic the prompt asks about, \
+flag the gap with a RECOMMENDATION rather than fabricating plausible-sounding architecture.
+
+### E. Knowledge Sources (multi-document context)
+
+When `## Knowledge Sources` appears in the project context, these are named reference \
+documents the user uploaded — treat each as authoritative material:
+
+- **Cross-reference between sources**: synthesize information across multiple documents \
+rather than treating each in isolation.
+- **Cite by source title**: when referencing specific information, mention which source \
+it comes from (e.g., "per the Architecture Doc," "as noted in the API Reference").
+- **Prioritize sources over general knowledge**: the user uploaded them for a reason — \
+use source-specific terminology, examples, and details over generic alternatives.
+- **Handle source conflicts**: when sources disagree, note the discrepancy and prefer \
+the more specific or more recent source.
+- **Don't summarize sources back**: the goal is to USE source material to improve the \
+prompt, not to regurgitate it. Weave source insights naturally into the optimized prompt.
 
 ## Combining Frameworks
 

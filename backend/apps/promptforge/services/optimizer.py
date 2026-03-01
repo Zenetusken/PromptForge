@@ -54,7 +54,7 @@ class PromptOptimizer:
             analysis: The analysis results from PromptAnalyzer.
             strategy: The primary optimization strategy to apply.
             secondary_frameworks: Optional 0-2 secondary frameworks to combine.
-            codebase_context: Optional codebase context to ground the optimization.
+            codebase_context: Optional project context to ground the optimization.
 
         Returns:
             An OptimizationResult with the optimized prompt and metadata.
@@ -69,7 +69,7 @@ class PromptOptimizer:
         if codebase_context:
             rendered = codebase_context.render()
             if rendered:
-                payload["codebase_context"] = rendered
+                payload["project_context"] = rendered
         user_message = json.dumps(payload)
         request = CompletionRequest(
             system_prompt=OPTIMIZER_SYSTEM_PROMPT,

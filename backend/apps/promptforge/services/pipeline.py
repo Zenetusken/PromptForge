@@ -568,7 +568,7 @@ async def run_pipeline_streaming(
         strategy_override: When set, skip StrategySelector and use this strategy.
         secondary_frameworks_override: When set with strategy_override, these
             secondary frameworks are passed to the optimizer.
-        codebase_context: Optional codebase context to thread through all stages.
+        codebase_context: Optional project context to thread through all stages.
         stages: Optional list of stage names to run. Default: all 4 in order.
 
     Yields:

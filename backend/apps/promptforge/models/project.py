@@ -56,6 +56,12 @@ class Project(Base):
         order_by="Prompt.order_index",
         foreign_keys="Prompt.project_id",
     )
+    sources: Mapped[list["ProjectSource"]] = relationship(  # noqa: F821
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="ProjectSource.order_index",
+        foreign_keys="ProjectSource.project_id",
+    )
 
     __table_args__ = (
         UniqueConstraint("name", "parent_id", name="uq_projects_name_parent"),

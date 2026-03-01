@@ -78,7 +78,7 @@ class PromptAnalyzer:
 
         Args:
             raw_prompt: The original prompt text to analyze.
-            codebase_context: Optional codebase context to enrich analysis.
+            codebase_context: Optional project context to enrich analysis.
 
         Returns:
             An AnalysisResult with task_type, complexity, weaknesses, and strengths.
@@ -91,8 +91,8 @@ class PromptAnalyzer:
             rendered = codebase_context.render()
             if rendered:
                 user_message += (
-                    "\n\nThis prompt will be used within the following "
-                    "codebase environment:\n\n" + rendered
+                    "\n\nThe user has attached the following project context "
+                    "as a knowledge source for this optimization:\n\n" + rendered
                 )
         request = CompletionRequest(
             system_prompt=ANALYZER_SYSTEM_PROMPT,

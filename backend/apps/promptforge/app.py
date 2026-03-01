@@ -48,6 +48,7 @@ class PromptForgeApp(AppBase):
             backfill_missing_prompts,
             backfill_prompt_ids,
             cleanup_stale_running,
+            migrate_context_to_kernel,
             migrate_legacy_projects,
             migrate_legacy_strategies,
             rebuild_projects_table,
@@ -63,3 +64,4 @@ class PromptForgeApp(AppBase):
         await backfill_missing_prompts(conn)
         await backfill_prompt_ids(conn)
         await cleanup_stale_running(conn)
+        await migrate_context_to_kernel(conn)

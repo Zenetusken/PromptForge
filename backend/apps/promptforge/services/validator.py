@@ -70,7 +70,7 @@ class PromptValidator:
             optimized_prompt: The optimized prompt text to validate.
             strategy: The optimization strategy that was applied (for framework
                 adherence scoring).
-            codebase_context: Optional codebase context for scoring calibration.
+            codebase_context: Optional project context for scoring calibration.
 
         Returns:
             A ValidationResult with scores and improvement verdict.
@@ -84,7 +84,7 @@ class PromptValidator:
         if codebase_context:
             rendered = codebase_context.render()
             if rendered:
-                payload["codebase_context"] = rendered
+                payload["project_context"] = rendered
         user_message = json.dumps(payload)
         request = CompletionRequest(
             system_prompt=VALIDATOR_SYSTEM_PROMPT,

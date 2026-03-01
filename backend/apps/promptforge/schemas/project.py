@@ -10,7 +10,7 @@ class ProjectCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=200, description="Project name")
     description: str | None = Field(None, max_length=2000, description="Project description")
-    context_profile: dict | None = Field(None, description="Codebase context profile (JSON)")
+    context_profile: dict | None = Field(None, description="Project context profile (JSON)")
     parent_id: str | None = Field(None, description="Parent folder ID (null = root level)")
 
     @field_validator("name")
@@ -29,7 +29,7 @@ class ProjectUpdate(BaseModel):
     description: str | None = Field(None, max_length=2000)
     context_profile: dict | None = Field(
         None,
-        description="Codebase context profile (JSON). Null clears.",
+        description="Project context profile (JSON). Null clears.",
     )
 
     @field_validator("name")
@@ -115,6 +115,7 @@ class ProjectSummaryResponse(BaseModel):
     parent_id: str | None = None
     depth: int = 0
     prompt_count: int = 0
+    source_count: int = 0
     has_context: bool = False
     created_at: UTCDatetime
     updated_at: UTCDatetime
@@ -130,6 +131,7 @@ class ProjectDetailResponse(BaseModel):
     status: str
     parent_id: str | None = None
     depth: int = 0
+    source_count: int = 0
     created_at: UTCDatetime
     updated_at: UTCDatetime
     prompts: list[PromptResponse] = []

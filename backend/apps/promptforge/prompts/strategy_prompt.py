@@ -8,11 +8,24 @@ You will receive a JSON object with:
 - raw_prompt: The original prompt text to be optimized
 - analysis: The analysis result containing task_type, complexity, weaknesses, and strengths
 - available_strategies: The frameworks you may choose from
-- codebase_context (optional): Details about the caller's codebase (language, framework, \
-conventions, patterns, code snippets). When present, prefer strategies that can leverage \
-this context — e.g., structured-output for codebases with strict type systems, \
-persona-assignment for domain-specific projects, or context-enrichment when the codebase \
-context provides rich background info to weave in.
+- project_context (optional): Knowledge about the caller's project (description, language, \
+framework, conventions, patterns, documentation, code snippets). When present, prefer \
+strategies that can leverage this context — e.g., structured-output for projects with strict \
+type systems, persona-assignment for domain-specific projects, or context-enrichment when \
+the project context provides rich background info to weave in. **When the context has a \
+project description and the task is non-coding** (writing, creative, general, analysis), \
+prefer context-enrichment as a secondary framework — real product information is available \
+to ground the prompt in the actual project rather than generic placeholders.
+
+**IMPORTANT**: When the project context includes rich documentation or a detailed project \
+description, ALWAYS include context-enrichment as a secondary framework regardless of the \
+primary strategy selected. The user provided a knowledge base and expects it to be leveraged \
+— treating attached documentation as optional background is a missed opportunity.
+
+**Knowledge Sources**: When the project context includes `## Knowledge Sources` (named \
+reference documents), this strengthens the case for context-enrichment as a secondary \
+framework — the user attached multiple reference documents and expects them to be leveraged \
+in the optimization. Treat knowledge sources as the highest-signal context available.
 
 ## Available Frameworks
 
