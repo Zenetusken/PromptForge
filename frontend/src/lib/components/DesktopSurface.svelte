@@ -7,11 +7,17 @@
 	import { fsOrchestrator } from '$lib/stores/filesystemOrchestrator.svelte';
 	import { systemBus } from '$lib/services/systemBus.svelte';
 	import { settingsState } from '$lib/stores/settings.svelte';
-	import { DRAG_MIME, decodeDragPayload } from '$lib/utils/dragPayload';
+	import { DRAG_MIME, decodeDragPayload, encodeDragPayload } from '$lib/utils/dragPayload';
+	import { createFolderDescriptor, createPromptDescriptor } from '$lib/utils/fileDescriptor';
 
 	let surfaceEl: HTMLDivElement | undefined = $state();
 	let editingIconId: string | null = $state(null);
 	let dropTargetIconId: string | null = $state(null);
+	let draggingDesktopIconId: string | null = $state(null);
+
+	function isDbIcon(iconId: string): boolean {
+		return iconId.startsWith(DB_FOLDER_PREFIX) || iconId.startsWith(DB_PROMPT_PREFIX);
+	}
 
 	// Watch for rename requests from context menu action
 	$effect(() => {
@@ -74,6 +80,7 @@
 	}
 
 	function handleIconMouseDown(e: MouseEvent, id: string) {
+		if (isDbIcon(id)) return; // DB icons use HTML5 drag, not grid repositioning
 		const iconEl = (e.target as HTMLElement)?.closest?.('[data-desktop-icon]');
 		if (!iconEl) return;
 		const rect = iconEl.getBoundingClientRect();
@@ -151,6 +158,29 @@
 		return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
 	});
 
+	// ── Desktop icon native drag (DB-backed icons → FolderWindow or folder icon) ──
+
+	function handleIconDragStart(e: DragEvent, icon: { id: string; label: string }) {
+		if (!e.dataTransfer) return;
+		draggingDesktopIconId = icon.id;
+
+		if (icon.id.startsWith(DB_FOLDER_PREFIX)) {
+			const folderId = icon.id.slice(DB_FOLDER_PREFIX.length);
+			const payload = { descriptor: createFolderDescriptor(folderId, icon.label), source: 'desktop' as const };
+			e.dataTransfer.setData(DRAG_MIME, encodeDragPayload(payload));
+		} else if (icon.id.startsWith(DB_PROMPT_PREFIX)) {
+			const promptId = icon.id.slice(DB_PROMPT_PREFIX.length);
+			const name = icon.label.replace(/\.md$/, '');
+			const payload = { descriptor: createPromptDescriptor(promptId, '', name), source: 'desktop' as const };
+			e.dataTransfer.setData(DRAG_MIME, encodeDragPayload(payload));
+		}
+		e.dataTransfer.effectAllowed = 'move';
+	}
+
+	function handleIconDragEnd() {
+		draggingDesktopIconId = null;
+	}
+
 	// ── External drag-and-drop (from FolderWindow, etc.) ──
 
 	function handleExternalDragOver(e: DragEvent) {
@@ -162,7 +192,8 @@
 		const iconEl = (e.target as HTMLElement)?.closest?.('[data-desktop-icon]');
 		if (iconEl) {
 			const iconId = iconEl.getAttribute('data-desktop-icon') ?? '';
-			if (iconId.startsWith(DB_FOLDER_PREFIX)) {
+			// Only highlight folder drop targets; skip the icon being dragged
+			if (iconId.startsWith(DB_FOLDER_PREFIX) && iconId !== draggingDesktopIconId) {
 				dropTargetIconId = iconId;
 				return;
 			}
@@ -194,9 +225,13 @@
 			// Drop on a folder icon → move into that folder
 			const folderId = desktopStore.getDbFolderId(targetIcon);
 			if (folderId) {
+				// Prevent dropping a folder on itself
+				if (desc.kind === 'folder' && desc.id === folderId) return;
 				await fsOrchestrator.move(type as 'project' | 'prompt', desc.id, folderId);
 			}
 		} else {
+			// Skip if already at root (desktop → desktop empty space is a no-op)
+			if (payload.source === 'desktop') return;
 			// Drop on empty desktop → move to root
 			await fsOrchestrator.move(type as 'project' | 'prompt', desc.id, null);
 		}
@@ -225,6 +260,7 @@
 	<div class="relative z-10">
 		{#each desktopStore.icons as icon (icon.id)}
 			{@const isDragTarget = desktopStore.dragState?.iconId === icon.id && desktopStore.isDragging}
+			{@const isNativeDragging = draggingDesktopIconId === icon.id}
 			{@const isDropTarget = dropTargetIconId === icon.id}
 			<div
 				class="absolute {isDragTarget ? '' : 'transition-[left,top] duration-150'} {isDropTarget ? 'ring-1 ring-neon-cyan/40 rounded-lg bg-neon-cyan/5' : ''}"
@@ -237,15 +273,18 @@
 					icon={icon.icon}
 					color={icon.color}
 					selected={desktopStore.selectedIconId === icon.id}
-					dragging={isDragTarget}
+					dragging={isDragTarget || isNativeDragging}
 					editing={editingIconId === icon.id}
 					renameable={icon.type !== 'system'}
 					binIndicator={icon.id === RECYCLE_BIN_ID}
 					binEmpty={desktopStore.binIsEmpty}
+					draggable={isDbIcon(icon.id) && editingIconId !== icon.id}
 					onselect={() => handleIconSelect(icon.id)}
 					ondblclick={() => handleIconDblClick(icon.id)}
 					oncontextmenu={(e) => handleIconContextMenu(e, icon.id)}
 					onmousedown={(e) => handleIconMouseDown(e, icon.id)}
+					ondragstart={(e) => handleIconDragStart(e, icon)}
+					ondragend={handleIconDragEnd}
 					onlabelclick={() => handleLabelClick(icon.id)}
 					onrename={(newLabel) => handleRename(icon.id, newLabel)}
 				/>

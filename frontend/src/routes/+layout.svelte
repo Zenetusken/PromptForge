@@ -10,9 +10,11 @@
 	import ForgeIDEWorkspace from "$lib/components/ForgeIDEWorkspace.svelte";
 	import CommandPaletteUI from "$lib/components/CommandPaletteUI.svelte";
 	import ConfirmModal from "$lib/components/ConfirmModal.svelte";
+	import MoveToDialog from "$lib/components/MoveToDialog.svelte";
 	import SnapPreview from "$lib/components/SnapPreview.svelte";
 	import SnapAssist from "$lib/components/SnapAssist.svelte";
 	import { desktopStore } from "$lib/stores/desktopStore.svelte";
+	import { fsOrchestrator } from "$lib/stores/filesystemOrchestrator.svelte";
 	import { historyState } from "$lib/stores/history.svelte";
 	import { optimizationState } from "$lib/stores/optimization.svelte";
 	import { providerState } from "$lib/stores/provider.svelte";
@@ -50,6 +52,13 @@
 	});
 
 	let { children } = $props();
+
+	// Resolve DB node info for the MoveToDialog from desktopStore's iconId
+	const moveNodeInfo = $derived(
+		desktopStore.moveToDialog.iconId
+			? desktopStore.getDbNodeInfo(desktopStore.moveToDialog.iconId)
+			: null
+	);
 
 	onMount(() => {
 		// --- OS Bootstrap: App Registry ---
@@ -547,6 +556,18 @@
 		confirmLabel={desktopStore.confirmDialog.confirmLabel}
 		onconfirm={() => desktopStore.confirmDialog.onConfirm()}
 		oncancel={() => desktopStore.confirmDialog.open = false}
+	/>
+
+	<!-- Move To dialog (for "Move to..." context menu action on desktop icons) -->
+	<MoveToDialog
+		bind:open={desktopStore.moveToDialog.open}
+		nodeType={moveNodeInfo?.type ?? null}
+		nodeId={moveNodeInfo?.id ?? null}
+		onmove={async (type, id, targetFolderId) => {
+			await fsOrchestrator.move(type, id, targetFolderId);
+			desktopStore.closeMoveToDialog();
+		}}
+		oncancel={() => desktopStore.closeMoveToDialog()}
 	/>
 
 	<div style="z-index: 60">

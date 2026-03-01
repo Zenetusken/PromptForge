@@ -174,12 +174,14 @@ const FILE_CONTEXT_ACTIONS: ContextAction[] = [
 
 const DB_FOLDER_CONTEXT_ACTIONS: ContextAction[] = [
 	{ id: 'open', label: 'Open', icon: 'folder-open' },
+	{ id: 'move-to', label: 'Move to...', icon: 'arrow-up-right' },
 	{ id: 'rename', label: 'Rename', icon: 'edit', separator: true },
 	{ id: 'delete', label: 'Delete', icon: 'trash-2', separator: true, danger: true },
 ];
 
 const DB_PROMPT_CONTEXT_ACTIONS: ContextAction[] = [
 	{ id: 'open', label: 'Open', icon: 'terminal' },
+	{ id: 'move-to', label: 'Move to...', icon: 'arrow-up-right' },
 	{ id: 'rename', label: 'Rename', icon: 'edit' },
 	{ id: 'delete', label: 'Delete', icon: 'trash-2', separator: true, danger: true },
 ];
@@ -338,6 +340,7 @@ class DesktopStoreState {
 		onConfirm: () => {},
 	});
 	requestRename: string | null = $state(null);
+	moveToDialog = $state<{ open: boolean; iconId: string | null }>({ open: false, iconId: null });
 
 	// ── Derived ──
 
@@ -625,6 +628,10 @@ class DesktopStoreState {
 			}
 			case 'rename': {
 				if (targetIconId) this.requestRename = targetIconId;
+				break;
+			}
+			case 'move-to': {
+				if (targetIconId) this.moveToDialog = { open: true, iconId: targetIconId };
 				break;
 			}
 			case 'delete': {
@@ -963,6 +970,17 @@ class DesktopStoreState {
 	getDbFolderId(iconId: string): string | null {
 		if (!iconId.startsWith(DB_FOLDER_PREFIX)) return null;
 		return iconId.slice(DB_FOLDER_PREFIX.length);
+	}
+
+	/** Extract node type and ID from a desktop icon ID. */
+	getDbNodeInfo(iconId: string): { type: 'project' | 'prompt'; id: string } | null {
+		if (iconId.startsWith(DB_FOLDER_PREFIX)) return { type: 'project', id: iconId.slice(DB_FOLDER_PREFIX.length) };
+		if (iconId.startsWith(DB_PROMPT_PREFIX)) return { type: 'prompt', id: iconId.slice(DB_PROMPT_PREFIX.length) };
+		return null;
+	}
+
+	closeMoveToDialog() {
+		this.moveToDialog = { open: false, iconId: null };
 	}
 
 	/**

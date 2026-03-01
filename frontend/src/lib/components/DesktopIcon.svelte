@@ -12,10 +12,13 @@
 		renameable = false,
 		binIndicator = false,
 		binEmpty = true,
+		draggable,
 		onselect,
 		ondblclick,
 		oncontextmenu,
 		onmousedown,
+		ondragstart,
+		ondragend,
 		onlabelclick,
 		onrename,
 	}: {
@@ -29,10 +32,13 @@
 		renameable?: boolean;
 		binIndicator?: boolean;
 		binEmpty?: boolean;
+		draggable?: boolean;
 		onselect?: () => void;
 		ondblclick?: () => void;
 		oncontextmenu?: (e: MouseEvent) => void;
 		onmousedown?: (e: MouseEvent) => void;
+		ondragstart?: (e: DragEvent) => void;
+		ondragend?: () => void;
 		onlabelclick?: () => void;
 		onrename?: (newLabel: string) => void;
 	} = $props();
@@ -123,6 +129,9 @@
 <div
 	class="flex flex-col items-center w-[76px] h-[84px] pt-1 gap-1"
 	data-testid={id ? `desktop-icon-${id}` : undefined}
+	draggable={draggable || undefined}
+	{ondragstart}
+	{ondragend}
 >
 	<!-- ICON GRAPHIC: 40x40 interactive square -->
 	<button
