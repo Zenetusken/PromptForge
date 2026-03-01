@@ -18,6 +18,8 @@
 		];
 		return fields.filter(Boolean).length;
 	});
+
+	let sourcesList = $derived(context.sources);
 </script>
 
 <div class="border-t border-white/[0.06]">
@@ -26,7 +28,7 @@
 		class="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] text-text-dim hover:text-text-secondary transition-colors"
 	>
 		<Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={10} />
-		<span class="font-medium">Codebase Context</span>
+		<span class="font-medium">Project Context</span>
 		<span class="ml-auto font-mono text-[9px] text-neon-cyan/60">{fieldCount}/9 fields</span>
 	</button>
 
@@ -115,6 +117,28 @@
 				<div>
 					<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Documentation</span>
 					<pre class="mt-0.5 rounded-sm bg-bg-primary p-1.5 text-[9px] font-mono text-text-secondary leading-tight overflow-x-auto max-h-24 border border-white/[0.06]">{context.documentation.slice(0, 500)}{context.documentation.length > 500 ? '...' : ''}</pre>
+				</div>
+			{/if}
+
+			<!-- Knowledge Sources -->
+			{#if sourcesList?.length}
+				<div>
+					<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Knowledge Sources</span>
+					<div class="flex flex-wrap gap-1 mt-0.5">
+						{#each sourcesList as src, i (i)}
+							<span class="rounded-sm px-1 py-0.5 text-[9px] text-neon-cyan bg-neon-cyan/8 border border-neon-cyan/20">
+								{src.title}
+							</span>
+						{/each}
+					</div>
+					{#each sourcesList as src, i (i)}
+						{#if src.content}
+							<details class="mt-1">
+								<summary class="text-[9px] text-text-dim cursor-pointer hover:text-text-secondary">{src.title}</summary>
+								<pre class="mt-0.5 rounded-sm bg-bg-primary p-1.5 text-[9px] font-mono text-text-secondary leading-tight overflow-x-auto max-h-24 border border-white/[0.06]">{src.content.slice(0, 500)}{src.content.length > 500 ? '...' : ''}</pre>
+							</details>
+						{/if}
+					{/each}
 				</div>
 			{/if}
 		</div>

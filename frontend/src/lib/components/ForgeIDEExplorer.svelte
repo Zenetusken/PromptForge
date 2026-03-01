@@ -10,7 +10,7 @@
 	<!-- Metadata (title, version, project, tags) — stacked in narrow pane -->
 	<ForgeMetadataSection projectListId="ide-project-suggestions" compact />
 
-	<!-- Context (stack templates, codebase fields) — stacked in narrow pane -->
+	<!-- Context (stack templates, project fields) — stacked in narrow pane -->
 	<ForgeContextSection compact />
 
 	<!-- Project autocomplete datalist -->

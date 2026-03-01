@@ -3,36 +3,67 @@
 	import { forgeSession } from "$lib/stores/forgeSession.svelte";
 	import { projectsState } from "$lib/stores/projects.svelte";
 	import type { CodebaseContext } from "$lib/api/client";
-	import { fetchProject } from "$lib/api/client";
+	import { fetchProject, fetchContextPreview } from "$lib/api/client";
+	import { knowledge } from "$lib/kernel/services/knowledge.svelte";
 	import { toLines } from "$lib/utils/safe";
 	import { STACK_TEMPLATES } from "$lib/utils/stackTemplates";
 	import Icon from "./Icon.svelte";
+	import ContextSnapshotPanel from "./ContextSnapshotPanel.svelte";
 	import { Tooltip } from "./ui";
+
+	// Kernel knowledge profile for the matched project
+	let kbLanguage = $state('');
+	let kbFramework = $state('');
+	let kbDescription = $state('');
+	let kbSourceCount = $state(0);
+
+	// Source count from the matched project (fallback)
+	let sourceCount = $derived.by(() => {
+		if (kbSourceCount > 0) return kbSourceCount;
+		const currentProject = forgeSession.draft.project.trim();
+		if (!currentProject) return 0;
+		const match = projectsState.allItems.find((p) => p.name === currentProject);
+		return match?.source_count ?? 0;
+	});
 
 	let { compact = false }: { compact?: boolean } = $props();
 
-	// Individual context fields synced to forgeSession.draft.contextProfile
-	let ctxLanguage = $state("");
-	let ctxFramework = $state("");
-	let ctxDescription = $state("");
+	// Pre-forge context preview
+	let previewData = $state<CodebaseContext | null>(null);
+	let previewOpen = $state(false);
+	let previewLoading = $state(false);
+	let previewFieldCount = $state(0);
+	let previewRenderedChars = $state(0);
+
+	async function handlePreview() {
+		if (previewOpen) {
+			previewOpen = false;
+			return;
+		}
+		previewLoading = true;
+		try {
+			const project = forgeSession.draft.project.trim() || null;
+			const ctx = forgeSession.draft.contextProfile || null;
+			const result = await fetchContextPreview(project, ctx);
+			previewData = result.context;
+			previewFieldCount = result.field_count;
+			previewRenderedChars = result.rendered_chars;
+			previewOpen = true;
+		} catch {
+			previewData = null;
+			previewOpen = false;
+		} finally {
+			previewLoading = false;
+		}
+	}
+
+	// Technical hint fields synced to forgeSession.draft.contextProfile
 	let ctxConventions = $state("");
 	let ctxPatterns = $state("");
-	let ctxCodeSnippets = $state("");
 	let ctxTestFramework = $state("");
 	let ctxTestPatterns = $state("");
-	let ctxDocumentation = $state("");
 	let hasContextData = $derived(
-		!!(
-			ctxLanguage ||
-			ctxFramework ||
-			ctxDescription ||
-			ctxConventions ||
-			ctxPatterns ||
-			ctxCodeSnippets ||
-			ctxTestFramework ||
-			ctxTestPatterns ||
-			ctxDocumentation
-		),
+		!!(ctxConventions || ctxPatterns || ctxTestFramework || ctxTestPatterns),
 	);
 
 	// Sync context fields from forgeSession.draft.contextProfile when it changes externally
@@ -42,25 +73,15 @@
 		if (cp !== lastSyncedContextProfile) {
 			lastSyncedContextProfile = cp;
 			if (cp) {
-				ctxLanguage = cp.language ?? "";
-				ctxFramework = cp.framework ?? "";
-				ctxDescription = cp.description ?? "";
 				ctxConventions = toLines(cp.conventions);
 				ctxPatterns = toLines(cp.patterns);
-				ctxCodeSnippets = toLines(cp.code_snippets);
 				ctxTestFramework = cp.test_framework ?? "";
 				ctxTestPatterns = toLines(cp.test_patterns);
-				ctxDocumentation = cp.documentation ?? "";
 			} else {
-				ctxLanguage = "";
-				ctxFramework = "";
-				ctxDescription = "";
 				ctxConventions = "";
 				ctxPatterns = "";
-				ctxCodeSnippets = "";
 				ctxTestFramework = "";
 				ctxTestPatterns = "";
-				ctxDocumentation = "";
 			}
 		}
 	});
@@ -72,9 +93,6 @@
 			return;
 		}
 		const ctx: CodebaseContext = {};
-		if (ctxLanguage.trim()) ctx.language = ctxLanguage.trim();
-		if (ctxFramework.trim()) ctx.framework = ctxFramework.trim();
-		if (ctxDescription.trim()) ctx.description = ctxDescription.trim();
 		if (ctxConventions.trim()) {
 			const items = ctxConventions.split("\n").map((s) => s.trim()).filter(Boolean);
 			if (items.length > 0) ctx.conventions = items;
@@ -83,11 +101,6 @@
 			const items = ctxPatterns.split("\n").map((s) => s.trim()).filter(Boolean);
 			if (items.length > 0) ctx.patterns = items;
 		}
-		if (ctxCodeSnippets.trim()) {
-			const items = ctxCodeSnippets.split("\n").map((s) => s.trim()).filter(Boolean);
-			if (items.length > 0) ctx.code_snippets = items;
-		}
-		if (ctxDocumentation.trim()) ctx.documentation = ctxDocumentation.trim();
 		if (ctxTestFramework.trim()) ctx.test_framework = ctxTestFramework.trim();
 		if (ctxTestPatterns.trim()) {
 			const items = ctxTestPatterns.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -103,15 +116,10 @@
 		source: "project" | "template",
 		templateId?: string,
 	) {
-		ctxLanguage = ctx.language ?? "";
-		ctxFramework = ctx.framework ?? "";
-		ctxDescription = ctx.description ?? "";
 		ctxConventions = toLines(ctx.conventions);
 		ctxPatterns = toLines(ctx.patterns);
-		ctxCodeSnippets = toLines(ctx.code_snippets);
 		ctxTestFramework = ctx.test_framework ?? "";
 		ctxTestPatterns = toLines(ctx.test_patterns);
-		ctxDocumentation = ctx.documentation ?? "";
 		forgeSession.updateDraft({
 			contextProfile: ctx,
 			contextSource: source,
@@ -122,15 +130,14 @@
 	}
 
 	function clearContext() {
-		ctxLanguage = "";
-		ctxFramework = "";
-		ctxDescription = "";
 		ctxConventions = "";
 		ctxPatterns = "";
-		ctxCodeSnippets = "";
 		ctxTestFramework = "";
 		ctxTestPatterns = "";
-		ctxDocumentation = "";
+		kbLanguage = "";
+		kbFramework = "";
+		kbDescription = "";
+		kbSourceCount = 0;
 		lastSyncedContextProfile = null;
 		forgeSession.updateDraft({
 			contextProfile: null,
@@ -140,9 +147,38 @@
 	}
 
 	async function loadAndApplyProjectContext(projectId: string) {
+		// Load kernel knowledge profile for the summary card
+		let kernelProfile: import("$lib/kernel/types").KnowledgeProfile | null = null;
+		try {
+			kernelProfile = await knowledge.getProfile('promptforge', projectId);
+			if (kernelProfile) {
+				kbLanguage = kernelProfile.language ?? '';
+				kbFramework = kernelProfile.framework ?? '';
+				kbDescription = kernelProfile.description ?? '';
+				// Count sources from cached data
+				const sources = knowledge.getCachedSources('promptforge', projectId);
+				kbSourceCount = sources.length;
+			}
+		} catch {
+			// Fallback — no kernel profile available
+		}
+
+		// Load legacy context profile for hint fields
 		const detail = await fetchProject(projectId);
 		if (detail?.context_profile) {
 			applyContext(detail.context_profile, "project");
+		} else if (kernelProfile) {
+			// Build hint context from kernel metadata when legacy is absent
+			const meta = kernelProfile.metadata ?? {};
+			const ctx: CodebaseContext = {};
+			if (Array.isArray(meta.conventions)) ctx.conventions = meta.conventions as string[];
+			if (Array.isArray(meta.patterns)) ctx.patterns = meta.patterns as string[];
+			if (typeof meta.test_patterns === 'object' && Array.isArray(meta.test_patterns))
+				ctx.test_patterns = meta.test_patterns as string[];
+			if (kernelProfile.test_framework) ctx.test_framework = kernelProfile.test_framework;
+			if (Object.keys(ctx).length > 0) {
+				applyContext(ctx, "project");
+			}
 		}
 	}
 
@@ -158,13 +194,17 @@
 			const match = projectsState.allItems.find(
 				(p) => p.name === currentProject,
 			);
-			if (match?.has_context) {
+			if (match && (match.has_context || match.source_count > 0)) {
 				lastAutoResolvedProject = currentProject;
 				loadAndApplyProjectContext(match.id);
 			}
 		}
 		if (!currentProject) {
 			lastAutoResolvedProject = "";
+			kbLanguage = "";
+			kbFramework = "";
+			kbDescription = "";
+			kbSourceCount = 0;
 		}
 	});
 </script>
@@ -182,7 +222,7 @@
 				? 'rotate-90'
 				: ''}"
 		/>
-		<Tooltip text="Provide codebase metadata for grounded optimization"
+		<Tooltip text="Provide project context for grounded optimization"
 			><span>Context</span></Tooltip
 		>
 		{#if forgeSession.draft.contextSource === "project"}
@@ -207,9 +247,35 @@
 	</Collapsible.Trigger>
 	<Collapsible.Content>
 		<div class="ctx-zone px-1.5 pt-0.5 pb-1" data-testid="context-fields">
+			<!-- Project Summary Card (read-only, from kernel knowledge profile) -->
+			{#if kbLanguage || kbFramework || kbDescription || sourceCount > 0}
+				<div class="mb-2 rounded-sm border border-neon-purple/15 bg-neon-purple/[0.03] px-2 py-1.5">
+					<div class="flex items-center gap-1.5 mb-1">
+						<Icon name="cpu" size={10} class="text-neon-purple/70" />
+						<span class="text-[9px] font-medium text-neon-purple/80">Project Knowledge</span>
+					</div>
+					<div class="flex flex-wrap items-center gap-1.5">
+						{#if kbLanguage}
+							<span class="rounded-sm border border-neon-purple/20 bg-neon-purple/8 px-1.5 py-px text-[9px] text-neon-purple/80">{kbLanguage}</span>
+						{/if}
+						{#if kbFramework}
+							<span class="rounded-sm border border-neon-purple/20 bg-neon-purple/8 px-1.5 py-px text-[9px] text-neon-purple/80">{kbFramework}</span>
+						{/if}
+						{#if sourceCount > 0}
+							<span class="flex items-center gap-1 text-[9px] text-text-dim">
+								<Icon name="file-text" size={9} class="text-neon-cyan/60" />
+								{sourceCount} source{sourceCount !== 1 ? 's' : ''}
+							</span>
+						{/if}
+					</div>
+					{#if kbDescription}
+						<p class="mt-1 text-[9px] text-text-secondary leading-snug line-clamp-2">{kbDescription}</p>
+					{/if}
+				</div>
+			{/if}
+
 			<p class="mb-1 text-[9px] leading-snug text-text-dim">
-				All fields optional. Providing context grounds the
-				optimization in your actual codebase.
+				Optional technical hints for this forge. Project identity is set in the Projects window.
 			</p>
 
 			<!-- Stack Template Picker -->
@@ -236,86 +302,8 @@
 				{/if}
 			</div>
 
-			<!-- Stack Identity -->
-			<div class="ctx-group-label">Stack</div>
-			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-3'}">
-				<div class="ctx-field">
-					<label for="pop-ctx-lang" class="ctx-field-label"
-						>Language</label
-					>
-					<input
-						id="pop-ctx-lang"
-						type="text"
-						bind:value={ctxLanguage}
-						onchange={syncContextToDraft}
-						placeholder="e.g. TypeScript"
-						list="pop-ctx-languages"
-						data-testid="ctx-language"
-						class="ctx-input"
-					/>
-					<datalist id="pop-ctx-languages">
-						<option value="Python"></option>
-						<option value="TypeScript"></option>
-						<option value="JavaScript"></option>
-						<option value="Rust"></option>
-						<option value="Go"></option>
-						<option value="Java"></option>
-						<option value="C#"></option>
-						<option value="C++"></option>
-						<option value="Ruby"></option>
-						<option value="PHP"></option>
-						<option value="Swift"></option>
-						<option value="Kotlin"></option>
-					</datalist>
-				</div>
-				<div class="ctx-field">
-					<label for="pop-ctx-fw" class="ctx-field-label"
-						>Framework</label
-					>
-					<input
-						id="pop-ctx-fw"
-						type="text"
-						bind:value={ctxFramework}
-						onchange={syncContextToDraft}
-						placeholder="e.g. SvelteKit"
-						data-testid="ctx-framework"
-						class="ctx-input"
-					/>
-				</div>
-				<div class="ctx-field">
-					<label for="pop-ctx-tf" class="ctx-field-label"
-						>Test Framework</label
-					>
-					<input
-						id="pop-ctx-tf"
-						type="text"
-						bind:value={ctxTestFramework}
-						onchange={syncContextToDraft}
-						placeholder="e.g. vitest"
-						data-testid="ctx-test-framework"
-						class="ctx-input"
-					/>
-				</div>
-			</div>
-
-			<!-- Description -->
-			<div class="ctx-field mt-2">
-				<label for="pop-ctx-desc" class="ctx-field-label"
-					>Description</label
-				>
-				<textarea
-					id="pop-ctx-desc"
-					bind:value={ctxDescription}
-					onchange={syncContextToDraft}
-					placeholder="What does this project do?"
-					rows="2"
-					data-testid="ctx-description"
-					class="ctx-input resize-none"
-				></textarea>
-			</div>
-
-			<!-- Architecture -->
-			<div class="ctx-group-label mt-2">Architecture</div>
+			<!-- Technical Hints -->
+			<div class="ctx-group-label">Technical Hints</div>
 			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-2'}">
 				<div class="ctx-field">
 					<label for="pop-ctx-conv" class="ctx-field-label"
@@ -347,25 +335,21 @@
 				</div>
 			</div>
 
-			<!-- Code Reference -->
-			<div class="ctx-field mt-2">
-				<label for="pop-ctx-code" class="ctx-field-label"
-					>Code Snippets</label
-				>
-				<textarea
-					id="pop-ctx-code"
-					bind:value={ctxCodeSnippets}
-					onchange={syncContextToDraft}
-					placeholder="One per line"
-					rows="3"
-					data-testid="ctx-code-snippets"
-					class="ctx-input ctx-code-well resize-none font-mono text-xs"
-				></textarea>
-			</div>
-
-			<!-- Testing & Docs -->
-			<div class="ctx-group-label mt-2">Testing & Docs</div>
-			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-2'}">
+			<div class="grid grid-cols-1 gap-1.5 mt-1.5 {compact ? '' : 'sm:grid-cols-2'}">
+				<div class="ctx-field">
+					<label for="pop-ctx-tf" class="ctx-field-label"
+						>Test Framework</label
+					>
+					<input
+						id="pop-ctx-tf"
+						type="text"
+						bind:value={ctxTestFramework}
+						onchange={syncContextToDraft}
+						placeholder="e.g. vitest"
+						data-testid="ctx-test-framework"
+						class="ctx-input"
+					/>
+				</div>
 				<div class="ctx-field">
 					<label for="pop-ctx-tp" class="ctx-field-label"
 						>Test Patterns</label
@@ -380,20 +364,29 @@
 						class="ctx-input resize-none"
 					></textarea>
 				</div>
-				<div class="ctx-field">
-					<label for="pop-ctx-doc" class="ctx-field-label"
-						>Documentation</label
-					>
-					<textarea
-						id="pop-ctx-doc"
-						bind:value={ctxDocumentation}
-						onchange={syncContextToDraft}
-						placeholder="Notes, links, references"
-						rows="2"
-						data-testid="ctx-documentation"
-						class="ctx-input resize-none"
-					></textarea>
-				</div>
+			</div>
+
+			<!-- Pre-forge context preview -->
+			<div class="mt-2 pt-1.5 border-t border-white/[0.04]">
+				<button
+					type="button"
+					class="flex items-center gap-1 rounded-sm border border-neon-cyan/20 px-2 py-0.5 text-[10px] text-neon-cyan hover:bg-neon-cyan/8 transition-colors disabled:opacity-30"
+					onclick={handlePreview}
+					disabled={previewLoading}
+				>
+					<Icon name="eye" size={10} />
+					{previewLoading ? 'Loading...' : previewOpen ? 'Hide Preview' : 'Preview Resolved Context'}
+				</button>
+				{#if previewOpen && previewData}
+					<div class="mt-1.5">
+						<div class="text-[9px] text-text-dim mb-1">
+							Resolved {previewFieldCount}/9 fields &middot; ~{previewRenderedChars >= 1000 ? `${(previewRenderedChars / 1000).toFixed(1)}K` : previewRenderedChars} chars
+						</div>
+						<ContextSnapshotPanel context={previewData} />
+					</div>
+				{:else if previewOpen && !previewData}
+					<p class="mt-1 text-[9px] text-text-dim italic">No context resolved. Set a project name or add hints above.</p>
+				{/if}
 			</div>
 		</div>
 	</Collapsible.Content>

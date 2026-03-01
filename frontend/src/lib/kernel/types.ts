@@ -249,6 +249,55 @@ export interface KernelStorage {
 	deleteDocument(appId: string, documentId: string): Promise<void>;
 }
 
+/** Kernel Knowledge Base profile. */
+export interface KnowledgeProfile {
+	id: string;
+	app_id: string;
+	entity_id: string;
+	name: string;
+	language: string | null;
+	framework: string | null;
+	description: string | null;
+	test_framework: string | null;
+	metadata: Record<string, unknown>;
+	auto_detected: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+}
+
+/** Kernel Knowledge Base source document. */
+export interface KnowledgeSource {
+	id: string;
+	profile_id: string;
+	title: string;
+	content: string;
+	source_type: string;
+	char_count: number;
+	enabled: boolean;
+	order_index: number;
+	created_at: string;
+	updated_at: string;
+}
+
+/** Knowledge service interface exposed to apps. */
+export interface KernelKnowledge {
+	getProfile(appId: string, entityId: string): Promise<KnowledgeProfile | null>;
+	updateProfile(
+		appId: string,
+		entityId: string,
+		fields: Partial<Pick<KnowledgeProfile, 'name' | 'language' | 'framework' | 'description' | 'test_framework'>>,
+	): Promise<KnowledgeProfile>;
+	getSources(appId: string, entityId: string, opts?: { enabledOnly?: boolean }): Promise<KnowledgeSource[]>;
+	addSource(
+		appId: string,
+		entityId: string,
+		data: { title: string; content: string; source_type?: string },
+	): Promise<KnowledgeSource>;
+	updateSource(sourceId: string, data: Partial<Pick<KnowledgeSource, 'title' | 'content' | 'enabled'>>): Promise<KnowledgeSource>;
+	deleteSource(sourceId: string): Promise<void>;
+	toggleSource(sourceId: string): Promise<KnowledgeSource>;
+}
+
 /** Kernel API provided to apps during init. */
 export interface KernelAPI {
 	readonly bus: KernelBus;
@@ -259,4 +308,5 @@ export interface KernelAPI {
 	readonly clipboard: KernelClipboard;
 	readonly appSettings: KernelAppSettings;
 	readonly storage: KernelStorage;
+	readonly knowledge: KernelKnowledge;
 }

@@ -28,6 +28,10 @@
 	let connecting = $state(false);
 	let disconnecting = $state(false);
 
+	// Context Inspector — kernel profile for selected workspace
+	let inspectorProfile = $state<import('$lib/kernel/types').KnowledgeProfile | null>(null);
+	let inspectorLoading = $state(false);
+
 	// OAuth setup form state
 	let configClientId = $state('');
 	let configClientSecret = $state('');
@@ -204,6 +208,58 @@
 		} finally {
 			unlinkingId = null;
 		}
+	}
+
+	// Load kernel knowledge profile when selected workspace changes
+	$effect(() => {
+		const ws = selectedWorkspace;
+		if (ws && ws.project_id) {
+			inspectorLoading = true;
+			import('$lib/kernel/services/knowledge.svelte').then(({ knowledge }) => {
+				knowledge.getProfile('promptforge', ws.project_id).then((profile) => {
+					inspectorProfile = profile;
+				}).catch(() => {
+					inspectorProfile = null;
+				}).finally(() => {
+					inspectorLoading = false;
+				});
+			});
+		} else {
+			inspectorProfile = null;
+		}
+	});
+
+	type Provenance = 'manual' | 'auto' | 'n/a';
+
+	function getFieldProvenance(field: string): { value: string; provenance: Provenance; autoValue: string } {
+		if (!inspectorProfile) return { value: '', provenance: 'n/a', autoValue: '' };
+
+		const identityFields = ['language', 'framework', 'description', 'test_framework'];
+		const metadataFields = ['conventions', 'patterns', 'test_patterns'];
+		const auto = (inspectorProfile.auto_detected ?? {}) as Record<string, unknown>;
+
+		let manualVal: unknown = null;
+		let autoVal: unknown = auto[field] ?? null;
+
+		if (identityFields.includes(field)) {
+			manualVal = (inspectorProfile as unknown as Record<string, unknown>)[field] ?? null;
+		} else if (metadataFields.includes(field)) {
+			const meta = (inspectorProfile.metadata ?? {}) as Record<string, unknown>;
+			manualVal = meta[field] ?? null;
+		}
+
+		const formatVal = (v: unknown): string => {
+			if (v == null) return '';
+			if (Array.isArray(v)) return v.join(', ');
+			return String(v);
+		};
+
+		const manual = formatVal(manualVal);
+		const autoStr = formatVal(autoVal);
+
+		if (manual) return { value: manual, provenance: 'manual', autoValue: autoStr };
+		if (autoStr) return { value: autoStr, provenance: 'auto', autoValue: '' };
+		return { value: '', provenance: 'n/a', autoValue: '' };
 	}
 
 	// Load data on mount
@@ -402,7 +458,7 @@
 						<Icon name="github" size={24} class="text-text-dim" />
 						<p class="text-xs text-text-secondary text-center max-w-[240px]">
 							GitHub OAuth is configured. Connect your account to start
-							extracting codebase context from repositories.
+							extracting project context from repositories.
 						</p>
 						<button
 							class="flex items-center gap-1.5 text-xs text-neon-cyan px-3 py-1.5 border border-neon-cyan/20 hover:border-neon-cyan/40 hover:bg-neon-cyan/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -427,7 +483,7 @@
 							<Icon name="github" size={20} class="text-text-dim" />
 							<h4 class="text-xs font-medium text-text-primary">GitHub OAuth Setup</h4>
 							<p class="text-[10px] text-text-secondary text-center max-w-[280px]">
-								Configure your GitHub OAuth App to enable automatic codebase
+								Configure your GitHub OAuth App to enable automatic project
 								context extraction from your repositories.
 							</p>
 						</div>
@@ -702,22 +758,35 @@
 						</div>
 
 						<!-- Field breakdown -->
-						<div class="space-y-1.5">
-							{#each contextFields as field (field.key)}
-								<div class="flex items-center gap-2 text-[11px]">
-									<span class="w-24 text-text-secondary shrink-0">{field.label}</span>
-									<span class="text-[9px] px-1 py-0.5 border shrink-0
-										{selectedWorkspace.sync_status === 'synced'
-											? 'text-neon-green border-neon-green/20 bg-neon-green/5'
-											: 'text-text-dim border-neon-cyan/5'}">
-										{selectedWorkspace.sync_status === 'synced' ? 'auto' : 'n/a'}
-									</span>
-									<span class="text-text-dim truncate flex-1">
-										{selectedWorkspace.sync_status === 'synced' ? 'Detected from repo' : 'Not synced'}
-									</span>
-								</div>
-							{/each}
-						</div>
+						{#if inspectorLoading}
+							<div class="text-[10px] text-text-dim py-2">Loading profile...</div>
+						{:else}
+							<div class="space-y-1.5">
+								{#each contextFields as field (field.key)}
+									{@const info = getFieldProvenance(field.key)}
+									<div class="flex items-start gap-2 text-[11px]">
+										<span class="w-24 text-text-secondary shrink-0 pt-0.5">{field.label}</span>
+										{#if info.provenance === 'manual'}
+											<span class="text-[9px] px-1 py-0.5 border shrink-0 text-neon-purple border-neon-purple/20 bg-neon-purple/5">manual</span>
+										{:else if info.provenance === 'auto'}
+											<span class="text-[9px] px-1 py-0.5 border shrink-0 text-neon-green border-neon-green/20 bg-neon-green/5">auto</span>
+										{:else}
+											<span class="text-[9px] px-1 py-0.5 border shrink-0 text-text-dim border-white/[0.06]">n/a</span>
+										{/if}
+										<span class="flex-1 min-w-0">
+											{#if info.value}
+												<span class="text-text-primary truncate block">{info.value}</span>
+												{#if info.provenance === 'manual' && info.autoValue}
+													<span class="text-[9px] text-text-dim truncate block">auto: {info.autoValue}</span>
+												{/if}
+											{:else}
+												<span class="text-text-dim italic">&mdash;</span>
+											{/if}
+										</span>
+									</div>
+								{/each}
+							</div>
+						{/if}
 
 						<div class="pt-2 border-t border-neon-cyan/5">
 							<p class="text-[10px] text-text-dim">

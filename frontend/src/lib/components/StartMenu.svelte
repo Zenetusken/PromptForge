@@ -279,8 +279,8 @@
 										<span class="text-[9px] text-text-dim">{project.prompt_count} prompts</span>
 									{/if}
 								</div>
-								{#if project.has_context}
-									<span class="h-1.5 w-1.5 rounded-full bg-neon-green flex-shrink-0" title="Has context profile"></span>
+								{#if project.has_context || project.source_count > 0}
+									<span class="h-1.5 w-1.5 rounded-full bg-neon-green flex-shrink-0" title="Has project knowledge"></span>
 								{/if}
 							</button>
 						{/each}

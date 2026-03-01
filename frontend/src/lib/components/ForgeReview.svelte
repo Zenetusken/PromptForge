@@ -160,7 +160,7 @@
 			</div>
 		{/if}
 
-		<!-- Codebase context snapshot (collapsible) -->
+		<!-- Project context snapshot (collapsible) -->
 		{#if result.codebase_context_snapshot}
 			<ContextSnapshotPanel context={result.codebase_context_snapshot} />
 		{/if}

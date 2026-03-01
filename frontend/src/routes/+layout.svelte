@@ -40,6 +40,7 @@
 	import { helloWorldApp } from "$lib/apps/hello_world";
 	import { textForgeApp } from "$lib/apps/textforge";
 	import { kernelBusBridge } from "$lib/kernel/services/kernelBusBridge.svelte";
+	import { knowledge } from "$lib/kernel/services/knowledge.svelte";
 
 	// View Transitions API for page navigation crossfade
 	onNavigate((navigation) => {
@@ -76,6 +77,7 @@
 			clipboard: clipboardService,
 			appSettings,
 			storage: appStorage,
+			knowledge,
 		});
 
 		// Sync app-declared desktop icons after registry is populated

@@ -20,6 +20,10 @@ const EVENT_TYPE_MAP: Record<string, BusEventType> = {
 	'kernel:job.progress': 'kernel:job_progress',
 	'kernel:job.completed': 'kernel:job_completed',
 	'kernel:job.failed': 'kernel:job_failed',
+	'kernel:knowledge.profile_updated': 'kernel:knowledge_profile_updated',
+	'kernel:knowledge.source_added': 'kernel:knowledge_source_added',
+	'kernel:knowledge.source_updated': 'kernel:knowledge_source_updated',
+	'kernel:knowledge.source_removed': 'kernel:knowledge_source_removed',
 };
 
 const MAX_BACKOFF = 30_000;

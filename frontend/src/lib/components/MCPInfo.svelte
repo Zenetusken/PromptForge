@@ -119,7 +119,7 @@
 				{ name: 'create_project', desc: 'Create a new project for grouping prompts' },
 				{ name: 'add_prompt', desc: 'Add a prompt to a project' },
 				{ name: 'update_prompt', desc: 'Update prompt content with auto-versioning' },
-				{ name: 'set_project_context', desc: 'Set or clear codebase context profile' },
+				{ name: 'set_project_context', desc: 'Set or clear project context profile' },
 			],
 		},
 		{

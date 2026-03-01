@@ -53,6 +53,10 @@ export type BusEventType =
 	| 'kernel:job_completed'
 	| 'kernel:job_failed'
 	| 'kernel:event'
+	| 'kernel:knowledge_profile_updated'
+	| 'kernel:knowledge_source_added'
+	| 'kernel:knowledge_source_updated'
+	| 'kernel:knowledge_source_removed'
 	| 'textforge:prefill';
 
 export interface BusEvent {

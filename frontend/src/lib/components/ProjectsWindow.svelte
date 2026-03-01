@@ -5,6 +5,7 @@
 	import FileManagerRow from './FileManagerRow.svelte';
 	import DesktopContextMenu from './DesktopContextMenu.svelte';
 	import ConfirmModal from './ConfirmModal.svelte';
+	import SourceManager from './SourceManager.svelte';
 	import type { ColumnDef } from './FileManagerView.svelte';
 	import type { ContextAction } from '$lib/stores/desktopStore.svelte';
 	import { projectsState } from '$lib/stores/projects.svelte';
@@ -50,6 +51,105 @@
 
 	// ── Drop target ──
 	let dropTargetId: string | null = $state(null);
+
+	// ── Knowledge panel ──
+	let knowledgeExpanded = $state(false);
+	let sourcesExpanded = $state(false);
+	const isProjectRoot = $derived(activeFolderId !== null && folderPath.length === 1);
+	const activeProjectStatus = $derived(
+		isProjectRoot ? (projectsState.items.find(p => p.id === activeFolderId)?.status ?? 'active') : 'active'
+	);
+
+	// ── Identity fields (kernel Knowledge Base) ──
+	let kbLanguage = $state('');
+	let kbFramework = $state('');
+	let kbDescription = $state('');
+	let kbLoading = $state(false);
+	let kbAutoDetected = $state<Record<string, string | null>>({});
+
+	// ── Technical hints (metadata fields from kernel Knowledge Base) ──
+	let kbConventions = $state('');
+	let kbPatterns = $state('');
+	let kbTestPatterns = $state('');
+	let hintsExpanded = $state(false);
+	const hintsItemCount = $derived(
+		[kbConventions, kbPatterns, kbTestPatterns].filter(s => s.trim()).length
+	);
+
+	// ── Context coverage stats (list view) ──
+	let contextStats = $derived.by(() => {
+		const all = projectsState.items.filter(p => p.status === 'active');
+		const withContext = all.filter(p => p.has_context || p.source_count > 0);
+		const totalSources = all.reduce((sum, p) => sum + p.source_count, 0);
+		return { total: all.length, withContext: withContext.length, totalSources };
+	});
+
+	async function loadKnowledgeProfile(entityId: string) {
+		kbLoading = true;
+		try {
+			const { knowledge } = await import('$lib/kernel/services/knowledge.svelte');
+			const profile = await knowledge.getProfile('promptforge', entityId);
+			if (profile) {
+				kbLanguage = profile.language ?? '';
+				kbFramework = profile.framework ?? '';
+				kbDescription = profile.description ?? '';
+				kbAutoDetected = (profile.auto_detected ?? {}) as Record<string, string | null>;
+				const meta = (profile.metadata ?? {}) as Record<string, unknown>;
+				kbConventions = Array.isArray(meta.conventions) ? (meta.conventions as string[]).join('\n') : '';
+				kbPatterns = Array.isArray(meta.patterns) ? (meta.patterns as string[]).join('\n') : '';
+				kbTestPatterns = Array.isArray(meta.test_patterns) ? (meta.test_patterns as string[]).join('\n') : '';
+			} else {
+				kbLanguage = '';
+				kbFramework = '';
+				kbDescription = '';
+				kbAutoDetected = {};
+				kbConventions = '';
+				kbPatterns = '';
+				kbTestPatterns = '';
+			}
+		} catch {
+			// Silently fail — identity section will show empty
+		} finally {
+			kbLoading = false;
+		}
+	}
+
+	async function saveIdentityField(field: string, value: string) {
+		if (!activeFolderId) return;
+		try {
+			const { knowledge } = await import('$lib/kernel/services/knowledge.svelte');
+			await knowledge.updateProfile('promptforge', activeFolderId, {
+				[field]: value.trim() || null,
+			} as any);
+		} catch {
+			// Silently fail — value stays in local state
+		}
+	}
+
+	async function saveHintField(field: string, value: string) {
+		if (!activeFolderId) return;
+		try {
+			const { knowledge } = await import('$lib/kernel/services/knowledge.svelte');
+			const profile = knowledge.getCachedProfile('promptforge', activeFolderId);
+			const currentMeta = { ...((profile?.metadata ?? {}) as Record<string, unknown>) };
+			const items = value.split('\n').map(s => s.trim()).filter(Boolean);
+			if (items.length > 0) {
+				currentMeta[field] = items;
+			} else {
+				delete currentMeta[field];
+			}
+			await knowledge.updateProfile('promptforge', activeFolderId, { metadata_json: currentMeta } as any);
+		} catch {
+			// Silently fail — value stays in local state
+		}
+	}
+
+	// Load knowledge profile when navigating to a project root
+	$effect(() => {
+		if (isProjectRoot && activeFolderId) {
+			loadKnowledgeProfile(activeFolderId);
+		}
+	});
 
 	// ── Context menu ──
 	let ctxMenu = $state({ open: false, x: 0, y: 0, targetId: null as string | null, actions: [] as ContextAction[] });
@@ -440,6 +540,22 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="h-full" onkeydown={handleKeydown}>
 {#if currentView === 'list'}
+	<!-- Context coverage bar -->
+	{#if contextStats.total > 0}
+		<div class="flex items-center gap-3 px-3 py-1 border-b border-white/[0.04] text-[10px]">
+			<span class="flex items-center gap-1 {contextStats.withContext > contextStats.total * 0.5 ? 'text-neon-green' : contextStats.withContext > 0 ? 'text-neon-yellow' : 'text-text-dim'}">
+				<Icon name="cpu" size={10} />
+				Context: {contextStats.withContext}/{contextStats.total} projects
+			</span>
+			{#if contextStats.totalSources > 0}
+				<span class="flex items-center gap-1 text-text-dim">
+					<Icon name="file-text" size={10} />
+					{contextStats.totalSources} source{contextStats.totalSources !== 1 ? 's' : ''}
+				</span>
+			{/if}
+		</div>
+	{/if}
+
 	<!-- Project list view -->
 	<FileManagerView
 		columns={listColumns}
@@ -487,8 +603,8 @@
 							class="{project.status === 'archived' ? 'text-text-dim/40' : 'text-neon-yellow/70'} shrink-0"
 						/>
 						<span class="text-xs font-medium text-text-primary truncate">{project.name}</span>
-						{#if project.has_context}
-							<span class="h-1.5 w-1.5 rounded-full bg-neon-green shrink-0" title="Has context profile"></span>
+						{#if project.has_context || project.source_count > 0}
+							<span class="h-1.5 w-1.5 rounded-full bg-neon-green shrink-0" title="Has project knowledge"></span>
 						{/if}
 						{#if project.status === 'archived'}
 							<span class="text-[9px] text-text-dim/50 shrink-0">(archived)</span>
@@ -585,6 +701,159 @@
 			{/each}
 		{/snippet}
 	</FileManagerView>
+
+	<!-- Knowledge panel (project root only) -->
+	{#if isProjectRoot && activeFolderId}
+		<!-- Identity Fields -->
+		<div class="border-t border-white/[0.04] px-2 py-1.5">
+			<button
+				type="button"
+				class="flex w-full items-center gap-1.5 text-[10px] text-text-dim hover:text-text-secondary transition-colors"
+				onclick={() => knowledgeExpanded = !knowledgeExpanded}
+			>
+				<Icon name={knowledgeExpanded ? "chevron-down" : "chevron-right"} size={10} />
+				<Icon name="cpu" size={10} class="text-neon-purple/60" />
+				<span>Project Knowledge</span>
+				{#if kbLanguage || kbFramework}
+					<span class="ml-auto text-[9px] text-text-dim font-mono">
+						{[kbLanguage, kbFramework].filter(Boolean).join(' / ')}
+					</span>
+				{/if}
+			</button>
+			{#if knowledgeExpanded}
+				<div class="mt-1.5 space-y-1.5 pb-1">
+					<p class="text-[9px] text-text-dim leading-snug">
+						Project identity shared across all apps. Grounding context for AI.
+					</p>
+					<div class="grid grid-cols-2 gap-1.5">
+						<div>
+							<label for="kb-lang" class="block text-[9px] text-text-dim mb-0.5">Language</label>
+							<div class="relative">
+								<input
+									id="kb-lang"
+									type="text"
+									bind:value={kbLanguage}
+									onblur={() => saveIdentityField('language', kbLanguage)}
+									placeholder="e.g. TypeScript"
+									disabled={activeProjectStatus !== 'active'}
+									class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none disabled:opacity-40"
+								/>
+								{#if kbAutoDetected.language && !kbLanguage}
+									<span class="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] text-neon-green/50">auto</span>
+								{/if}
+							</div>
+						</div>
+						<div>
+							<label for="kb-fw" class="block text-[9px] text-text-dim mb-0.5">Framework</label>
+							<div class="relative">
+								<input
+									id="kb-fw"
+									type="text"
+									bind:value={kbFramework}
+									onblur={() => saveIdentityField('framework', kbFramework)}
+									placeholder="e.g. SvelteKit"
+									disabled={activeProjectStatus !== 'active'}
+									class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none disabled:opacity-40"
+								/>
+								{#if kbAutoDetected.framework && !kbFramework}
+									<span class="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] text-neon-green/50">auto</span>
+								{/if}
+							</div>
+						</div>
+					</div>
+					<div>
+						<label for="kb-desc" class="block text-[9px] text-text-dim mb-0.5">Description</label>
+						<textarea
+							id="kb-desc"
+							bind:value={kbDescription}
+							onblur={() => saveIdentityField('description', kbDescription)}
+							placeholder="What does this project do?"
+							rows="2"
+							disabled={activeProjectStatus !== 'active'}
+							class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none resize-none disabled:opacity-40"
+						></textarea>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Technical Hints -->
+		<div class="border-t border-white/[0.04] px-2 py-1.5">
+			<button
+				type="button"
+				class="flex w-full items-center gap-1.5 text-[10px] text-text-dim hover:text-text-secondary transition-colors"
+				onclick={() => hintsExpanded = !hintsExpanded}
+			>
+				<Icon name={hintsExpanded ? "chevron-down" : "chevron-right"} size={10} />
+				<Icon name="code" size={10} class="text-neon-green/60" />
+				<span>Technical Hints</span>
+				{#if hintsItemCount > 0}
+					<span class="ml-auto text-[9px] text-text-dim font-mono">{hintsItemCount} field{hintsItemCount !== 1 ? 's' : ''}</span>
+				{/if}
+			</button>
+			{#if hintsExpanded}
+				<div class="mt-1.5 space-y-1.5 pb-1">
+					<p class="text-[9px] text-text-dim leading-snug">
+						Metadata hints injected into the optimization pipeline. One item per line.
+					</p>
+					<div>
+						<label for="kb-conv" class="block text-[9px] text-text-dim mb-0.5">Conventions</label>
+						<textarea
+							id="kb-conv"
+							bind:value={kbConventions}
+							onblur={() => saveHintField('conventions', kbConventions)}
+							placeholder="One per line (e.g. Use camelCase)"
+							rows="2"
+							disabled={activeProjectStatus !== 'active'}
+							class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-green/30 focus:outline-none resize-none disabled:opacity-40"
+						></textarea>
+					</div>
+					<div>
+						<label for="kb-pat" class="block text-[9px] text-text-dim mb-0.5">Patterns</label>
+						<textarea
+							id="kb-pat"
+							bind:value={kbPatterns}
+							onblur={() => saveHintField('patterns', kbPatterns)}
+							placeholder="One per line (e.g. Repository pattern)"
+							rows="2"
+							disabled={activeProjectStatus !== 'active'}
+							class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-green/30 focus:outline-none resize-none disabled:opacity-40"
+						></textarea>
+					</div>
+					<div>
+						<label for="kb-tp" class="block text-[9px] text-text-dim mb-0.5">Test Patterns</label>
+						<textarea
+							id="kb-tp"
+							bind:value={kbTestPatterns}
+							onblur={() => saveHintField('test_patterns', kbTestPatterns)}
+							placeholder="One per line (e.g. AAA pattern)"
+							rows="2"
+							disabled={activeProjectStatus !== 'active'}
+							class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-green/30 focus:outline-none resize-none disabled:opacity-40"
+						></textarea>
+					</div>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Knowledge Sources -->
+		<div class="border-t border-white/[0.04] px-2 py-1.5">
+			<button
+				type="button"
+				class="flex w-full items-center gap-1.5 text-[10px] text-text-dim hover:text-text-secondary transition-colors"
+				onclick={() => sourcesExpanded = !sourcesExpanded}
+			>
+				<Icon name={sourcesExpanded ? "chevron-down" : "chevron-right"} size={10} />
+				<Icon name="file-text" size={10} class="text-neon-cyan/60" />
+				<span>Knowledge Sources</span>
+			</button>
+			{#if sourcesExpanded}
+				<div class="mt-1.5">
+					<SourceManager appId="promptforge" entityId={activeFolderId} projectStatus={activeProjectStatus} />
+				</div>
+			{/if}
+		</div>
+	{/if}
 {/if}
 </div>
 

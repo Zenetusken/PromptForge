@@ -90,6 +90,12 @@ export interface PipelineEvent {
 	message?: string;
 }
 
+export interface ContextSourceDocument {
+	title: string;
+	content: string;
+	source_type?: string;
+}
+
 export interface CodebaseContext {
 	language?: string;
 	framework?: string;
@@ -100,6 +106,7 @@ export interface CodebaseContext {
 	documentation?: string;
 	test_framework?: string;
 	test_patterns?: string[];
+	sources?: ContextSourceDocument[];
 }
 
 export interface OptimizeMetadata {
@@ -277,6 +284,31 @@ export function mapSSEEvent(eventType: string, data: Record<string, unknown>): P
 		default:
 			return null;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Context Preview API
+// ---------------------------------------------------------------------------
+
+export interface ContextPreviewResponse {
+	context: CodebaseContext | null;
+	field_count: number;
+	rendered_chars: number;
+}
+
+/** Preview the fully resolved context for a project before forging. */
+export async function fetchContextPreview(
+	project?: string | null,
+	codebaseContext?: CodebaseContext | null,
+): Promise<ContextPreviewResponse> {
+	return apiFetch(`${BASE_URL}/context/preview`, { context: null, field_count: 0, rendered_chars: 0 }, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			project: project || null,
+			codebase_context: codebaseContext || null,
+		}),
+	});
 }
 
 /** Maximum time (ms) to wait for an SSE event before aborting. */
@@ -766,6 +798,7 @@ export interface ProjectSummary {
 	parent_id: string | null;
 	depth: number;
 	prompt_count: number;
+	source_count: number;
 	has_context: boolean;
 	created_at: string;
 	updated_at: string;
@@ -779,9 +812,29 @@ export interface ProjectDetail {
 	status: string;
 	parent_id: string | null;
 	depth: number;
+	source_count: number;
 	created_at: string;
 	updated_at: string;
 	prompts: ProjectPrompt[];
+}
+
+export interface ProjectSource {
+	id: string;
+	project_id: string;
+	title: string;
+	content: string;
+	source_type: string;
+	char_count: number;
+	enabled: boolean;
+	order_index: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface SourceListResponse {
+	items: ProjectSource[];
+	total: number;
+	total_chars: number;
 }
 
 export interface ProjectListResponse {
@@ -899,6 +952,60 @@ export async function reorderProjectPrompts(projectId: string, promptIds: string
 		method: 'PUT',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ prompt_ids: promptIds }),
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Sources API (Knowledge Sources)
+// ---------------------------------------------------------------------------
+
+export async function fetchSources(
+	projectId: string,
+	enabledOnly?: boolean,
+): Promise<SourceListResponse> {
+	const params = enabledOnly ? '?enabled_only=true' : '';
+	return apiFetch(`${BASE_URL}/projects/${projectId}/sources${params}`, {
+		items: [],
+		total: 0,
+		total_chars: 0,
+	});
+}
+
+export async function createSource(
+	projectId: string,
+	data: { title: string; content: string; source_type?: string },
+): Promise<ProjectSource | null> {
+	return apiFetch(`${BASE_URL}/projects/${projectId}/sources`, null, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(data),
+	});
+}
+
+export async function updateSource(
+	projectId: string,
+	sourceId: string,
+	data: { title?: string; content?: string; enabled?: boolean },
+): Promise<ProjectSource | null> {
+	return apiFetch(`${BASE_URL}/projects/${projectId}/sources/${sourceId}`, null, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(data),
+	});
+}
+
+export async function deleteSource(projectId: string, sourceId: string): Promise<boolean> {
+	return apiFetchOk(`${BASE_URL}/projects/${projectId}/sources/${sourceId}`, {
+		method: 'DELETE',
+	});
+}
+
+export async function toggleSource(
+	projectId: string,
+	sourceId: string,
+): Promise<ProjectSource | null> {
+	return apiFetch(`${BASE_URL}/projects/${projectId}/sources/${sourceId}/toggle`, null, {
+		method: 'POST',
 	});
 }
 
