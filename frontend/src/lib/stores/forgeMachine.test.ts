@@ -40,8 +40,10 @@ describe('ForgeMachineState', () => {
 	beforeEach(() => {
 		forgeMachine.reset();
 		forgeMachine.setWidth(240);
+		forgeMachine.setExplorerWidth(224);
 		processScheduler.reset();
 		storageMap.clear();
+		localMap.clear();
 		uuidCounter = 0;
 	});
 
@@ -137,9 +139,9 @@ describe('ForgeMachineState', () => {
 	});
 
 	describe('panel width', () => {
-		it('setWidth clamps to min (240)', () => {
+		it('setWidth clamps to min (280)', () => {
 			forgeMachine.setWidth(100);
-			expect(forgeMachine.panelWidth).toBe(240);
+			expect(forgeMachine.panelWidth).toBe(280);
 		});
 
 		it('setWidth clamps to max (560)', () => {
@@ -196,6 +198,32 @@ describe('ForgeMachineState', () => {
 		it('persists width to localStorage', () => {
 			forgeMachine.setWidth(400);
 			expect(localMap.get('pf_forge_panel_width')).toBe('400');
+		});
+	});
+
+	describe('explorer width', () => {
+		it('defaults to 224', () => {
+			expect(forgeMachine.explorerWidth).toBe(224);
+		});
+
+		it('setExplorerWidth clamps to min (180)', () => {
+			forgeMachine.setExplorerWidth(100);
+			expect(forgeMachine.explorerWidth).toBe(180);
+		});
+
+		it('setExplorerWidth clamps to max (360)', () => {
+			forgeMachine.setExplorerWidth(500);
+			expect(forgeMachine.explorerWidth).toBe(360);
+		});
+
+		it('setExplorerWidth accepts values in range', () => {
+			forgeMachine.setExplorerWidth(250);
+			expect(forgeMachine.explorerWidth).toBe(250);
+		});
+
+		it('persists explorer width to localStorage', () => {
+			forgeMachine.setExplorerWidth(300);
+			expect(localMap.get('pf_forge_explorer_width')).toBe('300');
 		});
 	});
 
@@ -293,12 +321,27 @@ describe('ForgeMachineState', () => {
 		});
 
 		it('enterReview clears isMinimized', () => {
-			forgeMachine.forge();
+			// enterReview guards against forging mode, so use review → minimize → enterReview
+			forgeMachine.enterReview();
 			forgeMachine.minimize();
 			expect(forgeMachine.isMinimized).toBe(true);
 			forgeMachine.enterReview();
 			expect(forgeMachine.isMinimized).toBe(false);
 			expect(forgeMachine.mode).toBe('review');
+		});
+
+		it('enterReview is a no-op during forging', () => {
+			forgeMachine.forge();
+			expect(forgeMachine.mode).toBe('forging');
+			forgeMachine.enterReview();
+			expect(forgeMachine.mode).toBe('forging');
+		});
+
+		it('enterForging is a no-op when already forging', () => {
+			forgeMachine.forge();
+			expect(forgeMachine.mode).toBe('forging');
+			forgeMachine.enterForging();
+			expect(forgeMachine.mode).toBe('forging');
 		});
 
 		it('enterReview persists to sessionStorage', () => {

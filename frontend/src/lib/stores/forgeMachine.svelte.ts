@@ -1,4 +1,5 @@
 import { processScheduler } from '$lib/stores/processScheduler.svelte';
+import { windowManager } from '$lib/stores/windowManager.svelte';
 
 export type ForgeMode = 'compose' | 'forging' | 'review' | 'compare';
 export type WidthTier = 'compact' | 'standard' | 'wide';
@@ -9,9 +10,13 @@ export interface ComparisonSlots {
 }
 
 const WIDTH_STORAGE_KEY = 'pf_forge_panel_width';
+const EXPLORER_WIDTH_STORAGE_KEY = 'pf_forge_explorer_width';
 const MACHINE_STORAGE_KEY = 'pf_forge_machine';
-const MIN_WIDTH = 240;
+const MIN_WIDTH = 280;
 const MAX_WIDTH = 560;
+const EXPLORER_MIN = 180;
+const EXPLORER_MAX = 360;
+const EXPLORER_DEFAULT = 224;
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(Math.max(value, min), max);
@@ -39,6 +44,20 @@ function loadPersistedWidth(): number {
 	return MIN_WIDTH;
 }
 
+function loadPersistedExplorerWidth(): number {
+	if (typeof window === 'undefined') return EXPLORER_DEFAULT;
+	try {
+		const stored = localStorage.getItem(EXPLORER_WIDTH_STORAGE_KEY);
+		if (stored) {
+			const parsed = parseInt(stored, 10);
+			if (!isNaN(parsed)) return clamp(parsed, EXPLORER_MIN, EXPLORER_MAX);
+		}
+	} catch {
+		// ignore
+	}
+	return EXPLORER_DEFAULT;
+}
+
 function loadPersistedMachine(): { mode: ForgeMode; isMinimized: boolean } | null {
 	if (typeof window === 'undefined') return null;
 	try {
@@ -53,6 +72,7 @@ function loadPersistedMachine(): { mode: ForgeMode; isMinimized: boolean } | nul
 class ForgeMachineState {
 	mode: ForgeMode = $state('compose');
 	panelWidth: number = $state(loadPersistedWidth());
+	explorerWidth: number = $state(loadPersistedExplorerWidth());
 	comparison: ComparisonSlots = $state({ slotA: null, slotB: null });
 	isMinimized: boolean = $state(false);
 
@@ -94,17 +114,24 @@ class ForgeMachineState {
 	complete() {
 		if (this.mode === 'forging') {
 			this.mode = 'review';
+			// Auto-widen for review readability
+			if (this.panelWidth < 400) {
+				this.setWidth(420);
+			}
 			this._persistMachine();
 		}
 	}
 
 	compare(slotA: string, slotB: string) {
+		if (!slotA || !slotB) return;
 		this.comparison = { slotA, slotB };
 		this.mode = 'compare';
+		this.isMinimized = false;
 		// Auto-widen to wide for comparison
 		if (this.panelWidth < 480) {
 			this.setWidth(560);
 		}
+		windowManager.openIDE();
 		this._persistMachine();
 	}
 
@@ -138,13 +165,19 @@ class ForgeMachineState {
 
 	/** Enter review mode directly (for viewing results outside the normal pipeline flow). */
 	enterReview() {
+		if (this.mode === 'forging') return; // Can't jump to review while forging
 		this.mode = 'review';
 		this.isMinimized = false;
+		// Auto-widen for review readability
+		if (this.panelWidth < 400) {
+			this.setWidth(420);
+		}
 		this._persistMachine();
 	}
 
 	/** Enter forging mode directly (for re-forge outside the compose → forging flow). */
 	enterForging() {
+		if (this.mode === 'forging') return; // Already forging
 		this.mode = 'forging';
 		if (this.panelWidth < 340) {
 			this.setWidth(380);
@@ -159,10 +192,24 @@ class ForgeMachineState {
 		this._persistWidth();
 	}
 
+	setExplorerWidth(w: number) {
+		this.explorerWidth = clamp(w, EXPLORER_MIN, EXPLORER_MAX);
+		this._persistExplorerWidth();
+	}
+
 	private _persistWidth() {
 		if (typeof window === 'undefined') return;
 		try {
 			localStorage.setItem(WIDTH_STORAGE_KEY, String(this.panelWidth));
+		} catch {
+			// ignore
+		}
+	}
+
+	private _persistExplorerWidth() {
+		if (typeof window === 'undefined') return;
+		try {
+			localStorage.setItem(EXPLORER_WIDTH_STORAGE_KEY, String(this.explorerWidth));
 		} catch {
 			// ignore
 		}

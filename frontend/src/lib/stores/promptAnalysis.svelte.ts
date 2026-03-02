@@ -6,6 +6,7 @@
 
 import { estimateTaskType, type HeuristicResult } from '$lib/utils/promptHeuristics';
 import { computeRecommendations, type RecommendationInput, type ScoredStrategy } from '$lib/utils/recommendation';
+import { extractVariables, detectSections, type ExtractedVariable, type DetectedSection } from '$lib/utils/promptParser';
 import { statsState } from '$lib/stores/stats.svelte';
 import type { StatsResponse } from '$lib/api/client';
 
@@ -19,6 +20,12 @@ class PromptAnalysisState {
 	/** Whether analysis is in progress (debounce pending). */
 	isAnalyzing: boolean = $state(false);
 
+	/** Detected structural sections from the prompt text. */
+	sections: DetectedSection[] = $state([]);
+
+	/** Extracted template variables from the prompt text. */
+	variables: ExtractedVariable[] = $state([]);
+
 	private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/**
@@ -27,6 +34,10 @@ class PromptAnalysisState {
 	 */
 	analyzePrompt(text: string): void {
 		if (this._debounceTimer) clearTimeout(this._debounceTimer);
+
+		// Sections and variables are pure + fast — compute immediately for any non-empty text
+		this.sections = text ? detectSections(text) : [];
+		this.variables = text ? extractVariables(text) : [];
 
 		if (!text || text.length < 50) {
 			this.heuristic = null;
@@ -62,6 +73,8 @@ class PromptAnalysisState {
 		this._debounceTimer = null;
 		this.heuristic = null;
 		this.recommendedStrategies = [];
+		this.sections = [];
+		this.variables = [];
 		this.isAnalyzing = false;
 	}
 

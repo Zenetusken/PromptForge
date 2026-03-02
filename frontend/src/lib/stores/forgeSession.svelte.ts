@@ -31,6 +31,8 @@ export interface WorkspaceTab {
 	mode: ForgeMode;
 	/** The document this tab is viewing/editing. Null for fresh "Untitled" tabs. */
 	document: FileDescriptor | null;
+	/** Snapshot of text when the tab was loaded/created. Used for modified detection. */
+	originalText: string;
 }
 
 export function createEmptyDraft(): ForgeSessionDraft {
@@ -61,6 +63,7 @@ function createInitialTab(): WorkspaceTab {
 		resultId: null,
 		mode: 'compose',
 		document: null,
+		originalText: '',
 	};
 }
 
@@ -99,6 +102,8 @@ class ForgeSessionState {
 	showMetadata: boolean = $state(false);
 	showContext: boolean = $state(false);
 	showStrategy: boolean = $state(false);
+	showOutline: boolean = $state(true);
+	showAnalysis: boolean = $state(false);
 	validationErrors: Record<string, string> = $state({});
 	duplicateTitleWarning: boolean = $state(false);
 	get autoRetryOnRateLimit(): boolean { return settingsState.autoRetryOnRateLimit; }
@@ -113,6 +118,8 @@ class ForgeSessionState {
 		Object.keys(this.draft.contextProfile).length > 0
 	);
 	charCount: number = $derived(this.draft.text.length);
+	lineCount: number = $derived(Math.max(this.draft.text.split('\n').length, 1));
+	wordCount: number = $derived(this.draft.text.trim() ? this.draft.text.trim().split(/\s+/).length : 0);
 
 	/** Open the IDE workspace. */
 	activate(): void {
@@ -137,11 +144,12 @@ class ForgeSessionState {
 		if (emptyTab) {
 			emptyTab.draft = newDraft;
 			emptyTab.name = tabName;
+			emptyTab.originalText = req.text;
 			this.activeTabId = emptyTab.id;
 		} else {
-			// Evict LRU non-active tab when at limit
+			// Evict LRU non-active, non-forging tab when at limit
 			if (this.tabs.length >= MAX_TABS) {
-				const evictIdx = this.tabs.findLastIndex(t => t.id !== this.activeTabId);
+				const evictIdx = this.tabs.findLastIndex(t => t.id !== this.activeTabId && t.mode !== 'forging');
 				if (evictIdx >= 0) {
 					this.tabs.splice(evictIdx, 1);
 				}
@@ -153,6 +161,7 @@ class ForgeSessionState {
 				resultId: null,
 				mode: 'compose',
 				document: null,
+				originalText: req.text,
 			};
 			this.tabs.push(newTab);
 			this.activeTabId = newTab.id;
@@ -259,17 +268,17 @@ class ForgeSessionState {
 		// Debounce guard — reject calls within 200ms of the last successful creation
 		const now = Date.now();
 		if (now - this._lastCreateTime < 200) return null;
-		this._lastCreateTime = now;
 
-		// Enforce MAX_TABS — evict LRU non-active tab
+		// Enforce MAX_TABS — evict LRU non-active, non-forging tab
 		if (this.tabs.length >= MAX_TABS) {
-			const evictIdx = this.tabs.findLastIndex(t => t.id !== this.activeTabId);
+			const evictIdx = this.tabs.findLastIndex(t => t.id !== this.activeTabId && t.mode !== 'forging');
 			if (evictIdx >= 0) {
 				this.tabs.splice(evictIdx, 1);
 			} else {
 				return null;
 			}
 		}
+		this._lastCreateTime = now;
 		const tab: WorkspaceTab = {
 			id: typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(),
 			name: this._nextUntitledName(),
@@ -277,6 +286,7 @@ class ForgeSessionState {
 			resultId: null,
 			mode: 'compose',
 			document: null,
+			originalText: '',
 		};
 		this.tabs.push(tab);
 		this.activeTabId = tab.id;
@@ -344,6 +354,8 @@ class ForgeSessionState {
 		this.showMetadata = false;
 		this.showContext = false;
 		this.showStrategy = false;
+		this.showOutline = true;
+		this.showAnalysis = false;
 		this.validationErrors = {};
 		this.duplicateTitleWarning = false;
 		this._lastCreateTime = 0;
@@ -404,9 +416,10 @@ class ForgeSessionState {
 					this.tabs = parsed.tabs.map((t: any) => ({
 						...t,
 						draft: { ...createEmptyDraft(), ...t.draft },
-						resultId: t.resultId ?? null,
+						resultId: t.mode === 'forging' ? null : (t.resultId ?? null),
 						mode: t.mode === 'forging' ? 'compose' : (t.mode ?? 'compose'),
 						document: _hydrateDocument(t.document),
+						originalText: t.originalText ?? '',
 					}));
 					this.activeTabId = parsed.activeTabId || this.tabs[0].id;
 					this.isActive = !!parsed.isActive;

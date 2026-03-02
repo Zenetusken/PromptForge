@@ -206,6 +206,43 @@ describe('ForgeSessionState', () => {
 		});
 	});
 
+	describe('lineCount', () => {
+		it('returns 1 for empty text', () => {
+			expect(forgeSession.lineCount).toBe(1);
+		});
+
+		it('counts logical newlines', () => {
+			forgeSession.updateDraft({ text: 'line1\nline2\nline3' });
+			expect(forgeSession.lineCount).toBe(3);
+		});
+
+		it('counts trailing newline', () => {
+			forgeSession.updateDraft({ text: 'line1\nline2\n' });
+			expect(forgeSession.lineCount).toBe(3);
+		});
+	});
+
+	describe('wordCount', () => {
+		it('returns 0 for empty text', () => {
+			expect(forgeSession.wordCount).toBe(0);
+		});
+
+		it('counts whitespace-separated words', () => {
+			forgeSession.updateDraft({ text: 'hello world foo' });
+			expect(forgeSession.wordCount).toBe(3);
+		});
+
+		it('handles multiple spaces', () => {
+			forgeSession.updateDraft({ text: '  hello   world  ' });
+			expect(forgeSession.wordCount).toBe(2);
+		});
+
+		it('returns 0 for whitespace-only text', () => {
+			forgeSession.updateDraft({ text: '   \n  \t  ' });
+			expect(forgeSession.wordCount).toBe(0);
+		});
+	});
+
 	describe('validate', () => {
 		it('returns true when no sourceAction', () => {
 			expect(forgeSession.validate()).toBe(true);
@@ -338,6 +375,8 @@ describe('ForgeSessionState', () => {
 			expect(forgeSession.draft.strategy).toBe('auto');
 			expect(forgeSession.isActive).toBe(false);
 			expect(forgeSession.showMetadata).toBe(false);
+			expect(forgeSession.showOutline).toBe(true);
+			expect(forgeSession.showAnalysis).toBe(false);
 			expect(forgeSession.validationErrors).toEqual({});
 		});
 
@@ -708,6 +747,54 @@ describe('ForgeSessionState', () => {
 		});
 	});
 
+	describe('originalText for modified detection', () => {
+		it('createTab sets originalText to empty string', () => {
+			expect(forgeSession.activeTab.originalText).toBe('');
+		});
+
+		it('loadRequest sets originalText to loaded text', () => {
+			forgeSession.loadRequest({ text: 'loaded content' });
+			expect(forgeSession.activeTab.originalText).toBe('loaded content');
+		});
+
+		it('tab is not modified when text matches originalText', () => {
+			forgeSession.loadRequest({ text: 'original' });
+			expect(forgeSession.activeTab.draft.text).toBe('original');
+			expect(forgeSession.activeTab.originalText).toBe('original');
+			// text === originalText → not modified
+			expect(forgeSession.activeTab.draft.text === forgeSession.activeTab.originalText).toBe(true);
+		});
+
+		it('tab is modified when text differs from originalText', () => {
+			forgeSession.loadRequest({ text: 'original' });
+			forgeSession.updateDraft({ text: 'modified' });
+			expect(forgeSession.activeTab.draft.text).toBe('modified');
+			expect(forgeSession.activeTab.originalText).toBe('original');
+			expect(forgeSession.activeTab.draft.text !== forgeSession.activeTab.originalText).toBe(true);
+		});
+
+		it('empty new tab is not considered modified', () => {
+			// Both text and originalText are '' → not modified
+			expect(forgeSession.activeTab.draft.text).toBe('');
+			expect(forgeSession.activeTab.originalText).toBe('');
+		});
+
+		it('hydration defaults originalText to empty string', () => {
+			storageMap.set('pf_forge_draft', JSON.stringify({
+				tabs: [{
+					id: 'tab-ot',
+					name: 'Old Tab',
+					draft: { text: 'test' },
+					// no originalText field
+				}],
+				activeTabId: 'tab-ot',
+			}));
+
+			forgeSession._hydrateFromStorage();
+			expect(forgeSession.activeTab.originalText).toBe('');
+		});
+	});
+
 	describe('reiterate sourceAction', () => {
 		it('accepts reiterate sourceAction', () => {
 			forgeSession.loadRequest({
@@ -734,7 +821,7 @@ describe('ForgeSessionState', () => {
 			expect(newTab!.mode).toBe('compose');
 		});
 
-		it('hydration resets forging mode to compose', () => {
+		it('hydration resets forging mode to compose and clears stale resultId', () => {
 			storageMap.set('pf_forge_draft', JSON.stringify({
 				tabs: [{
 					id: 'tab-1',
@@ -748,7 +835,8 @@ describe('ForgeSessionState', () => {
 
 			forgeSession._hydrateFromStorage();
 			expect(forgeSession.activeTab.mode).toBe('compose');
-			expect(forgeSession.activeTab.resultId).toBe('res-1');
+			// resultId is cleared when mode was forging (incomplete forge = no valid result)
+			expect(forgeSession.activeTab.resultId).toBeNull();
 		});
 
 		it('hydration preserves review mode with resultId', () => {
