@@ -1,0 +1,82 @@
+Subject: Your prompts are leaving performance on the table
+
+A/B Subject Alternatives:
+  A: We built a forge for better prompts
+  B: Raw prompt in, optimized prompt out — instantly
+
+Preview: See what 10 optimization frameworks do to a mediocre prompt.
+
+---
+
+YOUR PROMPTS WEREN'T ENGINEERED. NOW THEY WILL BE.
+
+PromptForge applies battle-tested optimization frameworks to your raw prompts — automatically analyzing, selecting a strategy, rewriting, and scoring the result.
+
+  [ 01 Analyze ] → [ 02 Strategy ] → [ 03 Optimize ] → [ 04 Validate ]
+
+---
+
+Stop iterating blindly on prompts that underperform. Most teams write prompts the way they write first drafts — fast, intuitive, and inconsistent. PromptForge's 4-stage AI pipeline replaces guesswork with precision. Forge any prompt, and PromptForge classifies it across 14 task categories and 3 complexity tiers, then rewrites it using the optimal framework for that specific job.
+
+Intelligence that goes deeper than autocomplete. PromptForge selects from 10 proven optimization strategies — CO-STAR, RISEN, Chain-of-Thought, Few-Shot Scaffolding, Constraint Injection, and more — each engineered for different prompt structures and goals. It can layer secondary frameworks for multidimensional improvement. Every result is scored across 5 calibrated dimensions: clarity, specificity, structure, faithfulness, and conciseness — so you know exactly where your prompt improved and by how much.
+
+  SCORE DIMENSIONS
+  ┌─────────┬──────────┬───────────┬──────────┬─────────┐
+  │ Clarity  │ Specific │ Structure │ Faithful │ Concise │
+  │  [8]     │  [9]     │  [7]      │  [9]     │  [8]    │
+  │  20%     │  20%     │  15%      │  25%     │  20%    │
+  └─────────┴──────────┴───────────┴──────────┴─────────┘
+  Weighted Score: 8.3/10
+
+  BEFORE → AFTER
+  ┌──────────────┬──────────────┬────────┐
+  │ Raw Prompt   │ Optimized    │ Delta  │
+  │ 4.8/10       │ 8.3/10       │ +3.5   │
+  └──────────────┴──────────────┴────────┘
+
+Build prompt quality into your team's pipeline, not around it. PromptForge isn't a toy for one-off experiments. Organize prompts into projects with full version history. Run batch optimizations across prompt libraries. Compare strategies side-by-side. Whether your team is building AI-powered features, automating support pipelines, or generating content at scale — PromptForge turns prompt engineering from a dark art into a repeatable discipline.
+
+  OPTIMIZATION STRATEGIES
+  CO-STAR · RISEN · Chain-of-Thought · Few-Shot Scaffolding
+  Role-Task-Format · Step-by-Step · Structured Output
+  Constraint Injection · Context Enrichment · Persona Assignment
+
+---
+
+  "We were spending 30-45 minutes per prompt getting our extraction
+   pipeline instructions right. PromptForge nailed it on the first
+   pass — and the scored breakdown showed us why our originals were
+   weak."
+
+  — Raj Mehta, Senior ML Engineer at Coalesce AI
+
+Across 2,400+ optimizations during beta, users saw an average 42% improvement in weighted prompt quality scores — with coding prompts averaging +3.1 points and analysis prompts +2.8 points on the 1–10 scale.
+
+PromptForge's strategies are grounded in published prompt engineering research — CO-STAR, RISEN, Chain-of-Thought, and structured output patterns validated across thousands of real-world use cases.
+
+---
+
+  >> Start Forging — Free <<
+  https://zenresources.net
+
+No credit card required. Optimize your first prompt in under 30 seconds.
+
+Watch the 2-minute demo: https://zenresources.net/demo
+
+---
+
+The gap between what LLMs *can* do and what most prompts *ask* them to do is measurable. PromptForge closes it. You'll see the delta on your first forge.
+
+— The PromptForge Team
+
+---
+◆ PROMPTFORGE
+AI-Powered Prompt Optimization
+
+[Open Source] [MIT License] [Self-Hosted]
+
+https://zenresources.net
+
+Unsubscribe: https://zenresources.net/unsubscribe
+Preferences: https://zenresources.net/preferences
+Support: support@zenresources.net

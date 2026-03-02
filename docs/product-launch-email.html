@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="x-apple-disable-message-reformatting">
+  <title>Your prompts are leaving performance on the table</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:AllowPNG/>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+  <style>
+    /* Reset */
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; }
+
+    /*
+     * Brand Typography — 3-font system
+     * Display: Syne (uppercase, 0.1em spacing, 700 weight — section headings, 12px)
+     * Body:    Geist (14px, 400 weight — readable content)
+     * Data:    Geist Mono (10px, 500/700 weight — scores, metrics, strategy names)
+     *
+     * Geist/Geist Mono are self-hosted in the app; email falls back to Inter/JetBrains Mono.
+     * Syne loaded from Google Fonts for broad email client support.
+     */
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
+
+    /* Dark mode — force bg-primary on clients that override */
+    @media (prefers-color-scheme: dark) {
+      .email-body { background-color: #06060c !important; }
+      .email-card { background-color: #11111e !important; }
+      .email-glass { background-color: #0c0c16 !important; }
+    }
+
+    /* Mobile responsive */
+    @media only screen and (max-width: 600px) {
+      .email-container { width: 100% !important; max-width: 100% !important; }
+      .fluid { padding-left: 20px !important; padding-right: 20px !important; }
+      .hero-headline { font-size: 24px !important; line-height: 1.2 !important; }
+      .hero-sub { font-size: 14px !important; }
+      .pipeline-cell { padding: 6px 2px !important; }
+      .pipeline-num { font-size: 9px !important; }
+      .pipeline-label { font-size: 10px !important; }
+      .score-strip td { padding: 4px 2px !important; }
+      .score-label { font-size: 8px !important; }
+      .score-value { font-size: 9px !important; }
+      .strategy-chip { padding: 3px 6px !important; font-size: 8px !important; }
+      .cta-link { display: block !important; width: 100% !important; text-align: center !important; }
+      .delta-table td { padding: 6px 4px !important; }
+    }
+  </style>
+</head>
+<!--
+  PromptForge Product Launch Email
+  Brand: Industrial cyberpunk precision tooling
+  Palette: 10 neon signal colors on 6-tier dark background
+  Directive: ZERO effects — sharp 1px contours only
+  Score colors: 1-3 red, 4-6 yellow, 7-8 cyan, 9-10 green (chromatic encoding)
+-->
+<body class="email-body" style="margin: 0; padding: 0; background-color: #06060c; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;">
+
+  <!-- Preview text -->
+  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
+    See what 10 optimization frameworks do to a mediocre prompt.
+    &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847; &#847;
+  </div>
+
+  <!-- Outer wrapper — bg-primary #06060c -->
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #06060c;">
+    <tr>
+      <td align="center" style="padding: 40px 16px;">
+
+        <!-- Email container — 600px max -->
+        <table role="presentation" class="email-container" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; width: 100%;">
+
+          <!-- ═══════════════════════════════════════════
+               BRAND MARK
+               Syne uppercase, 0.1em spacing, cyan accent
+               border-radius: 6px (XS tier)
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td align="center" style="padding: 0 0 32px 0;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #00e5ff; padding: 8px 16px; border: 1px solid rgba(0, 229, 255, 0.2); border-radius: 6px;">
+                    &#9670; PROMPTFORGE
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Divider — project-header gradient: cyan → purple (brand transformation arc) -->
+          <tr>
+            <td style="padding: 0 0 40px 0;">
+              <div style="height: 1px; background: linear-gradient(90deg, transparent, #00e5ff, #a855f7, transparent);"></div>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               HERO SECTION
+               Syne display, gradient text signature
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td class="fluid" style="padding: 0 0 16px 0;">
+              <h1 class="hero-headline" style="margin: 0; font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 30px; font-weight: 700; line-height: 1.2; color: #e4e4f0;">
+                Your prompts weren't engineered.<br>
+                <!-- Gradient text: cyan → purple brand signature (135deg, raw → optimized) -->
+                <span style="background: linear-gradient(135deg, #00e5ff 0%, #7c3aed 50%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; color: #00e5ff;">Now they will be.</span>
+              </h1>
+            </td>
+          </tr>
+
+          <tr>
+            <td class="fluid" style="padding: 0 0 32px 0;">
+              <p class="hero-sub" style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.7; color: #8b8ba8;">
+                PromptForge applies battle-tested optimization frameworks to your raw prompts&nbsp;&mdash; automatically analyzing, selecting a strategy, rewriting, and scoring the result.
+              </p>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               PIPELINE VISUALIZATION
+               bg-card (#11111e), border-subtle, 8px radius (Small tier)
+               Stage colors: blue → purple → cyan → green
+               Labels: Syne 12px uppercase 0.1em (section heading)
+               Numbers: Geist Mono 10px 500 (badge)
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding: 0 0 40px 0;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="email-card" style="background-color: #11111e; border: 1px solid rgba(74, 74, 106, 0.15); border-radius: 8px;">
+                <tr>
+                  <td style="padding: 16px 8px;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                      <tr>
+                        <!-- Stage 1: Analyze — neon-blue #4d8eff -->
+                        <td class="pipeline-cell" width="25%" align="center" style="padding: 8px 4px;">
+                          <div class="pipeline-num" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: #4d8eff; padding-bottom: 4px;">01</div>
+                          <div class="pipeline-label" style="font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #4d8eff;">Analyze</div>
+                        </td>
+                        <!-- Stage 2: Strategy — neon-purple #a855f7 -->
+                        <td class="pipeline-cell" width="25%" align="center" style="padding: 8px 4px;">
+                          <div class="pipeline-num" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: #a855f7; padding-bottom: 4px;">02</div>
+                          <div class="pipeline-label" style="font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #a855f7;">Strategy</div>
+                        </td>
+                        <!-- Stage 3: Optimize — neon-cyan #00e5ff -->
+                        <td class="pipeline-cell" width="25%" align="center" style="padding: 8px 4px;">
+                          <div class="pipeline-num" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: #00e5ff; padding-bottom: 4px;">03</div>
+                          <div class="pipeline-label" style="font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #00e5ff;">Optimize</div>
+                        </td>
+                        <!-- Stage 4: Validate — neon-green #22ff88 -->
+                        <td class="pipeline-cell" width="25%" align="center" style="padding: 8px 4px;">
+                          <div class="pipeline-num" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: #22ff88; padding-bottom: 4px;">04</div>
+                          <div class="pipeline-label" style="font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #22ff88;">Validate</div>
+                        </td>
+                      </tr>
+                      <!-- Connector line — 2px gradient matching pipeline -->
+                      <tr>
+                        <td colspan="4" style="padding: 6px 16px 0 16px;">
+                          <div style="height: 2px; background: linear-gradient(90deg, #4d8eff, #a855f7, #00e5ff, #22ff88); border-radius: 1px;"></div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               BODY PARAGRAPH 1
+               Body: Geist 14px, text-primary #e4e4f0
+               Data values: Geist Mono (monospace = computed data)
+               Canon: "Forge" not "Submit"
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td class="fluid" style="padding: 0 0 24px 0;">
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.7; color: #e4e4f0;">
+                <strong style="color: #e4e4f0;">Stop iterating blindly on prompts that underperform.</strong>
+                Most teams write prompts the way they write first drafts&nbsp;&mdash; fast, intuitive, and inconsistent.
+                PromptForge's
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #00e5ff;">4</span>-stage
+                AI pipeline replaces guesswork with precision. Forge any prompt, and PromptForge
+                classifies it across
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #00e5ff;">14</span> task categories and
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #00e5ff;">3</span> complexity tiers, then rewrites it using the optimal
+                framework for that specific job.
+              </p>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               BODY PARAGRAPH 2
+               Strategy names in their brand-mapped neon colors
+               (chromatic encoding — color IS data)
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td class="fluid" style="padding: 0 0 24px 0;">
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.7; color: #e4e4f0;">
+                <strong style="color: #e4e4f0;">Intelligence that goes deeper than autocomplete.</strong>
+                PromptForge selects from
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #00e5ff;">10</span> proven optimization strategies&nbsp;&mdash;
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #a855f7;">CO-STAR</span>,
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #22ff88;">RISEN</span>,
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #00e5ff;">Chain-of-Thought</span>,
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #fbbf24;">Few-Shot Scaffolding</span>,
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #ff6eb4;">Constraint Injection</span>,
+                and more&nbsp;&mdash; each engineered for different prompt structures and goals. It can layer secondary
+                frameworks for multidimensional improvement. Every result is scored across
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #00e5ff;">5</span> calibrated dimensions:
+                clarity, specificity, structure, faithfulness, and conciseness&nbsp;&mdash; so you know exactly where
+                your prompt improved and by how much.
+              </p>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               SCORE DIMENSION STRIP
+               Score-to-color mapping (chromatic encoding):
+                 7-8 = neon-cyan, 9-10 = neon-green
+               Score circles: 20px, Geist Mono 10px 700
+               Section heading: Syne 12px uppercase 0.1em
+               Weighted overall: clarity 20% + specificity 20%
+                 + structure 15% + faithfulness 25% + conciseness 20%
+                 = 8×.2 + 9×.2 + 7×.15 + 9×.25 + 8×.2 = 8.3/10
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding: 0 0 32px 0;">
+              <!-- Section heading — Syne 12px uppercase 0.1em -->
+              <div style="font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #7a7a9e; padding-bottom: 8px;">Score Dimensions</div>
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="email-card" style="background-color: #11111e; border: 1px solid rgba(74, 74, 106, 0.15); border-radius: 8px;">
+                <tr>
+                  <td style="padding: 12px 4px;">
+                    <table role="presentation" class="score-strip" cellspacing="0" cellpadding="0" border="0" width="100%">
+                      <tr>
+                        <!-- Clarity: 8 → neon-cyan (7-8 range) -->
+                        <td width="20%" align="center" style="padding: 4px 2px;">
+                          <div style="width: 20px; height: 20px; border-radius: 50%; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 700; line-height: 20px; text-align: center; color: #00e5ff; border: 1px solid rgba(0, 229, 255, 0.4); background-color: rgba(0, 229, 255, 0.08); margin: 0 auto 4px auto;">8</div>
+                          <div class="score-label" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #e4e4f0; padding-bottom: 2px;">Clarity</div>
+                          <div class="score-value" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #7a7a9e;">20%</div>
+                        </td>
+                        <!-- Specificity: 9 → neon-green (9-10 range) -->
+                        <td width="20%" align="center" style="padding: 4px 2px;">
+                          <div style="width: 20px; height: 20px; border-radius: 50%; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 700; line-height: 20px; text-align: center; color: #22ff88; border: 1px solid rgba(34, 255, 136, 0.4); background-color: rgba(34, 255, 136, 0.08); margin: 0 auto 4px auto;">9</div>
+                          <div class="score-label" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #e4e4f0; padding-bottom: 2px;">Specific</div>
+                          <div class="score-value" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #7a7a9e;">20%</div>
+                        </td>
+                        <!-- Structure: 7 → neon-cyan (7-8 range) -->
+                        <td width="20%" align="center" style="padding: 4px 2px;">
+                          <div style="width: 20px; height: 20px; border-radius: 50%; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 700; line-height: 20px; text-align: center; color: #00e5ff; border: 1px solid rgba(0, 229, 255, 0.4); background-color: rgba(0, 229, 255, 0.08); margin: 0 auto 4px auto;">7</div>
+                          <div class="score-label" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #e4e4f0; padding-bottom: 2px;">Structure</div>
+                          <div class="score-value" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #7a7a9e;">15%</div>
+                        </td>
+                        <!-- Faithfulness: 9 → neon-green (9-10 range) -->
+                        <td width="20%" align="center" style="padding: 4px 2px;">
+                          <div style="width: 20px; height: 20px; border-radius: 50%; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 700; line-height: 20px; text-align: center; color: #22ff88; border: 1px solid rgba(34, 255, 136, 0.4); background-color: rgba(34, 255, 136, 0.08); margin: 0 auto 4px auto;">9</div>
+                          <div class="score-label" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #e4e4f0; padding-bottom: 2px;">Faithful</div>
+                          <div class="score-value" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #7a7a9e;">25%</div>
+                        </td>
+                        <!-- Conciseness: 8 → neon-cyan (7-8 range) -->
+                        <td width="20%" align="center" style="padding: 4px 2px;">
+                          <div style="width: 20px; height: 20px; border-radius: 50%; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 700; line-height: 20px; text-align: center; color: #00e5ff; border: 1px solid rgba(0, 229, 255, 0.4); background-color: rgba(0, 229, 255, 0.08); margin: 0 auto 4px auto;">8</div>
+                          <div class="score-label" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #e4e4f0; padding-bottom: 2px;">Concise</div>
+                          <div class="score-value" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #7a7a9e;">20%</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <!-- Weighted overall score -->
+                <tr>
+                  <td style="padding: 0 12px 12px 12px;">
+                    <div style="height: 1px; background: rgba(74, 74, 106, 0.15); margin-bottom: 10px;"></div>
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                      <tr>
+                        <td style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; color: #7a7a9e; text-transform: uppercase; letter-spacing: 0.05em;">
+                          Weighted Score
+                        </td>
+                        <td align="right" style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 14px; font-weight: 700; color: #00e5ff;">
+                          8.3<span style="font-size: 10px; font-weight: 500; color: #7a7a9e;">/10</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               BEFORE → AFTER COMPARISON
+               Comparative display pattern: original = text-secondary,
+               optimized = text-primary, delta = green badges
+               bg-card, border-subtle, 8px radius
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding: 0 0 40px 0;">
+              <!-- Section heading — Syne 12px uppercase 0.1em -->
+              <div style="font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #7a7a9e; padding-bottom: 8px;">Before &rarr; After</div>
+              <table role="presentation" class="delta-table" cellspacing="0" cellpadding="0" border="0" width="100%" class="email-card" style="background-color: #11111e; border: 1px solid rgba(74, 74, 106, 0.15); border-radius: 8px;">
+                <tr>
+                  <!-- Raw prompt score — dimmed (the "before") -->
+                  <td width="42%" style="padding: 12px 8px; border-right: 1px solid rgba(74, 74, 106, 0.15);">
+                    <div style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #7a7a9e; text-transform: uppercase; letter-spacing: 0.05em; padding-bottom: 6px;">Raw Prompt</div>
+                    <!-- Score 4.8 → neon-yellow (4-6 range) -->
+                    <div style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 20px; font-weight: 700; color: #fbbf24;">4.8<span style="font-size: 11px; font-weight: 500; color: #7a7a9e;">/10</span></div>
+                  </td>
+                  <!-- Optimized score — bright (the "after") -->
+                  <td width="42%" style="padding: 12px 8px; border-right: 1px solid rgba(74, 74, 106, 0.15);">
+                    <div style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #7a7a9e; text-transform: uppercase; letter-spacing: 0.05em; padding-bottom: 6px;">Optimized</div>
+                    <!-- Score 8.3 → neon-cyan (7-8 range) -->
+                    <div style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 20px; font-weight: 700; color: #00e5ff;">8.3<span style="font-size: 11px; font-weight: 500; color: #7a7a9e;">/10</span></div>
+                  </td>
+                  <!-- Delta badge — green (positive improvement) -->
+                  <td width="16%" align="center" style="padding: 12px 8px;">
+                    <div style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; color: #7a7a9e; text-transform: uppercase; letter-spacing: 0.05em; padding-bottom: 6px;">Delta</div>
+                    <div style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; font-weight: 700; color: #22ff88; background-color: rgba(34, 255, 136, 0.08); border: 1px solid rgba(34, 255, 136, 0.2); border-radius: 6px; padding: 2px 8px;">+3.5</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               BODY PARAGRAPH 3
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td class="fluid" style="padding: 0 0 40px 0;">
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.7; color: #e4e4f0;">
+                <strong style="color: #e4e4f0;">Build prompt quality into your team's pipeline, not around it.</strong>
+                PromptForge isn't a toy for one-off experiments. Organize prompts into projects with full version history.
+                Run batch optimizations across prompt libraries. Compare strategies side-by-side. Whether your team is
+                building AI-powered features, automating support pipelines, or generating content at scale&nbsp;&mdash;
+                PromptForge turns prompt engineering from a dark art into a repeatable discipline.
+              </p>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               STRATEGY CHIPS
+               Chromatic encoding: "color IS data, not decoration"
+               Chip: Geist Mono 10px 500, 9999px radius (Full tier)
+               6%/12% opacity tiers for bg/border
+               Section heading: Syne 12px uppercase 0.1em
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding: 0 0 40px 0;">
+              <!-- Section heading — Syne 12px -->
+              <div style="font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #7a7a9e; padding-bottom: 8px;">Optimization Strategies</div>
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="padding: 0;">
+                    <span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #a855f7; background-color: rgba(168, 85, 247, 0.06); border: 1px solid rgba(168, 85, 247, 0.12);">CO-STAR</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #22ff88; background-color: rgba(34, 255, 136, 0.06); border: 1px solid rgba(34, 255, 136, 0.12);">RISEN</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #00e5ff; background-color: rgba(0, 229, 255, 0.06); border: 1px solid rgba(0, 229, 255, 0.12);">Chain-of-Thought</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #fbbf24; background-color: rgba(251, 191, 36, 0.06); border: 1px solid rgba(251, 191, 36, 0.12);">Few-Shot Scaffolding</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #ff3366; background-color: rgba(255, 51, 102, 0.06); border: 1px solid rgba(255, 51, 102, 0.12);">Role-Task-Format</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #ff8c00; background-color: rgba(255, 140, 0, 0.06); border: 1px solid rgba(255, 140, 0, 0.12);">Step-by-Step</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #4d8eff; background-color: rgba(77, 142, 255, 0.06); border: 1px solid rgba(77, 142, 255, 0.12);">Structured Output</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #ff6eb4; background-color: rgba(255, 110, 180, 0.06); border: 1px solid rgba(255, 110, 180, 0.12);">Constraint Injection</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #00d4aa; background-color: rgba(0, 212, 170, 0.06); border: 1px solid rgba(0, 212, 170, 0.12);">Context Enrichment</span><!--
+                    --><span class="strategy-chip" style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; padding: 4px 10px; border-radius: 9999px; margin: 0 4px 6px 0; color: #7b61ff; background-color: rgba(123, 97, 255, 0.06); border: 1px solid rgba(123, 97, 255, 0.12);">Persona Assignment</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Divider — border-accent pattern -->
+          <tr>
+            <td style="padding: 0 0 40px 0;">
+              <div style="height: 1px; background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.12), transparent);"></div>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               SOCIAL PROOF
+               Sidebar-card pattern: 2px left accent border
+               bg-secondary (#0c0c16), right-side 8px radius
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding: 0 0 24px 0;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" class="email-glass" style="background-color: #0c0c16; border-left: 2px solid #a855f7; border-radius: 0 8px 8px 0;">
+                <tr>
+                  <td style="padding: 16px 20px;">
+                    <p style="margin: 0 0 8px 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.65; color: #8b8ba8; font-style: italic;">
+                      "We were spending 30-45 minutes per prompt getting our extraction pipeline instructions right.
+                      PromptForge nailed it on the first pass&nbsp;&mdash; and the scored breakdown showed us why our
+                      originals were weak."
+                    </p>
+                    <p style="margin: 0; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 10px; font-weight: 500; color: #7a7a9e;">
+                      &mdash; Raj Mehta, Senior ML Engineer at Coalesce AI
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td class="fluid" style="padding: 0 0 16px 0;">
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.65; color: #8b8ba8;">
+                Across
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #00e5ff;">2,400+</span>
+                optimizations during beta, users saw an average
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #22ff88;">42%</span>
+                improvement in weighted prompt quality scores&nbsp;&mdash;
+                with coding prompts averaging
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #22ff88;">+3.1</span>
+                points and analysis prompts
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; color: #22ff88;">+2.8</span>
+                points on the
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 13px;">1&ndash;10</span> scale.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td class="fluid" style="padding: 0 0 40px 0;">
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.65; color: #8b8ba8;">
+                PromptForge's strategies are grounded in published prompt engineering research&nbsp;&mdash;
+                CO-STAR, RISEN, Chain-of-Thought, and structured output patterns validated across thousands
+                of real-world use cases.
+              </p>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               CTA SECTION
+               Primary CTA: gradient background (brand signature)
+               border-radius: 10px (Medium tier — CTA buttons)
+               Text: #06060c on gradient (dark on light)
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td align="center" style="padding: 0 0 12px 0;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td class="cta-link" align="center" style="border-radius: 10px; background: linear-gradient(135deg, #00e5ff 0%, #7c3aed 50%, #a855f7 100%);">
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://zenresources.net" style="height:44px;v-text-anchor:middle;width:220px;" arcsize="23%" fillcolor="#00e5ff">
+                      <w:anchorlock/>
+                      <center style="color:#06060c;font-family:'Inter',sans-serif;font-size:14px;font-weight:bold;letter-spacing:0.02em;">Start Forging — Free</center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-->
+                    <a href="https://zenresources.net" target="_blank" style="display: inline-block; padding: 12px 36px; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 600; color: #06060c; text-decoration: none; border-radius: 10px; letter-spacing: 0.02em;">
+                      Start Forging &mdash; Free
+                    </a>
+                    <!--<![endif]-->
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding: 0 0 8px 0;">
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 12px; color: #7a7a9e;">
+                No credit card required. Optimize your first prompt in under
+                <span style="font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 12px;">30</span> seconds.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding: 0 0 40px 0;">
+              <a href="#" style="font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; color: #00e5ff; text-decoration: none; border-bottom: 1px solid rgba(0, 229, 255, 0.3);">
+                Watch the 2-minute demo &rarr;
+              </a>
+            </td>
+          </tr>
+
+          <!-- Divider — border-accent -->
+          <tr>
+            <td style="padding: 0 0 32px 0;">
+              <div style="height: 1px; background: linear-gradient(90deg, transparent, rgba(0, 229, 255, 0.12), transparent);"></div>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               SIGN-OFF
+               Voice: confident instrument panel, not casual
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td class="fluid" style="padding: 0 0 8px 0;">
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.7; color: #8b8ba8;">
+                The gap between what LLMs <em>can</em> do and what most prompts <em>ask</em> them to do
+                is measurable. PromptForge closes it. You'll see the delta on your first forge.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td class="fluid" style="padding: 16px 0 0 0;">
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 14px; color: #e4e4f0;">
+                &mdash; The PromptForge Team
+              </p>
+            </td>
+          </tr>
+
+          <!-- ═══════════════════════════════════════════
+               FOOTER
+               Brand mark + meta badges + links
+               ═══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding: 40px 0 0 0;">
+              <div style="height: 1px; background: rgba(74, 74, 106, 0.15);"></div>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding: 24px 0 0 0;">
+              <!-- Footer brand mark -->
+              <p style="margin: 0 0 8px 0; font-family: 'Syne', 'Geist', ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #7a7a9e;">
+                &#9670; PROMPTFORGE
+              </p>
+              <p style="margin: 0 0 4px 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 11px; color: #7a7a9e;">
+                AI-Powered Prompt Optimization
+              </p>
+              <!-- Distribution badges — monospace, chip convention -->
+              <p style="margin: 0 0 12px 0;">
+                <span style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; margin: 0 2px; color: rgba(0, 229, 255, 0.6); background-color: rgba(0, 229, 255, 0.06); border: 1px solid rgba(0, 229, 255, 0.12);">Open Source</span>
+                <span style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; margin: 0 2px; color: rgba(0, 229, 255, 0.6); background-color: rgba(0, 229, 255, 0.06); border: 1px solid rgba(0, 229, 255, 0.12);">MIT License</span>
+                <span style="display: inline-block; font-family: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; font-size: 9px; font-weight: 500; padding: 2px 8px; border-radius: 9999px; margin: 0 2px; color: rgba(0, 229, 255, 0.6); background-color: rgba(0, 229, 255, 0.06); border: 1px solid rgba(0, 229, 255, 0.12);">Self-Hosted</span>
+              </p>
+              <p style="margin: 0 0 12px 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 11px; color: #7a7a9e;">
+                <a href="https://zenresources.net" style="color: #7a7a9e; text-decoration: none; border-bottom: 1px solid rgba(122, 122, 158, 0.3);">zenresources.net</a>
+              </p>
+              <p style="margin: 0; font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif; font-size: 11px; color: #7a7a9e;">
+                <a href="#" style="color: #7a7a9e; text-decoration: none; border-bottom: 1px solid rgba(122, 122, 158, 0.3);">Unsubscribe</a>
+                &nbsp;&middot;&nbsp;
+                <a href="#" style="color: #7a7a9e; text-decoration: none; border-bottom: 1px solid rgba(122, 122, 158, 0.3);">Preferences</a>
+                &nbsp;&middot;&nbsp;
+                <a href="mailto:support@zenresources.net" style="color: #7a7a9e; text-decoration: none; border-bottom: 1px solid rgba(122, 122, 158, 0.3);">Support</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /Email container -->
+
+      </td>
+    </tr>
+  </table>
+  <!-- /Outer wrapper -->
+
+</body>
+</html>
