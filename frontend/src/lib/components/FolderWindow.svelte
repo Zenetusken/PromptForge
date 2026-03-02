@@ -171,7 +171,19 @@
 		const unsub2 = systemBus.on('fs:created', () => loadContents());
 		const unsub3 = systemBus.on('fs:deleted', () => loadContents());
 		const unsub4 = systemBus.on('fs:renamed', () => loadContents());
-		return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+		const unsub5 = systemBus.on('forge:completed', (event) => {
+			const payload = event.payload as Record<string, unknown>;
+			const projectId = payload.projectId as string | null;
+			// Only reload if the forge belongs to this folder's project
+			if (!projectId || projectId !== folderId) return;
+			const promptId = payload.promptId as string | null;
+			if (promptId) {
+				// Clear cached forge list for this prompt so re-expansion fetches fresh data
+				forgeCache = new Map([...forgeCache].filter(([k]) => k !== promptId));
+			}
+			loadContents(); // Re-fetch to update forge_count badges
+		});
+		return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
 	});
 
 	// Reload on folderId change (skip initial since onMount handles it)

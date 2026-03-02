@@ -131,7 +131,7 @@ class ProjectsState {
 		}
 	}
 
-	private invalidateAllItems() {
+	invalidateAllItems() {
 		this.allItemsLoaded = false;
 		this.allItems = [];
 	}

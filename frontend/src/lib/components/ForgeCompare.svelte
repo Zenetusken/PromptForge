@@ -3,6 +3,7 @@
 	import { windowManager } from '$lib/stores/windowManager.svelte';
 	import { optimizationState, mapToResultState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
 	import { fetchOptimization } from '$lib/api/client';
+	import { systemBus } from '$lib/services/systemBus.svelte';
 	import { normalizeScore, getScoreBadgeClass } from '$lib/utils/format';
 	import ForgeScoreDelta from './ForgeScoreDelta.svelte';
 	import ForgeCompareActions from './ForgeCompareActions.svelte';
@@ -54,6 +55,23 @@
 	// Fetch missing slots from server (guards against stale async responses)
 	$effect(() => fetchSlotIfMissing('slotA', v => fetchedSlotA = v, v => loadingSlotA = v, v => errorSlotA = v));
 	$effect(() => fetchSlotIfMissing('slotB', v => fetchedSlotB = v, v => loadingSlotB = v, v => errorSlotB = v));
+
+	// Guard: exit compare if a compared result is deleted elsewhere
+	$effect(() => {
+		const unsub = systemBus.on('history:reload', () => {
+			if (forgeMachine.mode !== 'compare') return;
+			const { slotA: idA, slotB: idB } = forgeMachine.comparison;
+			if (!idA || !idB) { forgeMachine.back(); return; }
+			// If either slot was in the cache and got removed, exit compare
+			const cacheA = optimizationState.resultHistory.find(r => r.id === idA);
+			const cacheB = optimizationState.resultHistory.find(r => r.id === idB);
+			if ((cacheA === undefined && fetchedSlotA === null && !loadingSlotA) ||
+				(cacheB === undefined && fetchedSlotB === null && !loadingSlotB)) {
+				forgeMachine.back();
+			}
+		});
+		return unsub;
+	});
 
 	let hasBothSlots = $derived(slotA !== null && slotB !== null);
 

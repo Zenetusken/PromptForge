@@ -474,6 +474,7 @@ async def promptforge_optimize(
 
     # Create initial DB record, auto-create Project, and resolve context — all in one session
     resolved_project_id: str | None = None
+    resolved_prompt_id: str | None = prompt_id
     resolved_context = None
     async with _repo_session() as (repo, session):
         # Validate prompt_id FK before creating record
@@ -504,6 +505,7 @@ async def promptforge_optimize(
                 auto_prompt_id = await ensure_prompt_in_project(session, project_info.id, prompt)
                 if auto_prompt_id:
                     opt_record.prompt_id = auto_prompt_id
+                    resolved_prompt_id = auto_prompt_id
 
         # Context resolution: kernel Knowledge Base → per-request override
         from apps.promptforge.services.context_resolver import resolve_project_context
@@ -549,6 +551,8 @@ async def promptforge_optimize(
         result_dict["status"] = OptimizationStatus.COMPLETED
         if resolved_project_id:
             result_dict["project_id"] = resolved_project_id
+        if resolved_prompt_id:
+            result_dict["prompt_id"] = resolved_prompt_id
         return result_dict
     except ProviderError as e:
         await update_optimization_status(optimization_id, error=str(e))

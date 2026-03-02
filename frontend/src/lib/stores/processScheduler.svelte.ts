@@ -124,8 +124,16 @@ class ProcessScheduler {
 		return this.processes.find(p => p.id === this.activeProcessId) ?? null;
 	}
 
+	private _cleanup: (() => void) | null = null;
+
 	/** Initialize bus subscriptions. Call once from +layout.svelte onMount. */
 	init(): () => void {
+		// Clean up previous initialization if called again
+		if (this._cleanup) {
+			this._cleanup();
+			this._cleanup = null;
+		}
+
 		// Sync maxConcurrent from settings
 		const unsubSettings = $effect.root(() => {
 			$effect(() => {
@@ -146,14 +154,16 @@ class ProcessScheduler {
 			}, retryAfter * 1000);
 		});
 
-		return () => {
+		this._cleanup = () => {
 			unsubSettings();
 			unsubRateLimit();
 			if (this._rateLimitTimer) {
 				clearTimeout(this._rateLimitTimer);
 				this._rateLimitTimer = null;
 			}
+			this._cleanup = null;
 		};
+		return this._cleanup;
 	}
 
 	// --- Process lifecycle ---
@@ -250,6 +260,8 @@ class ProcessScheduler {
 			score: proc.score,
 			strategy: proc.strategy,
 			optimizationId: proc.optimizationId,
+			projectId: proc.result?.project_id || null,
+			promptId: proc.result?.prompt_id || null,
 		});
 
 		// Promote next queued process

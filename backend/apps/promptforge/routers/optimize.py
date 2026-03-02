@@ -362,6 +362,7 @@ async def optimize_prompt(
         "project": request.project or "",
         "tags": request.tags or [],
         "version": request.version or "",
+        "prompt_id": optimization.prompt_id or "",
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id
@@ -930,6 +931,7 @@ async def retry_optimization(
         "tags": retry_tags,
         "version": original.version or "",
         "retry_of": optimization_id,
+        "prompt_id": new_optimization.prompt_id or "",
     }
     if resolved_project_id:
         metadata["project_id"] = resolved_project_id

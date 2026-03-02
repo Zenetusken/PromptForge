@@ -209,6 +209,8 @@ class OptimizationState {
 	private abortController: AbortController | null = null;
 	private _reloadTimerId: ReturnType<typeof setTimeout> | null = null;
 	private _activeProcessId: string | null = null;
+	/** Guard against double-fail from both stream error callback and SSE 'error' event. */
+	private _errorHandled = false;
 
 	/** Analysis result from a standalone "Analyze Only" call. Null when a full forge result exists. */
 	get analysisResult(): AnalysisStepData | null {
@@ -234,6 +236,7 @@ class OptimizationState {
 
 	private _resetRunState() {
 		this.cancel();
+		this._errorHandled = false;
 		this.isRunning = true;
 		this.error = null;
 		this.errorType = null;
@@ -265,6 +268,8 @@ class OptimizationState {
 	}
 
 	private _onStreamError = (err: Error) => {
+		if (this._errorHandled) return;
+		this._errorHandled = true;
 		this._failWithError(err.message);
 		if (this._activeProcessId) {
 			processScheduler.fail(this._activeProcessId, err.message);
@@ -440,6 +445,10 @@ class OptimizationState {
 				sessionContext.record(this.forgeResult);
 				// Attach artifact descriptor to active tab for document-aware tab management
 				this._attachArtifactToActiveTab(this.forgeResult);
+				// Backfill draft.project from result when forge auto-created or assigned a project
+				if (this.forgeResult.project && !forgeSession.draft.project.trim()) {
+					forgeSession.updateDraft({ project: this.forgeResult.project });
+				}
 				// Mark all steps as complete
 				if (this.currentRun) {
 					this.currentRun.steps = this.currentRun.steps.map((s) => ({
@@ -465,13 +474,17 @@ class OptimizationState {
 					this._reloadTimerId = null;
 					historyState.loadHistory();
 					if (this.forgeResult?.project) {
+						projectsState.invalidateAllItems();
 						projectsState.loadProjects();
+						projectsState.loadAllProjects();
 					}
 				}, 500);
 				break;
 			}
 
 			case 'error': {
+				if (this._errorHandled) break;
+				this._errorHandled = true;
 				this._failWithError(event.error || 'Unknown error', event.errorType, event.retryAfter);
 				if (this._activeProcessId) {
 					processScheduler.fail(this._activeProcessId, event.error || 'Unknown error');
