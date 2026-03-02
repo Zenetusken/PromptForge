@@ -104,10 +104,15 @@
 		// MCP Activity Feed connection is managed reactively via $effect below.
 
 		// Reload history/stats when a forge completes (via bus, not direct import chains)
-		const unsubForgeComplete = systemBus.on('forge:completed', () => {
+		const unsubForgeComplete = systemBus.on('forge:completed', (event) => {
 			setTimeout(() => {
 				historyState.loadHistory();
 				statsState.load(historyState.total);
+				// Invalidate filesystem cache so forge counts update in open FolderWindows
+				const projectId = (event.payload as Record<string, unknown>).projectId as string | null;
+				if (projectId) {
+					fsOrchestrator.invalidate(projectId);
+				}
 			}, 500);
 		});
 
@@ -207,6 +212,15 @@
 
 		// Global keyboard shortcuts
 		function handleGlobalKeydown(e: KeyboardEvent) {
+			// Ctrl/Cmd+S — save prompt (must fire before INPUT/TEXTAREA guard)
+			if (e.key === "s" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+				if (windowManager.ideVisible && forgeMachine.mode === "compose") {
+					e.preventDefault();
+					systemBus.emit('forge:save', 'keyboard');
+					return;
+				}
+			}
+
 			const tag = (e.target as HTMLElement)?.tagName;
 			if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
 				return;

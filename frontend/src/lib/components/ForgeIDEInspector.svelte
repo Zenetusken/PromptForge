@@ -39,11 +39,45 @@
     let canForge = $derived(forgeSession.hasText && !optimizationState.isRunning);
     let isAnalyzing = $derived(optimizationState.isAnalyzing);
     let hasError = $derived(!!optimizationState.error && !optimizationState.isRunning);
+
+    // --- Resize handle ---
+    let isResizing = $state(false);
+
+    function onResizeStart(e: MouseEvent) {
+        e.preventDefault();
+        isResizing = true;
+        const startX = e.clientX;
+        const startWidth = forgeMachine.panelWidth;
+
+        function onMove(ev: MouseEvent) {
+            // Dragging left = wider panel (panel is on right side)
+            const delta = startX - ev.clientX;
+            forgeMachine.setWidth(startWidth + delta);
+        }
+        function onUp() {
+            isResizing = false;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        }
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-    class="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l border-neon-cyan/10 bg-bg-secondary"
+    class="relative flex h-full shrink-0 flex-col overflow-y-auto border-l border-white/[0.06] bg-bg-secondary"
+    style="width: {forgeMachine.panelWidth}px"
 >
+    <!-- Resize handle (left edge) -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+        class="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize transition-colors {isResizing ? 'bg-neon-cyan/30' : 'hover:bg-neon-cyan/20'}"
+        onmousedown={onResizeStart}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize panel"
+    ></div>
     {#if forgeMachine.mode === 'compose'}
         <!-- COMPOSE MODE: Strategy recommendations + picker + actions -->
         <div class="flex flex-col gap-1.5 p-2">
@@ -146,7 +180,7 @@
 
         <!-- Error recovery: explicit back-to-compose when pipeline errors out -->
         {#if hasError}
-            <div class="shrink-0 border-t border-neon-cyan/10 px-2 py-1.5">
+            <div class="shrink-0 border-t border-white/[0.06] px-2 py-1.5">
                 <button
                     onclick={handleCancelPipeline}
                     class="flex w-full items-center justify-center gap-1.5 rounded bg-bg-hover/50 px-3 py-1.5 text-[10px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"

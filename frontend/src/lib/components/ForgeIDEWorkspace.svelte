@@ -10,6 +10,8 @@
     import ForgeIDEEditor from "./ForgeIDEEditor.svelte";
     import ForgeIDEInspector from "./ForgeIDEInspector.svelte";
 
+    let editorRef: ForgeIDEEditor | undefined = $state();
+
     // Cancel any pending analysis debounce timer on teardown
     onDestroy(() => promptAnalysis.destroy());
 
@@ -44,7 +46,7 @@
 <div
     class="flex h-full w-full bg-bg-primary overflow-hidden"
 >
-    <ForgeIDEExplorer />
-    <ForgeIDEEditor />
+    <ForgeIDEExplorer onjumpline={(line) => editorRef?.jumpToLine(line)} />
+    <ForgeIDEEditor bind:this={editorRef} />
     <ForgeIDEInspector />
 </div>

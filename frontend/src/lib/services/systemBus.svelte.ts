@@ -57,7 +57,8 @@ export type BusEventType =
 	| 'kernel:knowledge_source_added'
 	| 'kernel:knowledge_source_updated'
 	| 'kernel:knowledge_source_removed'
-	| 'textforge:prefill';
+	| 'textforge:prefill'
+	| 'forge:save';
 
 export interface BusEvent {
 	type: BusEventType;
