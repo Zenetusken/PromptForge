@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { knowledge } from "$lib/kernel/services/knowledge.svelte";
 	import type { KnowledgeSource } from "$lib/kernel/types";
+	import { formatChars } from "$lib/utils/safe";
 	import Icon from "./Icon.svelte";
 
 	interface Props {
@@ -135,11 +136,6 @@
 		specification: "Spec",
 		notes: "Notes",
 	};
-
-	function formatChars(n: number): string {
-		if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-		return String(n);
-	}
 
 	$effect(() => {
 		if (entityId) loadSources();

@@ -300,6 +300,7 @@ export interface ContextPreviewResponse {
 export async function fetchContextPreview(
 	project?: string | null,
 	codebaseContext?: CodebaseContext | null,
+	signal?: AbortSignal,
 ): Promise<ContextPreviewResponse> {
 	return apiFetch(`${BASE_URL}/context/preview`, { context: null, field_count: 0, rendered_chars: 0 }, {
 		method: 'POST',
@@ -308,6 +309,7 @@ export async function fetchContextPreview(
 			project: project || null,
 			codebase_context: codebaseContext || null,
 		}),
+		signal,
 	});
 }
 
@@ -332,7 +334,7 @@ function processSSELines(
 					onEvent(mapped);
 				}
 			} catch {
-				console.warn('[PromptForge] Malformed SSE data, skipping:', trimmed.slice(6, 200));
+				console.warn('[PromptForge] Malformed SSE data (event=%s):', eventType || 'unknown', trimmed.slice(6, 500));
 			}
 			eventType = '';
 		} else if (trimmed === '') {
@@ -376,15 +378,20 @@ function openSSEStream(
 
 			resetReadTimer();
 
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
+			try {
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
 
-				resetReadTimer();
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || '';
-				currentEventType = processSSELines(lines, currentEventType, onEvent);
+					resetReadTimer();
+					buffer += decoder.decode(value, { stream: true });
+					const lines = buffer.split('\n');
+					buffer = lines.pop() || '';
+					currentEventType = processSSELines(lines, currentEventType, onEvent);
+				}
+			} finally {
+				// Always release the reader to prevent hanging streams
+				await reader.cancel().catch(() => {});
 			}
 
 			clearTimeout(readTimer);
@@ -1162,7 +1169,7 @@ export async function batchOptimize(
 	failed: number;
 	results: { index: number; optimization_id: string | null; overall_score: number | null; status: string; error: string | null }[];
 }> {
-	const res = await fetch(`${BASE_URL}/optimize/batch`, {
+	return apiFetchOrThrow(`${BASE_URL}/optimize/batch`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
@@ -1172,10 +1179,6 @@ export async function batchOptimize(
 			tags: options?.tags || null,
 		}),
 	});
-	if (!res.ok) {
-		throw new Error(`Batch optimize failed: ${res.status}`);
-	}
-	return res.json();
 }
 
 export async function fetchPromptForges(

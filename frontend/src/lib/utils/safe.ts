@@ -36,6 +36,12 @@ export function safeArrayOrUndefined(value: unknown): string[] | undefined {
  * Handles the common case where backend JSON fields arrive as a bare string
  * instead of an array (e.g., CodebaseContext.conventions from workspace sync).
  */
+/** Format a character count for compact display: values ≥ 1000 as `1.2K`, else as-is. Floors to 0. */
+export function formatChars(n: number): string {
+	const safe = Math.max(0, n);
+	return safe >= 1000 ? `${(safe / 1000).toFixed(1)}K` : `${safe}`;
+}
+
 export function toLines(value: string | string[] | undefined | null): string {
 	if (!value) return '';
 	if (Array.isArray(value)) return value.join('\n');
