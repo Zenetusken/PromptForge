@@ -102,6 +102,7 @@ function makeTab(overrides?: Partial<WorkspaceTab>): WorkspaceTab {
 		resultId: null,
 		mode: 'compose',
 		document: null,
+		originalText: '',
 		...overrides,
 	};
 }

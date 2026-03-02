@@ -39,10 +39,11 @@ export function restoreTabState(tab: WorkspaceTab): void {
 			optimizationState.resetForge();
 			forgeMachine.back();
 			optimizationState.restoreResult(tab.resultId).then(ok => {
-				if (generation !== _restoreGeneration) return;
-				if (forgeSession.activeTabId === tab.id && ok) {
+				// Guard: discard if another restore started or tab switched away
+				if (generation !== _restoreGeneration || forgeSession.activeTabId !== tab.id) return;
+				if (ok) {
 					forgeMachine.enterReview();
-				} else if (forgeSession.activeTabId === tab.id) {
+				} else {
 					tab.resultId = null;
 					tab.mode = 'compose';
 					// Clear artifact/sub-artifact document when its result can't be restored
@@ -52,6 +53,15 @@ export function restoreTabState(tab: WorkspaceTab): void {
 					forgeSession.persistTabs();
 					toastState.show('Previous result could not be restored', 'info');
 				}
+			}).catch(() => {
+				if (generation !== _restoreGeneration || forgeSession.activeTabId !== tab.id) return;
+				tab.resultId = null;
+				tab.mode = 'compose';
+				if (tab.document?.kind === 'artifact' || tab.document?.kind === 'sub-artifact') {
+					tab.document = null;
+				}
+				forgeSession.persistTabs();
+				toastState.show('Failed to restore previous result', 'error');
 			});
 		}
 	} else {

@@ -164,9 +164,12 @@ class NotificationService {
 
 	/**
 	 * Subscribe to system bus events for automated notifications.
-	 * Call this once during app bootstrap.
+	 * Call this once during app bootstrap. Idempotent — cleans up previous subscriptions.
 	 */
 	subscribeToBus(): void {
+		if (this._unsubscribers.length > 0) {
+			this.unsubscribeFromBus();
+		}
 		this._unsubscribers.push(
 			systemBus.on('forge:completed', (event) => {
 				const title = (event.payload.title as string) || 'Forge';

@@ -115,6 +115,8 @@ export const MCP_TOOL_COLORS: Record<string, string> = {
 const MAX_EVENTS = 100;
 const MAX_BACKOFF = 30_000;
 const INITIAL_BACKOFF = 3_000;
+const MAX_RECONNECT_FAILURES = 10;
+const SNAPSHOT_DURATION_MS = 2_000;
 
 class MCPActivityFeed {
 	connected = $state(false);
@@ -126,10 +128,10 @@ class MCPActivityFeed {
 	private _abortController: AbortController | null = null;
 	private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private _backoff = INITIAL_BACKOFF;
-	private _snapshotPhase = true;
-	private _snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+	private _snapshotStartedAt: number | null = null;
 	private _lastEventId: string | null = null;
 	private _connecting = false;
+	private _consecutiveFailures = 0;
 
 	/**
 	 * Start the SSE connection. Safe to call multiple times — guards
@@ -145,10 +147,6 @@ class MCPActivityFeed {
 	 * Stop the SSE connection and cleanup.
 	 */
 	disconnect(): void {
-		if (this._snapshotTimer) {
-			clearTimeout(this._snapshotTimer);
-			this._snapshotTimer = null;
-		}
 		if (this._reconnectTimer) {
 			clearTimeout(this._reconnectTimer);
 			this._reconnectTimer = null;
@@ -158,6 +156,7 @@ class MCPActivityFeed {
 			this._abortController = null;
 		}
 		this.connected = false;
+		this._consecutiveFailures = 0;
 	}
 
 	/**
@@ -195,12 +194,8 @@ class MCPActivityFeed {
 
 			this.connected = true;
 			this._backoff = INITIAL_BACKOFF;
-			this._snapshotPhase = true;
-			if (this._snapshotTimer) clearTimeout(this._snapshotTimer);
-			this._snapshotTimer = setTimeout(() => {
-				this._snapshotPhase = false;
-				this._snapshotTimer = null;
-			}, 2000);
+			this._consecutiveFailures = 0;
+			this._snapshotStartedAt = Date.now();
 
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
@@ -242,8 +237,18 @@ class MCPActivityFeed {
 		this._scheduleReconnect();
 	}
 
+	/** Whether we're still in the initial snapshot phase after connection. */
+	private _isSnapshotPhase(): boolean {
+		return this._snapshotStartedAt !== null && (Date.now() - this._snapshotStartedAt) < SNAPSHOT_DURATION_MS;
+	}
+
 	private _scheduleReconnect(): void {
 		if (this._reconnectTimer) return;
+		this._consecutiveFailures++;
+		if (this._consecutiveFailures > MAX_RECONNECT_FAILURES) {
+			console.warn('[MCPActivityFeed] Too many reconnect failures, giving up');
+			return;
+		}
 		this._reconnectTimer = setTimeout(() => {
 			this._reconnectTimer = null;
 			this._backoff = Math.min(this._backoff * 1.5, MAX_BACKOFF);
@@ -338,7 +343,7 @@ class MCPActivityFeed {
 
 		// Don't emit bus events for snapshot replay events — prevents notification
 		// flooding on SSE connect/reconnect. Events still populate the event log.
-		if (!this._snapshotPhase) {
+		if (!this._isSnapshotPhase()) {
 			const busType = EVENT_TYPE_MAP[event.event_type];
 			if (busType) {
 				systemBus.emit(busType, 'mcpActivityFeed', {
