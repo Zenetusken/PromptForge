@@ -51,6 +51,10 @@
 		<div class="px-1.5 pt-0.5 pb-1" data-testid="metadata-fields">
 			<div class="grid grid-cols-1 gap-1.5 {compact ? '' : 'sm:grid-cols-4'}">
 				<div>
+					<label for="meta-title" class="flex items-center gap-1 mb-0.5 text-[9px] font-bold uppercase tracking-wider text-text-dim/50">
+						<Icon name="edit" size={9} class="text-text-dim/40" />
+						Title
+					</label>
 					<input
 						id="meta-title"
 						type="text"
@@ -74,6 +78,10 @@
 					{/if}
 				</div>
 				<div class="{compact ? '' : 'max-w-[100px]'}">
+					<label for="meta-version" class="flex items-center gap-1 mb-0.5 text-[9px] font-bold uppercase tracking-wider text-text-dim/50">
+						<Icon name="git-branch" size={9} class="text-text-dim/40" />
+						Version
+					</label>
 					<input
 						id="meta-version"
 						type="text"
@@ -92,6 +100,18 @@
 					{/if}
 				</div>
 				<div>
+					<label for="meta-project" class="flex items-center gap-1 mb-0.5 text-[9px] font-bold uppercase tracking-wider text-text-dim/50">
+						<Icon name="folder" size={9} class="text-text-dim/40" />
+						Project
+						{#if forgeSession.draft.sourceAction}
+							<span class="rounded-sm px-1 py-px text-[8px] font-medium {forgeSession.draft.sourceAction === 'optimize' ? 'text-neon-purple/70' : 'text-neon-cyan/70'}">
+								{forgeSession.draft.sourceAction === 'optimize' ? 'OPT' : 'RET'}
+							</span>
+						{/if}
+						{#if forgeSession.draft.promptId}
+							<Icon name="link" size={8} class="text-neon-green/50" />
+						{/if}
+					</label>
 					<input
 						id="meta-project"
 						type="text"
@@ -114,6 +134,10 @@
 					{/if}
 				</div>
 				<div>
+					<label for="meta-tags" class="flex items-center gap-1 mb-0.5 text-[9px] font-bold uppercase tracking-wider text-text-dim/50">
+						<Icon name="layers" size={9} class="text-text-dim/40" />
+						Tags
+					</label>
 					<input
 						id="meta-tags"
 						type="text"

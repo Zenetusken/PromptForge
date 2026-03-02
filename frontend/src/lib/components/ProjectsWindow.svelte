@@ -64,6 +64,7 @@
 	let kbLanguage = $state('');
 	let kbFramework = $state('');
 	let kbDescription = $state('');
+	let kbTestFramework = $state('');
 	let kbLoading = $state(false);
 	let kbAutoDetected = $state<Record<string, string | null>>({});
 
@@ -93,6 +94,7 @@
 				kbLanguage = profile.language ?? '';
 				kbFramework = profile.framework ?? '';
 				kbDescription = profile.description ?? '';
+				kbTestFramework = profile.test_framework ?? '';
 				kbAutoDetected = (profile.auto_detected ?? {}) as Record<string, string | null>;
 				const meta = (profile.metadata ?? {}) as Record<string, unknown>;
 				kbConventions = Array.isArray(meta.conventions) ? (meta.conventions as string[]).join('\n') : '';
@@ -102,6 +104,7 @@
 				kbLanguage = '';
 				kbFramework = '';
 				kbDescription = '';
+				kbTestFramework = '';
 				kbAutoDetected = {};
 				kbConventions = '';
 				kbPatterns = '';
@@ -772,6 +775,18 @@
 							disabled={activeProjectStatus !== 'active'}
 							class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none resize-none disabled:opacity-40"
 						></textarea>
+					</div>
+					<div>
+						<label for="kb-tf" class="block text-[9px] text-text-dim mb-0.5">Test Framework</label>
+						<input
+							id="kb-tf"
+							type="text"
+							bind:value={kbTestFramework}
+							onblur={() => saveIdentityField('test_framework', kbTestFramework)}
+							placeholder="e.g. vitest"
+							disabled={activeProjectStatus !== 'active'}
+							class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none disabled:opacity-40"
+						/>
 					</div>
 				</div>
 			{/if}

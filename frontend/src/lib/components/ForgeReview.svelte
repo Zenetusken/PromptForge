@@ -2,12 +2,16 @@
 	import { optimizationState, type OptimizationResultState } from '$lib/stores/optimization.svelte';
 	import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
 	import { windowManager } from '$lib/stores/windowManager.svelte';
-	import { forgeSession } from '$lib/stores/forgeSession.svelte';
+	import { forgeSession, createEmptyDraft } from '$lib/stores/forgeSession.svelte';
 	import { normalizeScore, getScoreBadgeClass, formatScore } from '$lib/utils/format';
 	import { getStrategyColor } from '$lib/utils/strategies';
 	import { ALL_DIMENSIONS, DIMENSION_LABELS, DIMENSION_COLORS } from '$lib/utils/scoreDimensions';
+	import { historyState } from '$lib/stores/history.svelte';
+	import { toastState } from '$lib/stores/toast.svelte';
+	import { systemBus } from '$lib/services/systemBus.svelte';
 	import Icon from './Icon.svelte';
 	import CopyButton from './CopyButton.svelte';
+	import ConfirmModal from './ConfirmModal.svelte';
 	import ForgeIterationTimeline from './ForgeIterationTimeline.svelte';
 	import ContextSnapshotPanel from './ContextSnapshotPanel.svelte';
 	import ForgeContents from './ForgeContents.svelte';
@@ -43,6 +47,10 @@
 
 	function handleReforge() {
 		if (!result) return;
+		// Ensure draft carries the result's project for re-forge
+		if (result.project && forgeSession.draft.project !== result.project) {
+			forgeSession.updateDraft({ project: result.project });
+		}
 		const metadata = forgeSession.buildMetadata();
 		optimizationState.startOptimization(result.original, metadata);
 		forgeMachine.enterForging();
@@ -59,13 +67,41 @@
 		forgeMachine.compare(target.id, result.id);
 	}
 
+	let confirmDeleteOpen = $state(false);
+
+	async function handleDeleteForge() {
+		if (!result) return;
+		const id = result.id;
+		const ok = await historyState.removeEntry(id);
+		confirmDeleteOpen = false;
+		if (ok) {
+			if (optimizationState.forgeResult?.id === id) optimizationState.forgeResult = null;
+			optimizationState.resultHistory = optimizationState.resultHistory.filter(r => r.id !== id);
+			// Reset the active tab so stale result content doesn't persist in sessionStorage
+			const tab = forgeSession.activeTab;
+			tab.resultId = null;
+			tab.mode = 'compose';
+			tab.document = null;
+			tab.draft = createEmptyDraft();
+			tab.name = 'Untitled';
+			tab.originalText = '';
+			forgeMachine.back();
+			forgeSession.persistTabs();
+			systemBus.emit('history:reload', 'forgeReview');
+			systemBus.emit('stats:reload', 'forgeReview');
+			toastState.show('Forge entry deleted', 'success');
+		} else {
+			toastState.show('Failed to delete forge entry', 'error');
+		}
+	}
+
 </script>
 
 {#if result}
 	<div class="flex flex-1 flex-col overflow-y-auto" data-testid="forge-review">
 		<!-- Score header -->
-		<div class="px-2 pt-2 pb-1.5">
-			<div class="flex items-center gap-1.5 mb-1">
+		<div class="px-3 pt-2.5 pb-2">
+			<div class="flex items-center gap-2 mb-1.5">
 				{#if result.scores.overall}
 					<span class="score-circle score-circle-sm {getScoreBadgeClass(result.scores.overall)}">
 						{normalizeScore(result.scores.overall)}
@@ -108,55 +144,82 @@
 					{@const normalized = normalizeScore(score)}
 					<div class="flex items-center gap-1.5">
 						<span class="w-16 text-[9px] font-medium text-text-dim truncate">{DIMENSION_LABELS[dim]}</span>
-						<div class="flex-1 h-1 rounded-full bg-bg-primary/60 overflow-hidden">
+						<div class="flex-1 h-1.5 rounded-full bg-bg-primary/60 overflow-hidden">
 							<div
 								class="h-full rounded-full transition-[width] duration-500"
 								style="width: {normalized ?? 0}%; background-color: var(--color-{DIMENSION_COLORS[dim]})"
 							></div>
 						</div>
-						<span class="w-5 text-right font-mono text-[9px] text-text-dim">{formatScore(score)}</span>
+						<span
+							class="w-5 text-right font-mono text-[9px] font-medium"
+							style="color: var(--color-{DIMENSION_COLORS[dim]})"
+						>{formatScore(score)}</span>
 					</div>
 				{/each}
 			</div>
 		</div>
 
-		<!-- Tabs -->
-		<div class="flex border-y border-neon-cyan/8">
+		<!-- Tabs with sliding indicator -->
+		<div class="relative flex border-y border-white/[0.06]">
 			<button
-				class="flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors {activeTab === 'optimized' ? 'text-neon-cyan bg-neon-cyan/5 border-b border-neon-cyan' : 'text-text-dim hover:text-text-secondary'}"
+				class="flex-1 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors {activeTab === 'optimized' ? 'text-neon-cyan' : 'text-text-dim hover:text-text-secondary'}"
 				onclick={() => (activeTab = 'optimized')}
 			>
 				Optimized
 			</button>
 			<button
-				class="flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors {activeTab === 'original' ? 'text-text-secondary bg-bg-hover/30 border-b border-text-secondary' : 'text-text-dim hover:text-text-secondary'}"
+				class="flex-1 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors {activeTab === 'original' ? 'text-text-secondary' : 'text-text-dim hover:text-text-secondary'}"
 				onclick={() => (activeTab = 'original')}
 			>
 				Original
 			</button>
+			<!-- Sliding underline indicator -->
+			<div
+				class="absolute bottom-0 h-px transition-all duration-200 ease-out"
+				style="left: {activeTab === 'optimized' ? '0%' : '50%'}; width: 50%; background-color: {activeTab === 'optimized' ? 'var(--color-neon-cyan)' : 'var(--color-text-secondary)'};"
+			></div>
 		</div>
 
-		<!-- Content -->
-		<div class="flex-1 overflow-y-auto px-2 py-1.5">
-			<pre class="whitespace-pre-wrap font-mono text-[11px] leading-snug text-text-primary">{activeTab === 'optimized' ? result.optimized : result.original}</pre>
+		<!-- Content well -->
+		<div class="flex-1 overflow-y-auto p-2">
+			<div class="rounded-md border border-white/[0.04] bg-bg-primary/40 p-3">
+				<pre class="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-text-primary selection:bg-neon-cyan/20">{activeTab === 'optimized' ? result.optimized : result.original}</pre>
+			</div>
 		</div>
 
 		<!-- Strategy reasoning (collapsible) -->
 		{#if result.strategy_reasoning}
-			<div class="px-2 pb-0.5">
-				<details class="text-[10px]">
-					<summary class="cursor-pointer text-text-dim hover:text-text-secondary transition-colors font-medium">
-						Strategy reasoning
+			<div class="border-t border-white/[0.06]">
+				<details class="group">
+					<summary class="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer text-[10px] text-text-dim hover:text-text-secondary transition-colors select-none">
+						<Icon name="chevron-right" size={10} class="shrink-0 transition-transform group-open:rotate-90" />
+						<Icon name="info" size={10} class="shrink-0 text-neon-purple/60" />
+						<span class="font-bold uppercase tracking-wider">Strategy Reasoning</span>
 					</summary>
-					<p class="mt-1 text-text-secondary leading-snug">{result.strategy_reasoning}</p>
+					<div class="px-3 pb-2">
+						<div class="rounded-md border border-white/[0.04] bg-bg-primary/30 p-2.5">
+							<p class="text-[11px] text-text-secondary leading-relaxed">{result.strategy_reasoning}</p>
+						</div>
+					</div>
 				</details>
 			</div>
 		{/if}
 
-		<!-- Verdict -->
+		<!-- Verdict (callout bar) -->
 		{#if result.verdict}
-			<div class="px-2 pb-1.5">
-				<p class="text-[10px] italic text-text-dim leading-snug">{result.verdict}</p>
+			<div class="border-t border-white/[0.06]">
+				<details class="group">
+					<summary class="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer text-[10px] text-text-dim hover:text-text-secondary transition-colors select-none">
+						<Icon name="chevron-right" size={10} class="shrink-0 transition-transform group-open:rotate-90" />
+						<Icon name="check" size={10} class="shrink-0 text-neon-green/60" />
+						<span class="font-bold uppercase tracking-wider">Verdict</span>
+					</summary>
+					<div class="px-3 pb-2">
+						<div class="border-l border-neon-cyan/30 pl-2.5 py-0.5">
+							<p class="text-[11px] italic text-text-secondary leading-relaxed">{result.verdict}</p>
+						</div>
+					</div>
+				</details>
 			</div>
 		{/if}
 
@@ -174,9 +237,10 @@
 			onselect={(target) => handleCompareWith(target)}
 		/>
 
-		<!-- Actions -->
-		<div class="shrink-0 border-t border-neon-cyan/8 px-2 py-1.5 flex flex-wrap gap-1">
+		<!-- Actions (sticky bottom bar) -->
+		<div class="shrink-0 border-t border-white/[0.06] bg-bg-secondary px-3 py-2 flex flex-wrap gap-1.5">
 			<CopyButton text={result.optimized} />
+			<span class="w-px h-4 bg-white/[0.08] self-center"></span>
 			<button
 				onclick={handleIterate}
 				class="forge-action-btn"
@@ -194,6 +258,7 @@
 				Re-forge
 			</button>
 			{#if optimizationState.resultHistory.length > 1}
+				<span class="w-px h-4 bg-white/[0.08] self-center"></span>
 				<button
 					onclick={handleCompareWithPrevious}
 					class="forge-action-btn {!previousResult ? 'opacity-40 cursor-not-allowed' : ''}"
@@ -209,6 +274,15 @@
 				slotId="promptforge:review-actions"
 				context={{ resultId: result.id, optimizedPrompt: result.optimized }}
 			/>
+			<span class="w-px h-4 bg-white/[0.08] self-center"></span>
+			<button
+				onclick={() => (confirmDeleteOpen = true)}
+				class="forge-action-btn text-neon-red/60 hover:text-neon-red hover:border-neon-red/30 hover:bg-neon-red/5"
+				aria-label="Delete forge result"
+			>
+				<Icon name="trash-2" size={10} />
+				Delete
+			</button>
 		</div>
 	</div>
 {:else}
@@ -216,4 +290,12 @@
 		<p class="text-[11px] text-text-dim">No result to review</p>
 	</div>
 {/if}
+
+<ConfirmModal
+	bind:open={confirmDeleteOpen}
+	title="Delete Forge"
+	variant="danger"
+	message="Permanently delete this forge result? This cannot be undone."
+	onconfirm={handleDeleteForge}
+/>
 

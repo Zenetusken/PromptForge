@@ -7,6 +7,7 @@
 	import type { ProjectSummary } from '$lib/api/client';
 	import { fetchProjects } from '$lib/api/client';
 	import Icon from './Icon.svelte';
+	import SourceManager from './SourceManager.svelte';
 	import { WindowTabStrip, StatusDot, InlineProgress } from './ui';
 	import { onMount } from 'svelte';
 
@@ -31,6 +32,23 @@
 	// Context Inspector — kernel profile for selected workspace
 	let inspectorProfile = $state<import('$lib/kernel/types').KnowledgeProfile | null>(null);
 	let inspectorLoading = $state(false);
+	let inspLanguage = $state('');
+	let inspFramework = $state('');
+	let inspDescription = $state('');
+	let inspTestFramework = $state('');
+	let inspConventions = $state('');
+	let inspPatterns = $state('');
+	let inspTestPatterns = $state('');
+	let inspAutoDetected = $state<Record<string, string | null>>({});
+
+	let inspectorCompleteness = $derived.by(() => {
+		if (!inspectorProfile) return 0;
+		const identity = [inspLanguage, inspFramework, inspDescription, inspTestFramework];
+		const hints = [inspConventions, inspPatterns, inspTestPatterns];
+		const total = identity.length + hints.length;
+		const filled = identity.filter(v => v.trim()).length + hints.filter(v => v.trim()).length;
+		return total > 0 ? filled / total : 0;
+	});
 
 	// OAuth setup form state
 	let configClientId = $state('');
@@ -38,16 +56,6 @@
 	let configError = $state('');
 	let configSaving = $state(false);
 	let showSetupGuide = $state(false);
-
-	const contextFields = [
-		{ key: 'language', label: 'Language' },
-		{ key: 'framework', label: 'Framework' },
-		{ key: 'description', label: 'Description' },
-		{ key: 'conventions', label: 'Conventions' },
-		{ key: 'patterns', label: 'Patterns' },
-		{ key: 'test_framework', label: 'Test Framework' },
-		{ key: 'test_patterns', label: 'Test Patterns' },
-	];
 
 	let githubConnected = $derived(workspaceManager.githubConnected);
 	let githubUser = $derived(workspaceManager.githubUser);
@@ -218,6 +226,21 @@
 			import('$lib/kernel/services/knowledge.svelte').then(({ knowledge }) => {
 				knowledge.getProfile('promptforge', ws.project_id).then((profile) => {
 					inspectorProfile = profile;
+					if (profile) {
+						inspLanguage = profile.language ?? '';
+						inspFramework = profile.framework ?? '';
+						inspDescription = profile.description ?? '';
+						inspTestFramework = profile.test_framework ?? '';
+						inspAutoDetected = (profile.auto_detected ?? {}) as Record<string, string | null>;
+						const meta = (profile.metadata ?? {}) as Record<string, unknown>;
+						inspConventions = Array.isArray(meta.conventions) ? (meta.conventions as string[]).join('\n') : '';
+						inspPatterns = Array.isArray(meta.patterns) ? (meta.patterns as string[]).join('\n') : '';
+						inspTestPatterns = Array.isArray(meta.test_patterns) ? (meta.test_patterns as string[]).join('\n') : '';
+					} else {
+						inspLanguage = ''; inspFramework = ''; inspDescription = '';
+						inspTestFramework = ''; inspAutoDetected = {};
+						inspConventions = ''; inspPatterns = ''; inspTestPatterns = '';
+					}
 				}).catch(() => {
 					inspectorProfile = null;
 				}).finally(() => {
@@ -226,40 +249,42 @@
 			});
 		} else {
 			inspectorProfile = null;
+			inspLanguage = ''; inspFramework = ''; inspDescription = '';
+			inspTestFramework = ''; inspAutoDetected = {};
+			inspConventions = ''; inspPatterns = ''; inspTestPatterns = '';
 		}
 	});
 
-	type Provenance = 'manual' | 'auto' | 'n/a';
-
-	function getFieldProvenance(field: string): { value: string; provenance: Provenance; autoValue: string } {
-		if (!inspectorProfile) return { value: '', provenance: 'n/a', autoValue: '' };
-
-		const identityFields = ['language', 'framework', 'description', 'test_framework'];
-		const metadataFields = ['conventions', 'patterns', 'test_patterns'];
-		const auto = (inspectorProfile.auto_detected ?? {}) as Record<string, unknown>;
-
-		let manualVal: unknown = null;
-		let autoVal: unknown = auto[field] ?? null;
-
-		if (identityFields.includes(field)) {
-			manualVal = (inspectorProfile as unknown as Record<string, unknown>)[field] ?? null;
-		} else if (metadataFields.includes(field)) {
-			const meta = (inspectorProfile.metadata ?? {}) as Record<string, unknown>;
-			manualVal = meta[field] ?? null;
+	async function saveInspectorIdentity(field: string, value: string) {
+		const ws = selectedWorkspace;
+		if (!ws?.project_id) return;
+		try {
+			const { knowledge } = await import('$lib/kernel/services/knowledge.svelte');
+			await knowledge.updateProfile('promptforge', ws.project_id, {
+				[field]: value.trim() || null,
+			} as any);
+		} catch {
+			// Silently fail — value stays in local state
 		}
+	}
 
-		const formatVal = (v: unknown): string => {
-			if (v == null) return '';
-			if (Array.isArray(v)) return v.join(', ');
-			return String(v);
-		};
-
-		const manual = formatVal(manualVal);
-		const autoStr = formatVal(autoVal);
-
-		if (manual) return { value: manual, provenance: 'manual', autoValue: autoStr };
-		if (autoStr) return { value: autoStr, provenance: 'auto', autoValue: '' };
-		return { value: '', provenance: 'n/a', autoValue: '' };
+	async function saveInspectorHint(field: string, value: string) {
+		const ws = selectedWorkspace;
+		if (!ws?.project_id) return;
+		try {
+			const { knowledge } = await import('$lib/kernel/services/knowledge.svelte');
+			const profile = knowledge.getCachedProfile('promptforge', ws.project_id);
+			const currentMeta = { ...((profile?.metadata ?? {}) as Record<string, unknown>) };
+			const items = value.split('\n').map(s => s.trim()).filter(Boolean);
+			if (items.length > 0) {
+				currentMeta[field] = items;
+			} else {
+				delete currentMeta[field];
+			}
+			await knowledge.updateProfile('promptforge', ws.project_id, { metadata_json: currentMeta } as any);
+		} catch {
+			// Silently fail
+		}
 	}
 
 	// Load data on mount
@@ -748,51 +773,101 @@
 							</div>
 						{/if}
 
-						<!-- Context completeness -->
+						<!-- Context completeness (computed from kernel profile) -->
 						<div class="flex items-center gap-2">
 							<span class="text-[10px] text-text-secondary">Completeness</span>
-							<InlineProgress percent={selectedWorkspace.context_completeness * 100} class="flex-1" />
-							<span class="text-[10px] text-neon-cyan">
-								{Math.round(selectedWorkspace.context_completeness * 100)}%
+							<InlineProgress percent={inspectorCompleteness * 100} class="flex-1" />
+							<span class="text-[10px] text-neon-cyan font-mono">
+								{Math.round(inspectorCompleteness * 100)}%
 							</span>
 						</div>
 
-						<!-- Field breakdown -->
 						{#if inspectorLoading}
 							<div class="text-[10px] text-text-dim py-2">Loading profile...</div>
 						{:else}
+							<!-- Identity -->
 							<div class="space-y-1.5">
-								{#each contextFields as field (field.key)}
-									{@const info = getFieldProvenance(field.key)}
-									<div class="flex items-start gap-2 text-[11px]">
-										<span class="w-24 text-text-secondary shrink-0 pt-0.5">{field.label}</span>
-										{#if info.provenance === 'manual'}
-											<span class="text-[9px] px-1 py-0.5 border shrink-0 text-neon-purple border-neon-purple/20 bg-neon-purple/5">manual</span>
-										{:else if info.provenance === 'auto'}
-											<span class="text-[9px] px-1 py-0.5 border shrink-0 text-neon-green border-neon-green/20 bg-neon-green/5">auto</span>
-										{:else}
-											<span class="text-[9px] px-1 py-0.5 border shrink-0 text-text-dim border-white/[0.06]">n/a</span>
-										{/if}
-										<span class="flex-1 min-w-0">
-											{#if info.value}
-												<span class="text-text-primary truncate block">{info.value}</span>
-												{#if info.provenance === 'manual' && info.autoValue}
-													<span class="text-[9px] text-text-dim truncate block">auto: {info.autoValue}</span>
-												{/if}
-											{:else}
-												<span class="text-text-dim italic">&mdash;</span>
+								<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Identity</span>
+								<div class="grid grid-cols-2 gap-1.5">
+									<div>
+										<label for="insp-lang" class="block text-[9px] text-text-dim mb-0.5">Language</label>
+										<div class="relative">
+											<input id="insp-lang" type="text" bind:value={inspLanguage}
+												onblur={() => saveInspectorIdentity('language', inspLanguage)}
+												placeholder="e.g. TypeScript"
+												class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none" />
+											{#if inspAutoDetected.language && !inspLanguage}
+												<span class="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] text-neon-green/50">auto</span>
 											{/if}
-										</span>
+										</div>
 									</div>
-								{/each}
+									<div>
+										<label for="insp-fw" class="block text-[9px] text-text-dim mb-0.5">Framework</label>
+										<div class="relative">
+											<input id="insp-fw" type="text" bind:value={inspFramework}
+												onblur={() => saveInspectorIdentity('framework', inspFramework)}
+												placeholder="e.g. SvelteKit"
+												class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none" />
+											{#if inspAutoDetected.framework && !inspFramework}
+												<span class="absolute right-1.5 top-1/2 -translate-y-1/2 text-[8px] text-neon-green/50">auto</span>
+											{/if}
+										</div>
+									</div>
+								</div>
+								<div>
+									<label for="insp-desc" class="block text-[9px] text-text-dim mb-0.5">Description</label>
+									<textarea id="insp-desc" bind:value={inspDescription}
+										onblur={() => saveInspectorIdentity('description', inspDescription)}
+										placeholder="What does this project do?" rows="2"
+										class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none resize-none"></textarea>
+								</div>
+								<div>
+									<label for="insp-tf" class="block text-[9px] text-text-dim mb-0.5">Test Framework</label>
+									<input id="insp-tf" type="text" bind:value={inspTestFramework}
+										onblur={() => saveInspectorIdentity('test_framework', inspTestFramework)}
+										placeholder="e.g. vitest"
+										class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-purple/30 focus:outline-none" />
+								</div>
+							</div>
+
+							<!-- Technical Hints -->
+							<div class="space-y-1.5">
+								<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Technical Hints</span>
+								<div>
+									<label for="insp-conv" class="block text-[9px] text-text-dim mb-0.5">Conventions</label>
+									<textarea id="insp-conv" bind:value={inspConventions}
+										onblur={() => saveInspectorHint('conventions', inspConventions)}
+										placeholder="One per line" rows="2"
+										class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-green/30 focus:outline-none resize-none"></textarea>
+								</div>
+								<div>
+									<label for="insp-pat" class="block text-[9px] text-text-dim mb-0.5">Patterns</label>
+									<textarea id="insp-pat" bind:value={inspPatterns}
+										onblur={() => saveInspectorHint('patterns', inspPatterns)}
+										placeholder="One per line" rows="2"
+										class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-green/30 focus:outline-none resize-none"></textarea>
+								</div>
+								<div>
+									<label for="insp-tp" class="block text-[9px] text-text-dim mb-0.5">Test Patterns</label>
+									<textarea id="insp-tp" bind:value={inspTestPatterns}
+										onblur={() => saveInspectorHint('test_patterns', inspTestPatterns)}
+										placeholder="One per line" rows="2"
+										class="w-full rounded-sm border border-white/[0.08] bg-bg-input px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim/50 focus:border-neon-green/30 focus:outline-none resize-none"></textarea>
+								</div>
+							</div>
+
+							<!-- Knowledge Sources -->
+							<div class="space-y-1.5">
+								<span class="text-[9px] font-medium text-text-dim uppercase tracking-wider">Knowledge Sources</span>
+								<SourceManager appId="promptforge" entityId={selectedWorkspace.project_id} projectStatus="active" />
 							</div>
 						{/if}
 
 						<div class="pt-2 border-t border-neon-cyan/5">
 							<p class="text-[10px] text-text-dim">
-								Auto-detected fields serve as the base layer. Manual edits via
-								ContextProfileEditor override these fields. Per-request context
-								has the highest priority.
+								Auto-detected fields from GitHub sync serve as the base layer.
+								Manual edits override auto-detected values. Per-request context
+								in the Forge has the highest priority.
 							</p>
 						</div>
 					</div>
