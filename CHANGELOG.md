@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+**Forge IDE Explorer & Editor UX**
+- `promptAnalysis` store now owns `sections` and `variables` (centralized from `ForgeEditor` local computation) — immediate computation for any non-empty text, separate from debounced heuristic
+- `ForgeIDEExplorer`: new **Outline** section with navigable prompt sections (colored dots, clickable `:lineNumber` jump) and variable count; new **Analysis** section with task type + confidence %, matched keyword chips, and recommended strategies with composite scores
+- `ForgeIDEEditor`: auto-focus editor on IDE entry and tab switch (compose mode guard); cursor-aware section breadcrumb colored by `SECTION_COLORS`; version badge + first 2 tags as pills in breadcrumb; context status indicator (`server` icon); validation error bar (dismissible, between breadcrumb and editor); enhanced forging toolbar with current pipeline stage label, iteration counter, concurrent count, error state with retry countdown; analysis spinner (orange pulse); task type badge with matched keywords tooltip; strategy recommendation quick-pick popover (top 3 `recommendedStrategies`, click-outside dismiss)
+- `ForgeEditor`: variable occurrence cycling — clicking a variable chip cycles through all occurrences with scroll-to-line and `current/total` counter; occurrence index resets on text changes
+- `ForgeIDEWorkspace`: wires `onjumpline` from Explorer → Editor via `bind:this` ref chain
+- `ForgeMetadataSection`: icon + uppercase label above each field (edit, git-branch, folder, layers)
+- `ForgeContextSection`: flat single-level layout with identity badges, editable fields, `<select>` template picker, auto-fetching resolved summary
+- `forgeSession`: `showOutline` (default open) and `showAnalysis` (default closed) explorer section toggles
+
 **Context Observability**
 - Pre-forge context preview: `POST /api/apps/promptforge/context/preview` endpoint returns resolved context with field count and rendered char estimate; `ContextPreviewRequest` schema in `schemas/optimization.py`
 - `fetchContextPreview()` API client function in `client.ts`
@@ -15,10 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Cross-project context coverage bar in `ProjectsWindow.svelte` list view: shows project count with knowledge + total source count
 - Technical Hints collapsible section in `ProjectsWindow.svelte` (conventions, patterns, test_patterns) — edits metadata via kernel Knowledge Base
 - `knowledge.svelte.ts` `updateProfile` now accepts `metadata_json` for metadata field writes
-- Context Inspector in `WorkspaceWindow.svelte` shows actual field values with provenance badges (`[manual]` neon-purple, `[auto]` neon-green, `[n/a]` dim) — loads kernel profile per workspace
+- Context Inspector tab in `WorkspaceWindow.svelte` — workspace-scoped knowledge profile editor (loads kernel profile per workspace)
 - Source content expand-in-place in `SourceManager.svelte` — click title to toggle inline content preview (2K char truncation, max-h-48 scroll)
-
-### Added
 
 **Kernel Knowledge Base**
 - Kernel-level Knowledge Base service (`kernel/models/knowledge.py`, `kernel/repositories/knowledge.py`) — shared "brain" of the OS accessible to all apps, replacing PromptForge-specific context storage
@@ -150,7 +158,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `GET /api/kernel/apps` now includes `resource_quotas` per app
 - Quota enforcement on batch and retry endpoints (not just single optimize)
 
+### Changed
+
+**WorkspaceWindow Context Inspector Rewrite**
+- `WorkspaceWindow.svelte` Context Inspector tab: replaced read-only provenance display with fully editable knowledge profile editor — identity fields (language, framework, description, test_framework) and hint fields (conventions, patterns, test_patterns) with blur-to-save, `SourceManager` embedded for source CRUD, completeness bar computed from kernel profile instead of legacy `context_completeness`
+- Removed `contextFields` array and `getFieldProvenance()` function; added `saveInspectorIdentity()` and `saveInspectorHint()` mirroring ProjectsWindow patterns
+- Fixed footer text referencing non-existent "ContextProfileEditor"
+- `ProjectsWindow.svelte` Knowledge panel: added missing `test_framework` identity field (was present in WorkspaceWindow but absent from ProjectsWindow)
+
+**IDE Status Bar & Context Badge Cleanup**
+- `ForgeIDEEditor` status bar: replaced `Ln N, Col N` + `N lines · N chars` with `Ln N` + `N words · N chars` — word count is more useful than column position for prompt engineering
+- `forgeSession.svelte.ts`: centralized `lineCount` and `wordCount` as derived properties (moved from local deriveds in `ForgeIDEEditor` and `ForgeEditor`)
+- `ForgeContextSection` trigger badge: removed tilde prefix (`~61` → `61`), uses shared `formatChars()` from `utils/safe.ts`
+- `formatChars()` extracted to `utils/safe.ts` as shared utility (was duplicated in `ForgeContextSection` and `SourceManager`); adds `Math.max(0, n)` floor
+
+**ForgeContextSection Streamlining**
+- Flattened from 3 nested expand/collapse levels to a single-level layout: identity badges, flat editable fields, `<select>` template picker, auto-fetching resolved summary
+- Project Knowledge card replaced with compact inline identity badges (language, framework, test framework, source count)
+- Technical Hints `<details>` sub-disclosure removed — fields always visible when section is open
+- Stack template chip picker replaced with `<select>` dropdown in action row
+- Manual "Preview Resolved Context" button + `ContextSnapshotPanel` replaced with auto-fetching debounced (600ms) compact text summary
+- Collapsible trigger badge now shows `N fields · XK` instead of `from project/template/workspace` pills
+
 ### Fixed
+
+**Visual Line Numbers in ForgeEditor**
+- Gutter now counts visual wrapped lines (not just logical `\n` lines) using hidden mirror div measurement with matching CSS — a single paragraph that wraps to 3 visual rows shows 3 line numbers
+- Section markers and cursor position report visual line positions via `logicalToVisualStart` mapping
+- ResizeObserver triggers re-measurement on container resize for responsive accuracy
+
+**Context Field Count & Badge Overflow**
+- Removed stale `/9` denominator from context field counts in `ForgeContextSection` resolved summary and `ContextSnapshotPanel` header — now shows `N fields` (dynamic)
+- `ContextSnapshotPanel.fieldCount` now includes knowledge sources as a countable field
+- Identity badges in `ForgeContextSection` (language, framework) truncate with ellipsis + tooltip; test_framework removed from badges (redundant with its own editable field)
+- Scalar badges in `ContextSnapshotPanel` (review panel) truncate with ellipsis + `title` attribute
+- Resolved summary rewritten as compact one-liner: `shortLabel()` truncates verbose values at natural breaks (comma, `+`, `/`), counts use abbreviated labels (`1 conv · 1 pat · 1 test pat`)
+
+**Forge Result Filing & Filesystem Consistency**
+- SSE `complete` event now includes `prompt_id` in metadata — artifact descriptors get correct `sourcePromptId` for SSE results (was always null)
+- MCP `optimize` tool now returns `prompt_id` in result dict (was only returning `project_id`)
+- `forge:completed` bus event now carries `projectId`/`promptId` from the forge result for targeted downstream invalidation
+- `+layout.svelte` invalidates `fsOrchestrator` cache for the forge's project folder on completion — other consumers see fresh `forge_count` values
+- `FolderWindow` subscribes to `forge:completed` (gated by `projectId === folderId`) — clears stale forge cache entries and reloads contents so forge count badges update immediately
+- Retry endpoint SSE metadata now includes `prompt_id` for parity with the optimize endpoint
 
 **Context System — Project Context as Universal Knowledge Source**
 - `CodebaseContext.render()` now produces two-tier output: "## Project Identity" (description, language, framework — always relevant) and "## Technical Details" (conventions, patterns, code snippets — relevant for coding, source material for all). LLM can distinguish what's universally applicable vs. code-specific.

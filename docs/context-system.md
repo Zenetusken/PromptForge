@@ -600,43 +600,41 @@ Calls `/api/kernel/knowledge/*` REST endpoints. URL path segments are encoded vi
 
 ### ForgeContextSection.svelte
 
-Displays in the Forge IDE compose panel. **Simplified to two concerns:**
+Displays in the Forge IDE compose panel. Flat single-level layout with four sections:
 
-**1. Read-only project summary card** — Loaded from kernel knowledge profile when a project is matched:
-- Language badge (neon-purple)
-- Framework badge (neon-purple)
-- Source count with file-text icon (`{sourceCount} source(s)`)
-- Description preview (line-clamped to 2 lines)
-- Source count derives from `knowledge.getCachedSources()` with fallback to `projectsState.allItems[...].source_count`
+**1. Identity line** — Compact inline badges loaded from kernel knowledge profile when a project is matched:
+- Language badge (neon-purple), Framework badge (neon-purple)
+- Test framework badge (neon-green) from `ctxTestFramework`
+- Source count with file-text icon (derives from `knowledge.getCachedSources()` with fallback to `projectsState.allItems[...].source_count`)
 
-**2. Four editable technical hint fields** — Synced to `forgeSession.draft.contextProfile`:
+**2. Four editable fields** — Always visible, synced to `forgeSession.draft.contextProfile`:
 - Conventions (textarea, one per line)
 - Patterns (textarea, one per line)
 - Test Framework (text input)
 - Test Patterns (textarea, one per line)
 
-**3. Pre-forge context preview** — "Preview Resolved Context" button below technical hints:
-- Calls `fetchContextPreview(project, contextProfile)` → `POST /context/preview`
-- Shows resolved field count and character estimate
-- Renders full resolved context via embedded `ContextSnapshotPanel`
-- Toggle behavior: click again to close
+**3. Action row** — `<select>` dropdown for stack templates + Clear button:
+- Template select populates the 4 hint fields; deselecting clears template association but keeps fields
+- Clear button resets all fields, identity state, and preview data
 
-**Additional UI:**
-- Stack template picker — preset buttons that populate the 4 hint fields
-- Context source badges: "from project", "from template", "from workspace"
-- Clear all button when hint data is present
-- `compact` prop controls grid layout (1-col vs 2-col)
+**4. Auto-fetching resolved summary** — Debounced (600ms) preview that loads automatically when the section is open:
+- Calls `fetchContextPreview(project, contextProfile, signal)` → `POST /context/preview`
+- Shows resolved field count, character estimate, and compact text digest (identity + counts)
+- Uses `AbortController` to cancel stale requests on rapid changes
+- No manual button or nested collapsible
 
-**Auto-resolve:** When `forgeSession.draft.project` changes and the matched project has context **or sources** (`match.has_context || match.source_count > 0`), `loadAndApplyProjectContext()` is called. It:
-1. Fetches the kernel profile via `knowledge.getProfile()` → populates the read-only summary card (language, framework, description badges + source count)
+**Trigger badge:** Shows `N fields · XK` in neon-green when preview data is populated (uses shared `formatChars()` from `utils/safe.ts`); falls back to green dot when hint fields have manual data.
+
+**Auto-resolve:** When `forgeSession.draft.project` changes, `loadAndApplyProjectContext()` is called. It:
+1. Fetches the kernel profile via `knowledge.getProfile()` → populates identity badges (language, framework + source count)
 2. Fetches legacy `context_profile` via `fetchProject()` → populates hint fields if present
-3. **Kernel metadata fallback:** When no legacy `context_profile` exists but a kernel profile does, builds hint context from `kernelProfile.metadata` (`conventions`, `patterns`, `test_patterns`) and `kernelProfile.test_framework`. This ensures projects set up entirely through the ProjectsWindow identity panel (kernel-only) still populate the hint fields.
+3. **Kernel metadata fallback:** When no legacy `context_profile` exists but a kernel profile does, builds hint context from `kernelProfile.metadata` (`conventions`, `patterns`, `test_patterns`) and `kernelProfile.test_framework`.
 
 **Key functions:**
 - `syncContextToDraft()` — exports 4 hint fields to `forgeSession.draft.contextProfile`
 - `applyContext(ctx, source, templateId?)` — applies template or project hint data
-- `clearContext()` — resets all fields and kernel state
-- `loadAndApplyProjectContext(projectId)` — fetches kernel + legacy data, applies summary card and hint fields
+- `clearContext()` — resets all fields, identity state, and preview data
+- `loadAndApplyProjectContext(projectId)` — fetches kernel + legacy data, applies identity badges and hint fields
 
 ### ProjectsWindow.svelte Knowledge Panel
 
@@ -646,6 +644,7 @@ Displayed at project root level (`isProjectRoot && activeFolderId`). Three colla
 - Language input with "auto" badge when value came from `auto_detected_json`
 - Framework input with "auto" badge
 - Description textarea
+- Test Framework input
 - All save on blur via `knowledge.updateProfile('promptforge', entityId, {field: value.trim() || null})` — sends `null` for empty strings to clear the field on the backend
 - Disabled when project status is not "active"
 - Loads kernel profile via `knowledge.getProfile()` when navigating to project root
@@ -702,20 +701,19 @@ interface Props {
 
 ### WorkspaceWindow.svelte Context Inspector
 
-The "Context Inspector" tab displays per-field provenance for the selected workspace's linked project.
+The "Context Inspector" tab is a fully editable knowledge profile editor for the selected workspace's linked project. Mirrors the ProjectsWindow knowledge panel pattern.
 
-**Profile loading:** When `selectedWorkspace` changes, loads the kernel profile via `knowledge.getProfile('promptforge', ws.project_id)` into `inspectorProfile`.
+**Profile loading:** When `selectedWorkspace` changes, loads the kernel profile via `knowledge.getProfile('promptforge', ws.project_id)` and unpacks into editable `$state` variables (`inspLanguage`, `inspFramework`, `inspDescription`, `inspTestFramework`, `inspConventions`, `inspPatterns`, `inspTestPatterns`).
 
-**Field provenance:** For each of the 7 context fields (language, framework, description, test_framework, conventions, patterns, test_patterns):
-- **Identity fields** (language, framework, description, test_framework): manual = `profile[field]`, auto = `profile.auto_detected[field]`
-- **Metadata fields** (conventions, patterns, test_patterns): manual = `profile.metadata[field]`, auto = `profile.auto_detected[field]`
+**Editable fields:**
+- **Identity fields** (language, framework, description, test_framework): `<input>`/`<textarea>` with `onblur` → `saveInspectorIdentity(field, value)` → `knowledge.updateProfile()`. Focus border accent: neon-purple.
+- **Hint fields** (conventions, patterns, test_patterns): `<textarea>` (one item per line) with `onblur` → `saveInspectorHint(field, value)` → splits by newline, reads current metadata via `getCachedProfile`, merges, writes via `knowledge.updateProfile({ metadata_json })`. Focus border accent: neon-green.
 
-**Provenance badges:**
-- `[manual]` neon-purple — user-set value overrides auto-detected
-- `[auto]` neon-green — value came from workspace sync
-- `[n/a]` text-dim — neither exists
+**Auto-detect badges:** When an identity field is empty and `inspAutoDetected[field]` exists, a small "auto" label appears inside the input (neon-green/50). Manual values always override.
 
-When a field has `manual` provenance and an auto-detected value also exists, the auto value is shown below in dim text as "auto: {value}". List fields (conventions, patterns, test_patterns) are displayed as comma-joined strings.
+**Completeness bar:** `inspectorCompleteness` derived from the 7 local editable state variables (counts non-empty trimmed values). Updates reactively as the user types — no stale profile dependency.
+
+**Knowledge Sources:** `SourceManager` component embedded with `appId="promptforge"` and `entityId={selectedWorkspace.project_id}`, providing full source CRUD inline.
 
 ### ContextSnapshotPanel.svelte
 
