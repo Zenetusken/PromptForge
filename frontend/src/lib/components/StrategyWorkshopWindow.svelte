@@ -63,7 +63,7 @@
 		onTabChange={(id) => activeView = id as typeof activeView}
 	/>
 
-	<div class="flex-1 overflow-y-auto p-3">
+	<div class="flex-1 min-h-0 overflow-y-auto p-3">
 		{#if !stats}
 			<EmptyState icon="layers" message="No analytics data yet. Run some forges first." />
 		{:else if activeView === 'heatmap'}

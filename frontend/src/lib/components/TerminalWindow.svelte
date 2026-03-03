@@ -324,7 +324,7 @@
 	onkeydown={() => inputRef?.focus()}
 >
 	<!-- Output area -->
-	<div class="flex-1 overflow-y-auto p-3 space-y-0.5" bind:this={scrollRef}>
+	<div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-0.5" bind:this={scrollRef}>
 		{#each lines as line (line.timestamp + line.text)}
 			<div class="text-[11px] {LINE_COLORS[line.type]} whitespace-pre-wrap break-words leading-relaxed">
 				{line.text}

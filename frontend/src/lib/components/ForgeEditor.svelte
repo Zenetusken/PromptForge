@@ -301,7 +301,7 @@
 	}
 </script>
 
-<div class="relative {isCollapsed ? '' : 'flex-1 flex'}">
+<div class="relative {isCollapsed ? '' : 'flex-1 min-h-0 flex'}">
 	{#if showSlashMenu && filteredStrategies.length > 0}
 		<div
 			class="absolute {isCollapsed ? 'bottom-full left-0 mb-2 w-full sm:w-64' : 'top-[100px] left-12 w-64'} rounded-md border border-neon-cyan/20 bg-bg-secondary/95 overflow-hidden z-[50]"

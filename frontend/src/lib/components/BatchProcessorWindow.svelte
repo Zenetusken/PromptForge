@@ -269,7 +269,7 @@ Third prompt here..."
 		<InlineProgress percent={items.length > 0 ? (finishedCount / items.length * 100) : 0} />
 
 		<!-- Items list -->
-		<div class="flex-1 overflow-y-auto">
+		<div class="flex-1 min-h-0 overflow-y-auto">
 			{#each items as item, i (item.id)}
 				<div class="flex items-center gap-3 px-3 py-2 border-b border-neon-cyan/5">
 					<span class="text-[10px] text-text-dim tabular-nums w-5">#{i + 1}</span>

@@ -473,7 +473,7 @@
 		</div>
 
 		<!-- Content area -->
-		<div class="flex-1 overflow-hidden {dragging || resizing ? 'pointer-events-none' : ''}">
+		<div class="flex-1 min-h-0 overflow-hidden {dragging || resizing ? 'pointer-events-none' : ''}">
 			{@render children()}
 		</div>
 	</div>

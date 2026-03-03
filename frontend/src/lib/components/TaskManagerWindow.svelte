@@ -196,7 +196,7 @@
 
 	{#if activeTab === 'processes'}
 	<!-- Process table -->
-	<div class="flex-1 overflow-y-auto">
+	<div class="flex-1 min-h-0 overflow-y-auto">
 		{#if sorted.length === 0}
 			<EmptyState icon="server" message="No processes" />
 		{:else}
@@ -341,7 +341,7 @@
 
 	{:else}
 	<!-- Jobs table -->
-	<div class="flex-1 overflow-y-auto">
+	<div class="flex-1 min-h-0 overflow-y-auto">
 		{#if jobsLoading && jobs.length === 0}
 			<EmptyState icon="loader" message="Loading jobs..." />
 		{:else if jobs.length === 0}

@@ -531,7 +531,7 @@
 	{/if}
 
 	<!-- Editor Area -->
-	<div class="relative flex-1 bg-bg-secondary overflow-hidden flex flex-col">
+	<div class="relative flex-1 min-h-0 bg-bg-secondary overflow-hidden flex flex-col">
 		<ForgeEditor bind:this={forgeEditorRef} variant="focus" onsubmit={handleSubmit} oncursorchange={handleCursorChange} onselectionchange={handleSelectionChange} />
 	</div>
 

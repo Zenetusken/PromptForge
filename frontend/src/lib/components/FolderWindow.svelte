@@ -300,6 +300,8 @@
 	}
 </script>
 
+<div class="flex flex-col h-full overflow-hidden">
+
 <!-- Breadcrumb bar -->
 <div class="flex items-center gap-1 px-3 py-1.5 border-b border-white/5 text-xs text-text-secondary overflow-x-auto shrink-0">
 	<button
@@ -441,6 +443,8 @@
 			</div>
 		{/each}
 	{/if}
+</div>
+
 </div>
 
 <DesktopContextMenu

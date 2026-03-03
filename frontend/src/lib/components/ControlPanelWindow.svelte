@@ -46,7 +46,7 @@
 	<WindowTabStrip {tabs} {activeTab} onTabChange={(id) => activeTab = id} />
 
 	<!-- Content -->
-	<div class="flex-1 overflow-y-auto p-3 space-y-3">
+	<div class="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
 		{#if activeTab === 'providers'}
 			<div class="space-y-3">
 				<h3 class="section-heading">Provider Configuration</h3>
