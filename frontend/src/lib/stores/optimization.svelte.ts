@@ -1,4 +1,4 @@
-import { fetchOptimize, fetchRetry, fetchOptimization, cancelOptimization, orchestrateAnalyze, orchestrateStrategy, orchestrateOptimize, orchestrateValidate, type AnalyzeRequest, type StrategyRequest, type OptimizeGenerateRequest, type ValidateRequest, type PipelineEvent, type HistoryItem, type OptimizeMetadata, type LLMHeaders, type CodebaseContext } from '$lib/api/client';
+import { fetchOptimize, fetchRetry, fetchOptimization, cancelOptimization, orchestrateAnalyze, orchestrateStrategy, orchestrateOptimize, orchestrateValidate, type AnalyzeRequest, type StrategyRequest, type OptimizeGenerateRequest, type ValidateRequest, type PipelineEvent, type HistoryItem, type OptimizeMetadata, type LLMHeaders, type CodebaseContext, type DetectedSectionDTO, type DetectedVariableDTO } from '$lib/api/client';
 import { historyState } from '$lib/stores/history.svelte';
 import { projectsState } from '$lib/stores/projects.svelte';
 import { forgeMachine } from '$lib/stores/forgeMachine.svelte';
@@ -19,6 +19,8 @@ export interface AnalysisStepData {
 	complexity?: string;
 	weaknesses?: string[];
 	strengths?: string[];
+	detected_sections?: DetectedSectionDTO[];
+	detected_variables?: DetectedVariableDTO[];
 	step_duration_ms?: number;
 }
 
@@ -110,6 +112,8 @@ export interface OptimizationResultState {
 	secondary_frameworks: string[];
 	created_at: string;
 	codebase_context_snapshot: CodebaseContext | null;
+	detected_sections: DetectedSectionDTO[];
+	detected_variables: DetectedVariableDTO[];
 }
 
 /** Translate raw error messages to user-friendly text. */
@@ -185,6 +189,8 @@ export function mapToResultState(
 		secondary_frameworks: safeArray(source.secondary_frameworks),
 		created_at: safeString(source.created_at),
 		codebase_context_snapshot: (source.codebase_context_snapshot as CodebaseContext) ?? null,
+		detected_sections: Array.isArray(source.detected_sections) ? source.detected_sections as DetectedSectionDTO[] : [],
+		detected_variables: Array.isArray(source.detected_variables) ? source.detected_variables as DetectedVariableDTO[] : [],
 	};
 }
 
@@ -449,6 +455,10 @@ class OptimizationState {
 				if (this.forgeResult.project && !forgeSession.draft.project.trim()) {
 					forgeSession.updateDraft({ project: this.forgeResult.project });
 				}
+				// Backfill promptId when forge resolved or created a different prompt
+				if (this.forgeResult.prompt_id && this.forgeResult.prompt_id !== forgeSession.draft.promptId) {
+					forgeSession.updateDraft({ promptId: this.forgeResult.prompt_id });
+				}
 				// Mark all steps as complete
 				if (this.currentRun) {
 					this.currentRun.steps = this.currentRun.steps.map((s) => ({
@@ -662,6 +672,7 @@ class OptimizationState {
 	chainForge(result: OptimizationResultState, metadata?: OptimizeMetadata) {
 		const chainMeta: OptimizeMetadata = {
 			...metadata,
+			prompt_id: undefined, // chain creates new content — don't inherit original's prompt_id
 			title: `Chain: ${result.title || result.optimized.slice(0, 30)}`,
 			tags: [...(metadata?.tags || []), 'chained'],
 		};

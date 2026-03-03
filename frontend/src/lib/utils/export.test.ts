@@ -44,6 +44,8 @@ function makeResult(overrides: Partial<OptimizationResultState> = {}): Optimizat
 		secondary_frameworks: [],
 		created_at: '',
 		codebase_context_snapshot: null,
+		detected_sections: [],
+		detected_variables: [],
 		...overrides,
 	};
 }

@@ -4,10 +4,11 @@
 	import { normalizeScore, formatScore, getScoreBadgeClass } from '$lib/utils/format';
 	import { ALL_DIMENSIONS, DIMENSION_LABELS, DIMENSION_COLORS } from '$lib/utils/scoreDimensions';
 	import Icon from './Icon.svelte';
+	import PromptAnatomyHUD from './PromptAnatomyHUD.svelte';
 
 	let { result }: { result: OptimizationResultState } = $props();
 
-	type SubArtifactKey = 'forge-analysis' | 'forge-scores' | 'forge-strategy';
+	type SubArtifactKey = 'forge-analysis' | 'forge-scores' | 'forge-strategy' | 'forge-anatomy';
 	let expanded: Set<SubArtifactKey> = $state(new Set());
 
 	function toggle(key: SubArtifactKey) {
@@ -18,10 +19,15 @@
 		}
 	}
 
-	const subArtifacts: { kind: SubArtifactKey; iconName: 'search' | 'activity' | 'sliders' }[] = [
+	let hasAnatomy = $derived(
+		(result.detected_sections?.length ?? 0) > 0 || (result.detected_variables?.length ?? 0) > 0
+	);
+
+	const subArtifacts: { kind: SubArtifactKey; iconName: 'search' | 'activity' | 'sliders' | 'cpu' }[] = [
 		{ kind: 'forge-analysis', iconName: 'search' },
 		{ kind: 'forge-scores', iconName: 'activity' },
 		{ kind: 'forge-strategy', iconName: 'sliders' },
+		{ kind: 'forge-anatomy', iconName: 'cpu' },
 	];
 </script>
 
@@ -30,11 +36,11 @@
 		<summary class="flex items-center gap-1.5 px-2 py-1 cursor-pointer text-[10px] text-text-dim hover:text-text-secondary transition-colors select-none">
 			<Icon name="chevron-right" size={10} class="transition-transform group-open:rotate-90" />
 			<span class="font-medium uppercase tracking-wider">Forge Contents</span>
-			<span class="text-text-dim/40">{subArtifacts.length} files</span>
+			<span class="text-text-dim/40">{subArtifacts.filter(s => s.kind !== 'forge-anatomy' || hasAnatomy).length} files</span>
 		</summary>
 
 		<div class="pb-1">
-			{#each subArtifacts as sub}
+			{#each subArtifacts.filter(s => s.kind !== 'forge-anatomy' || hasAnatomy) as sub}
 				{@const meta = ARTIFACT_KINDS[sub.kind]}
 				{@const filename = toSubArtifactFilename(sub.kind)}
 				{@const isExpanded = expanded.has(sub.kind)}
@@ -170,6 +176,12 @@
 									</div>
 								{/if}
 							</div>
+							{:else if sub.kind === 'forge-anatomy'}
+							<PromptAnatomyHUD
+								sections={result.detected_sections.map(s => ({ label: s.label, lineNumber: s.line_number, type: s.type }))}
+								variables={result.detected_variables}
+								mode="review"
+							/>
 						{/if}
 					</div>
 				{/if}

@@ -5,6 +5,7 @@
 	import { forgeSession, createEmptyDraft } from '$lib/stores/forgeSession.svelte';
 	import { normalizeScore, getScoreBadgeClass, formatScore } from '$lib/utils/format';
 	import { getStrategyColor } from '$lib/utils/strategies';
+	import { reforge, iterate, type ForgeActionStores } from '$lib/utils/forgeActions';
 	import { ALL_DIMENSIONS, DIMENSION_LABELS, DIMENSION_COLORS } from '$lib/utils/scoreDimensions';
 	import { historyState } from '$lib/stores/history.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
@@ -15,6 +16,7 @@
 	import ForgeIterationTimeline from './ForgeIterationTimeline.svelte';
 	import ContextSnapshotPanel from './ContextSnapshotPanel.svelte';
 	import ForgeContents from './ForgeContents.svelte';
+	import PromptAnatomyHUD from './PromptAnatomyHUD.svelte';
 	import ExtensionSlot from '$lib/kernel/components/ExtensionSlot.svelte';
 
 	let result = $derived(optimizationState.forgeResult);
@@ -30,31 +32,7 @@
 		return idx >= 0 && idx + 1 < history.length ? history[idx + 1] : null;
 	});
 
-	function handleIterate() {
-		if (!result) return;
-		forgeSession.loadRequest({
-			text: result.optimized,
-			sourceAction: 'reiterate',
-			project: result.project,
-			promptId: result.prompt_id,
-			title: result.title,
-			version: result.version,
-			tags: Array.isArray(result.tags) ? result.tags.join(', ') : '',
-			strategy: 'auto',
-		});
-		forgeMachine.back();
-	}
-
-	function handleReforge() {
-		if (!result) return;
-		// Ensure draft carries the result's project for re-forge
-		if (result.project && forgeSession.draft.project !== result.project) {
-			forgeSession.updateDraft({ project: result.project });
-		}
-		const metadata = forgeSession.buildMetadata();
-		optimizationState.startOptimization(result.original, metadata);
-		forgeMachine.enterForging();
-	}
+	const forgeActionStores: ForgeActionStores = { optimizationState, forgeSession, forgeMachine };
 
 	function handleCompareWithPrevious() {
 		if (!result || !previousResult) return;
@@ -87,8 +65,8 @@
 			tab.originalText = '';
 			forgeMachine.back();
 			forgeSession.persistTabs();
-			systemBus.emit('history:reload', 'forgeReview');
-			systemBus.emit('stats:reload', 'forgeReview');
+			systemBus.emit('history:reload', 'forgeReview', {});
+			systemBus.emit('stats:reload', 'forgeReview', {});
 			toastState.show('Forge entry deleted', 'success');
 		} else {
 			toastState.show('Failed to delete forge entry', 'error');
@@ -223,6 +201,26 @@
 			</div>
 		{/if}
 
+		<!-- Prompt Anatomy (collapsible) -->
+		{#if result.detected_sections?.length || result.detected_variables?.length}
+			<div class="border-t border-white/[0.06]">
+				<details class="group">
+					<summary class="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer text-[10px] text-text-dim hover:text-text-secondary transition-colors select-none">
+						<Icon name="chevron-right" size={10} class="shrink-0 transition-transform group-open:rotate-90" />
+						<Icon name="cpu" size={10} class="shrink-0 text-neon-yellow/60" />
+						<span class="font-bold uppercase tracking-wider">Prompt Anatomy</span>
+					</summary>
+					<div class="px-3 pb-2">
+						<PromptAnatomyHUD
+							sections={result.detected_sections.map(s => ({ label: s.label, lineNumber: s.line_number, type: s.type }))}
+							variables={result.detected_variables}
+							mode="review"
+						/>
+					</div>
+				</details>
+			</div>
+		{/if}
+
 		<!-- Project context snapshot (collapsible) -->
 		{#if result.codebase_context_snapshot}
 			<ContextSnapshotPanel context={result.codebase_context_snapshot} />
@@ -242,7 +240,7 @@
 			<CopyButton text={result.optimized} />
 			<span class="w-px h-4 bg-white/[0.08] self-center"></span>
 			<button
-				onclick={handleIterate}
+				onclick={() => iterate(forgeActionStores)}
 				class="forge-action-btn"
 				aria-label="Load optimized text into composer"
 			>
@@ -250,7 +248,7 @@
 				Iterate
 			</button>
 			<button
-				onclick={handleReforge}
+				onclick={() => reforge(forgeActionStores)}
 				class="forge-action-btn"
 				aria-label="Re-forge with different settings"
 			>

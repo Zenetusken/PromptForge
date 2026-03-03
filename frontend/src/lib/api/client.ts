@@ -5,6 +5,17 @@ const BASE_URL = import.meta.env.VITE_API_URL
 /** Base URL without /api suffix — for kernel and app endpoints. */
 export const API_BASE = import.meta.env.VITE_API_URL || '';
 
+export interface DetectedSectionDTO {
+	label: string;
+	line_number: number;
+	type: string;
+}
+
+export interface DetectedVariableDTO {
+	name: string;
+	occurrences: number;
+}
+
 export interface HistoryItem {
 	id: string;
 	created_at: string;
@@ -49,6 +60,8 @@ export interface HistoryItem {
 	project_id: string | null;
 	project_status: string | null;
 	codebase_context_snapshot: CodebaseContext | null;
+	detected_sections?: DetectedSectionDTO[] | null;
+	detected_variables?: DetectedVariableDTO[] | null;
 }
 
 export interface HistorySummaryItem {

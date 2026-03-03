@@ -7,6 +7,7 @@
 	import { SECTION_COLORS } from '$lib/utils/promptParser';
 	import ForgeMetadataSection from './ForgeMetadataSection.svelte';
 	import ForgeContextSection from './ForgeContextSection.svelte';
+	import PromptAnatomyHUD from './PromptAnatomyHUD.svelte';
 	import Icon from './Icon.svelte';
 	import { Tooltip, MetaBadge } from './ui';
 
@@ -79,7 +80,7 @@
 	<!-- Metadata (title, version, project, tags) -->
 	<ForgeMetadataSection projectListId="ide-project-suggestions" compact />
 
-	<!-- Outline (prompt sections + variables) -->
+	<!-- Anatomy (prompt sections + variables) -->
 	{#if hasOutlineContent}
 		<Collapsible.Root bind:open={forgeSession.showOutline}>
 			<Collapsible.Trigger
@@ -91,32 +92,16 @@
 					size={12}
 					class="transition-transform duration-200 {forgeSession.showOutline ? 'rotate-90' : ''}"
 				/>
-				<span>Outline</span>
+				<span>Anatomy</span>
 				<span class="ml-auto rounded-sm bg-neon-yellow/10 px-1 py-px text-[9px] font-mono text-neon-yellow/70 tabular-nums">{outlineCount}</span>
 			</Collapsible.Trigger>
 			<Collapsible.Content>
-				<div class="px-1 pt-0.5 pb-1 space-y-px">
-					{#each sections as section}
-						<button
-							class="flex w-full items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-left text-[11px] hover:bg-bg-hover transition-colors group"
-							onclick={() => onjumpline?.(section.lineNumber)}
-							title="{section.label} ({section.type}) — line {section.lineNumber}"
-						>
-							<span
-								class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-								style="background-color: var(--color-{SECTION_COLORS[section.type]})"
-							></span>
-							<span class="truncate text-text-secondary group-hover:text-text-primary">{section.label}</span>
-							<span class="ml-auto shrink-0 font-mono text-[9px] text-text-dim/40 tabular-nums">:{section.lineNumber}</span>
-						</button>
-					{/each}
-					{#if variables.length > 0}
-						<div class="flex items-center gap-1.5 px-1.5 py-0.5 text-[10px] text-neon-teal/70">
-							<span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-neon-teal/50"></span>
-							<span>{variables.length} variable{variables.length !== 1 ? 's' : ''}</span>
-						</div>
-					{/if}
-				</div>
+				<PromptAnatomyHUD
+					sections={sections.map(s => ({ label: s.label, lineNumber: s.lineNumber, type: s.type }))}
+					variables={variables.map(v => ({ name: v.name, occurrences: v.occurrences.length }))}
+					mode="compose"
+					{onjumpline}
+				/>
 			</Collapsible.Content>
 		</Collapsible.Root>
 	{/if}

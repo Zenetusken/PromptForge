@@ -1,6 +1,6 @@
 import { appRegistry } from '$lib/kernel/services/appRegistry.svelte';
 
-export type FileExtension = '.md' | '.forge' | '.scan' | '.val' | '.strat' | '.tmpl' | '.app' | '.lnk' | (string & {});
+export type FileExtension = '.md' | '.forge' | '.scan' | '.val' | '.strat' | '.anat' | '.tmpl' | '.app' | '.lnk' | (string & {});
 
 export interface FileTypeMetadata {
 	readonly label: string;
@@ -17,6 +17,7 @@ const BUILTIN_FILE_EXTENSIONS: Record<string, FileTypeMetadata> = {
 	'.scan': { label: 'Forge Analysis', icon: 'search', color: 'green', editable: false, versionable: false },
 	'.val': { label: 'Forge Scores', icon: 'activity', color: 'yellow', editable: false, versionable: false },
 	'.strat': { label: 'Forge Strategy', icon: 'sliders', color: 'indigo', editable: false, versionable: false },
+	'.anat': { label: 'Prompt Anatomy', icon: 'cpu', color: 'yellow', editable: false, versionable: false },
 	'.tmpl': { label: 'Prompt Template', icon: 'file-code', color: 'teal', editable: false, versionable: false },
 	'.app': { label: 'Application', icon: 'monitor', color: 'cyan', editable: false, versionable: false },
 	'.lnk': { label: 'Shortcut', icon: 'link', color: 'blue', editable: false, versionable: false },
@@ -47,7 +48,7 @@ export const FILE_EXTENSIONS: Record<string, FileTypeMetadata> = new Proxy(BUILT
 
 // ── Artifact types (system-produced, immutable records) ──
 
-export type ArtifactKind = 'forge-result' | 'forge-analysis' | 'forge-scores' | 'forge-strategy';
+export type ArtifactKind = 'forge-result' | 'forge-analysis' | 'forge-scores' | 'forge-strategy' | 'forge-anatomy';
 
 export interface ArtifactKindMetadata {
 	readonly label: string;
@@ -60,6 +61,7 @@ export const ARTIFACT_KINDS: Record<ArtifactKind, ArtifactKindMetadata> = {
 	'forge-analysis': { label: 'Analysis', icon: 'search', color: 'green' },
 	'forge-scores': { label: 'Scores', icon: 'activity', color: 'yellow' },
 	'forge-strategy': { label: 'Strategy', icon: 'sliders', color: 'indigo' },
+	'forge-anatomy': { label: 'Anatomy', icon: 'cpu', color: 'yellow' },
 };
 
 /** Map each artifact kind to its canonical file extension. */
@@ -68,6 +70,7 @@ export const ARTIFACT_EXTENSION_MAP: Record<ArtifactKind, FileExtension> = {
 	'forge-analysis': '.scan',
 	'forge-scores': '.val',
 	'forge-strategy': '.strat',
+	'forge-anatomy': '.anat',
 };
 
 /**
@@ -115,6 +118,7 @@ export function toSubArtifactFilename(artifactKind: ArtifactKind): string {
 		case 'forge-analysis': return `analysis${ext}`;
 		case 'forge-scores': return `scores${ext}`;
 		case 'forge-strategy': return `strategy${ext}`;
+		case 'forge-anatomy': return `anatomy${ext}`;
 		default: return `result${ext}`;
 	}
 }
