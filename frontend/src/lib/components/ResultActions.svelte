@@ -33,7 +33,8 @@
 		} else {
 			optimizationState.startOptimization(result.original);
 		}
-		forgeMachine.forge();
+		// enterForging() works from any mode (forge() requires compose mode)
+		forgeMachine.enterForging();
 		forgeSession.activate();
 	}
 
@@ -44,7 +45,8 @@
 		forgeSession.updateDraft({ text: result.optimized });
 		const metadata = forgeSession.buildMetadata();
 		optimizationState.chainForge(result, metadata);
-		forgeMachine.forge();
+		// enterForging() works from any mode (forge() requires compose mode)
+		forgeMachine.enterForging();
 		forgeSession.activate();
 	}
 

@@ -5,7 +5,7 @@
 	import { forgeSession, createEmptyDraft } from '$lib/stores/forgeSession.svelte';
 	import { normalizeScore, getScoreBadgeClass, formatScore } from '$lib/utils/format';
 	import { getStrategyColor } from '$lib/utils/strategies';
-	import { reforge, iterate, type ForgeActionStores } from '$lib/utils/forgeActions';
+	import { reforge, chainForge, iterate, type ForgeActionStores } from '$lib/utils/forgeActions';
 	import { ALL_DIMENSIONS, DIMENSION_LABELS, DIMENSION_COLORS } from '$lib/utils/scoreDimensions';
 	import { historyState } from '$lib/stores/history.svelte';
 	import { toastState } from '$lib/stores/toast.svelte';
@@ -254,6 +254,14 @@
 			>
 				<Icon name="refresh" size={10} />
 				Re-forge
+			</button>
+			<button
+				onclick={() => chainForge(forgeActionStores)}
+				class="forge-action-btn text-neon-orange/80 hover:text-neon-orange hover:border-neon-orange/30 hover:bg-neon-orange/5"
+				aria-label="Use optimized output as new input"
+			>
+				<Icon name="git-branch" size={10} />
+				Chain
 			</button>
 			{#if optimizationState.resultHistory.length > 1}
 				<span class="w-px h-4 bg-white/[0.08] self-center"></span>
