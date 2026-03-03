@@ -105,6 +105,7 @@ export interface OptimizationResultState {
 	prompt_id: string;
 	project_id: string;
 	project_status: string;
+	retry_of?: string;
 	tags: string[];
 	strategy: string;
 	strategy_reasoning: string;
@@ -182,6 +183,7 @@ export function mapToResultState(
 		prompt_id: safeString(source.prompt_id),
 		project_id: safeString(source.project_id),
 		project_status: safeString(source.project_status),
+		...(source.retry_of ? { retry_of: safeString(source.retry_of) } : {}),
 		tags: safeArray(source.tags),
 		strategy: safeString(source.strategy),
 		strategy_reasoning: safeString(source.strategy_reasoning),
@@ -282,9 +284,9 @@ class OptimizationState {
 		}
 	};
 
-	startOptimization(prompt: string, metadata?: OptimizeMetadata) {
+	startOptimization(prompt: string, metadata?: OptimizeMetadata, displayTitle?: string) {
 		const proc = processScheduler.spawn({
-			title: metadata?.title || prompt.slice(0, 60),
+			title: displayTitle ?? metadata?.title ?? prompt.slice(0, 60),
 			metadata,
 			onExecute: () => {
 				this._resetRunState();
@@ -670,11 +672,15 @@ class OptimizationState {
 	 * Chain a new forge from an existing result — use the optimized prompt as input.
 	 */
 	chainForge(result: OptimizationResultState, metadata?: OptimizeMetadata) {
+		// Strip any existing "Chain: " prefix(es) to avoid "Chain: Chain: X" nesting.
+		const baseTitle = result.title?.replace(/^(Chain:\s*)+/i, '').trim()
+			|| result.optimized.slice(0, 30);
 		const chainMeta: OptimizeMetadata = {
 			...metadata,
 			prompt_id: undefined, // chain creates new content — don't inherit original's prompt_id
-			title: `Chain: ${result.title || result.optimized.slice(0, 30)}`,
-			tags: [...(metadata?.tags || []), 'chained'],
+			version: undefined,   // new lineage — don't inherit parent version
+			title: metadata?.title?.trim() || `Chain: ${baseTitle}`,
+			tags: [...new Set([...(metadata?.tags || []), 'chained'])],
 		};
 		this.startOptimization(result.optimized, chainMeta);
 	}

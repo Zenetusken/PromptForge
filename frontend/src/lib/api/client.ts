@@ -134,6 +134,7 @@ export interface OptimizeMetadata {
 	codebase_context?: CodebaseContext;
 	max_iterations?: number;
 	score_threshold?: number;
+	retry_of?: string;
 }
 
 export interface ScoreMatrixEntry {
@@ -1156,15 +1157,34 @@ export async function fetchPromptVersions(
 	);
 }
 
-/** Check if an optimization with the given title already exists in the project. */
-export async function checkDuplicateTitle(title: string, project?: string): Promise<boolean> {
+/**
+ * Check if a title+project+version slot is already taken.
+ *
+ * ``exclude_ids`` should include the current result's ID and its retry_of
+ * ancestor so that a retry chain with the same title doesn't trigger a
+ * false-positive warning.
+ *
+ * ``version`` is part of the uniqueness key: omit or pass undefined/'' to
+ * check the unversioned slot; pass 'v1' etc. to check a specific version.
+ */
+export async function checkDuplicateTitle(
+	title: string,
+	project?: string,
+	exclude_ids?: string[],
+	version?: string,
+): Promise<{ duplicate: boolean; suggested_version: string | null }> {
 	const params = new URLSearchParams({ title });
 	if (project) params.set('project', project);
-	const result = await apiFetch<{ duplicate: boolean }>(
+	if (exclude_ids) {
+		for (const id of exclude_ids) params.append('exclude_ids', id);
+	}
+	// Always send version so the backend can match the correct version slot.
+	// Empty string signals "unversioned" — backend normalises '' → null.
+	params.set('version', version ?? '');
+	return apiFetch<{ duplicate: boolean; suggested_version: string | null }>(
 		`${BASE_URL}/optimize/check-duplicate?${params}`,
-		{ duplicate: false },
+		{ duplicate: false, suggested_version: null },
 	);
-	return result.duplicate;
 }
 
 /** Cancel a running optimization. Sets status to CANCELLED for bookkeeping. */

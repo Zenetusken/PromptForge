@@ -9,6 +9,7 @@ import type { OptimizeMetadata } from '$lib/api/client';
 
 /** Minimal result shape needed by forge actions. */
 export interface ForgeActionResult {
+	id: string;
 	original: string;
 	optimized: string;
 	project: string;
@@ -22,7 +23,7 @@ export interface ForgeActionResult {
 export interface ForgeActionStores {
 	optimizationState: {
 		forgeResult: ForgeActionResult | null;
-		startOptimization(prompt: string, metadata?: OptimizeMetadata): void;
+		startOptimization(prompt: string, metadata?: OptimizeMetadata, displayTitle?: string): void;
 		chainForge(result: ForgeActionResult, metadata?: OptimizeMetadata): void;
 	};
 	forgeSession: {
@@ -47,8 +48,13 @@ export function reforge(stores: ForgeActionStores): void {
 	if (result.project && stores.forgeSession.draft.project !== result.project) {
 		stores.forgeSession.updateDraft({ project: result.project });
 	}
-	const metadata = stores.forgeSession.buildMetadata();
-	stores.optimizationState.startOptimization(result.original, metadata);
+	const metadata: OptimizeMetadata = stores.forgeSession.buildMetadata() ?? {};
+	// Always link re-forge to the source result for score-delta computation.
+	// This overrides any retryOf already in draft to ensure the immediate parent is used.
+	metadata.retry_of = result.id;
+	// Use result's title as the process-queue display label when the draft has no title.
+	const displayTitle = result.title || undefined;
+	stores.optimizationState.startOptimization(result.original, metadata, displayTitle);
 	stores.forgeMachine.enterForging();
 }
 
@@ -87,6 +93,8 @@ export function iterate(stores: ForgeActionStores): void {
 		version: result.version,
 		tags: Array.isArray(result.tags) ? result.tags.join(', ') : '',
 		strategy: 'auto',
+		// Carry lineage so buildMetadata() includes retry_of when user submits
+		retryOf: result.id,
 	});
 	stores.forgeMachine.back();
 }

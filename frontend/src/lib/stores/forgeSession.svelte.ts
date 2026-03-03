@@ -15,6 +15,8 @@ export interface ForgeSessionDraft {
 	promptId: string;
 	tags: string;
 	version: string;
+	/** ID of the optimization this draft was derived from (iterate/re-forge lineage). */
+	retryOf: string;
 	sourceAction: SourceAction;
 	strategy: string;
 	secondaryStrategies: string[];
@@ -43,6 +45,7 @@ export function createEmptyDraft(): ForgeSessionDraft {
 		promptId: '',
 		tags: '',
 		version: '',
+		retryOf: '',
 		sourceAction: null,
 		strategy: settingsState.defaultStrategy || 'auto',
 		secondaryStrategies: [],
@@ -210,10 +213,14 @@ class ForgeSessionState {
 		if (d.title.trim()) meta.title = d.title.trim();
 		if (d.project.trim()) meta.project = d.project.trim();
 		if (d.tags.trim()) {
-			const tags = d.tags.split(',').map((t) => t.trim()).filter(Boolean);
+			const raw = d.tags.split(',').map((t) => t.trim()).filter(Boolean);
+			// Always deduplicate tags regardless of sourceAction
+			const tags = [...new Set(raw)];
 			if (tags.length > 0) meta.tags = tags;
 		}
 		if (d.version.trim()) meta.version = d.version.trim();
+		// Carry lineage ID for iterate and explicit retry flows
+		if (d.retryOf.trim()) meta.retry_of = d.retryOf.trim();
 		if (providerState.selectedProvider) meta.provider = providerState.selectedProvider;
 		if (d.strategy !== 'auto') meta.strategy = d.strategy;
 		if (d.secondaryStrategies.length > 0) meta.secondary_frameworks = d.secondaryStrategies;
@@ -322,6 +329,7 @@ class ForgeSessionState {
 			tab.draft.tags === '' &&
 			tab.draft.version === '' &&
 			tab.draft.promptId === '' &&
+			tab.draft.retryOf === '' &&
 			tab.draft.contextProfile === null &&
 			tab.resultId === null &&
 			tab.mode === 'compose'

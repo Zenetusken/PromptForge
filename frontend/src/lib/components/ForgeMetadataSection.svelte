@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Collapsible } from "bits-ui";
 	import { forgeSession } from "$lib/stores/forgeSession.svelte";
+	import { optimizationState } from "$lib/stores/optimization.svelte";
 	import { checkDuplicateTitle } from "$lib/api/client";
 	import Icon from "./Icon.svelte";
 	import { Tooltip } from "./ui";
@@ -8,20 +9,33 @@
 	let { projectListId = undefined, compact = false }: { projectListId?: string; compact?: boolean } = $props();
 
 	let duplicateCheckTimer: ReturnType<typeof setTimeout> | undefined;
+	let suggestedVersion: string | null = $state(null);
 
-	// Debounced duplicate title check
+	// Debounced duplicate title check — re-runs when title, project, OR version change.
 	$effect(() => {
 		const currentTitle = forgeSession.draft.title;
 		const currentProject = forgeSession.draft.project;
+		const currentVersion = forgeSession.draft.version; // version is part of the uniqueness key
 		clearTimeout(duplicateCheckTimer);
 		forgeSession.duplicateTitleWarning = false;
+		suggestedVersion = null;
 		if (currentTitle.trim() && currentProject.trim()) {
 			duplicateCheckTimer = setTimeout(async () => {
-				const isDup = await checkDuplicateTitle(
+				// Exclude the currently-viewed result AND its retry_of ancestor so that
+				// a re-forge chain with the same title+project+version doesn't self-warn.
+				const excludeIds: string[] = [];
+				const cur = optimizationState.result;
+				if (cur?.id) excludeIds.push(cur.id);
+				if (cur?.retry_of) excludeIds.push(cur.retry_of);
+
+				const res = await checkDuplicateTitle(
 					currentTitle.trim(),
 					currentProject.trim(),
+					excludeIds.length > 0 ? excludeIds : undefined,
+					currentVersion.trim() || undefined,
 				);
-				forgeSession.duplicateTitleWarning = isDup;
+				forgeSession.duplicateTitleWarning = res.duplicate;
+				suggestedVersion = res.suggested_version;
 			}, 500);
 		}
 	});
@@ -72,8 +86,15 @@
 						</p>
 					{/if}
 					{#if forgeSession.duplicateTitleWarning}
-						<p class="mt-0.5 text-[10px] text-neon-yellow">
+						<p class="mt-0.5 text-[10px] text-neon-yellow flex items-center gap-1 flex-wrap">
 							Title already exists in this project
+							{#if suggestedVersion}
+								—
+								<button
+									class="underline hover:text-neon-cyan transition-colors"
+									onclick={() => forgeSession.updateDraft({ version: suggestedVersion! })}
+								>use {suggestedVersion}</button>
+							{/if}
 						</p>
 					{/if}
 				</div>
