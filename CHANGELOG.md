@@ -8,15 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+**Prompt Anatomy HUD & Backend Structure Extraction**
+- `PromptAnatomyHUD.svelte`: consolidated prompt structure panel with section rows (2px colored border, type badge, label, line number) and variable chips (`{{name}} ×N`), compose mode (clickable jump-to-line, `transition:slide`) and review mode (staggered fade-in animation)
+- `prompt_structure.py` backend service: Python port of `promptParser.ts` regex extraction — `extract_variables()`, `detect_sections()`, `extract_prompt_structure()`. No LLM call, microsecond cost.
+- `detected_sections` and `detected_variables` JSON columns on `optimizations` table (2 ALTER TABLE migrations)
+- Pipeline integration: structure extraction runs in AnalyzeStage after LLM analysis, flows through SSE `complete` event to frontend
+- `ForgeIDEExplorer`: renamed "Outline" → "Anatomy" section, now renders `PromptAnatomyHUD` in compose mode
+- `ForgeReview`: new collapsible "Prompt Anatomy" panel between Verdict and Context Snapshot
+- `ForgeContents`: new `forge-anatomy` sub-artifact (`anatomy.anat`) with section dots and variable chips
+- `.anat` file extension and `forge-anatomy` artifact kind added to PFFS type system
+- `DetectedSectionDTO` and `DetectedVariableDTO` interfaces in `client.ts`; `detected_sections`/`detected_variables` on `OptimizationResultState` and `AnalysisStepData`
+- Backend tests: 26 tests in `test_prompt_structure.py`, 5 tests in `test_converters.py` for new field serialization
+- Frontend tests: 8 tests in `PromptAnatomyHUD.test.ts`
+
 **Forge IDE Explorer & Editor UX**
 - `promptAnalysis` store now owns `sections` and `variables` (centralized from `ForgeEditor` local computation) — immediate computation for any non-empty text, separate from debounced heuristic
 - `ForgeIDEExplorer`: new **Outline** section with navigable prompt sections (colored dots, clickable `:lineNumber` jump) and variable count; new **Analysis** section with task type + confidence %, matched keyword chips, and recommended strategies with composite scores
-- `ForgeIDEEditor`: auto-focus editor on IDE entry and tab switch (compose mode guard); cursor-aware section breadcrumb colored by `SECTION_COLORS`; version badge + first 2 tags as pills in breadcrumb; context status indicator (`server` icon); validation error bar (dismissible, between breadcrumb and editor); enhanced forging toolbar with current pipeline stage label, iteration counter, concurrent count, error state with retry countdown; analysis spinner (orange pulse); task type badge with matched keywords tooltip; strategy recommendation quick-pick popover (top 3 `recommendedStrategies`, click-outside dismiss)
+- `ForgeIDEEditor`: auto-focus editor on IDE entry and tab switch (compose mode guard); cursor-aware section breadcrumb colored by `SECTION_COLORS`; version badge + first 2 tags as pills in breadcrumb; context status indicator (`server` icon); validation error bar (dismissible, between breadcrumb and editor); enhanced forging toolbar with current pipeline stage label, iteration counter, concurrent count, error state with retry countdown; analysis spinner (orange pulse); task type badge with matched keywords tooltip; strategy recommendation quick-pick popover (top 3 `recommendedStrategies`, click-outside dismiss); save button (Ctrl+S via `forge:save` bus, green flash, project validation); analyze-only button (`runNodeAnalyze` with spinner); review toolbar (Re-forge/Chain/Iterate via shared `forgeActions.ts`); secondary strategies badge + picker (delegates to `forgeSession.toggleSecondaryStrategy()`); context popover (source/language/framework/size, Clear/Configure); analysis inline bar (task type, complexity, weakness/strength counts); default strategy indicator (`(default)` label)
 - `ForgeEditor`: variable occurrence cycling — clicking a variable chip cycles through all occurrences with scroll-to-line and `current/total` counter; occurrence index resets on text changes
 - `ForgeIDEWorkspace`: wires `onjumpline` from Explorer → Editor via `bind:this` ref chain
 - `ForgeMetadataSection`: icon + uppercase label above each field (edit, git-branch, folder, layers)
 - `ForgeContextSection`: flat single-level layout with identity badges, editable fields, `<select>` template picker, auto-fetching resolved summary
-- `forgeSession`: `showOutline` (default open) and `showAnalysis` (default closed) explorer section toggles
+- `forgeSession`: `showOutline` (default open) and `showAnalysis` (default closed) explorer section toggles; `toggleSecondaryStrategy()` method centralizes FIFO toggle logic (was duplicated in `ForgeIDEEditor` and `ForgeStrategySection`)
+- `forgeActions.ts`: shared `reforge()`, `chainForge()`, `iterate()` utility functions extracted from `ForgeIDEEditor` and `ForgeReview` via `ForgeActionStores` interface
+- `forge:save` bus event added (Ctrl+S keyboard shortcut → layout emitter → `ForgeIDEEditor` listener)
 
 **Context Observability**
 - Pre-forge context preview: `POST /api/apps/promptforge/context/preview` endpoint returns resolved context with field count and rendered char estimate; `ContextPreviewRequest` schema in `schemas/optimization.py`

@@ -33,9 +33,9 @@ PromptForge-specific migrations (in `apps/promptforge/database.py`): `run_migrat
 
 ## Migration List
 
-30 migrations in `_MIGRATIONS` covering:
+32 migrations in `_MIGRATIONS` covering:
 
-- Column additions: `strategy_reasoning`, `input_tokens`, `output_tokens`, `strategy_confidence`, `prompt_id`, `strategy`, `secondary_frameworks`, `version`, `context_profile`, `codebase_context_snapshot`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `conciseness_score`, `detected_patterns`, `retry_of`, `framework_adherence_score`
+- Column additions: `strategy_reasoning`, `input_tokens`, `output_tokens`, `strategy_confidence`, `prompt_id`, `strategy`, `secondary_frameworks`, `version`, `context_profile`, `codebase_context_snapshot`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `conciseness_score`, `detected_patterns`, `retry_of`, `framework_adherence_score`, `detected_sections`, `detected_variables`
 - Table creation: `projects`, `prompts`, `prompt_versions`, `project_sources`
 - Indexes: 15 single/composite indexes on `optimizations`, `projects`, `prompts`, `prompt_versions`, `project_sources`
 
@@ -45,7 +45,7 @@ New databases get indexes at CREATE TABLE time; migrations apply them for pre-ex
 
 | Table | File | Key Fields |
 |-------|------|------------|
-| `optimizations` | `apps/promptforge/models/optimization.py` | `raw_prompt`, `optimized_prompt`, `status`, `overall_score`, `conciseness_score`, `framework_adherence_score`, `detected_patterns` (JSON list), `strategy`, `project`, `prompt_id` FK, `retry_of`, `codebase_context_snapshot` |
+| `optimizations` | `apps/promptforge/models/optimization.py` | `raw_prompt`, `optimized_prompt`, `status`, `overall_score`, `conciseness_score`, `framework_adherence_score`, `detected_patterns` (JSON list), `detected_sections` (JSON list), `detected_variables` (JSON list), `strategy`, `project`, `prompt_id` FK, `retry_of`, `codebase_context_snapshot` |
 | `projects` | `apps/promptforge/models/project.py` | `name` (unique), `status` (active/archived/deleted), `context_profile` (JSON text) |
 | `prompts` | `apps/promptforge/models/project.py` | `content`, `version`, `project_id` FK, `order_index` |
 | `prompt_versions` | `apps/promptforge/models/project.py` | `prompt_id` FK, `version`, `content`, `optimization_id` FK (immutable snapshots) |
