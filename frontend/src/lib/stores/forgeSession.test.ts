@@ -795,6 +795,38 @@ describe('ForgeSessionState', () => {
 		});
 	});
 
+	describe('toggleSecondaryStrategy', () => {
+		it('adds a strategy when none are selected', () => {
+			forgeSession.toggleSecondaryStrategy('risen');
+			expect(forgeSession.draft.secondaryStrategies).toEqual(['risen']);
+		});
+
+		it('removes a strategy that is already selected', () => {
+			forgeSession.updateDraft({ secondaryStrategies: ['risen'] });
+			forgeSession.toggleSecondaryStrategy('risen');
+			expect(forgeSession.draft.secondaryStrategies).toEqual([]);
+		});
+
+		it('adds a second strategy when one is selected', () => {
+			forgeSession.updateDraft({ secondaryStrategies: ['risen'] });
+			forgeSession.toggleSecondaryStrategy('co-star');
+			expect(forgeSession.draft.secondaryStrategies).toEqual(['risen', 'co-star']);
+		});
+
+		it('FIFO-evicts the oldest when at max 2', () => {
+			forgeSession.updateDraft({ secondaryStrategies: ['risen', 'co-star'] });
+			forgeSession.toggleSecondaryStrategy('step-by-step');
+			// 'risen' (oldest) evicted, 'co-star' kept, 'step-by-step' added
+			expect(forgeSession.draft.secondaryStrategies).toEqual(['co-star', 'step-by-step']);
+		});
+
+		it('removes from a full list correctly', () => {
+			forgeSession.updateDraft({ secondaryStrategies: ['risen', 'co-star'] });
+			forgeSession.toggleSecondaryStrategy('risen');
+			expect(forgeSession.draft.secondaryStrategies).toEqual(['co-star']);
+		});
+	});
+
 	describe('reiterate sourceAction', () => {
 		it('accepts reiterate sourceAction', () => {
 			forgeSession.loadRequest({

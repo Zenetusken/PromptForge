@@ -216,7 +216,7 @@
 			if (e.key === "s" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
 				if (windowManager.ideVisible && forgeMachine.mode === "compose") {
 					e.preventDefault();
-					systemBus.emit('forge:save', 'keyboard');
+					systemBus.emit('forge:save', 'keyboard', {});
 					return;
 				}
 			}

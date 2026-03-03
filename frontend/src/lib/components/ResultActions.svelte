@@ -38,7 +38,12 @@
 	}
 
 	function handleChain() {
-		optimizationState.chainForge(result);
+		if (result.project && !forgeSession.draft.project.trim()) {
+			forgeSession.updateDraft({ project: result.project });
+		}
+		forgeSession.updateDraft({ text: result.optimized });
+		const metadata = forgeSession.buildMetadata();
+		optimizationState.chainForge(result, metadata);
 		forgeMachine.forge();
 		forgeSession.activate();
 	}

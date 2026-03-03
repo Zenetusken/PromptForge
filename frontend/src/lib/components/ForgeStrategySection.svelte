@@ -55,23 +55,6 @@
 		return { ungrouped, categories: [...categoryMap.entries()] };
 	})();
 
-	function toggleSecondary(value: string) {
-		const current = forgeSession.draft.secondaryStrategies;
-		if (current.includes(value)) {
-			forgeSession.updateDraft({
-				secondaryStrategies: current.filter((v) => v !== value),
-			});
-		} else if (current.length < 2) {
-			forgeSession.updateDraft({
-				secondaryStrategies: [...current, value],
-			});
-		} else {
-			forgeSession.updateDraft({
-				secondaryStrategies: [current[1], value],
-			});
-		}
-	}
-
 	// Clear secondaries that match the new primary
 	$effect(() => {
 		if (
@@ -222,7 +205,7 @@
 								<button
 									type="button"
 									onclick={() =>
-										toggleSecondary(option.value)}
+										forgeSession.toggleSecondaryStrategy(option.value)}
 									data-testid="secondary-{option.value}"
 									class="transition-[color,background-color,border-color,opacity,transform] active:scale-95 {forgeSession.draft.secondaryStrategies.includes(
 										option.value,

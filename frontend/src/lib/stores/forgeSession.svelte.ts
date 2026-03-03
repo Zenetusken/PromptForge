@@ -227,6 +227,21 @@ class ForgeSessionState {
 	}
 
 	/**
+	 * Toggle a secondary strategy. Adds if not present, removes if present,
+	 * FIFO-evicts the oldest when at max 2.
+	 */
+	toggleSecondaryStrategy(value: string): void {
+		const current = this.draft.secondaryStrategies;
+		if (current.includes(value)) {
+			this.updateDraft({ secondaryStrategies: current.filter(v => v !== value) });
+		} else if (current.length < 2) {
+			this.updateDraft({ secondaryStrategies: [...current, value] });
+		} else {
+			this.updateDraft({ secondaryStrategies: [current[1], value] });
+		}
+	}
+
+	/**
 	 * Validate required fields when sourceAction is set.
 	 * Returns true if valid (or no validation needed).
 	 */

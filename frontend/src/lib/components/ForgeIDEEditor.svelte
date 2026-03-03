@@ -12,7 +12,8 @@
 	import { settingsState } from '$lib/stores/settings.svelte';
 	import { systemBus } from '$lib/services/systemBus.svelte';
 	import { ALL_STRATEGIES } from '$lib/utils/strategies';
-	import { normalizeScore, getScoreBadgeClass, getScoreColorClass, formatScore } from '$lib/utils/format';
+	import { reforge, chainForge, iterate, type ForgeActionStores } from '$lib/utils/forgeActions';
+	import { getScoreBadgeClass, formatScore } from '$lib/utils/format';
 	import { SECTION_COLORS, type DetectedSection } from '$lib/utils/promptParser';
 	import { FILE_EXTENSIONS, ARTIFACT_KINDS } from '$lib/utils/fileTypes';
 	import { DRAG_MIME, decodeDragPayload } from '$lib/utils/dragPayload';
@@ -309,53 +310,8 @@
 		});
 	}
 
-	// §F3: Review toolbar helpers
-	function handleReforge() {
-		const result = optimizationState.forgeResult;
-		if (!result) return;
-		if (result.project && forgeSession.draft.project !== result.project) {
-			forgeSession.updateDraft({ project: result.project });
-		}
-		const metadata = forgeSession.buildMetadata();
-		optimizationState.startOptimization(result.original, metadata);
-		forgeMachine.enterForging();
-	}
-
-	function handleChainForge() {
-		const result = optimizationState.forgeResult;
-		if (!result) return;
-		const metadata = forgeSession.buildMetadata();
-		optimizationState.chainForge(result, metadata);
-		forgeMachine.enterForging();
-	}
-
-	function handleIterate() {
-		const result = optimizationState.forgeResult;
-		if (!result) return;
-		forgeSession.loadRequest({
-			text: result.optimized,
-			sourceAction: 'reiterate',
-			project: result.project,
-			promptId: result.prompt_id,
-			title: result.title,
-			version: result.version,
-			tags: Array.isArray(result.tags) ? result.tags.join(', ') : '',
-			strategy: 'auto',
-		});
-		forgeMachine.back();
-	}
-
-	// §F4: Secondary strategies
-	function toggleSecondary(value: string) {
-		const current = forgeSession.draft.secondaryStrategies;
-		if (current.includes(value)) {
-			forgeSession.updateDraft({ secondaryStrategies: current.filter(v => v !== value) });
-		} else if (current.length < 2) {
-			forgeSession.updateDraft({ secondaryStrategies: [...current, value] });
-		} else {
-			forgeSession.updateDraft({ secondaryStrategies: [current[1], value] });
-		}
-	}
+	// §F3: Review toolbar — shared forge actions
+	const forgeActionStores: ForgeActionStores = { optimizationState, forgeSession, forgeMachine };
 
 	// §F5: Context popover
 	let showContextPopover = $state(false);
@@ -366,40 +322,28 @@
 		return JSON.stringify(ctx).length;
 	});
 
-	// Dismiss context popover on click-outside and Escape key
-	$effect(() => {
-		if (!showContextPopover) return;
-		const dismiss = () => { showContextPopover = false; };
-		const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); };
-		const timer = setTimeout(() => window.addEventListener('click', dismiss), 0);
-		window.addEventListener('keydown', onKeydown);
-		return () => {
-			clearTimeout(timer);
-			window.removeEventListener('click', dismiss);
-			window.removeEventListener('keydown', onKeydown);
-		};
-	});
+	// Shared click-outside + Escape dismiss helper for popovers
+	function createDismissEffect(isOpen: () => boolean, close: () => void): void {
+		$effect(() => {
+			if (!isOpen()) return;
+			const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+			const timer = setTimeout(() => window.addEventListener('click', close), 0);
+			window.addEventListener('keydown', onKeydown);
+			return () => {
+				clearTimeout(timer);
+				window.removeEventListener('click', close);
+				window.removeEventListener('keydown', onKeydown);
+			};
+		});
+	}
+	createDismissEffect(() => showContextPopover, () => { showContextPopover = false; });
+	createDismissEffect(() => showStrategyPicker, () => { showStrategyPicker = false; });
 
 	// §F7: Default strategy indicator
 	let isDefaultStrategy = $derived(
 		settingsState.defaultStrategy !== 'auto' &&
 		forgeSession.draft.strategy === settingsState.defaultStrategy
 	);
-
-	// Dismiss strategy picker on click-outside and Escape key
-	$effect(() => {
-		if (!showStrategyPicker) return;
-		const dismiss = () => { showStrategyPicker = false; };
-		const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); };
-		// Delay click listener to avoid catching the opening click
-		const timer = setTimeout(() => window.addEventListener('click', dismiss), 0);
-		window.addEventListener('keydown', onKeydown);
-		return () => {
-			clearTimeout(timer);
-			window.removeEventListener('click', dismiss);
-			window.removeEventListener('keydown', onKeydown);
-		};
-	});
 
 	// Dismiss strategy picker when forge starts or recommendations disappear
 	$effect(() => {
@@ -765,7 +709,7 @@
 			<div class="ml-auto flex items-center gap-1.5">
 				<Tooltip text="Re-forge with same original prompt">
 					<button
-						onclick={handleReforge}
+						onclick={() => reforge(forgeActionStores)}
 						class="flex items-center gap-1 text-[10px] border border-neon-cyan/20 text-neon-cyan px-2 py-0.5 hover:bg-neon-cyan/10 transition-colors"
 					>
 						<Icon name="refresh" size={10} />
@@ -774,7 +718,7 @@
 				</Tooltip>
 				<Tooltip text="Chain: use optimized output as new input">
 					<button
-						onclick={handleChainForge}
+						onclick={() => chainForge(forgeActionStores)}
 						class="flex items-center gap-1 text-[10px] border border-neon-orange/20 text-neon-orange px-2 py-0.5 hover:bg-neon-orange/10 transition-colors"
 					>
 						<Icon name="git-branch" size={10} />
@@ -783,7 +727,7 @@
 				</Tooltip>
 				<Tooltip text="Load optimized prompt into editor for manual edits">
 					<button
-						onclick={handleIterate}
+						onclick={() => iterate(forgeActionStores)}
 						class="flex items-center gap-1 text-[10px] border border-neon-purple/20 text-neon-purple px-2 py-0.5 hover:bg-neon-purple/10 transition-colors"
 					>
 						<Icon name="edit" size={10} />
@@ -895,7 +839,7 @@
 						{@const isActive = forgeSession.draft.secondaryStrategies.includes(rec.name)}
 						<button
 							class="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] transition-colors {isActive ? 'text-neon-cyan bg-neon-cyan/[0.05]' : 'text-text-dim hover:bg-bg-hover hover:text-text-secondary'}"
-							onclick={() => toggleSecondary(rec.name)}
+							onclick={() => forgeSession.toggleSecondaryStrategy(rec.name)}
 						>
 							<Icon name={isActive ? 'check' : 'plus'} size={9} class="shrink-0 {isActive ? 'text-neon-cyan' : 'text-text-dim/40'}" />
 							<span class="font-mono truncate">{rec.label}</span>

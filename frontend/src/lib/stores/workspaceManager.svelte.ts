@@ -100,7 +100,7 @@ class WorkspaceManagerState {
 			this.githubConnected = false;
 			this.githubUser = null;
 			this.repos = [];
-			systemBus.emit('workspace:disconnected', 'workspaceManager');
+			systemBus.emit('workspace:disconnected', 'workspaceManager', {});
 		} catch (e) {
 			this.githubError = e instanceof Error ? e.message : 'Failed to disconnect';
 		}
