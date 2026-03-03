@@ -7,7 +7,7 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -309,6 +309,7 @@ async def optimize_prompt(
         title=request.title,
         version=request.version,
         prompt_id=request.prompt_id,
+        retry_of=request.retry_of,
     )
     db.add(optimization)
 
@@ -784,12 +785,26 @@ async def batch_optimize(
 async def check_duplicate_title(
     title: str,
     project: str | None = None,
+    exclude_ids: list[str] | None = Query(None),
+    version: str | None = None,
     db: AsyncSession = Depends(get_db_readonly),
 ):
-    """Check if an optimization with the given title already exists in the project."""
+    """Check if a title+project+version slot is already taken.
+
+    ``version`` is included in the uniqueness key so that "Email Optimizer v1"
+    and "Email Optimizer v2" are considered distinct.  Omit or pass empty string
+    to check the unversioned slot.  ``exclude_ids`` accepts multiple values
+    (e.g. the current result ID and its ``retry_of`` ancestor) to suppress
+    false positives within an intentional retry/re-forge chain.
+    """
+    # Normalize blank string to None — both mean "unversioned slot"
+    normalized_version = (version or "").strip() or None
     repo = OptimizationRepository(db)
-    duplicate = await repo.title_exists(title, project)
-    return {"duplicate": duplicate}
+    duplicate = await repo.title_exists(title, project, exclude_ids or [], normalized_version)
+    suggested_version = (
+        await repo.get_next_version(title, project, exclude_ids or []) if duplicate else None
+    )
+    return {"duplicate": duplicate, "suggested_version": suggested_version}
 
 
 @router.get("/optimize/{optimization_id}", response_model=OptimizationResponse)

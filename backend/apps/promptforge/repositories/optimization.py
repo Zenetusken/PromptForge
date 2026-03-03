@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -313,20 +314,55 @@ class OptimizationRepository:
         self,
         title: str,
         project: str | None = None,
-        exclude_id: str | None = None,
+        exclude_ids: list[str] | None = None,
+        version: str | None = None,
     ) -> bool:
-        """Check if an optimization with the given title exists (case-insensitive).
+        """Check if an optimization with the given title+project+version slot exists.
 
-        Optionally scoped to a project name.
+        ``version`` is part of the uniqueness key: None matches NULL-versioned
+        optimizations; a non-empty string matches that exact version
+        (case-insensitive).  ``exclude_ids`` removes a list of IDs from the
+        search (current result and its retry_of ancestor).
         """
         conditions = [func.lower(Optimization.title) == title.lower()]
         if project:
             conditions.append(Optimization.project == project)
-        if exclude_id:
-            conditions.append(Optimization.id != exclude_id)
+        if exclude_ids:
+            conditions.append(Optimization.id.notin_(exclude_ids))
+        # Match the exact version slot: null vs null, or case-insensitive string
+        if version:
+            conditions.append(func.lower(Optimization.version) == version.lower())
+        else:
+            conditions.append(Optimization.version.is_(None))
         stmt = select(func.count(Optimization.id)).where(and_(*conditions))
         result = await self._session.execute(stmt)
         return (result.scalar() or 0) > 0
+
+    async def get_next_version(
+        self,
+        title: str,
+        project: str | None = None,
+        exclude_ids: list[str] | None = None,
+    ) -> str:
+        """Return the next available version string (v1, v2, …) for title+project.
+
+        Scans ALL versioned optimizations with this title+project (regardless of
+        current version slot) to find the highest existing vN and returns max+1.
+        """
+        conditions = [func.lower(Optimization.title) == title.lower()]
+        if project:
+            conditions.append(Optimization.project == project)
+        if exclude_ids:
+            conditions.append(Optimization.id.notin_(exclude_ids))
+        stmt = select(Optimization.version).where(and_(*conditions))
+        result = await self._session.execute(stmt)
+        versions = [row[0] for row in result if row[0]]
+        nums = [
+            int(m.group(1))
+            for v in versions
+            if (m := re.match(r"^v(\d+)$", v, re.IGNORECASE))
+        ]
+        return f"v{max(nums) + 1}" if nums else "v1"
 
     # --- List with filters ---
 

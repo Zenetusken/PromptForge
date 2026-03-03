@@ -72,6 +72,9 @@ class OptimizeRequest(BaseModel):
             "Pipeline iterates until this score is reached."
         ),
     )
+    retry_of: str | None = Field(
+        None, description="Optional ID of the optimization this retries (enables score deltas)",
+    )
 
     @field_validator("stages")
     @classmethod
