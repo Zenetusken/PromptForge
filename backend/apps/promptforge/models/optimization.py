@@ -66,6 +66,8 @@ class Optimization(Base):
     strategy_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     secondary_frameworks: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
     detected_patterns: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    detected_sections: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    detected_variables: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
 
     # Execution metadata
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)

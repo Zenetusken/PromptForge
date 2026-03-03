@@ -162,6 +162,9 @@ _MIGRATIONS: list[str] = [
     " ON project_sources (project_id)",
     "CREATE INDEX IF NOT EXISTS ix_project_sources_enabled"
     " ON project_sources (project_id, enabled)",
+    # --- Prompt structure analysis (regex-based sections + variables) ---
+    "ALTER TABLE optimizations ADD COLUMN detected_sections TEXT",
+    "ALTER TABLE optimizations ADD COLUMN detected_variables TEXT",
 ]
 
 

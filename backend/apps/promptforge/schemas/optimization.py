@@ -180,6 +180,8 @@ class OptimizationResponse(BaseModel):
     is_improvement: bool | None = None
     verdict: str | None = None
     detected_patterns: list[str] | None = None
+    detected_sections: list[dict] | None = None
+    detected_variables: list[dict] | None = None
     duration_ms: int | None = None
     model_used: str | None = None
     input_tokens: int | None = None

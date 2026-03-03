@@ -24,6 +24,7 @@ from apps.promptforge.constants import (
     compute_progress,
 )
 from apps.promptforge.services.analyzer import AnalysisResult, PromptAnalyzer
+from apps.promptforge.services.prompt_structure import extract_prompt_structure
 from apps.promptforge.services.optimizer import OptimizationResult, PromptOptimizer
 from apps.promptforge.services.strategy_selector import StrategySelection, StrategySelector
 from apps.promptforge.services.token_budget import token_budget
@@ -33,6 +34,18 @@ if TYPE_CHECKING:
     from apps.promptforge.schemas.context import CodebaseContext
 
 logger = logging.getLogger(__name__)
+
+
+def _augment_with_structure(analysis: AnalysisResult, raw_prompt: str) -> None:
+    """Populate detected_sections/variables on an AnalysisResult via regex extraction.
+
+    Called after the LLM analysis returns. Modifies the result in-place so that
+    every serialization path (SSE events, DB persistence, API responses) includes
+    the structure data without separate per-path extraction calls.
+    """
+    structure = extract_prompt_structure(raw_prompt)
+    analysis.detected_sections = structure["sections"]
+    analysis.detected_variables = structure["variables"]
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +105,7 @@ class AnalyzeStage(PipelineStage):
         result = await analyzer.analyze(
             context.raw_prompt, codebase_context=context.codebase_context,
         )
+        _augment_with_structure(result, context.raw_prompt)
         context.analysis = result
         context.total_usage = _add_usage(context.total_usage, analyzer.last_usage)
         return result
@@ -257,6 +271,8 @@ class PipelineResult:
     strategy_confidence: float = 0.75
     secondary_frameworks: list[str] = field(default_factory=list)
     detected_patterns: list[str] = field(default_factory=list)
+    detected_sections: list[dict] = field(default_factory=list)
+    detected_variables: list[dict] = field(default_factory=list)
     framework_adherence_score: float | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -350,6 +366,8 @@ def _assemble_result(
         is_improvement=validation.is_improvement,
         verdict=validation.verdict,
         detected_patterns=validation.detected_patterns,
+        detected_sections=analysis.detected_sections,
+        detected_variables=analysis.detected_variables,
         framework_adherence_score=validation.framework_adherence_score,
         duration_ms=elapsed_ms,
         model_used=model,
@@ -385,6 +403,8 @@ async def run_pipeline(
     analyzer = PromptAnalyzer(client)
     analysis = await analyzer.analyze(raw_prompt, codebase_context=codebase_context)
     total_usage = _add_usage(total_usage, analyzer.last_usage)
+    # Regex-based structure extraction (no LLM call) — augment analysis result
+    _augment_with_structure(analysis, raw_prompt)
     logger.info(
         "Analysis: task_type=%s complexity=%s weaknesses=%s strengths=%s",
         analysis.task_type, analysis.complexity, analysis.weaknesses, analysis.strengths,
@@ -585,9 +605,20 @@ async def run_pipeline_streaming(
     # Stage 1: Analyze
     analyzer = PromptAnalyzer(client)
     analysis = None
+
+    async def _analyze_with_structure() -> AnalysisResult:
+        """Run LLM analysis + regex structure extraction in one coroutine.
+
+        This ensures _stream_stage serializes the complete AnalysisResult
+        (with detected_sections/variables populated) before emitting the SSE event.
+        """
+        result = await analyzer.analyze(raw_prompt, codebase_context=codebase_context)
+        _augment_with_structure(result, raw_prompt)
+        return result
+
     if "analyze" in active_stages:
         async for event in _stream_stage(
-            analyzer.analyze(raw_prompt, codebase_context=codebase_context), STAGE_ANALYZE,
+            _analyze_with_structure(), STAGE_ANALYZE,
         ):
             if isinstance(event, StageResult):
                 analysis = event.value
@@ -797,6 +828,8 @@ async def run_pipeline_streaming(
         "is_improvement": validation.is_improvement,
         "verdict": validation.verdict,
         "detected_patterns": validation.detected_patterns,
+        "detected_sections": analysis.detected_sections,
+        "detected_variables": analysis.detected_variables,
         "framework_adherence_score": validation.framework_adherence_score,
         # Metadata
         "duration_ms": elapsed_ms,

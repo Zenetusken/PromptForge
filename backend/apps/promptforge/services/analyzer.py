@@ -1,7 +1,7 @@
 """Prompt analyzer service - analyzes raw prompts to identify characteristics."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from app.providers import LLMProvider, get_provider
@@ -22,6 +22,8 @@ class AnalysisResult:
     complexity: str
     weaknesses: list[str]
     strengths: list[str]
+    detected_sections: list[dict] = field(default_factory=list)
+    detected_variables: list[dict] = field(default_factory=list)
 
 
 _MAX_LIST_ITEMS = 20

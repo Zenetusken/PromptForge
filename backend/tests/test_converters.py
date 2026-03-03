@@ -12,11 +12,13 @@ from sqlalchemy import select
 from apps.promptforge.constants import OptimizationStatus
 from apps.promptforge.converters import (
     _SCORE_FIELDS,
+    _deserialize_json_list,
     _serialize_json_list,
     apply_pipeline_result_to_orm,
     compute_score_deltas,
     deserialize_json_field,
     extract_raw_scores,
+    optimization_to_dict,
     optimization_to_response,
     optimization_to_summary,
     update_optimization_status,
@@ -296,6 +298,86 @@ class TestApplyPipelineResultToOrm:
         assert opt.weaknesses is None
         assert opt.strengths is None
         assert opt.changes_made is None
+
+    def test_detected_sections_and_variables_serialized(self):
+        opt = _make_optimization()
+        data = {
+            "detected_sections": [
+                {"label": "Role", "line_number": 1, "type": "role"},
+                {"label": "Context", "line_number": 3, "type": "context"},
+            ],
+            "detected_variables": [
+                {"name": "user", "occurrences": 2},
+            ],
+        }
+        apply_pipeline_result_to_orm(opt, data, 0)
+        assert json.loads(opt.detected_sections) == data["detected_sections"]
+        assert json.loads(opt.detected_variables) == data["detected_variables"]
+
+    def test_detected_sections_none_stays_none(self):
+        opt = _make_optimization()
+        apply_pipeline_result_to_orm(opt, {"detected_sections": None}, 0)
+        assert opt.detected_sections is None
+
+
+# ---------------------------------------------------------------------------
+# TestDeserializeJsonList
+# ---------------------------------------------------------------------------
+
+class TestDeserializeJsonList:
+    def test_none_returns_none(self):
+        assert _deserialize_json_list(None) is None
+
+    def test_valid_list_of_dicts(self):
+        value = json.dumps([{"label": "Role", "type": "role"}])
+        result = _deserialize_json_list(value)
+        assert len(result) == 1
+        assert result[0]["label"] == "Role"
+
+    def test_preserves_dict_items(self):
+        """Unlike deserialize_json_field, does NOT coerce dicts to strings."""
+        value = json.dumps([{"name": "x", "occurrences": 3}])
+        result = _deserialize_json_list(value)
+        assert isinstance(result[0], dict)
+
+    def test_invalid_json_returns_none(self):
+        assert _deserialize_json_list("not json") is None
+
+    def test_non_list_returns_none(self):
+        assert _deserialize_json_list('{"key": "value"}') is None
+
+    def test_empty_list(self):
+        assert _deserialize_json_list("[]") == []
+
+
+# ---------------------------------------------------------------------------
+# TestDetectedFieldsExtraction
+# ---------------------------------------------------------------------------
+
+class TestDetectedFieldsExtraction:
+    def test_optimization_to_dict_includes_detected_fields(self):
+        opt = _make_optimization(
+            detected_sections=json.dumps([{"label": "Role", "line_number": 1, "type": "role"}]),
+            detected_variables=json.dumps([{"name": "user", "occurrences": 2}]),
+        )
+        result = optimization_to_dict(opt)
+        assert result["detected_sections"] == [{"label": "Role", "line_number": 1, "type": "role"}]
+        assert result["detected_variables"] == [{"name": "user", "occurrences": 2}]
+
+    def test_optimization_to_dict_none_detected_fields(self):
+        opt = _make_optimization()
+        result = optimization_to_dict(opt)
+        assert result["detected_sections"] is None
+        assert result["detected_variables"] is None
+
+    def test_optimization_to_response_includes_detected_fields(self):
+        opt = _make_optimization(
+            detected_sections=json.dumps([{"label": "Steps", "line_number": 5, "type": "steps"}]),
+            detected_variables=json.dumps([]),
+        )
+        response = optimization_to_response(opt)
+        assert response.detected_sections == [{"label": "Steps", "line_number": 5, "type": "steps"}]
+        assert response.detected_variables == []
 
 
 # ---------------------------------------------------------------------------

@@ -100,7 +100,28 @@ def _extract_optimization_fields(opt: Optimization) -> dict[str, Any]:
         "codebase_context_snapshot": _deserialize_json_dict(
             getattr(opt, "codebase_context_snapshot", None)
         ),
+        "detected_sections": _deserialize_json_list(
+            getattr(opt, "detected_sections", None)
+        ),
+        "detected_variables": _deserialize_json_list(
+            getattr(opt, "detected_variables", None)
+        ),
     }
+
+
+def _deserialize_json_list(value: str | None) -> list | None:
+    """Deserialize a JSON string to a list, or return None.
+
+    Unlike deserialize_json_field, preserves dict items (does not coerce to strings).
+    Used for structured list-of-dicts fields like detected_sections/variables.
+    """
+    if value is None:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return parsed if isinstance(parsed, list) else None
 
 
 def _deserialize_json_dict(value: str | None) -> dict | None:
@@ -278,6 +299,8 @@ def apply_pipeline_result_to_orm(
     opt.is_improvement = data.get("is_improvement")
     opt.verdict = data.get("verdict")
     opt.detected_patterns = _serialize_json_list(data.get("detected_patterns"))
+    opt.detected_sections = _serialize_json_list(data.get("detected_sections"))
+    opt.detected_variables = _serialize_json_list(data.get("detected_variables"))
     opt.duration_ms = elapsed_ms
     opt.model_used = data.get("model_used")
     opt.input_tokens = data.get("input_tokens")

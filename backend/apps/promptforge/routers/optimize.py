@@ -457,6 +457,7 @@ async def orchestrate_analyze(
     x_llm_provider: str | None = Header(None, alias="X-LLM-Provider"),
 ):
     from apps.promptforge.services.analyzer import PromptAnalyzer
+    from apps.promptforge.services.pipeline import _augment_with_structure
 
     provider = _resolve_orchestration_provider(x_llm_provider, x_llm_api_key, x_llm_model)
     sanitized_prompt, _ = sanitize_text(request.prompt)
@@ -464,6 +465,7 @@ async def orchestrate_analyze(
     start = time.time()
     try:
         result = await PromptAnalyzer(provider).analyze(sanitized_prompt, codebase_context=context)
+        _augment_with_structure(result, sanitized_prompt)
     except (ProviderError, Exception) as exc:
         logger.exception("Orchestrate analyze failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
