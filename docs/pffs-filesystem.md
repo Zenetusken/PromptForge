@@ -153,7 +153,7 @@ Desktop store (`desktopStore.svelte.ts`) has a 4-tier `IconType` hierarchy:
 
 - `syncDbFolders(folders)` — mirrors root-level DB folders as desktop icons
 - `syncDbPrompts(prompts)` — mirrors root-level DB prompts (project_id=null) as desktop icons
-- `DesktopSurface.svelte` calls both on mount and on `fs:created`/`fs:moved`/`fs:deleted`/`fs:renamed` bus events
+- `DesktopSurface.svelte` calls both on mount; bus handlers are root-scoped — only sync when the affected item has `parent_id === null` (create/delete/rename) or `oldParentId/newParentId === null` (move)
 
 ---
 
@@ -288,7 +288,7 @@ Hierarchical folder browser rendered inside `DesktopWindow`.
 - **Context menu**: Single-item (Open / Move to... / Delete) and batch (Move N items to... / Delete N items) via `Ctrl/Cmd+click` multi-selection
 - **Move to... dialog**: Local `MoveToDialog` instance for single-item and batch moves from context menu
 - **New Folder**: Inline input with Enter/Escape keyboard handling
-- **Live reload**: Subscribes to `fs:created`/`fs:moved`/`fs:deleted`/`fs:renamed` bus events
+- **Surgical live updates**: Subscribes to `fs:*` bus events — `fs:deleted`/`fs:renamed` update local `nodes` in-place; `fs:created` appends from payload; `fs:moved` removes from source or refetches at destination; no full reload except on arrive/create. Batch delete and batch move execute in parallel (`Promise.all`). New-folder input closes immediately (optimistic); `fs:created` appends the node. Drag-in-flight row dims with `opacity-50 animate-pulse`.
 
 ### ForgeContents (`ForgeContents.svelte`)
 
@@ -369,10 +369,10 @@ Shows `.forge` extension on history items via `toForgeFilename()`.
 
 | Event | Emitter | Payload | Consumers |
 |-------|---------|---------|-----------|
-| `fs:created` | fsOrchestrator | `{ node }` | DesktopSurface, FolderWindow |
-| `fs:moved` | fsOrchestrator | `{ type, id, newParentId }` | DesktopSurface, FolderWindow |
-| `fs:deleted` | fsOrchestrator | `{ id }` | DesktopSurface, FolderWindow |
-| `fs:renamed` | fsOrchestrator | `{ id, newName }` | DesktopSurface, FolderWindow |
+| `fs:created` | fsOrchestrator | `{ node: FsNode }` | DesktopSurface (root guard), FolderWindow (append if same parent), ProjectsWindow (append if same folder) |
+| `fs:moved` | fsOrchestrator | `{ type, id, newParentId, oldParentId }` | DesktopSurface (root guard), FolderWindow (remove at source / refetch at dest), ProjectsWindow (same) |
+| `fs:deleted` | fsOrchestrator | `{ id, parentId }` | DesktopSurface (root guard), FolderWindow (filter in-place), ProjectsWindow (filter in-place) |
+| `fs:renamed` | fsOrchestrator | `{ id, newName, parentId }` | DesktopSurface (root guard), FolderWindow (update name in-place), ProjectsWindow (update name in-place) |
 
 ---
 

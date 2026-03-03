@@ -418,8 +418,12 @@
 	async function loadFolderContents(id: string) {
 		folderLoading = true;
 		try {
-			folderNodes = await fsOrchestrator.loadChildren(id);
-			folderPath = await fsOrchestrator.getPath(id);
+			const [children, path] = await Promise.all([
+				fsOrchestrator.loadChildren(id),
+				fsOrchestrator.getPath(id),
+			]);
+			folderNodes = children;
+			folderPath = path;
 			syncBreadcrumbs();
 		} finally {
 			folderLoading = false;
@@ -439,10 +443,10 @@
 	async function handleCreateFolder() {
 		const name = newFolderName.trim();
 		if (!name) return;
-		await fsOrchestrator.createFolder(name, activeFolderId);
 		newFolderInput = false;
 		newFolderName = '';
-		if (activeFolderId) await loadFolderContents(activeFolderId);
+		await fsOrchestrator.createFolder(name, activeFolderId);
+		// fs:created handler will append the node surgically
 	}
 
 	// ── Drag-and-drop for folder rows ──
@@ -518,17 +522,37 @@
 		syncNavigation();
 		syncBreadcrumbs();
 
-		const unsub1 = systemBus.on('fs:moved', () => {
-			if (activeFolderId) loadFolderContents(activeFolderId);
+		// MOVE: remove from source folder; refetch only if item arrives here
+		const unsub1 = systemBus.on('fs:moved', (event) => {
+			if (!activeFolderId) return;
+			const { id, newParentId, oldParentId } = event.payload as {
+				id: string; newParentId: string | null; oldParentId: string | null;
+			};
+			if (oldParentId === activeFolderId) {
+				folderNodes = folderNodes.filter((n) => n.id !== id);
+				selectedIds = new Set([...selectedIds].filter((x) => x !== id));
+			} else if (newParentId === activeFolderId) {
+				loadFolderContents(activeFolderId);
+			}
 		});
-		const unsub2 = systemBus.on('fs:created', () => {
-			if (activeFolderId) loadFolderContents(activeFolderId);
+		// CREATE: append node directly if it belongs here
+		const unsub2 = systemBus.on('fs:created', (event) => {
+			if (!activeFolderId) return;
+			const { node } = event.payload as { node: FsNode };
+			if (node.parent_id === activeFolderId) {
+				folderNodes = [...folderNodes, node];
+			}
 		});
-		const unsub3 = systemBus.on('fs:deleted', () => {
-			if (activeFolderId) loadFolderContents(activeFolderId);
+		// DELETE: remove from local nodes without a server round-trip
+		const unsub3 = systemBus.on('fs:deleted', (event) => {
+			const { id } = event.payload as { id: string };
+			folderNodes = folderNodes.filter((n) => n.id !== id);
+			selectedIds = new Set([...selectedIds].filter((x) => x !== id));
 		});
-		const unsub4 = systemBus.on('fs:renamed', () => {
-			if (activeFolderId) loadFolderContents(activeFolderId);
+		// RENAME: update name in-place without a server round-trip
+		const unsub4 = systemBus.on('fs:renamed', (event) => {
+			const { id, newName } = event.payload as { id: string; newName: string };
+			folderNodes = folderNodes.map((n) => (n.id === id ? { ...n, name: newName } : n));
 		});
 
 		return () => { unsub1(); unsub2(); unsub3(); unsub4(); };

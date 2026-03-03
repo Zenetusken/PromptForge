@@ -34,6 +34,7 @@
 	let newFolderInput = $state(false);
 	let newFolderName = $state('');
 	let dropTargetId: string | null = $state(null);
+	let droppingId: string | null = $state(null);
 
 	// ── Forge expansion state ──
 	let expandedPrompts: Set<string> = $state(new Set());
@@ -134,13 +135,13 @@
 		if (!confirmAction) return;
 		const { items } = confirmAction;
 		confirmAction = null;
-		for (const item of items) {
-			if (item.type === 'folder') {
-				await fsOrchestrator.deleteFolder(item.id);
-			} else {
-				await fsOrchestrator.deletePrompt(item.id);
-			}
-		}
+		await Promise.all(
+			items.map((item) =>
+				item.type === 'folder'
+					? fsOrchestrator.deleteFolder(item.id)
+					: fsOrchestrator.deletePrompt(item.id),
+			),
+		);
 		selectedIds = new Set();
 	}
 
@@ -155,9 +156,12 @@
 		loading = true;
 		error = false;
 		try {
-			const result = await fsOrchestrator.loadChildren(folderId);
+			const [result, fetchedPath] = await Promise.all([
+				fsOrchestrator.loadChildren(folderId),
+				fsOrchestrator.getPath(folderId),
+			]);
 			nodes = result;
-			path = await fsOrchestrator.getPath(folderId);
+			path = fetchedPath;
 		} catch {
 			error = true;
 		} finally {
@@ -167,21 +171,47 @@
 
 	onMount(() => {
 		loadContents();
-		const unsub1 = systemBus.on('fs:moved', () => loadContents());
-		const unsub2 = systemBus.on('fs:created', () => loadContents());
-		const unsub3 = systemBus.on('fs:deleted', () => loadContents());
-		const unsub4 = systemBus.on('fs:renamed', () => loadContents());
+		// MOVE: remove from source folder; refetch only if item arrives here
+		const unsub1 = systemBus.on('fs:moved', (event) => {
+			const { id, newParentId, oldParentId } = event.payload as {
+				id: string; newParentId: string | null; oldParentId: string | null;
+			};
+			if (oldParentId === folderId) {
+				nodes = nodes.filter((n) => n.id !== id);
+			} else if (newParentId === folderId) {
+				loadContents();
+			}
+		});
+		// CREATE: append node directly if it belongs here (payload carries full FsNode)
+		const unsub2 = systemBus.on('fs:created', (event) => {
+			const { node } = event.payload as { node: FsNode };
+			if (node.parent_id === folderId) {
+				nodes = [...nodes, node];
+			}
+		});
+		// DELETE: remove from local nodes without a server round-trip
+		const unsub3 = systemBus.on('fs:deleted', (event) => {
+			const { id } = event.payload as { id: string };
+			nodes = nodes.filter((n) => n.id !== id);
+			selectedIds = new Set([...selectedIds].filter((x) => x !== id));
+			expandedPrompts = new Set([...expandedPrompts].filter((x) => x !== id));
+			forgeCache = new Map([...forgeCache].filter(([k]) => k !== id));
+		});
+		// RENAME: update name in-place without a server round-trip
+		const unsub4 = systemBus.on('fs:renamed', (event) => {
+			const { id, newName } = event.payload as { id: string; newName: string };
+			nodes = nodes.map((n) => (n.id === id ? { ...n, name: newName } : n));
+		});
+		// FORGE: reload to update forge_count badges (scoped to this folder)
 		const unsub5 = systemBus.on('forge:completed', (event) => {
 			const payload = event.payload as Record<string, unknown>;
 			const projectId = payload.projectId as string | null;
-			// Only reload if the forge belongs to this folder's project
 			if (!projectId || projectId !== folderId) return;
 			const promptId = payload.promptId as string | null;
 			if (promptId) {
-				// Clear cached forge list for this prompt so re-expansion fetches fresh data
 				forgeCache = new Map([...forgeCache].filter(([k]) => k !== promptId));
 			}
-			loadContents(); // Re-fetch to update forge_count badges
+			loadContents();
 		});
 		return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
 	});
@@ -214,9 +244,9 @@
 	async function handleCreateFolder() {
 		const name = newFolderName.trim();
 		if (!name) return;
-		await fsOrchestrator.createFolder(name, folderId);
 		newFolderInput = false;
 		newFolderName = '';
+		await fsOrchestrator.createFolder(name, folderId);
 	}
 
 	function handleDragOver(e: DragEvent, targetNodeId: string) {
@@ -251,7 +281,12 @@
 		if (!currentParent && !targetNodeId) return;
 
 		const type: 'project' | 'prompt' = desc.kind === 'folder' ? 'project' : 'prompt';
-		await fsOrchestrator.move(type, desc.id, targetNodeId);
+		droppingId = desc.id;
+		try {
+			await fsOrchestrator.move(type, desc.id, targetNodeId);
+		} finally {
+			droppingId = null;
+		}
 	}
 
 	function folderDragPayload(node: FsNode): DragPayload {
@@ -364,9 +399,10 @@
 			{@const isDropTarget = dropTargetId === node.id && isFolder}
 			{@const hasForges = !isFolder && (node.forge_count ?? 0) > 0}
 			{@const isExpanded = expandedPrompts.has(node.id)}
+			{@const isDropping = droppingId === node.id}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class={isDropTarget ? 'bg-neon-cyan/10 ring-1 ring-neon-cyan/30 rounded-sm' : ''}
+				class="{isDropTarget ? 'bg-neon-cyan/10 ring-1 ring-neon-cyan/30 rounded-sm' : ''} {isDropping ? 'opacity-50 pointer-events-none animate-pulse' : ''}"
 				ondragover={(e) => { if (isFolder) handleDragOver(e, node.id); }}
 				ondragleave={() => handleDragLeave()}
 				ondrop={(e) => { if (isFolder) { e.stopPropagation(); handleDrop(e, node.id); } }}
@@ -477,9 +513,9 @@
 		moveDialog = { open: false, nodeType: null, nodeId: null, batchItems: [] };
 	}}
 	onmovebatch={async (items, targetFolderId) => {
-		for (const item of items) {
-			await fsOrchestrator.move(item.type, item.id, targetFolderId);
-		}
+		await Promise.all(
+			items.map((item) => fsOrchestrator.move(item.type, item.id, targetFolderId)),
+		);
 		moveDialog = { open: false, nodeType: null, nodeId: null, batchItems: [] };
 		selectedIds = new Set();
 	}}

@@ -251,10 +251,23 @@
 
 	onMount(() => {
 		syncRootContent();
-		const unsub1 = systemBus.on('fs:created', () => syncRootContent());
-		const unsub2 = systemBus.on('fs:moved', () => syncRootContent());
-		const unsub3 = systemBus.on('fs:deleted', () => syncRootContent());
-		const unsub4 = systemBus.on('fs:renamed', () => syncRootContent());
+		// Only re-sync desktop when root-level (parent_id === null) items are affected
+		const unsub1 = systemBus.on('fs:created', (event) => {
+			const { node } = event.payload as { node: { parent_id: string | null } };
+			if (node.parent_id === null) syncRootContent();
+		});
+		const unsub2 = systemBus.on('fs:moved', (event) => {
+			const { oldParentId, newParentId } = event.payload as { oldParentId: string | null; newParentId: string | null };
+			if (oldParentId === null || newParentId === null) syncRootContent();
+		});
+		const unsub3 = systemBus.on('fs:deleted', (event) => {
+			const { parentId } = event.payload as { parentId: string | null };
+			if (parentId === null) syncRootContent();
+		});
+		const unsub4 = systemBus.on('fs:renamed', (event) => {
+			const { parentId } = event.payload as { parentId: string | null };
+			if (parentId === null) syncRootContent();
+		});
 		return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
 	});
 

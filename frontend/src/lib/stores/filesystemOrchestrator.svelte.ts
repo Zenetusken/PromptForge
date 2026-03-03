@@ -136,7 +136,7 @@ class FilesystemOrchestratorState {
 			if (oldParentId !== newParentId) {
 				this.invalidate(newParentId);
 			}
-			systemBus.emit('fs:moved', 'fsOrchestrator', { type, id, newParentId });
+			systemBus.emit('fs:moved', 'fsOrchestrator', { type, id, newParentId, oldParentId });
 			return true;
 		} catch (err) {
 			systemBus.emit('notification:show', 'fsOrchestrator', {
@@ -153,8 +153,9 @@ class FilesystemOrchestratorState {
 		try {
 			const result = await updateProject(id, { name: newName });
 			if (!result) return false;
-			this.invalidate(result.parent_id ?? null);
-			systemBus.emit('fs:renamed', 'fsOrchestrator', { id, newName });
+			const parentId = result.parent_id ?? null;
+			this.invalidate(parentId);
+			systemBus.emit('fs:renamed', 'fsOrchestrator', { id, newName, parentId });
 			return true;
 		} catch (err) {
 			systemBus.emit('notification:show', 'fsOrchestrator', {
@@ -173,7 +174,7 @@ class FilesystemOrchestratorState {
 			const ok = await deleteProject(id);
 			if (!ok) return false;
 			this.invalidate(parentId);
-			systemBus.emit('fs:deleted', 'fsOrchestrator', { id });
+			systemBus.emit('fs:deleted', 'fsOrchestrator', { id, parentId });
 			return true;
 		} catch (err) {
 			systemBus.emit('notification:show', 'fsOrchestrator', {
@@ -192,7 +193,7 @@ class FilesystemOrchestratorState {
 			const ok = await deletePromptDirect(id);
 			if (!ok) return false;
 			this.invalidate(parentId);
-			systemBus.emit('fs:deleted', 'fsOrchestrator', { id });
+			systemBus.emit('fs:deleted', 'fsOrchestrator', { id, parentId });
 			return true;
 		} catch (err) {
 			systemBus.emit('notification:show', 'fsOrchestrator', {

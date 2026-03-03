@@ -89,7 +89,12 @@ describe('move', () => {
 		expect(result).toBe(true);
 		// Source (root) cache should be invalidated
 		expect(fsOrchestrator.getChildren(null)).toEqual([]);
-		expect(systemBus.emit).toHaveBeenCalledWith('fs:moved', 'fsOrchestrator', expect.any(Object));
+		expect(systemBus.emit).toHaveBeenCalledWith('fs:moved', 'fsOrchestrator', {
+			type: 'project',
+			id: 'item',
+			newParentId: 'target-id',
+			oldParentId: null,
+		});
 	});
 
 	it('returns false on failure', async () => {
@@ -120,7 +125,8 @@ describe('deleteFolder', () => {
 		mockDeleteProject.mockResolvedValue(true);
 		const result = await fsOrchestrator.deleteFolder('some-id');
 		expect(result).toBe(true);
-		expect(systemBus.emit).toHaveBeenCalledWith('fs:deleted', 'fsOrchestrator', { id: 'some-id' });
+		// parentId is null because 'some-id' is not in any cached folder list
+		expect(systemBus.emit).toHaveBeenCalledWith('fs:deleted', 'fsOrchestrator', { id: 'some-id', parentId: null });
 	});
 });
 

@@ -1184,14 +1184,16 @@ class DesktopStoreState {
 			confirmLabel: 'Delete',
 			onConfirm: async () => {
 				const { fsOrchestrator } = await import('$lib/stores/filesystemOrchestrator.svelte');
-				await fsOrchestrator.deletePrompt(promptId);
-				this.icons = this.icons.filter((i) => i.id !== iconId);
-				if (this.selectedIconIds.has(iconId)) {
-					const next = new Set(this.selectedIconIds);
-					next.delete(iconId);
-					this.selectedIconIds = next;
+				const ok = await fsOrchestrator.deletePrompt(promptId);
+				if (ok) {
+					this.icons = this.icons.filter((i) => i.id !== iconId);
+					if (this.selectedIconIds.has(iconId)) {
+						const next = new Set(this.selectedIconIds);
+						next.delete(iconId);
+						this.selectedIconIds = next;
+					}
+					this._persist();
 				}
-				this._persist();
 				this.confirmDialog.open = false;
 			},
 		};

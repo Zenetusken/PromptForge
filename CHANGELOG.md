@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Performance
+
+**Filesystem UI Responsiveness**
+- `FolderWindow`, `ProjectsWindow`: `loadContents` / `loadFolderContents` now fetches children + breadcrumb path in parallel via `Promise.all` instead of sequentially
+- `FolderWindow`, `ProjectsWindow`: batch delete and batch move fire all N operations in parallel (`Promise.all`) instead of sequential `for-await`
+- `FolderWindow`, `ProjectsWindow`, `DesktopSurface`: `fs:deleted` and `fs:renamed` events update local state in-place; `fs:created` appends the node from the bus payload; `fs:moved` removes the node from source without refetching — server round-trip only when a node arrives at the destination
+- `DesktopSurface`: `fs:*` handlers now guard on `parent_id === null` / `oldParentId/newParentId === null` so desktop sync only fires for root-level changes
+- `FolderWindow`, `ProjectsWindow`: new folder input closes immediately on submit (optimistic); node appears via `fs:created` bus event
+- Drag-and-drop: dragged row dims (`opacity-50 animate-pulse`) while move is in-flight, disappears instantly on `fs:moved`
+- `fs:deleted` payload now includes `parentId`; `fs:renamed` payload includes `parentId` — enables all subscribers to filter without additional fetches
+
 ### Added
 
 **Prompt Anatomy HUD & Backend Structure Extraction**
