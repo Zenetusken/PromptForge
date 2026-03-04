@@ -1315,7 +1315,7 @@
       "VERIFY the optimization records are still present after verifying database file exists"
     ],
     "expected_outcome": "Optimization data persists across server restart",
-    "passes": false,
+    "passes": true,
     "id": 62
   },
   {
