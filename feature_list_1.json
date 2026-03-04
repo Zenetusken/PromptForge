@@ -1186,7 +1186,7 @@
       "VERIFY the response includes codebase_aware_count field (integer >= 0)"
     ],
     "expected_outcome": "History stats includes codebase_aware_count",
-    "passes": false,
+    "passes": true,
     "id": 56
   },
   {
