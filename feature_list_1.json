@@ -1250,7 +1250,7 @@
       "VERIFY the HTTP status code is 422 or 400"
     ],
     "expected_outcome": "Pydantic validation rejects empty prompt",
-    "passes": false,
+    "passes": true,
     "id": 59
   },
   {
