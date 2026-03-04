@@ -1042,7 +1042,7 @@
       "VERIFY the response is valid JSON (either a repo object or null/empty)"
     ],
     "expected_outcome": "GET /api/github/repos/linked returns current link",
-    "passes": false,
+    "passes": true,
     "id": 49
   },
   {
