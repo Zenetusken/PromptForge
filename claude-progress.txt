@@ -200,3 +200,35 @@ Fixed by adding `retry_of` parameter to `optimize_prompt()` and passing
 - T3: 0/66
 - T4: 0/70
 - T5: 0/30
+
+## Integration Report — Session 7 (2026-03-04)
+
+**Gaps discovered:** 5
+- [SESSION] optimize.py + optimizations.py used req.cookies.get("session_id") instead of canonical req.session.get("session_id") — WIRED (3 occurrences fixed)
+- [FIELD_MISMATCH] HistoryEntry.strategy vs API primary_framework — ALREADY HANDLED (NavigatorHistory maps it)
+- [FIELD_MISMATCH] HistoryEntry.model vs API model_* fields — ALREADY HANDLED (NavigatorHistory maps provider_used)
+- [ORPHAN] Toast.svelte — SKIPPED (needs toast store + layout import + caller hooks; flagged for coding agent)
+- [ORPHAN] RepoPickerModal.svelte + RepoBadge.svelte — SKIPPED (needs state management for modal; flagged for coding agent)
+
+**Gaps wired:** 1 of 5 (2 were already handled, 2 need coding agent)
+**Tests now passing (via wiring):** none (session fix enables future codebase context tests but doesn't directly pass any test)
+
+**Verification results:**
+- Backend health: OK after session fix
+- History navigator: data flows correctly (scores, strategies, dates displayed)
+- GitHub navigator: PAT input and connection status working
+- Settings navigator: model, timeout, retries, checkboxes all displayed
+- 5-zone grid layout: all zones rendering correctly
+
+**Remaining gaps for future sessions:**
+- Toast.svelte needs a toast store + wiring (coding agent, low priority)
+- RepoPickerModal.svelte needs parent integration (coding agent, low priority)
+- /api/optimizations/* endpoints are dead code (frontend uses /api/optimize/* + /api/history/*)
+
+**Progress:** 63/335 tests passing (18.8%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws
+- DB: backend/data/promptforge.db (3 tables, proper indexes)
+- Start: ./init.sh start
