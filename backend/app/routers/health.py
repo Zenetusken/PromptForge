@@ -29,7 +29,7 @@ async def health_check():
     provider_name = _provider.name if _provider else "none"
 
     return {
-        "status": "healthy" if db_ok else "degraded",
+        "status": "ok" if db_ok else "degraded",
         "provider": provider_name,
         "model_routing": MODEL_ROUTING,
         "github_oauth_enabled": github_oauth_enabled,

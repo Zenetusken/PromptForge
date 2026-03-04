@@ -26,8 +26,9 @@
   --color-border-subtle: rgba(74, 74, 106, 0.15);
   --color-border-accent: rgba(0, 229, 255, 0.12);
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --font-sans: 'Geist', Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --font-display: 'Syne', Geist, ui-sans-serif, system-ui, sans-serif;
 
   --animate-fade-in: fade-in 0.3s ease-out both;
   --animate-stagger-fade-in: stagger-fade-in 0.4s ease-out both;
@@ -117,7 +118,7 @@
 
 @keyframes copy-flash {
   0% { background-color: transparent; }
-  30% { background-color: rgba(0, 229, 255, 0.15); }
+  30% { background-color: rgba(34, 255, 136, 0.15); }
   100% { background-color: transparent; }
 }
 
@@ -137,8 +138,10 @@
 }
 
 @keyframes forge-spark {
-  0%, 100% { box-shadow: 0 0 4px rgba(0, 229, 255, 0.3), 0 0 8px rgba(168, 85, 247, 0.2); }
-  50% { box-shadow: 0 0 12px rgba(0, 229, 255, 0.6), 0 0 24px rgba(168, 85, 247, 0.4); }
+  0% { transform: scale(1) rotate(0deg); background-color: transparent; }
+  20% { transform: scale(1.02) rotate(10deg); background-color: rgba(251, 191, 36, 0.15); }
+  50% { transform: scale(1.01) rotate(-5deg); background-color: rgba(251, 191, 36, 0.08); }
+  100% { transform: scale(1) rotate(0deg); background-color: transparent; }
 }
 
 /* Scrollbar styling */

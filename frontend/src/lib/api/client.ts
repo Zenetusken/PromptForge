@@ -3,42 +3,121 @@ const BASE = '';
 export interface HealthResponse {
   status: string;
   provider: string;
-  model: string;
+  model_routing: Record<string, string>;
+  github_oauth_enabled: boolean;
+  db_connected: boolean;
   version: string;
 }
 
-export interface OptimizationOptions {
+export interface OptimizeRequest {
+  prompt: string;
+  project?: string;
+  tags?: string[];
+  title?: string;
   strategy?: string;
-  model?: string;
-  context_files?: string[];
-  github_repo?: string;
+  repo_full_name?: string;
+  repo_branch?: string;
 }
 
 export interface HistoryParams {
   page?: number;
-  page_size?: number;
+  per_page?: number;
   search?: string;
-  strategy?: string;
-  sort_by?: string;
-  sort_dir?: string;
+  sort?: string;
+  order?: string;
+  project?: string;
+  task_type?: string;
+  has_repo?: boolean;
+  min_score?: number;
+  max_score?: number;
+  status?: string;
 }
 
 export interface HistoryResponse {
   items: Array<Record<string, unknown>>;
   total: number;
   page: number;
-  page_size: number;
+  per_page: number;
+  pages: number;
 }
 
-export interface OptimizationResponse {
+export interface OptimizationRecord {
   id: string;
-  original_prompt: string;
-  optimized_prompt: string;
-  overall_score: number;
-  strategy: string;
-  model: string;
   created_at: string;
-  stages: Record<string, unknown>;
+  updated_at: string | null;
+  raw_prompt: string;
+  optimized_prompt: string | null;
+  task_type: string | null;
+  complexity: string | null;
+  weaknesses: string[] | null;
+  strengths: string[] | null;
+  changes_made: string[] | null;
+  primary_framework: string | null;
+  framework_applied: string | null;
+  optimization_notes: string | null;
+  strategy_rationale: string | null;
+  clarity_score: number | null;
+  specificity_score: number | null;
+  structure_score: number | null;
+  faithfulness_score: number | null;
+  conciseness_score: number | null;
+  overall_score: number | null;
+  is_improvement: boolean | null;
+  verdict: string | null;
+  issues: string[] | null;
+  duration_ms: number | null;
+  provider_used: string | null;
+  model_explore: string | null;
+  model_analyze: string | null;
+  model_strategy: string | null;
+  model_optimize: string | null;
+  model_validate: string | null;
+  status: string;
+  error_message: string | null;
+  project: string | null;
+  tags: string[] | null;
+  title: string | null;
+  version: string | null;
+  retry_of: string | null;
+  linked_repo_full_name: string | null;
+  linked_repo_branch: string | null;
+  codebase_context_snapshot: string | null;
+}
+
+export interface HistoryStats {
+  total_optimizations: number;
+  average_score: number | null;
+  task_type_breakdown: Record<string, number>;
+  framework_breakdown: Record<string, number>;
+  provider_breakdown: Record<string, number>;
+  model_usage: Record<string, number>;
+  codebase_aware_count: number;
+  improvement_rate: number | null;
+}
+
+export interface GitHubAuthStatus {
+  connected: boolean;
+  login: string | null;
+  avatar_url: string | null;
+  github_user_id: number | null;
+  token_type: string | null;
+}
+
+export interface RepoInfo {
+  full_name: string;
+  name: string;
+  private: boolean;
+  default_branch: string;
+  description: string | null;
+  language: string | null;
+  size_kb: number;
+}
+
+export interface LinkedRepo {
+  id: string;
+  full_name: string;
+  branch: string;
+  linked_at: string;
 }
 
 // ---- Health ----
@@ -59,8 +138,7 @@ export interface SSEEvent {
 export type SSECallback = (event: SSEEvent) => void;
 
 export async function startOptimization(
-  prompt: string,
-  options: OptimizationOptions,
+  request: OptimizeRequest,
   onEvent: SSECallback,
   onError: (err: Error) => void,
   onComplete: () => void
@@ -71,7 +149,7 @@ export async function startOptimization(
     const res = await fetch(`${BASE}/api/optimize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, ...options }),
+      body: JSON.stringify(request),
       signal: controller.signal
     });
 
@@ -84,7 +162,7 @@ export async function startOptimization(
       throw new Error('No response body for SSE stream');
     }
 
-    // Parse SSE from ReadableStream
+    // Parse SSE from ReadableStream (NOT EventSource — too limited)
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -97,27 +175,21 @@ export async function startOptimization(
 
           buffer += decoder.decode(value, { stream: true });
 
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+          // Split on double newlines to find complete events
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || '';
 
-          let currentEvent = 'message';
-          let currentData = '';
-
-          for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              currentEvent = line.slice(7).trim();
-            } else if (line.startsWith('data: ')) {
-              currentData = line.slice(6);
-            } else if (line === '' && currentData) {
-              // End of event
+          for (const raw of events) {
+            if (!raw.trim()) continue;
+            const typeMatch = raw.match(/^event: (.+)$/m);
+            const dataMatch = raw.match(/^data: (.+)$/m);
+            if (typeMatch && dataMatch) {
               try {
-                const parsed = JSON.parse(currentData);
-                onEvent({ event: currentEvent, data: parsed });
+                const parsed = JSON.parse(dataMatch[1]);
+                onEvent({ event: typeMatch[1], data: parsed });
               } catch {
-                onEvent({ event: currentEvent, data: currentData });
+                onEvent({ event: typeMatch[1], data: dataMatch[1] });
               }
-              currentEvent = 'message';
-              currentData = '';
             }
           }
         }
@@ -139,35 +211,19 @@ export async function startOptimization(
   return controller;
 }
 
-// ---- History ----
+// ---- Optimization CRUD ----
 
-export async function fetchHistory(params: HistoryParams = {}): Promise<HistoryResponse> {
-  const searchParams = new URLSearchParams();
-  if (params.page) searchParams.set('page', String(params.page));
-  if (params.page_size) searchParams.set('page_size', String(params.page_size));
-  if (params.search) searchParams.set('search', params.search);
-  if (params.strategy) searchParams.set('strategy', params.strategy);
-  if (params.sort_by) searchParams.set('sort_by', params.sort_by);
-  if (params.sort_dir) searchParams.set('sort_dir', params.sort_dir);
-
-  const res = await fetch(`${BASE}/api/history?${searchParams.toString()}`);
-  if (!res.ok) throw new Error(`Fetch history failed: ${res.status}`);
-  return res.json();
-}
-
-export async function fetchOptimization(id: string): Promise<OptimizationResponse> {
-  const res = await fetch(`${BASE}/api/history/${id}`);
+export async function fetchOptimization(id: string): Promise<OptimizationRecord> {
+  const res = await fetch(`${BASE}/api/optimize/${id}`);
   if (!res.ok) throw new Error(`Fetch optimization failed: ${res.status}`);
   return res.json();
 }
 
-export async function deleteOptimization(id: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/history/${id}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Delete optimization failed: ${res.status}`);
-}
-
-export async function patchOptimization(id: string, data: Record<string, unknown>): Promise<OptimizationResponse> {
-  const res = await fetch(`${BASE}/api/history/${id}`, {
+export async function patchOptimization(
+  id: string,
+  data: { title?: string; tags?: string[]; version?: string; project?: string }
+): Promise<OptimizationRecord> {
+  const res = await fetch(`${BASE}/api/optimize/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -176,32 +232,119 @@ export async function patchOptimization(id: string, data: Record<string, unknown
   return res.json();
 }
 
-// ---- GitHub Auth ----
-
-export async function connectGitHub(pat: string): Promise<{ username: string; repos: Array<Record<string, unknown>> }> {
-  const res = await fetch(`${BASE}/auth/github/connect`, {
+export async function retryOptimization(
+  id: string,
+  strategy?: string
+): Promise<Response> {
+  const res = await fetch(`${BASE}/api/optimize/${id}/retry`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pat })
+    body: JSON.stringify({ strategy })
   });
-  if (!res.ok) throw new Error(`GitHub connect failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Retry optimization failed: ${res.status}`);
+  return res;
+}
+
+// ---- History ----
+
+export async function fetchHistory(params: HistoryParams = {}): Promise<HistoryResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.per_page) searchParams.set('per_page', String(params.per_page));
+  if (params.search) searchParams.set('search', params.search);
+  if (params.sort) searchParams.set('sort', params.sort);
+  if (params.order) searchParams.set('order', params.order);
+  if (params.project) searchParams.set('project', params.project);
+  if (params.task_type) searchParams.set('task_type', params.task_type);
+  if (params.has_repo !== undefined) searchParams.set('has_repo', String(params.has_repo));
+  if (params.min_score) searchParams.set('min_score', String(params.min_score));
+  if (params.max_score) searchParams.set('max_score', String(params.max_score));
+  if (params.status) searchParams.set('status', params.status);
+
+  const res = await fetch(`${BASE}/api/history?${searchParams.toString()}`);
+  if (!res.ok) throw new Error(`Fetch history failed: ${res.status}`);
   return res.json();
 }
 
-export async function disconnectGitHub(): Promise<void> {
-  const res = await fetch(`${BASE}/auth/github/disconnect`, { method: 'POST' });
-  if (!res.ok) throw new Error(`GitHub disconnect failed: ${res.status}`);
+export async function deleteOptimization(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/history/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Delete optimization failed: ${res.status}`);
 }
 
-export async function fetchGitHubRepos(): Promise<Array<Record<string, unknown>>> {
-  const res = await fetch(`${BASE}/auth/github/repos`);
+export async function fetchHistoryStats(project?: string): Promise<HistoryStats> {
+  const params = project ? `?project=${encodeURIComponent(project)}` : '';
+  const res = await fetch(`${BASE}/api/history/stats${params}`);
+  if (!res.ok) throw new Error(`Fetch stats failed: ${res.status}`);
+  return res.json();
+}
+
+// ---- GitHub Auth ----
+
+export async function fetchGitHubAuthStatus(): Promise<GitHubAuthStatus> {
+  const res = await fetch(`${BASE}/auth/github/me`);
+  if (!res.ok) throw new Error(`GitHub auth check failed: ${res.status}`);
+  return res.json();
+}
+
+export async function submitGitHubPAT(token: string): Promise<GitHubAuthStatus> {
+  const res = await fetch(`${BASE}/auth/github/pat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token })
+  });
+  if (!res.ok) throw new Error(`GitHub PAT submission failed: ${res.status}`);
+  return res.json();
+}
+
+export async function logoutGitHub(): Promise<void> {
+  const res = await fetch(`${BASE}/auth/github/logout`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`GitHub logout failed: ${res.status}`);
+}
+
+export function getGitHubLoginUrl(): string {
+  return `${BASE}/auth/github/login`;
+}
+
+// ---- GitHub Repos ----
+
+export async function fetchGitHubRepos(): Promise<RepoInfo[]> {
+  const res = await fetch(`${BASE}/api/github/repos`);
   if (!res.ok) throw new Error(`Fetch repos failed: ${res.status}`);
   return res.json();
 }
 
-export async function fetchGitHubFiles(repo: string, path: string = ''): Promise<Array<Record<string, unknown>>> {
-  const params = new URLSearchParams({ repo, path });
-  const res = await fetch(`${BASE}/auth/github/files?${params.toString()}`);
-  if (!res.ok) throw new Error(`Fetch files failed: ${res.status}`);
+export async function linkRepo(full_name: string, branch?: string): Promise<LinkedRepo> {
+  const res = await fetch(`${BASE}/api/github/repos/link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ full_name, branch })
+  });
+  if (!res.ok) throw new Error(`Link repo failed: ${res.status}`);
   return res.json();
+}
+
+export async function fetchLinkedRepo(): Promise<LinkedRepo | null> {
+  const res = await fetch(`${BASE}/api/github/repos/linked`);
+  if (!res.ok) throw new Error(`Fetch linked repo failed: ${res.status}`);
+  return res.json();
+}
+
+export async function unlinkRepo(): Promise<void> {
+  const res = await fetch(`${BASE}/api/github/repos/unlink`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Unlink repo failed: ${res.status}`);
+}
+
+// ---- GitHub convenience wrappers (used by NavigatorGitHub) ----
+
+export async function connectGitHub(token: string): Promise<{ username: string; repos: RepoInfo[] }> {
+  const authStatus = await submitGitHubPAT(token);
+  const repos = await fetchGitHubRepos();
+  return {
+    username: authStatus.login || '',
+    repos
+  };
+}
+
+export async function disconnectGitHub(): Promise<void> {
+  return logoutGitHub();
 }
