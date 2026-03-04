@@ -501,7 +501,7 @@
       "VERIFY the status code is 302 (redirect) or 400/503 (not configured)"
     ],
     "expected_outcome": "GitHub OAuth login endpoint exists",
-    "passes": false,
+    "passes": true,
     "id": 24
   },
   {
