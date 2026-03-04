@@ -14,7 +14,7 @@
       "VERIFY the response body is valid JSON containing a 'status' field"
     ],
     "expected_outcome": "Backend server starts on port 8000",
-    "passes": false,
+    "passes": true,
     "id": 1
   },
   {
@@ -34,7 +34,7 @@
       "VERIFY no console errors appear in the browser"
     ],
     "expected_outcome": "Frontend serves index page on port 5199",
-    "passes": false,
+    "passes": true,
     "id": 2
   },
   {
@@ -60,7 +60,7 @@
       "VERIFY response contains 'version' field with string value"
     ],
     "expected_outcome": "Health endpoint returns complete status object",
-    "passes": false,
+    "passes": true,
     "id": 3
   },
   {
@@ -81,7 +81,7 @@
       "VERIFY a SQLite database file exists in the data directory"
     ],
     "expected_outcome": "Database optimizations table created on startup",
-    "passes": false,
+    "passes": true,
     "id": 4
   },
   {
@@ -102,7 +102,7 @@
       "VERIFY the database contains linked_repos table"
     ],
     "expected_outcome": "Database github tables created on startup",
-    "passes": false,
+    "passes": true,
     "id": 5
   },
   {
@@ -124,7 +124,7 @@
       "VERIFY the page title contains 'PromptForge' or 'FastAPI'"
     ],
     "expected_outcome": "API docs available at /api/docs",
-    "passes": false,
+    "passes": true,
     "id": 6
   },
   {
@@ -144,7 +144,7 @@
       "VERIFY the Access-Control-Allow-Origin header includes http://localhost:5199 or wildcard *"
     ],
     "expected_outcome": "CORS configured for frontend origin",
-    "passes": false,
+    "passes": true,
     "id": 7
   },
   {
@@ -167,7 +167,7 @@
       "SCREENSHOT to verify the frontend shows provider status or connected state"
     ],
     "expected_outcome": "Frontend can reach backend API",
-    "passes": false,
+    "passes": true,
     "id": 8
   },
   {
@@ -187,7 +187,7 @@
       "VERIFY the response is JSON with an error message"
     ],
     "expected_outcome": "Backend returns proper 404 for unknown API routes",
-    "passes": false,
+    "passes": true,
     "id": 9
   },
   {
@@ -208,7 +208,7 @@
       "VERIFY the page contains the workbench layout structure"
     ],
     "expected_outcome": "Frontend SvelteKit routing works for main page",
-    "passes": false,
+    "passes": true,
     "id": 10
   },
   {
@@ -228,7 +228,7 @@
       "VERIFY the provider field is either 'claude_cli' or 'anthropic_api'"
     ],
     "expected_outcome": "Provider detection completes on startup",
-    "passes": false,
+    "passes": true,
     "id": 11
   },
   {
@@ -245,7 +245,7 @@
       "VERIFY the MCP server process is running"
     ],
     "expected_outcome": "MCP server starts on port 8001",
-    "passes": false,
+    "passes": true,
     "id": 12
   },
   {
@@ -265,7 +265,7 @@
       "RUN 'curl -s http://localhost:8000/api/health' and verify the server is configured"
     ],
     "expected_outcome": "Environment variables loaded from .env",
-    "passes": false,
+    "passes": true,
     "id": 13
   },
   {
@@ -286,7 +286,7 @@
       "VERIFY the database has idx_github_tokens_session index"
     ],
     "expected_outcome": "Database indexes created for performance",
-    "passes": false,
+    "passes": true,
     "id": 14
   },
   {
@@ -308,7 +308,7 @@
       "SCREENSHOT to verify the page renders with styles applied"
     ],
     "expected_outcome": "Static CSS and JS assets served by frontend",
-    "passes": false,
+    "passes": true,
     "id": 15
   },
   {
@@ -329,7 +329,7 @@
       "VERIFY db_connected is true"
     ],
     "expected_outcome": "Backend lifespan initializes provider and database",
-    "passes": false,
+    "passes": true,
     "id": 16
   },
   {
@@ -352,7 +352,7 @@
       "SCREENSHOT to verify the dark cyberpunk theme is applied"
     ],
     "expected_outcome": "Frontend app.css loads cyberpunk theme variables",
-    "passes": false,
+    "passes": true,
     "id": 17
   },
   {
@@ -372,7 +372,7 @@
       "VERIFY the backend server starts without session middleware errors"
     ],
     "expected_outcome": "Session middleware configured on backend",
-    "passes": false,
+    "passes": true,
     "id": 18
   },
   {
