@@ -1166,7 +1166,7 @@
       "VERIFY failed optimizations have a non-null error_message"
     ],
     "expected_outcome": "Optimization error_message stored on failure",
-    "passes": false,
+    "passes": true,
     "id": 55
   },
   {
