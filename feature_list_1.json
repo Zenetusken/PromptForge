@@ -440,7 +440,7 @@
       "VERIFY the response is JSON format"
     ],
     "expected_outcome": "GitHub PAT submission with valid token",
-    "passes": false,
+    "passes": true,
     "id": 21
   },
   {
