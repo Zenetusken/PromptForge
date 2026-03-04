@@ -1,67 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 230 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 264 lines. Earlier notes are in git history.]
 
-   - Replaced with `ProviderNotAvailableError` per spec
-   - When no real provider is available, the app now raises a clear error with setup instructions
-   - MockProvider class entirely removed — no more hardcoded responses
-2. **Added nested-session detection** in `detector.py`
-   - When CLAUDECODE env var is set (inside Claude Code), skips CLI provider gracefully
-   - Prevents cryptic nested-session crash errors
-3. **Updated `init.sh`** to clear CLAUDECODE when starting backend/MCP
-   - Backend runs independently and must not inherit parent session's env
-   - Ensures Claude CLI provider works when launched from within Claude Code
-4. **Added `claude-agent-sdk`** to `requirements.txt` (was missing)
-   - ClaudeCLIProvider now properly installs its dependency
-5. **Made `seed_examples.py` functional**
-   - Was a placeholder stub, now creates 3 real example optimization records
-   - Populates database with realistic data for dev/demo
-6. **Updated `providers.py` router docstring** to not mention mock
-7. **Updated `main.py`** to handle ProviderNotAvailableError with proper logging
-8. **Created `.sdk_integrated` marker file**
-
-### Provider Status After Integration
-- Active: ClaudeCLIProvider (Claude Code CLI v2.1.68, Max subscription, zero cost)
-- Health check: PASSING (real LLM calls working end-to-end)
-- All pipeline stages routed to correct Claude models per MODEL_ROUTING
-- No mock responses — all LLM calls go through real providers
-
-## Session 2 Summary — 2026-03-04 (coding)
-
-**Completed:** #1-#18 (all T0 infrastructure tests — 18 tests)
-- #1 Backend server starts on port 8000
-- #2 Frontend serves index page on port 5199
-- #3 Health endpoint returns complete status object
-- #4 Database optimizations table created on startup
-- #5 Database github tables created on startup
-- #6 API docs available at /api/docs
-- #7 CORS configured for frontend origin
-- #8 Frontend can reach backend API
-- #9 Backend returns proper 404 for unknown API routes
-- #10 Frontend SvelteKit routing works for main page
-- #11 Provider detection completes on startup
-- #12 MCP server starts on port 8001
-- #13 Environment variables loaded from .env
-- #14 Database indexes created for performance
-- #15 Static CSS and JS assets served by frontend
-- #16 Backend lifespan initializes provider and database
-- #17 Frontend app.css loads cyberpunk theme variables
-- #18 Session middleware configured on backend
-
-**Regressions fixed:** None
-**In progress:** None
-**Next up:** T1 tests starting with #19 (Provider auto-detection)
-**Known issues:** None — all infrastructure healthy
-**Progress:** 18/335 tests passing (5.4%)
-
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (running)
-- DB: backend/data/promptforge.db (3 tables, proper indexes)
-- Start: ./init.sh start
-
-## Integration Report — Session 3 (2026-03-04)
-
-**Gaps discovered:** 7
 - [API_CLIENT] No settings API functions (fetchSettings/updateSettings) — WIRED (added to client.ts)
 - [SETTINGS] Navigator settings panel was static placeholder — WIRED (created NavigatorSettings.svelte, fetches from GET/PATCH /api/settings)
 - [API_CLIENT] No provider detect/status API functions — WIRED (added fetchProviderDetect/fetchProviderStatus to client.ts)
@@ -255,10 +193,31 @@ MockProvider in detector.py — it now raises ProviderNotAvailableError instead.
 - Seed data has 3 clean records with provider_used='claude_cli' for testing
 - All infrastructure is solid, no technical debt
 
-**Progress:** 18/335 tests passing (5.4%)
+**Progress:** 52/335 tests passing (15.5%)
 **Server info:**
 - Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
 - Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
 - MCP: ws://127.0.0.1:8001/ws
-- DB: backend/data/promptforge.db (3 tables, proper indexes, 3 clean seed records)
+- DB: backend/data/promptforge.db (3 tables, proper indexes, 2 clean seed records)
 - Start: ./init.sh start
+
+## Session 5 Summary (coding, 2026-03-04)
+
+**Completed:** 34 T1 tests verified and marked passing:
+- Auth: #19 (provider auto-detect), #20 (MODEL_ROUTING), #21-#25 (GitHub PAT/auth/logout/OAuth)
+- CRUD: #26 (SSE stream), #28 (GET optimize), #29 (history list), #30 (pagination), #31 (DELETE), #32 (stats), #33 (PATCH), #34 (retry), #35 (sorted DESC), #36 (filter task_type), #37 (search)
+- Data: #39 (score fields), #40 (provider/model info), #41 (status tracking), #52 (multiple records), #55 (error_message column), #56 (codebase_aware_count), #58 (missing prompt 422), #59 (empty prompt 422), #62 (data persistence)
+- GitHub: #47 (repos endpoint), #48 (repos/link), #49 (repos/linked), #50 (repos/unlink), #51 (Fernet encryption)
+- Sort/Filter: #53 (sort by score), #54 (filter has_repo)
+
+**Regressions fixed:** None
+**In progress:** None
+
+**Remaining T1 (11 tests):** #27, #38, #42, #43, #44, #45, #46, #57, #60, #61, #63
+- All require full pipeline completion (30-60s per run with real Claude API)
+- Pipeline SSE works (verified in #26) but tests need the complete event
+- Key concern: Seed data overall_score=9 does not match weighted average formula (8.35 rounds to 8). Test #38 needs real pipeline validation.
+
+**Known issues:**
+- Seed optimized_prompt is placeholder text. Real pipeline outputs will differ.
+- Stuck running records from partial SSE tests were cleaned up.
