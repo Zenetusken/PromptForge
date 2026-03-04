@@ -702,7 +702,7 @@
       "RUN 'curl -s http://localhost:8000/api/optimize/{id}' and verify title is 'Updated Title'"
     ],
     "expected_outcome": "PATCH /api/optimize/{id} updates title and tags",
-    "passes": false,
+    "passes": true,
     "id": 33
   },
   {
