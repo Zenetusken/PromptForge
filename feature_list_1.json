@@ -1145,7 +1145,7 @@
       "VERIFY all returned records have linked_repo_full_name set or the response is empty"
     ],
     "expected_outcome": "History filterable by has_repo parameter",
-    "passes": false,
+    "passes": true,
     "id": 54
   },
   {
