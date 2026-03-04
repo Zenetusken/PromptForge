@@ -467,9 +467,30 @@ if __name__ == "__main__":
         logger.error("Cannot start MCP server: mcp package not installed")
         raise SystemExit(1)
 
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.routing import WebSocketRoute
+    from mcp.server.websocket import websocket_server
+
+    async def ws_endpoint(scope, receive, send):
+        """Handle WebSocket connections for MCP protocol."""
+        async with websocket_server(scope, receive, send) as (read_stream, write_stream):
+            await mcp._mcp_server.run(
+                read_stream,
+                write_stream,
+                mcp._mcp_server.create_initialization_options(),
+            )
+
     # Initialize database tables
     asyncio.run(create_tables())
 
-    mcp_server = create_mcp_server()
+    mcp = create_mcp_server()
+
+    app = Starlette(
+        routes=[
+            WebSocketRoute("/ws", ws_endpoint),
+        ],
+    )
+
     logger.info(f"Starting MCP server on ws://{settings.MCP_HOST}:{settings.MCP_PORT}/ws")
-    mcp_server.run(transport="websocket")
+    uvicorn.run(app, host=settings.MCP_HOST, port=settings.MCP_PORT, log_level="info")

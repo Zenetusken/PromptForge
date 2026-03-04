@@ -245,7 +245,7 @@
       "VERIFY the MCP server process is running"
     ],
     "expected_outcome": "MCP server starts on port 8001",
-    "passes": false,
+    "passes": true,
     "id": 12
   },
   {
