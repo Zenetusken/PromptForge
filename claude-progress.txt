@@ -1,56 +1,5 @@
-CLAUDE-PROGRESS: PromptForge v2 — Session 1 (Initializer)
-================================================================
-Date: 2026-03-04
-Session Type: Initializer Agent (Session 1 of Many)
-================================================================
+[Trimmed by orchestrator: kept last 200 of 202 lines. Earlier notes are in git history.]
 
-## COMPLETED TASKS
-
-### 1. Feature List Generation (CRITICAL FIRST TASK) ✅
-- Created 335 end-to-end test cases across 2 feature list JSON files
-- feature_list_1.json: 167 tests (T0:18, T1:45, T2:104)
-- feature_list_2.json: 168 tests (T2:2, T3:66, T4:70, T5:30)
-- 35 tests have 10+ steps (meets the 35+ threshold requirement)
-- Tier distribution: T0:18, T1:45, T2:106, T3:66, T4:70, T5:30
-- Used batch protocol with feature_list_gen.py helper
-- 14 batch scripts created, executed, and cleaned up
-
-### 2. Project Structure Verification ✅
-- Full backend directory: 48 Python files across app/, models/, routers/, services/, providers/, prompts/, schemas/
-- Full frontend directory: 50+ files across components/, stores/, api/, utils/, routes/
-- All dependencies listed in requirements.txt and package.json
-- Docker configuration (docker-compose.yml, Dockerfiles)
-- MCP server configuration (.mcp.json)
-
-### 3. init.sh Setup Script ✅
-- Already existed from prior session, verified complete (307 lines)
-- Commands: setup, start, stop, restart, status, seed, mcp, help
-- Ports: Backend=8000, Frontend=5199, MCP=8001
-- PID file management, port waiting, auto-setup on first start
-
-### 4. Git Repository Initialization ✅
-- Initialized git repo on 'main' branch
-- First commit: 116 files (all project source, configs, feature lists)
-- Second commit: Fixed critical import error + added T0 verification
-
-### 5. T0 Infrastructure — ALL 17 TESTS PASS ✅
-- Backend starts and serves on port 8000
-- Frontend serves on port 5199 with full cyberpunk theme CSS
-- Health endpoint returns complete status object (status, provider, model_routing, db_connected, version)
-- SQLite database with 3 tables (optimizations, github_tokens, linked_repos)
-- 5 performance indexes created on startup
-- API docs available at /api/docs (Swagger UI)
-- CORS properly configured for http://localhost:5199
-- Frontend Vite proxy routes /api/* to backend
-- Backend returns proper 404 for unknown routes
-- Provider detection completes (MockProvider in dev, Claude CLI detected but SDK not installed)
-- Session middleware configured
-- Environment variables loaded from .env
-
-## BUGS FOUND AND FIXED
-
-### CRITICAL: ImportError in optimizations.py
-- Problem: `from app.services.pipeline import run_pipeline, get_last_pipeline_result`
   - `get_last_pipeline_result` does not exist in pipeline.py
   - This prevented the backend from starting at all
 - Fix: Removed the non-existent import, rewrote event_stream() to:
@@ -130,22 +79,49 @@ Date: 2026-03-04
 - All pipeline stages routed to correct Claude models per MODEL_ROUTING
 - No mock responses — all LLM calls go through real providers
 
+## Session 2 Summary — 2026-03-04 (coding)
+
+**Completed:** #1-#18 (all T0 infrastructure tests — 18 tests)
+- #1 Backend server starts on port 8000
+- #2 Frontend serves index page on port 5199
+- #3 Health endpoint returns complete status object
+- #4 Database optimizations table created on startup
+- #5 Database github tables created on startup
+- #6 API docs available at /api/docs
+- #7 CORS configured for frontend origin
+- #8 Frontend can reach backend API
+- #9 Backend returns proper 404 for unknown API routes
+- #10 Frontend SvelteKit routing works for main page
+- #11 Provider detection completes on startup
+- #12 MCP server starts on port 8001
+- #13 Environment variables loaded from .env
+- #14 Database indexes created for performance
+- #15 Static CSS and JS assets served by frontend
+- #16 Backend lifespan initializes provider and database
+- #17 Frontend app.css loads cyberpunk theme variables
+- #18 Session middleware configured on backend
+
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** T1 tests starting with #19 (Provider auto-detection)
+**Known issues:** None — all infrastructure healthy
+**Progress:** 18/335 tests passing (5.4%)
+
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (running)
+- DB: backend/data/promptforge.db (3 tables, proper indexes)
+- Start: ./init.sh start
+
 ## NEXT SESSION PRIORITIES
 
 ### T1 Features (Auth/CRUD — 45 tests)
 1. Basic optimization CRUD (create, list, get, delete, patch)
-2. SSE pipeline streaming with mock provider
+2. SSE pipeline streaming
 3. History endpoint with pagination and filtering
 4. GitHub PAT connection flow
 5. Settings read/write
-
-### T2 Features (Pipeline/SSE/GitHub/UI — 106 tests)
-1. Full 5-stage pipeline execution with SSE streaming
-2. Stage-by-stage progress tracking
-3. GitHub repo linking and codebase-aware optimization
-4. Editor tab management and document editing
-5. Activity bar navigation and panel switching
-6. MCP server tools
 
 ### Architecture Notes for Next Session
 - The optimize.py router (/api/optimize) is the primary pipeline endpoint
