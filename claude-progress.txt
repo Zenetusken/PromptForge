@@ -1,26 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 264 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 202 lines. Earlier notes are in git history.]
 
-- [API_CLIENT] No settings API functions (fetchSettings/updateSettings) — WIRED (added to client.ts)
-- [SETTINGS] Navigator settings panel was static placeholder — WIRED (created NavigatorSettings.svelte, fetches from GET/PATCH /api/settings)
-- [API_CLIENT] No provider detect/status API functions — WIRED (added fetchProviderDetect/fetchProviderStatus to client.ts)
-- [API_CLIENT] No repo tree/file API functions — WIRED (added fetchRepoTree/fetchFileContent to client.ts)
-- [RESPONSE_SHAPE] github_auth.py POST /auth/github/pat returned wrong shape — WIRED (now returns GitHubUserInfo matching frontend GitHubAuthStatus interface)
-- [FIELD_MAPPING] NavigatorHistory used wrong field names (original_prompt vs raw_prompt, wrong filter param names) — WIRED (fixed field mapping and HistoryParams usage)
-- [MOCK_DATA] Seed optimization records have provider_used: "mock" — REPORTED (outstanding mock for validator)
-
-**Gaps wired:** 6 of 7
-**Tests now passing (via wiring):** none (T1 tests are backend-only curl tests, not frontend-wiring tests)
-
-**Verification results:**
-- Settings panel: data flows end-to-end — loads from backend, saves changes persist (screenshot verified)
-- History panel: was stuck on loading spinner, now loads 4 records with correct field mapping (screenshot verified)
-- GitHub panel: PAT endpoint returns correct shape, UI renders properly (screenshot verified)
-- Provider/repo tree API functions: added to client.ts, no UI consumer yet (will be used by T2+ components)
-
-**Remaining gaps for future sessions:**
-- Provider status/detect functions have no UI consumer yet (need coding agent to build provider status display)
-- Repo tree/file functions have no UI consumer yet (need coding agent to wire to NavigatorFiles when GitHub connected)
-- Seed optimization records still have provider_used: "mock" (validator should flag)
 
 **Progress:** 18/335 tests passing (5.4%) — no new tests unlocked by wiring (T1 tests are backend-only)
 **Server info:** Backend http://localhost:8000, Frontend http://localhost:5199, Start: ./init.sh start
@@ -221,3 +200,42 @@ MockProvider in detector.py — it now raises ProviderNotAvailableError instead.
 **Known issues:**
 - Seed optimized_prompt is placeholder text. Real pipeline outputs will differ.
 - Stuck running records from partial SSE tests were cleaned up.
+
+## Session 6 Summary (coding, 2026-03-04)
+
+**Completed:** 11 T1 tests (completing all 45 T1 tests — tier boundary reached):
+- #27: Optimization record saved to database after pipeline
+- #38: Overall score computed as weighted average server-side
+- #42: Raw prompt text preserved exactly in database
+- #43: Optimized prompt stored after pipeline completion
+- #44: Duration tracked in milliseconds
+- #45: Optimization with tags persists as JSON array
+- #46: Optimization with project field persists correctly
+- #57: Retry creates new optimization linked via retry_of (BUG FIX)
+- #60: Optimization title field can be set on creation
+- #61: Strategy override accepted in optimize request
+- #63: Strategy rationale stored in optimization record
+
+**Bug fix:** #57 — retry endpoint was not setting `retry_of` on new records.
+Fixed by adding `retry_of` parameter to `optimize_prompt()` and passing
+`optimization_id` from the retry endpoint.
+
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** T2 tests starting at #64 (pipeline stage tests)
+
+**Progress:** 63/335 tests passing (18.8%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws
+- DB: backend/data/promptforge.db (3 tables, proper indexes, multiple test records)
+- Start: ./init.sh start
+
+**Tier status:**
+- T0: 18/18 ✓ (complete)
+- T1: 45/45 ✓ (complete) — TIER BOUNDARY, exiting for validator
+- T2: 0/106 (next)
+- T3: 0/66
+- T4: 0/70
+- T5: 0/30
