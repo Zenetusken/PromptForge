@@ -658,7 +658,7 @@
       "RUN 'curl -s http://localhost:8000/api/optimize/{id}' and verify 404"
     ],
     "expected_outcome": "DELETE /api/history/{id} removes optimization record",
-    "passes": false,
+    "passes": true,
     "id": 31
   },
   {
