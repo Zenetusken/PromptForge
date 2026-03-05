@@ -2964,7 +2964,7 @@
       "SCREENSHOT to verify the Activity Bar icons"
     ],
     "expected_outcome": "Activity Bar renders 6 icon buttons",
-    "passes": false,
+    "passes": true,
     "id": 128
   },
   {
