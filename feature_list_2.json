@@ -3067,7 +3067,7 @@
       "SCREENSHOT to verify number formatting"
     ],
     "expected_outcome": "Number+unit format: no space (8.2/10, 42%, 3.1pts)",
-    "passes": false,
+    "passes": true,
     "id": 291
   },
   {
@@ -3091,7 +3091,7 @@
       "SCREENSHOT to verify active indicator"
     ],
     "expected_outcome": "Active Activity Bar icon has neon-cyan left border",
-    "passes": false,
+    "passes": true,
     "id": 292
   },
   {
@@ -3115,7 +3115,7 @@
       "SCREENSHOT to verify focus border transition"
     ],
     "expected_outcome": "Textarea focus border transitions to neon-cyan",
-    "passes": false,
+    "passes": true,
     "id": 293
   },
   {
@@ -3137,7 +3137,7 @@
       "VERIFY the cursor is removed (not hidden) on stream completion"
     ],
     "expected_outcome": "Streaming cursor 2px neon-cyan with blink animation",
-    "passes": false,
+    "passes": true,
     "id": 294
   },
   {
@@ -3163,7 +3163,7 @@
       "SCREENSHOT to verify word count delta badges"
     ],
     "expected_outcome": "Word count delta badges in Stage 03 (+N/-N format)",
-    "passes": false,
+    "passes": true,
     "id": 295
   },
   {
