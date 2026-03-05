@@ -768,7 +768,7 @@
       "SCREENSHOT to verify the @ context injection popup"
     ],
     "expected_outcome": "@ context injection triggers fuzzy popup",
-    "passes": false,
+    "passes": true,
     "id": 198
   },
   {
@@ -794,7 +794,7 @@
       "SCREENSHOT to verify context chip added"
     ],
     "expected_outcome": "Context chip added to Context Bar on selection",
-    "passes": false,
+    "passes": true,
     "id": 199
   },
   {
@@ -819,7 +819,7 @@
       "SCREENSHOT to verify chip removal"
     ],
     "expected_outcome": "Context chip dismiss removes it from Context Bar",
-    "passes": false,
+    "passes": true,
     "id": 200
   },
   {

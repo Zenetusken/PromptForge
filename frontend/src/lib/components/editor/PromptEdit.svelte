@@ -14,6 +14,57 @@
   let strategy = $state('auto');
   let abortController = $state<AbortController | null>(null);
 
+  // @ context popup state
+  let showAtPopup = $state(false);
+  let atQuery = $state('');
+  let contextBarRef: ContextBar | undefined = $state();
+  let textareaRef: HTMLTextAreaElement | undefined = $state();
+  let atPopupX = $state(0);
+  let atPopupY = $state(0);
+  let atSelectedIndex = $state(0);
+
+  const contextSources = [
+    { type: 'file', label: 'File', category: 'Sources', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+    { type: 'repo', label: 'Repository', category: 'Sources', icon: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' },
+    { type: 'url', label: 'URL', category: 'Sources', icon: 'M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1' },
+    { type: 'template', label: 'Template', category: 'Templates', icon: 'M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z' },
+    { type: 'instruction', label: 'Instruction', category: 'Templates', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' }
+  ];
+
+  const filteredSources = $derived(
+    atQuery.length === 0
+      ? contextSources
+      : contextSources.filter(s =>
+          s.label.toLowerCase().includes(atQuery.toLowerCase()) ||
+          s.type.toLowerCase().includes(atQuery.toLowerCase()) ||
+          s.category.toLowerCase().includes(atQuery.toLowerCase())
+        )
+  );
+
+  function handleAtSelect(source: typeof contextSources[0]) {
+    contextBarRef?.addChip(source.type, source.label);
+    closeAtPopup();
+    // Remove the @query from textarea
+    if (textareaRef) {
+      const text = tab.promptText || '';
+      const cursorPos = textareaRef.selectionStart;
+      // Find the @ that triggered this popup
+      const beforeCursor = text.slice(0, cursorPos);
+      const atIdx = beforeCursor.lastIndexOf('@');
+      if (atIdx >= 0) {
+        const newText = text.slice(0, atIdx) + text.slice(cursorPos);
+        editor.updateTabPrompt(tab.id, newText);
+      }
+      textareaRef.focus();
+    }
+  }
+
+  function closeAtPopup() {
+    showAtPopup = false;
+    atQuery = '';
+    atSelectedIndex = 0;
+  }
+
   const strategies = [
     'auto',
     'CO-STAR', 'RISEN', 'chain-of-thought', 'few-shot-scaffolding',
@@ -23,7 +74,48 @@
 
   function handleInput(e: Event) {
     const target = e.target as HTMLTextAreaElement;
-    editor.updateTabPrompt(tab.id, target.value);
+    const value = target.value;
+    editor.updateTabPrompt(tab.id, value);
+
+    // Detect @ trigger
+    const cursorPos = target.selectionStart;
+    const charBefore = value[cursorPos - 1];
+    if (charBefore === '@') {
+      // Position the popup near the textarea cursor
+      const rect = target.getBoundingClientRect();
+      atPopupX = rect.left + 20;
+      atPopupY = rect.top + 40;
+      showAtPopup = true;
+      atQuery = '';
+      atSelectedIndex = 0;
+    } else if (showAtPopup) {
+      // Update fuzzy query with characters after @
+      const beforeCursor = value.slice(0, cursorPos);
+      const atIdx = beforeCursor.lastIndexOf('@');
+      if (atIdx >= 0) {
+        atQuery = beforeCursor.slice(atIdx + 1);
+      } else {
+        closeAtPopup();
+      }
+    }
+  }
+
+  function handleTextareaKeydown(e: KeyboardEvent) {
+    if (!showAtPopup) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      atSelectedIndex = Math.min(atSelectedIndex + 1, filteredSources.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      atSelectedIndex = Math.max(atSelectedIndex - 1, 0);
+    } else if (e.key === 'Enter' && filteredSources.length > 0) {
+      e.preventDefault();
+      handleAtSelect(filteredSources[atSelectedIndex]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeAtPopup();
+    }
   }
 
   async function handleForge() {
@@ -137,14 +229,56 @@
 
 <div class="flex flex-col h-full">
   <!-- Textarea -->
-  <div class="flex-1 p-4">
+  <div class="flex-1 p-4 relative">
     <textarea
+      bind:this={textareaRef}
       class="w-full h-full bg-transparent text-text-primary text-sm font-mono leading-relaxed resize-none focus:outline-none placeholder:text-text-dim/50"
       placeholder="Enter your prompt here... Describe what you want the AI to do, and PromptForge will optimize it for better results."
       value={tab.promptText || ''}
       oninput={handleInput}
+      onkeydown={handleTextareaKeydown}
       spellcheck="false"
     ></textarea>
+
+    <!-- @ Context injection popup -->
+    {#if showAtPopup}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="absolute left-4 top-10 w-64 bg-bg-card border border-border-subtle rounded-lg shadow-xl z-50 animate-dropdown-enter"
+        data-testid="at-context-popup"
+        onmousedown={(e) => e.preventDefault()}
+      >
+        <div class="px-3 py-2 border-b border-border-subtle">
+          <div class="flex items-center gap-1.5 text-xs text-text-dim">
+            <span class="text-neon-cyan font-mono">@</span>
+            <input
+              class="flex-1 bg-transparent text-text-primary text-xs focus:outline-none"
+              placeholder="Search context sources..."
+              value={atQuery}
+              readonly
+            />
+          </div>
+        </div>
+        <div class="py-1 max-h-48 overflow-y-auto">
+          {#each filteredSources as source, i}
+            <button
+              class="w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors
+                {i === atSelectedIndex ? 'bg-bg-hover text-text-primary' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'}"
+              onclick={() => handleAtSelect(source)}
+            >
+              <svg class="w-3.5 h-3.5 text-neon-cyan/70" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d={source.icon}></path>
+              </svg>
+              <span>{source.label}</span>
+              <span class="ml-auto text-[10px] text-text-dim">{source.category}</span>
+            </button>
+          {/each}
+          {#if filteredSources.length === 0}
+            <div class="px-3 py-2 text-xs text-text-dim italic">No matching sources</div>
+          {/if}
+        </div>
+      </div>
+    {/if}
   </div>
 
   <!-- Word count -->
@@ -155,7 +289,7 @@
   </div>
 
   <!-- Context bar (below textarea per spec) -->
-  <ContextBar />
+  <ContextBar bind:this={contextBarRef} />
 
   <!-- Action row -->
   <div class="flex items-center justify-between px-4 py-2 border-t border-border-subtle bg-bg-secondary/30 shrink-0">
