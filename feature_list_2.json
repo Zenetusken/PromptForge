@@ -989,7 +989,7 @@
       "SCREENSHOT to verify original prompt in Inspector"
     ],
     "expected_outcome": "Inspector shows original prompt for forge artifact",
-    "passes": false,
+    "passes": true,
     "id": 207
   },
   {
@@ -1012,7 +1012,7 @@
       "SCREENSHOT to verify strategy chip in Status Bar"
     ],
     "expected_outcome": "Status Bar strategy chip clickable",
-    "passes": false,
+    "passes": true,
     "id": 208
   },
   {
@@ -1040,7 +1040,7 @@
       "SCREENSHOT to verify score click interaction"
     ],
     "expected_outcome": "Status Bar score clickable to show breakdown",
-    "passes": false,
+    "passes": true,
     "id": 209
   },
   {

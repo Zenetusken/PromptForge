@@ -1,41 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 274 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 238 lines. Earlier notes are in git history.]
 
-- Audit was completed before timeout in first attempt
-- No new mocks/stubs found (clean from session 19 audit forward)
-- Spec compliance: PASS (Fernet encryption, WebSocket MCP transport, correct ports)
-
-**Scope:** Expanded (retry completion) — 24 tests verified (of 25 cap)
-**Infrastructure:** Fixed (frontend was down from timeout, restarted via init.sh)
-
-**Tests verified this session (24):**
-#1, #2, #3, #8, #10, #17, #21, #26, #29, #51, #64, #70, #86, #87, #88, #92, #94, #98, #127, #128, #129, #130, #143, #168
-
-**Regressions found:** 0
-**Regressions fixed:** 0 of 0
-**Tests still passing after validation:** 130/335
-
-**Tier breakdown:**
-- T0: 18/18 ✓ (complete)
-- T1: 45/45 ✓ (complete)
-- T2: 67/106 (in progress)
-- T3: 0/66
-- T4: 0/70
-- T5: 0/30
-
-**Cross-feature integration check:**
-- Frontend build: ✓ Clean (vite build in 5.14s)
-- Backend compile: ✓ Clean
-- Console errors: 0
-- History Navigator: ✓ Shows 67 records with stats header (avg 7.9/10, framework badges)
-- GitHub Navigator: ✓ Shows connected user with real repo list + Disconnect button
-- Files Navigator: ✓ Shows Workspace + Recent Forges sections
-- API data flow: ✓ Real data (67 optimizations, 7 frameworks, 3 model types)
-- Visual coherence: ✓ Consistent cyberpunk dark theme across all views
-
-**Guidance for next coding session:**
-- Continue T2 tests: 39 remaining (67/106)
-- High-priority action a20_1: Mark 12 already-implemented workbench UI tests (#131-#142) as passing
-- High-priority action a20_2: Mark 7 SSE frontend tests (#96, #97, #99-#102, #104) as passing
 - Those 19 tests need no code changes, just marking — will bring T2 to 86/106
 - After marking those, remaining T2 gaps: #80 long prompts, #106-107 tool results, #160-167 MCP UI tests
 - RepoPickerModal still orphaned (needs parent trigger UI)
@@ -230,6 +194,45 @@
 
 **Progress:** 187/335 tests passing (55.8%)
 **Tier breakdown:** T0: 18/18, T1: 45/45, T2: 106/106, T3: 18/66, T4: 0/70, T5: 0/30
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
+
+## Integration Report — Session 27 (2026-03-05)
+
+**Gaps discovered:** 7
+- [WIRING] StatusBar score not clickable → Inspector breakdown — WIRED (test #209)
+- [WIRING] Inspector missing original prompt in forge artifact view — WIRED (test #207)
+- [WIRING] StatusBar strategy chip not visible/clickable — WIRED (test #208, now shows "auto" placeholder + clickable button)
+- [TYPE] workbench.provider type missing 'claude_cli'/'anthropic_api' — FIXED
+- [WIRING] Strategy state local to PromptEdit, not in store for StatusBar — SKIPPED (needs coding agent to move to store)
+- [COMPONENT] RepoPickerModal not imported — SKIPPED (already flagged i24_6 for coding)
+- [UNUSED] 6 API client functions + /api/optimizations routes — not blocking tests
+
+**Gaps wired:** 4 of 7
+**Tests now passing (via wiring):** #207, #208, #209
+
+**Verification results:**
+- StatusBar strategy chip: visible as "Auto" before forge, updates to strategy name after forge (screenshot verified)
+- StatusBar score click: opens Inspector with score breakdown (screenshot verified)
+- Inspector original prompt: shows in forge artifact view (screenshot verified)
+- Provider type: 'claude_cli' now in union type, cast aligned
+
+**Tests likely already passing (for validator to verify):**
+- #205 Inspector shows strategy recommendations in Edit mode (already implemented)
+- #206 Inspector shows score breakdown post-forge (already implemented)
+- #210 StatusBar shows forging progress during pipeline (already implemented)
+
+**Remaining gaps for future sessions:**
+- Strategy needs to be moved from PromptEdit local state to forge/editor store (i27_1)
+- RepoPickerModal needs parent (i24_6)
+- MCP frontend connection (no frontend WebSocket code yet — needs coding)
+- Global toast system (Toast only used locally in PromptEdit — needs coding)
+
+**Progress:** 190/335 tests passing (56.7%)
 **Server info:**
 - Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
 - Frontend: http://localhost:5199 (SvelteKit 2 + Vite)

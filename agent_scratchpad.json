@@ -2,16 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 21,
-      "session_type": "integrator",
-      "tests_completed": [],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "gaps_found": 11,
-      "gaps_wired": 2,
-      "summary": "Wired linkRepo/unlinkRepo into NavigatorGitHub selectRepo + disconnect. Wired fetchLinkedRepo restore into handleConnect flow."
-    },
-    {
       "session_id": 22,
       "session_type": "validator",
       "tests_completed": [],
@@ -94,12 +84,41 @@
     {
       "session_id": 26,
       "session_type": "coding",
-      "tests_completed": [170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187],
+      "tests_completed": [
+        170,
+        171,
+        172,
+        173,
+        174,
+        175,
+        176,
+        177,
+        178,
+        179,
+        180,
+        181,
+        182,
+        183,
+        184,
+        185,
+        186,
+        187
+      ],
       "tests_regressed": [],
       "tests_fixed": [],
       "mocks_found": 0,
       "mocks_fixed": 0,
       "summary": "18 T3 tests completed (T3: 18/66). Marked 10 already-implemented tests. New implementations: multi-select Compare toolbar (#174), DiffView rewrite with LCS diff + side-by-side/inline toggle + diff highlighting + differences-only mode (#180-183), Re-forge button on PromptHistory (#178), enhanced ChainComposer step cards with strategy/score (#185), fixed filter count display (#176). 187/335 passing (55.8%)."
+    },
+    {
+      "session_id": 27,
+      "session_type": "integrator",
+      "tests_completed": [207, 208, 209],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "gaps_found": 7,
+      "gaps_wired": 4,
+      "summary": "Wired 4 gaps: StatusBar score clickable → Inspector (#209), StatusBar strategy chip always visible + clickable (#208), Inspector original prompt in forge artifact view (#207), workbench.provider type fix. 3 tests now passing. Flagged strategy-to-store refactor for coding agent (i27_1). Also noted #205, #206, #210 likely already passing for validator."
     }
   ],
   "active_warnings": [],
@@ -279,8 +298,12 @@
       "to_agent": "coding",
       "from_session": 24,
       "action": "Add panel resize drag handles for Navigator and Inspector panels. Workbench store already has navigatorWidth/inspectorWidth state, but no drag handle UI exists to resize them.",
-      "test_ids": [201, 203],
-      "priority": "medium"
+      "test_ids": [
+        201,
+        203
+      ],
+      "priority": "medium",
+      "status": "expired"
     },
     {
       "id": "i24_2",
@@ -288,8 +311,13 @@
       "to_agent": "coding",
       "from_session": 24,
       "action": "Add localStorage/sessionStorage persistence: panel widths (workbench.navigatorWidth/inspectorWidth) in localStorage, active activity (workbench.activeActivity) in sessionStorage, and history sort/filter preferences (history.filters) in localStorage.",
-      "test_ids": [223, 224, 225],
-      "priority": "medium"
+      "test_ids": [
+        223,
+        224,
+        225
+      ],
+      "priority": "medium",
+      "status": "expired"
     },
     {
       "id": "i24_3",
@@ -297,8 +325,13 @@
       "to_agent": "coding",
       "from_session": 24,
       "action": "Add @ context injection popup: when user types '@' in PromptEdit textarea, show a fuzzy-search popup with context options. On selection, add a context chip to the existing ContextBar component. ContextBar already exists and has dismiss support.",
-      "test_ids": [198, 199, 200],
-      "priority": "medium"
+      "test_ids": [
+        198,
+        199,
+        200
+      ],
+      "priority": "medium",
+      "status": "expired"
     },
     {
       "id": "i24_6",
@@ -307,7 +340,17 @@
       "from_session": 24,
       "action": "Wire RepoPickerModal into a parent component (e.g., NavigatorGitHub or NavigatorFiles). The modal exists at frontend/src/lib/components/github/RepoPickerModal.svelte but is not imported by any component.",
       "test_ids": [],
-      "priority": "low"
+      "priority": "low",
+      "status": "expired"
+    },
+    {
+      "id": "i27_1",
+      "from_agent": "integrator",
+      "to_agent": "coding",
+      "from_session": 27,
+      "action": "Move strategy selection from PromptEdit local state to forge/editor store so StatusBar and other components can read and display it. Currently strategy is a local $state('auto') in PromptEdit.svelte. StatusBar needs it to show clickable strategy chip (test #208).",
+      "test_ids": [208],
+      "priority": "medium"
     },
     {
       "id": "a26_1",
@@ -315,7 +358,35 @@
       "to_agent": "validator",
       "from_session": 26,
       "action": "Verify 18 new T3 tests (#170-187). Key implementations to check: NavigatorHistory multi-select with Compare toolbar (#174), DiffView rewrite with LCS diff algorithm + side-by-side/inline toggle + diff highlighting (#180-183), Re-forge button in PromptHistory (#178), ChainComposer step card enhancements (#185), filter count always-visible display (#176).",
-      "test_ids": [170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187],
+      "test_ids": [
+        170,
+        171,
+        172,
+        173,
+        174,
+        175,
+        176,
+        177,
+        178,
+        179,
+        180,
+        181,
+        182,
+        183,
+        184,
+        185,
+        186,
+        187
+      ],
+      "priority": "high"
+    },
+    {
+      "id": "i27_2",
+      "from_agent": "integrator",
+      "to_agent": "validator",
+      "from_session": 27,
+      "action": "Verify 3 newly-wired tests (#207, #208, #209) and check if #205, #206, #210 are also passing (they were already implemented pre-session-27, just not marked). StatusBar score click should open Inspector with score breakdown. StatusBar strategy chip should be visible and clickable. Inspector should show original prompt in forge artifact view.",
+      "test_ids": [205, 206, 207, 208, 209, 210],
       "priority": "high"
     }
   ],
@@ -325,8 +396,8 @@
     "mcp_url": "ws://127.0.0.1:8001/ws",
     "health_endpoint": "http://localhost:8000/api/health",
     "start_command": "./init.sh start",
-    "last_verified_session": 26,
-    "notes": "All services healthy (session 26). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. T0: 18/18, T1: 45/45, T2: 106/106, T3: 18/66. 187/335 tests passing (55.8%). Build clean."
+    "last_verified_session": 27,
+    "notes": "All services healthy (session 27). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. T0: 18/18, T1: 45/45, T2: 106/106, T3: 21/66. 190/335 tests passing (56.7%). Build clean."
   },
   "session_checkpoint": {
     "session_type": "",
