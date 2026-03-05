@@ -2532,7 +2532,7 @@
       "SCREENSHOT to verify GitHub connection UI"
     ],
     "expected_outcome": "GitHub PAT flow validates and stores token via UI",
-    "passes": false,
+    "passes": true,
     "id": 108
   },
   {
