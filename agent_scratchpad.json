@@ -2,16 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 24,
-      "session_type": "integrator",
-      "tests_completed": [],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "gaps_found": 8,
-      "gaps_wired": 4,
-      "summary": "Wired 4 gaps: global keyboard shortcuts (Ctrl+B/I/N/W/S/Enter), fixed Inspector shortcut to Ctrl+I per spec, added CommandPalette prefix scoping (> and #), fixed strategy filter (was using task_type column instead of primary_framework). Flagged 6 coding tasks for remaining T3 gaps."
-    },
-    {
       "session_id": 25,
       "session_type": "validator",
       "tests_completed": [],
@@ -82,7 +72,7 @@
       "tests_fixed": [],
       "mocks_found": 0,
       "mocks_fixed": 0,
-      "summary": "Standard validation: 25 tests verified via live UI + 1 forge run. 0 regressions, 0 mocks found. Code audit clean — no stubs/mocks/TODOs in app code, spec compliance re-verified (SSE, WebSocket MCP, Fernet, SQLite, no duplicate routes). Build clean. Frontend needed restart (was down from previous session). 190/335 passing (56.7%)."
+      "summary": "Standard validation: 25 tests verified via live UI + 1 forge run. 0 regressions, 0 mocks found. Code audit clean \u2014 no stubs/mocks/TODOs in app code, spec compliance re-verified (SSE, WebSocket MCP, Fernet, SQLite, no duplicate routes). Build clean. Frontend needed restart (was down from previous session). 190/335 passing (56.7%)."
     }
   ],
   "active_warnings": [],
@@ -290,7 +280,8 @@
       "test_ids": [
         208
       ],
-      "priority": "medium"
+      "priority": "medium",
+      "status": "expired"
     },
     {
       "id": "a28_1",
@@ -316,13 +307,13 @@
     "notes": "All services healthy (session 29). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. T0: 18/18, T1: 45/45, T2: 106/106, T3: 21/66. 190/335 tests passing (56.7%). Build clean. 25 tests verified (21 T3 + 4 T2). Frontend needed restart at session start."
   },
   "session_checkpoint": {
-    "session_type": "",
-    "session_id": 0,
+    "session_type": "coding",
+    "session_id": 30,
     "audit_done": false,
     "tests_verified_this_run": [],
     "tests_completed_this_run": [],
     "gaps_wired_this_run": [],
-    "last_step": "",
-    "session_start_sha": ""
+    "last_step": "orient",
+    "session_start_sha": "fd8aa6e5f1d3875d9906be6ca64f00f57cef8b12"
   }
 }

@@ -936,7 +936,7 @@
       "SCREENSHOT to verify strategy recommendations in Inspector"
     ],
     "expected_outcome": "Inspector shows strategy recommendations in Edit mode",
-    "passes": false,
+    "passes": true,
     "id": 205
   },
   {
@@ -962,7 +962,7 @@
       "SCREENSHOT to verify score breakdown in Inspector"
     ],
     "expected_outcome": "Inspector shows score breakdown post-forge",
-    "passes": false,
+    "passes": true,
     "id": 206
   },
   {
@@ -1065,7 +1065,7 @@
       "VERIFY the Status Bar shows stage progress (e.g., 'Analyzing...' or 'Stage 1/4')"
     ],
     "expected_outcome": "Status Bar shows forging progress during pipeline",
-    "passes": false,
+    "passes": true,
     "id": 210
   },
   {
