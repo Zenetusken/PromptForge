@@ -1,7 +1,8 @@
 <script lang="ts">
   import { history } from '$lib/stores/history.svelte';
   import { editor } from '$lib/stores/editor.svelte';
-  import { fetchHistory, fetchHistoryStats, deleteOptimization, type HistoryStats } from '$lib/api/client';
+  import { forge } from '$lib/stores/forge.svelte';
+  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, type HistoryStats } from '$lib/api/client';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import { onMount } from 'svelte';
 
@@ -59,15 +60,26 @@
     }
   }
 
-  function openHistoryEntry(entry: typeof history.entries[0]) {
+  async function openHistoryEntry(entry: typeof history.entries[0]) {
     history.select(entry.id);
+
+    // Load full record and populate forge store for artifact view
+    try {
+      const record = await fetchOptimization(entry.id);
+      forge.loadFromRecord(record);
+    } catch {
+      // If fetch fails, still open the tab
+    }
+
     editor.openTab({
       id: `history-${entry.id}`,
       label: entry.raw_prompt.slice(0, 30) + (entry.raw_prompt.length > 30 ? '...' : ''),
       type: 'prompt',
-      promptText: entry.optimized_prompt || entry.raw_prompt,
+      promptText: entry.raw_prompt,
       dirty: false
     });
+    // Switch to pipeline view to show the forge artifact with sub-tabs
+    editor.setSubTab('pipeline');
   }
 
   onMount(() => {

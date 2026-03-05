@@ -117,6 +117,83 @@ class ForgeStore {
     this.addEvent({ type: 'forge_complete', timestamp: Date.now() });
   }
 
+  loadFromRecord(record: {
+    id: string;
+    raw_prompt: string;
+    optimized_prompt?: string | null;
+    overall_score?: number | null;
+    task_type?: string | null;
+    complexity?: string | null;
+    weaknesses?: string[] | null;
+    strengths?: string[] | null;
+    primary_framework?: string | null;
+    strategy_rationale?: string | null;
+    clarity_score?: number | null;
+    specificity_score?: number | null;
+    structure_score?: number | null;
+    faithfulness_score?: number | null;
+    conciseness_score?: number | null;
+    duration_ms?: number | null;
+    total_tokens?: number | null;
+  }) {
+    this.resetPipeline();
+    this.optimizationId = record.id;
+    this.rawPrompt = record.raw_prompt;
+    this.streamingText = record.optimized_prompt || '';
+    this.overallScore = record.overall_score ?? null;
+    this.totalDuration = record.duration_ms ?? null;
+    this.totalTokens = record.total_tokens ?? null;
+
+    // Populate stage results from the record data
+    if (record.task_type || record.complexity) {
+      this.stageStatuses['analyze'] = 'done';
+      this.stageResults['analyze'] = {
+        stage: 'analyze',
+        data: {
+          task_type: record.task_type,
+          complexity: record.complexity,
+          weaknesses: record.weaknesses || [],
+          strengths: record.strengths || []
+        }
+      };
+    }
+
+    if (record.primary_framework) {
+      this.stageStatuses['strategy'] = 'done';
+      this.stageResults['strategy'] = {
+        stage: 'strategy',
+        data: {
+          primary_framework: record.primary_framework,
+          rationale: record.strategy_rationale
+        }
+      };
+    }
+
+    if (record.optimized_prompt) {
+      this.stageStatuses['optimize'] = 'done';
+      this.stageResults['optimize'] = {
+        stage: 'optimize',
+        data: { optimized_prompt: record.optimized_prompt }
+      };
+    }
+
+    const scores: Record<string, number> = {};
+    if (record.clarity_score != null) scores.clarity = record.clarity_score;
+    if (record.specificity_score != null) scores.specificity = record.specificity_score;
+    if (record.structure_score != null) scores.structure = record.structure_score;
+    if (record.faithfulness_score != null) scores.faithfulness = record.faithfulness_score;
+    if (record.conciseness_score != null) scores.conciseness = record.conciseness_score;
+    if (record.overall_score != null) scores.overall_score = record.overall_score;
+
+    if (Object.keys(scores).length > 0) {
+      this.stageStatuses['validate'] = 'done';
+      this.stageResults['validate'] = {
+        stage: 'validate',
+        data: { scores, overall_score: record.overall_score }
+      };
+    }
+  }
+
   private addEvent(event: PipelineEvent) {
     this.pipelineEvents = [...this.pipelineEvents, event];
   }

@@ -3804,7 +3804,7 @@
       "SCREENSHOT to verify the forge artifact opened from history"
     ],
     "expected_outcome": "Forge followed by history review flow",
-    "passes": false,
+    "passes": true,
     "id": 162
   },
   {
