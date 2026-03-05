@@ -347,7 +347,7 @@
       "SCREENSHOT to verify the different diff display mode"
     ],
     "expected_outcome": "Diff view toggle between side-by-side and inline",
-    "passes": false,
+    "passes": true,
     "id": 180
   },
   {
@@ -374,7 +374,7 @@
       "SCREENSHOT to verify green highlighting on additions"
     ],
     "expected_outcome": "Diff additions highlighted in neon-green",
-    "passes": false,
+    "passes": true,
     "id": 181
   },
   {
@@ -401,7 +401,7 @@
       "SCREENSHOT to verify red highlighting on removals"
     ],
     "expected_outcome": "Diff removals highlighted in neon-red",
-    "passes": false,
+    "passes": true,
     "id": 182
   },
   {
@@ -430,7 +430,7 @@
       "SCREENSHOT to verify differences-only mode"
     ],
     "expected_outcome": "Show differences only toggle hides identical sections",
-    "passes": false,
+    "passes": true,
     "id": 183
   },
   {
