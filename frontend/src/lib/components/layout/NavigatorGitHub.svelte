@@ -1,6 +1,6 @@
 <script lang="ts">
   import { github } from '$lib/stores/github.svelte';
-  import { connectGitHub, disconnectGitHub } from '$lib/api/client';
+  import { connectGitHub, disconnectGitHub, linkRepo, unlinkRepo } from '$lib/api/client';
   import GitHubStatus from '$lib/components/github/GitHubStatus.svelte';
 
   let patInput = $state('');
@@ -28,9 +28,19 @@
     }
   }
 
+  async function handleSelectRepo(fullName: string) {
+    github.selectRepo(fullName);
+    // Persist repo link to backend (non-blocking — local state already updated)
+    const repo = github.repos.find(r => r.full_name === fullName);
+    linkRepo(fullName, repo?.default_branch).catch(() => {
+      // Link failed — local selection still works, just won't persist across refresh
+    });
+  }
+
   async function handleDisconnect() {
     try {
       await disconnectGitHub();
+      await unlinkRepo().catch(() => {});
     } catch {
       // ignore
     }
@@ -83,7 +93,7 @@
             {github.selectedRepo === repo.full_name
               ? 'bg-bg-hover border border-border-accent text-text-primary'
               : 'hover:bg-bg-hover text-text-secondary border border-transparent'}"
-          onclick={() => github.selectRepo(repo.full_name)}
+          onclick={() => handleSelectRepo(repo.full_name)}
         >
           <div class="flex items-center gap-1.5">
             {#if repo.private}
