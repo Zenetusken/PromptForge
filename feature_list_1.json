@@ -3013,7 +3013,7 @@
       "SCREENSHOT to verify the tab bar rendering"
     ],
     "expected_outcome": "Editor Groups tab bar renders with at least one tab",
-    "passes": false,
+    "passes": true,
     "id": 130
   },
   {
