@@ -1506,7 +1506,7 @@
       "VERIFY the pipeline starts (palette closes, Pipeline sub-tab activates)"
     ],
     "expected_outcome": "Command Palette full interaction flow",
-    "passes": false,
+    "passes": true,
     "id": 228
   },
   {
