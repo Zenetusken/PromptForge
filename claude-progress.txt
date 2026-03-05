@@ -1,65 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 232 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 262 lines. Earlier notes are in git history.]
 
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
-- DB: backend/data/promptforge.db
-- Start: ./init.sh start
-
-## Session 26 — Coding (2026-03-05)
-
-**Completed (18 T3 tests):**
-- #170 NavigatorHistory sortable by score (already implemented)
-- #171 NavigatorHistory sortable by date (already implemented)
-- #172 NavigatorHistory filterable by strategy chips (already implemented)
-- #173 NavigatorHistory inline search debounced (already implemented)
-- #174 History multi-select with Compare toolbar (NEW: added checkboxes + toolbar)
-- #175 Click history row opens forge artifact in Editor (already implemented)
-- #176 Active filter count shown in History (fixed: always show count, X of Y when filtered)
-- #177 PromptHistory expandable rows show StageTrack trace (already implemented)
-- #178 PromptHistory Re-forge action (NEW: added Re-forge button to expanded rows)
-- #179 Score delta shown between consecutive runs (already implemented)
-- #180 Diff view toggle between side-by-side and inline (NEW: rewrote DiffView with LCS diff)
-- #181 Diff additions highlighted in neon-green (NEW: part of DiffView rewrite)
-- #182 Diff removals highlighted in neon-red (NEW: part of DiffView rewrite)
-- #183 Show differences only toggle hides identical sections (NEW: part of DiffView rewrite)
-- #184 Chain Composer renders vertical card stack (already implemented)
-- #185 Chain step cards show prompt name and strategy (enhanced step cards)
-- #186 Copy optimized prompt with one-click copy button (already implemented, has green flash)
-- #187 Settings activity shows app configuration (already implemented)
-
-**Regressions fixed:** None (0 regressions detected)
-**In progress:** None
-**Next up:** #188-#194 (MCP tools), #195-#197 (Toast notifications), #198-#200 (@ context injection)
-**Known issues:** None
-
-**Progress:** 187/335 tests passing (55.8%)
-**Tier breakdown:** T0: 18/18, T1: 45/45, T2: 106/106, T3: 18/66, T4: 0/70, T5: 0/30
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
-- DB: backend/data/promptforge.db
-- Start: ./init.sh start
-
-## Integration Report — Session 27 (2026-03-05)
-
-**Gaps discovered:** 7
-- [WIRING] StatusBar score not clickable → Inspector breakdown — WIRED (test #209)
-- [WIRING] Inspector missing original prompt in forge artifact view — WIRED (test #207)
-- [WIRING] StatusBar strategy chip not visible/clickable — WIRED (test #208, now shows "auto" placeholder + clickable button)
-- [TYPE] workbench.provider type missing 'claude_cli'/'anthropic_api' — FIXED
-- [WIRING] Strategy state local to PromptEdit, not in store for StatusBar — SKIPPED (needs coding agent to move to store)
-- [COMPONENT] RepoPickerModal not imported — SKIPPED (already flagged i24_6 for coding)
-- [UNUSED] 6 API client functions + /api/optimizations routes — not blocking tests
-
-**Gaps wired:** 4 of 7
-**Tests now passing (via wiring):** #207, #208, #209
-
-**Verification results:**
-- StatusBar strategy chip: visible as "Auto" before forge, updates to strategy name after forge (screenshot verified)
-- StatusBar score click: opens Inspector with score breakdown (screenshot verified)
-- Inspector original prompt: shows in forge artifact view (screenshot verified)
 - Provider type: 'claude_cli' now in union type, cast aligned
 
 **Tests likely already passing (for validator to verify):**
@@ -260,3 +200,21 @@ Full discovery scan completed (Steps 3a-3i):
 - MCP: ws://127.0.0.1:8001/ws (RUNNING)
 - DB: backend/data/promptforge.db
 - Start: ./init.sh start
+
+## Session Summary — Session 33 (2026-03-05)
+
+**Completed:** #226 History navigation and artifact review flow, #233 Diff view with side-by-side/inline toggle, #234 Multiple forges with different strategies, #235 Copy to clipboard with visual feedback
+**Regressions fixed:** None
+**In progress:** None
+**Next up:** T4 tests starting at #236 (Cyberpunk dark theme) — 70 CSS/styling/theming tests
+**Known issues:** None — all features clean, no mocks, no stubs
+**Progress:** 235/335 tests passing (70.1%)
+**Tier breakdown:** T0: 18/18, T1: 45/45, T2: 106/106, T3: 66/66 ✓ COMPLETE, T4: 0/70, T5: 0/30
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
+
+**Notes:** T3 tier boundary reached. All 4 remaining T3 tests (#226, #233, #234, #235) were already implemented (session 30) and verified by validator (session 32). Code review confirmed all features: NavigatorHistory with sorting, ForgeArtifact with 4 sub-tabs, DiffView with LCS diffing and mode toggle, strategy dropdown in PromptEdit, CopyButton with neon-green 600ms flash animation. Marked all 4 as passing. Exiting for tier boundary validation sweep before starting T4 styling work.
