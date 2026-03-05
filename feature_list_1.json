@@ -1829,7 +1829,7 @@
       "VERIFY subsequent stages are marked as 'skipped'"
     ],
     "expected_outcome": "Failed stage marks optimization as failed",
-    "passes": false,
+    "passes": true,
     "id": 81
   },
   {
@@ -1849,7 +1849,7 @@
       "VERIFY a retry attempt uses adjusted constraints in the optimizer prompt"
     ],
     "expected_outcome": "Validation retry on low score",
-    "passes": false,
+    "passes": true,
     "id": 82
   },
   {
@@ -2190,7 +2190,7 @@
       "VERIFY the error event contains 'stage', 'error', and 'recoverable' fields"
     ],
     "expected_outcome": "SSE error event emitted on pipeline failure",
-    "passes": false,
+    "passes": true,
     "id": 95
   },
   {
@@ -2407,7 +2407,7 @@
       "VERIFY a warning toast or message is displayed (not an error state)"
     ],
     "expected_outcome": "Rate limit warning SSE event handled as non-fatal",
-    "passes": false,
+    "passes": true,
     "id": 103
   },
   {
@@ -2458,7 +2458,7 @@
       "VERIFY Content-Type contains 'text/event-stream'"
     ],
     "expected_outcome": "SSE stream respects Content-Type text/event-stream",
-    "passes": false,
+    "passes": true,
     "id": 105
   },
   {

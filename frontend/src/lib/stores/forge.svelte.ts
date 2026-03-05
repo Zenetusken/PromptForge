@@ -93,6 +93,11 @@ class ForgeStore {
     this.addEvent({ type: 'stage_error', stage, data: { error }, timestamp: Date.now() });
   }
 
+  setStageSkipped(stage: string) {
+    this.stageStatuses[stage] = 'skipped';
+    this.addEvent({ type: 'stage_skipped', stage, timestamp: Date.now() });
+  }
+
   appendStreamingText(chunk: string) {
     this.streamingText += chunk;
   }

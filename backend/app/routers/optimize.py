@@ -72,6 +72,8 @@ async def optimize_prompt(
             from app.services.pipeline import run_pipeline
 
             total_tokens = 0
+            pipeline_failed = False
+            pipeline_error_message = None
 
             async for event_type, event_data in run_pipeline(
                 provider=_provider,
@@ -87,6 +89,11 @@ async def optimize_prompt(
                 # Track total tokens from stage complete events
                 if event_type == "stage" and event_data.get("status") == "complete":
                     total_tokens += event_data.get("token_count", 0)
+
+                # Detect non-recoverable pipeline errors (failed stage)
+                if event_type == "error" and not event_data.get("recoverable", True):
+                    pipeline_failed = True
+                    pipeline_error_message = event_data.get("error", "Unknown stage failure")
 
                 # Update the optimization record with pipeline results
                 if event_type == "analysis":
@@ -121,20 +128,27 @@ async def optimize_prompt(
             # Finalize
             duration_ms = int((time.time() - start_time) * 1000)
             optimization.duration_ms = duration_ms
-            optimization.status = "completed"
-            optimization.provider_used = _provider.name
             optimization.updated_at = datetime.now(timezone.utc)
+            optimization.provider_used = _provider.name
+
+            if pipeline_failed:
+                # A stage failed and subsequent stages were skipped
+                optimization.status = "failed"
+                optimization.error_message = pipeline_error_message
+            else:
+                optimization.status = "completed"
 
             # Persist final state
             async with (await _get_fresh_session()) as s:
                 merged = await s.merge(optimization)
                 await s.commit()
 
-            yield _sse_event("complete", {
-                "optimization_id": opt_id,
-                "total_duration_ms": duration_ms,
-                "total_tokens": total_tokens,
-            })
+            if not pipeline_failed:
+                yield _sse_event("complete", {
+                    "optimization_id": opt_id,
+                    "total_duration_ms": duration_ms,
+                    "total_tokens": total_tokens,
+                })
 
         except Exception as e:
             logger.exception(f"Pipeline error for {opt_id}: {e}")

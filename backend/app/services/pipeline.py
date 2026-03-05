@@ -17,12 +17,21 @@ from app.services.codebase_explorer import run_explore
 
 logger = logging.getLogger(__name__)
 
+# Retry threshold: if overall_score < this, retry optimize+validate once
+LOW_SCORE_THRESHOLD = 5
+
 
 def _estimate_tokens(text: str) -> int:
     """Estimate token count from text (~4 chars per token)."""
     if not text:
         return 0
     return max(1, len(text) // 4)
+
+
+def _skip_remaining(remaining_stages: list[str]):
+    """Yield skipped events for stages that won't run due to earlier failure."""
+    for stage_name in remaining_stages:
+        yield ("stage", {"stage": stage_name, "status": "skipped"})
 
 
 async def run_pipeline(
@@ -42,6 +51,10 @@ async def run_pipeline(
       2. Strategy
       3. Optimize (streaming)
       4. Validate
+
+    Stage failure handling:
+      - Stage 0 (Explore) failures are recoverable; pipeline continues without codebase context
+      - Stages 1-4 failures mark subsequent stages as 'skipped' and emit an error event
     """
     codebase_context = None
 
@@ -85,109 +98,225 @@ async def run_pipeline(
     total_tokens = 0
 
     # ---- Stage 1: Analyze ----
-    yield ("stage", {"stage": "analyze", "status": "started"})
-    start = time.time()
+    try:
+        yield ("stage", {"stage": "analyze", "status": "started"})
+        start = time.time()
 
-    analysis = await run_analyze(
-        provider=provider,
-        raw_prompt=raw_prompt,
-        codebase_context=codebase_context,
-    )
-    analysis["model"] = MODEL_ROUTING["analyze"]
+        analysis = await run_analyze(
+            provider=provider,
+            raw_prompt=raw_prompt,
+            codebase_context=codebase_context,
+        )
+        analysis["model"] = MODEL_ROUTING["analyze"]
 
-    stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
-    total_tokens += stage_tokens
+        stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
+        total_tokens += stage_tokens
 
-    yield ("analysis", analysis)
-    yield ("stage", {
-        "stage": "analyze",
-        "status": "complete",
-        "duration_ms": int((time.time() - start) * 1000),
-        "token_count": stage_tokens,
-    })
+        yield ("analysis", analysis)
+        yield ("stage", {
+            "stage": "analyze",
+            "status": "complete",
+            "duration_ms": int((time.time() - start) * 1000),
+            "token_count": stage_tokens,
+        })
+    except Exception as e:
+        logger.error(f"Stage 1 (Analyze) failed fatally: {e}")
+        yield ("error", {
+            "stage": "analyze",
+            "error": str(e),
+            "recoverable": False,
+        })
+        for ev in _skip_remaining(["strategy", "optimize", "validate"]):
+            yield ev
+        return
 
     # ---- Stage 2: Strategy ----
-    yield ("stage", {"stage": "strategy", "status": "started"})
-    start = time.time()
+    try:
+        yield ("stage", {"stage": "strategy", "status": "started"})
+        start = time.time()
 
-    if strategy_override:
-        strategy_result = {
-            "primary_framework": strategy_override,
-            "secondary_frameworks": [],
-            "rationale": f"User-specified strategy override: {strategy_override}",
-            "approach_notes": f"Apply {strategy_override} framework as requested.",
-            "model": MODEL_ROUTING["strategy"],
-        }
-    else:
-        strategy_result = await run_strategy(
+        if strategy_override:
+            strategy_result = {
+                "primary_framework": strategy_override,
+                "secondary_frameworks": [],
+                "rationale": f"User-specified strategy override: {strategy_override}",
+                "approach_notes": f"Apply {strategy_override} framework as requested.",
+                "model": MODEL_ROUTING["strategy"],
+            }
+        else:
+            strategy_result = await run_strategy(
+                provider=provider,
+                raw_prompt=raw_prompt,
+                analysis=analysis,
+                codebase_context=codebase_context,
+            )
+            strategy_result["model"] = MODEL_ROUTING["strategy"]
+
+        stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(strategy_result))
+        total_tokens += stage_tokens
+
+        yield ("strategy", strategy_result)
+        yield ("stage", {
+            "stage": "strategy",
+            "status": "complete",
+            "duration_ms": int((time.time() - start) * 1000),
+            "token_count": stage_tokens,
+        })
+    except Exception as e:
+        logger.error(f"Stage 2 (Strategy) failed fatally: {e}")
+        yield ("error", {
+            "stage": "strategy",
+            "error": str(e),
+            "recoverable": False,
+        })
+        for ev in _skip_remaining(["optimize", "validate"]):
+            yield ev
+        return
+
+    # ---- Stage 3: Optimize (streaming) ----
+    try:
+        yield ("stage", {"stage": "optimize", "status": "started"})
+        start = time.time()
+
+        optimization_result = None
+        async for event_type, event_data in run_optimize(
             provider=provider,
             raw_prompt=raw_prompt,
             analysis=analysis,
+            strategy=strategy_result,
             codebase_context=codebase_context,
-        )
-        strategy_result["model"] = MODEL_ROUTING["strategy"]
+        ):
+            if event_type == "optimization":
+                optimization_result = event_data
+                optimization_result["model"] = MODEL_ROUTING["optimize"]
+            yield (event_type, event_data)
 
-    stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(strategy_result))
-    total_tokens += stage_tokens
+        opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
+        stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis)) + _estimate_tokens(json.dumps(strategy_result)) + _estimate_tokens(opt_text)
+        total_tokens += stage_tokens
 
-    yield ("strategy", strategy_result)
-    yield ("stage", {
-        "stage": "strategy",
-        "status": "complete",
-        "duration_ms": int((time.time() - start) * 1000),
-        "token_count": stage_tokens,
-    })
-
-    # ---- Stage 3: Optimize (streaming) ----
-    yield ("stage", {"stage": "optimize", "status": "started"})
-    start = time.time()
-
-    optimization_result = None
-    async for event_type, event_data in run_optimize(
-        provider=provider,
-        raw_prompt=raw_prompt,
-        analysis=analysis,
-        strategy=strategy_result,
-        codebase_context=codebase_context,
-    ):
-        if event_type == "optimization":
-            optimization_result = event_data
-            optimization_result["model"] = MODEL_ROUTING["optimize"]
-        yield (event_type, event_data)
-
-    opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
-    stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis)) + _estimate_tokens(json.dumps(strategy_result)) + _estimate_tokens(opt_text)
-    total_tokens += stage_tokens
-
-    yield ("stage", {
-        "stage": "optimize",
-        "status": "complete",
-        "duration_ms": int((time.time() - start) * 1000),
-        "token_count": stage_tokens,
-    })
+        yield ("stage", {
+            "stage": "optimize",
+            "status": "complete",
+            "duration_ms": int((time.time() - start) * 1000),
+            "token_count": stage_tokens,
+        })
+    except Exception as e:
+        logger.error(f"Stage 3 (Optimize) failed fatally: {e}")
+        yield ("error", {
+            "stage": "optimize",
+            "error": str(e),
+            "recoverable": False,
+        })
+        for ev in _skip_remaining(["validate"]):
+            yield ev
+        return
 
     # ---- Stage 4: Validate ----
-    yield ("stage", {"stage": "validate", "status": "started"})
-    start = time.time()
+    try:
+        yield ("stage", {"stage": "validate", "status": "started"})
+        start = time.time()
 
-    optimized_prompt = optimization_result.get("optimized_prompt", "") if optimization_result else ""
-    changes_made = optimization_result.get("changes_made", []) if optimization_result else []
+        optimized_prompt = optimization_result.get("optimized_prompt", "") if optimization_result else ""
+        changes_made = optimization_result.get("changes_made", []) if optimization_result else []
 
-    validation = await run_validate(
-        provider=provider,
-        original_prompt=raw_prompt,
-        optimized_prompt=optimized_prompt,
-        changes_made=changes_made,
-    )
-    validation["model"] = MODEL_ROUTING["validate"]
+        validation = await run_validate(
+            provider=provider,
+            original_prompt=raw_prompt,
+            optimized_prompt=optimized_prompt,
+            changes_made=changes_made,
+        )
+        validation["model"] = MODEL_ROUTING["validate"]
 
-    stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt) + _estimate_tokens(json.dumps(validation))
-    total_tokens += stage_tokens
+        stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt) + _estimate_tokens(json.dumps(validation))
+        total_tokens += stage_tokens
 
-    yield ("validation", validation)
-    yield ("stage", {
-        "stage": "validate",
-        "status": "complete",
-        "duration_ms": int((time.time() - start) * 1000),
-        "token_count": stage_tokens,
-    })
+        yield ("validation", validation)
+        yield ("stage", {
+            "stage": "validate",
+            "status": "complete",
+            "duration_ms": int((time.time() - start) * 1000),
+            "token_count": stage_tokens,
+        })
+    except Exception as e:
+        logger.error(f"Stage 4 (Validate) failed fatally: {e}")
+        yield ("error", {
+            "stage": "validate",
+            "error": str(e),
+            "recoverable": False,
+        })
+        return
+
+    # ---- Retry on low score ----
+    overall_score = validation.get("scores", validation).get("overall_score", 10)
+    if overall_score is not None and overall_score < LOW_SCORE_THRESHOLD:
+        logger.info(f"Overall score {overall_score} < {LOW_SCORE_THRESHOLD}: retrying optimize+validate with adjusted constraints")
+        yield ("rate_limit_warning", {
+            "message": f"Score {overall_score}/10 below threshold — retrying with stricter constraints",
+            "stage": "validate",
+        })
+
+        try:
+            # Re-run optimize with adjusted constraints
+            yield ("stage", {"stage": "optimize", "status": "started"})
+            start = time.time()
+
+            retry_optimization_result = None
+            async for event_type, event_data in run_optimize(
+                provider=provider,
+                raw_prompt=raw_prompt,
+                analysis=analysis,
+                strategy=strategy_result,
+                codebase_context=codebase_context,
+                retry_constraints={
+                    "min_score_target": LOW_SCORE_THRESHOLD + 2,
+                    "previous_score": overall_score,
+                    "focus_areas": validation.get("issues", []),
+                },
+            ):
+                if event_type == "optimization":
+                    retry_optimization_result = event_data
+                    retry_optimization_result["model"] = MODEL_ROUTING["optimize"]
+                yield (event_type, event_data)
+
+            if retry_optimization_result:
+                optimization_result = retry_optimization_result
+
+            opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
+            stage_tokens = _estimate_tokens(opt_text)
+            total_tokens += stage_tokens
+
+            yield ("stage", {
+                "stage": "optimize",
+                "status": "complete",
+                "duration_ms": int((time.time() - start) * 1000),
+                "token_count": stage_tokens,
+            })
+
+            # Re-run validate
+            yield ("stage", {"stage": "validate", "status": "started"})
+            start = time.time()
+
+            optimized_prompt = optimization_result.get("optimized_prompt", "") if optimization_result else ""
+            changes_made = optimization_result.get("changes_made", []) if optimization_result else []
+
+            validation = await run_validate(
+                provider=provider,
+                original_prompt=raw_prompt,
+                optimized_prompt=optimized_prompt,
+                changes_made=changes_made,
+            )
+            validation["model"] = MODEL_ROUTING["validate"]
+
+            stage_tokens = _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt) + _estimate_tokens(json.dumps(validation))
+            total_tokens += stage_tokens
+
+            yield ("validation", validation)
+            yield ("stage", {
+                "stage": "validate",
+                "status": "complete",
+                "duration_ms": int((time.time() - start) * 1000),
+                "token_count": stage_tokens,
+            })
+        except Exception as e:
+            logger.warning(f"Retry failed: {e}. Using original validation result.")

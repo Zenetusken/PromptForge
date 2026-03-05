@@ -6,11 +6,24 @@
   import CopyButton from '$lib/components/shared/CopyButton.svelte';
   import ModelBadge from '$lib/components/shared/ModelBadge.svelte';
   import StrategyBadge from '$lib/components/shared/StrategyBadge.svelte';
+  import Toast from '$lib/components/shared/Toast.svelte';
 
   let { tab }: { tab: EditorTab } = $props();
 
   let strategy = $state('auto');
   let abortController = $state<AbortController | null>(null);
+  let toastMessage = $state('');
+  let toastType = $state<'info' | 'success' | 'error' | 'warning'>('info');
+  let toastVisible = $state(false);
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function showToast(message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info', duration = 5000) {
+    toastMessage = message;
+    toastType = type;
+    toastVisible = true;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastVisible = false; }, duration);
+  }
 
   const strategies = [
     'auto',
@@ -59,6 +72,8 @@
                   tokenCount: data.token_count as number | undefined
                 });
               }
+            } else if (data.status === 'skipped') {
+              forge.setStageSkipped(stageName);
             }
             break;
           }
@@ -93,6 +108,10 @@
             break;
           case 'error':
             forge.setStageFailed(data.stage as string || 'pipeline', data.error as string);
+            break;
+          case 'rate_limit_warning':
+            // Non-fatal warning — show toast but do NOT stop the pipeline
+            showToast(data.message as string || 'Rate limit warning — retrying', 'warning');
             break;
           default:
             break;
@@ -188,3 +207,5 @@
     </div>
   </div>
 </div>
+
+<Toast message={toastMessage} type={toastType} visible={toastVisible} />

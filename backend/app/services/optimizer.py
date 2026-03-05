@@ -21,12 +21,17 @@ async def run_optimize(
     analysis: dict,
     strategy: dict,
     codebase_context: Optional[dict] = None,
+    retry_constraints: Optional[dict] = None,
 ) -> AsyncGenerator[tuple[str, dict], None]:
     """Run Stage 3 optimization with streaming.
 
     Yields:
         ("step_progress", {"step": "optimize", "content": "chunk"}) for each token
         ("optimization", {optimized_prompt, changes_made, framework_applied, optimization_notes})
+
+    Args:
+        retry_constraints: If provided, includes adjusted constraints for retry attempts
+            with keys: min_score_target, previous_score, focus_areas
     """
     task_type = analysis.get("task_type", "general")
     system_prompt = get_optimizer_prompt(task_type)
@@ -38,6 +43,16 @@ async def run_optimize(
     )
     if codebase_context:
         user_message += f"\n\nCodebase context:\n{json.dumps(codebase_context, indent=2)}"
+
+    if retry_constraints:
+        user_message += (
+            f"\n\n--- RETRY WITH ADJUSTED CONSTRAINTS ---\n"
+            f"Previous optimization scored {retry_constraints.get('previous_score', 'low')}/10.\n"
+            f"Target minimum score: {retry_constraints.get('min_score_target', 7)}/10.\n"
+            f"Focus on improving these issues: {json.dumps(retry_constraints.get('focus_areas', []))}\n"
+            f"Be MORE specific, structured, and detailed than the previous attempt.\n"
+            f"Ensure the optimized prompt is substantially better than the original."
+        )
 
     model = MODEL_ROUTING["optimize"]
 
