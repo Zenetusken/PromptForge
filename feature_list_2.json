@@ -263,7 +263,7 @@
       "SCREENSHOT to verify expanded run trace"
     ],
     "expected_outcome": "PromptHistory expandable rows show StageTrack trace",
-    "passes": false,
+    "passes": true,
     "id": 177
   },
   {
@@ -290,7 +290,7 @@
       "SCREENSHOT to verify Re-forge action visibility"
     ],
     "expected_outcome": "PromptHistory Re-forge action",
-    "passes": false,
+    "passes": true,
     "id": 178
   },
   {
@@ -319,7 +319,7 @@
       "SCREENSHOT to verify score delta display"
     ],
     "expected_outcome": "Score delta shown between consecutive runs",
-    "passes": false,
+    "passes": true,
     "id": 179
   },
   {

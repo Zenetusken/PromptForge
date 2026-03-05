@@ -1,12 +1,34 @@
 <script lang="ts">
   import { history } from '$lib/stores/history.svelte';
   import { editor } from '$lib/stores/editor.svelte';
-  import { fetchHistory } from '$lib/api/client';
+  import { forge } from '$lib/stores/forge.svelte';
+  import { fetchHistory, retryOptimization } from '$lib/api/client';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import { formatRelativeTime } from '$lib/utils/format';
 
   let isLoading = $state(false);
   let expandedId = $state<string | null>(null);
+  let reforgingId = $state<string | null>(null);
+
+  async function handleReforge(entry: typeof history.entries[0]) {
+    reforgingId = entry.id;
+    try {
+      // Populate the edit tab with the original prompt
+      if (editor.activeTab) {
+        editor.activeTab.promptText = entry.raw_prompt;
+      }
+      // Switch to edit sub-tab to show the prompt
+      editor.setSubTab('edit');
+      // Trigger the re-forge via API
+      await retryOptimization(entry.id, entry.strategy);
+      // Reload history after re-forge
+      await loadHistory();
+    } catch {
+      // Re-forge failed silently
+    } finally {
+      reforgingId = null;
+    }
+  }
 
   // Load history entries on mount
   $effect(() => {
@@ -165,6 +187,15 @@
                     {#if entry.duration_ms}
                       <p class="text-[10px] text-text-dim mt-1">Total duration: {(entry.duration_ms / 1000).toFixed(1)}s</p>
                     {/if}
+                    <div class="mt-2 pt-2 border-t border-border-subtle/50">
+                      <button
+                        class="text-[10px] px-2 py-1 rounded bg-neon-cyan/10 border border-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/20 transition-colors disabled:opacity-50"
+                        onclick={(e: MouseEvent) => { e.stopPropagation(); handleReforge(entry); }}
+                        disabled={reforgingId === entry.id}
+                      >
+                        {reforgingId === entry.id ? 'Re-forging...' : 'Re-forge'}
+                      </button>
+                    </div>
                   </div>
                 </td>
               </tr>
