@@ -2,66 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 22,
-      "session_type": "validator",
-      "tests_completed": [],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "mocks_found": 0,
-      "mocks_fixed": 0,
-      "summary": "Expanded validation (retry completion): 24 tests verified across T0-T2. 0 regressions. Build clean."
-    },
-    {
-      "session_id": 23,
-      "session_type": "coding",
-      "tests_completed": [
-        96,
-        97,
-        99,
-        100,
-        101,
-        102,
-        104,
-        106,
-        107,
-        108,
-        109,
-        131,
-        132,
-        133,
-        134,
-        135,
-        136,
-        137,
-        138,
-        139,
-        140,
-        141,
-        142,
-        144,
-        145,
-        146,
-        147,
-        148,
-        149,
-        150,
-        160,
-        161,
-        162,
-        163,
-        164,
-        165,
-        166,
-        167,
-        169
-      ],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "mocks_found": 0,
-      "mocks_fixed": 0,
-      "summary": "39 T2 tests \u2014 T2 NOW FULLY COMPLETE (106/106). Marked 19 already-implemented tests (SSE + workbench UI). Implemented: Context Bar moved below textarea (#149), repo badge placeholder (#109), PromptHistory per-prompt filtering + table + expandable rows + score delta (#148,#163,#164), Inspector strategy recommendations (#167), forge.loadFromRecord + history\u2192artifact view (#162). Marked 6 forge-dependent tests as code-complete (#160,#161,#165,#166,#169). Build clean."
-    },
-    {
       "session_id": 24,
       "session_type": "integrator",
       "tests_completed": [],
@@ -113,12 +53,36 @@
     {
       "session_id": 27,
       "session_type": "integrator",
-      "tests_completed": [207, 208, 209],
+      "tests_completed": [
+        207,
+        208,
+        209
+      ],
       "tests_regressed": [],
       "tests_fixed": [],
       "gaps_found": 7,
       "gaps_wired": 4,
-      "summary": "Wired 4 gaps: StatusBar score clickable → Inspector (#209), StatusBar strategy chip always visible + clickable (#208), Inspector original prompt in forge artifact view (#207), workbench.provider type fix. 3 tests now passing. Flagged strategy-to-store refactor for coding agent (i27_1). Also noted #205, #206, #210 likely already passing for validator."
+      "summary": "Wired 4 gaps: StatusBar score clickable \u2192 Inspector (#209), StatusBar strategy chip always visible + clickable (#208), Inspector original prompt in forge artifact view (#207), workbench.provider type fix. 3 tests now passing. Flagged strategy-to-store refactor for coding agent (i27_1). Also noted #205, #206, #210 likely already passing for validator."
+    },
+    {
+      "session_id": 28,
+      "session_type": "validator",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "mocks_found": 0,
+      "mocks_fixed": 0,
+      "summary": "Expanded validation: 21 T3 tests verified via live UI + 2 forge runs. 0 regressions, 0 mocks found. Code audit clean \u2014 no stubs/mocks/TODOs in app code, spec compliance verified (SSE, WebSocket MCP, Fernet, SQLite all correct). Build clean. Also observed #205, #206, #210 working but left passes:false (validator cannot mark new tests). 190/335 passing (56.7%)."
+    },
+    {
+      "session_id": 29,
+      "session_type": "validator",
+      "tests_completed": [],
+      "tests_regressed": [],
+      "tests_fixed": [],
+      "mocks_found": 0,
+      "mocks_fixed": 0,
+      "summary": "Standard validation: 25 tests verified via live UI + 1 forge run. 0 regressions, 0 mocks found. Code audit clean — no stubs/mocks/TODOs in app code, spec compliance re-verified (SSE, WebSocket MCP, Fernet, SQLite, no duplicate routes). Build clean. Frontend needed restart (was down from previous session). 190/335 passing (56.7%)."
     }
   ],
   "active_warnings": [],
@@ -275,7 +239,32 @@
       "158": 19,
       "159": 19,
       "160": 25,
-      "168": 22
+      "168": 22,
+      "80": 29,
+      "89": 29,
+      "90": 29,
+      "91": 29,
+      "170": 29,
+      "171": 29,
+      "172": 29,
+      "173": 29,
+      "174": 29,
+      "175": 29,
+      "176": 29,
+      "177": 29,
+      "178": 29,
+      "179": 29,
+      "180": 29,
+      "181": 29,
+      "182": 29,
+      "183": 29,
+      "184": 29,
+      "185": 29,
+      "186": 29,
+      "187": 29,
+      "207": 29,
+      "208": 29,
+      "209": 29
     },
     "tests_spot_checked": {
       "1": 19,
@@ -293,100 +282,27 @@
   },
   "next_actions": [
     {
-      "id": "i24_1",
-      "from_agent": "integrator",
-      "to_agent": "coding",
-      "from_session": 24,
-      "action": "Add panel resize drag handles for Navigator and Inspector panels. Workbench store already has navigatorWidth/inspectorWidth state, but no drag handle UI exists to resize them.",
-      "test_ids": [
-        201,
-        203
-      ],
-      "priority": "medium",
-      "status": "expired"
-    },
-    {
-      "id": "i24_2",
-      "from_agent": "integrator",
-      "to_agent": "coding",
-      "from_session": 24,
-      "action": "Add localStorage/sessionStorage persistence: panel widths (workbench.navigatorWidth/inspectorWidth) in localStorage, active activity (workbench.activeActivity) in sessionStorage, and history sort/filter preferences (history.filters) in localStorage.",
-      "test_ids": [
-        223,
-        224,
-        225
-      ],
-      "priority": "medium",
-      "status": "expired"
-    },
-    {
-      "id": "i24_3",
-      "from_agent": "integrator",
-      "to_agent": "coding",
-      "from_session": 24,
-      "action": "Add @ context injection popup: when user types '@' in PromptEdit textarea, show a fuzzy-search popup with context options. On selection, add a context chip to the existing ContextBar component. ContextBar already exists and has dismiss support.",
-      "test_ids": [
-        198,
-        199,
-        200
-      ],
-      "priority": "medium",
-      "status": "expired"
-    },
-    {
-      "id": "i24_6",
-      "from_agent": "integrator",
-      "to_agent": "coding",
-      "from_session": 24,
-      "action": "Wire RepoPickerModal into a parent component (e.g., NavigatorGitHub or NavigatorFiles). The modal exists at frontend/src/lib/components/github/RepoPickerModal.svelte but is not imported by any component.",
-      "test_ids": [],
-      "priority": "low",
-      "status": "expired"
-    },
-    {
       "id": "i27_1",
       "from_agent": "integrator",
       "to_agent": "coding",
       "from_session": 27,
       "action": "Move strategy selection from PromptEdit local state to forge/editor store so StatusBar and other components can read and display it. Currently strategy is a local $state('auto') in PromptEdit.svelte. StatusBar needs it to show clickable strategy chip (test #208).",
-      "test_ids": [208],
+      "test_ids": [
+        208
+      ],
       "priority": "medium"
     },
     {
-      "id": "a26_1",
-      "from_agent": "coding",
-      "to_agent": "validator",
-      "from_session": 26,
-      "action": "Verify 18 new T3 tests (#170-187). Key implementations to check: NavigatorHistory multi-select with Compare toolbar (#174), DiffView rewrite with LCS diff algorithm + side-by-side/inline toggle + diff highlighting (#180-183), Re-forge button in PromptHistory (#178), ChainComposer step card enhancements (#185), filter count always-visible display (#176).",
+      "id": "a28_1",
+      "from_agent": "validator",
+      "to_agent": "coding",
+      "from_session": 28,
+      "action": "Tests #205, #206, #210 are already working in the UI but marked passes:false. #205: Inspector shows strategy recommendations in Edit mode (visible on page load). #206: Inspector shows score breakdown post-forge (5 dimensions visible). #210: StatusBar shows forging progress during pipeline ('Forging Analyze', 'Forging Validate' observed). Coding agent should mark these as passes:true after confirming.",
       "test_ids": [
-        170,
-        171,
-        172,
-        173,
-        174,
-        175,
-        176,
-        177,
-        178,
-        179,
-        180,
-        181,
-        182,
-        183,
-        184,
-        185,
-        186,
-        187
+        205,
+        206,
+        210
       ],
-      "priority": "high"
-    },
-    {
-      "id": "i27_2",
-      "from_agent": "integrator",
-      "to_agent": "validator",
-      "from_session": 27,
-      "action": "Verify 3 newly-wired tests (#207, #208, #209) and check if #205, #206, #210 are also passing (they were already implemented pre-session-27, just not marked). StatusBar score click should open Inspector with score breakdown. StatusBar strategy chip should be visible and clickable. Inspector should show original prompt in forge artifact view.",
-      "test_ids": [205, 206, 207, 208, 209, 210],
       "priority": "high"
     }
   ],
@@ -396,8 +312,8 @@
     "mcp_url": "ws://127.0.0.1:8001/ws",
     "health_endpoint": "http://localhost:8000/api/health",
     "start_command": "./init.sh start",
-    "last_verified_session": 27,
-    "notes": "All services healthy (session 27). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. T0: 18/18, T1: 45/45, T2: 106/106, T3: 21/66. 190/335 tests passing (56.7%). Build clean."
+    "last_verified_session": 29,
+    "notes": "All services healthy (session 29). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. T0: 18/18, T1: 45/45, T2: 106/106, T3: 21/66. 190/335 tests passing (56.7%). Build clean. 25 tests verified (21 T3 + 4 T2). Frontend needed restart at session start."
   },
   "session_checkpoint": {
     "session_type": "",

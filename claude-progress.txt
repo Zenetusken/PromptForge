@@ -1,44 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 238 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 202 lines. Earlier notes are in git history.]
 
-- Those 19 tests need no code changes, just marking — will bring T2 to 86/106
-- After marking those, remaining T2 gaps: #80 long prompts, #106-107 tool results, #160-167 MCP UI tests
-- RepoPickerModal still orphaned (needs parent trigger UI)
-- retryOptimization still unused (needs retry button UI)
-
-**Progress:** 130/335 tests passing (38.8%)
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
-- DB: backend/data/promptforge.db (3 tables, 67 optimization records)
-- Start: ./init.sh start
-
-## Session Summary — Session 23 (2026-03-05)
-
-**Completed: 39 T2 tests — T2 NOW FULLY COMPLETE (106/106)**
-
-**Marked as already-implemented (code review verified):**
-#96, #97, #99, #100, #101, #102, #104 (SSE frontend — 7 tests)
-#131-#142 (workbench UI — 12 tests)
-#106, #107, #108 (SSE tool_call, stage track, GitHub PAT UI)
-#144, #145, #146, #150 (score display, copy button, strategy dropdown, word count)
-
-**Implemented new features:**
-#149: Moved Context Bar below textarea per spec, added "Add context with @" hint
-#109: Added repo badge placeholder in Status Bar (shows "No repo" when unlinked)
-#148: Rewrote PromptHistory with per-prompt filtering + table layout (Run#, Strategy, Score, Duration, Date)
-#167: Added Inspector strategy recommendations with confidence bars (varies by prompt length)
-#162: Added forge.loadFromRecord() to populate forge store from optimization record; NavigatorHistory opens history entries as forge artifacts (Pipeline sub-tab with Optimized/Diff/Scores/Trace)
-#163: Added expandable rows to PromptHistory with stage trace info
-#164: Added score delta display between consecutive runs
-
-**Marked as code-complete (validator will verify via forge run):**
-#160, #161, #165, #166, #169 (full end-to-end forge pipeline tests)
-
-**Regressions fixed:** 0
-**In progress:** None — T2 complete
-**Next up:** T3 tests (starting from lowest ID)
-**Known issues:** None identified
 
 **TIER BOUNDARY: T2 complete — validator should run expanded check**
 
@@ -231,6 +192,59 @@
 - RepoPickerModal needs parent (i24_6)
 - MCP frontend connection (no frontend WebSocket code yet — needs coding)
 - Global toast system (Toast only used locally in PromptEdit — needs coding)
+
+**Progress:** 190/335 tests passing (56.7%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
+
+## Validation Report — Session 29 (2026-03-05)
+
+**Code integrity audit:**
+- Files scanned: All backend/app/*.py, frontend/src/**/*.svelte,*.ts
+- Mocks/stubs found: 0
+- Mocks/stubs fixed: 0
+- Mocks/stubs remaining: 0
+- TODOs found: 0 (all TODOs in .venv third-party packages only)
+- TODOs resolved: 0
+- pass$ statements: 13 found, all legitimate (exception handlers for JSON parsing, DeclarativeBase class)
+- Spec compliance: PASS
+  - SSE: StreamingResponse + text/event-stream ✓
+  - MCP: WebSocket transport (not stdio) ✓
+  - Database: SQLite via aiosqlite + SQLAlchemy ✓
+  - Auth: Fernet encryption for tokens ✓
+  - Ports: 8000 (backend), 5199 (frontend), 8001 (MCP) ✓
+  - No duplicate routes ✓
+  - No hardcoded tokens ✓
+
+**Scope:** Standard — 25 tests verified (21 T3 + 4 T2)
+**Infrastructure:** Frontend was down at session start — restarted. Backend and MCP healthy throughout.
+
+**Tests verified (25):**
+- T3 (21): #170-178, #179 (code-verified), #180-187, #207-209
+- T2 (4): #80 (long prompts via DB), #89, #90, #91 (SSE events via live forge)
+
+**Regressions found:** 0
+**Regressions fixed:** 0 of 0
+**Tests still passing after validation:** 190/335
+
+**Tier breakdown:**
+- T0: 18/18 passing ✓
+- T1: 45/45 passing ✓
+- T2: 106/106 passing ✓
+- T3: 21/66 passing
+- T4: 0/70 passing
+- T5: 0/30 passing
+
+**Guidance for next coding session:**
+- Tests #205, #206, #210 are already working (confirmed in sessions 28+29) — coding agent should mark passes:true
+- Strategy needs to be moved from PromptEdit local state to forge/editor store (i27_1)
+- Next T3 targets: #188-194 (MCP tools), #195-197 (Toast notifications), #198-200 (@ context injection), #201-204 (resize/collapse panels), #211-215 (Command Palette features), #218-225 (keyboard shortcuts, persistence)
+- MCP frontend WebSocket connection not yet built (needed for future tests)
+- Global toast system only used locally in PromptEdit (needs coding)
 
 **Progress:** 190/335 tests passing (56.7%)
 **Server info:**
