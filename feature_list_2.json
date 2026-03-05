@@ -3523,7 +3523,7 @@
       "VERIFY the focused zone receives a visual indicator (faint neon-cyan outline)"
     ],
     "expected_outcome": "F6 zone cycling through 5 ARIA landmarks",
-    "passes": false,
+    "passes": true,
     "id": 307
   },
   {
@@ -3760,7 +3760,7 @@
       "VERIFY pressing Enter on a focused icon activates that activity"
     ],
     "expected_outcome": "Keyboard navigation through Activity Bar icons",
-    "passes": false,
+    "passes": true,
     "id": 317
   },
   {
@@ -3782,7 +3782,7 @@
       "VERIFY arrow keys move focus between tree items"
     ],
     "expected_outcome": "Keyboard navigation in Navigator file tree",
-    "passes": false,
+    "passes": true,
     "id": 318
   },
   {
@@ -3805,7 +3805,7 @@
       "VERIFY arrow keys navigate between rows"
     ],
     "expected_outcome": "Keyboard navigation in history table",
-    "passes": false,
+    "passes": true,
     "id": 319
   },
   {
@@ -4045,7 +4045,7 @@
       "SCREENSHOT to verify long prompt handling"
     ],
     "expected_outcome": "Very long prompt (5000+ chars) accepted without truncation",
-    "passes": false,
+    "passes": true,
     "id": 330
   },
   {
@@ -4071,7 +4071,7 @@
       "SCREENSHOT to verify special character handling"
     ],
     "expected_outcome": "Special characters in prompt preserved correctly",
-    "passes": false,
+    "passes": true,
     "id": 331
   },
   {
@@ -4099,7 +4099,7 @@
       "SCREENSHOT to verify concurrent interaction worked"
     ],
     "expected_outcome": "Concurrent page interactions during forge do not crash",
-    "passes": false,
+    "passes": true,
     "id": 332
   },
   {
@@ -4124,7 +4124,7 @@
       "SCREENSHOT to verify clean state after refresh"
     ],
     "expected_outcome": "Page refresh during forge shows clean state",
-    "passes": false,
+    "passes": true,
     "id": 333
   },
   {

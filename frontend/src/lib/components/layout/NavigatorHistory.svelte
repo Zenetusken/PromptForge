@@ -249,9 +249,7 @@
         <p class="text-[10px] text-text-dim/50 mt-0.5">Forge a prompt to get started.</p>
       </div>
     {:else}
-      {#each history.entries as entry (entry.id)}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
+      {#each history.entries as entry, i (entry.id)}
         <div
           class="w-full text-left px-2 rounded text-xs transition-colors duration-200 mb-0.5 cursor-pointer group/entry h-[32px] flex items-center
             {selectedIds.has(entry.id)
@@ -259,7 +257,15 @@
               : history.selectedId === entry.id
                 ? 'bg-bg-hover border border-border-accent'
                 : 'hover:bg-bg-hover border border-transparent'}"
+          role="row"
+          tabindex={i === 0 ? 0 : -1}
+          data-history-row
           onclick={() => openHistoryEntry(entry)}
+          onkeydown={(e: KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHistoryEntry(entry); }
+            else if (e.key === 'ArrowDown') { e.preventDefault(); const rows = document.querySelectorAll<HTMLElement>('[data-history-row]'); rows[i + 1]?.focus(); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); const rows = document.querySelectorAll<HTMLElement>('[data-history-row]'); rows[i - 1]?.focus(); }
+          }}
         >
           <div class="flex items-start gap-2">
             <!-- Checkbox: visible on hover or when selected -->

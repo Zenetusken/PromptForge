@@ -92,6 +92,31 @@
     expandedDirs = next;
   }
 
+  function handleTreeKeydown(e: KeyboardEvent) {
+    const items = Array.from(document.querySelectorAll<HTMLElement>('[data-file-item]'));
+    if (!items.length) return;
+    const currentIdx = items.indexOf(e.target as HTMLElement);
+    if (currentIdx === -1) return;
+
+    let newIdx = currentIdx;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      newIdx = Math.min(currentIdx + 1, items.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      newIdx = Math.max(currentIdx - 1, 0);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      newIdx = 0;
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      newIdx = items.length - 1;
+    } else {
+      return;
+    }
+    items[newIdx]?.focus();
+  }
+
   onMount(() => {
     loadRecentForges();
     if (github.selectedRepo) {
@@ -120,7 +145,9 @@
       {#each promptFiles as file}
         <button
           class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          data-file-item
           onclick={() => openFile(file)}
+          onkeydown={handleTreeKeydown}
         >
           <svg class="w-3.5 h-3.5 text-neon-cyan/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -149,7 +176,9 @@
       {#each forgeFiles as file}
         <button
           class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          data-file-item
           onclick={() => openFile(file)}
+          onkeydown={handleTreeKeydown}
         >
           <svg class="w-3.5 h-3.5 text-neon-green/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -185,7 +214,9 @@
           {#if entry.type === 'tree'}
             <button
               class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              data-file-item
               onclick={() => toggleDir(entry.path)}
+              onkeydown={handleTreeKeydown}
             >
               <svg class="w-3.5 h-3.5 text-neon-yellow/60 shrink-0 transition-transform {expandedDirs.has(entry.path) ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
@@ -195,7 +226,9 @@
           {:else}
             <button
               class="w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              data-file-item
               onclick={() => openRepoFile(entry.path)}
+              onkeydown={handleTreeKeydown}
             >
               <svg class="w-3.5 h-3.5 text-text-dim/60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>

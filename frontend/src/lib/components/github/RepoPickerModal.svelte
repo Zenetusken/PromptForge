@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { github } from '$lib/stores/github.svelte';
+  import { github, type GitHubRepo } from '$lib/stores/github.svelte';
   import RepoBadge from './RepoBadge.svelte';
 
   let {
@@ -29,7 +29,7 @@
     expandedRepo = null;
   });
 
-  function toggleExpand(repo: { full_name: string; default_branch: string }) {
+  function toggleExpand(repo: GitHubRepo) {
     if (expandedRepo === repo.full_name) {
       expandedRepo = null;
     } else {
@@ -79,7 +79,7 @@
                   {repo.language}
                 </span>
               {/if}
-              {#if repo.size_kb}
+              {#if repo.size_kb != null}
                 <span class="text-[10px] text-text-dim/60 shrink-0">
                   {repo.size_kb >= 1000
                     ? `${(repo.size_kb / 1024).toFixed(1)} MB`
@@ -100,7 +100,7 @@
 
         <!-- Inline branch expansion -->
         {#if expandedRepo === repo.full_name}
-          <div class="px-4 pb-3 flex items-center gap-2 bg-bg-hover/40 border-t border-border-subtle/50">
+          <div class="px-4 pt-2 pb-3 flex items-center gap-2 bg-bg-hover/40 border-t border-border-subtle/50">
             <span class="text-[10px] text-text-dim shrink-0">Branch</span>
             <input
               class="flex-1 bg-bg-input border border-border-subtle rounded px-2 py-1

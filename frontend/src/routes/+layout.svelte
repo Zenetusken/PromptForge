@@ -70,10 +70,46 @@
     }
   }
 
+  // F6 zone cycling per spec: cycle focus through Activity Bar, Navigator, Editor, Inspector, Status Bar
+  const zoneSelectors = [
+    'nav[aria-label="Activity Bar"]',
+    'nav[aria-label="Navigator"]',
+    'main[aria-label="Editor"]',
+    'aside[aria-label="Inspector"]',
+    'footer[aria-label="Status Bar"]'
+  ];
+  let currentZoneIndex = $state(-1);
+
+  function handleF6(e: KeyboardEvent) {
+    if (e.key === 'F6') {
+      e.preventDefault();
+      // Advance to next zone (wrap around)
+      currentZoneIndex = (currentZoneIndex + 1) % zoneSelectors.length;
+      const zone = document.querySelector(zoneSelectors[currentZoneIndex]) as HTMLElement;
+      if (zone) {
+        // Remove focus outline from previous zone
+        document.querySelectorAll('[data-zone-focused]').forEach(el => {
+          el.removeAttribute('data-zone-focused');
+          (el as HTMLElement).style.outline = '';
+        });
+        // Focus the zone
+        zone.setAttribute('tabindex', '-1');
+        zone.focus();
+        zone.setAttribute('data-zone-focused', 'true');
+        zone.style.outline = '1px solid rgba(0, 229, 255, 0.3)';
+        zone.style.outlineOffset = '-1px';
+        // Try to focus the first focusable element inside the zone
+        const firstFocusable = zone.querySelector<HTMLElement>('button, a, input, select, textarea, [tabindex="0"]');
+        if (firstFocusable) firstFocusable.focus();
+      }
+    }
+  }
+
   onMount(() => {
     // Initial responsive check
     handleResize();
     window.addEventListener('resize', handleResize);
+    document.addEventListener('keydown', handleF6);
 
     // Detect provider on mount
     fetchHealth()
@@ -121,6 +157,11 @@
 
     // Ensure at least one tab is open
     editor.ensureWelcomeTab();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('keydown', handleF6);
+    };
   });
 </script>
 

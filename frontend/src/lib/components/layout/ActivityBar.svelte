@@ -10,13 +10,34 @@
     { id: 'search', icon: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z', label: 'Search' },
     { id: 'settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z', label: 'Settings' }
   ];
+
+  function handleKeydown(e: KeyboardEvent, index: number) {
+    let newIndex = index;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      newIndex = (index + 1) % activities.length;
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      newIndex = (index - 1 + activities.length) % activities.length;
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      newIndex = 0;
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      newIndex = activities.length - 1;
+    } else {
+      return;
+    }
+    const btns = document.querySelectorAll<HTMLElement>('[data-activity-btn]');
+    btns[newIndex]?.focus();
+  }
 </script>
 
 <nav
   class="flex flex-col items-center w-[40px] bg-bg-secondary border-r border-border-subtle py-2 gap-1"
   aria-label="Activity Bar"
 >
-  {#each activities as act}
+  {#each activities as act, i}
     <button
       class="w-8 h-8 flex items-center justify-center rounded-md transition-colors relative
         {workbench.activeActivity === act.id && !workbench.navigatorCollapsed
@@ -24,7 +45,9 @@
           : 'text-text-dim hover:text-text-secondary hover:bg-bg-hover'}"
       title={act.label}
       aria-label={act.label}
+      data-activity-btn
       onclick={() => workbench.setActivity(act.id)}
+      onkeydown={(e: KeyboardEvent) => handleKeydown(e, i)}
     >
       <!-- Active left border indicator (1px neon-cyan) -->
       {#if workbench.activeActivity === act.id && !workbench.navigatorCollapsed}

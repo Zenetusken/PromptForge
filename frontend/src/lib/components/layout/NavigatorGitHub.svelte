@@ -41,7 +41,7 @@
     }
   }
 
-  async function handleSelectRepo(fullName: string, branch?: string) {
+  function handleSelectRepo(fullName: string, branch?: string) {
     github.selectRepo(fullName);
     // Persist repo link to backend (non-blocking — local state already updated)
     const repo = github.repos.find(r => r.full_name === fullName);
