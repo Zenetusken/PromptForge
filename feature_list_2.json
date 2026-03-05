@@ -454,7 +454,7 @@
       "SCREENSHOT to verify chain composer layout"
     ],
     "expected_outcome": "Chain Composer renders vertical card stack",
-    "passes": false,
+    "passes": true,
     "id": 184
   },
   {
@@ -476,7 +476,7 @@
       "VERIFY each step card has a score indicator"
     ],
     "expected_outcome": "Chain step cards show prompt name and strategy",
-    "passes": false,
+    "passes": true,
     "id": 185
   },
   {
@@ -504,7 +504,7 @@
       "SCREENSHOT to verify copy feedback animation"
     ],
     "expected_outcome": "Copy optimized prompt with one-click copy button",
-    "passes": false,
+    "passes": true,
     "id": 186
   },
   {
@@ -528,7 +528,7 @@
       "SCREENSHOT to verify settings view"
     ],
     "expected_outcome": "Settings activity shows app configuration",
-    "passes": false,
+    "passes": true,
     "id": 187
   },
   {
