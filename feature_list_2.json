@@ -1476,7 +1476,7 @@
       "SCREENSHOT to verify context chip added to Context Bar"
     ],
     "expected_outcome": "Complete context injection flow from @ to forge",
-    "passes": false,
+    "passes": true,
     "id": 227
   },
   {
@@ -1535,7 +1535,7 @@
       "SCREENSHOT to verify Navigator restored"
     ],
     "expected_outcome": "Navigator panel collapse and expand flow",
-    "passes": false,
+    "passes": true,
     "id": 229
   },
   {
@@ -1563,7 +1563,7 @@
       "SCREENSHOT to verify Inspector restored"
     ],
     "expected_outcome": "Inspector panel collapse and expand flow",
-    "passes": false,
+    "passes": true,
     "id": 230
   },
   {
@@ -1596,7 +1596,7 @@
       "SCREENSHOT to verify final Settings view state"
     ],
     "expected_outcome": "Activity Bar full cycling through all 6 activities",
-    "passes": false,
+    "passes": true,
     "id": 231
   },
   {
@@ -1626,7 +1626,7 @@
       "SCREENSHOT to verify sub-tab navigation works correctly"
     ],
     "expected_outcome": "Complete sub-tab navigation within prompt document",
-    "passes": false,
+    "passes": true,
     "id": 232
   },
   {
