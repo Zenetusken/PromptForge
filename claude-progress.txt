@@ -1,57 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 202 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 254 lines. Earlier notes are in git history.]
 
-**Infrastructure:** Frontend restarted (was down from previous timeout). All services healthy after restart.
-
-**Regressions found:** 0
-**Regressions fixed:** 0
-
-**Cross-feature integration check:**
-- Frontend build: ✓ Clean (vite build 3.87s)
-- Console errors: 0
-- History sidebar: ✓ Shows real optimization data (scores, frameworks, durations)
-- Settings panel: ✓ All fields functional
-- API spot-checks: health ✓, history pagination ✓ (5 of 51), stats ✓ (real data), GitHub auth/me ✓ (disconnected)
-- Visual coherence: ✓ Consistent cyberpunk dark theme across all views
-
-**Tests still passing after validation:** 114/335
-
-**Tier breakdown:**
-- T0: 18/18 ✓ (complete)
-- T1: 45/45 ✓ (complete)
-- T2: 51/106 (in progress)
-- T3: 0/66
-- T4: 0/70
-- T5: 0/30
-
-**Guidance for next coding session:**
-- Continue T2 tests: 55 remaining
-- Key T2 areas: UI interactions (#76, #78-80), SSE event details (#88-94, #96-97), error states (#99-102, #104), tool results (#106-107)
-- RepoPickerModal.svelte still orphaned (needs import + modal state + trigger)
-- retryOptimization() still unused (needs retry button UI)
-- fetchGitHubAuthStatus() not called on init (needs onMount hydration) — FIXED by integrator session 18
-
-**Progress:** 117/335 tests passing (34.9%)
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
-- DB: backend/data/promptforge.db (3 tables, 51 optimization records)
-- Start: ./init.sh start
-
-## Integration Report — Session 18 (2026-03-04)
-
-**Gaps discovered:** 8
-- [WIRING] GitHub state not hydrated on init (fetchGitHubAuthStatus/fetchGitHubRepos/fetchLinkedRepo) — WIRED
-- [COMPONENT] RepoPickerModal.svelte orphaned — SKIPPED (needs coding, flagged i16_1)
-- [WIRING] retryOptimization() unused — SKIPPED (needs retry button UI, flagged i16_2)
-- [WIRING] NavigatorFiles uses hardcoded sampleFiles — SKIPPED (needs coding to rewrite, flagged i18_1)
-- [ENDPOINT] /api/optimizations — no frontend consumer (likely intentional dead code)
-- [API] fetchHistoryStats — no UI consumer — SKIPPED (needs stats display, flagged i18_2)
-- [API] deleteOptimization — no UI trigger — SKIPPED (needs delete button, flagged i18_3)
-- [API] fetchProviderDetect/fetchProviderStatus — unused (workbench uses /api/health)
-
-**Gaps wired:** 1 of 8
-- +layout.svelte onMount now calls fetchGitHubAuthStatus → fetchGitHubRepos → fetchLinkedRepo to hydrate github store on page load. GitHub connection state, repos list, and linked repo selection persist across page refreshes.
 
 **Tests now passing (via wiring):** none (hydration enables persistence but can't verify without real GitHub PAT)
 

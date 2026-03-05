@@ -147,9 +147,6 @@
 </script>
 
 <div class="flex flex-col h-full">
-  <!-- Context bar -->
-  <ContextBar />
-
   <!-- Textarea -->
   <div class="flex-1 p-4">
     <textarea
@@ -167,6 +164,9 @@
     <span class="mx-1.5">·</span>
     <span>{(tab.promptText || '').length} chars</span>
   </div>
+
+  <!-- Context bar (below textarea per spec) -->
+  <ContextBar />
 
   <!-- Action row -->
   <div class="flex items-center justify-between px-4 py-2 border-t border-border-subtle bg-bg-secondary/30 shrink-0">

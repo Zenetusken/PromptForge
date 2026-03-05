@@ -2479,7 +2479,7 @@
       "VERIFY tool events are only emitted when a repository is linked"
     ],
     "expected_outcome": "Stage 00 Explore SSE events include tool_call data",
-    "passes": false,
+    "passes": true,
     "id": 106
   },
   {
@@ -2507,7 +2507,7 @@
       "VERIFY each stage card has a header with stage label, model badge, and status"
     ],
     "expected_outcome": "Stage Track vertical layout renders correctly",
-    "passes": false,
+    "passes": true,
     "id": 107
   },
   {
@@ -2556,7 +2556,7 @@
       "SCREENSHOT to verify Status Bar structure including repo badge placeholder"
     ],
     "expected_outcome": "Linked repo shown in Status Bar",
-    "passes": false,
+    "passes": true,
     "id": 109
   },
   {
@@ -3362,7 +3362,7 @@
       "SCREENSHOT to verify score display in both locations"
     ],
     "expected_outcome": "Score displayed after forge completion",
-    "passes": false,
+    "passes": true,
     "id": 144
   },
   {
@@ -3390,7 +3390,7 @@
       "SCREENSHOT to verify copy feedback"
     ],
     "expected_outcome": "Copy button copies optimized prompt to clipboard",
-    "passes": false,
+    "passes": true,
     "id": 145
   },
   {
@@ -3414,7 +3414,7 @@
       "SCREENSHOT to verify strategy dropdown with framework options"
     ],
     "expected_outcome": "Strategy selector dropdown in Edit sub-tab",
-    "passes": false,
+    "passes": true,
     "id": 146
   },
   {
@@ -3441,7 +3441,7 @@
       "SCREENSHOT to verify forge artifact sub-tab structure"
     ],
     "expected_outcome": "Forge artifact view with sub-tabs",
-    "passes": false,
+    "passes": true,
     "id": 147
   },
   {
@@ -3469,7 +3469,7 @@
       "SCREENSHOT to verify per-prompt history table"
     ],
     "expected_outcome": "PromptHistory sub-tab shows per-prompt run table",
-    "passes": false,
+    "passes": true,
     "id": 148
   },
   {
@@ -3492,7 +3492,7 @@
       "SCREENSHOT to verify Context Bar placement"
     ],
     "expected_outcome": "Context Bar renders below textarea",
-    "passes": false,
+    "passes": true,
     "id": 149
   },
   {
@@ -3516,7 +3516,7 @@
       "SCREENSHOT to verify word count display"
     ],
     "expected_outcome": "Word count displayed in Edit sub-tab",
-    "passes": false,
+    "passes": true,
     "id": 150
   },
   {

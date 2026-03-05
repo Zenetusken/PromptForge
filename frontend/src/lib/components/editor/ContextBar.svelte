@@ -26,6 +26,10 @@
 <div class="flex items-center gap-1.5 px-4 py-1.5 border-b border-border-subtle bg-bg-secondary/30 shrink-0 min-h-[32px]">
   <span class="text-[10px] text-text-dim uppercase tracking-wider mr-1">Context</span>
 
+  {#if chips.length === 0}
+    <span class="text-[10px] text-text-dim/50 italic">Add context with @</span>
+  {/if}
+
   {#each chips as chip (chip.id)}
     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-bg-card border border-border-subtle text-text-secondary animate-scale-in">
       <span class="text-neon-cyan">@</span>{chip.label}
