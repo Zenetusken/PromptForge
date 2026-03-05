@@ -1,96 +1,4 @@
-[Trimmed by orchestrator: kept last 200 of 253 lines. Earlier notes are in git history.]
-
-
-## Integration Report — Session 12 (2026-03-04)
-
-**Gaps discovered:** 0 new (3 previously known remain)
-- [ENDPOINT] /api/optimizations (5 routes) — no frontend consumer — ALREADY FLAGGED (coding agent)
-- [ORPHAN] Toast.svelte — not imported anywhere — ALREADY FLAGGED (coding agent)
-- [ORPHAN] RepoPickerModal.svelte — not imported anywhere — ALREADY FLAGGED (coding agent)
-
-**No new gaps from latest coding session.** The coding agent (session after 11) properly wired:
-- Token count flow: backend pipeline.py → SSE events → forge store → StageCard/RunHeader
-- Streaming text: SSE chunks → forge.appendChunk → StageOptimize/ForgeArtifact
-- Auto-switch: PromptEdit → editor.setSubTab('pipeline') on forge start
-- Total duration/tokens: complete event → finishForge → RunHeader display
-
-**Discovery scan results:**
-- All backend endpoints have frontend consumers (except /api/optimizations — known dead code)
-- All stores imported by at least 1 component
-- All components imported by parent (except Toast, RepoPickerModal — known orphans)
-- No duplicate routes
-- CORS configured correctly
-- No hardcoded localhost in frontend source
-- Session access pattern consistent (all use request.session.get)
-- No TypeScript interface/backend schema mismatches in recently changed files
-
-**Gaps wired:** 0 (none needed)
-**Tests now passing (via wiring):** none
-
-**Remaining gaps for future sessions:**
-- Toast.svelte needs coding agent (toast store + layout import + call sites)
-- RepoPickerModal.svelte needs coding agent (modal state + trigger)
-- /api/optimizations endpoints may be intentional dead code (frontend uses /api/optimize + /api/history)
-
-**Progress:** 83/335 tests passing (24.8%)
-**Server info:**
-- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
-- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
-- DB: backend/data/promptforge.db (3 tables)
-- Start: ./init.sh start
-
-## Validation Report — Session 13 (2026-03-04, TIMED OUT — partial)
-
-**Code integrity audit:** Skipped (completed in prior run, audit_done=true)
-
-**Scope:** Standard — 83 tests targeted (20 T2 passing + 45 T1 + 5 T0 spot checks)
-
-**Tests verified this partial run (19 of 83):**
-
-Pipeline Puppeteer run (full 4-stage e2e, 130s total):
-- #64 ✅ 4/4 stages completed, all green
-- #65 ✅ Analyze: task_type = "CODING"
-- #66 ✅ Analyze: STRENGTHS list present
-- #67 ✅ Analyze: complexity = "MODERATE"
-- #68 ✅ Strategy: RISEN framework selected
-- #69 ✅ Optimize: improved prompt produced
-- #71 ✅ Validate: 5 dimension scores (Clarity 9, Specificity 9, Structure 9, Faithfulness 8, Conciseness 6)
-- #72 ✅ Validate: verdict = "Improved", is_improvement = true
-- #77 ✅ changes_made list present (LLM-variable content, structure correct)
-- #83 ✅ All scores are integers 1-10
-- #86 ✅ Run header: total duration 130.0s, score 8/10, 6,880 tok
-- #87 ✅ Per-stage: Analyze 15.2s/364 tok, Optimize 45.5s/3171 tok, Validate 38.2s/2541 tok
-- #98 ✅ Auto-switch to Pipeline sub-tab on forge (Edit → Pipeline instantly)
-- #168 ✅ StatusBar shows "Score: 8/10 · RISEN" after completion
-
-API batch (T1 auth tests):
-- #3 ✅ Health endpoint returns complete status object
-- #22 ✅ Invalid PAT → 401 Unauthorized
-- #23 ✅ auth/me → disconnected when no token
-- #24 ✅ OAuth login endpoint exists (400 = exists, needs params)
-- #25 ✅ Logout clears session (returns disconnected: true)
-
-**Regressions found:** 0
-**Tests NOT yet verified (64 remaining):**
-- T2: #70 (streaming), #74, #75 (not reached)
-- T1: #26-#45, #46-#63 bulk (not reached — session timed out)
-- T0 spot-checks: not reached
-
-**NEW tests confirmed working for first time:** #86, #87, #98
-
-**Session timed out mid-Step 5.** Next retry (session 14) should:
-- Skip tests_verified_this_run (19 tests above)
-- Continue with remaining T2 tests: #70, #74, #75
-- Then bulk T1: #26-#45 range (history, optimize, prompt management)
-- Then T0 spot-checks
-
-**Progress:** 83/335 tests passing (24.8%)
-**Server info:**
-- Backend: http://localhost:8000
-- Frontend: http://localhost:5199
-- MCP: ws://127.0.0.1:8001/ws (RUNNING)
-- Start: ./init.sh start
+[Trimmed by orchestrator: kept last 200 of 268 lines. Earlier notes are in git history.]
 
 ## Validation Report — Session 14 (2026-03-05, retry of session 13)
 
@@ -225,4 +133,119 @@ API batch (T1 auth tests):
 - Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
 - MCP: ws://127.0.0.1:8001/ws (RUNNING)
 - DB: backend/data/promptforge.db (3 tables)
+- Start: ./init.sh start
+
+## Validation Report — Session 17 (2026-03-04)
+
+**Code integrity audit:**
+- Files scanned: All backend/app/**/*.py, frontend/src/**/*.{ts,svelte}
+- Mocks/stubs found: 0
+- Mocks/stubs fixed: 0
+- Mocks/stubs remaining: 0
+- TODOs found: 0 (only third-party package TODOs in .venv)
+- Spec compliance: PASS
+  - MCP transport: WebSocket at ws://127.0.0.1:8001/ws ✓
+  - Token encryption: Fernet ✓
+  - Database: SQLite via aiosqlite at data/promptforge.db ✓
+  - SSE streaming: StreamingResponse with text/event-stream ✓
+  - No duplicate routes ✓
+  - Health endpoint fields match TypeScript interface ✓
+- Outstanding mocks: 0
+- Bare pass statements: All in legitimate exception handlers (JSON decode) — not stubs
+
+**Scope:** Expanded — 114 tests verified across all tiers (T1 complete boundary trigger)
+**Infrastructure:** All services healthy (backend 8000, frontend 5199, MCP 8001)
+
+**Regressions found:** 0
+**Regressions fixed:** 0 (none needed)
+**Tests still passing after validation:** 114/335
+
+**Full pipeline e2e test (via Puppeteer):**
+- Prompt: "Design a caching strategy for a high-traffic web application"
+- 4/4 stages completed: Analyze (18.0s, 475 tok) → Strategy (34.4s, 783 tok) → Optimize (46.3s, 2528 tok) → Validate (26.0s, 1709 tok)
+- Total: 124.8s, 5,495 tok, Score 8/10, RISEN framework
+- Auto-switch to Pipeline tab: ✓
+- Status bar lifecycle: "Forging Analyze" → "Forging Strategy" → "Forging Optimize" → "Forging Validate" → "Score: 8/10 · RISEN" ✓
+- Run header: duration, score, tokens all displayed ✓
+- Streaming text in Optimize stage: ✓
+- Score bars + verdict in Validate stage: ✓
+
+**Cross-feature integration check:**
+- Frontend build: ✓ Clean (vite build 5.41s)
+- Console errors: 0
+- History data flow: ✓ New forge appeared immediately in history navigator
+- 51 optimization records in DB with real pipeline data
+- Visual coherence: ✓ Consistent cyberpunk dark theme
+
+**Tier breakdown:**
+- T0: 18/18 ✓ (complete)
+- T1: 45/45 ✓ (complete)
+- T2: 51/106 (in progress)
+- T3: 0/66
+- T4: 0/70
+- T5: 0/30
+
+**Guidance for next coding session:**
+- Continue T2 tests: remaining 55 tests
+- Key T2 areas: UI interactions (#76, #78-80), SSE event details (#88-94, #96-97), error states (#99-102, #104), tool results (#106-107)
+- RepoPickerModal.svelte still orphaned (needs import + modal state + trigger)
+- retryOptimization() still unused (needs retry button UI)
+- fetchGitHubAuthStatus() not called on init (needs onMount hydration)
+- /api/optimizations endpoints still unused by frontend (may be intentional dead code)
+
+**Progress:** 114/335 tests passing (34.0%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
+- DB: backend/data/promptforge.db (3 tables, 51 optimization records)
+- Start: ./init.sh start
+
+## Validation Report — Session 17 (2026-03-04, retry completion)
+
+**Code integrity audit:** Completed in first attempt of session 17 (prior to timeout)
+- Files scanned: All backend/app/**/*.py, frontend/src/**/*.{ts,svelte}
+- Mocks/stubs found: 0
+- Mocks/stubs fixed: 0
+- Mocks/stubs remaining: 0
+- TODOs found: 0 (only third-party)
+- Spec compliance: PASS (MCP WebSocket ✓, Fernet ✓, SQLite ✓, SSE ✓)
+
+**Scope:** Expanded (T1 boundary complete) — 114 tests verified via git checkpoints + spot-checks
+**Infrastructure:** Frontend restarted (was down from previous timeout). All services healthy after restart.
+
+**Regressions found:** 0
+**Regressions fixed:** 0
+
+**Cross-feature integration check:**
+- Frontend build: ✓ Clean (vite build 3.87s)
+- Console errors: 0
+- History sidebar: ✓ Shows real optimization data (scores, frameworks, durations)
+- Settings panel: ✓ All fields functional
+- API spot-checks: health ✓, history pagination ✓ (5 of 51), stats ✓ (real data), GitHub auth/me ✓ (disconnected)
+- Visual coherence: ✓ Consistent cyberpunk dark theme across all views
+
+**Tests still passing after validation:** 114/335
+
+**Tier breakdown:**
+- T0: 18/18 ✓ (complete)
+- T1: 45/45 ✓ (complete)
+- T2: 51/106 (in progress)
+- T3: 0/66
+- T4: 0/70
+- T5: 0/30
+
+**Guidance for next coding session:**
+- Continue T2 tests: 55 remaining
+- Key T2 areas: UI interactions (#76, #78-80), SSE event details (#88-94, #96-97), error states (#99-102, #104), tool results (#106-107)
+- RepoPickerModal.svelte still orphaned (needs import + modal state + trigger)
+- retryOptimization() still unused (needs retry button UI)
+- fetchGitHubAuthStatus() not called on init (needs onMount hydration)
+
+**Progress:** 114/335 tests passing (34.0%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING — 13 tools registered)
+- DB: backend/data/promptforge.db (3 tables, 51 optimization records)
 - Start: ./init.sh start
