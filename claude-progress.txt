@@ -1,35 +1,5 @@
-[Trimmed by orchestrator: kept last 200 of 239 lines. Earlier notes are in git history.]
+[Trimmed by orchestrator: kept last 200 of 232 lines. Earlier notes are in git history.]
 
-- #142 Navigator History view shows run list
-- #144 Score displayed after forge completion
-- #145 Copy button copies optimized prompt to clipboard
-- #146 Strategy selector dropdown in Edit sub-tab
-- #147 Forge artifact view with sub-tabs (Optimized/Diff/Scores/Trace)
-- #148 PromptHistory sub-tab shows per-prompt run table
-- #149 Context Bar renders below textarea
-- #150 Word count displayed in Edit sub-tab
-- #160 Full end-to-end forge flow from prompt to result display
-
-**Regressions found:** 0
-**Regressions fixed:** 0 of 0
-**Tests still passing after validation:** 169/335
-
-**Tier breakdown:**
-- T0: 18/18 passing ✓
-- T1: 45/45 passing ✓
-- T2: 106/106 passing ✓
-- T3: 0/66 passing
-- T4: 0/70 passing
-- T5: 0/30 passing
-
-**Guidance for next coding session:**
-- T3 implementation is next priority (66 tests)
-- 19 T2 tests still unverified by validator but confirmed correct via code audit (#80,#89-93,#100-102,#104,#106,#108,#161-167,#169) — next validator session should continue from these
-- Integrator actions i24_1 through i24_6 remain open for coding agent (resize handles, persistence, @ popup, diff toggle, re-forge button, RepoPickerModal)
-- All keyboard shortcuts (Ctrl+B/I/N/W/S/Enter) were wired by integrator session 24 but T3 tests for them (#170-173, #176) need to be marked
-
-**Progress:** 169/335 tests passing (50.4%)
-**Server info:**
 - Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
 - Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
 - MCP: ws://127.0.0.1:8001/ws (RUNNING)
@@ -222,6 +192,66 @@ Full discovery scan completed (Steps 3a-3i):
 - T3: 4 remaining (#226, #233, #234, #235) — E2E tests requiring forge pipeline runs (validator job)
 - T4: 70 tests — all CSS styling/theming (coding agent job)
 - T5: 30 tests — (coding agent job)
+
+**Progress:** 231/335 tests passing (69.0%)
+**Server info:**
+- Backend: http://localhost:8000 (FastAPI + uvicorn, claude_cli provider)
+- Frontend: http://localhost:5199 (SvelteKit 2 + Vite)
+- MCP: ws://127.0.0.1:8001/ws (RUNNING)
+- DB: backend/data/promptforge.db
+- Start: ./init.sh start
+
+## Validation Report — Session 32 (2026-03-05)
+
+**Code integrity audit:**
+- Files scanned: All backend/*.py and frontend/src/**/*.{ts,svelte}
+- Mocks/stubs found: 0 (all TODO/MOCK/STUB hits were in .venv third-party packages)
+- Mocks/stubs fixed: 0
+- Mocks/stubs remaining: 0
+- TODOs found: 0 in application code
+- TODOs resolved: 0
+- Bare `pass` statements: All legitimate (exception handlers, SQLAlchemy Base class)
+- Spec compliance: PASS
+  - MCP transport: WebSocket on port 8001 ✓
+  - Database: SQLite via aiosqlite at data/promptforge.db ✓
+  - Encryption: Fernet for GitHub tokens ✓
+  - Model routing: Haiku/Opus/Sonnet per spec ✓
+  - SSE streaming: text/event-stream via StreamingResponse ✓
+  - No duplicate routes ✓
+  - Session management: consistent request.session pattern ✓
+
+**Scope:** Expanded — 25 T3 tests verified via UI + code audit
+**Infrastructure:** Healthy — backend, frontend, MCP all running. Build passes.
+
+**Regressions found:** 0
+**Regressions fixed:** 0 of 0
+**Tests still passing after validation:** 231/335
+
+**Tests verified (25):**
+- Toast system: #195 (forge toast), #196 (5s auto-dismiss), #197 (max 3 visible)
+- @ context injection: #198 (popup), #199 (chip added), #200 (chip dismiss)
+- Panel resize/collapse: #201 (nav resize), #202 (Ctrl+B), #203 (insp resize), #204 (Ctrl+I)
+- Command Palette: #211 (> prefix), #212 (# prefix), #213 (shortcuts), #214 (contextual), #215 (Escape)
+- Navigator views: #216 (Templates), #217 (Chains)
+- Tab management: #218 (Ctrl+S), #219 (Ctrl+N), #220 (close button), #221 (multi-tab), #222 (● modified)
+- Persistence: #223 (localStorage panel widths), #224 (sessionStorage activity), #225 (localStorage history filters)
+
+**Full forge pipeline verified:** Real LLM output confirmed — Fibonacci prompt analyzed as CODING/SIMPLE, strategy few-shot-scaffolding selected by Opus, optimized prompt with 5 examples and constraints, scores 8/10 overall. Not a mock.
+
+**Tier breakdown:**
+- T0: 18/18 passing ✓
+- T1: 45/45 passing ✓
+- T2: 106/106 passing ✓
+- T3: 62/66 passing (4 remaining: #226, #233, #234, #235 — passes=false, need coding agent)
+- T4: 0/70 passing
+- T5: 0/30 passing
+
+**Guidance for next coding session:**
+- Tests #226, #233, #234, #235 are the last 4 T3 tests — all features appear implemented, coding agent should verify and mark passing
+- T4 (70 CSS styling/theming tests) is ready to start — all functional features verified
+- No mocks, no stubs, no TODOs in application code
+- All persistence, toast, resize, Command Palette, and context injection features verified working
+- Frontend build passes cleanly (8.82s)
 
 **Progress:** 231/335 tests passing (69.0%)
 **Server info:**
