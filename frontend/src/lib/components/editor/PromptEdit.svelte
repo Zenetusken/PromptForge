@@ -111,6 +111,7 @@
               forge.optimizationId = data.optimization_id as string;
             }
             forge.finishForge(forge.overallScore ?? undefined, data.total_duration_ms as number | undefined, data.total_tokens as number | undefined);
+            showToast('Forge complete — prompt optimized!', 'success');
             break;
           case 'error':
             forge.setStageFailed(data.stage as string || 'pipeline', data.error as string);

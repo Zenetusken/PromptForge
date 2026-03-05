@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fetchSettings, updateSettings, type AppSettings } from '$lib/api/client';
+  import { workbench } from '$lib/stores/workbench.svelte';
 
   let settings = $state<AppSettings | null>(null);
   let loading = $state(true);
@@ -63,6 +64,24 @@
     </div>
   {:else if settings}
     <div class="space-y-2 px-1">
+      <!-- Provider Info -->
+      <div class="space-y-1 mb-3 p-2 rounded bg-bg-card border border-border-subtle">
+        <div class="text-[10px] uppercase tracking-wider text-text-dim font-semibold mb-1">Provider</div>
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'bg-neon-green' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'bg-neon-yellow' : 'bg-neon-red'}"></span>
+          <span class="text-xs text-text-primary font-medium">
+            {workbench.provider === 'anthropic' || workbench.provider === 'claude_cli' ? 'CLI (Claude)' : workbench.provider === 'openai' || workbench.provider === 'anthropic_api' ? 'API (Paid)' : 'Not detected'}
+          </span>
+        </div>
+        {#if workbench.providerModel}
+          <div class="text-[10px] text-text-dim font-mono ml-4">{workbench.providerModel}</div>
+        {/if}
+        <div class="flex items-center gap-1.5 mt-0.5">
+          <span class="w-1.5 h-1.5 rounded-full {workbench.isConnected ? 'bg-neon-green' : 'bg-neon-red'}"></span>
+          <span class="text-[10px] text-text-dim">{workbench.isConnected ? 'Connected' : 'Disconnected'}</span>
+        </div>
+      </div>
+
       <!-- Default Model -->
       <div class="space-y-0.5">
         <label class="text-[10px] text-text-dim block" for="setting-model">Default Model</label>
