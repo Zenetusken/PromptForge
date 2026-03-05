@@ -2,16 +2,6 @@
   "$schema_version": 1,
   "session_log": [
     {
-      "session_id": 29,
-      "session_type": "validator",
-      "tests_completed": [],
-      "tests_regressed": [],
-      "tests_fixed": [],
-      "mocks_found": 0,
-      "mocks_fixed": 0,
-      "summary": "Standard validation: 25 tests verified. 0 regressions, 0 mocks. Code audit clean."
-    },
-    {
       "session_id": 30,
       "session_type": "coding",
       "tests_completed": [
@@ -364,13 +354,39 @@
     "notes": "All services healthy (session 33). Backend using claude_cli provider. Frontend dev server on 5199. MCP server RUNNING. DB at backend/data/promptforge.db. Build passes. T0: 18/18, T1: 45/45, T2: 106/106, T3: 66/66. 235/335 tests passing (70.1%). T4 styling work ready to begin."
   },
   "session_checkpoint": {
-    "session_type": "",
-    "session_id": 0,
-    "audit_done": false,
-    "tests_verified_this_run": [],
+    "session_type": "validator",
+    "session_id": 35,
+    "audit_done": true,
+    "tests_verified_this_run": [
+      4,
+      5,
+      6,
+      12,
+      13,
+      14,
+      15,
+      188,
+      189,
+      190,
+      205,
+      93,
+      100,
+      102,
+      167,
+      169,
+      226,
+      233,
+      235,
+      108,
+      228,
+      229,
+      230,
+      231,
+      234
+    ],
     "tests_completed_this_run": [],
     "gaps_wired_this_run": [],
-    "last_step": "",
-    "session_start_sha": ""
+    "last_step": "5",
+    "session_start_sha": "9352f38fda312ff4a4d3125985bddc15f11f9a25"
   }
 }
