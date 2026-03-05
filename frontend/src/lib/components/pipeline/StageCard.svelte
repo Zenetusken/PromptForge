@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import type { StageStatus } from '$lib/stores/forge.svelte';
+  import { forge } from '$lib/stores/forge.svelte';
   import ModelBadge from '$lib/components/shared/ModelBadge.svelte';
 
   let { name, icon, status, index, isActive, children, duration, model, tokenCount, stageColor }: {
@@ -25,6 +26,25 @@
 
   let stageLabel = $derived(`0${index} // ${name.toUpperCase()}`);
 
+  // Get label color based on status
+  let labelColor = $derived(
+    status === 'running' ? (stageColor || '#00e5ff') :
+    status === 'done' ? (stageColor || '#22ff88') :
+    status === 'error' ? '#ff3366' :
+    status === 'timed_out' ? '#ff8c00' :
+    status === 'cancelled' ? '#8b8ba8' :
+    status === 'skipped' ? '#7a7a9e' :
+    '#7a7a9e'
+  );
+
+  // Get inline error text (first 80 chars) for failed stages
+  let errorText = $derived.by(() => {
+    if (status === 'error' && forge.error) {
+      return forge.error.length > 80 ? forge.error.slice(0, 80) + '…' : forge.error;
+    }
+    return '';
+  });
+
   $effect(() => {
     if (isActive || status === 'running') {
       expanded = true;
@@ -33,7 +53,8 @@
 </script>
 
 <div
-  class="bg-bg-card border border-border-subtle rounded-lg overflow-hidden transition-all duration-300"
+  class="bg-bg-card border border-border-subtle rounded-lg overflow-hidden transition-all duration-300
+    {status === 'skipped' ? 'opacity-40' : ''}"
   style="border-left: 2px solid {stageColor ? `color-mix(in srgb, ${stageColor} ${leftBorderOpacity * 100}%, transparent)` : 'transparent'};"
   data-testid="stage-card-{name.toLowerCase()}"
 >
@@ -62,17 +83,45 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
         </svg>
       </span>
+    {:else if status === 'timed_out'}
+      <span class="w-3 h-3 rounded-full shrink-0 flex items-center justify-center bg-neon-orange/20" aria-label="Status: timed out" role="img">
+        <svg class="w-2 h-2 text-neon-orange" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3"></path>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6"></path>
+        </svg>
+      </span>
+    {:else if status === 'cancelled'}
+      <span class="w-3 h-3 rounded-full shrink-0 flex items-center justify-center border border-text-secondary/40" aria-label="Status: cancelled" role="img">
+        <svg class="w-2 h-2 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636"></path>
+        </svg>
+      </span>
+    {:else if status === 'skipped'}
+      <span class="w-3 h-3 rounded-full shrink-0 flex items-center justify-center border border-text-dim/40" aria-label="Status: skipped" role="img">
+        <svg class="w-2 h-2 text-text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+        </svg>
+      </span>
     {:else}
       <span class="w-3 h-3 rounded-full shrink-0 border border-text-dim/40" aria-label="Status: idle" role="img"></span>
     {/if}
 
     <!-- Stage label: Syne 11px 700 uppercase -->
     <span
-      class="font-display text-[11px] font-bold uppercase flex-1"
-      style="letter-spacing: 0.08em; color: {status === 'running' ? (stageColor || '#00e5ff') : status === 'done' ? (stageColor || '#22ff88') : status === 'error' ? '#ff3366' : '#7a7a9e'};"
+      class="font-display text-[11px] font-bold uppercase"
+      style="letter-spacing: 0.08em; color: {labelColor};"
     >
       {stageLabel}
     </span>
+
+    <!-- Inline error annotation (first 80 chars) -->
+    {#if status === 'error' && errorText}
+      <span class="text-neon-red/70 font-mono text-[10px] truncate max-w-[200px]" title={forge.error || ''}>
+        {errorText}
+      </span>
+    {/if}
+
+    <span class="flex-1"></span>
 
     {#if duration}
       <span class="text-[10px] text-text-dim font-mono">{(duration / 1000).toFixed(1)}s</span>

@@ -1,4 +1,4 @@
-export type StageStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped';
+export type StageStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped' | 'timed_out' | 'cancelled';
 
 export interface StageResult {
   stage: string;
@@ -96,6 +96,17 @@ class ForgeStore {
   setStageSkipped(stage: string) {
     this.stageStatuses[stage] = 'skipped';
     this.addEvent({ type: 'stage_skipped', stage, timestamp: Date.now() });
+  }
+
+  setStageTimedOut(stage: string, error?: string) {
+    this.stageStatuses[stage] = 'timed_out';
+    this.error = error || `Stage ${stage} timed out`;
+    this.addEvent({ type: 'stage_timed_out', stage, data: { error }, timestamp: Date.now() });
+  }
+
+  setStageCancelled(stage: string) {
+    this.stageStatuses[stage] = 'cancelled';
+    this.addEvent({ type: 'stage_cancelled', stage, timestamp: Date.now() });
   }
 
   appendStreamingText(chunk: string) {

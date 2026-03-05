@@ -120,7 +120,10 @@
   }
 
   async function handleForge() {
-    if (!tab.promptText?.trim()) return;
+    if (!tab.promptText?.trim()) {
+      toast.error('Please enter a prompt before forging');
+      return;
+    }
     if (forge.isForging) return;
 
     // Trigger forge-spark animation before disable

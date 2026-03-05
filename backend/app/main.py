@@ -9,8 +9,9 @@ and mounts /api/docs for Swagger UI.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
@@ -118,6 +119,22 @@ app.include_router(github_repos.router)
 app.include_router(providers_router)
 app.include_router(github_router)
 app.include_router(settings_router)
+
+
+# ── Error Handlers ────────────────────────────────────────────────────
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Return JSON for unhandled exceptions instead of HTML stack traces."""
+    logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "detail": str(exc) if not isinstance(exc, Exception) else "An unexpected error occurred",
+            "path": str(request.url.path),
+        },
+    )
 
 
 @app.get("/")

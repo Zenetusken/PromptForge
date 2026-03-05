@@ -3827,7 +3827,7 @@
       "VERIFY an error toast or message is displayed on network failure"
     ],
     "expected_outcome": "Pipeline handles network error gracefully",
-    "passes": false,
+    "passes": true,
     "id": 320
   },
   {
@@ -3848,7 +3848,7 @@
       "VERIFY error boundaries or try-catch blocks protect the UI"
     ],
     "expected_outcome": "Invalid API response handled without crash",
-    "passes": false,
+    "passes": true,
     "id": 321
   },
   {
@@ -3870,7 +3870,7 @@
       "VERIFY clicking the stage header expands the full error details"
     ],
     "expected_outcome": "Stage failure shows inline error annotation",
-    "passes": false,
+    "passes": true,
     "id": 322
   },
   {
@@ -3891,7 +3891,7 @@
       "VERIFY the failed circle has correct coloring (neon-red/20 fill, \u00d7 icon)"
     ],
     "expected_outcome": "Failed stage shows neon-red circle with \u00d7 icon",
-    "passes": false,
+    "passes": true,
     "id": 323
   },
   {
@@ -3912,7 +3912,7 @@
       "VERIFY skipped stages show a hollow circle with \u2192 icon"
     ],
     "expected_outcome": "Skipped stages shown at 40% opacity",
-    "passes": false,
+    "passes": true,
     "id": 324
   },
   {
@@ -3933,7 +3933,7 @@
       "VERIFY timed-out uses neon-orange color (not neon-red)"
     ],
     "expected_outcome": "Timed-out stages show neon-orange circle with clock icon",
-    "passes": false,
+    "passes": true,
     "id": 325
   },
   {
@@ -3954,7 +3954,7 @@
       "VERIFY cancelled uses text-secondary color with hollow circle + slash icon"
     ],
     "expected_outcome": "Cancelled stages show distinct visual from failed",
-    "passes": false,
+    "passes": true,
     "id": 326
   },
   {
@@ -3974,7 +3974,7 @@
       "VERIFY error responses are JSON format with error message"
     ],
     "expected_outcome": "Backend 500 error returns JSON error response",
-    "passes": false,
+    "passes": true,
     "id": 327
   },
   {
@@ -3994,7 +3994,7 @@
       "VERIFY stage data from successful stages is still accessible"
     ],
     "expected_outcome": "Pipeline partial success preserves completed stage data",
-    "passes": false,
+    "passes": true,
     "id": 328
   },
   {
@@ -4019,7 +4019,7 @@
       "SCREENSHOT to verify validation error"
     ],
     "expected_outcome": "Empty prompt rejected with validation error",
-    "passes": false,
+    "passes": true,
     "id": 329
   },
   {
@@ -4144,7 +4144,7 @@
       "VERIFY Dockerfiles exist for backend and frontend"
     ],
     "expected_outcome": "Docker build succeeds for all services",
-    "passes": false,
+    "passes": true,
     "id": 334
   },
   {
@@ -4164,7 +4164,7 @@
       "VERIFY the file contains promptforge server with transport='websocket' and url='ws://127.0.0.1:8001/ws'"
     ],
     "expected_outcome": ".mcp.json config file correct for Claude Code",
-    "passes": false,
+    "passes": true,
     "id": 335
   }
 ]
