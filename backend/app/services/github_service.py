@@ -31,9 +31,10 @@ _fernet: Optional[Fernet] = None
 # File extensions and directories to exclude when browsing repos
 EXCLUDED_EXTENSIONS = frozenset({
     ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg",
-    ".woff", ".woff2", ".ttf", ".eot", ".pdf",
+    ".woff", ".woff2", ".ttf", ".eot",
     ".zip", ".gz", ".tar", ".mp4", ".mp3",
     ".pyc", ".pyo", ".so", ".dll", ".exe", ".bin",
+    ".wasm", ".rdata", ".pdb", ".map",
 })
 
 EXCLUDED_DIRECTORIES = frozenset({
@@ -340,3 +341,24 @@ async def get_repo_info(token: str, full_name: str) -> Optional[dict]:
     except Exception as e:
         logger.error("Failed to get repo info for %s: %s", full_name, e)
         return None
+
+
+async def get_default_branch(token: str, repo_full_name: str) -> str:
+    """Return the default branch name for a GitHub repository.
+
+    Args:
+        token: Decrypted GitHub access token.
+        repo_full_name: Repository full name (owner/repo).
+
+    Returns:
+        The default branch name (e.g. "main" or "master").
+
+    Raises:
+        Exception: If the repository cannot be reached or the token is invalid.
+    """
+    def _sync() -> str:
+        from github import Auth, Github
+        g = Github(auth=Auth.Token(token))
+        return g.get_repo(repo_full_name).default_branch
+
+    return await anyio.to_thread.run_sync(_sync)
