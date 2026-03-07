@@ -64,7 +64,7 @@
         <p class="text-xs text-text-secondary">{data.verdict}</p>
         {#if hasCodebaseContext}
           <p class="mt-1.5 font-mono text-[11px]" style="color: #7a7a9e;">
-            <span style="color: var(--color-neon-teal, #00e5ff);">◆</span> Codebase accuracy verified against {exploreRepo}
+            <span style="color: var(--color-neon-teal, #00d4aa);">◆</span> Codebase accuracy verified against {exploreRepo}
           </p>
         {/if}
       </div>

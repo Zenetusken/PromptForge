@@ -90,7 +90,7 @@
         <span class="text-neon-purple/80">Files: {filesReadCount}</span>
         {#if coveragePct > 0}
           <span class="text-text-dim">·</span>
-          <span>Coverage: <span style="color: var(--color-neon-teal, #00e5ff);">{coveragePct}% of repo</span></span>
+          <span>Coverage: <span style="color: var(--color-neon-teal, #00d4aa);">{coveragePct}% of repo</span></span>
         {/if}
       </div>
     {/if}
