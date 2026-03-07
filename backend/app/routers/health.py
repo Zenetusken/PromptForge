@@ -1,7 +1,6 @@
 import logging
 from fastapi import APIRouter
 
-from app.providers.base import MODEL_ROUTING
 from app.config import settings
 from app.database import check_db_connection
 
@@ -31,7 +30,6 @@ async def health_check():
     return {
         "status": "ok" if db_ok else "degraded",
         "provider": provider_name,
-        "model_routing": MODEL_ROUTING,
         "github_oauth_enabled": github_oauth_enabled,
         "db_connected": db_ok,
         "version": "2.0.0",

@@ -83,7 +83,6 @@ async def detect_providers():
     return {
         "providers": providers,
         "active": active_provider,
-        "model_routing": MODEL_ROUTING,
     }
 
 
@@ -101,7 +100,6 @@ async def provider_status():
         return {
             "status": "unavailable",
             "provider": None,
-            "model_routing": MODEL_ROUTING,
             "healthy": False,
             "message": "No LLM provider has been initialized.",
         }
@@ -127,7 +125,6 @@ async def provider_status():
     return {
         "status": "healthy" if healthy else "degraded",
         "provider": _provider.name,
-        "model_routing": MODEL_ROUTING,
         "healthy": healthy,
         "message": message,
     }
