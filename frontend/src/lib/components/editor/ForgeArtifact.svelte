@@ -177,7 +177,7 @@
     {:else if activeSubTab === 'scores'}
       {#if Object.keys(scores).length > 0}
         <div class="space-y-3">
-          {#each Object.entries(scores) as [key, val]}
+          {#each Object.entries(scores).filter(([k]) => k !== 'overall_score') as [key, val]}
             {@const scoreVal = typeof val === 'number' ? val : 0}
             <div class="space-y-1">
               <div class="flex justify-between text-xs">

@@ -257,13 +257,15 @@ class ForgeStore {
       };
     }
 
+    // Use _score-suffixed keys to match the live validation event shape so the
+    // Scores sub-tab renders the same labels regardless of run source.
     const scores: Record<string, number> = {};
-    if (record.clarity_score != null) scores.clarity = record.clarity_score;
-    if (record.specificity_score != null) scores.specificity = record.specificity_score;
-    if (record.structure_score != null) scores.structure = record.structure_score;
-    if (record.faithfulness_score != null) scores.faithfulness = record.faithfulness_score;
-    if (record.conciseness_score != null) scores.conciseness = record.conciseness_score;
-    if (record.overall_score != null) scores.overall_score = record.overall_score;
+    if (record.clarity_score != null) scores.clarity_score = record.clarity_score;
+    if (record.specificity_score != null) scores.specificity_score = record.specificity_score;
+    if (record.structure_score != null) scores.structure_score = record.structure_score;
+    if (record.faithfulness_score != null) scores.faithfulness_score = record.faithfulness_score;
+    if (record.conciseness_score != null) scores.conciseness_score = record.conciseness_score;
+    // overall_score is excluded — it is displayed via ScoreCircle, not as a dimension bar.
 
     if (Object.keys(scores).length > 0) {
       this.stageStatuses['validate'] = 'done';

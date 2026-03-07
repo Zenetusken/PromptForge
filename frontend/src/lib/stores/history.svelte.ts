@@ -3,11 +3,13 @@ export interface HistoryEntry {
   raw_prompt: string;
   optimized_prompt?: string;
   overall_score?: number;
-  strategy?: string;
-  model?: string;
+  primary_framework?: string;   // API field name from to_dict()
+  model_optimize?: string;      // API returns per-stage model fields
   created_at: string;
   duration_ms?: number;
   tags?: string[];
+  linked_repo_full_name?: string;  // for repo context restore on re-forge
+  linked_repo_branch?: string;
 }
 
 export interface HistoryFilters {

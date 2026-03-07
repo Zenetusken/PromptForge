@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { history } from '$lib/stores/history.svelte';
   import { editor } from '$lib/stores/editor.svelte';
+  import { github } from '$lib/stores/github.svelte';
   import { fetchHistory } from '$lib/api/client';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
   import StrategyBadge from '$lib/components/shared/StrategyBadge.svelte';
@@ -20,6 +21,12 @@
         // result from this re-run replaces the old association on this tab
         tab.optimizationId = undefined;
         editor.updateTabPrompt(tab.id, entry.raw_prompt);
+      }
+      // Restore the linked repo from the original run so the Explore stage
+      // re-runs with the same codebase context. Only overrides if the entry
+      // had a repo — leaves the current selection intact otherwise.
+      if (entry.linked_repo_full_name) {
+        github.selectRepo(entry.linked_repo_full_name, entry.linked_repo_branch ?? undefined);
       }
       // Switch to edit sub-tab so the forge button is visible, then await DOM update
       editor.setSubTab('edit');
@@ -132,7 +139,7 @@
             >
               <td class="py-2 px-2 text-text-secondary font-mono">#{promptRuns.length - i}</td>
               <td class="py-2 px-2">
-                <StrategyBadge strategy={entry.strategy ?? 'auto'} />
+                <StrategyBadge strategy={entry.primary_framework ?? 'auto'} />
               </td>
               <td class="py-2 px-2">
                 {#if entry.overall_score != null}
@@ -172,11 +179,11 @@
                           <span class="text-neon-purple/70">{entry.strategy}</span>
                         </div>
                       {/if}
-                      {#if entry.model}
+                      {#if entry.model_optimize}
                         <div class="flex items-center gap-2 py-0.5">
                           <span class="w-1.5 h-1.5 rounded-full bg-neon-blue/60 shrink-0"></span>
                           <span class="text-text-dim w-16 shrink-0">Model</span>
-                          <span class="text-text-secondary">{entry.model}</span>
+                          <span class="text-text-secondary">{entry.model_optimize}</span>
                         </div>
                       {/if}
                       {#if entry.overall_score != null}
