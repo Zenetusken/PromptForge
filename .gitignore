@@ -41,3 +41,4 @@ claude-progress.txt
 *.bak.*
 .pids/
 backend/data/
+.worktrees/
