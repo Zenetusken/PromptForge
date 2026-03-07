@@ -66,11 +66,23 @@
           complete(system, user, model) -> str
           stream(system, user, model) -> AsyncGenerator[str, None]
           complete_json(system, user, model, schema) -> dict
-          complete_agentic(system, user, model, tools, max_turns) -> AgenticResult
+          complete_agentic(system, user, model, tools, max_turns, on_tool_call, output_schema) -> AgenticResult
+
+        AgenticResult fields: text (str), tool_calls (list[dict]), output (dict | None),
+          stop_reason ("end_turn" | "max_turns" | "tool_error" | "cancelled").
+          Note: "tool_error" and "cancelled" are reserved contract values. Neither the
+          Anthropic API nor the claude-agent-sdk currently surfaces these as stop reasons;
+          both providers return "end_turn" or "max_turns" in practice.
+        ToolDefinition fields: name, description, input_schema (JSON Schema dict),
+          handler (async callable).
 
         The agentic method is the key addition for GitHub-grounded analysis.
         For ClaudeCLIProvider: uses claude-agent-sdk with in-process MCP server tools.
-        For AnthropicAPIProvider: runs an explicit tool-calling loop via messages.create().
+          No server-side schema enforcement — complete_json(schema=...) uses best-effort
+          parse_json_robust() fallback. init.sh unsets CLAUDECODE before starting the
+          backend; no API delegation occurs at runtime.
+        For AnthropicAPIProvider: runs a multi-turn tool-calling loop via messages.stream()
+          with adaptive thinking (Opus/Sonnet 4.6) and ephemeral prompt caching.
       </llm_integration>
 
       <model_orchestration>

@@ -41,6 +41,12 @@ class AnthropicAPIProvider(LLMProvider):
         if schema is not None:
             # output_config.json_schema is incompatible with adaptive thinking.
             # Requires: additionalProperties=False on all objects (Anthropic requirement).
+            if use_thinking:
+                logger.warning(
+                    "Adaptive thinking disabled for model %s because schema was provided "
+                    "(JSON schema output is incompatible with extended thinking).",
+                    model,
+                )
             extra: dict = {"output_config": {"format": {"type": "json_schema", "schema": schema}}}
         elif use_thinking:
             extra = {"thinking": {"type": "adaptive"}}

@@ -97,8 +97,10 @@ async def _detect_provider_inner() -> LLMProvider:
     in_claude_session = bool(os.environ.get("CLAUDECODE"))
     if in_claude_session:
         logger.info(
-            "Running inside a Claude Code session (CLAUDECODE env set). "
-            "Skipping ClaudeCLIProvider to avoid nested session issues."
+            "Running inside a Claude Code session (CLAUDECODE=%s). "
+            "Skipping ClaudeCLIProvider probe — nested sessions are not supported. "
+            "Will try AnthropicAPIProvider next.",
+            os.environ.get("CLAUDECODE"),
         )
     else:
         try:

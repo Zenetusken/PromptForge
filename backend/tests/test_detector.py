@@ -217,3 +217,24 @@ async def test_detect_provider_uses_cli_when_claude_dir_exists(monkeypatch):
         with patch.dict(os.environ, _env_without_claudecode(), clear=True):
             provider = await detect_provider()
             assert provider.name == "claude_cli"
+
+
+# ---------------------------------------------------------------------------
+# N2 — AnthropicAPIProvider detection path
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_detect_provider_uses_anthropic_api_when_cli_unavailable():
+    """When claude CLI is absent and ANTHROPIC_API_KEY is set, use AnthropicAPIProvider."""
+    from app.providers.anthropic_api import AnthropicAPIProvider
+
+    with (
+        patch("shutil.which", return_value=None),  # no claude binary
+        patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-test-key"}),
+    ):
+        from app.config import settings
+        with patch.object(settings, "ANTHROPIC_API_KEY", "sk-ant-test-key"):
+            with patch.dict(os.environ, _env_without_claudecode(), clear=False):
+                provider = await _detect_provider_inner()
+
+    assert isinstance(provider, AnthropicAPIProvider)

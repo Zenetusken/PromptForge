@@ -145,6 +145,11 @@ async def run_optimize(
         optimization_notes = parsed.get("optimization_notes", "")
     else:
         # All extraction strategies exhausted — treat full_text as the optimized prompt
+        logger.warning(
+            "optimize stage: all provider calls and JSON extraction strategies failed; "
+            "returning %s unchanged",
+            "raw prompt" if full_text == raw_prompt else "accumulated text",
+        )
         optimized_prompt = full_text
         changes_made = []
         optimization_notes = ""

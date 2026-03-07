@@ -138,7 +138,10 @@ class ClaudeCLIProvider(LLMProvider):
                 result = await _handler(args)
                 result_str = result if isinstance(result, str) else str(result)
                 if _on:
-                    _on(_name, args)
+                    try:
+                        _on(_name, args)
+                    except Exception as _cb_err:
+                        logger.warning("on_tool_call callback raised: %s", _cb_err)
                 _calls.append({
                     "name": _name,
                     "input": args,
