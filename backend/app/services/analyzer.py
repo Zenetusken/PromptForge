@@ -40,6 +40,7 @@ async def run_analyze(
             provider.complete_json(system_prompt, user_message, model),
             timeout=settings.ANALYZE_TIMEOUT_SECONDS,
         )
+        result["analysis_quality"] = "full"
     except asyncio.TimeoutError:
         logger.warning(
             "Analyze stage timed out after %ds", settings.ANALYZE_TIMEOUT_SECONDS
@@ -55,6 +56,7 @@ async def run_analyze(
             "complexity": "moderate",
             "recommended_frameworks": ["CO-STAR"],
             "codebase_informed": codebase_context is not None,
+            "analysis_quality": "fallback",
         }
 
     # Ensure required fields

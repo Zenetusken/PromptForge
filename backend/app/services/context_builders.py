@@ -22,6 +22,9 @@ Round 6 (P1.5) further improves build_codebase_summary():
   - Grounding notes cap raised 5→8
   - coverage_pct surfaced; repo and branch merged into one header line
   - Quality warnings are now specific: partial vs failed give distinct messages
+
+Round 7 (P2.2) extends build_analysis_summary():
+  analysis_quality caveat prepended when quality is 'fallback' or 'failed'
 """
 
 
@@ -120,6 +123,19 @@ def build_analysis_summary(analysis: dict) -> str:
         return ""
 
     parts: list[str] = []
+
+    analysis_quality = analysis.get("analysis_quality")
+    if analysis_quality == "fallback":
+        parts.append(
+            "Note: Prompt analysis fell back to defaults (LLM call failed). "
+            "Framework selection should prioritize well-established patterns."
+        )
+        parts.append("")  # blank line separator
+    elif analysis_quality == "failed":
+        parts.append(
+            "Note: Prompt analysis failed completely. Proceed with maximum caution."
+        )
+        parts.append("")  # blank line separator
 
     task_type = analysis.get("task_type")
     if task_type:

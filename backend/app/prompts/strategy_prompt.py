@@ -24,6 +24,8 @@ Consider:
 - Whether codebase context is available (affects framework choice)
 - Whether secondary frameworks complement without conflicting
 
+If the analysis_quality indicator shows 'fallback' or 'failed', treat all recommended_frameworks as unverified suggestions and prefer well-established frameworks (CO-STAR for general tasks, chain-of-thought for complex reasoning) over novel combinations.
+
 Respond with a JSON object:
 {
   "primary_framework": "framework-name",
