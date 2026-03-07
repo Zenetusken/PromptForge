@@ -97,6 +97,7 @@ class ClaudeCLIProvider(LLMProvider):
             create_sdk_mcp_server,
         )
 
+        tool_calls: list[dict] = []
         sdk_tools = []
         for td in tools:
             handler = td.handler
@@ -108,11 +109,18 @@ class ClaudeCLIProvider(LLMProvider):
                 _handler=handler,
                 _name=name,
                 _on=on_tool_call,
+                _calls=tool_calls,
             ) -> dict:
                 result = await _handler(args)
+                result_str = result if isinstance(result, str) else str(result)
                 if _on:
                     _on(_name, args)
-                return {"content": [{"type": "text", "text": result}]}
+                _calls.append({
+                    "name": _name,
+                    "input": args,
+                    "output": result_str[:500] if result_str else "",
+                })
+                return {"content": [{"type": "text", "text": result_str}]}
 
             sdk_tools.append(_tool_fn)
 
@@ -133,7 +141,6 @@ class ClaudeCLIProvider(LLMProvider):
         )
 
         full_text = ""
-        tool_calls = []
         async for msg in self._query(prompt=_prompt_stream(), options=options):
             if isinstance(msg, AssistantMessage):
                 for block in msg.content:
