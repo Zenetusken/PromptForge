@@ -2,6 +2,7 @@ import json
 import uuid
 import time
 import logging
+import datetime as dt
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -31,9 +32,27 @@ def set_pipeline(pipeline):
     _pipeline = pipeline
 
 
+def _default_serializer(obj: object) -> str:
+    """JSON fallback serializer for types not handled by default."""
+    if isinstance(obj, (dt.datetime, dt.date)):
+        return obj.isoformat()
+    if isinstance(obj, Exception):
+        return str(obj)
+    return repr(obj)  # Last resort — never silently drop data
+
+
 def _sse_event(event_type: str, data: dict) -> str:
-    """Format an SSE event."""
-    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+    """Format an SSE event with safe JSON serialization.
+
+    Uses a fallback serializer so that non-serializable values (datetimes,
+    exceptions, etc.) never crash the stream silently.
+    """
+    try:
+        payload = json.dumps(data, default=_default_serializer)
+    except Exception as e:
+        logger.error("SSE serialization failed for event %s: %s", event_type, e)
+        payload = json.dumps({"error": f"Serialization error: {e}"})
+    return f"event: {event_type}\ndata: {payload}\n\n"
 
 
 @router.post("/api/optimize")
