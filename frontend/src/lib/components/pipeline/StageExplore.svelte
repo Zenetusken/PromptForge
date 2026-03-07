@@ -8,6 +8,10 @@
   let observations = $derived((data.observations || []) as string[]);
   let groundingNotes = $derived((data.grounding_notes || []) as string[]);
   let filesReadCount = $derived((data.files_read_count as number) || keyFiles.length);
+  let coveragePct = $derived((data.coverage_pct as number) || 0);
+  let branchFallback = $derived((data.branch_fallback as boolean) || false);
+  let originalBranch = $derived((data.original_branch as string) || '');
+  let usedBranch = $derived((data.used_branch as string) || '');
 </script>
 
 <div class="space-y-2 text-xs">
@@ -30,6 +34,16 @@
       {/if}
     </div>
   {:else if result}
+    <!-- Branch fallback warning -->
+    {#if branchFallback}
+      <div
+        class="px-2 py-1.5 text-[11px] text-text-secondary font-mono"
+        style="border: 1px solid var(--color-neon-yellow, #fbbf24); background: rgba(251,191,36,0.04);"
+      >
+        ⚠ Branch "{originalBranch}" not found — using "{usedBranch}" instead
+      </div>
+    {/if}
+
     <!-- Terminal-style key files feed -->
     {#if keyFiles.length > 0}
       <div class="bg-bg-input rounded-md p-2 space-y-1">
@@ -72,8 +86,12 @@
     {/if}
 
     {#if filesReadCount > 0}
-      <div class="text-neon-purple/80 font-mono text-[10px]">
-        Grounded in {filesReadCount} file{filesReadCount !== 1 ? 's' : ''}
+      <div class="text-text-secondary font-mono text-[10px] flex items-center gap-2">
+        <span class="text-neon-purple/80">Files: {filesReadCount}</span>
+        {#if coveragePct > 0}
+          <span class="text-text-dim">·</span>
+          <span>Coverage: <span style="color: var(--color-neon-teal, #00e5ff);">{coveragePct}% of repo</span></span>
+        {/if}
       </div>
     {/if}
   {:else}

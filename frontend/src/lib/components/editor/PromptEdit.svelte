@@ -185,6 +185,18 @@
               forge.setStageComplete('explore', { stage: 'explore', data });
             }
             break;
+          case 'explore_info':
+            // Supplemental metadata about the explore stage (branch fallback, coverage).
+            // Merge into the existing explore stage result data rather than replacing it.
+            if (forge.stageResults['explore']) {
+              forge.stageResults['explore'] = {
+                ...forge.stageResults['explore'],
+                data: { ...forge.stageResults['explore'].data, ...data }
+              };
+            } else {
+              forge.stageResults['explore'] = { stage: 'explore', data };
+            }
+            break;
           case 'analysis':
             forge.setStageComplete('analyze', { stage: 'analyze', data, duration: data.duration_ms as number | undefined });
             break;

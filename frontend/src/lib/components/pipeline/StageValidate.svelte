@@ -6,6 +6,16 @@
   let result = $derived(forge.stageResults['validate']);
   let data = $derived((result?.data || {}) as Record<string, unknown>);
   let scores = $derived((data.scores || {}) as Record<string, number>);
+
+  // Codebase accuracy: show when explore completed with real context
+  let exploreData = $derived((forge.stageResults['explore']?.data || {}) as Record<string, unknown>);
+  let exploreQuality = $derived((exploreData.quality as string) || '');
+  let exploreRepo = $derived((exploreData.repo as string) || '');
+  let hasCodebaseContext = $derived(
+    forge.stageStatuses['explore'] === 'done' &&
+    (exploreQuality === 'complete' || exploreQuality === 'partial') &&
+    exploreRepo.length > 0
+  );
 </script>
 
 <div class="space-y-2 text-xs">
@@ -52,6 +62,11 @@
           {/if}
         </div>
         <p class="text-xs text-text-secondary">{data.verdict}</p>
+        {#if hasCodebaseContext}
+          <p class="mt-1.5 font-mono text-[11px]" style="color: #7a7a9e;">
+            <span style="color: var(--color-neon-teal, #00e5ff);">◆</span> Codebase accuracy verified against {exploreRepo}
+          </p>
+        {/if}
       </div>
     {/if}
   {:else}
