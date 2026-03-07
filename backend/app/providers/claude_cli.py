@@ -114,14 +114,29 @@ class ClaudeCLIProvider(LLMProvider):
                 for block in msg.content:
                     if isinstance(block, TextBlock):
                         text = block.text
-                        # Chunk large text blocks for progressive streaming
-                        chunk_size = 80
-                        if len(text) <= chunk_size:
-                            yield text
-                        else:
-                            for i in range(0, len(text), chunk_size):
-                                yield text[i:i + chunk_size]
-                                await asyncio.sleep(0.01)  # Small delay for progressive display
+                        if not text:
+                            continue
+                        # Word-boundary streaming: split on whitespace to avoid
+                        # cutting tokens mid-word, then batch words into chunks
+                        # of ~60 chars for a smooth progressive display.
+                        # First chunk yields immediately; subsequent chunks get
+                        # a 3ms pause (vs 10ms fixed — 70% less total sleep overhead).
+                        CHUNK_TARGET = 60
+                        words = text.split(" ")
+                        current = ""
+                        first = True
+                        for word in words:
+                            candidate = (current + " " + word).lstrip() if current else word
+                            if len(candidate) >= CHUNK_TARGET and current:
+                                yield current + " "
+                                if not first:
+                                    await asyncio.sleep(0.003)
+                                first = False
+                                current = word
+                            else:
+                                current = candidate
+                        if current:
+                            yield current
 
     async def complete_json(
         self,
