@@ -61,7 +61,53 @@ class AnthropicAPIProvider(LLMProvider):
             async for chunk in stream.text_stream:
                 yield chunk
 
-    async def complete_json(self, system: str, user: str, model: str, schema: type | None = None) -> dict:
+    async def complete_json(
+        self,
+        system: str,
+        user: str,
+        model: str,
+        schema: dict | None = None,
+    ) -> dict:
+        """Structured JSON output.
+
+        When ``schema`` is provided (a JSON Schema dict), uses
+        ``output_config.format`` for guaranteed schema-compliant output —
+        the API enforces the schema server-side; no regex parsing needed.
+
+        When ``schema`` is None, calls complete() and applies the 3-strategy
+        parse_json_robust() fallback (backward-compatible for callers that
+        rely on the model's prompt-driven JSON output).
+        """
+        use_thinking = model in _THINKING_MODELS
+        max_tokens = _MAX_TOKENS_THINKING if use_thinking else _MAX_TOKENS_DEFAULT
+        extra: dict = {"thinking": {"type": "adaptive"}} if use_thinking else {}
+
+        if schema is not None:
+            # Native schema enforcement: output_config.format guarantees the
+            # response matches the schema — zero regex required.
+            # Requires: additionalProperties=False on all objects (Anthropic requirement).
+            extra["output_config"] = {
+                "format": {
+                    "type": "json_schema",
+                    "schema": schema,
+                }
+            }
+            async with self._client.messages.stream(
+                model=model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+                **extra,
+            ) as stream:
+                response = await stream.get_final_message()
+            import json
+            raw_text = next((b.text for b in response.content if hasattr(b, "text")), "{}")
+            try:
+                return json.loads(raw_text)
+            except (json.JSONDecodeError, TypeError):
+                return parse_json_robust(raw_text)
+
+        # No schema: stream + 3-strategy fallback (existing behavior)
         raw = await self.complete(system, user, model)
         return parse_json_robust(raw)
 

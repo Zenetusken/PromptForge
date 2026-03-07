@@ -83,11 +83,23 @@ class LLMProvider(ABC):
         ...
 
     @abstractmethod
-    async def complete_json(self, system: str, user: str, model: str, schema: type | None = None) -> dict:
-        """Structured JSON output with 3-strategy fallback:
+    async def complete_json(
+        self,
+        system: str,
+        user: str,
+        model: str,
+        schema: dict | None = None,
+    ) -> dict:
+        """Structured JSON output.
+
+        When ``schema`` is provided (a JSON Schema dict with
+        ``additionalProperties: false`` on all objects), providers MUST use
+        native schema enforcement (API output_config.format or SDK equivalent).
+
+        When ``schema`` is None, falls back to 3-strategy text parsing:
         1. Parse raw response as JSON
         2. Extract first ```json ... ``` code block, parse it
-        3. Extract first { ... } substring with regex, parse it
+        3. Extract first { ... } substring via regex, parse it
         """
         ...
 
