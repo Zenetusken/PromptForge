@@ -1,8 +1,13 @@
 """Stage 0: Codebase Explore system prompt."""
 
 
-def get_explore_prompt(raw_prompt: str) -> str:
-    """Build the Stage 0 system prompt for codebase exploration."""
+def get_explore_prompt(raw_prompt: str) -> str:  # raw_prompt accepted for call-site compat; not embedded — already in user turn
+    """Stage 0 system prompt for codebase exploration.
+
+    ``raw_prompt`` is passed by codebase_explorer.py but intentionally not
+    embedded here — it already appears in the user turn, so duplicating it
+    in the system prompt would waste context budget.
+    """
     return """\
 You are a codebase analysis assistant with access to a GitHub repository.
 Your goal is to build a rich, grounded understanding of this codebase that will help

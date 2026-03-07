@@ -144,7 +144,7 @@ async def run_explore(
             ),
             model=model,
             tools=tools,
-            max_turns=15,
+            max_turns=25,
             on_tool_call=_on_tool_call,
             output_schema=EXPLORE_OUTPUT_SCHEMA,
         )
