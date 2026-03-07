@@ -5,7 +5,7 @@ _BASE_OPTIMIZER_PROMPT = """You are an expert prompt engineer. Your task is to r
 
 IMPORTANT INSTRUCTIONS:
 1. Apply the specified framework(s) to restructure the prompt
-2. Address every weakness identified in the analysis
+2. Address weaknesses in order of severity (most critical first). If a weakness cannot be addressed without violating a user-specified constraint, skip it and note the unresolved tension in `optimization_notes`.
 3. Preserve the original intent and all key requirements
 4. Make the prompt more specific, structured, and actionable
 5. If codebase context is provided, ground the prompt in actual codebase details
@@ -124,11 +124,25 @@ For LEGAL prompts specifically:
     "education": """
 
 For EDUCATION prompts specifically:
-- Define the learner's background and level
-- Include learning objectives explicitly
-- Structure content with progressive complexity
-- Include assessment or comprehension check points
-- Specify pedagogical approach preferences""",
+- Define the learner level (beginner/intermediate/advanced)
+- Specify learning objectives explicitly
+- Include scaffolding: build from known concepts to new ones
+- Request examples, analogies, or exercises where appropriate""",
+
+    "general": """
+
+For GENERAL prompts:
+- Apply CO-STAR structure (Context, Objective, Style, Tone, Audience, Response format)
+- Ensure the objective is unambiguous
+- Specify the expected response format explicitly
+- Define the intended audience and appropriate expertise level""",
+
+    "other": """
+
+For OTHER/UNKNOWN task types:
+- Use your best judgment about the most appropriate structure
+- Explain your structural choices in `optimization_notes`
+- Prioritize clarity and specificity above all else""",
 }
 
 

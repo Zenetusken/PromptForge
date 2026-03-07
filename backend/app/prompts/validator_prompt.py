@@ -37,7 +37,15 @@ Respond with a JSON object:
   "issues": []
 }
 
-Be critical but fair. A score of 5 means average/no change. Higher means improvement. Lower means degradation.
+Be critical but fair. A score of 5 means the optimized prompt is indistinguishable from the original in this dimension — neither better nor worse. Higher means improvement. Lower means degradation.
+
+faithfulness_score considers: (a) whether the original intent and key requirements are preserved, and (b) whether user-specified output constraints are honored. Weight (b) more heavily when constraints were provided — violating an explicit constraint is a larger faithfulness failure than a minor scope change.
+
+Score guidance:
+- 3/10: Major deficiency — e.g., clarity_score 3: intent requires guessing; specificity_score 3: all requirements are vague
+- 7/10: Good — e.g., clarity_score 7: intent is clear with minor ambiguities; specificity_score 7: most requirements concrete
+- 9/10: Excellent — e.g., clarity_score 9: single unambiguous reading; specificity_score 9: all requirements precise and measurable
+
 Focus on whether the optimization actually addresses the weaknesses of the original."""
 
     if has_codebase_context:

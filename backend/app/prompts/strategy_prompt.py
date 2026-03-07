@@ -24,12 +24,16 @@ Consider:
 - Whether codebase context is available (affects framework choice)
 - Whether secondary frameworks complement without conflicting
 
+If `analysis.recommended_frameworks` is non-empty, treat the first item as the **strongly preferred primary framework** unless a more specific framework better addresses the highest-severity weakness identified in the analysis.
+
+When choosing secondary frameworks: if two candidate secondary frameworks give contradictory structural directives (e.g., chain-of-thought and structured-output both impose competing document layouts), keep only the one that addresses more weaknesses. Note the conflict in `approach_notes`.
+
 If the analysis_quality indicator shows 'fallback' or 'failed', treat all recommended_frameworks as unverified suggestions and prefer well-established frameworks (CO-STAR for general tasks, chain-of-thought for complex reasoning) over novel combinations.
 
 Respond with a JSON object:
 {
   "primary_framework": "framework-name",
-  "secondary_frameworks": ["optional-framework-1", "optional-framework-2"],
+  "secondary_frameworks": ["optional-framework-1", "optional-framework-2"],  // maximum 2 items
   "rationale": "Detailed reasoning for this framework choice",
   "approach_notes": "Specific instructions for the optimizer stage on how to apply these frameworks"
 }"""
