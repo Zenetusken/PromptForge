@@ -54,58 +54,79 @@ async def run_explore(
         repo_branch=repo_branch,
     )
 
-    def on_tool_call(tool_name: str, tool_input: dict):
-        """Side-effect callback for SSE streaming of tool activity."""
-        pass  # Handled via the yielded events below
+    # Use asyncio.Queue to bridge sync on_tool_call → async SSE stream
+    event_queue: asyncio.Queue = asyncio.Queue()
 
-    tool_call_events = []
-
-    def _on_tool_call(name: str, args: dict):
-        tool_call_events.append(("tool_call", {
+    def _on_tool_call(name: str, args: dict) -> None:
+        """Sync callback; puts event in queue for real-time SSE yield."""
+        event_queue.put_nowait(("tool_call", {
             "tool": name,
             "input": args,
             "status": "running",
         }))
 
-    try:
-        result = await asyncio.wait_for(
-            provider.complete_agentic(
-                system=system_prompt,
-                user=f"Explore the repository {repo_full_name} (branch: {repo_branch}) "
-                     f"to build context for optimizing this prompt:\n\n{raw_prompt}",
-                model=model,
-                tools=tools,
-                max_turns=15,
-                on_tool_call=_on_tool_call,
-            ),
-            timeout=30.0,
+    # Run agent as a background task so we can drain events while it runs
+    agent_task = asyncio.create_task(
+        provider.complete_agentic(
+            system=system_prompt,
+            user=f"Explore the repository {repo_full_name} (branch: {repo_branch}) "
+                 f"to build context for optimizing this prompt:\n\n{raw_prompt}",
+            model=model,
+            tools=tools,
+            max_turns=15,
+            on_tool_call=_on_tool_call,
         )
+    )
 
-        # Yield accumulated tool call events
-        for evt in tool_call_events:
-            yield evt
+    # Set a timeout on the background task
+    timeout_handle = asyncio.get_event_loop().call_later(
+        30.0, lambda: agent_task.cancel() if not agent_task.done() else None
+    )
 
-        # Parse the agent's response into a CodebaseContext
-        context = CodebaseContext(repo=repo_full_name, branch=repo_branch)
-        try:
-            parsed = json.loads(result.text)
-            context.tech_stack = parsed.get("tech_stack", [])
-            context.key_files_read = parsed.get("key_files_read", [])
-            context.relevant_snippets = parsed.get("relevant_code_snippets", [])
-            context.observations = parsed.get("codebase_observations", [])
-            context.grounding_notes = parsed.get("prompt_grounding_notes", [])
-            context.files_read_count = len(context.key_files_read)
-        except (json.JSONDecodeError, TypeError):
-            context.observations = [result.text[:500] if result.text else "No output"]
+    try:
+        # Stream tool-call events in real time while agent runs
+        while not agent_task.done():
+            try:
+                evt = event_queue.get_nowait()
+                yield evt
+            except asyncio.QueueEmpty:
+                await asyncio.sleep(0.05)  # 50ms poll — tight enough for real-time UX
 
-        yield ("explore_result", asdict(context))
+        # Drain any remaining events enqueued before task completion
+        while not event_queue.empty():
+            yield event_queue.get_nowait()
 
-    except asyncio.TimeoutError:
+        # Raises CancelledError or other exception if the task failed
+        result = await agent_task
+
+    except asyncio.CancelledError:
         logger.warning("Stage 0 (Explore) timed out after 30 seconds")
+        # Drain any remaining events
+        while not event_queue.empty():
+            yield event_queue.get_nowait()
         context = CodebaseContext(repo=repo_full_name, branch=repo_branch)
         context.observations = ["Exploration timed out - partial context only"]
         yield ("explore_result", asdict(context))
+        return
 
     except Exception as e:
         logger.error(f"Stage 0 (Explore) error: {e}")
         raise
+
+    finally:
+        timeout_handle.cancel()
+
+    # Parse the agent's response into a CodebaseContext
+    context = CodebaseContext(repo=repo_full_name, branch=repo_branch)
+    try:
+        parsed = json.loads(result.text)
+        context.tech_stack = parsed.get("tech_stack", [])
+        context.key_files_read = parsed.get("key_files_read", [])
+        context.relevant_snippets = parsed.get("relevant_code_snippets", [])
+        context.observations = parsed.get("codebase_observations", [])
+        context.grounding_notes = parsed.get("prompt_grounding_notes", [])
+        context.files_read_count = len(context.key_files_read)
+    except (json.JSONDecodeError, TypeError):
+        context.observations = [result.text[:500] if result.text else "No output"]
+
+    yield ("explore_result", asdict(context))
