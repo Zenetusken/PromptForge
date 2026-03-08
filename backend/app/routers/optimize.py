@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_session
+from app.database import async_session, get_session
 from app.models.optimization import Optimization
 from app.schemas.optimization import OptimizeRequest, PatchOptimizationRequest, RetryRequest
 from app.config import settings
@@ -150,7 +150,7 @@ async def optimize_prompt(
                                 "Validation event missing 'scores' sub-dict for opt %s; keys: %s",
                                 opt_id, list(event_data.keys())
                             )
-                        scores = event_data["scores"]
+                        scores = event_data.get("scores", {})
                         optimization.clarity_score = scores.get("clarity_score")
                         optimization.specificity_score = scores.get("specificity_score")
                         optimization.structure_score = scores.get("structure_score")
@@ -176,7 +176,7 @@ async def optimize_prompt(
                     optimization.status = "completed"
 
                 # Persist final state
-                async with (await _get_fresh_session()) as s:
+                async with async_session() as s:
                     await s.merge(optimization)
                     await s.commit()
 
@@ -198,7 +198,7 @@ async def optimize_prompt(
             )
             optimization.duration_ms = int((time.time() - start_time) * 1000)
             optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
-            async with (await _get_fresh_session()) as s:
+            async with async_session() as s:
                 await s.merge(optimization)
                 await s.commit()
             yield _sse_event("error", {
@@ -217,7 +217,7 @@ async def optimize_prompt(
             optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
 
             try:
-                async with (await _get_fresh_session()) as s:
+                async with async_session() as s:
                     await s.merge(optimization)
                     await s.commit()
             except Exception:
@@ -239,11 +239,6 @@ async def optimize_prompt(
         },
     )
 
-
-async def _get_fresh_session():
-    """Get a new database session for background updates."""
-    from app.database import async_session
-    return async_session()
 
 
 @router.get("/api/optimize/{optimization_id}")

@@ -323,6 +323,11 @@
             break;
           case 'error':
             forge.setStageFailed(data.stage as string || 'pipeline', data.error as string);
+            // Non-recoverable errors signal pipeline termination — stop forging immediately
+            // rather than waiting for the stream to close (avoids stale "forging" UI state)
+            if (data.recoverable === false) {
+              forge.finishForge();
+            }
             break;
           case 'context_warning':
             // Store dropped-context metadata for optional display in the UI

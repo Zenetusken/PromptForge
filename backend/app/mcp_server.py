@@ -9,6 +9,7 @@ GitHub tools accept explicit token parameter — no shared mutable session state
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -224,20 +225,21 @@ def create_mcp_server(provider=None) -> FastMCP:
         prov = ctx.request_context.lifespan_context.provider
         url_fetched = await fetch_url_contexts(url_contexts)
         results = {}
-        async for event_type, event_data in run_pipeline(
-            provider=prov,
-            raw_prompt=prompt,
-            optimization_id=_new_run_id("mcp"),
-            strategy_override=strategy,
-            repo_full_name=repo_full_name,
-            repo_branch=repo_branch,
-            github_token=github_token,
-            file_contexts=file_contexts,
-            instructions=instructions,
-            url_fetched_contexts=url_fetched,
-        ):
-            if event_type in ("analysis", "strategy", "optimization", "validation", "complete"):
-                results[event_type] = event_data
+        async with asyncio.timeout(settings.PIPELINE_TIMEOUT_SECONDS):
+            async for event_type, event_data in run_pipeline(
+                provider=prov,
+                raw_prompt=prompt,
+                optimization_id=_new_run_id("mcp"),
+                strategy_override=strategy,
+                repo_full_name=repo_full_name,
+                repo_branch=repo_branch,
+                github_token=github_token,
+                file_contexts=file_contexts,
+                instructions=instructions,
+                url_fetched_contexts=url_fetched,
+            ):
+                if event_type in ("analysis", "strategy", "optimization", "validation", "complete"):
+                    results[event_type] = event_data
         return json.dumps(results, indent=2)
 
     @mcp.tool(
@@ -363,8 +365,9 @@ def create_mcp_server(provider=None) -> FastMCP:
             project: Scope stats to this project label. Omit for global stats.
 
         Returns:
-            JSON with total, average_score, task_type_breakdown, framework_breakdown,
-            provider_breakdown, model_usage, codebase_aware_count, improvement_rate.
+            JSON with total_optimizations, average_score, task_type_breakdown,
+            framework_breakdown, provider_breakdown, model_usage,
+            codebase_aware_count, improvement_rate.
         """
         query = select(Optimization)
         if project:
@@ -375,7 +378,7 @@ def create_mcp_server(provider=None) -> FastMCP:
 
         if not optimizations:
             return json.dumps({
-                "total": 0,
+                "total_optimizations": 0,
                 "average_score": None,
                 "task_type_breakdown": {},
                 "framework_breakdown": {},
@@ -424,11 +427,11 @@ def create_mcp_server(provider=None) -> FastMCP:
             improvement_rate = round(improvements / len(validated), 3)
 
         return json.dumps({
-            "total": total,
+            "total_optimizations": total,
             "average_score": avg_score,
             "task_type_breakdown": dict(sorted(task_types.items(), key=lambda x: -x[1])),
             "framework_breakdown": dict(sorted(frameworks.items(), key=lambda x: -x[1])),
-            "provider_breakdown": providers_breakdown,
+            "provider_breakdown": dict(sorted(providers_breakdown.items(), key=lambda x: -x[1])),
             "model_usage": model_usage,
             "codebase_aware_count": codebase_aware,
             "improvement_rate": improvement_rate,
