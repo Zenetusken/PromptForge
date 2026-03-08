@@ -80,6 +80,7 @@ async def run_optimize(
     if retry_constraints:
         user_message += (
             f"\n\n--- RETRY WITH ADJUSTED CONSTRAINTS ---\n"
+            f"This is retry attempt {retry_constraints.get('retry_attempt', 1)}.\n"
             f"Previous optimization scored {retry_constraints.get('previous_score', 'low')}/10.\n"
             f"Target minimum score: {retry_constraints.get('min_score_target', 7)}/10.\n"
             f"Focus on improving these issues: {json.dumps(retry_constraints.get('focus_areas', []))}\n"

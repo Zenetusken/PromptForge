@@ -417,6 +417,7 @@ async def run_pipeline(
                     "min_score_target": LOW_SCORE_THRESHOLD + 2,
                     "previous_score": overall_score,
                     "focus_areas": focus_areas,
+                    "retry_attempt": retry_count + 1,
                 },
             ):
                 if event_type == "optimization":
