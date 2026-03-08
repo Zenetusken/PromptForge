@@ -1,4 +1,4 @@
-# CLAUDE.md — PromptForge v2
+# CLAUDE.md — PromptForge
 
 Guidance for Claude Code when working in this repository.
 

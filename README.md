@@ -1,4 +1,4 @@
-# PromptForge v2 — Intelligent Prompt Optimization Engine
+# PromptForge — Intelligent Prompt Optimization Engine
 
 PromptForge is a self-adaptive prompt optimization webapp that transforms raw, unstructured prompts into properly structured, improved, and optimized versions using Claude AI models.
 

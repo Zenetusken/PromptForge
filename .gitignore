@@ -45,3 +45,14 @@ claude-progress.txt
 .pids/
 backend/data/
 .worktrees/
+
+# Builder scaffolding (autonomous-coding system artifacts)
+agent_scratchpad.json
+agent_scratchpad_*.json
+app_spec.txt
+claude-progress.txt
+feature_list*.json
+feature_list_gen.py
+.sdk_integrated
+.claude_settings.json
+generations/
