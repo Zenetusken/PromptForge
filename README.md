@@ -1,13 +1,11 @@
 # Project Synthesis
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![GitHub Marketplace](https://img.shields.io/badge/GitHub_Marketplace-Project_Synthesis-purple?logo=github)](https://github.com/marketplace/project-synthesis)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Website](https://img.shields.io/badge/Website-projectsynthesis.ai-00bcd4)](https://projectsynthesis.ai)
 
-**Multi-Agent Development Platform powered by Claude AI.**
+**AI-powered prompt optimization with a 5-stage analysis pipeline.**
 
-Project Synthesis transforms complex development tasks into collaborative AI workflows through a spec-driven pipeline: **Explore → Analyze → Strategy → Optimize → Validate** — then orchestrates 16 specialized agents across domains to build production-ready software from your specification.
+Project Synthesis runs your prompts through a structured pipeline — **Explore → Analyze → Strategy → Optimize → Validate** — producing a measurably improved result with per-dimension scoring, diff view, and full trace visibility.
 
 ## Prerequisites
 
@@ -36,6 +34,16 @@ At least one LLM provider:
 | API backend | 8000 | FastAPI + pipeline orchestration |
 | Frontend | 5199 | SvelteKit UI |
 | MCP server | 8001 | 13 tools for Claude Code integration |
+
+## Pipeline stages
+
+| Stage | What it does |
+|---|---|
+| **Explore** | Reads linked GitHub repository context (file tree, key files) |
+| **Analyze** | Classifies prompt type, task domain, and complexity |
+| **Strategy** | Selects the optimal optimization framework |
+| **Optimize** | Rewrites the prompt using the chosen strategy |
+| **Validate** | Scores the result across multiple dimensions (0–10) |
 
 ## MCP Server
 
