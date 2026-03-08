@@ -11,6 +11,11 @@ dist/
 build/
 .svelte-kit/
 
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
 # Database
 data/*
 !data/.gitkeep

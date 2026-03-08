@@ -17,7 +17,7 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ```bash
 # 1. Fork and clone
-git clone https://github.com/ProjectSynthesis/project-synthesis.git
+git clone https://github.com/project-synthesis/ProjectSynthesis.git
 cd project-synthesis
 
 # 2. Start all services
