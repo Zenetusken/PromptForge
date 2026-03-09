@@ -1,6 +1,6 @@
 # Project Synthesis MCP Server
 
-Project Synthesis exposes 16 tools over the Model Context Protocol (MCP), allowing Claude Code and other MCP clients to optimize prompts, query history, manage trash/restore, and interact with linked GitHub repositories directly from a chat session.
+Project Synthesis exposes 14 tools over the Model Context Protocol (MCP), allowing Claude Code and other MCP clients to optimize prompts, query history, manage trash/restore, and interact with linked GitHub repositories directly from a chat session.
 
 ## Transports
 
