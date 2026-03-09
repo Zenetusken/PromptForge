@@ -574,6 +574,7 @@ async def test_callback_redirect_includes_new_param_for_new_users():
         mock_http.__aexit__ = AsyncMock(return_value=False)
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # session.add() is sync in SQLAlchemy
 
         mock_request = MagicMock()
         mock_request.session = {}
@@ -621,6 +622,7 @@ async def test_callback_redirect_excludes_new_param_for_existing_users():
         mock_http.__aexit__ = AsyncMock(return_value=False)
 
         mock_db = AsyncMock()
+        mock_db.add = MagicMock()  # session.add() is sync in SQLAlchemy
 
         mock_request = MagicMock()
         mock_request.session = {}
