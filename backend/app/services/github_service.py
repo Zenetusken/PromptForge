@@ -108,6 +108,7 @@ _REFRESH_WINDOW_MINUTES = 15  # refresh if token expires within this window
 async def get_token_for_session(
     session: AsyncSession,
     session_id: str,
+    db_token: Optional[GitHubToken] = None,
 ) -> Optional[str]:
     """Retrieve and decrypt the GitHub token for a session.
 
@@ -118,16 +119,20 @@ async def get_token_for_session(
     Args:
         session: Async database session.
         session_id: Browser session identifier.
+        db_token: Pre-fetched GitHubToken record. If provided, the DB lookup
+            is skipped — avoids a redundant round-trip when the caller has
+            already fetched the record (e.g. for cross-validation).
 
     Returns:
         Decrypted token string, or None if no token exists.
     """
     from datetime import datetime, timedelta, timezone
 
-    result = await session.execute(
-        select(GitHubToken).where(GitHubToken.session_id == session_id)
-    )
-    db_token = result.scalar_one_or_none()
+    if db_token is None:
+        result = await session.execute(
+            select(GitHubToken).where(GitHubToken.session_id == session_id)
+        )
+        db_token = result.scalar_one_or_none()
     if db_token is None:
         return None
 

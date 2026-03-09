@@ -10,8 +10,11 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
+from app.dependencies.auth import get_current_user
+from app.schemas.auth import AuthenticatedUser
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["settings"])
@@ -95,7 +98,9 @@ def _save_settings(settings: dict) -> None:
 
 
 @router.get("/api/settings")
-async def get_settings():
+async def get_settings(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """Get current application settings.
 
     Returns all settings with their current values, including defaults
@@ -108,7 +113,10 @@ async def get_settings():
 
 
 @router.patch("/api/settings")
-async def update_settings(update: SettingsUpdate):
+async def update_settings(
+    update: SettingsUpdate,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """Update application settings.
 
     Only the fields included in the request body are updated.

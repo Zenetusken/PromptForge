@@ -8,10 +8,12 @@ import asyncio
 import logging
 import shutil
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
 from app.config import settings
+from app.dependencies.auth import get_current_user
 from app.providers.base import MODEL_ROUTING
+from app.schemas.auth import AuthenticatedUser
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["providers"])
@@ -26,7 +28,10 @@ def set_provider(provider):
 
 
 @router.get("/api/providers/detect")
-async def detect_providers(request: Request):
+async def detect_providers(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """Detect available LLM providers.
 
     Checks for the Claude CLI on PATH and the ANTHROPIC_API_KEY
@@ -87,7 +92,10 @@ async def detect_providers(request: Request):
 
 
 @router.get("/api/providers/status")
-async def provider_status(request: Request):
+async def provider_status(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     """Provider health check.
 
     Returns the current provider status, model routing configuration,

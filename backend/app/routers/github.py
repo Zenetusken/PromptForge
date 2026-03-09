@@ -14,6 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.dependencies.auth import get_current_user
+from app.schemas.auth import AuthenticatedUser
 from app.services.github_service import (
     get_repo_tree,
     get_token_for_session,
@@ -36,6 +38,7 @@ async def get_repo_tree_endpoint(
     request: Request,
     branch: str = Query("main"),
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get the file tree of a repository.
 
@@ -68,6 +71,7 @@ async def read_file(
     request: Request,
     branch: str = Query("main"),
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Read a file from a repository by path.
 

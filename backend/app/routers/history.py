@@ -7,7 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
+from app.dependencies.auth import get_current_user
 from app.models.optimization import Optimization
+from app.schemas.auth import AuthenticatedUser
 from app.schemas.optimization import HistoryStatsResponse
 from app.services.optimization_service import VALID_SORT_COLUMNS, compute_stats
 
@@ -30,6 +32,7 @@ async def list_history(
     max_score: Optional[int] = Query(None, ge=1, le=10),
     status: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """List optimization history with pagination, search, sort, and filter."""
     query = select(Optimization).where(Optimization.deleted_at.is_(None))
@@ -96,6 +99,7 @@ async def list_history(
 async def delete_optimization(
     optimization_id: str,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Soft-delete an optimization record."""
     from app.services.optimization_service import delete_optimization as svc_delete
@@ -134,6 +138,7 @@ async def list_trash(
 async def get_stats(
     project: Optional[str] = Query(None),
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get aggregated statistics about optimization history."""
     return await compute_stats(session, project=project)

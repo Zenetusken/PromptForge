@@ -79,6 +79,7 @@ async def _migrate_add_missing_columns() -> None:
             "approach_notes": "TEXT",
             "strategy_source": "TEXT",
             "deleted_at": "DATETIME",          # soft-delete
+            "user_id": "TEXT",                 # authenticated user who created this record
         },
         "github_tokens": {
             "avatar_url": "TEXT",              # cached avatar URL

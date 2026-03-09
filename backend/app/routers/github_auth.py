@@ -17,6 +17,7 @@ from app.models.github import GitHubToken
 from app.schemas.github import GitHubUserInfo
 from app.services.auth_service import issue_jwt_pair
 from app.services.github_service import encrypt_token
+from app.utils.jwt import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["github-auth"])
@@ -82,6 +83,16 @@ def _get_session_id(request: Request) -> str:
 @router.get("/auth/github/login")
 async def github_login(request: Request):
     """Initiate GitHub App OAuth flow. Redirects to GitHub."""
+    # Soft check: redirect already-authenticated users back to the app.
+    # This is a UX improvement, not a security gate — no DB revocation check.
+    _auth = request.headers.get("Authorization", "")
+    if _auth.startswith("Bearer "):
+        try:
+            decode_token(_auth[len("Bearer "):])
+            return RedirectResponse(url=settings.FRONTEND_URL)
+        except Exception:
+            pass  # Invalid/expired — proceed with OAuth flow
+
     if not settings.GITHUB_APP_CLIENT_ID or not settings.GITHUB_APP_CLIENT_SECRET:
         raise HTTPException(
             status_code=400,

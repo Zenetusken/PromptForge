@@ -6,7 +6,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models.github import LinkedRepo
+from app.dependencies.auth import get_current_user
+from app.models.auth import User
+from app.models.github import GitHubToken, LinkedRepo
+from app.schemas.auth import AuthenticatedUser
 from app.schemas.github import LinkRepoRequest
 from app.services import github_service
 
@@ -31,14 +34,43 @@ def evict_repo_cache(session_id: str) -> None:
     _repo_cache.pop(session_id, None)
 
 
-async def _get_github_token(request: Request, session: AsyncSession) -> str:
-    """Retrieve and decrypt the GitHub token for the current session."""
+async def _get_github_token(
+    request: Request,
+    session: AsyncSession,
+    current_user: AuthenticatedUser,
+) -> str:
+    """Retrieve and decrypt the GitHub token for the current session.
+
+    Cross-validates that the JWT-authenticated user matches the GitHub user
+    who stored the token in this session.
+    """
     session_id = request.session.get("session_id")
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated with GitHub")
-    token = await github_service.get_token_for_session(session, session_id)
-    if not token:
+
+    # Fetch the stored token record for this session
+    gh_result = await session.execute(
+        select(GitHubToken).where(GitHubToken.session_id == session_id)
+    )
+    gh_record = gh_result.scalar_one_or_none()
+    if not gh_record:
         raise HTTPException(status_code=401, detail="No GitHub token found. Connect GitHub first.")
+
+    # Cross-validate: JWT user must match the GitHub user who stored this token
+    user_result = await session.execute(
+        select(User).where(User.id == current_user.id)
+    )
+    user = user_result.scalar_one_or_none()
+    if user is None or user.github_user_id != gh_record.github_user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="GitHub token does not belong to the authenticated user",
+        )
+
+    # Pass gh_record to skip the redundant DB round-trip — it was already fetched above.
+    token = await github_service.get_token_for_session(session, session_id, db_token=gh_record)
+    if not token:
+        raise HTTPException(status_code=401, detail="GitHub token could not be decrypted.")
     return token
 
 
@@ -46,9 +78,10 @@ async def _get_github_token(request: Request, session: AsyncSession) -> str:
 async def list_repos(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """List repositories accessible with the user's GitHub token."""
-    token = await _get_github_token(request, session)
+    token = await _get_github_token(request, session, current_user)
 
     # Check cache
     cache_key = request.session.get("session_id", "")
@@ -74,9 +107,10 @@ async def list_branches(
     repo: str,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """List branches for a repository (max 50)."""
-    token = await _get_github_token(request, session)
+    token = await _get_github_token(request, session, current_user)
     branches = await github_service.get_repo_branches(token, f"{owner}/{repo}")
     return branches
 
@@ -86,9 +120,10 @@ async def link_repo(
     body: LinkRepoRequest,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Link a GitHub repository for codebase-aware optimization."""
-    token = await _get_github_token(request, session)
+    token = await _get_github_token(request, session, current_user)
     session_id = request.session.get("session_id", "")
 
     # Validate repo access via service layer
@@ -126,6 +161,7 @@ async def link_repo(
 async def get_linked_repo(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get the currently linked repository for this session."""
     session_id = request.session.get("session_id")
@@ -153,6 +189,7 @@ async def get_linked_repo(
 async def unlink_repo(
     request: Request,
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Unlink the currently linked repository."""
     session_id = request.session.get("session_id")

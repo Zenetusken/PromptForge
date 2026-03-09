@@ -5,7 +5,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Index, Integer, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Index, Integer, Text
 
 from app.database import Base
 
@@ -43,7 +43,7 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(Text, nullable=False)
+    user_id = Column(Text, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     token_hash = Column(Text, nullable=False, unique=True)
     expires_at = Column(DateTime, nullable=False)
     revoked = Column(Boolean, nullable=False, default=False)

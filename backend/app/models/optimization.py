@@ -63,6 +63,9 @@ class Optimization(Base):
     status = Column(Text, default="completed", nullable=False)
     error_message = Column(Text, nullable=True)
 
+    # Attribution
+    user_id = Column(Text, nullable=True)   # authenticated user who created this
+
     # Soft-delete
     deleted_at = Column(DateTime, nullable=True)
 
@@ -82,6 +85,7 @@ class Optimization(Base):
         Index("idx_optimizations_project", "project"),
         Index("idx_optimizations_task_type", "task_type"),
         Index("idx_optimizations_created_at", created_at.desc()),
+        Index("idx_optimizations_user_id", "user_id"),
     )
 
     def to_dict(self) -> dict:

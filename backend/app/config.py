@@ -1,5 +1,13 @@
+import logging
+
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
+
+_WEAK_DEFAULTS = {
+    "SECRET_KEY": "synthesis-dev-secret-key",
+    "JWT_SECRET": "dev-jwt-secret-change-in-prod",
+    "JWT_REFRESH_SECRET": "dev-refresh-secret-change-in-prod",
+}
 
 
 class Settings(BaseSettings):
@@ -47,6 +55,16 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     # Set to True in production (behind HTTPS) to add Secure flag to cookies.
     JWT_COOKIE_SECURE: bool = False
+
+    def model_post_init(self, __context) -> None:
+        _log = logging.getLogger(__name__)
+        for field, weak in _WEAK_DEFAULTS.items():
+            if getattr(self, field) == weak:
+                _log.warning(
+                    "SECURITY: %s is using the default dev value — "
+                    "set a strong random secret in .env before deploying.",
+                    field,
+                )
 
 
 settings = Settings()
