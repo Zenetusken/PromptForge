@@ -315,7 +315,78 @@
     // Ensure at least one tab is open
     editor.ensureWelcomeTab();
 
-    // Register command palette commands
+    // ── Command palette — single source of truth ─────────────────────────
+    // Sections: File → View → Forge → History → GitHub (insertion order).
+    // CommandPalette.svelte only renders; it never registers commands.
+
+    // FILE — tab lifecycle
+    commandPalette.registerCommand({
+      id: 'new-prompt',
+      label: 'New Prompt',
+      shortcut: 'Ctrl+N',
+      group: 'File',
+      action: () => {
+        editor.openTab({
+          id: `prompt-${Date.now()}`,
+          label: 'New Prompt',
+          type: 'prompt',
+          promptText: '',
+          dirty: false
+        });
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'save-prompt',
+      label: 'Save Prompt',
+      shortcut: 'Ctrl+S',
+      group: 'File',
+      action: () => editor.saveActiveTab()
+    });
+    commandPalette.registerCommand({
+      id: 'close-tab',
+      label: 'Close Tab',
+      shortcut: 'Ctrl+W',
+      group: 'File',
+      action: () => {
+        if (editor.activeTabId) editor.closeTab(editor.activeTabId);
+      }
+    });
+
+    // VIEW — panel / layout toggles
+    commandPalette.registerCommand({
+      id: 'toggle-navigator',
+      label: 'Toggle Navigator',
+      shortcut: 'Ctrl+B',
+      group: 'View',
+      action: () => workbench.toggleNavigator()
+    });
+    commandPalette.registerCommand({
+      id: 'toggle-inspector',
+      label: 'Toggle Inspector',
+      shortcut: 'Ctrl+I',
+      group: 'View',
+      action: () => workbench.toggleInspector()
+    });
+    commandPalette.registerCommand({
+      id: 'open-settings',
+      label: 'Open Settings',
+      shortcut: 'Ctrl+,',
+      group: 'View',
+      action: () => workbench.setActivity('settings')
+    });
+
+    // FORGE — optimization workflow
+    commandPalette.registerCommand({
+      id: 'forge.run',
+      label: 'Run Optimization',
+      shortcut: 'Ctrl+Enter',
+      group: 'Forge',
+      action: () => {
+        setTimeout(() => {
+          document.querySelector<HTMLButtonElement>('[data-testid="forge-button"]')?.click();
+        }, 0);
+      }
+    });
     commandPalette.registerCommand({
       id: 'forge.new',
       label: 'New Optimization',
@@ -336,17 +407,6 @@
       }
     });
     commandPalette.registerCommand({
-      id: 'forge.run',
-      label: 'Run Optimization',
-      shortcut: 'Ctrl+Enter',
-      group: 'Forge',
-      action: () => {
-        setTimeout(() => {
-          document.querySelector<HTMLButtonElement>('[data-testid="forge-button"]')?.click();
-        }, 0);
-      }
-    });
-    commandPalette.registerCommand({
       id: 'forge.retry',
       label: 'Retry Last Optimization',
       description: 'Re-run with same settings',
@@ -355,13 +415,13 @@
         if (forge.optimizationId) forge.retryForge(forge.optimizationId);
       }
     });
+
+    // HISTORY — optimization history
     commandPalette.registerCommand({
       id: 'history.open',
       label: 'Open History',
       group: 'History',
-      action: () => {
-        workbench.setActivity('history');
-      }
+      action: () => workbench.setActivity('history')
     });
     commandPalette.registerCommand({
       id: 'history.trash',
@@ -373,6 +433,8 @@
         history.loadTrash();
       }
     });
+
+    // GITHUB — repository management
     commandPalette.registerCommand({
       id: 'github.connect',
       label: 'Connect Repository',
@@ -394,32 +456,6 @@
           } catch { /* best-effort */ }
           github.disconnect();
         }
-      }
-    });
-    commandPalette.registerCommand({
-      id: 'nav.settings',
-      label: 'Open Settings',
-      group: 'Navigation',
-      action: () => {
-        workbench.setActivity('settings');
-      }
-    });
-    commandPalette.registerCommand({
-      id: 'nav.toggle-navigator',
-      label: 'Toggle Navigator',
-      shortcut: 'Ctrl+B',
-      group: 'Navigation',
-      action: () => {
-        workbench.toggleNavigator();
-      }
-    });
-    commandPalette.registerCommand({
-      id: 'nav.toggle-inspector',
-      label: 'Toggle Inspector',
-      shortcut: 'Ctrl+.',
-      group: 'Navigation',
-      action: () => {
-        workbench.toggleInspector();
       }
     });
 

@@ -1,9 +1,8 @@
 <script lang="ts">
   import { commandPalette } from '$lib/stores/commandPalette.svelte';
-  import { editor } from '$lib/stores/editor.svelte';
-  import { workbench } from '$lib/stores/workbench.svelte';
-  import { forge } from '$lib/stores/forge.svelte';
   import { onMount } from 'svelte';
+  // NOTE: All commands are registered by +layout.svelte. Do not import stores
+  // here for registration purposes — this component only renders the palette UI.
 
   let inputEl: HTMLInputElement | undefined = $state();
   let paletteEl: HTMLDivElement | undefined = $state();
@@ -20,82 +19,9 @@
     return groups;
   });
 
-  // Register default commands
+  // Commands are registered by +layout.svelte (single source of truth).
+  // This component only handles palette open/close, search, and keyboard dispatch.
   onMount(() => {
-    commandPalette.registerCommands([
-      {
-        id: 'new-prompt',
-        label: 'New Prompt',
-        shortcut: 'Ctrl+N',
-        category: 'File',
-        action: () => {
-          editor.openTab({
-            id: `prompt-${Date.now()}`,
-            label: 'New Prompt',
-            type: 'prompt',
-            promptText: '',
-            dirty: false
-          });
-        }
-      },
-      {
-        id: 'toggle-navigator',
-        label: 'Toggle Navigator',
-        shortcut: 'Ctrl+B',
-        category: 'View',
-        action: () => workbench.toggleNavigator()
-      },
-      {
-        id: 'toggle-inspector',
-        label: 'Toggle Inspector',
-        shortcut: 'Ctrl+I',
-        category: 'View',
-        action: () => workbench.toggleInspector()
-      },
-      {
-        id: 'show-history',
-        label: 'Show History',
-        category: 'View',
-        action: () => workbench.setActivity('history')
-      },
-      {
-        id: 'show-github',
-        label: 'Show GitHub',
-        category: 'View',
-        action: () => workbench.setActivity('github')
-      },
-      {
-        id: 'save-prompt',
-        label: 'Save Prompt',
-        shortcut: 'Ctrl+S',
-        category: 'File',
-        action: () => editor.saveActiveTab()
-      },
-      {
-        id: 'close-tab',
-        label: 'Close Tab',
-        shortcut: 'Ctrl+W',
-        category: 'File',
-        action: () => {
-          if (editor.activeTabId) editor.closeTab(editor.activeTabId);
-        }
-      },
-      {
-        id: 'forge-prompt',
-        label: 'Synthesize Current Prompt',
-        shortcut: 'Ctrl+Enter',
-        category: 'Synthesize',
-        action: () => {
-          if (!forge.isForging && editor.activeTab?.promptText?.trim()) {
-            editor.setSubTab('edit');
-            // setTimeout(0) lets Svelte flush DOM updates before the click
-            setTimeout(() => {
-              document.querySelector<HTMLButtonElement>('[data-testid="forge-button"]')?.click();
-            }, 0);
-          }
-        }
-      }
-    ]);
 
     // Parse shortcut string (e.g. "Ctrl+Shift+B") into a matcher
     function matchesShortcut(e: KeyboardEvent, shortcut: string): boolean {
