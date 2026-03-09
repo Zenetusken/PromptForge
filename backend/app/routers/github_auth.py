@@ -81,6 +81,19 @@ def _get_session_id(request: Request) -> str:
     return session["session_id"]
 
 
+def _rotate_session(request: Request, **new_data) -> str:
+    """Clear the current session and repopulate with new_data + a fresh session_id.
+
+    Returns the new session_id. Call this after successful authentication to
+    prevent session fixation attacks (OWASP A07:2021).
+    """
+    request.session.clear()
+    new_session_id = str(uuid.uuid4())
+    request.session["session_id"] = new_session_id
+    request.session.update(new_data)
+    return new_session_id
+
+
 @router.get("/auth/github/login")
 async def github_login(request: Request):
     """Initiate GitHub App OAuth flow. Redirects to GitHub."""
@@ -196,17 +209,18 @@ async def github_callback(
     encrypted_access = encrypt_token(access_token)
     encrypted_refresh = encrypt_token(refresh_token_str) if refresh_token_str else None
 
-    session_id = _get_session_id(request)
+    # Use the pre-auth session_id for the GitHubToken record, then rotate after DB work.
+    old_session_id = request.session.get("session_id", str(uuid.uuid4()))
     github_user_id = user_data["id"]
     github_login = user_data["login"]
 
     # Remove any existing token for this session
     await session.execute(
-        delete(GitHubToken).where(GitHubToken.session_id == session_id)
+        delete(GitHubToken).where(GitHubToken.session_id == old_session_id)
     )
 
     new_token = GitHubToken(
-        session_id=session_id,
+        session_id=old_session_id,  # will be updated to new session_id after rotation
         github_user_id=github_user_id,
         github_login=github_login,
         token_encrypted=encrypted_access,
@@ -220,13 +234,19 @@ async def github_callback(
     # Note: do NOT commit here — _upsert_user and _issue_jwt_pair must be part
     # of the same transaction so a constraint violation rolls back everything.
 
-    # Store user info in session
-    request.session["github_user_id"] = github_user_id
-    request.session["github_login"] = github_login
-
     # Issue JWT pair — upsert User then create RefreshToken record (same tx)
     user = await _upsert_user(session, github_user_id, github_login)
     jwt_access, raw_refresh = await issue_jwt_pair(session, user)
+
+    # Rotate session AFTER all DB work — prevents session fixation (OWASP A07:2021).
+    # Update the GitHubToken to the new session_id so future lookups don't break.
+    new_session_id = _rotate_session(
+        request,
+        github_user_id=github_user_id,
+        github_login=github_login,
+        pending_access_token=jwt_access,
+    )
+    new_token.session_id = new_session_id
 
     # Emit structured audit log
     try:
@@ -235,15 +255,13 @@ async def github_callback(
             event="user_token_issued",
             github_login=github_login,
             github_user_id=github_user_id,
-            session_id=session_id,
+            session_id=new_session_id,
             expires_at=expires_at,
         )
     except Exception:
         pass
 
-    # Store access token in session for one-time exchange via GET /auth/token.
-    # Never embed JWTs in redirect URLs — they end up in browser history and logs.
-    request.session["pending_access_token"] = jwt_access
+    # Redirect to frontend; token is retrieved via GET /auth/token (never in URL)
     redirect = RedirectResponse(url=f"{settings.FRONTEND_URL}/?auth_complete=1")
     _set_refresh_cookie(redirect, raw_refresh)
     return redirect

@@ -267,3 +267,62 @@ async def test_logout_all_devices_endpoint_exists_and_revokes_all_tokens():
     assert rt2.revoked is True
     assert rt3.revoked is True
     assert result["revoked_sessions"] == 3
+
+
+# ── Cycle 4: Session Fixation (Gap 4) ─────────────────────────────────────
+
+
+async def test_session_id_is_rotated_after_successful_oauth_callback():
+    """Session ID must change after successful authentication (OWASP A07:2021 — session fixation)."""
+    from fastapi.responses import RedirectResponse
+    from app.routers.github_auth import github_callback
+
+    with patch("app.routers.github_auth._csrf_signer") as mock_signer_fn:
+        mock_signer = MagicMock()
+        mock_signer.unsign.return_value = b"nonce"
+        mock_signer_fn.return_value = mock_signer
+
+        mock_token_resp = MagicMock()
+        mock_token_resp.json.return_value = {"access_token": "ghs_fake", "expires_in": 28800}
+        mock_user_resp = MagicMock()
+        mock_user_resp.status_code = 200
+        mock_user_resp.json.return_value = {"id": 999, "login": "octocat", "avatar_url": "https://a.com/1"}
+
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(return_value=mock_token_resp)
+        mock_http.get = AsyncMock(return_value=mock_user_resp)
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        mock_user = MagicMock()
+        mock_user.id = "user-uuid"
+        mock_user.github_login = "octocat"
+        mock_user.role = MagicMock(value="user")
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_user
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock(return_value=mock_result)
+        mock_db.add = MagicMock()
+        mock_db.flush = AsyncMock()
+
+        # Pre-auth session has a known session_id
+        pre_auth_session_id = "pre-auth-session-id-fixed"
+        session_data = {"session_id": pre_auth_session_id}
+        mock_request = MagicMock()
+        mock_request.session = session_data
+
+        with patch("app.routers.github_auth.httpx.AsyncClient", return_value=mock_http):
+            with patch("app.routers.github_auth.issue_jwt_pair",
+                       AsyncMock(return_value=("access.jwt.token", "refresh.jwt.token"))):
+                with patch("app.routers.github_auth.encrypt_token", return_value=b"enc"):
+                    await github_callback(
+                        request=mock_request, code="code", state="state", session=mock_db
+                    )
+
+    # After auth, the session_id must have changed
+    post_auth_session_id = session_data.get("session_id")
+    assert post_auth_session_id != pre_auth_session_id, (
+        f"Session ID must rotate after login. Before: {pre_auth_session_id}, After: {post_auth_session_id}"
+    )
+    assert post_auth_session_id is not None, "session_id must be present after auth"
