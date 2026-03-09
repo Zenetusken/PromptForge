@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { patchAuthMe } from '$lib/api/client';
+  import { patchAuthMe, fetchAuthMe } from '$lib/api/client';
+  import { user } from '$lib/stores/user.svelte';
 
   interface Props {
     onComplete: () => void;
@@ -18,6 +19,7 @@
         display_name: displayName.trim() || null,
         onboarding_completed: true,
       });
+      try { user.setProfile(await fetchAuthMe()); } catch { /* non-fatal */ }
       onComplete();
     } catch (err) {
       error = (err as Error).message;
@@ -42,10 +44,11 @@
       Optionally set a display name to personalise your workspace.
     </p>
 
-    <label class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-1">
+    <label for="onboarding-display-name" class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-1">
       Display Name <span class="text-text-dim/50">(optional)</span>
     </label>
     <input
+      id="onboarding-display-name"
       type="text"
       maxlength="128"
       placeholder="Your name"

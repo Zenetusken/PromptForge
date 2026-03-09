@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -34,7 +34,10 @@ async def list_history(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """List optimization history with pagination, search, sort, and filter."""
-    query = select(Optimization).where(Optimization.deleted_at.is_(None))
+    query = select(Optimization).where(
+        Optimization.deleted_at.is_(None),
+        Optimization.user_id == current_user.id,
+    )
 
     # Filters
     if search:
@@ -100,12 +103,14 @@ async def delete_optimization(
     session: AsyncSession = Depends(get_session),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Soft-delete an optimization record."""
-    from app.services.optimization_service import delete_optimization as svc_delete
-    deleted = await svc_delete(session, optimization_id)
-    if not deleted:
+    """Soft-delete an optimization record (user-scoped)."""
+    from app.services.optimization_service import get_optimization_orm
+    opt = await get_optimization_orm(session, optimization_id)
+    if not opt or opt.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Optimization not found")
+    opt.deleted_at = datetime.now(timezone.utc)
     await session.commit()
+    logger.info("Soft-deleted optimization %s by user %s", optimization_id, current_user.id)
     return {"deleted": True, "id": optimization_id}
 
 
@@ -114,23 +119,58 @@ async def list_trash(
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """List soft-deleted optimizations pending purge (deleted within the last 7 days)."""
-    from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    base_filter = [
+        Optimization.deleted_at.isnot(None),
+        Optimization.deleted_at >= cutoff,
+        Optimization.user_id == current_user.id,
+    ]
+
+    # Count total matching items
+    count_query = select(func.count()).select_from(
+        select(Optimization).where(*base_filter).subquery()
+    )
+    total_result = await session.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Paginated items
     query = (
         select(Optimization)
-        .where(
-            Optimization.deleted_at.isnot(None),
-            Optimization.deleted_at >= cutoff,
-        )
+        .where(*base_filter)
         .order_by(Optimization.deleted_at.desc())
         .offset(offset)
         .limit(limit)
     )
     result = await session.execute(query)
     items = [opt.to_dict() for opt in result.scalars().all()]
-    return {"items": items, "count": len(items), "offset": offset}
+    fetched = len(items)
+    has_more = (offset + fetched) < total
+    return {
+        "total": total,
+        "count": fetched,
+        "offset": offset,
+        "items": items,
+        "has_more": has_more,
+        "next_offset": offset + fetched if has_more else None,
+    }
+
+
+@router.post("/api/history/{optimization_id}/restore")
+async def restore_optimization(
+    optimization_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Restore a soft-deleted optimization (clears deleted_at)."""
+    from app.services.optimization_service import restore_optimization as svc_restore
+    restored = await svc_restore(session, optimization_id, current_user.id)
+    if not restored:
+        raise HTTPException(status_code=404, detail="Not found in trash")
+    await session.commit()
+    return {"restored": True, "id": optimization_id}
 
 
 @router.get("/api/history/stats")
@@ -139,5 +179,5 @@ async def get_stats(
     session: AsyncSession = Depends(get_session),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Get aggregated statistics about optimization history."""
-    return await compute_stats(session, project=project)
+    """Get aggregated statistics about optimization history (user-scoped)."""
+    return await compute_stats(session, project=project, user_id=current_user.id)

@@ -101,6 +101,12 @@
   export function getContextOptions() {
     return contextOptions;
   }
+
+  // Svelte action: focuses the element when it mounts into the DOM.
+  // Used instead of the bare `autofocus` HTML attribute which triggers a11y warnings.
+  function focusEl(node: HTMLElement) {
+    node.focus();
+  }
 </script>
 
 <div class="flex items-center gap-1.5 px-4 py-1.5 border-b border-border-subtle bg-bg-secondary/30 shrink-0 min-h-[32px]">
@@ -138,7 +144,7 @@
     <div class="flex items-center gap-1 px-1">
       <input
         bind:value={instructionText}
-        autofocus
+        use:focusEl
         class="bg-bg-input border border-border-accent text-text-primary font-sans
                text-xs px-2 py-0.5 w-52 focus:outline-none focus:border-neon-cyan/50"
         placeholder="e.g. always use bullet points"
@@ -158,7 +164,7 @@
     <div class="flex items-center gap-1 px-1">
       <input
         bind:value={urlText}
-        autofocus
+        use:focusEl
         class="bg-bg-input border border-border-accent text-text-primary font-sans
                text-xs px-2 py-0.5 w-52 focus:outline-none focus:border-neon-cyan/50"
         placeholder="https://..."

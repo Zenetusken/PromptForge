@@ -309,16 +309,18 @@ async def github_me(
         return GitHubUserInfo(connected=False).model_dump()
 
     result = await session.execute(
-        select(GitHubToken).where(GitHubToken.session_id == session_id)
+        select(GitHubToken, User)
+        .join(User, User.github_user_id == GitHubToken.github_user_id, isouter=True)
+        .where(GitHubToken.session_id == session_id)
     )
-    token_record = result.scalar_one_or_none()
-    if not token_record:
+    row = result.one_or_none()
+    if not row:
         return GitHubUserInfo(connected=False).model_dump()
-
+    token_record, user_record = row
     return {
         "connected": True,
         "login": token_record.github_login,
-        "avatar_url": token_record.avatar_url,  # cached at login; None for pre-migration tokens
+        "avatar_url": user_record.avatar_url if user_record else token_record.avatar_url,
         "github_user_id": token_record.github_user_id,
         "token_type": token_record.token_type,
     }

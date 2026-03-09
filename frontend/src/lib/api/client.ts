@@ -353,8 +353,8 @@ export async function fetchHistory(params: HistoryParams = {}): Promise<HistoryR
   if (params.task_type) searchParams.set('task_type', params.task_type);
   if (params.framework) searchParams.set('framework', params.framework);
   if (params.has_repo !== undefined) searchParams.set('has_repo', String(params.has_repo));
-  if (params.min_score) searchParams.set('min_score', String(params.min_score));
-  if (params.max_score) searchParams.set('max_score', String(params.max_score));
+  if (params.min_score !== undefined) searchParams.set('min_score', String(params.min_score));
+  if (params.max_score !== undefined) searchParams.set('max_score', String(params.max_score));
   if (params.status) searchParams.set('status', params.status);
 
   const res = await apiFetch(`${BASE}/api/history?${searchParams.toString()}`);
@@ -365,6 +365,17 @@ export async function fetchHistory(params: HistoryParams = {}): Promise<HistoryR
 export async function deleteOptimization(id: string): Promise<void> {
   const res = await apiFetch(`${BASE}/api/history/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Delete optimization failed: ${res.status}`);
+}
+
+export async function fetchHistoryTrash(offset = 0, limit = 20): Promise<HistoryResponse> {
+  const res = await apiFetch(`${BASE}/api/history/trash?offset=${offset}&limit=${limit}`);
+  if (!res.ok) throw new Error(`Trash fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function restoreOptimization(id: string): Promise<void> {
+  const res = await apiFetch(`${BASE}/api/history/${id}/restore`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Restore failed: ${res.status}`);
 }
 
 export async function fetchHistoryStats(project?: string): Promise<HistoryStats> {
@@ -387,6 +398,16 @@ export async function logoutGitHub(): Promise<void> {
   if (!res.ok) throw new Error(`GitHub logout failed: ${res.status}`);
   // Clear in-memory JWT — refresh cookie is cleared server-side.
   auth.clearToken();
+}
+
+export async function refreshGitHubToken(): Promise<{
+  refreshed: boolean;
+  reason?: string;
+  expires_at?: string;
+}> {
+  const res = await apiFetch(`${BASE}/auth/github/token/refresh`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
+  return res.json();
 }
 
 export function getGitHubLoginUrl(): string {
@@ -607,6 +628,26 @@ export async function patchAuthMe(data: {
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(`Profile update failed: ${res.status}`);
+  return res.json();
+}
+
+export interface AuthMeResponse {
+  id: string;
+  github_login: string;
+  github_user_id: number;
+  role: string;
+  email: string | null;
+  avatar_url: string | null;
+  display_name: string | null;
+  onboarding_completed: boolean;
+  onboarding_completed_at: string | null;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+export async function fetchAuthMe(): Promise<AuthMeResponse> {
+  const res = await apiFetch(`${BASE}/auth/me`);
+  if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
   return res.json();
 }
 

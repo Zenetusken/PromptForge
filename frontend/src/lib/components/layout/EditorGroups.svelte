@@ -125,11 +125,14 @@
         {#if showOverflowMenu}
           <div
             class="absolute top-full right-0 mt-0.5 min-w-40 bg-bg-card border border-border-subtle z-[200] py-1 animate-dropdown-enter"
+            role="menu"
+            tabindex="-1"
             onmouseleave={() => showOverflowMenu = false}
           >
             {#each editor.openTabs.slice(editor.openTabs.length - overflowCount) as tab}
               <button
                 class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                role="menuitem"
                 onclick={() => { editor.activeTabId = tab.id; showOverflowMenu = false; }}
               >
                 {tab.label}
