@@ -20,7 +20,7 @@ Project Synthesis runs your prompts through a structured pipeline — **Explore 
 
 ## Prerequisites
 
-- Python 3.12+ and Node.js 20+
+- Python 3.14.0+ and Node.js 24.0.0+
 - At least one LLM provider — Claude Code CLI (`claude login`) or an Anthropic API key
 
 ## Installation
