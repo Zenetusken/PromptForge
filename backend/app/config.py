@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # Set to True in production (behind HTTPS) to add Secure flag to cookies.
     JWT_COOKIE_SECURE: bool = False
 
+    # Rate limiting — auth endpoints (slowapi format: "N/period")
+    RATE_LIMIT_AUTH_LOGIN: str = "20/minute"
+    RATE_LIMIT_AUTH_CALLBACK: str = "10/minute"
+    RATE_LIMIT_JWT_REFRESH: str = "60/minute"
+
     def model_post_init(self, __context) -> None:
         _log = logging.getLogger(__name__)
         for field, weak in _WEAK_DEFAULTS.items():

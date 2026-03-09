@@ -17,11 +17,15 @@ from app.models.github import GitHubToken
 from app.schemas.github import GitHubUserInfo
 from app.services.auth_service import issue_jwt_pair
 from app.services.github_service import encrypt_token
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
 from app.routers.github_repos import evict_repo_cache
 from app.utils.jwt import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["github-auth"])
+limiter = Limiter(key_func=get_remote_address)
 
 # ── JWT helpers ────────────────────────────────────────────────────────────
 
@@ -95,6 +99,7 @@ def _rotate_session(request: Request, **new_data) -> str:
 
 
 @router.get("/auth/github/login")
+@limiter.limit(lambda: settings.RATE_LIMIT_AUTH_LOGIN)
 async def github_login(request: Request):
     """Initiate GitHub App OAuth flow. Redirects to GitHub."""
     # Soft check: redirect already-authenticated users back to the app.
@@ -133,6 +138,7 @@ async def github_login(request: Request):
 
 
 @router.get("/auth/github/callback")
+@limiter.limit(lambda: settings.RATE_LIMIT_AUTH_CALLBACK)
 async def github_callback(
     request: Request,
     code: str = "",

@@ -18,6 +18,9 @@ from app.schemas.auth import (
     ERR_TOKEN_REVOKED,
     TokenResponse,
 )
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
 from app.dependencies.auth import get_current_user
 from app.schemas.auth import AuthenticatedUser
 from app.services.auth_service import issue_jwt_pair
@@ -28,6 +31,7 @@ from app.utils.jwt import (
 )
 
 router = APIRouter(tags=["jwt-auth"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/auth/token", response_model=TokenResponse)
@@ -73,6 +77,7 @@ async def logout_all_devices(
 
 
 @router.post("/auth/jwt/refresh", response_model=TokenResponse)
+@limiter.limit(lambda: settings.RATE_LIMIT_JWT_REFRESH)
 async def jwt_refresh(
     request: Request,
     response: Response,

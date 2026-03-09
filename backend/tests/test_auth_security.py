@@ -326,3 +326,51 @@ async def test_session_id_is_rotated_after_successful_oauth_callback():
         f"Session ID must rotate after login. Before: {pre_auth_session_id}, After: {post_auth_session_id}"
     )
     assert post_auth_session_id is not None, "session_id must be present after auth"
+
+
+# ── Cycle 5: Rate Limiting (Gap 5) ────────────────────────────────────────
+
+
+def test_rate_limiter_is_imported_in_github_auth_router():
+    """The rate limiter must be applied to the GitHub auth router (structural test)."""
+    import importlib
+    import sys
+
+    # Verify slowapi is importable (will fail if not installed)
+    try:
+        import slowapi  # noqa: F401
+    except ImportError:
+        pytest.fail("slowapi is not installed — add it to requirements.txt")
+
+    # Reload to get fresh module state
+    if "app.routers.github_auth" in sys.modules:
+        del sys.modules["app.routers.github_auth"]
+    mod = importlib.import_module("app.routers.github_auth")
+
+    assert hasattr(mod, "limiter"), "github_auth router must define a 'limiter' instance"
+
+
+def test_rate_limiter_is_imported_in_jwt_auth_router():
+    """The rate limiter must be applied to the JWT auth router (structural test)."""
+    import importlib
+    import sys
+
+    if "app.routers.auth" in sys.modules:
+        del sys.modules["app.routers.auth"]
+    mod = importlib.import_module("app.routers.auth")
+
+    assert hasattr(mod, "limiter"), "auth router must define a 'limiter' instance"
+
+
+def test_rate_limit_config_vars_exist():
+    """Rate limit configuration must be settable via environment variables."""
+    from app.config import Settings
+
+    s = Settings(
+        RATE_LIMIT_AUTH_LOGIN="5/minute",
+        RATE_LIMIT_AUTH_CALLBACK="5/minute",
+        RATE_LIMIT_JWT_REFRESH="30/minute",
+    )
+    assert s.RATE_LIMIT_AUTH_LOGIN == "5/minute"
+    assert s.RATE_LIMIT_AUTH_CALLBACK == "5/minute"
+    assert s.RATE_LIMIT_JWT_REFRESH == "30/minute"
