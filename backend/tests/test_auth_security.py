@@ -806,3 +806,81 @@ def test_jwt_refresh_response_cookie_uses_samesite_strict():
     assert 'samesite="strict"' in source or "samesite='strict'" in source, (
         "jwt_refresh cookie must use SameSite=Strict"
     )
+
+
+# ── Cycle 12: github_me reads avatar_url from User (Gap B) ────────────────
+
+
+async def test_github_me_returns_user_avatar_url_not_token_avatar_url():
+    """GET /auth/github/me must return User.avatar_url (not GitHubToken.avatar_url)
+    when a User record exists — User is the single source of truth for profile data.
+    """
+    from app.routers.github_auth import github_me
+
+    # Deliberately use DIFFERENT values so the test distinguishes the two sources.
+    token_avatar = "https://avatars.example.com/from-token"
+    user_avatar = "https://avatars.example.com/from-user"
+
+    mock_token = MagicMock()
+    mock_token.github_login = "octocat"
+    mock_token.avatar_url = token_avatar  # the OLD cached value on GitHubToken
+    mock_token.github_user_id = 999
+    mock_token.token_type = "github_app"
+
+    mock_user = MagicMock()
+    mock_user.avatar_url = user_avatar  # the canonical value on User
+
+    # result.one_or_none() returns a (token, user) row tuple
+    mock_result = MagicMock()
+    mock_result.one_or_none.return_value = (mock_token, mock_user)
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    mock_request = MagicMock()
+    mock_request.session = {"session_id": "test-session-id"}
+
+    result = await github_me(request=mock_request, session=mock_session)
+
+    assert result["connected"] is True
+    assert result["avatar_url"] == user_avatar, (
+        f"github_me must return User.avatar_url ('{user_avatar}'), "
+        f"not GitHubToken.avatar_url ('{token_avatar}'). Got: '{result['avatar_url']}'"
+    )
+    assert result["login"] == "octocat"
+    assert result["github_user_id"] == 999
+
+
+async def test_github_me_falls_back_to_token_avatar_url_when_no_user_record():
+    """GET /auth/github/me falls back to GitHubToken.avatar_url when User record is None
+    (backward compatibility for pre-migration tokens).
+    """
+    from app.routers.github_auth import github_me
+
+    token_avatar = "https://avatars.example.com/from-token"
+
+    mock_token = MagicMock()
+    mock_token.github_login = "octocat"
+    mock_token.avatar_url = token_avatar
+    mock_token.github_user_id = 999
+    mock_token.token_type = "classic"
+
+    # LEFT JOIN found no matching User row
+    mock_result = MagicMock()
+    mock_result.one_or_none.return_value = (mock_token, None)
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+
+    mock_request = MagicMock()
+    mock_request.session = {"session_id": "legacy-session-id"}
+
+    result = await github_me(request=mock_request, session=mock_session)
+
+    assert result["connected"] is True
+    assert result["avatar_url"] == token_avatar, (
+        f"When user_record is None, must fall back to GitHubToken.avatar_url. Got: '{result['avatar_url']}'"
+    )
+    assert result["login"] == "octocat"
+    assert result["github_user_id"] == 999
+    assert result["token_type"] == "classic"
