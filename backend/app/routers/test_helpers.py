@@ -16,7 +16,7 @@ from app.utils.jwt import sign_access_token
 router = APIRouter(tags=["test-helpers"])
 
 
-class TestTokenRequest(BaseModel):
+class TokenRequest(BaseModel):
     email: str = "e2e@test.com"
     github_login: str = "e2e-user"
     is_new_user: bool = False
@@ -24,7 +24,7 @@ class TestTokenRequest(BaseModel):
 
 @router.post("/test/token")
 async def issue_test_token(
-    body: TestTokenRequest,
+    body: TokenRequest,
     session: AsyncSession = Depends(get_session),
 ):
     """Issue a pre-signed JWT for E2E tests. Never available in production."""
