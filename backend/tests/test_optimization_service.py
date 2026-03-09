@@ -1,6 +1,5 @@
 """Tests for optimization_service CRUD functions."""
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 
@@ -33,7 +32,8 @@ def test_valid_sort_columns_exported():
 
 async def test_compute_stats_empty_db(tmp_path):
     """compute_stats returns zero-state dict when no optimizations exist."""
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
     import app.models.optimization  # noqa
     from app.database import Base
 
@@ -59,7 +59,8 @@ async def test_compute_stats_empty_db(tmp_path):
 
 async def test_compute_stats_respects_project_filter(tmp_path):
     """compute_stats must not raise when project filter is provided."""
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
     import app.models.optimization  # noqa
     from app.database import Base
 

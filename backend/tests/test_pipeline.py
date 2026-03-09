@@ -5,9 +5,9 @@ are forwarded from run_pipeline() to run_optimize(), not just to run_analyze().
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # P-prop-1: file/url/instruction contexts reach run_optimize

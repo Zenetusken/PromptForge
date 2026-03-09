@@ -2,8 +2,6 @@
 import time
 from importlib import reload
 
-import pytest
-
 
 def _get_module():
     import app.routers.github_repos as m

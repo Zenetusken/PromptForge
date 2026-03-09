@@ -13,7 +13,6 @@ import pytest
 from app.schemas.auth import AuthenticatedUser
 from app.utils.jwt import sign_access_token
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 def _make_request(token: str | None = None) -> MagicMock:
@@ -54,6 +53,7 @@ def _make_session(scalar_return=None) -> AsyncMock:
 async def test_protected_endpoint_returns_401_without_auth(method, path):
     """Each protected endpoint raises 401 when get_current_user is called without a token."""
     from fastapi import HTTPException
+
     from app.dependencies.auth import get_current_user
 
     req = _make_request(token=None)
@@ -71,7 +71,6 @@ async def test_protected_endpoint_returns_401_without_auth(method, path):
 
 async def test_health_is_public():
     """Health endpoint doesn't depend on get_current_user."""
-    from app.routers.health import router
 
     # Verify health router has no auth dependency by checking the endpoint exists
     # and doesn't import get_current_user
@@ -144,6 +143,7 @@ async def test_optimize_sets_user_id_from_jwt():
 async def test_github_token_cross_validation_rejects_wrong_user():
     """_get_github_token raises 403 when JWT user doesn't own the GitHub token."""
     from fastapi import HTTPException
+
     from app.routers.github_repos import _get_github_token
 
     # GitHubToken stored for github_user_id=999
@@ -201,7 +201,7 @@ async def test_github_token_cross_validation_passes_matching_user():
 
     # get_token_for_session is the final call — patch it to return a token
     with patch("app.routers.github_repos.github_service.get_token_for_session",
-               AsyncMock(return_value="decrypted-token")) as mock_get:
+               AsyncMock(return_value="decrypted-token")):
         result = await _get_github_token(mock_request, mock_session, current_user)
 
     assert result == "decrypted-token"
@@ -236,8 +236,9 @@ def test_strong_secret_no_warning(caplog):
 
 async def test_auth_github_login_is_accessible_without_jwt():
     """github_login does NOT call get_current_user — it's a public OAuth entry point."""
-    from app.routers.github_auth import github_login
     import inspect
+
+    from app.routers.github_auth import github_login
 
     # Verify the endpoint signature has no get_current_user dependency
     sig = inspect.signature(github_login)
@@ -249,6 +250,7 @@ async def test_auth_github_login_is_accessible_without_jwt():
 async def test_already_authenticated_user_redirected_from_login():
     """github_login redirects authenticated users back to the frontend."""
     from fastapi.responses import RedirectResponse
+
     from app.routers.github_auth import github_login
 
     token = sign_access_token("user-123", "octocat", ["user"])
@@ -273,6 +275,7 @@ async def test_expired_token_not_redirected_from_login():
         expired_token = sign_access_token("user-123", "octocat", ["user"])
 
     from fastapi import HTTPException
+
     from app.routers.github_auth import github_login
 
     mock_request = MagicMock()

@@ -1,7 +1,7 @@
 import logging
 
-from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
+from pydantic_settings import BaseSettings
 
 _WEAK_DEFAULTS = {
     "SECRET_KEY": "synthesis-dev-secret-key",

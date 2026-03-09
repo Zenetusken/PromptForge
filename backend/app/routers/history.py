@@ -10,7 +10,6 @@ from app.database import get_session
 from app.dependencies.auth import get_current_user
 from app.models.optimization import Optimization
 from app.schemas.auth import AuthenticatedUser
-from app.schemas.optimization import HistoryStatsResponse
 from app.services.optimization_service import VALID_SORT_COLUMNS, compute_stats
 
 logger = logging.getLogger(__name__)

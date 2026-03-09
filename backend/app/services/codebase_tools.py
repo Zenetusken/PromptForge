@@ -59,7 +59,9 @@ def get_cached_tree_size(repo_full_name: str, branch: str) -> int:
 # Regex for get_file_outline: matches top-level function/class/interface definitions
 OUTLINE_PATTERNS = re.compile(
     r'^(\s*)'
-    r'(def |async def |class |function |export function |export default function |export class |export interface |export type |interface |type |const .+ = \(|module\.exports|fn |pub fn |pub struct |pub enum |pub trait |impl )',
+    r'(def |async def |class |function |export function |export default function '
+    r'|export class |export interface |export type |interface |type '
+    r'|const .+ = \(|module\.exports|fn |pub fn |pub struct |pub enum |pub trait |impl )',
     re.MULTILINE,
 )
 

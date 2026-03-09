@@ -13,24 +13,23 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.sessions import SessionMiddleware
-
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.database import create_tables
 from app.mcp_server import HAS_MCP, create_mcp_server, make_websocket_asgi
-from app.services.cleanup import cleanup_loop
 from app.providers.detector import ProviderNotAvailableError, detect_provider
 
 # Import routers
 from app.routers import github_auth, github_repos, health, history, optimize
 from app.routers.auth import router as jwt_auth_router
 from app.routers.github import router as github_router
+from app.routers.github_config import router as github_config_router
 from app.routers.providers import router as providers_router
 from app.routers.providers import set_provider as providers_set_provider
 from app.routers.settings import router as settings_router
-from app.routers.github_config import router as github_config_router
+from app.services.cleanup import cleanup_loop
 from app.services.github_credentials_service import load_credentials_from_file
 
 logging.basicConfig(

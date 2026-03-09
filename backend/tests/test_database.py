@@ -1,6 +1,6 @@
 """Tests for database engine configuration."""
 import os
-import tempfile
+
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -53,9 +53,8 @@ async def test_pool_pre_ping():
 
 async def test_missing_indices_created(tmp_path):
     """_migrate_add_missing_indexes must create all 5 new indices on optimizations."""
-    import app.models.optimization  # noqa: ensure model registered
-    import app.models.github  # noqa
-    import app.models.auth  # noqa
+    import app.models.auth  # noqa: F401
+    import app.models.github  # noqa: F401
 
     db_path = tmp_path / "idx_test.db"
     eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")

@@ -6,14 +6,13 @@ CodebaseContext dataclass (P1.3).
 """
 from dataclasses import asdict
 
+from app.services.codebase_explorer import CodebaseContext
+from app.services.codebase_tools import _search_priority
 from app.services.context_builders import (
     build_analysis_summary,
     build_codebase_summary,
     build_strategy_summary,
 )
-from app.services.codebase_explorer import CodebaseContext
-from app.services.codebase_tools import _search_priority
-
 
 # ── _search_priority (P1.2) ───────────────────────────────────────────────────
 

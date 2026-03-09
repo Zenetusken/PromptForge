@@ -9,12 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_session
 from app.models.auth import RefreshToken
 from app.schemas.auth import (
-    AuthenticatedUser,
     ERR_INSUFFICIENT_PERMISSIONS,
     ERR_TOKEN_EXPIRED,
     ERR_TOKEN_INVALID,
     ERR_TOKEN_MISSING,
     ERR_TOKEN_REVOKED,
+    AuthenticatedUser,
 )
 from app.utils.jwt import decode_token
 

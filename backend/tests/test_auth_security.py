@@ -9,15 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.dependencies.auth import get_current_user
 from app.schemas.auth import (
-    ERR_TOKEN_EXPIRED,
     ERR_TOKEN_INVALID,
     ERR_TOKEN_MISSING,
     ERR_TOKEN_REVOKED,
 )
 from app.utils.jwt import sign_access_token, sign_refresh_token
-from app.dependencies.auth import get_current_user
-
 
 # ── Cycle 1: Token in URL (Gap A) ─────────────────────────────────────────
 
@@ -25,6 +23,7 @@ from app.dependencies.auth import get_current_user
 async def test_callback_redirect_url_has_no_access_token():
     """OAuth callback must NOT embed JWT in redirect URL (ASVS §3.5.2)."""
     from fastapi.responses import RedirectResponse
+
     from app.routers.github_auth import github_callback
 
     with patch("app.routers.github_auth._csrf_signer") as mock_signer_fn:
@@ -107,6 +106,7 @@ async def test_get_auth_token_clears_session_after_read():
 async def test_get_auth_token_returns_401_when_no_pending_token():
     """GET /auth/token returns 401 when no pending token is in the session."""
     from fastapi import HTTPException
+
     from app.routers.auth import get_auth_token
 
     mock_request = MagicMock()
@@ -211,8 +211,10 @@ async def test_logout_revokes_all_active_refresh_tokens_not_just_most_recent():
     mock_user = MagicMock()
     mock_user.id = "user-uuid"
 
-    rt1 = MagicMock(); rt1.revoked = False
-    rt2 = MagicMock(); rt2.revoked = False  # second device — currently NOT revoked by logout
+    rt1 = MagicMock()
+    rt1.revoked = False
+    rt2 = MagicMock()
+    rt2.revoked = False  # second device — currently NOT revoked by logout
 
     user_result = MagicMock()
     user_result.scalar_one_or_none.return_value = mock_user
@@ -243,13 +245,15 @@ async def test_logout_revokes_all_active_refresh_tokens_not_just_most_recent():
 async def test_logout_all_devices_endpoint_exists_and_revokes_all_tokens():
     """DELETE /auth/sessions (logout-all) revokes every active RT for the authenticated user."""
     from app.routers.auth import logout_all_devices  # does not exist yet → ImportError
-
     from app.schemas.auth import AuthenticatedUser
     current_user = AuthenticatedUser(id="user-uuid", github_login="octocat", roles=["user"])
 
-    rt1 = MagicMock(); rt1.revoked = False
-    rt2 = MagicMock(); rt2.revoked = False
-    rt3 = MagicMock(); rt3.revoked = False
+    rt1 = MagicMock()
+    rt1.revoked = False
+    rt2 = MagicMock()
+    rt2.revoked = False
+    rt3 = MagicMock()
+    rt3.revoked = False
 
     rt_result = MagicMock()
     rt_result.scalars.return_value.all.return_value = [rt1, rt2, rt3]
@@ -274,7 +278,6 @@ async def test_logout_all_devices_endpoint_exists_and_revokes_all_tokens():
 
 async def test_session_id_is_rotated_after_successful_oauth_callback():
     """Session ID must change after successful authentication (OWASP A07:2021 — session fixation)."""
-    from fastapi.responses import RedirectResponse
     from app.routers.github_auth import github_callback
 
     with patch("app.routers.github_auth._csrf_signer") as mock_signer_fn:
@@ -382,6 +385,7 @@ def test_rate_limit_config_vars_exist():
 def test_insecure_cookie_warns_in_production_context(caplog):
     """JWT_COOKIE_SECURE=False with a non-localhost FRONTEND_URL emits CRITICAL warning."""
     import logging
+
     from app.config import Settings
 
     with caplog.at_level(logging.CRITICAL, logger="app.config"):
@@ -399,6 +403,7 @@ def test_insecure_cookie_warns_in_production_context(caplog):
 def test_insecure_cookie_allowed_on_localhost(caplog):
     """JWT_COOKIE_SECURE=False on localhost (dev) must NOT emit a CRITICAL warning."""
     import logging
+
     from app.config import Settings
 
     with caplog.at_level(logging.CRITICAL, logger="app.config"):
@@ -548,6 +553,7 @@ async def test_upsert_user_returns_is_new_false_for_existing_user():
 async def test_callback_redirect_includes_new_param_for_new_users():
     """OAuth callback sets ?new=1 in redirect URL when the user is brand new."""
     from fastapi.responses import RedirectResponse
+
     from app.routers.github_auth import github_callback
 
     with patch("app.routers.github_auth._csrf_signer") as mock_signer_fn:
@@ -597,7 +603,6 @@ async def test_callback_redirect_includes_new_param_for_new_users():
 async def test_github_token_refresh_endpoint_calls_refresh_user_token():
     """POST /auth/github/token/refresh triggers refresh and updates the DB record."""
     from app.routers.github_auth import refresh_github_token  # does not exist yet
-
     from app.schemas.auth import AuthenticatedUser
     current_user = AuthenticatedUser(id="user-uuid", github_login="octocat", roles=["user"])
 
@@ -680,6 +685,7 @@ async def test_user_not_found_and_token_not_found_return_same_error_body():
     by probing error messages (oracle attack prevention).
     """
     from fastapi import HTTPException
+
     from app.routers.auth import jwt_refresh
 
     raw_refresh = sign_refresh_token("user-999")
@@ -734,6 +740,7 @@ async def test_user_not_found_and_token_not_found_return_same_error_body():
 def test_set_refresh_cookie_uses_samesite_strict():
     """The JWT refresh cookie must use SameSite=Strict (not Lax)."""
     import inspect
+
     from app.routers import github_auth
 
     source = inspect.getsource(github_auth._set_refresh_cookie)
@@ -746,6 +753,7 @@ def test_set_refresh_cookie_uses_samesite_strict():
 def test_jwt_refresh_response_cookie_uses_samesite_strict():
     """The new cookie set by /auth/jwt/refresh must also use SameSite=Strict."""
     import inspect
+
     from app.routers import auth
 
     source = inspect.getsource(auth.jwt_refresh)

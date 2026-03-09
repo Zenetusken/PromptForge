@@ -1,12 +1,10 @@
 """Tests for background cleanup service (Task 7)."""
-import asyncio
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, patch
 
 from app.services.cleanup import (
     run_cleanup_cycle,
-    sweep_expired_tokens,
     sweep_expired_github_tokens,
+    sweep_expired_tokens,
     sweep_old_linked_repos,
     sweep_soft_deleted_optimizations,
 )

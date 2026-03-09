@@ -7,23 +7,22 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session
+from app.dependencies.auth import get_current_user
 from app.models.auth import RefreshToken, User
 from app.models.github import GitHubToken
-from app.schemas.github import GitHubUserInfo
-from app.dependencies.auth import get_current_user
+from app.routers.github_repos import evict_repo_cache
 from app.schemas.auth import AuthenticatedUser
+from app.schemas.github import GitHubUserInfo
 from app.services.auth_service import issue_jwt_pair
 from app.services.github_app_service import refresh_user_token
 from app.services.github_service import encrypt_token
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-from app.routers.github_repos import evict_repo_cache
 from app.utils.jwt import decode_token
 
 logger = logging.getLogger(__name__)

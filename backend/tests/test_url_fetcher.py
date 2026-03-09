@@ -9,10 +9,8 @@ Verifies that HTML structure is preserved as markdown:
   - Excess whitespace / blank lines normalised
 """
 
-import pytest
 
 from app.services.url_fetcher import strip_html
-
 
 # ── Headings ─────────────────────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 import asyncio
+import datetime as dt
 import json
 import logging
-import datetime as dt
 import time
 import uuid
 from datetime import datetime, timezone
@@ -11,12 +11,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import async_session, get_session
 from app.dependencies.auth import get_current_user
 from app.models.optimization import Optimization
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.optimization import OptimizeRequest, PatchOptimizationRequest, RetryRequest
-from app.config import settings
 from app.services.url_fetcher import fetch_url_contexts
 
 logger = logging.getLogger(__name__)

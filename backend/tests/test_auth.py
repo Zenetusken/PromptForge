@@ -7,23 +7,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from jose import ExpiredSignatureError, JWTError
 
-from app.utils.jwt import (
-    decode_refresh_token,
-    decode_token,
-    hash_token,
-    sign_access_token,
-    sign_refresh_token,
-)
+from app.dependencies.auth import get_current_user, require_roles
 from app.schemas.auth import (
-    AuthenticatedUser,
     ERR_INSUFFICIENT_PERMISSIONS,
     ERR_TOKEN_EXPIRED,
     ERR_TOKEN_INVALID,
     ERR_TOKEN_MISSING,
     ERR_TOKEN_REVOKED,
+    AuthenticatedUser,
 )
-from app.dependencies.auth import get_current_user, require_roles
-
+from app.utils.jwt import (
+    decode_refresh_token,
+    decode_token,
+    sign_access_token,
+    sign_refresh_token,
+)
 
 # ── JWT Utils (5 tests) ────────────────────────────────────────────────────
 
@@ -138,6 +136,7 @@ async def test_get_current_user_invalid_token_raises_401():
 async def test_get_current_user_expired_token_raises_401():
     """Expired token raises 401 with AUTH_TOKEN_EXPIRED code."""
     from fastapi import HTTPException
+
     from app.config import settings as real_settings
 
     with patch("app.utils.jwt.settings") as mock_settings:
@@ -266,6 +265,7 @@ async def test_refresh_valid_cookie_returns_new_access_token():
 async def test_refresh_missing_cookie_raises_401():
     """Missing jwt_refresh_token cookie raises 401 AUTH_TOKEN_MISSING."""
     from fastapi import HTTPException
+
     from app.routers.auth import jwt_refresh
 
     mock_request = MagicMock()
@@ -283,6 +283,7 @@ async def test_refresh_missing_cookie_raises_401():
 async def test_refresh_invalid_token_raises_401():
     """Invalid refresh token value raises 401 AUTH_TOKEN_INVALID."""
     from fastapi import HTTPException
+
     from app.routers.auth import jwt_refresh
 
     mock_request = MagicMock()
@@ -300,6 +301,7 @@ async def test_refresh_invalid_token_raises_401():
 async def test_refresh_revoked_token_raises_401():
     """A revoked refresh token raises 401 AUTH_TOKEN_REVOKED."""
     from fastapi import HTTPException
+
     from app.routers.auth import jwt_refresh
 
     raw_refresh = sign_refresh_token("user-123")
@@ -328,6 +330,7 @@ async def test_refresh_revoked_token_raises_401():
 async def test_refresh_user_id_mismatch_raises_401():
     """Refresh token whose stored user_id differs from JWT sub raises 401 AUTH_TOKEN_INVALID."""
     from fastapi import HTTPException
+
     from app.routers.auth import jwt_refresh
 
     # Sign for "user-123" but stored record claims "user-999"

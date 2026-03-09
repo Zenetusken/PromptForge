@@ -21,7 +21,6 @@ from app.routers.github_config import (
     update_github_app_config,
 )
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 

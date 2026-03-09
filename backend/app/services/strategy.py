@@ -8,11 +8,11 @@ import asyncio
 import logging
 from typing import AsyncGenerator, Optional
 
+from app.config import settings
 from app.prompts.strategy_prompt import get_strategy_prompt
 from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
 from app.services.context_builders import build_analysis_summary, build_codebase_summary
 from app.services.strategy_selector import heuristic_strategy_fallback
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 

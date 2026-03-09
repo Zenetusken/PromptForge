@@ -12,7 +12,6 @@ from app.providers.detector import (
     detect_provider,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -46,7 +45,7 @@ async def test_detect_provider_total_timeout_under_10s():
 
     The 5s per-probe timeout fires first; total detection stays well under 10s.
     """
-    proc = _mock_proc(communicate_sleep=30.0)
+    _mock_proc(communicate_sleep=30.0)
 
     async def slow_create(*args, **kwargs):
         # Simulate a subprocess that takes forever to start

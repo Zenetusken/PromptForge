@@ -1,9 +1,9 @@
 """Tests for LLM provider implementations (P2-P8, T1-T11)."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # P-parse — parse_json_robust() three-strategy fallback
@@ -49,6 +49,7 @@ def test_anthropic_thinking_disabled_for_haiku():
 
 def test_anthropic_thinking_disabled_warns_when_schema_provided(caplog):
     import logging
+
     from app.providers.anthropic_api import AnthropicAPIProvider
     provider = AnthropicAPIProvider.__new__(AnthropicAPIProvider)
     with caplog.at_level(logging.WARNING, logger="app.providers.anthropic_api"):
@@ -129,7 +130,7 @@ async def test_agentic_result_output_from_submit_result():
 async def test_on_tool_call_callback_invoked_with_name_and_input():
     """on_tool_call(name, input) is called for each tool invocation."""
     from app.providers.anthropic_api import AnthropicAPIProvider
-    from app.providers.base import ToolDefinition, AgenticResult
+    from app.providers.base import ToolDefinition
 
     calls: list[tuple] = []
 
@@ -188,7 +189,7 @@ async def test_on_tool_call_callback_invoked_with_name_and_input():
 async def test_complete_agentic_stops_at_max_turns():
     """Loop exits with stop_reason='max_turns' when max_turns is exhausted."""
     from app.providers.anthropic_api import AnthropicAPIProvider
-    from app.providers.base import ToolDefinition, AgenticResult
+    from app.providers.base import AgenticResult, ToolDefinition
 
     async def noop(args: dict) -> str:
         return "x"
@@ -249,8 +250,9 @@ async def test_complete_returns_empty_string_on_no_content():
     assert result == ""
 
     # ClaudeCLIProvider: message with no content blocks
-    from app.providers.claude_cli import ClaudeCLIProvider
     from claude_agent_sdk import AssistantMessage
+
+    from app.providers.claude_cli import ClaudeCLIProvider
 
     real_msg = MagicMock(spec=AssistantMessage)
     real_msg.content = []  # empty
@@ -333,8 +335,9 @@ async def test_complete_json_without_schema_uses_parse_json_robust():
 async def test_cli_complete_json_with_schema_uses_parse_json_robust():
     """ClaudeCLIProvider.complete_json(schema=...) calls complete() and
     parses with parse_json_robust — no API delegation."""
-    from app.providers.claude_cli import ClaudeCLIProvider
     from claude_agent_sdk import AssistantMessage, TextBlock
+
+    from app.providers.claude_cli import ClaudeCLIProvider
 
     schema = {
         "type": "object",
@@ -365,7 +368,7 @@ async def test_cli_complete_json_with_schema_uses_parse_json_robust():
 async def test_complete_agentic_tool_error_returns_error_to_model():
     """A tool handler exception must produce a tool_result error, not crash the loop."""
     from app.providers.anthropic_api import AnthropicAPIProvider
-    from app.providers.base import ToolDefinition, AgenticResult
+    from app.providers.base import AgenticResult, ToolDefinition
 
     async def failing_handler(args: dict) -> str:
         raise RuntimeError("disk full")
@@ -453,6 +456,7 @@ def test_agentic_result_max_turns_stop_reason():
 
 def test_parse_json_robust_logs_warning_on_failure(caplog):
     import logging
+
     from app.providers.base import parse_json_robust
     with caplog.at_level(logging.WARNING, logger="app.providers.base"):
         with pytest.raises(ValueError, match="Could not parse JSON"):
@@ -466,6 +470,7 @@ def test_parse_json_robust_logs_warning_on_failure(caplog):
 
 def test_abc_stream_is_async():
     import inspect
+
     from app.providers.base import LLMProvider
     assert "stream" in LLMProvider.__abstractmethods__
     # Verify implementations are async generators (not sync)
@@ -757,9 +762,9 @@ def test_describe_tool_call_submit_result():
 @pytest.mark.asyncio
 async def test_on_tool_call_emits_reasoning_before_tool_call():
     """_on_tool_call must enqueue ('agent_text', ...) before ('tool_call', ...)."""
-    import asyncio
-    from app.services.codebase_explorer import run_explore
     from unittest.mock import AsyncMock, MagicMock, patch
+
+    from app.services.codebase_explorer import run_explore
 
     events: list[tuple] = []
 
@@ -814,8 +819,9 @@ async def test_run_explore_user_turn_reminds_submit_result():
     Adding a brief reminder in the user turn ensures the model has the instruction
     in its most-attended context.
     """
-    from app.services.codebase_explorer import run_explore
     from unittest.mock import AsyncMock, MagicMock
+
+    from app.services.codebase_explorer import run_explore
 
     captured_user_turn: list[str] = []
 
