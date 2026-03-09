@@ -44,6 +44,9 @@ class GitHubStore {
   files = $state<GitHubFile[]>([]);
   error = $state<string | null>(null);
 
+  // Command palette trigger — set true to open the repo picker modal from outside
+  showRepoPicker = $state(false);
+
   // File tree state
   fileTree = $state<TreeNode[] | null>(null);
   treeLoading = $state(false);

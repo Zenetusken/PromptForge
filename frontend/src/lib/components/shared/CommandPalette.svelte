@@ -258,15 +258,20 @@
         {#each cmds as cmd}
           {@const globalIdx = commandPalette.filteredCommands.indexOf(cmd)}
           <button
-            class="w-full flex items-center justify-between px-4 h-[40px] text-[13px] transition-colors relative border-l
+            class="w-full flex items-center justify-between px-4 py-2 min-h-[40px] text-[13px] transition-colors relative border-l
               {globalIdx === commandPalette.selectedIndex
                 ? 'border-neon-cyan/50 bg-bg-hover text-text-primary'
                 : 'border-transparent text-text-secondary hover:bg-bg-hover/50'}"
             onclick={() => { commandPalette.selectedIndex = globalIdx; commandPalette.executeSelected(); }}
           >
-            <span>{cmd.label}</span>
+            <div class="flex flex-col items-start min-w-0">
+              <span>{cmd.label}</span>
+              {#if cmd.description}
+                <span class="text-[10px] text-text-dim truncate max-w-[300px]">{cmd.description}</span>
+              {/if}
+            </div>
             {#if cmd.shortcut}
-              <kbd>{cmd.shortcut}</kbd>
+              <kbd class="ml-2 shrink-0 text-[10px] px-1.5 py-0.5 bg-bg-secondary rounded border border-border-subtle text-text-dim">{cmd.shortcut}</kbd>
             {/if}
           </button>
         {/each}

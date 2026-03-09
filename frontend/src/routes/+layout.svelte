@@ -5,11 +5,13 @@
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { github } from '$lib/stores/github.svelte';
-  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe } from '$lib/api/client';
+  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe, unlinkRepo } from '$lib/api/client';
   import { toast } from '$lib/stores/toast.svelte';
   import type { RepoInfo } from '$lib/api/client';
   import { user } from '$lib/stores/user.svelte';
   import { auth } from '$lib/stores/auth.svelte';
+  import { history } from '$lib/stores/history.svelte';
+  import { commandPalette } from '$lib/stores/commandPalette.svelte';
   import ActivityBar from '$lib/components/layout/ActivityBar.svelte';
   import Navigator from '$lib/components/layout/Navigator.svelte';
   import EditorGroups from '$lib/components/layout/EditorGroups.svelte';
@@ -312,6 +314,113 @@
 
     // Ensure at least one tab is open
     editor.ensureWelcomeTab();
+
+    // Register command palette commands
+    commandPalette.registerCommand({
+      id: 'forge.new',
+      label: 'New Optimization',
+      description: 'Clear prompt and start fresh',
+      group: 'Forge',
+      action: () => {
+        forge.resetPipeline();
+        editor.openTab({
+          id: `prompt-${Date.now()}`,
+          label: 'New Prompt',
+          type: 'prompt',
+          promptText: '',
+          dirty: false
+        });
+        setTimeout(() => {
+          document.querySelector<HTMLTextAreaElement>('[data-testid="prompt-textarea"]')?.focus();
+        }, 0);
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'forge.run',
+      label: 'Run Optimization',
+      shortcut: '⌘↵',
+      group: 'Forge',
+      action: () => {
+        setTimeout(() => {
+          document.querySelector<HTMLButtonElement>('[data-testid="forge-button"]')?.click();
+        }, 0);
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'forge.retry',
+      label: 'Retry Last Optimization',
+      description: 'Re-run with same settings',
+      group: 'Forge',
+      action: () => {
+        if (forge.optimizationId) forge.retryForge(forge.optimizationId);
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'history.open',
+      label: 'Open History',
+      group: 'History',
+      action: () => {
+        workbench.setActivity('history');
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'history.trash',
+      label: 'Open Trash',
+      group: 'History',
+      action: () => {
+        workbench.setActivity('history');
+        history.showTrash = true;
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'github.connect',
+      label: 'Connect Repository',
+      description: 'Pick a GitHub repo for context',
+      group: 'GitHub',
+      action: () => {
+        workbench.setActivity('github');
+        github.showRepoPicker = true;
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'github.disconnect',
+      label: 'Disconnect Repository',
+      group: 'GitHub',
+      action: async () => {
+        if (github.isConnected) {
+          try {
+            await unlinkRepo();
+          } catch { /* best-effort */ }
+          github.disconnect();
+        }
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'nav.settings',
+      label: 'Open Settings',
+      group: 'Navigation',
+      action: () => {
+        workbench.setActivity('settings');
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'nav.toggle-navigator',
+      label: 'Toggle Navigator',
+      shortcut: '⌘B',
+      group: 'Navigation',
+      action: () => {
+        workbench.toggleNavigator();
+      }
+    });
+    commandPalette.registerCommand({
+      id: 'nav.toggle-inspector',
+      label: 'Toggle Inspector',
+      shortcut: '⌘.',
+      group: 'Navigation',
+      action: () => {
+        workbench.toggleInspector();
+      }
+    });
 
     return () => {
       clearInterval(healthTimer);

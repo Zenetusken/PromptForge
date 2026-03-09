@@ -7,7 +7,11 @@
   import GitHubStatus from '$lib/components/github/GitHubStatus.svelte';
   import RepoPickerModal from '$lib/components/github/RepoPickerModal.svelte';
 
-  let showRepoPicker = $state(false);
+  let showRepoPicker = $derived(github.showRepoPicker);
+
+  function setShowRepoPicker(v: boolean) {
+    github.showRepoPicker = v;
+  }
 
   function handleSelectRepo(fullName: string, branch?: string) {
     const repo = github.repos.find(r => r.full_name === fullName);
@@ -93,7 +97,7 @@
         <div class="flex items-center gap-2">
           <button
             class="text-[10px] text-neon-cyan hover:text-neon-cyan/80"
-            onclick={() => { showRepoPicker = true; }}
+            onclick={() => { setShowRepoPicker(true); }}
           >
             Browse…
           </button>
@@ -151,4 +155,4 @@
   {/if}
 </div>
 
-<RepoPickerModal open={showRepoPicker} onclose={() => { showRepoPicker = false; }} onselectrepo={handleSelectRepo} />
+<RepoPickerModal open={showRepoPicker} onclose={() => { setShowRepoPicker(false); }} onselectrepo={handleSelectRepo} />
