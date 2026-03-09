@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -34,7 +34,10 @@ async def list_history(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """List optimization history with pagination, search, sort, and filter."""
-    query = select(Optimization).where(Optimization.deleted_at.is_(None))
+    query = select(Optimization).where(
+        Optimization.deleted_at.is_(None),
+        Optimization.user_id == current_user.id,
+    )
 
     # Filters
     if search:
@@ -117,7 +120,6 @@ async def list_trash(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """List soft-deleted optimizations pending purge (deleted within the last 7 days)."""
-    from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     base_filter = [
         Optimization.deleted_at.isnot(None),

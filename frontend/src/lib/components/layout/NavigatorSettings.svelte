@@ -128,8 +128,11 @@
 
   let loggingOutAll = $state(false);
   let reconnecting = $state(false);
-  let reconnectError = $state('');
+  let reconnectError = $state('');   // actual failures — shown in neon-red
+  let reconnectInfo = $state('');    // informational skipped-reason — shown in text-dim
 
+  // Informational "skipped" reasons — not errors, shown in neutral colour.
+  const _reconnectInfoReasons = new Set(['not_expiring_soon']);
   const _reconnectReasonMessages: Record<string, string> = {
     not_expiring_soon: 'Token is still valid — no refresh needed',
     not_a_github_app_token: 'Manual refresh is only available for GitHub App tokens',
@@ -138,13 +141,19 @@
   async function handleReconnectGitHub() {
     reconnecting = true;
     reconnectError = '';
+    reconnectInfo = '';
     try {
       const result = await refreshGitHubToken();
       if (result.refreshed) {
         toast.success('GitHub token refreshed');
       } else {
         const reason = result.reason ?? '';
-        reconnectError = _reconnectReasonMessages[reason] ?? 'Token refresh skipped';
+        const msg = _reconnectReasonMessages[reason] ?? 'Token refresh skipped';
+        if (_reconnectInfoReasons.has(reason)) {
+          reconnectInfo = msg;
+        } else {
+          reconnectError = msg;
+        }
       }
     } catch (e) {
       reconnectError = (e as Error).message;
@@ -353,6 +362,8 @@
           </button>
           {#if reconnectError}
             <p class="font-mono text-[9px] text-neon-red ml-4">{reconnectError}</p>
+          {:else if reconnectInfo}
+            <p class="font-mono text-[9px] text-text-dim ml-4">{reconnectInfo}</p>
           {/if}
         {:else if workbench.githubOAuthEnabled}
           <div class="flex items-center gap-2 mb-1">

@@ -6,7 +6,7 @@ and deleting optimization records via SQLAlchemy async sessions.
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import case, func, select
@@ -285,12 +285,17 @@ async def restore_optimization(
     optimization_id: str,
     user_id: str,
 ) -> bool:
-    """Restore a soft-deleted optimization. Returns True if found and restored, False if not found."""
+    """Restore a soft-deleted optimization within the 7-day trash window.
+
+    Returns True if found and restored, False if not found or already purged.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     result = await session.execute(
         select(Optimization).where(
             Optimization.id == optimization_id,
             Optimization.user_id == user_id,
             Optimization.deleted_at.isnot(None),
+            Optimization.deleted_at >= cutoff,
         )
     )
     opt = result.scalar_one_or_none()
