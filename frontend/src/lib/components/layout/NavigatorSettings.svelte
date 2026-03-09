@@ -101,13 +101,27 @@
   let reconnecting = $state(false);
   let reconnectError = $state('');
 
+  const _reconnectReasonMessages: Record<string, string> = {
+    not_expiring_soon: 'Token is still valid — no refresh needed',
+    not_a_github_app_token: 'Manual refresh is only available for GitHub App tokens',
+  };
+
   async function handleReconnectGitHub() {
-    reconnecting = true; reconnectError = '';
+    reconnecting = true;
+    reconnectError = '';
     try {
       const result = await refreshGitHubToken();
-      if (!result.refreshed) reconnectError = result.reason ?? 'Token already fresh';
-    } catch (e) { reconnectError = (e as Error).message; }
-    finally { reconnecting = false; }
+      if (result.refreshed) {
+        toast.success('GitHub token refreshed');
+      } else {
+        const reason = result.reason ?? '';
+        reconnectError = _reconnectReasonMessages[reason] ?? 'Token refresh skipped';
+      }
+    } catch (e) {
+      reconnectError = (e as Error).message;
+    } finally {
+      reconnecting = false;
+    }
   }
 
   async function handleLogoutAllDevices() {
