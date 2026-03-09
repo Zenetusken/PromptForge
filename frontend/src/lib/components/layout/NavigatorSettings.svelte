@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchSettings, updateSettings, fetchProviderStatus, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, type AppSettings } from '$lib/api/client';
+  import { fetchSettings, updateSettings, fetchProviderStatus, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, fetchGitHubAppConfig, saveGitHubAppConfig, type AppSettings, type GitHubAppConfig } from '$lib/api/client';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { github } from '$lib/stores/github.svelte';
   import { auth } from '$lib/stores/auth.svelte';
@@ -10,20 +10,64 @@
   let error = $state<string | null>(null);
   let saving = $state(false);
 
+  // ── GitHub App credential management ─────────────────────────────────────
+  let appConfig = $state<GitHubAppConfig | null>(null);
+  let expandConfig = $state(false);
+  let showReconnect = $state(false);
+  let configClientId = $state('');
+  let configSecret = $state('');
+  let showConfigSecret = $state(false);
+  let configSaving = $state(false);
+  let configError = $state('');
+
+  function cancelConfig() {
+    expandConfig = false;
+    showReconnect = false;
+    configError = '';
+    configClientId = '';
+    configSecret = '';
+  }
+
   async function loadSettings() {
     loading = true;
     error = null;
     try {
-      const [s, status] = await Promise.all([
+      const [s, status, cfg] = await Promise.all([
         fetchSettings(),
-        fetchProviderStatus().catch(() => null)
+        fetchProviderStatus().catch(() => null),
+        fetchGitHubAppConfig().catch(() => null)
       ]);
       settings = s;
       if (status) workbench.isConnected = status.healthy;
+      if (cfg) appConfig = cfg;
     } catch (err) {
       error = (err as Error).message;
     } finally {
       loading = false;
+    }
+  }
+
+  async function handleSaveAppConfig() {
+    configError = '';
+    configSaving = true;
+    try {
+      const result = await saveGitHubAppConfig(configClientId.trim(), configSecret.trim());
+      appConfig = { configured: result.configured, client_id_masked: result.client_id_masked, has_secret: result.has_secret };
+      expandConfig = false;
+      configClientId = '';
+      configSecret = '';
+      workbench.setGithubOAuthEnabled(true);
+      toast.success('GitHub credentials updated');
+      if (github.isConnected) {
+        // User must reconnect for the new credentials to take effect.
+        showReconnect = true;
+      } else {
+        window.location.href = getGitHubLoginUrl();
+      }
+    } catch (err) {
+      configError = (err as Error).message;
+    } finally {
+      configSaving = false;
     }
   }
 
@@ -149,6 +193,141 @@
           >Connect via GitHub →</button>
         {:else}
           <span class="text-[10px] text-text-dim">GitHub App not configured</span>
+        {/if}
+      </div>
+
+      <!-- GitHub App Credentials -->
+      <div class="space-y-1 mb-3 p-2 rounded bg-bg-card border border-border-subtle">
+        <!-- Collapsed header row -->
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="font-display text-[11px] font-bold uppercase text-text-dim">GitHub App</span>
+            {#if appConfig}
+              <span class="font-mono text-[9px] text-text-dim/60 truncate">
+                {appConfig.configured ? appConfig.client_id_masked : 'Not configured'}
+              </span>
+            {/if}
+          </div>
+          <button
+            class="font-mono text-[9px] text-neon-cyan/70 hover:text-neon-cyan shrink-0
+                   transition-colors duration-150"
+            onclick={() => { if (expandConfig) cancelConfig(); else { expandConfig = true; configError = ''; } }}
+          >
+            {expandConfig ? 'CANCEL' : (appConfig?.configured ? 'UPDATE' : 'CONFIGURE')}
+          </button>
+        </div>
+
+        {#if expandConfig}
+          <!-- Expanded form -->
+          <div class="mt-2 space-y-1.5">
+            <!-- Client ID -->
+            <div>
+              <label
+                for="nav-config-cid"
+                class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5"
+              >Client ID</label>
+              <input
+                id="nav-config-cid"
+                type="text"
+                placeholder="Iv1.xxxxxxxxxxxxxxxxxxxx"
+                bind:value={configClientId}
+                autocomplete="off"
+                spellcheck="false"
+                class="w-full bg-bg-input border border-border-subtle px-2 py-1
+                       font-mono text-[10px] text-text-primary
+                       focus:outline-none focus:border-neon-cyan/30
+                       placeholder:text-text-dim/40
+                       transition-colors duration-150"
+              />
+            </div>
+
+            <!-- Client Secret -->
+            <div>
+              <label
+                for="nav-config-sec"
+                class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5"
+              >Client Secret</label>
+              <div class="relative">
+                <input
+                  id="nav-config-sec"
+                  type={showConfigSecret ? 'text' : 'password'}
+                  placeholder="••••••••••••••••••••••••••••••••"
+                  bind:value={configSecret}
+                  autocomplete="new-password"
+                  spellcheck="false"
+                  class="w-full bg-bg-input border border-border-subtle px-2 py-1 pr-7
+                         font-mono text-[10px] text-text-primary
+                         focus:outline-none focus:border-neon-cyan/30
+                         placeholder:text-text-dim/40
+                         transition-colors duration-150"
+                />
+                <button
+                  type="button"
+                  class="absolute right-1.5 top-1/2 -translate-y-1/2
+                         text-text-dim hover:text-text-secondary
+                         transition-colors duration-150"
+                  onclick={() => { showConfigSecret = !showConfigSecret; }}
+                  aria-label={showConfigSecret ? 'Hide secret' : 'Show secret'}
+                >
+                  {#if showConfigSecret}
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                    </svg>
+                  {:else}
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                  {/if}
+                </button>
+              </div>
+            </div>
+
+            <!-- Action row -->
+            <div class="flex items-center gap-1.5 pt-0.5">
+              <button
+                class="flex-1 px-2 py-1 bg-neon-cyan text-bg-primary border border-neon-cyan
+                       hover:bg-[#00cce6] active:bg-[#00b8cf]
+                       transition-colors duration-150
+                       font-mono text-[9px] tracking-[0.07em] uppercase
+                       disabled:opacity-40 disabled:cursor-not-allowed"
+                onclick={handleSaveAppConfig}
+                disabled={configSaving || !configClientId.trim() || !configSecret.trim()}
+              >
+                {configSaving ? 'SAVING…' : 'SAVE'}
+              </button>
+              <button
+                class="px-2 py-1 border border-border-subtle text-text-dim
+                       hover:border-neon-cyan/25 hover:text-text-secondary
+                       transition-colors duration-150
+                       font-mono text-[9px] uppercase"
+                onclick={cancelConfig}
+              >
+                CANCEL
+              </button>
+            </div>
+
+            {#if configError}
+              <p class="font-mono text-[9px] text-neon-red leading-snug">{configError}</p>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Reconnect prompt — visible after save while already connected to GitHub -->
+        {#if showReconnect}
+          <div class="mt-1 pt-1.5 border-t border-border-subtle">
+            <p class="font-mono text-[9px] text-text-dim leading-snug">
+              Credentials updated. Reconnect to apply:
+              <button
+                class="text-neon-cyan hover:text-neon-cyan/80 transition-colors duration-150 ml-1"
+                onclick={async () => {
+                  showReconnect = false;
+                  await disconnectGitHub().catch(() => {});
+                  window.location.href = getGitHubLoginUrl();
+                }}
+              >RECONNECT</button>
+            </p>
+          </div>
         {/if}
       </div>
 

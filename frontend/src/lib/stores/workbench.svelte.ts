@@ -89,6 +89,10 @@ class WorkbenchStore {
       localStorage.setItem('pf_inspectorWidth', String(this.inspectorWidth));
     }
   }
+
+  setGithubOAuthEnabled(v: boolean) {
+    this.githubOAuthEnabled = v;
+  }
 }
 
 export const workbench = new WorkbenchStore();

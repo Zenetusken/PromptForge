@@ -535,6 +535,47 @@ export async function fetchRepoBranches(owner: string, repo: string): Promise<Re
   return res.json();
 }
 
+// ---- GitHub App credential management ----
+
+export interface GitHubAppConfig {
+  configured: boolean;
+  client_id_masked: string;
+  has_secret: boolean;
+}
+
+/** Always public — no JWT needed. Used by AuthGate to check bootstrap state. */
+export async function fetchGitHubAppConfig(): Promise<GitHubAppConfig> {
+  const res = await globalThis.fetch(`${BASE}/api/github/app-config`);
+  if (!res.ok) throw new Error(`GitHub app config check failed: ${res.status}`);
+  return res.json();
+}
+
+/**
+ * Save GitHub App credentials. Unauthenticated when unconfigured (bootstrap);
+ * sends JWT when credentials already exist. Throws with server detail on error.
+ */
+export async function saveGitHubAppConfig(
+  clientId: string,
+  clientSecret: string
+): Promise<{ ok: boolean } & GitHubAppConfig> {
+  const res = await apiFetch(`${BASE}/api/github/app-config`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret })
+  });
+  if (!res.ok) {
+    let detail = `Save failed (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) {
+        detail = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+      }
+    } catch { /* ignore parse errors */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 // ---- GitHub convenience wrappers (used by NavigatorGitHub) ----
 
 export async function disconnectGitHub(): Promise<void> {

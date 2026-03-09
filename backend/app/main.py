@@ -30,6 +30,8 @@ from app.routers.github import router as github_router
 from app.routers.providers import router as providers_router
 from app.routers.providers import set_provider as providers_set_provider
 from app.routers.settings import router as settings_router
+from app.routers.github_config import router as github_config_router
+from app.services.github_credentials_service import load_credentials_from_file
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,6 +117,9 @@ async def lifespan(app: FastAPI):
     # Create database tables
     await create_tables()
     logger.info("Database tables ready")
+
+    # Load persisted GitHub App credentials (hot-reload before first request)
+    load_credentials_from_file()
 
     # Detect LLM provider (raises ProviderNotAvailableError if none found)
     try:
@@ -225,6 +230,7 @@ app.include_router(providers_router)
 app.include_router(github_router)
 app.include_router(settings_router)
 app.include_router(jwt_auth_router)
+app.include_router(github_config_router)
 
 
 # ── Error Handlers ────────────────────────────────────────────────────
