@@ -102,6 +102,13 @@
       {:else if stage === 'validate'}
         <StageValidate />
       {/if}
+      {#if forge.stageErrors[stage]}
+        {@const stageErr = forge.stageErrors[stage]}
+        <div class="mt-2 flex items-start gap-2 px-2 py-1.5 border border-neon-red/40 bg-neon-red/5 text-neon-red text-[11px] font-mono">
+          <span class="shrink-0">✗</span>
+          <span class="flex-1">Stage failed: {stageErr.error}{stageErr.recoverable ? ' [recoverable]' : ''}</span>
+        </div>
+      {/if}
     </StageCard>
   {/each}
 </div>

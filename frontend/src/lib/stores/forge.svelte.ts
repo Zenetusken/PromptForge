@@ -87,6 +87,7 @@ class ForgeStore {
   totalTokens = $state<number | null>(null);
   error = $state<string | null>(null);
   contextWarning = $state<ContextWarning | null>(null);
+  stageErrors = $state<Record<string, { error: string; recoverable: boolean }>>({});
   liveActivity = $state<Array<{
     type: 'tool' | 'reasoning';
     tool?: string;
@@ -144,6 +145,7 @@ class ForgeStore {
     this.totalTokens = null;
     this.error = null;
     this.contextWarning = null;
+    this.stageErrors = {};
     this.liveActivity = [];
     this.liveStageText = {};
   }

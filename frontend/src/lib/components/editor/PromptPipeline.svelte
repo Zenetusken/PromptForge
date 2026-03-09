@@ -9,6 +9,29 @@
 </script>
 
 <div class="flex flex-col h-full animate-slide-in-right" aria-live="polite">
+  {#if forge.contextWarning && (forge.isForging || forge.completedStages > 0)}
+    <div class="flex items-start gap-2 px-3 py-2 border-b border-amber-500/40 bg-amber-500/5 text-amber-400 text-[11px] font-mono shrink-0">
+      <span class="shrink-0 mt-px">⚠</span>
+      <span class="flex-1">
+        Context truncated:
+        {#if (forge.contextWarning.dropped_files ?? 0) > 0}
+          {forge.contextWarning.dropped_files} file{forge.contextWarning.dropped_files !== 1 ? 's' : ''} dropped (max 5){(forge.contextWarning.dropped_urls ?? 0) > 0 || (forge.contextWarning.dropped_instructions ?? 0) > 0 ? ', ' : ''}
+        {/if}
+        {#if (forge.contextWarning.dropped_urls ?? 0) > 0}
+          {forge.contextWarning.dropped_urls} URL{forge.contextWarning.dropped_urls !== 1 ? 's' : ''} dropped (max 3){(forge.contextWarning.dropped_instructions ?? 0) > 0 ? ', ' : ''}
+        {/if}
+        {#if (forge.contextWarning.dropped_instructions ?? 0) > 0}
+          {forge.contextWarning.dropped_instructions} instruction{forge.contextWarning.dropped_instructions !== 1 ? 's' : ''} dropped (max 10)
+        {/if}
+      </span>
+      <button
+        class="shrink-0 text-amber-400/60 hover:text-amber-400 transition-colors leading-none"
+        onclick={() => { forge.contextWarning = null; }}
+        aria-label="Dismiss context warning"
+      >✕</button>
+    </div>
+  {/if}
+
   {#if !forge.isForging && forge.completedStages === 0 && !forge.error}
     <div class="flex flex-col items-center justify-center h-full gap-4 py-16 animate-fade-in">
       <div class="w-10 h-10 border border-border-subtle flex items-center justify-center opacity-30">
