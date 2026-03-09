@@ -166,6 +166,17 @@ async def restore_optimization(
 ) -> dict:
     """Restore a soft-deleted optimization (clears deleted_at)."""
     from app.services.optimization_service import restore_optimization as svc_restore
+    result = await session.execute(
+        select(Optimization).where(Optimization.id == optimization_id)
+    )
+    opt = result.scalar_one_or_none()
+    if not opt:
+        raise HTTPException(status_code=404, detail="Not found in trash")
+    if opt.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "Not authorized to restore this optimization"},
+        )
     restored = await svc_restore(session, optimization_id, current_user.id)
     if not restored:
         raise HTTPException(status_code=404, detail="Not found in trash")

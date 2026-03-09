@@ -199,11 +199,11 @@ async def test_restore_happy_path(client: AsyncClient, auth_headers):
     assert opt_id in ids
 
 
-async def test_restore_wrong_user_returns_404(client: AsyncClient, auth_headers, other_auth_headers):
+async def test_restore_wrong_user_returns_403(client: AsyncClient, auth_headers, other_auth_headers):
     opt_id = await _create_optimization(client, auth_headers, "Other cannot restore")
     await client.delete(f"/api/history/{opt_id}", headers=auth_headers)
     resp = await client.post(f"/api/history/{opt_id}/restore", headers=other_auth_headers)
-    assert resp.status_code == 404
+    assert resp.status_code == 403
 
 
 async def test_restore_not_in_trash_returns_404(client: AsyncClient, auth_headers):

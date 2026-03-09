@@ -91,7 +91,15 @@ async def test_restore_endpoint_happy_path():
 
     mock_user = MagicMock()
     mock_user.id = "user-id"
+
+    mock_opt = MagicMock()
+    mock_opt.user_id = "user-id"
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=mock_opt)
+
     mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=execute_result)
     mock_session.commit = AsyncMock()
 
     # The router does a local import of the service function, so patch at the service module.
@@ -117,7 +125,13 @@ async def test_restore_endpoint_not_in_trash_raises_404():
 
     mock_user = MagicMock()
     mock_user.id = "user-id"
+
+    # Simulate record not found at all (execute returns None)
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=None)
+
     mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=execute_result)
 
     # The router does a local import of the service function, so patch at the service module.
     with patch(
