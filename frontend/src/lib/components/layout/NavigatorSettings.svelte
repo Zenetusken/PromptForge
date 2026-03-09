@@ -191,17 +191,59 @@
   // ── Profile editing ───────────────────────────────────────────────────────
   let editField = $state<'display_name' | 'email' | null>(null);
   let editValue = $state('');
+  let editOriginal = $state('');
   let savingField = $state(false);
-  let fieldError = $state('');
+  let savedField = $state<'display_name' | 'email' | null>(null);
+
+  // Svelte action: focuses the element when it mounts into the DOM.
+  function focusEl(node: HTMLElement) {
+    node.focus();
+  }
+
+  function startEdit(field: 'display_name' | 'email') {
+    editField = field;
+    const val = field === 'display_name' ? (user.displayName ?? '') : (user.email ?? '');
+    editValue = val;
+    editOriginal = val;
+  }
+
+  function cancelEdit() {
+    editField = null;
+    editValue = '';
+    editOriginal = '';
+  }
 
   async function saveField(field: 'display_name' | 'email') {
-    savingField = true; fieldError = '';
+    const trimmed = editValue.trim();
+    if (!trimmed || trimmed === editOriginal) {
+      cancelEdit();
+      return;
+    }
+    savingField = true;
     try {
-      await patchAuthMe({ [field]: editValue.trim() || null });
-      user.setProfile(await fetchAuthMe());
+      await patchAuthMe({ [field]: trimmed });
+      if (field === 'display_name') {
+        user.displayName = trimmed;
+      } else {
+        user.email = trimmed;
+      }
       editField = null;
-    } catch (e) { fieldError = (e as Error).message; }
-    finally { savingField = false; }
+      editValue = '';
+      editOriginal = '';
+      savedField = field;
+      setTimeout(() => { savedField = null; }, 1500);
+    } catch (e) {
+      editValue = editOriginal;
+      cancelEdit();
+      toast.error(field === 'display_name' ? 'Failed to save display name' : 'Failed to save email');
+    } finally {
+      savingField = false;
+    }
+  }
+
+  async function handleFieldBlur(field: 'display_name' | 'email') {
+    if (editField !== field) return;
+    await saveField(field);
   }
 
   $effect(() => {
@@ -253,18 +295,34 @@
                     bind:value={editValue}
                     maxlength="128"
                     placeholder="Display name"
-                    onkeydown={(e) => { if (e.key === 'Enter') saveField('display_name'); if (e.key === 'Escape') { editField = null; } }}
-                    class="w-full bg-bg-input border border-neon-cyan/30 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus:outline-none"
+                    use:focusEl
+                    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveField('display_name'); } if (e.key === 'Escape') { cancelEdit(); } }}
+                    onblur={() => handleFieldBlur('display_name')}
+                    class="w-full bg-bg-input border border-[1px] border-neon-cyan/60 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus:outline-none focus:border-neon-cyan"
                   />
-                  <div class="flex gap-1 mt-0.5">
-                    <button onclick={() => saveField('display_name')} disabled={savingField} class="font-mono text-[9px] text-neon-cyan hover:text-neon-cyan/80 disabled:opacity-40">{savingField ? '…' : 'Save'}</button>
-                    <button onclick={() => { editField = null; }} class="font-mono text-[9px] text-text-dim hover:text-text-secondary">Cancel</button>
-                  </div>
+                  {#if savingField}
+                    <span class="font-mono text-[9px] text-text-dim">…</span>
+                  {/if}
                 {:else}
-                  <button
-                    onclick={() => { editField = 'display_name'; editValue = user.displayName ?? ''; fieldError = ''; }}
-                    class="text-[10px] text-text-secondary hover:text-text-primary text-left truncate w-full"
-                  >{#if user.displayName}{user.displayName}{:else}<span class="text-text-dim/40 italic">Display name</span>{/if}</button>
+                  <div class="flex items-center gap-1 group">
+                    <button
+                      onclick={() => startEdit('display_name')}
+                      class="text-[10px] text-text-secondary hover:text-text-primary text-left truncate flex-1"
+                    >{#if user.displayName}{user.displayName}{:else}<span class="text-text-dim/40 italic">Display name</span>{/if}</button>
+                    {#if savedField === 'display_name'}
+                      <span class="font-mono text-[9px] text-neon-green shrink-0">Saved ✓</span>
+                    {:else}
+                      <button
+                        onclick={() => startEdit('display_name')}
+                        class="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-text-dim hover:text-neon-cyan"
+                        aria-label="Edit display name"
+                      >
+                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                          <path stroke-linecap="square" stroke-linejoin="miter" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+                        </svg>
+                      </button>
+                    {/if}
+                  </div>
                 {/if}
               </div>
               <!-- email: click-to-edit -->
@@ -275,23 +333,36 @@
                     bind:value={editValue}
                     maxlength="255"
                     placeholder="email@example.com"
-                    onkeydown={(e) => { if (e.key === 'Enter') saveField('email'); if (e.key === 'Escape') { editField = null; } }}
-                    class="w-full bg-bg-input border border-neon-cyan/30 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus:outline-none"
+                    use:focusEl
+                    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveField('email'); } if (e.key === 'Escape') { cancelEdit(); } }}
+                    onblur={() => handleFieldBlur('email')}
+                    class="w-full bg-bg-input border border-[1px] border-neon-cyan/60 px-1.5 py-0.5 font-mono text-[10px] text-text-primary focus:outline-none focus:border-neon-cyan"
                   />
-                  <div class="flex gap-1 mt-0.5">
-                    <button onclick={() => saveField('email')} disabled={savingField} class="font-mono text-[9px] text-neon-cyan hover:text-neon-cyan/80 disabled:opacity-40">{savingField ? '…' : 'Save'}</button>
-                    <button onclick={() => { editField = null; }} class="font-mono text-[9px] text-text-dim hover:text-text-secondary">Cancel</button>
-                  </div>
+                  {#if savingField}
+                    <span class="font-mono text-[9px] text-text-dim">…</span>
+                  {/if}
                 {:else}
-                  <button
-                    onclick={() => { editField = 'email'; editValue = user.email ?? ''; fieldError = ''; }}
-                    class="text-[10px] text-text-dim hover:text-text-secondary text-left truncate w-full"
-                  >{#if user.email}{user.email}{:else}<span class="text-text-dim/40 italic">Email</span>{/if}</button>
+                  <div class="flex items-center gap-1 group">
+                    <button
+                      onclick={() => startEdit('email')}
+                      class="text-[10px] text-text-dim hover:text-text-secondary text-left truncate flex-1"
+                    >{#if user.email}{user.email}{:else}<span class="text-text-dim/40 italic">Email</span>{/if}</button>
+                    {#if savedField === 'email'}
+                      <span class="font-mono text-[9px] text-neon-green shrink-0">Saved ✓</span>
+                    {:else}
+                      <button
+                        onclick={() => startEdit('email')}
+                        class="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-text-dim hover:text-neon-cyan"
+                        aria-label="Edit email"
+                      >
+                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                          <path stroke-linecap="square" stroke-linejoin="miter" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+                        </svg>
+                      </button>
+                    {/if}
+                  </div>
                 {/if}
               </div>
-              {#if fieldError}
-                <p class="font-mono text-[9px] text-neon-red">{fieldError}</p>
-              {/if}
             </div>
           </div>
         </div>
