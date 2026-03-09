@@ -84,6 +84,42 @@ async def test_missing_indices_created(tmp_path):
     await eng.dispose()
 
 
+async def test_synchronous_pragma_set(file_engine):
+    """Engine must set synchronous=NORMAL (value 1)."""
+    async with file_engine.connect() as conn:
+        result = await conn.execute(sa.text("PRAGMA synchronous"))
+        val = result.scalar()
+    assert val == 1  # NORMAL = 1 in SQLite
+
+
+async def test_cache_size_pragma_set(mem_engine):
+    """Engine must set cache_size=-64000 (64MB page cache)."""
+    async with mem_engine.connect() as conn:
+        result = await conn.execute(sa.text("PRAGMA cache_size"))
+        val = result.scalar()
+    assert val == -64000
+
+
+async def test_missing_indices_idempotent(tmp_path):
+    """_migrate_add_missing_indexes must be safe to run multiple times."""
+    import app.models.optimization  # noqa
+    import app.models.github        # noqa
+    import app.models.auth          # noqa
+
+    db_path = tmp_path / "idempotent_test.db"
+    eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    from app.database import Base, _migrate_add_missing_indexes
+
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # First run creates indices
+    await _migrate_add_missing_indexes(eng)
+    # Second run must not raise (IF NOT EXISTS semantics)
+    await _migrate_add_missing_indexes(eng)
+    await eng.dispose()
+
+
 async def test_schema_additions_migrated(tmp_path):
     """deleted_at and avatar_url columns must be present after create_all."""
     import app.models.optimization  # noqa
