@@ -56,7 +56,6 @@ def _sse_event(event_type: str, data: dict) -> str:
 async def optimize_prompt(
     request: OptimizeRequest,
     req: Request,
-    session: AsyncSession = Depends(get_session),
     retry_of: str | None = None,
 ):
     """Run the optimization pipeline with SSE streaming."""
@@ -66,23 +65,21 @@ async def optimize_prompt(
     opt_id = str(uuid.uuid4())
     start_time = time.time()
 
-    # Create initial record
-    optimization = Optimization(
-        id=opt_id,
-        raw_prompt=request.prompt,
-        status="running",
-        project=request.project,
-        tags=json.dumps(request.tags or []),
-        title=request.title,
-        linked_repo_full_name=request.repo_full_name,
-        linked_repo_branch=request.repo_branch,
-        retry_of=retry_of,
-    )
-    session.add(optimization)
-    await session.commit()
-
     async def event_stream():
-        nonlocal optimization
+        async with async_session() as s:
+            optimization = Optimization(
+                id=opt_id,
+                raw_prompt=request.prompt,
+                status="running",
+                project=request.project,
+                tags=json.dumps(request.tags or []),
+                title=request.title,
+                linked_repo_full_name=request.repo_full_name,
+                linked_repo_branch=request.repo_branch,
+                retry_of=retry_of,
+            )
+            s.add(optimization)
+            await s.commit()
         try:
             # Import pipeline here to avoid circular imports
             from app.services.pipeline import run_pipeline
@@ -121,7 +118,14 @@ async def optimize_prompt(
 
                     # Update the optimization record with pipeline results
                     if event_type == "codebase_context":
-                        optimization.codebase_context_snapshot = json.dumps(event_data)
+                        _snapshot = json.dumps(event_data)
+                        if len(_snapshot) > 65536:
+                            logger.warning(
+                                "codebase_context_snapshot truncated from %d to 65536 chars for opt %s",
+                                len(_snapshot), opt_id,
+                            )
+                            _snapshot = _snapshot[:65536]
+                        optimization.codebase_context_snapshot = _snapshot
                         optimization.model_explore = event_data.get("model")
                     elif event_type == "analysis":
                         optimization.task_type = event_data.get("task_type")
@@ -315,4 +319,4 @@ async def retry_optimization(
     )
 
     # Reuse the optimize endpoint logic, linking retry to original
-    return await optimize_prompt(retry_request, req, session, retry_of=optimization_id)
+    return await optimize_prompt(retry_request, req, retry_of=optimization_id)
