@@ -70,6 +70,18 @@ class Settings(BaseSettings):
                     "set a strong random secret in .env before deploying.",
                     field,
                 )
+        # Production security check: warn when cookies are insecure outside localhost.
+        _is_localhost = (
+            self.FRONTEND_URL.startswith("http://localhost")
+            or self.FRONTEND_URL.startswith("http://127.0.0.1")
+        )
+        if not self.JWT_COOKIE_SECURE and not _is_localhost:
+            _log.critical(
+                "SECURITY: JWT_COOKIE_SECURE=False but FRONTEND_URL=%s is not localhost. "
+                "Auth cookies will be sent over plaintext HTTP in production. "
+                "Set JWT_COOKIE_SECURE=True in .env.",
+                self.FRONTEND_URL,
+            )
 
 
 settings = Settings()

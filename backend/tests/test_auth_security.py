@@ -374,3 +374,43 @@ def test_rate_limit_config_vars_exist():
     assert s.RATE_LIMIT_AUTH_LOGIN == "5/minute"
     assert s.RATE_LIMIT_AUTH_CALLBACK == "5/minute"
     assert s.RATE_LIMIT_JWT_REFRESH == "30/minute"
+
+
+# ── Cycle 6: Cookie Secure Enforcement (Gap B) ────────────────────────────
+
+
+def test_insecure_cookie_warns_in_production_context(caplog):
+    """JWT_COOKIE_SECURE=False with a non-localhost FRONTEND_URL emits CRITICAL warning."""
+    import logging
+    from app.config import Settings
+
+    with caplog.at_level(logging.CRITICAL, logger="app.config"):
+        Settings(
+            JWT_COOKIE_SECURE=False,
+            FRONTEND_URL="https://app.projectsynthesis.io",
+        )
+
+    critical_records = [r for r in caplog.records if r.levelno >= logging.CRITICAL]
+    assert any("JWT_COOKIE_SECURE" in r.message for r in critical_records), (
+        "Must emit CRITICAL warning when JWT_COOKIE_SECURE=False on a production URL"
+    )
+
+
+def test_insecure_cookie_allowed_on_localhost(caplog):
+    """JWT_COOKIE_SECURE=False on localhost (dev) must NOT emit a CRITICAL warning."""
+    import logging
+    from app.config import Settings
+
+    with caplog.at_level(logging.CRITICAL, logger="app.config"):
+        Settings(
+            JWT_COOKIE_SECURE=False,
+            FRONTEND_URL="http://localhost:5199",
+        )
+
+    critical_cookie_records = [
+        r for r in caplog.records
+        if r.levelno >= logging.CRITICAL and "JWT_COOKIE_SECURE" in r.message
+    ]
+    assert len(critical_cookie_records) == 0, (
+        "Should NOT warn about JWT_COOKIE_SECURE=False when FRONTEND_URL is localhost"
+    )
