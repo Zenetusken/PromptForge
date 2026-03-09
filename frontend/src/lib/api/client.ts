@@ -353,8 +353,8 @@ export async function fetchHistory(params: HistoryParams = {}): Promise<HistoryR
   if (params.task_type) searchParams.set('task_type', params.task_type);
   if (params.framework) searchParams.set('framework', params.framework);
   if (params.has_repo !== undefined) searchParams.set('has_repo', String(params.has_repo));
-  if (params.min_score) searchParams.set('min_score', String(params.min_score));
-  if (params.max_score) searchParams.set('max_score', String(params.max_score));
+  if (params.min_score !== undefined) searchParams.set('min_score', String(params.min_score));
+  if (params.max_score !== undefined) searchParams.set('max_score', String(params.max_score));
   if (params.status) searchParams.set('status', params.status);
 
   const res = await apiFetch(`${BASE}/api/history?${searchParams.toString()}`);

@@ -292,7 +292,7 @@
       </button>
     </div>
     <div class="text-[10px] text-text-dim">
-      {#if history.filters.search || history.filters.strategy}
+      {#if history.filters.search || history.filters.strategy || history.filters.has_repo !== undefined || history.filters.min_score !== undefined || history.filters.max_score !== undefined || history.filters.task_type || history.filters.status}
         {history.totalCount} of {stats?.total_optimizations ?? history.totalCount} runs
       {:else}
         {history.totalCount} runs
