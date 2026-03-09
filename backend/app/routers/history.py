@@ -182,7 +182,7 @@ async def restore_optimization(
         )
     restored = await svc_restore(session, optimization_id, current_user.id)
     if not restored:
-        raise HTTPException(status_code=404, detail="Not found in trash")
+        raise HTTPException(status_code=500, detail="Restore operation failed unexpectedly")
     await session.commit()
     return {"restored": True, "id": optimization_id}
 

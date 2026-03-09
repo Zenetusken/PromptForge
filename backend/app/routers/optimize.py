@@ -258,11 +258,9 @@ async def get_optimization(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get a single optimization by ID."""
-    result = await session.execute(
-        select(Optimization).where(Optimization.id == optimization_id)
-    )
-    optimization = result.scalar_one_or_none()
-    if not optimization:
+    from app.services.optimization_service import get_optimization_orm
+    optimization = await get_optimization_orm(session, optimization_id)
+    if not optimization or optimization.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Optimization not found")
     return optimization.to_dict()
 
