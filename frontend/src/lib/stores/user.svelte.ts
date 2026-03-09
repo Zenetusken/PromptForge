@@ -28,6 +28,7 @@ class UserStore {
     this.githubLogin = null;
     this.email       = null;
     this.onboardingCompleted = false;
+    this.loading = false;
     this.error = null;
   }
 }

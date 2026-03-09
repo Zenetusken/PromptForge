@@ -142,7 +142,7 @@
         if (auth.isAuthenticated) workbench.setActivity('settings'); else workbench.setActivity('github');
       }}
       title={auth.isAuthenticated
-        ? `Authenticated${github.username ? ' as ' + github.username : ''} · JWT active`
+        ? `Authenticated as ${user.label ?? github.username ?? 'JWT'} · JWT active`
         : 'Not authenticated — click to sign in'}
       data-testid="statusbar-auth"
     >

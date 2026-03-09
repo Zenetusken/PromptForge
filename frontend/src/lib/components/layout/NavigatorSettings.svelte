@@ -199,7 +199,7 @@
                   </div>
                 {:else}
                   <button
-                    onclick={() => { editField = 'display_name'; editValue = user.displayName ?? ''; }}
+                    onclick={() => { editField = 'display_name'; editValue = user.displayName ?? ''; fieldError = ''; }}
                     class="text-[10px] text-text-secondary hover:text-text-primary text-left truncate w-full"
                   >{#if user.displayName}{user.displayName}{:else}<span class="text-text-dim/40 italic">Display name</span>{/if}</button>
                 {/if}
@@ -221,7 +221,7 @@
                   </div>
                 {:else}
                   <button
-                    onclick={() => { editField = 'email'; editValue = user.email ?? ''; }}
+                    onclick={() => { editField = 'email'; editValue = user.email ?? ''; fieldError = ''; }}
                     class="text-[10px] text-text-dim hover:text-text-secondary text-left truncate w-full"
                   >{#if user.email}{user.email}{:else}<span class="text-text-dim/40 italic">Email</span>{/if}</button>
                 {/if}
