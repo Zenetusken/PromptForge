@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { editor } from '$lib/stores/editor.svelte';
+  import { history } from '$lib/stores/history.svelte';
   import { patchOptimization } from '$lib/api/client';
   import { STRATEGY_HEX } from '$lib/utils/strategy';
   import CopyButton from '$lib/components/shared/CopyButton.svelte';
@@ -44,6 +45,69 @@
       completedAt = null;
     }
   });
+
+  // ── Tags editing ─────────────────────────────────────────────────────────────
+  const MAX_TAGS = 10;
+  let pendingTags = $state<string[]>([]);
+  let addingTag = $state(false);
+  let newTagValue = $state('');
+  let newTagInputEl = $state<HTMLInputElement | undefined>();
+  let tagsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let prevTagsSnapshot: string[] = [];
+
+  // Sync pendingTags from forge.tags when optimizationId changes
+  $effect(() => {
+    void forge.optimizationId;
+    pendingTags = [...(forge.tags ?? [])];
+    addingTag = false;
+    newTagValue = '';
+  });
+
+  $effect(() => {
+    if (newTagInputEl && addingTag) newTagInputEl.focus();
+  });
+
+  function debouncedPatchTags(tags: string[]) {
+    if (tagsDebounceTimer) clearTimeout(tagsDebounceTimer);
+    const snapshot = [...prevTagsSnapshot];
+    const id = forge.optimizationId;
+    tagsDebounceTimer = setTimeout(async () => {
+      if (!id) return;
+      try {
+        await patchOptimization(id, { tags });
+        // also update history store if this entry exists there
+        history.updateEntryTags(id, tags);
+      } catch {
+        // revert
+        pendingTags = snapshot;
+        forge.tags = snapshot;
+        history.updateEntryTags(id, snapshot);
+        toast.error('Failed to save tags');
+      }
+    }, 500);
+  }
+
+  function addTag() {
+    const val = newTagValue.trim();
+    if (!val || pendingTags.includes(val) || pendingTags.length >= MAX_TAGS) {
+      addingTag = false;
+      newTagValue = '';
+      return;
+    }
+    prevTagsSnapshot = [...pendingTags];
+    pendingTags = [...pendingTags, val];
+    forge.tags = [...pendingTags];
+    newTagValue = '';
+    addingTag = false;
+    debouncedPatchTags(pendingTags);
+  }
+
+  function removeTag(tag: string) {
+    prevTagsSnapshot = [...pendingTags];
+    pendingTags = pendingTags.filter(t => t !== tag);
+    forge.tags = [...pendingTags];
+    debouncedPatchTags(pendingTags);
+  }
 
   async function handleReforge() {
     editor.setSubTab('edit');
@@ -209,6 +273,46 @@
       {/if}
     </div>
   </div>
+
+  <!-- Tags row -->
+  {#if forge.optimizationId}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="flex items-center flex-wrap gap-1 px-4 py-1.5 border-b border-border-subtle bg-bg-secondary/30 min-h-[30px]">
+      {#each pendingTags as tag}
+        <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono border border-neon-cyan/30 text-neon-cyan/80 bg-neon-cyan/5">
+          {tag}
+          <button
+            class="ml-0.5 text-neon-cyan/50 hover:text-neon-red transition-colors leading-none"
+            onclick={() => removeTag(tag)}
+            aria-label="Remove tag {tag}"
+            title="Remove tag"
+          >×</button>
+        </span>
+      {/each}
+      {#if addingTag}
+        <input
+          type="text"
+          bind:this={newTagInputEl}
+          bind:value={newTagValue}
+          placeholder="tag name"
+          class="bg-transparent border border-neon-cyan/50 px-1 py-0.5 text-[10px] font-mono text-text-primary focus:outline-none w-20"
+          onclick={(e: MouseEvent) => e.stopPropagation()}
+          onblur={addTag}
+          onkeydown={(e: KeyboardEvent) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); addTag(); }
+            if (e.key === 'Escape') { e.preventDefault(); addingTag = false; newTagValue = ''; }
+          }}
+        />
+      {:else if pendingTags.length < MAX_TAGS}
+        <button
+          class="text-[10px] font-mono text-text-dim/50 hover:text-neon-cyan/70 transition-colors px-1 border border-transparent hover:border-neon-cyan/20"
+          onclick={(e: MouseEvent) => { e.stopPropagation(); addingTag = true; }}
+          title="Add tag"
+        >{pendingTags.length === 0 ? '+ Add tag' : '+'}</button>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Sub-tab bar -->
   <div class="flex items-center h-8 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">

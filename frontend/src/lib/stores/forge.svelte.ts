@@ -42,6 +42,8 @@ export interface ForgeRecord {
   // Timing
   duration_ms?: number | null;
   total_tokens?: number | null;
+  // Metadata
+  tags?: string[] | null;
 }
 
 export interface StageResult {
@@ -70,6 +72,7 @@ export interface ContextWarning {
 class ForgeStore {
   isForging = $state(false);
   currentStage = $state<string | null>(null);
+  tags = $state<string[]>([]);
   private _abortController = $state<AbortController | null>(null);
   private _recordCache = new Map<string, ForgeRecord>();
   stageStatuses = $state<Record<string, StageStatus>>({
@@ -130,6 +133,7 @@ class ForgeStore {
     }
     this.isForging = false;
     this.currentStage = null;
+    this.tags = [];
     this.stageStatuses = {
       explore: 'idle',
       analyze: 'idle',
@@ -241,6 +245,7 @@ class ForgeStore {
     this.overallScore = record.overall_score ?? null;
     this.totalDuration = record.duration_ms ?? null;
     this.totalTokens = record.total_tokens ?? null;
+    this.tags = record.tags ?? [];
 
     // Populate stage results from the record data
     if (record.task_type || record.complexity) {

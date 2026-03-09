@@ -11,6 +11,7 @@ export interface HistoryEntry {
   created_at: string;
   duration_ms?: number;
   tags?: string[];
+  title?: string | null;
   linked_repo_full_name?: string;  // for repo context restore on re-forge
   linked_repo_branch?: string;
 }
@@ -113,6 +114,14 @@ class HistoryStore {
   updateFilters(partial: Partial<HistoryFilters>) {
     this.filters = { ...this.filters, ...partial };
     saveFilters(this.filters);
+  }
+
+  updateEntryTitle(id: string, title: string) {
+    this.entries = this.entries.map(e => e.id === id ? { ...e, title } : e);
+  }
+
+  updateEntryTags(id: string, tags: string[]) {
+    this.entries = this.entries.map(e => e.id === id ? { ...e, tags } : e);
   }
 
   async loadHistory() {

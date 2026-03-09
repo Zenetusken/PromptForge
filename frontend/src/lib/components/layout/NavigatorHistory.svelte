@@ -3,10 +3,10 @@
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { toast } from '$lib/stores/toast.svelte';
-  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, fetchHistoryTrash, restoreOptimization, type HistoryStats, type HistoryResponse } from '$lib/api/client';
+  import { fetchHistory, fetchHistoryStats, fetchOptimization, deleteOptimization, fetchHistoryTrash, restoreOptimization, patchOptimization, type HistoryStats, type HistoryResponse } from '$lib/api/client';
   import { getStrategyHex } from '$lib/utils/strategy';
   import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   let loading = $state(false);
   let stats = $state<HistoryStats | null>(null);
@@ -14,6 +14,44 @@
   let selectedIds = $state<Set<string>>(new Set());
   let showFilters = $state(false);
   let contextMenuId = $state<string | null>(null);
+
+  // Inline title editing state
+  let editingId = $state<string | null>(null);
+  let editingValue = $state('');
+  let titleInputEl = $state<HTMLInputElement | undefined>();
+
+  $effect(() => {
+    if (titleInputEl) titleInputEl.focus();
+  });
+
+  function startTitleEdit(e: MouseEvent, entry: typeof history.entries[0]) {
+    e.stopPropagation();
+    editingId = entry.id;
+    editingValue = entry.title || entry.raw_prompt.slice(0, 60);
+  }
+
+  async function commitTitleEdit(entry: typeof history.entries[0]) {
+    if (!editingId || editingId !== entry.id) return;
+    const original = entry.title || '';
+    const newTitle = editingValue.trim();
+    if (!newTitle) { editingId = null; return; }
+    if (newTitle === original) { editingId = null; return; }
+    // Optimistic update
+    history.updateEntryTitle(entry.id, newTitle);
+    editingId = null;
+    try {
+      await patchOptimization(entry.id, { title: newTitle });
+    } catch {
+      // Revert on error
+      history.updateEntryTitle(entry.id, original);
+      toast.error('Failed to save title');
+    }
+  }
+
+  function cancelTitleEdit() {
+    editingId = null;
+    editingValue = '';
+  }
 
   function toggleSelect(e: MouseEvent, id: string) {
     e.stopPropagation();
@@ -440,7 +478,28 @@
                 <ScoreCircle score={entry.overall_score} size={20} />
               {/if}
               <div class="flex-1 min-w-0">
-                <p class="text-text-primary truncate">{entry.raw_prompt}</p>
+                {#if editingId === entry.id}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <input
+                    type="text"
+                    bind:this={titleInputEl}
+                    bind:value={editingValue}
+                    class="w-full bg-transparent border border-neon-cyan/50 px-1 py-0 text-xs text-text-primary font-sans focus:outline-none"
+                    onclick={(e: MouseEvent) => e.stopPropagation()}
+                    onblur={() => commitTitleEdit(entry)}
+                    onkeydown={(e: KeyboardEvent) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') { e.preventDefault(); commitTitleEdit(entry); }
+                      if (e.key === 'Escape') { e.preventDefault(); cancelTitleEdit(); }
+                    }}
+                  />
+                {:else}
+                  <p
+                    class="text-text-primary truncate cursor-default"
+                    ondblclick={(e: MouseEvent) => startTitleEdit(e, entry)}
+                    title="Double-click to rename"
+                  >{entry.title || entry.raw_prompt}</p>
+                {/if}
                 <div class="flex items-center gap-2 mt-0.5 min-w-0">
                   {#if entry.primary_framework}
                     <span class="text-[10px] truncate" style="color: {getStrategyHex(entry.primary_framework)}">{entry.primary_framework}</span>
