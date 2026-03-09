@@ -35,14 +35,19 @@ export default defineConfig({
         DATABASE_URL: 'sqlite+aiosqlite:///./e2e_test.db',
         SECRET_KEY: 'e2e-test-secret-32chars-minimum!!',
         GITHUB_TOKEN_ENCRYPTION_KEY: 'Zm9vYmFyYmF6cXV4cXV4cXV4cXV4cXV4cXV4cXU=',
+        JWT_SECRET: 'e2e-jwt-secret-at-least-32-chars!!',
+        JWT_REFRESH_SECRET: 'e2e-refresh-secret-at-least-32!!',
       },
     },
     {
-      // SvelteKit production preview
+      // SvelteKit production preview — proxy forwarded to E2E backend port
       command: 'npm run preview -- --port 4173',
       url: 'http://localhost:4173',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
+      env: {
+        VITE_BACKEND_PORT: '8099',
+      },
     },
   ],
 });
