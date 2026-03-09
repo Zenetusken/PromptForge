@@ -22,6 +22,10 @@ Include:
 - Expected vs actual behaviour
 - Relevant log output (redact any tokens or credentials)
 
+## Terms of Use
+
+Project Synthesis is free for personal and organizational use with no paid tier. There is no SLA or vendor relationship — support is community best-effort. See [TERMS.md](TERMS.md) for the full usage policy.
+
 ## Out of scope for issues
 
 - General prompt engineering questions (use GitHub Discussions instead)

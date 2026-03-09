@@ -38,10 +38,10 @@
         style="background: linear-gradient(135deg, #00e5ff 0%, #7c3aed 60%, #a855f7 100%);
                background-clip: text; -webkit-background-clip: text; color: transparent;"
       >
-        PROMPTFORGE
+        PROJECT SYNTHESIS
       </h1>
       <p class="font-mono text-[10px] text-text-dim tracking-[0.05em]">
-        AI-Powered Prompt Optimization
+        AI-Powered Development Platform
       </p>
     </div>
 
@@ -222,10 +222,10 @@
 <style>
   /* ── Card entrance ──────────────────────────────────────────────────────── */
   .auth-card {
-    animation: forge-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: synthesis-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
-  @keyframes forge-enter {
+  @keyframes synthesis-enter {
     from { opacity: 0; transform: translateY(10px); }
     to   { opacity: 1; transform: translateY(0);    }
   }

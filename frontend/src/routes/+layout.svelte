@@ -297,7 +297,7 @@
   <!-- Loading: centered wordmark while silent refresh resolves -->
   <div class="h-screen w-screen flex items-center justify-center bg-bg-primary">
     <span class="font-display text-sm tracking-[0.2em] uppercase text-text-dim/50">
-      PROMPTFORGE
+      PROJECT SYNTHESIS
     </span>
   </div>
 {:else if !auth.isAuthenticated}

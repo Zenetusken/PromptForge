@@ -69,3 +69,4 @@ Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR. Found a secu
 
 Copyright 2026 Project Synthesis Contributors.
 Licensed under the [Apache License, Version 2.0](LICENSE).
+Free for personal and organizational use. See [TERMS.md](TERMS.md).
