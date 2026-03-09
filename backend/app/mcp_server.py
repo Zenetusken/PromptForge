@@ -87,6 +87,7 @@ def _accumulate_event(opt: "Optimization", event_type: str, event_data: dict) ->
         opt.weaknesses = json.dumps(event_data.get("weaknesses", []))
         opt.strengths = json.dumps(event_data.get("strengths", []))
         opt.model_analyze = event_data.get("model")
+        opt.analysis_quality = event_data.get("analysis_quality")
     elif event_type == "strategy":
         opt.primary_framework = event_data.get("primary_framework")
         opt.secondary_frameworks = json.dumps(event_data.get("secondary_frameworks", []))
@@ -112,6 +113,7 @@ def _accumulate_event(opt: "Optimization", event_type: str, event_data: dict) ->
         opt.verdict = event_data.get("verdict")
         opt.issues = json.dumps(event_data.get("issues", []))
         opt.model_validate = event_data.get("model")
+        opt.validation_quality = event_data.get("validation_quality")
 
 
 async def _run_and_persist(

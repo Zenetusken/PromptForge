@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Index, Integer, Text
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text
 
 from app.database import Base
 
@@ -27,6 +27,7 @@ class Optimization(Base):
     weaknesses = Column(Text, nullable=True)  # JSON array
     strengths = Column(Text, nullable=True)  # JSON array
     changes_made = Column(Text, nullable=True)  # JSON array
+    analysis_quality = Column(String(20), nullable=True)  # "full" | "fallback" | "degraded" | "failed"
 
     # Strategy results
     primary_framework = Column(Text, nullable=True)
@@ -49,6 +50,7 @@ class Optimization(Base):
     is_improvement = Column(Boolean, nullable=True)
     verdict = Column(Text, nullable=True)
     issues = Column(Text, nullable=True)  # JSON array
+    validation_quality = Column(String(20), nullable=True)  # "full" | "fallback" | "degraded" | "failed"
 
     # Timing & provider
     duration_ms = Column(Integer, nullable=True)

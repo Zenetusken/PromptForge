@@ -137,6 +137,7 @@ async def optimize_prompt(
                         optimization.weaknesses = json.dumps(event_data.get("weaknesses", []))
                         optimization.strengths = json.dumps(event_data.get("strengths", []))
                         optimization.model_analyze = event_data.get("model")
+                        optimization.analysis_quality = event_data.get("analysis_quality")
                     elif event_type == "strategy":
                         optimization.primary_framework = event_data.get("primary_framework")
                         optimization.secondary_frameworks = json.dumps(
@@ -169,6 +170,7 @@ async def optimize_prompt(
                         optimization.verdict = event_data.get("verdict")
                         optimization.issues = json.dumps(event_data.get("issues", []))
                         optimization.model_validate = event_data.get("model")
+                        optimization.validation_quality = event_data.get("validation_quality")
 
                 # Finalize
                 duration_ms = int((time.time() - start_time) * 1000)

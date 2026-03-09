@@ -80,6 +80,8 @@ async def _migrate_add_missing_columns() -> None:
             "strategy_source": "TEXT",
             "deleted_at": "DATETIME",          # soft-delete
             "user_id": "TEXT",                 # authenticated user who created this record
+            "analysis_quality": "VARCHAR(20)",  # pipeline quality flag for analysis stage
+            "validation_quality": "VARCHAR(20)", # pipeline quality flag for validation stage
         },
         "github_tokens": {
             "avatar_url": "TEXT",              # cached avatar URL
