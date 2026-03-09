@@ -75,6 +75,105 @@ async def _opt_session(optimization_id: str) -> AsyncGenerator[tuple, None]:
         yield session, result.scalar_one_or_none()
 
 
+# ── Module-level helpers ───────────────────────────────────────────────────────
+
+def _accumulate_event(opt: "Optimization", event_type: str, event_data: dict) -> None:
+    """Map one pipeline event to fields on the Optimization ORM object."""
+    if event_type == "codebase_context":
+        opt.model_explore = event_data.get("model")
+    elif event_type == "analysis":
+        opt.task_type = event_data.get("task_type")
+        opt.complexity = event_data.get("complexity")
+        opt.weaknesses = json.dumps(event_data.get("weaknesses", []))
+        opt.strengths = json.dumps(event_data.get("strengths", []))
+        opt.model_analyze = event_data.get("model")
+    elif event_type == "strategy":
+        opt.primary_framework = event_data.get("primary_framework")
+        opt.secondary_frameworks = json.dumps(event_data.get("secondary_frameworks", []))
+        opt.approach_notes = event_data.get("approach_notes")
+        opt.strategy_rationale = event_data.get("rationale")
+        opt.strategy_source = event_data.get("strategy_source")
+        opt.model_strategy = event_data.get("model")
+    elif event_type == "optimization":
+        opt.optimized_prompt = event_data.get("optimized_prompt")
+        opt.changes_made = json.dumps(event_data.get("changes_made", []))
+        opt.framework_applied = event_data.get("framework_applied")
+        opt.optimization_notes = event_data.get("optimization_notes")
+        opt.model_optimize = event_data.get("model")
+    elif event_type == "validation":
+        scores = event_data.get("scores", {})
+        opt.clarity_score = scores.get("clarity_score")
+        opt.specificity_score = scores.get("specificity_score")
+        opt.structure_score = scores.get("structure_score")
+        opt.faithfulness_score = scores.get("faithfulness_score")
+        opt.conciseness_score = scores.get("conciseness_score")
+        opt.overall_score = scores.get("overall_score")
+        opt.is_improvement = event_data.get("is_improvement")
+        opt.verdict = event_data.get("verdict")
+        opt.issues = json.dumps(event_data.get("issues", []))
+        opt.model_validate = event_data.get("model")
+
+
+async def _run_and_persist(
+    provider,
+    prompt: str,
+    *,
+    opt_id: str,
+    strategy=None,
+    repo_full_name=None,
+    repo_branch=None,
+    github_token=None,
+    file_contexts=None,
+    instructions=None,
+    url_fetched=None,
+    retry_of=None,
+) -> tuple[dict, "Optimization"]:
+    """Create Optimization record, run pipeline, persist results. Returns (events, opt)."""
+    import time
+
+    from app.services.pipeline import run_pipeline
+
+    opt = Optimization(
+        id=opt_id,
+        raw_prompt=prompt,
+        status="running",
+        linked_repo_full_name=repo_full_name,
+        linked_repo_branch=repo_branch,
+        retry_of=retry_of,
+    )
+    async with async_session() as s:
+        s.add(opt)
+        await s.commit()
+
+    results: dict = {}
+    start = time.time()
+    async for event_type, event_data in run_pipeline(
+        provider=provider,
+        raw_prompt=prompt,
+        optimization_id=opt_id,
+        strategy_override=strategy,
+        repo_full_name=repo_full_name,
+        repo_branch=repo_branch,
+        github_token=github_token,
+        file_contexts=file_contexts,
+        instructions=instructions,
+        url_fetched_contexts=url_fetched,
+    ):
+        _accumulate_event(opt, event_type, event_data)
+        if event_type in ("analysis", "strategy", "optimization", "validation"):
+            results[event_type] = event_data
+
+    opt.status = "completed"
+    opt.duration_ms = int((time.time() - start) * 1000)
+    opt.provider_used = provider.name
+
+    async with async_session() as s:
+        await s.merge(opt)
+        await s.commit()
+
+    return results, opt
+
+
 # ── Server factory ────────────────────────────────────────────────────────────
 
 def create_mcp_server(provider=None) -> FastMCP:
@@ -107,10 +206,8 @@ def create_mcp_server(provider=None) -> FastMCP:
     )
 
     # Whitelisted sort columns — prevents getattr on arbitrary user input (B5)
-    _SORT_COLUMNS = {
-        "created_at", "overall_score", "task_type", "updated_at",
-        "duration_ms", "primary_framework", "status",
-    }
+    from app.services.optimization_service import VALID_SORT_COLUMNS as _SORT_COLUMNS
+    from app.services.optimization_service import compute_stats
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -213,27 +310,17 @@ def create_mcp_server(provider=None) -> FastMCP:
             The 'optimization.optimized_prompt' field contains the final result.
             The 'validation.scores.overall_score' field is 1-10.
         """
-        from app.services.pipeline import run_pipeline
         assert ctx is not None
         prov = ctx.request_context.lifespan_context.provider
         url_fetched = await fetch_url_contexts(url_contexts)
-        results = {}
-        async with asyncio.timeout(settings.PIPELINE_TIMEOUT_SECONDS):
-            async for event_type, event_data in run_pipeline(
-                provider=prov,
-                raw_prompt=prompt,
-                optimization_id=_new_run_id("mcp"),
-                strategy_override=strategy,
-                repo_full_name=repo_full_name,
-                repo_branch=repo_branch,
-                github_token=github_token,
-                file_contexts=file_contexts,
-                instructions=instructions,
-                url_fetched_contexts=url_fetched,
-            ):
-                if event_type in ("analysis", "strategy", "optimization", "validation", "complete"):
-                    results[event_type] = event_data
-        return json.dumps(results, indent=2)
+        opt_id = _new_run_id("mcp")
+        results, opt = await _run_and_persist(
+            prov, prompt, opt_id=opt_id, strategy=strategy,
+            repo_full_name=repo_full_name, repo_branch=repo_branch,
+            github_token=github_token, file_contexts=file_contexts,
+            instructions=instructions, url_fetched=url_fetched,
+        )
+        return json.dumps({"optimization_id": opt_id, **results}, default=str, indent=2)
 
     @mcp.tool(
         name="get_optimization",
@@ -303,7 +390,7 @@ def create_mcp_server(provider=None) -> FastMCP:
             order = "desc"
         limit = min(max(1, limit), 100)
 
-        query = select(Optimization)
+        query = select(Optimization).where(Optimization.deleted_at.is_(None))
         if project:
             query = query.where(Optimization.project == project)
         if task_type:
@@ -351,7 +438,7 @@ def create_mcp_server(provider=None) -> FastMCP:
             openWorldHint= False,
         ),
     )
-    async def get_stats(project: Optional[str] = None) -> str:
+    async def get_stats(project: Optional[str] = None, ctx: Optional[Context] = None) -> str:
         """Get aggregated statistics across optimization history.
 
         Args:
@@ -362,73 +449,9 @@ def create_mcp_server(provider=None) -> FastMCP:
             framework_breakdown, provider_breakdown, model_usage,
             codebase_aware_count, improvement_rate.
         """
-        query = select(Optimization)
-        if project:
-            query = query.where(Optimization.project == project)
         async with async_session() as session:
-            result = await session.execute(query)
-            optimizations = result.scalars().all()
-
-        if not optimizations:
-            return json.dumps({
-                "total_optimizations": 0,
-                "average_score": None,
-                "task_type_breakdown": {},
-                "framework_breakdown": {},
-                "provider_breakdown": {},
-                "model_usage": {},
-                "codebase_aware_count": 0,
-                "improvement_rate": None,
-            }, indent=2)
-
-        total = len(optimizations)
-        scores = [o.overall_score for o in optimizations if o.overall_score is not None]
-        avg_score = round(sum(scores) / len(scores), 2) if scores else None
-
-        task_types: dict[str, int] = {}
-        for o in optimizations:
-            if o.task_type:
-                k = str(o.task_type)
-                task_types[k] = task_types.get(k, 0) + 1
-
-        frameworks: dict[str, int] = {}
-        for o in optimizations:
-            if o.primary_framework:
-                k = str(o.primary_framework)
-                frameworks[k] = frameworks.get(k, 0) + 1
-
-        providers_breakdown: dict[str, int] = {}
-        for o in optimizations:
-            if o.provider_used:
-                k = str(o.provider_used)
-                providers_breakdown[k] = providers_breakdown.get(k, 0) + 1
-
-        model_usage: dict[str, int] = {}
-        for o in optimizations:
-            for model_field in ("model_explore", "model_analyze", "model_strategy",
-                                "model_optimize", "model_validate"):
-                model = getattr(o, model_field)
-                if model:
-                    model_usage[str(model)] = model_usage.get(str(model), 0) + 1
-
-        codebase_aware = sum(1 for o in optimizations if o.linked_repo_full_name is not None)
-
-        validated = [o for o in optimizations if o.is_improvement is not None]
-        improvement_rate = None
-        if validated:
-            improvements = sum(1 for o in validated if o.is_improvement)
-            improvement_rate = round(improvements / len(validated), 3)
-
-        return json.dumps({
-            "total_optimizations": total,
-            "average_score": avg_score,
-            "task_type_breakdown": dict(sorted(task_types.items(), key=lambda x: -x[1])),
-            "framework_breakdown": dict(sorted(frameworks.items(), key=lambda x: -x[1])),
-            "provider_breakdown": dict(sorted(providers_breakdown.items(), key=lambda x: -x[1])),
-            "model_usage": model_usage,
-            "codebase_aware_count": codebase_aware,
-            "improvement_rate": improvement_rate,
-        }, indent=2)
+            stats = await compute_stats(session, project=project)
+        return json.dumps(stats, indent=2)
 
     @mcp.tool(
         name="delete_optimization",
@@ -441,7 +464,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         ),
     )
     async def delete_optimization(optimization_id: str) -> str:
-        """Permanently delete an optimization record by ID. This cannot be undone.
+        """Soft-delete an optimization record by ID (sets deleted_at; purged after 7 days).
 
         Args:
             optimization_id: The UUID of the optimization to delete.
@@ -451,11 +474,12 @@ def create_mcp_server(provider=None) -> FastMCP:
             JSON confirming deletion with {"deleted": true, "id": "..."}.
             Returns {"error": ...} with a hint if not found.
         """
-        async with _opt_session(optimization_id) as (session, opt):
-            if not opt:
-                return _not_found(optimization_id)
-            await session.delete(opt)
+        from app.services.optimization_service import delete_optimization as svc_delete
+        async with async_session() as session:
+            deleted = await svc_delete(session, optimization_id)
             await session.commit()
+        if not deleted:
+            return _not_found(optimization_id)
         return json.dumps({"deleted": True, "id": optimization_id})
 
     @mcp.tool(
@@ -490,6 +514,7 @@ def create_mcp_server(provider=None) -> FastMCP:
         stmt = (
             select(Optimization)
             .where(
+                Optimization.deleted_at.is_(None),
                 (Optimization.raw_prompt.ilike(pattern))
                 | (Optimization.optimized_prompt.ilike(pattern))
                 | (Optimization.title.ilike(pattern))
@@ -651,34 +676,26 @@ def create_mcp_server(provider=None) -> FastMCP:
             JSON with keys: analysis, strategy, optimization, validation.
             Returns {"error": ...} with a hint if not found.
         """
-        from app.services.pipeline import run_pipeline
         # B6: capture all ORM values as locals inside the session block
-        async with _opt_session(optimization_id) as (_, opt):
-            if not opt:
+        async with _opt_session(optimization_id) as (_, orig):
+            if not orig:
                 return _not_found(optimization_id)
-            raw_prompt = opt.raw_prompt
-            repo_full_name = opt.linked_repo_full_name
-            repo_branch = opt.linked_repo_branch
+            raw_prompt = orig.raw_prompt
+            repo_full_name = orig.linked_repo_full_name
+            repo_branch = orig.linked_repo_branch
 
         assert ctx is not None
         prov = ctx.request_context.lifespan_context.provider
         url_fetched = await fetch_url_contexts(url_contexts)
-        results = {}
-        async for event_type, event_data in run_pipeline(
-            provider=prov,
-            raw_prompt=raw_prompt,
-            optimization_id=_new_run_id("mcp-retry"),
-            strategy_override=strategy,
-            repo_full_name=repo_full_name,
-            repo_branch=repo_branch,
-            github_token=github_token,
-            file_contexts=file_contexts,
-            instructions=instructions,
-            url_fetched_contexts=url_fetched,
-        ):
-            if event_type in ("analysis", "strategy", "optimization", "validation", "complete"):
-                results[event_type] = event_data
-        return json.dumps(results, indent=2)
+        opt_id = _new_run_id("mcp-retry")
+        results, opt = await _run_and_persist(
+            prov, raw_prompt, opt_id=opt_id, strategy=strategy,
+            repo_full_name=repo_full_name, repo_branch=repo_branch,
+            github_token=github_token, file_contexts=file_contexts,
+            instructions=instructions, url_fetched=url_fetched,
+            retry_of=optimization_id,
+        )
+        return json.dumps({"optimization_id": opt_id, "retry_of": optimization_id, **results}, default=str, indent=2)
 
     # ── GitHub tools — stateless: token optional, bot credentials used by default ──
 

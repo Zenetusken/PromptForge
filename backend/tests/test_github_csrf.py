@@ -62,5 +62,5 @@ def test_different_secret_raises_bad_signature():
 def test_signed_state_contains_dot_separator():
     """Signed tokens follow the format <payload>.<timestamp>.<signature>."""
     signed = _signer().sign("some-token").decode()
-    # itsdangerous TimestampSigner produces at least 2 dots (base64 timestamp + hmac)
-    assert signed.count(".") >= 1
+    # itsdangerous TimestampSigner format: <payload>.<timestamp>.<signature> — always 2 dots
+    assert signed.count(".") == 2

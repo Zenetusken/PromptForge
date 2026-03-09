@@ -16,6 +16,14 @@ router = APIRouter(tags=["github-repos"])
 # Simple in-memory cache for repo lists
 _repo_cache: dict[str, tuple[float, list]] = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
+MAX_REPO_CACHE_SIZE = 500
+
+
+def _evict_repo_cache_if_full() -> None:
+    """Evict oldest entry when cache exceeds MAX_REPO_CACHE_SIZE (Python dict insertion order)."""
+    while len(_repo_cache) > MAX_REPO_CACHE_SIZE:
+        oldest_key = next(iter(_repo_cache))
+        _repo_cache.pop(oldest_key)
 
 
 def evict_repo_cache(session_id: str) -> None:
@@ -56,6 +64,7 @@ async def list_repos(
         raise HTTPException(status_code=502, detail=f"Failed to fetch repos: {e}")
 
     _repo_cache[cache_key] = (time.time(), repos)
+    _evict_repo_cache_if_full()
     return repos
 
 
