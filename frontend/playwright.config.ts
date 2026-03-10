@@ -26,7 +26,7 @@ export default defineConfig({
   webServer: [
     {
       // FastAPI backend with test mode on — relative path from frontend/
-      command: 'bash -c "cd ../backend && python -m uvicorn app.main:asgi_app --host 0.0.0.0 --port 8099"',
+      command: 'bash -c "cd ../backend && source .venv/bin/activate && python -m uvicorn app.main:asgi_app --host 0.0.0.0 --port 8099"',
       url: 'http://localhost:8099/api/health',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,

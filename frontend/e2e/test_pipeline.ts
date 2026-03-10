@@ -5,6 +5,11 @@ import { seedAuth, clearAuth } from './helpers';
 test.beforeEach(async ({ page }) => {
   await seedAuth(page, { email: 'pipeline-test@test.com' });
   await expect(page.locator('nav[aria-label="Activity Bar"]')).toBeVisible({ timeout: 15_000 });
+
+  // After auth the user lands on the Welcome tab (no prompt textarea).
+  // Click the "+" new-tab button to open a blank prompt editor.
+  await page.locator('button[aria-label="New tab"]').click();
+  await expect(page.locator('#prompt-textarea')).toBeVisible({ timeout: 5_000 });
 });
 
 test.afterEach(async ({ page }) => {

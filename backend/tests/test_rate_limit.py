@@ -129,6 +129,49 @@ def test_x_forwarded_for_ignored_from_untrusted_proxy():
     assert ip == "10.0.0.1"
 
 
+# ── Test: CIDR-based trusted proxy matching ──────────────────────────────
+
+
+def test_cidr_trusted_proxy_matching():
+    """Should trust X-Forwarded-For when direct IP falls within a CIDR range.
+
+    This is critical for Docker deployments where the nginx container IP
+    is within the Docker bridge subnet (e.g., 172.17.0.5 within 172.16.0.0/12).
+    """
+    from ipaddress import ip_network
+
+    from app.dependencies.rate_limit import _get_client_ip, _trusted_proxy_nets
+
+    # Temporarily add a Docker bridge CIDR to the trusted networks
+    docker_net = ip_network("172.16.0.0/12", strict=False)
+    original_nets = list(_trusted_proxy_nets)
+    _trusted_proxy_nets.append(docker_net)
+    try:
+        mock_request = MagicMock()
+        mock_request.headers = {"X-Forwarded-For": "203.0.113.50, 172.17.0.1"}
+        mock_request.client = MagicMock()
+        mock_request.client.host = "172.17.0.5"  # Docker bridge IP
+
+        ip = _get_client_ip(mock_request)
+        assert ip == "203.0.113.50"
+    finally:
+        _trusted_proxy_nets.clear()
+        _trusted_proxy_nets.extend(original_nets)
+
+
+def test_parse_trusted_proxies_handles_cidr_and_ips():
+    """_parse_trusted_proxies should accept both IPs and CIDR notation."""
+    from app.dependencies.rate_limit import _parse_trusted_proxies
+
+    nets = _parse_trusted_proxies("127.0.0.1, 172.16.0.0/12, ::1")
+    assert len(nets) == 3
+
+    from ipaddress import ip_address
+    assert ip_address("172.17.0.5") in nets[1]  # Docker bridge IP
+    assert ip_address("172.31.255.255") in nets[1]  # upper bound of /12
+    assert ip_address("10.0.0.1") not in nets[1]  # outside range
+
+
 def test_direct_client_ip_when_no_forwarded():
     """Should use request.client.host when no X-Forwarded-For is present."""
     from app.dependencies.rate_limit import _get_client_ip

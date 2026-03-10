@@ -102,9 +102,10 @@ test('onboarding modal can be triggered', async ({ page }) => {
 
   await page.unroute('**/auth/token');
 
-  // The onboarding modal should appear — heading is "Welcome to Project Synthesis"
-  await expect(page.getByText(/Welcome to Project Synthesis/i)).toBeVisible({ timeout: 10_000 });
-  // Input and buttons present
-  await expect(page.locator('#onboarding-display-name')).toBeVisible();
-  await expect(page.getByRole('button', { name: /get started/i })).toBeVisible();
+  // The onboarding wizard should appear — heading "PROJECT SYNTHESIS" with
+  // tagline "AI-Powered Prompt Engineering" and a 4-step flow.
+  await expect(page.locator('#wizard-display-name')).toBeVisible({ timeout: 10_000 });
+  // The wizard shows NEXT (step 1) and SKIP ALL buttons
+  await expect(page.getByRole('button', { name: /next/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /skip all/i })).toBeVisible();
 });

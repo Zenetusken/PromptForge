@@ -38,14 +38,25 @@ test('GitHub section shows Not connected when no token', async ({ page }) => {
   await reloadWithAuth(page, authToken);
   await expect(page.locator('nav[aria-label="Activity Bar"]')).toBeVisible({ timeout: 15_000 });
 
-  // Open Settings panel via Ctrl+,
-  await page.keyboard.press('Control+,');
+  // Wait for the health check to complete — it sets githubOAuthEnabled which
+  // controls whether the "Not connected" branch renders in NavigatorSettings.
+  await page.waitForResponse((resp) => resp.url().includes('/api/health') && resp.status() === 200);
+
+  // Open Settings panel by clicking the settings icon in the Activity Bar.
+  await page.locator('button[aria-label="Settings"]').click();
 
   // Should show "Not connected" (not "GitHub App not configured")
   await expect(page.getByText(/not connected/i)).toBeVisible({ timeout: 10_000 });
 });
 
 test('simulated GitHub connected state shows username', async ({ page }) => {
+  // Intercept health to enable GitHub OAuth
+  await page.route('**/api/health', async (route) => {
+    const resp = await route.fetch();
+    const body = await resp.json();
+    await route.fulfill({ json: { ...body, github_oauth_enabled: true } });
+  });
+
   // Intercept the GitHub status endpoint to simulate connected state.
   // The layout calls fetchGitHubAuthStatus() which hits /auth/github/me.
   await page.route('**/auth/github/me', (route) => {
@@ -76,8 +87,10 @@ test('simulated GitHub connected state shows username', async ({ page }) => {
   await reloadWithAuth(page, authToken);
   await expect(page.locator('nav[aria-label="Activity Bar"]')).toBeVisible({ timeout: 15_000 });
 
-  // Open settings panel
-  await page.keyboard.press('Control+,');
+  // Open Settings panel by clicking the activity bar icon directly.
+  // The github.username is populated by a $effect that runs when auth becomes true,
+  // which triggers fetchGitHubAuthStatus(). The assertion timeout handles the race.
+  await page.locator('button[aria-label="Settings"]').click();
 
   // NavigatorSettings shows github.username when connected
   await expect(page.getByText('mock-github-user')).toBeVisible({ timeout: 10_000 });
