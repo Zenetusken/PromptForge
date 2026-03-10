@@ -104,17 +104,30 @@ def test_parses_config_string():
 # ── Test: X-Forwarded-For extraction ──────────────────────────────────────
 
 
-def test_x_forwarded_for_extraction():
-    """Should extract the first IP from X-Forwarded-For header."""
+def test_x_forwarded_for_extraction_from_trusted_proxy():
+    """Should extract the first IP from X-Forwarded-For when direct IP is a trusted proxy."""
     from app.dependencies.rate_limit import _get_client_ip
 
     mock_request = MagicMock()
     mock_request.headers = {"X-Forwarded-For": "203.0.113.1, 198.51.100.2, 192.0.2.3"}
     mock_request.client = MagicMock()
-    mock_request.client.host = "10.0.0.1"
+    mock_request.client.host = "127.0.0.1"  # trusted proxy (loopback)
 
     ip = _get_client_ip(mock_request)
     assert ip == "203.0.113.1"
+
+
+def test_x_forwarded_for_ignored_from_untrusted_proxy():
+    """Should ignore X-Forwarded-For when direct IP is NOT a trusted proxy."""
+    from app.dependencies.rate_limit import _get_client_ip
+
+    mock_request = MagicMock()
+    mock_request.headers = {"X-Forwarded-For": "203.0.113.1, 198.51.100.2"}
+    mock_request.client = MagicMock()
+    mock_request.client.host = "10.0.0.1"  # not in trusted proxy set
+
+    ip = _get_client_ip(mock_request)
+    assert ip == "10.0.0.1"
 
 
 def test_direct_client_ip_when_no_forwarded():
@@ -128,3 +141,21 @@ def test_direct_client_ip_when_no_forwarded():
 
     ip = _get_client_ip(mock_request)
     assert ip == "10.0.0.1"
+
+
+# ── Test: rate string parse caching ──────────────────────────────────────
+
+
+def test_rate_string_parse_is_cached():
+    """_parse_rate should cache results, avoiding repeated parsing."""
+    from app.dependencies.rate_limit import _parse_rate
+
+    # Clear any previous cache entries
+    _parse_rate.cache_clear()
+
+    result1 = _parse_rate("60/minute")
+    result2 = _parse_rate("60/minute")
+
+    assert result1 is result2  # same object, not just equal
+    assert _parse_rate.cache_info().hits >= 1
+    assert _parse_rate.cache_info().misses >= 1

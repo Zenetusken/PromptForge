@@ -119,3 +119,43 @@ def test_hash_content_different_for_different_input():
     h1 = CacheService.hash_content("content a")
     h2 = CacheService.hash_content("content b")
     assert h1 != h2
+
+
+# ── Test: JSON normalization in memory fallback ──────────────────────
+
+
+async def test_set_normalizes_data_types_in_memory():
+    """In-memory fallback should store JSON-normalized values, not raw Python objects.
+
+    This ensures that the in-memory path returns the same types as the Redis
+    path (e.g., tuples become lists, non-serializable objects become strings).
+    """
+    redis_mock = _make_mock_redis(available=False)
+    cache = CacheService(redis_mock)
+
+    # Tuples should become lists after JSON normalization
+    await cache.set("norm:key", {"items": (1, 2, 3)}, ttl_seconds=300)
+    result = await cache.get("norm:key")
+    assert result == {"items": [1, 2, 3]}
+    assert isinstance(result["items"], list)
+
+
+# ── Test: memory eviction when over limit ────────────────────────────
+
+
+async def test_memory_eviction_when_over_limit():
+    """Entries should be evicted when in-memory cache exceeds the limit."""
+    from app.services.cache_service import _MAX_MEMORY_ENTRIES
+
+    redis_mock = _make_mock_redis(available=False)
+    cache = CacheService(redis_mock)
+
+    # Fill cache past the limit with long-lived entries
+    for i in range(_MAX_MEMORY_ENTRIES + 100):
+        cache._memory[f"key:{i}"] = (time.time() + 86400, f"value-{i}")
+
+    # Trigger cleanup by adding one more entry via set()
+    await cache.set("trigger:key", "new-value", ttl_seconds=300)
+
+    # Should be back under the limit (with 50 headroom evicted)
+    assert len(cache._memory) <= _MAX_MEMORY_ENTRIES
