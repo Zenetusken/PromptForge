@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_HISTORY: str = "60/minute"
     RATE_LIMIT_HISTORY_WRITE: str = "20/minute"
 
+    # Trusted reverse-proxy IPs (comma-separated). X-Forwarded-For is only
+    # honoured when the direct connection comes from one of these addresses.
+    # Defaults to loopback (127.0.0.1, ::1) when empty.
+    TRUSTED_PROXIES: str = ""
+
     # Redis (optional — in-memory fallback when unavailable)
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
