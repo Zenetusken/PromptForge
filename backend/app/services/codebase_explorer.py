@@ -23,6 +23,7 @@ from app.config import settings
 from app.prompts.explore_synthesis_prompt import get_explore_synthesis_prompt
 from app.providers.base import MODEL_ROUTING, LLMProvider, parse_json_robust
 from app.services.cache_service import CacheService, get_cache
+from app.services.codebase_patterns import ANCHOR_FILENAMES
 from app.services.github_service import (
     get_default_branch,
     get_repo_tree,
@@ -103,22 +104,13 @@ class CodebaseContext:
 
 
 # ── Deterministic anchor files ──────────────────────────────────────────
-
-_ANCHOR_FILENAMES = frozenset({
-    "README.md", "README.rst", "README",
-    "package.json", "pyproject.toml", "Cargo.toml",
-    "setup.py", "go.mod", "requirements.txt",
-    "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
-    ".env.example", "CLAUDE.md",
-    "openapi.yaml", "openapi.json",
-    "architecture.md", "ARCHITECTURE.md",
-})
+# ANCHOR_FILENAMES imported from codebase_patterns.py (single source of truth)
 
 
 def _get_anchor_paths(tree: list[dict]) -> list[str]:
     """Return paths of deterministic anchor files present in the tree."""
     tree_paths = {e["path"] for e in tree}
-    return [p for p in sorted(tree_paths) if p.split("/")[-1] in _ANCHOR_FILENAMES]
+    return [p for p in sorted(tree_paths) if p.split("/")[-1] in ANCHOR_FILENAMES]
 
 
 def _deduplicate_files(

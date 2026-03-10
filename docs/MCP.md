@@ -1,6 +1,6 @@
 # Project Synthesis MCP Server
 
-Project Synthesis exposes 14 tools over the Model Context Protocol (MCP), allowing Claude Code and other MCP clients to optimize prompts, query history, manage trash/restore, and interact with linked GitHub repositories directly from a chat session.
+Project Synthesis exposes 14 tools over the Model Context Protocol (MCP), allowing Claude Code and other MCP clients to optimize prompts, query history, manage trash/restore, and interact with linked GitHub repositories directly from a chat session. The explore stage uses semantic retrieval (pre-built embedding index) for fast codebase analysis.
 
 ## Transports
 
@@ -233,15 +233,6 @@ Re-run the pipeline on an existing optimization (useful after a failure or provi
 
 All GitHub tools require an explicit `token` parameter (a GitHub Personal Access Token with `repo` scope). No session-level state is shared between calls.
 
-#### `github_validate_token`
-Check whether a token is valid and return the authenticated user's login and scopes.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `token` | string | yes | GitHub PAT |
-
----
-
 #### `github_list_repos`
 List repositories accessible to the token.
 
@@ -280,15 +271,6 @@ Returns up to 20 matches with `path` and `name`.
 
 ---
 
-#### `github_set_token`
-Validate and store a GitHub Personal Access Token for reuse. The token is encrypted at rest. Once stored, other GitHub tools can accept an empty string as `token` and will fall back to the stored value.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `token` | string | yes | GitHub PAT to validate and store |
-
----
-
 ## Tool annotations
 
 Every tool is decorated with MCP tool annotations to help clients understand side effects:
@@ -319,5 +301,5 @@ The detected provider is injected into all tool calls via the FastMCP lifespan c
 All tools return actionable error messages as JSON strings. Common cases:
 
 - **Optimization not found**: includes the ID that was looked up and a suggestion to call `list_optimizations`
-- **GitHub API error**: includes HTTP status, response body, and a suggestion to validate the token with `github_validate_token`
+- **GitHub API error**: includes HTTP status and response body
 - **Missing token/session**: raised at the explore stage if a repo is linked but no GitHub token is available

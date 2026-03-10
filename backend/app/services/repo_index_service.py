@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -32,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import async_session
 from app.models.repo_index import RepoFileIndex, RepoIndexMeta
+from app.services.codebase_patterns import OUTLINE_PATTERNS
 from app.services.embedding_service import get_embedding_service
 from app.services.github_service import (
     get_repo_tree,
@@ -66,16 +66,7 @@ _SKIP_FILES = frozenset({
     "go.sum", "composer.lock", "Gemfile.lock",
 })
 
-# Outline regex — matches function/class/interface definitions.
-# Uses [ \t]* (not \s*) for indent capture to avoid matching across line
-# boundaries (\s matches \n, which would cause off-by-one line numbers).
-OUTLINE_PATTERNS = re.compile(
-    r'^([ \t]*)'
-    r'(def |async def |class |function |export function |export default function '
-    r'|export class |export interface |export type |interface |type '
-    r'|const .+ = \(|module\.exports|fn |pub fn |pub struct |pub enum |pub trait |impl )',
-    re.MULTILINE,
-)
+# OUTLINE_PATTERNS imported from codebase_patterns.py (single source of truth)
 
 
 @dataclass

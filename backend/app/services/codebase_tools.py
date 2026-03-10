@@ -14,6 +14,7 @@ import time
 from typing import Optional
 
 from app.providers.base import ToolDefinition
+from app.services.codebase_patterns import ANCHOR_FILENAMES, OUTLINE_PATTERNS
 from app.services.github_service import get_repo_tree as _svc_get_repo_tree
 from app.services.github_service import read_file_content as _svc_read_file_content
 
@@ -59,17 +60,7 @@ def get_cached_tree_size(repo_full_name: str, branch: str) -> int:
     return len(cached) if cached is not None else 0
 
 
-# Regex for get_file_outline: matches top-level function/class/interface definitions.
-# Uses [ \t]* (not \s*) for indent capture to avoid matching across line
-# boundaries (\s matches \n, which would cause off-by-one line numbers).
-# Shared with repo_index_service._extract_outline — keep in sync.
-OUTLINE_PATTERNS = re.compile(
-    r'^([ \t]*)'
-    r'(def |async def |class |function |export function |export default function '
-    r'|export class |export interface |export type |interface |type '
-    r'|const .+ = \(|module\.exports|fn |pub fn |pub struct |pub enum |pub trait |impl )',
-    re.MULTILINE,
-)
+# OUTLINE_PATTERNS imported from codebase_patterns.py (single source of truth)
 
 # Priority tiers for search_code file ordering
 _TIER1_PREFIXES = ("src/", "lib/", "app/", "backend/", "server/", "core/", "pkg/")
@@ -360,15 +351,10 @@ def build_codebase_tools(
     async def get_repo_summary_handler(args: dict) -> str:
         tree = await _get_tree()
 
-        # Key files to look for
-        summary_files = [
-            "README.md", "README.rst", "README",
-            "package.json", "pyproject.toml", "Cargo.toml",
-            "setup.py", "go.mod", "go.sum",
-            "Makefile", "Dockerfile", "docker-compose.yml",
-            "CONTRIBUTING.md", "architecture.md", "ARCHITECTURE.md",
-            "openapi.yaml", "openapi.json", ".env.example", "CLAUDE.md",
-        ]
+        # Key files to look for — ANCHOR_FILENAMES plus a few extras for summary
+        summary_files = sorted(ANCHOR_FILENAMES | {
+            "go.sum", "Makefile", "CONTRIBUTING.md",
+        })
 
         parts = []
 

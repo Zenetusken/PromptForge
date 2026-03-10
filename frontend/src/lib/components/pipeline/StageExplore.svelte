@@ -19,6 +19,23 @@
   let liveReasoningCount = $derived(forge.liveActivity.filter(e => e.type === 'reasoning').length);
 
   function fmtCall(tool: string, input: Record<string, unknown>): string {
+    // Semantic explore pipeline tools
+    if (tool === 'semantic_retrieval') {
+      const method = input.method as string | undefined;
+      const count = input.files_selected as number | undefined;
+      if (method && count) return `index query [${method}] → ${count} files`;
+      return `index query ${input.repo ?? ''}`;
+    }
+    if (tool === 'batch_read_files') {
+      const count = (input.count as number) ?? 0;
+      return `read ${count} file${count !== 1 ? 's' : ''}`;
+    }
+    if (tool === 'llm_synthesis') {
+      const files = input.files as number | undefined;
+      if (files) return `synthesize (${files} files → ${input.model ?? 'haiku'})`;
+      return 'synthesize context';
+    }
+    // Legacy agentic explore tools (MCP / fallback)
     if (tool === 'read_file')           return `cat ${input.path ?? ''}`;
     if (tool === 'list_repo_files')     return `ls ${input.path_prefix || '/'}`;
     if (tool === 'search_code')         return `grep "${input.pattern ?? ''}"`;
