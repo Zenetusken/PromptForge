@@ -38,7 +38,9 @@
     }
   }
 
-  const CALLBACK_URL = 'http://localhost:8000/auth/github/callback';
+  // Derive from current origin so it's correct in both dev (port 5199 via
+  // Vite proxy) and production (port 80 via nginx reverse proxy).
+  const CALLBACK_URL = `${window.location.origin}/auth/github/callback`;
 </script>
 
 <!-- ── Full-screen centred card ──────────────────────────────────────────── -->
