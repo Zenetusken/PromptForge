@@ -32,7 +32,9 @@ class Settings(BaseSettings):
     # Claude CLI provider spawns a new subprocess per call; cold-start alone
     # takes ~7–15 seconds on typical hardware. Timeouts are set generously
     # to survive startup + API latency. Override via env vars if needed.
-    EXPLORE_TIMEOUT_SECONDS: int = 600   # Agentic multi-turn repo exploration (10 min)
+    EXPLORE_TIMEOUT_SECONDS: int = 120   # Single-shot synthesis + retrieval (2 min)
+    # Legacy agentic explore timeout — unused after semantic index migration
+    # EXPLORE_AGENTIC_TIMEOUT_SECONDS: int = 600
     ANALYZE_TIMEOUT_SECONDS: int = 90    # Simple completion; CLI startup ~7–15s
     STRATEGY_TIMEOUT_SECONDS: int = 90   # Simple completion; same startup cost
     OPTIMIZE_TIMEOUT_SECONDS: int = 120  # Streaming rewrite; longest content
@@ -67,6 +69,15 @@ class Settings(BaseSettings):
     # honoured when the direct connection comes from one of these addresses.
     # Defaults to loopback (127.0.0.1, ::1) when empty.
     TRUSTED_PROXIES: str = ""
+
+    # Embedding / Repo Index
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    REPO_INDEX_TTL_HOURS: int = 24
+    REPO_INDEX_MAX_FILES: int = 5000
+    EXPLORE_INDEX_WAIT_TIMEOUT: int = 30     # seconds to wait for building index
+    EXPLORE_FILE_READ_CONCURRENCY: int = 10  # parallel GitHub reads
+    EXPLORE_MAX_FILES: int = 25              # max files to read for synthesis
+    EXPLORE_RESULT_CACHE_TTL: int = 3600     # 1 hour
 
     # Redis (optional — in-memory fallback when unavailable)
     REDIS_HOST: str = "localhost"

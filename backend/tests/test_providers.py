@@ -733,126 +733,18 @@ def test_get_repo_summary_is_first_tool():
 
 
 # ---------------------------------------------------------------------------
-# T-reasoning-1: _describe_tool_call() — synthesized reasoning notes
+# T-reasoning-1 through T-explore-1: REMOVED (2026-03-10)
+#
+# These tests validated the old agentic explore loop (build_codebase_tools,
+# _describe_tool_call, complete_agentic, submit_result).  The explore phase
+# has been replaced with semantic retrieval + single-shot synthesis.
+#
+# Equivalent coverage now lives in tests/test_explore_phase.py:
+#   - TestExploreFlow.test_sse_event_sequence — verifies event ordering
+#   - TestExploreFlow.test_cache_hit_returns_immediately — cache path
+#   - TestExploreFlow.test_token_resolution_error — error path
+#
+# The codebase_tools module itself (build_codebase_tools, etc.) is still
+# tested above via T-tools-1 and T-tools-2 — those remain valid since the
+# module is kept for MCP use.
 # ---------------------------------------------------------------------------
-
-def test_describe_tool_call_read_file():
-    """_describe_tool_call('read_file', ...) must include the file path."""
-    from app.services.codebase_explorer import _describe_tool_call
-    result = _describe_tool_call("read_file", {"path": "main.py"})
-    assert isinstance(result, str) and result
-    assert "main.py" in result
-
-
-def test_describe_tool_call_search_code():
-    """_describe_tool_call('search_code', ...) must include the search pattern."""
-    from app.services.codebase_explorer import _describe_tool_call
-    result = _describe_tool_call("search_code", {"pattern": "def run_pipeline"})
-    assert isinstance(result, str) and result
-    assert "def run_pipeline" in result
-
-
-def test_describe_tool_call_submit_result():
-    """_describe_tool_call('submit_result', ...) must return a non-empty string."""
-    from app.services.codebase_explorer import _describe_tool_call
-    result = _describe_tool_call("submit_result", {})
-    assert isinstance(result, str) and result
-
-
-@pytest.mark.asyncio
-async def test_on_tool_call_emits_reasoning_before_tool_call():
-    """_on_tool_call must enqueue ('agent_text', ...) before ('tool_call', ...)."""
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    from app.services.codebase_explorer import run_explore
-
-    events: list[tuple] = []
-
-    async def mock_complete_agentic(**kwargs):
-        # Simulate the on_tool_call callback being invoked once
-        on_tool_call = kwargs.get("on_tool_call")
-        if on_tool_call:
-            on_tool_call("read_file", {"path": "README.md"})
-        return MagicMock(output=None, text="", tool_calls=[])
-
-    provider = MagicMock()
-    provider.complete_agentic = mock_complete_agentic
-
-    with patch("anyio.to_thread.run_sync", new_callable=AsyncMock), \
-         patch("app.services.codebase_explorer.build_codebase_tools", return_value=[]):
-        async for evt in run_explore(
-            provider=provider,
-            raw_prompt="Test prompt",
-            repo_full_name="owner/repo",
-            repo_branch="main",
-            github_token="fake-token",
-        ):
-            events.append(evt)
-
-    event_types = [e[0] for e in events]
-    assert "agent_text" in event_types, "No agent_text event emitted"
-    assert "tool_call" in event_types, "No tool_call event emitted"
-
-    # agent_text must come before tool_call
-    first_text_idx = next(i for i, e in enumerate(events) if e[0] == "agent_text")
-    first_tool_idx = next(i for i, e in enumerate(events) if e[0] == "tool_call")
-    assert first_text_idx < first_tool_idx, (
-        f"agent_text (idx {first_text_idx}) did not appear before "
-        f"tool_call (idx {first_tool_idx})"
-    )
-
-
-# ---------------------------------------------------------------------------
-# T-explore-1: run_explore user turn must remind the model to call submit_result
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_run_explore_user_turn_reminds_submit_result():
-    """The user turn passed to complete_agentic must mention submit_result.
-
-    The system prompt's 'Final step (REQUIRED): call submit_result' instruction
-    is located at the end of a long system prompt and is often forgotten by the
-    time the model finishes its 10-15 tool calls. Without a reminder in the user
-    turn, the model ends its turn with a plain text response, leaving result.output
-    as None and the frontend with no structured explore data.
-
-    Adding a brief reminder in the user turn ensures the model has the instruction
-    in its most-attended context.
-    """
-    from unittest.mock import AsyncMock, MagicMock
-
-    from app.services.codebase_explorer import run_explore
-
-    captured_user_turn: list[str] = []
-
-    async def mock_complete_agentic(**kwargs):
-        captured_user_turn.append(kwargs.get("user", ""))
-        return MagicMock(output=None, text="", tool_calls=[])
-
-    provider = MagicMock()
-    provider.complete_agentic = mock_complete_agentic
-
-    # Minimal mock for GitHub auth — we just need to get past the token
-    # resolution and branch check to reach the complete_agentic call.
-    with patch("app.services.codebase_explorer.get_default_branch", new_callable=AsyncMock) as mock_gdb, \
-         patch("anyio.to_thread.run_sync", new_callable=AsyncMock), \
-         patch("app.services.codebase_explorer.build_codebase_tools", return_value=[]), \
-         patch("app.services.github_client._get_decrypted_token", new_callable=AsyncMock, return_value="tok"):
-        mock_gdb.return_value = "main"
-        async for _ in run_explore(
-            provider=provider,
-            raw_prompt="Test prompt",
-            repo_full_name="owner/repo",
-            repo_branch="main",
-            github_token="fake-token",
-        ):
-            pass
-
-    assert len(captured_user_turn) == 1, "complete_agentic was not called"
-    user_msg = captured_user_turn[0]
-    assert "submit_result" in user_msg, (
-        "The user turn passed to complete_agentic does not mention 'submit_result'. "
-        "The model often ignores the system prompt's final-step instruction after "
-        "10+ tool calls. Add a brief reminder ('When done, call submit_result') "
-        "to the user turn so it appears in the model's most-attended context."
-    )

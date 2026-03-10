@@ -1,13 +1,33 @@
-"""Stage 0: Codebase Explore system prompt."""
+"""Stage 0: Codebase Explore system prompt.
+
+.. deprecated:: 2026-03-10
+    Replaced by the semantic retrieval + single-shot synthesis pipeline in
+    ``codebase_explorer.py`` and ``explore_synthesis_prompt.py``.  The agentic
+    25-turn exploration loop is no longer used.  This module is kept for
+    reference only — do not import it in new code.
+"""
+
+import warnings
 
 
 def get_explore_prompt(raw_prompt: str) -> str:  # raw_prompt accepted for call-site compat; not embedded — already in user turn
     """Stage 0 system prompt for codebase exploration.
 
+    .. deprecated:: 2026-03-10
+        Use :func:`app.prompts.explore_synthesis_prompt.get_explore_synthesis_prompt`
+        instead.  The agentic loop has been replaced by deterministic vector
+        retrieval + single-shot LLM synthesis.
+
     ``raw_prompt`` is passed by codebase_explorer.py but intentionally not
     embedded here — it already appears in the user turn, so duplicating it
     in the system prompt would waste context budget.
     """
+    warnings.warn(
+        "get_explore_prompt is deprecated — use get_explore_synthesis_prompt instead. "
+        "The agentic explore loop has been replaced by semantic retrieval + single-shot synthesis.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return """\
 You are a codebase analysis assistant with access to a GitHub repository.
 Your goal is to build a rich, grounded understanding of this codebase that will help

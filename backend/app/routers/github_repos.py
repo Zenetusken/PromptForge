@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,6 +13,7 @@ from app.schemas.auth import AuthenticatedUser
 from app.schemas.github import LinkRepoRequest
 from app.services import github_service
 from app.services.cache_service import get_cache
+from app.services.repo_index_service import get_repo_index_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["github-repos"])
@@ -141,6 +143,17 @@ async def link_repo(
     session.add(linked)
     await session.commit()
 
+    # Trigger background embedding index build for the linked repo.
+    # This runs asynchronously — the response returns immediately.
+    try:
+        index_svc = get_repo_index_service()
+        asyncio.create_task(
+            index_svc.build_index(token, body.full_name, branch)
+        )
+        logger.info("Background index build triggered for %s@%s", body.full_name, branch)
+    except Exception as e:
+        logger.warning("Failed to trigger background indexing: %s", e)
+
     return {
         "id": linked.id,
         "full_name": linked.full_name,
@@ -176,6 +189,39 @@ async def get_linked_repo(
         "language": linked.language,
         "linked_at": linked.linked_at.isoformat() if linked.linked_at else None,
     }
+
+
+@router.post("/api/github/repos/{owner}/{repo}/reindex")
+async def reindex_repo(
+    owner: str,
+    repo: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Manually trigger re-indexing of a repository's embedding index.
+
+    Invalidates the existing index and rebuilds from scratch.
+    """
+    token = await _get_github_token(request, session, current_user)
+    full_name = f"{owner}/{repo}"
+
+    # Look up the linked repo to get branch
+    session_id = request.session.get("session_id", "")
+    result = await session.execute(
+        select(LinkedRepo).where(
+            LinkedRepo.session_id == session_id,
+            LinkedRepo.full_name == full_name,
+        )
+    )
+    linked = result.scalar_one_or_none()
+    branch = linked.branch if linked else "main"
+
+    index_svc = get_repo_index_service()
+    await index_svc.invalidate_index(full_name, branch)
+    asyncio.create_task(index_svc.build_index(token, full_name, branch))
+
+    return {"status": "reindexing", "repo": full_name, "branch": branch}
 
 
 @router.delete("/api/github/repos/unlink")
