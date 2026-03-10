@@ -30,11 +30,6 @@ logger = logging.getLogger(__name__)
 _MAX_MEMORY_ENTRIES = 1000
 
 
-def _hash_content(content: str) -> str:
-    """SHA256 truncated to 16 chars for cache keys."""
-    return hashlib.sha256(content.encode()).hexdigest()[:16]
-
-
 class CacheService:
     """Async cache backed by Redis with in-memory fallback."""
 
@@ -45,7 +40,7 @@ class CacheService:
 
     async def get(self, key: str) -> Any | None:
         """Get a value by key. Returns None on miss or expiry."""
-        if self._redis.is_available and self._redis.client is not None:
+        if self._redis.is_ready:
             try:
                 raw = await self._redis.client.get(key)
                 if raw is not None:
@@ -68,7 +63,7 @@ class CacheService:
         """Store a value with TTL. JSON-serializes the value."""
         serialized = json.dumps(value, default=str)
 
-        if self._redis.is_available and self._redis.client is not None:
+        if self._redis.is_ready:
             try:
                 await self._redis.client.set(key, serialized, ex=ttl_seconds)
                 return
@@ -76,13 +71,15 @@ class CacheService:
                 logger.debug("Redis cache set failed for %s: %s", key, e)
 
         # Fallback to in-memory with lazy cleanup
-        if len(self._memory) > _MAX_MEMORY_ENTRIES:
+        # Store JSON-normalized value so types match the Redis path (e.g., datetime → str)
+        if len(self._memory) >= _MAX_MEMORY_ENTRIES:
             self._cleanup_memory()
-        self._memory[key] = (time.time() + ttl_seconds, value)
+        normalized = json.loads(serialized)
+        self._memory[key] = (time.time() + ttl_seconds, normalized)
 
     async def delete(self, key: str) -> None:
         """Delete a key from cache."""
-        if self._redis.is_available and self._redis.client is not None:
+        if self._redis.is_ready:
             try:
                 await self._redis.client.delete(key)
             except Exception as e:
@@ -92,11 +89,21 @@ class CacheService:
         self._memory.pop(key, None)
 
     def _cleanup_memory(self) -> None:
-        """Remove expired entries from in-memory fallback."""
+        """Remove expired entries from in-memory fallback.
+
+        If still over the limit after expiry cleanup, evicts entries
+        closest to expiry (soonest to expire) to make room.
+        """
         now = time.time()
         expired = [k for k, (exp, _) in self._memory.items() if now > exp]
         for k in expired:
             del self._memory[k]
+        # Evict soonest-to-expire entries if still at/over limit
+        if len(self._memory) >= _MAX_MEMORY_ENTRIES:
+            sorted_keys = sorted(self._memory, key=lambda k: self._memory[k][0])
+            to_remove = len(self._memory) - _MAX_MEMORY_ENTRIES + 50  # headroom
+            for k in sorted_keys[:to_remove]:
+                del self._memory[k]
 
     @staticmethod
     def make_key(*parts: str) -> str:
@@ -106,7 +113,7 @@ class CacheService:
     @staticmethod
     def hash_content(content: str) -> str:
         """SHA256 hash truncated to 16 chars, for use in cache keys."""
-        return _hash_content(content)
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
 # ── Module-level singleton ──────────────────────────────────────────────────

@@ -77,7 +77,7 @@ async def list_repos(
 
     # Check cache
     cache = get_cache()
-    cache_key = cache.make_key("repos", request.session.get("session_id", "")) if cache else ""
+    cache_key = cache.make_key("repos", request.session.get("session_id", "")) if cache else None
     if cache:
         cached = await cache.get(cache_key)
         if cached is not None:
