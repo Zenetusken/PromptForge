@@ -13,7 +13,6 @@
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let selectedIds = $state<Set<string>>(new Set());
   let showFilters = $state(false);
-  let contextMenuId = $state<string | null>(null);
 
   // Inline title editing state
   let editingId = $state<string | null>(null);
@@ -176,7 +175,6 @@
 
   async function handleHistoryRetry(e: MouseEvent, id: string) {
     e.stopPropagation();
-    contextMenuId = null;
     // Open the entry tab so results are visible in the editor panel
     const entry = history.entries.find(en => en.id === id);
     if (entry) {
@@ -199,12 +197,7 @@
   });
 </script>
 
-<div
-  class="flex flex-col h-full"
-  role="presentation"
-  onclick={() => { if (contextMenuId) contextMenuId = null; }}
-  onkeydown={(e) => { if (e.key === 'Escape' && contextMenuId) contextMenuId = null; }}
->
+<div class="flex flex-col h-full" role="presentation">
   <!-- Top-level tab bar: History | Trash -->
   <div class="flex items-center h-8 border-b border-border-subtle bg-bg-secondary/50 px-2 gap-1 shrink-0">
     <button
@@ -459,7 +452,10 @@
             aria-selected={selectedIds.has(entry.id) || history.selectedId === entry.id}
             tabindex={i === 0 ? 0 : -1}
             data-history-row
-            onclick={() => openHistoryEntry(entry)}
+            onclick={(e: MouseEvent) => {
+              if ((e.target as Element).closest('[data-action-btn]')) return;
+              openHistoryEntry(entry);
+            }}
             onkeydown={(e: KeyboardEvent) => {
               if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openHistoryEntry(entry); }
               else if (e.key === 'ArrowDown') { e.preventDefault(); const rows = document.querySelectorAll<HTMLElement>('[data-history-row]'); rows[i + 1]?.focus(); }
@@ -513,49 +509,35 @@
                   <span class="text-[10px] text-text-dim shrink-0">{new Date(entry.created_at).toLocaleDateString()}</span>
                 </div>
               </div>
-              <!-- Context menu "..." button -->
-              <div class="relative shrink-0">
+              <!-- Inline action buttons — visible on row hover, no portal needed -->
+              <div class="shrink-0 self-center flex items-center gap-px opacity-0 group-hover/entry:opacity-100" style="transition: opacity 150ms;">
                 <button
-                  class="w-5 h-5 flex items-center justify-center opacity-0 group-hover/entry:opacity-100 text-text-dim hover:text-text-primary transition-all font-mono text-[11px] leading-none"
-                  onclick={(e: MouseEvent) => { e.stopPropagation(); contextMenuId = contextMenuId === entry.id ? null : entry.id; }}
-                  aria-label="More options"
-                  title="More options"
+                  data-action-btn
+                  class="w-5 h-5 flex items-center justify-center text-neon-cyan/50 border border-transparent hover:text-neon-cyan hover:border-neon-cyan/20 hover:bg-neon-cyan/8"
+                  style="transition: color 150ms, border-color 150ms, background-color 150ms;"
+                  onclick={(e: MouseEvent) => handleHistoryRetry(e, entry.id)}
+                  aria-label="Retry optimization"
+                  title="Retry"
                 >
-                  ···
+                  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" class="w-3 h-3" style="pointer-events:none" aria-hidden="true">
+                    <path d="M10 4a4.5 4.5 0 1 0 .5 2.5"/>
+                    <polyline points="10,1 10,4 7,4"/>
+                  </svg>
                 </button>
-                {#if contextMenuId === entry.id}
-                  <div
-                    role="menu"
-                    tabindex="-1"
-                    class="absolute right-0 top-full mt-0.5 w-28 bg-bg-card border border-border-subtle z-[300] font-mono"
-                    onclick={(e) => e.stopPropagation()}
-                    onkeydown={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      class="w-full text-left px-3 py-1.5 text-[11px] text-neon-cyan/80 hover:bg-bg-hover hover:text-neon-cyan transition-colors"
-                      onclick={(e: MouseEvent) => handleHistoryRetry(e, entry.id)}
-                    >
-                      ↺ Retry
-                    </button>
-                    <button
-                      class="w-full text-left px-3 py-1.5 text-[11px] text-text-dim hover:bg-bg-hover hover:text-neon-red transition-colors"
-                      onclick={(e: MouseEvent) => { contextMenuId = null; handleDelete(e, entry.id); }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                {/if}
+                <button
+                  data-action-btn
+                  class="w-5 h-5 flex items-center justify-center text-neon-red/50 border border-transparent hover:text-neon-red hover:border-neon-red/20 hover:bg-neon-red/8"
+                  style="transition: color 150ms, border-color 150ms, background-color 150ms;"
+                  onclick={(e: MouseEvent) => handleDelete(e, entry.id)}
+                  aria-label="Delete optimization"
+                  title="Delete"
+                >
+                  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" class="w-2.5 h-2.5" style="pointer-events:none" aria-hidden="true">
+                    <line x1="2" y1="2" x2="10" y2="10"/>
+                    <line x1="10" y1="2" x2="2" y2="10"/>
+                  </svg>
+                </button>
               </div>
-              <button
-                class="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover/entry:opacity-100 text-text-dim hover:text-neon-red hover:bg-neon-red/10 transition-all shrink-0"
-                onclick={(e: MouseEvent) => handleDelete(e, entry.id)}
-                aria-label="Delete optimization"
-                title="Delete"
-              >
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                </svg>
-              </button>
             </div>
           </div>
         {/each}
@@ -573,3 +555,4 @@
     </button>
   </div>
 </div>
+

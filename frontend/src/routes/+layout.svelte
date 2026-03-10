@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
+  import { replaceState } from '$app/navigation';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
@@ -273,7 +274,7 @@
         // Clean up URL after callback
         url.searchParams.delete('auth_complete');
         url.searchParams.delete('new');
-        window.history.replaceState({}, '', url.toString());
+        replaceState(url.toString(), {});
         authChecked = true;
       } else {
         // Attempt silent refresh from httponly cookie (restores returning sessions)

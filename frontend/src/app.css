@@ -132,7 +132,10 @@
 
   to {
     opacity: 1;
-    transform: translateY(0);
+    /* No transform in final state — removes stacking context so position:fixed
+       descendants escape any overflow container. translateY(0) is visually
+       identical to no transform but would persist a stacking context via
+       fill-mode:both, trapping fixed-positioned portals. */
   }
 }
 
@@ -144,7 +147,6 @@
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -156,7 +158,6 @@
 
   to {
     opacity: 1;
-    transform: translateX(0);
   }
 }
 
@@ -180,7 +181,6 @@
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -192,7 +192,6 @@
 
   to {
     opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -204,7 +203,6 @@
 
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
   }
 }
 
@@ -216,7 +214,6 @@
 
   to {
     opacity: 1;
-    transform: translateY(0) scaleY(1);
   }
 }
 
@@ -228,7 +225,6 @@
 
   to {
     opacity: 1;
-    transform: translateY(0) scaleY(1);
   }
 }
 
@@ -334,7 +330,6 @@
 
   to {
     opacity: 1;
-    transform: translateX(0);
   }
 }
 
