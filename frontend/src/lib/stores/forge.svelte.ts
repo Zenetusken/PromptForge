@@ -94,7 +94,9 @@ class ForgeStore {
   error = $state<string | null>(null);
   contextWarning = $state<ContextWarning | null>(null);
   stageErrors = $state<Record<string, { error: string; recoverable: boolean }>>({});
+  private _activitySeq = 0;
   liveActivity = $state<Array<{
+    id: number;
     type: 'tool' | 'reasoning';
     tool?: string;
     input?: Record<string, unknown>;
@@ -153,6 +155,7 @@ class ForgeStore {
     this.error = null;
     this.contextWarning = null;
     this.stageErrors = {};
+    this._activitySeq = 0;
     this.liveActivity = [];
     this.liveStageText = {};
   }
@@ -208,11 +211,11 @@ class ForgeStore {
   }
 
   addToolCall(tool: string, input: Record<string, unknown>) {
-    this.liveActivity = [...this.liveActivity, { type: 'tool', tool, input, ts: Date.now() }];
+    this.liveActivity = [...this.liveActivity, { id: ++this._activitySeq, type: 'tool', tool, input, ts: Date.now() }];
   }
 
   addAgentReasoning(content: string) {
-    this.liveActivity = [...this.liveActivity, { type: 'reasoning', content, ts: Date.now() }];
+    this.liveActivity = [...this.liveActivity, { id: ++this._activitySeq, type: 'reasoning', content, ts: Date.now() }];
   }
 
   appendStageText(stage: string, chunk: string) {

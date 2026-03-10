@@ -42,7 +42,7 @@
       </div>
     {:else}
       <div class="bg-bg-input p-2 space-y-0.5 max-h-48 overflow-y-auto">
-        {#each liveActivity as entry (entry.ts)}
+        {#each liveActivity as entry (entry.id)}
           {#if entry.type === 'reasoning'}
             <div class="font-mono text-[10px] text-neon-purple/50 italic leading-snug pl-1">
               ·· {entry.content}
