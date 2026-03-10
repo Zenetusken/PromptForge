@@ -217,7 +217,7 @@ app.mount("/mcp", _LazyMCPHttpApp())
 # Session cache middleware (mirrors session data to Redis for server-side visibility).
 # Registered before SessionMiddleware so it runs AFTER it in the ASGI stack
 # (Starlette middleware wraps in reverse registration order).
-from app.middleware.session_cache import SessionCacheMiddleware
+from app.middleware.session_cache import SessionCacheMiddleware  # noqa: E402
 
 app.add_middleware(SessionCacheMiddleware)
 

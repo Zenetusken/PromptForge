@@ -22,10 +22,11 @@ import logging
 from functools import lru_cache
 from typing import TYPE_CHECKING, Callable
 
-from app.config import settings as _settings
 from fastapi import HTTPException, Request
 from limits import parse as limits_parse
 from limits.storage import MemoryStorage
+
+from app.config import settings as _settings
 
 if TYPE_CHECKING:
     from app.services.redis_service import RedisService

@@ -7,10 +7,7 @@ from __future__ import annotations
 import time
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
-from app.services.redis_service import RedisService, _RECONNECT_COOLDOWN
-
+from app.services.redis_service import _RECONNECT_COOLDOWN, RedisService
 
 # ── Test: graceful degradation on connect failure ─────────────────────────
 

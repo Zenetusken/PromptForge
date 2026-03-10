@@ -37,7 +37,10 @@ async def run_analyze(
     # Cache check: same prompt + same context type flags = same classification
     cache = get_cache()
     if cache:
-        context_flags = f"{bool(codebase_context)}:{bool(file_contexts)}:{bool(url_fetched_contexts)}:{bool(instructions)}"
+        context_flags = (
+            f"{bool(codebase_context)}:{bool(file_contexts)}"
+            f":{bool(url_fetched_contexts)}:{bool(instructions)}"
+        )
         prompt_hash = cache.hash_content(raw_prompt)
         flags_hash = cache.hash_content(context_flags)
         analyze_cache_key = cache.make_key("analyze", prompt_hash, flags_hash)

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 
 async def test_evict_repo_cache_calls_cache_delete():
     """evict_repo_cache should call cache.delete with the correct key."""

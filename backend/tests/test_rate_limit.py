@@ -4,11 +4,10 @@ Run: cd backend && source .venv/bin/activate && pytest tests/test_rate_limit.py 
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-
 
 # ── Test: allows within limit ─────────────────────────────────────────────
 
