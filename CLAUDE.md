@@ -25,7 +25,7 @@ Logs: `data/backend.log`, `data/frontend.log`, `data/mcp.log`
 - **Framework**: FastAPI + uvicorn with `--reload` (watches `backend/app/`)
 - **Database**: SQLite via SQLAlchemy async + aiosqlite (`data/synthesis.db`)
 - **Config**: `backend/app/config.py` — reads from `.env` via pydantic-settings
-- **Key env vars**: `ANTHROPIC_API_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_TOKEN_ENCRYPTION_KEY`, `SECRET_KEY`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD`
+- **Key env vars**: `ANTHROPIC_API_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_TOKEN_ENCRYPTION_KEY`, `SECRET_KEY`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_PASSWORD`, `TRUSTED_PROXIES`
 
 ### Layer rules
 - `routers/` → `services/` → `models/` only. Services must never import from routers.
@@ -145,6 +145,6 @@ curl -s -X POST http://127.0.0.1:8001/mcp \
 - **Lazy ASGI wrappers** (`main.py`): `_LazyMCPHttpApp` and `_LazyMCPWSApp` are mounted at module level but populated during lifespan, avoiding FastAPI sub-app startup conflicts.
 - **GitHub token layer**: tokens are Fernet-encrypted at rest. `github_service.encrypt_token` / `decrypt_token` are the only entry points — routers do not hold the Fernet key.
 - **Pagination envelope**: all list/search endpoints return `{total, count, offset, items, has_more, next_offset}`.
-- **Redis graceful degradation**: Redis is optional. On connect failure, the app logs CRITICAL and falls back to in-memory rate limiting (`limits.storage.MemoryStorage`) and in-memory caching (dict with TTL). All Redis consumers check `redis_service.is_available` before use. Health endpoint reports `redis_connected: true/false`; overall status is `"degraded"` (not `"error"`) when Redis is down.
-- **Rate limiting**: Uses the `limits` library (not slowapi) via a `RateLimit` FastAPI dependency class (`backend/app/dependencies/rate_limit.py`). Endpoints use `Depends(RateLimit(lambda: settings.RATE_LIMIT_*))` instead of decorators.
+- **Redis graceful degradation**: Redis is optional. On connect failure, the app logs CRITICAL and falls back to in-memory rate limiting (`limits.storage.MemoryStorage`) and in-memory caching (dict with TTL, bounded at 1000 entries with LRU eviction). When Redis is marked unavailable, `health_check()` retries reconnection every 30 seconds (`_RECONNECT_COOLDOWN`). All Redis consumers use the `redis_service.is_ready` property guard. Health endpoint reports `redis_connected: true/false`; overall status is `"degraded"` (not `"error"`) when Redis is down.
+- **Rate limiting**: Uses the `limits` library (not slowapi) via a `RateLimit` FastAPI dependency class (`backend/app/dependencies/rate_limit.py`). Endpoints use `Depends(RateLimit(lambda: settings.RATE_LIMIT_*))` instead of decorators. `X-Forwarded-For` is only trusted from IPs in `TRUSTED_PROXIES` (defaults to loopback) to prevent rate-limit bypass via header spoofing.
 - **Pipeline caching**: Strategy (7-day TTL, keyed by task_type+complexity) and Analyze (24-hour TTL, keyed by prompt+context flags) stages are cached. Optimize and Validate are NOT cached (non-deterministic creative output).
