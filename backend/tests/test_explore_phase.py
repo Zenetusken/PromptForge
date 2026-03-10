@@ -8,11 +8,11 @@ import pytest
 
 from app.services.codebase_explorer import (
     CodebaseContext,
-    _deduplicate_files,
     _extract_prompt_referenced_files,
     _format_files_for_llm,
     _get_anchor_paths,
     _keyword_fallback,
+    _merge_file_lists,
     _normalize_snippets,
     _normalize_string_list,
 )
@@ -50,7 +50,7 @@ class TestAnchorPaths:
 
 
 class TestDeduplicateFiles:
-    """Test file deduplication and capping."""
+    """Test file deduplication and capping (now via _merge_file_lists)."""
 
     def test_basic_dedup(self):
         ranked = [
@@ -58,7 +58,7 @@ class TestDeduplicateFiles:
             RankedFile(path="src/main.py", score=0.8),
         ]
         anchors = ["README.md", "package.json"]
-        result = _deduplicate_files(ranked, anchors, cap=10)
+        result = _merge_file_lists([], anchors, ranked, cap=10)
 
         # Anchors first, then ranked
         assert result[0] == "README.md"
@@ -67,23 +67,68 @@ class TestDeduplicateFiles:
         assert "src/main.py" in result
 
     def test_dedup_overlap(self):
-        """Overlapping files between ranked and anchors are deduplicated."""
         ranked = [
-            RankedFile(path="README.md", score=0.9),  # also an anchor
+            RankedFile(path="README.md", score=0.9),
             RankedFile(path="src/auth.py", score=0.8),
         ]
         anchors = ["README.md"]
-        result = _deduplicate_files(ranked, anchors, cap=10)
+        result = _merge_file_lists([], anchors, ranked, cap=10)
 
-        # README.md should only appear once
         assert result.count("README.md") == 1
         assert len(result) == 2
 
     def test_cap_enforced(self):
         ranked = [RankedFile(path=f"file_{i}.py", score=0.5) for i in range(50)]
         anchors = ["README.md"]
-        result = _deduplicate_files(ranked, anchors, cap=5)
+        result = _merge_file_lists([], anchors, ranked, cap=5)
         assert len(result) == 5
+
+
+class TestMergeFileLists:
+    """Test 3-tier priority file merge."""
+
+    def test_priority_order(self):
+        result = _merge_file_lists(
+            prompt_referenced=["pipeline.py"],
+            anchors=["README.md"],
+            semantic_ranked=["utils.py"],
+            cap=10,
+        )
+        assert result[0] == "pipeline.py"
+        assert result[1] == "README.md"
+        assert result[2] == "utils.py"
+
+    def test_dedup_across_tiers(self):
+        result = _merge_file_lists(
+            prompt_referenced=["README.md"],
+            anchors=["README.md", "Dockerfile"],
+            semantic_ranked=["README.md", "utils.py"],
+            cap=10,
+        )
+        assert result.count("README.md") == 1
+        assert len(result) == 3
+
+    def test_cap_trims_semantic_first(self):
+        result = _merge_file_lists(
+            prompt_referenced=["a.py", "b.py"],
+            anchors=["README.md"],
+            semantic_ranked=["c.py", "d.py", "e.py"],
+            cap=4,
+        )
+        assert len(result) == 4
+        assert "a.py" in result
+        assert "b.py" in result
+        assert "README.md" in result
+
+    def test_prompt_referenced_never_trimmed(self):
+        result = _merge_file_lists(
+            prompt_referenced=["a.py", "b.py", "c.py"],
+            anchors=["README.md"],
+            semantic_ranked=["d.py"],
+            cap=3,
+        )
+        assert len(result) == 3
+        assert all(f in result for f in ["a.py", "b.py", "c.py"])
 
 
 class TestKeywordFallback:

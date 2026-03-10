@@ -246,29 +246,39 @@ def _get_anchor_paths(tree: list[dict]) -> list[str]:
     return [p for p in sorted(tree_paths) if p.split("/")[-1] in ANCHOR_FILENAMES]
 
 
-def _deduplicate_files(
-    ranked: list[RankedFile],
+def _merge_file_lists(
+    prompt_referenced: list[str],
     anchors: list[str],
+    semantic_ranked: list[str] | list,
     cap: int,
 ) -> list[str]:
-    """Merge ranked files and anchors, deduplicate, cap at limit.
+    """Merge three file tiers with deduplication, respecting priority order.
 
-    Anchors come first (deterministic context), then ranked by score.
+    Priority: prompt_referenced > anchors > semantic_ranked.
+    Files appearing in multiple tiers count once at their highest priority.
+    Semantic results are trimmed first when the cap is hit.
     """
     seen: set[str] = set()
     result: list[str] = []
 
-    # Anchors first
+    # Tier 1: Prompt-referenced (highest priority)
+    for path in prompt_referenced:
+        if path not in seen:
+            seen.add(path)
+            result.append(path)
+
+    # Tier 2: Anchors
     for path in anchors:
         if path not in seen:
             seen.add(path)
             result.append(path)
 
-    # Then ranked files
-    for rf in ranked:
-        if rf.path not in seen:
-            seen.add(rf.path)
-            result.append(rf.path)
+    # Tier 3: Semantic ranked (fill remaining)
+    for item in semantic_ranked:
+        path = item.path if hasattr(item, "path") else str(item)
+        if path not in seen:
+            seen.add(path)
+            result.append(path)
         if len(result) >= cap:
             break
 
@@ -566,8 +576,14 @@ async def run_explore(
     # Get anchor files (README, manifests, etc.)
     anchor_paths = _get_anchor_paths(tree)
 
-    # Merge and deduplicate
-    all_file_paths = _deduplicate_files(ranked_files, anchor_paths, cap=max_files)
+    # Merge and deduplicate (3-tier priority: prompt-referenced > anchors > semantic)
+    prompt_file_paths = _extract_prompt_referenced_files(raw_prompt, tree)
+    all_file_paths = _merge_file_lists(
+        prompt_referenced=prompt_file_paths,
+        anchors=anchor_paths,
+        semantic_ranked=ranked_files,
+        cap=max_files,
+    )
 
     yield ("tool_call", {
         "tool": "semantic_retrieval",
