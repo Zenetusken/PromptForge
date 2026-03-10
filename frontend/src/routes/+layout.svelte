@@ -26,6 +26,11 @@
   import type { Snippet } from 'svelte';
   let { children }: { children: Snippet } = $props();
 
+  // Non-reactive re-entry guards — plain `let` (not $state) so they don't
+  // trigger reactive effects when set and reset correctly on HMR/remount.
+  let _profileFetching = false;
+  let _githubFetching = false;
+
   // Tab-switch forge state restoration
   $effect(() => {
     const tab = editor.activeTab;
@@ -67,7 +72,10 @@
   // Runs on first auth (OAuth) and on page reload with a valid refresh cookie.
   // Fires reactively so a freshly completed OAuth flow is immediately reflected without a hard refresh.
   $effect(() => {
-    if (!auth.isAuthenticated) return;
+    if (!auth.isAuthenticated) { _githubFetching = false; return; }
+    // Re-entry guard: token rotations re-trigger this effect; skip if already in flight.
+    if (_githubFetching) return;
+    _githubFetching = true;
     fetchGitHubAuthStatus()
       .then(async (authStatus) => {
         if (authStatus.connected && authStatus.login) {
@@ -104,17 +112,21 @@
       })
       .catch(() => {
         // Not connected or auth check failed — leave github store in default state
-      });
+      })
+      .finally(() => { _githubFetching = false; });
   });
 
   // Hydrate User profile (display_name, avatar_url, email) when authenticated.
   $effect(() => {
-    if (!auth.isAuthenticated) { user.clearProfile(); return; }
+    if (!auth.isAuthenticated) { user.clearProfile(); _profileFetching = false; return; }
+    // Re-entry guard: token rotations re-trigger this effect; skip if already in flight.
+    if (_profileFetching) return;
+    _profileFetching = true;
     user.loading = true;
     fetchAuthMe()
       .then(p => user.setProfile(p))
-      .catch(e => { user.error = (e as Error).message; toast.error('Profile load failed'); })
-      .finally(() => { user.loading = false; });
+      .catch(e => { user.error = (e as Error).message; })
+      .finally(() => { user.loading = false; _profileFetching = false; });
   });
 
   // Auth gate — false until the silent refresh attempt resolves
@@ -252,6 +264,10 @@
   }
 
   onMount(() => {
+    // Reset auth gate — ensures workbench never renders with a stale HMR-preserved
+    // authChecked=true value before the silent refresh attempt completes.
+    authChecked = false;
+
     // ── JWT token capture ──────────────────────────────────────────────
     // After GitHub OAuth redirect the backend sends the user to /?auth_complete=1.
     // We exchange the one-time server-side session token via GET /auth/token —

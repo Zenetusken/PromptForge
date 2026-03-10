@@ -55,8 +55,17 @@ class AuthStore {
   async refresh(): Promise<string | null> {
     if (this.refreshing) return this.accessToken;
     this.refreshing = true;
+    // Abort the request if the backend doesn't respond within 8 s.
+    // Without a timeout, a hard reload while the backend is starting hangs
+    // indefinitely, blocking the authChecked gate and keeping the loading screen up.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8_000);
     try {
-      const res = await fetch(REFRESH_PATH, { method: 'POST', credentials: 'include' });
+      const res = await fetch(REFRESH_PATH, {
+        method: 'POST',
+        credentials: 'include',
+        signal: controller.signal
+      });
       if (!res.ok) {
         this.clearToken();
         return null;
@@ -68,6 +77,7 @@ class AuthStore {
       this.clearToken();
       return null;
     } finally {
+      clearTimeout(timeoutId);
       this.refreshing = false;
     }
   }

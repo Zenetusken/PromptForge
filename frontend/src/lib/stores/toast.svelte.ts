@@ -16,10 +16,21 @@ export interface ToastItem {
 const MAX_VISIBLE = 3;
 let nextId = 0;
 
+// Deduplication: tracks the last-shown timestamp per `type:message` key.
+// Module-level (not reactive) so it persists across renders without triggering effects.
+const _recentMessages = new Map<string, number>();
+const DEDUP_WINDOW_MS = 5_000;
+
 class ToastStore {
   toasts = $state<ToastItem[]>([]);
 
   show(message: string, type: ToastType = 'info', duration = 5000, action?: ToastAction) {
+    // Suppress duplicate messages shown within the deduplication window.
+    const dedupeKey = `${type}:${message}`;
+    const lastShown = _recentMessages.get(dedupeKey) ?? 0;
+    if (Date.now() - lastShown < DEDUP_WINDOW_MS) return;
+    _recentMessages.set(dedupeKey, Date.now());
+
     const id = nextId++;
     const toast: ToastItem = { id, message, type, dismissing: false, action };
 
