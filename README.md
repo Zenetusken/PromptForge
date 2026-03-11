@@ -67,13 +67,12 @@ We tag releases when meaningful milestones land. Watch the repo if you want to f
 
 ---
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Python 3.14](https://img.shields.io/badge/python-3.14-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Claude](https://img.shields.io/badge/Powered_by-Claude-cc785c.svg?logo=anthropic&logoColor=white)](https://www.anthropic.com/claude)
-[![MCP](https://img.shields.io/badge/MCP-enabled-6366f1.svg)](docs/MCP.md)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg?logo=docker&logoColor=white)](docker-compose.yml)
-
+[![License](https://img.shields.io/badge/Apache_2.0-blue.svg?logo=apache&logoColor=white)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs_Welcome-brightgreen.svg?logo=git&logoColor=white)](CONTRIBUTING.md)
+[![Python](https://img.shields.io/badge/Python_3.14-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Claude](https://img.shields.io/badge/Powered_by_Claude-cc785c.svg?logo=anthropic&logoColor=white)](https://www.anthropic.com/claude)
+[![MCP](https://img.shields.io/badge/MCP_Enabled-6366f1.svg?logo=anthropic&logoColor=white)](docs/MCP.md)
+[![Docker](https://img.shields.io/badge/Docker_Ready-2496ED.svg?logo=docker&logoColor=white)](docker-compose.yml)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00.svg?logo=svelte&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS_4-06B6D4.svg?logo=tailwindcss&logoColor=white)
