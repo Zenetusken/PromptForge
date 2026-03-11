@@ -15,6 +15,7 @@ from app.services.cache_service import get_cache
 from app.services.context_builders import (
     build_codebase_summary,
     format_file_contexts,
+    format_instructions,
     format_url_contexts,
 )
 
@@ -73,11 +74,7 @@ async def run_analyze(
     user_message += format_url_contexts(url_fetched_contexts)
 
     # N37: inject output constraints so analyzer can flag incompatibilities
-    if instructions:
-        constraint_block = "\n".join(f"  - {i}" for i in instructions[:10])
-        user_message += (
-            f"\n\nUser-specified output constraints:\n{constraint_block}"
-        )
+    user_message += format_instructions(instructions)
 
     model = MODEL_ROUTING["analyze"]
 

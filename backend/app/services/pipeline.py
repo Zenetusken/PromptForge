@@ -6,12 +6,17 @@ Runs the full optimization pipeline (up to 5 stages) and yields SSE events.
 import json
 import logging
 import time
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 
 from app.config import settings
 from app.providers.base import MODEL_ROUTING, LLMProvider
 from app.services.analyzer import run_analyze
 from app.services.codebase_explorer import run_explore
+from app.services.context_builders import (
+    MAX_FILE_CONTEXTS,
+    MAX_INSTRUCTIONS,
+    MAX_URL_CONTEXTS,
+)
 from app.services.optimizer import run_optimize
 from app.services.strategy import run_strategy
 from app.services.validator import run_validate
@@ -23,7 +28,16 @@ LOW_SCORE_THRESHOLD = 5
 
 
 def _estimate_tokens(text: str) -> int:
-    """Estimate token count from text (~4 chars per token)."""
+    """Estimate token count from text using the ~4 chars/token heuristic.
+
+    This is an approximation. Actual token counts vary by model tokenizer
+    (Claude's tokenizer averages ~3.5-4.5 chars/token for English text).
+    The ``token_count`` values reported in stage events should be treated as
+    order-of-magnitude estimates, not precise billing figures.
+
+    TODO: When provider responses include ``usage.input_tokens`` /
+    ``usage.output_tokens``, reconcile against those for accurate reporting.
+    """
     if not text:
         return 0
     return max(1, len(text) // 4)
@@ -39,14 +53,14 @@ async def run_pipeline(
     provider: LLMProvider,
     raw_prompt: str,
     optimization_id: str,
-    strategy_override: Optional[str] = None,
-    repo_full_name: Optional[str] = None,
-    repo_branch: Optional[str] = None,
-    session_id: Optional[str] = None,
-    github_token: Optional[str] = None,
-    file_contexts: Optional[list] = None,
-    url_fetched_contexts: Optional[list] = None,
-    instructions: Optional[list] = None,
+    strategy_override: str | None = None,
+    repo_full_name: str | None = None,
+    repo_branch: str | None = None,
+    session_id: str | None = None,
+    github_token: str | None = None,
+    file_contexts: list[dict] | None = None,
+    url_fetched_contexts: list[dict] | None = None,
+    instructions: list[str] | None = None,
 ) -> AsyncGenerator[tuple, None]:
     """Run the full optimization pipeline, yielding (event_type, event_data) tuples.
 
@@ -132,17 +146,18 @@ async def run_pipeline(
     # ---- Context truncation ----
     # Enforce injection caps BEFORE stages run. Slices happen here so every
     # downstream stage receives already-truncated lists — no silent over-injection.
+    # Cap constants live in context_builders (single source of truth).
     _orig_files = len(file_contexts or [])
     _orig_urls  = len(url_fetched_contexts or [])
     _orig_instr = len(instructions or [])
 
-    file_contexts        = list(file_contexts or [])[:5]
-    url_fetched_contexts = list(url_fetched_contexts or [])[:3]
-    instructions         = list(instructions or [])[:10]
+    file_contexts        = list(file_contexts or [])[:MAX_FILE_CONTEXTS]
+    url_fetched_contexts = list(url_fetched_contexts or [])[:MAX_URL_CONTEXTS]
+    instructions         = list(instructions or [])[:MAX_INSTRUCTIONS]
 
-    _dropped_files = max(0, _orig_files - 5)
-    _dropped_urls  = max(0, _orig_urls  - 3)
-    _dropped_instr = max(0, _orig_instr - 10)
+    _dropped_files = max(0, _orig_files - MAX_FILE_CONTEXTS)
+    _dropped_urls  = max(0, _orig_urls  - MAX_URL_CONTEXTS)
+    _dropped_instr = max(0, _orig_instr - MAX_INSTRUCTIONS)
     if _dropped_files or _dropped_urls or _dropped_instr:
         yield ("context_warning", {
             "dropped_files": _dropped_files,
@@ -363,7 +378,9 @@ async def run_pipeline(
     # On the second retry (retry_count >= 1), focus_areas is narrowed to the
     # single lowest-scoring dimension instead of all failing areas.
     retry_count = 0
-    overall_score = validation.get("scores", validation).get("overall_score", 10)
+    # Use empty dict fallback (not validation itself) so the access pattern is
+    # consistent with the retry-narrowing block at the bottom of the loop.
+    overall_score = validation.get("scores", {}).get("overall_score", 10)
     is_improvement = validation.get("is_improvement", False)
     while (
         retry_count < settings.MAX_PIPELINE_RETRIES
@@ -403,6 +420,7 @@ async def run_pipeline(
             focus_areas = [lowest_dim]
             logger.info(f"Second retry: narrowing focus to lowest dimension '{lowest_dim}'")
 
+        _retry_active_stage = "optimize"  # Track which stage is active for error reporting
         try:
             # Re-run optimize with adjusted constraints
             yield ("stage", {"stage": "optimize", "status": "started"})
@@ -457,6 +475,7 @@ async def run_pipeline(
                 return
 
             # Re-run validate
+            _retry_active_stage = "validate"
             yield ("stage", {"stage": "validate", "status": "started"})
             start = time.time()
 
@@ -494,11 +513,17 @@ async def run_pipeline(
             })
 
             # Update loop conditions for next iteration
-            overall_score = validation.get("scores", validation).get("overall_score", 10)
+            overall_score = validation.get("scores", {}).get("overall_score", 10)
             is_improvement = validation.get("is_improvement", False)
 
         except Exception as e:
-            logger.warning(f"Retry {retry_count + 1} failed: {e}. Using previous validation result.")
+            logger.warning(f"Retry {retry_count + 1} failed during {_retry_active_stage}: {e}. "
+                           "Using previous validation result.")
+            yield ("error", {
+                "stage": _retry_active_stage,
+                "error": f"Retry {retry_count + 1} failed: {e}",
+                "recoverable": True,
+            })
             break
 
         retry_count += 1

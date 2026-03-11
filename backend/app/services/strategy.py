@@ -16,6 +16,7 @@ from app.services.context_builders import (
     build_analysis_summary,
     build_codebase_summary,
     format_file_contexts,
+    format_instructions,
     format_url_contexts,
 )
 from app.services.strategy_selector import heuristic_strategy_fallback
@@ -81,11 +82,7 @@ async def run_strategy(
     user_message += format_file_contexts(file_contexts)
     user_message += format_url_contexts(url_fetched_contexts)
 
-    if instructions:
-        constraint_block = "\n".join(f"  - {i}" for i in instructions[:10])
-        user_message += (
-            f"\n\nUser-specified output constraints:\n{constraint_block}"
-        )
+    user_message += format_instructions(instructions)
 
     model = MODEL_ROUTING["strategy"]
 

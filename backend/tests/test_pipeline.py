@@ -1,7 +1,10 @@
-"""Tests for pipeline.py context propagation (P-prop).
+"""Tests for pipeline.py — context propagation, retry logic, and context builders.
 
-These tests verify that file_contexts, url_fetched_contexts, and instructions
-are forwarded from run_pipeline() to run_optimize(), not just to run_analyze().
+P-prop  — context forwarding from run_pipeline to downstream stages
+P-sentinel — optimizer failure sentinel gating
+P-default — default analysis values
+P-retry-err — retry exception error event emission
+P-ctx — context_builders edge cases
 """
 from __future__ import annotations
 
@@ -312,3 +315,233 @@ async def test_empty_analysis_defaults_to_general():
 
     # Strategy should have received the defaulted analysis
     assert received_analysis.get("task_type") == "general"
+
+
+# ---------------------------------------------------------------------------
+# P-retry-err-1: retry exception emits error event (not silent break)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_retry_exception_emits_error_event():
+    """When the retry validate stage raises, an error event must be emitted.
+
+    Previously the except handler only logged + broke, leaving the client
+    with a dangling 'validate started' stage and no error signal.
+    """
+    from app.services.pipeline import run_pipeline
+
+    provider = MagicMock()
+
+    async def mock_analyze(*args, **kwargs):
+        yield ("analysis", {
+            "task_type": "coding",
+            "complexity": "moderate",
+            "weaknesses": [],
+            "strengths": [],
+            "recommended_frameworks": [],
+        })
+
+    async def mock_strategy(*args, **kwargs):
+        yield ("strategy", {
+            "primary_framework": "CO-STAR",
+            "secondary_frameworks": [],
+            "rationale": "test",
+            "approach_notes": "",
+        })
+
+    async def mock_optimize(*args, **kwargs):
+        yield ("optimization", {
+            "optimized_prompt": "some prompt",
+            "changes_made": [],
+            "framework_applied": "CO-STAR",
+            "optimization_notes": "",
+        })
+
+    validate_call_count = 0
+
+    async def mock_validate(*args, **kwargs):
+        nonlocal validate_call_count
+        validate_call_count += 1
+        if validate_call_count == 1:
+            # First call: low score to trigger retry
+            yield ("validation", {
+                "scores": {
+                    "clarity_score": 3,
+                    "specificity_score": 3,
+                    "structure_score": 3,
+                    "faithfulness_score": 3,
+                    "conciseness_score": 3,
+                    "overall_score": 3,
+                },
+                "is_improvement": False,
+                "verdict": "needs work",
+                "issues": ["too vague"],
+            })
+        else:
+            # Second call (retry): raise to simulate provider failure
+            raise RuntimeError("Provider connection lost")
+            yield  # unreachable — makes this an async generator function
+
+    events = []
+    with patch("app.services.pipeline.run_analyze", mock_analyze), \
+         patch("app.services.pipeline.run_strategy", mock_strategy), \
+         patch("app.services.pipeline.run_optimize", mock_optimize), \
+         patch("app.services.pipeline.run_validate", mock_validate), \
+         patch("app.services.pipeline.settings") as mock_settings:
+        mock_settings.MAX_PIPELINE_RETRIES = 1
+        mock_settings.ANALYZE_TIMEOUT_SECONDS = 30
+        mock_settings.STRATEGY_TIMEOUT_SECONDS = 30
+
+        async for event_type, event_data in run_pipeline(
+            provider=provider,
+            raw_prompt="Test prompt",
+            optimization_id="retry-err-test",
+        ):
+            events.append((event_type, event_data))
+
+    # An error event must be emitted for the failed retry
+    error_events = [(et, ed) for et, ed in events if et == "error"]
+    retry_errors = [ed for _, ed in error_events if ed.get("recoverable") is True]
+    assert len(retry_errors) >= 1, \
+        "Retry exception must emit a recoverable error event"
+    assert "validate" in retry_errors[0]["stage"], \
+        "Error event must identify the validate stage"
+
+
+# ---------------------------------------------------------------------------
+# P-ctx-1: format_file_contexts filters None and empty content
+# ---------------------------------------------------------------------------
+
+def test_format_file_contexts_filters_none_content():
+    """format_file_contexts must skip items with None or empty content."""
+    from app.services.context_builders import format_file_contexts
+
+    contexts = [
+        {"name": "valid.py", "content": "class Foo: pass"},
+        {"name": "none_content.py", "content": None},
+        {"name": "empty_content.py", "content": ""},
+        {"name": "missing_content.py"},  # no content key at all
+    ]
+    result = format_file_contexts(contexts)
+
+    # Only the valid item should appear
+    assert "valid.py" in result
+    assert "class Foo: pass" in result
+    assert "none_content.py" not in result
+    assert "empty_content.py" not in result
+    assert "missing_content.py" not in result
+
+
+def test_format_file_contexts_empty_input():
+    """format_file_contexts returns empty string for None and empty list."""
+    from app.services.context_builders import format_file_contexts
+
+    assert format_file_contexts(None) == ""
+    assert format_file_contexts([]) == ""
+
+
+def test_format_file_contexts_all_empty_returns_empty():
+    """format_file_contexts returns empty string when all items have empty content."""
+    from app.services.context_builders import format_file_contexts
+
+    contexts = [
+        {"name": "a.py", "content": ""},
+        {"name": "b.py", "content": None},
+    ]
+    assert format_file_contexts(contexts) == ""
+
+
+# ---------------------------------------------------------------------------
+# P-ctx-2: format_instructions shared helper
+# ---------------------------------------------------------------------------
+
+def test_format_instructions_basic():
+    """format_instructions produces the expected block."""
+    from app.services.context_builders import format_instructions
+
+    result = format_instructions(["Use Python", "Be concise"])
+    assert "User-specified output constraints:" in result
+    assert "  - Use Python" in result
+    assert "  - Be concise" in result
+
+
+def test_format_instructions_empty():
+    """format_instructions returns empty string for None and empty list."""
+    from app.services.context_builders import format_instructions
+
+    assert format_instructions(None) == ""
+    assert format_instructions([]) == ""
+
+
+def test_format_instructions_custom_label():
+    """format_instructions supports custom label."""
+    from app.services.context_builders import format_instructions
+
+    result = format_instructions(["constraint"], label="Custom label")
+    assert "Custom label:" in result
+    assert "  - constraint" in result
+
+
+def test_format_instructions_caps_at_10():
+    """format_instructions caps items at MAX_INSTRUCTIONS (10)."""
+    from app.services.context_builders import format_instructions
+
+    items = [f"item_{i}" for i in range(15)]
+    result = format_instructions(items)
+    assert "item_9" in result
+    assert "item_10" not in result
+
+
+# ---------------------------------------------------------------------------
+# P-ctx-3: context builder edge cases
+# ---------------------------------------------------------------------------
+
+def test_build_codebase_summary_none_returns_empty():
+    """build_codebase_summary returns empty string for None input."""
+    from app.services.context_builders import build_codebase_summary
+
+    assert build_codebase_summary(None) == ""
+    assert build_codebase_summary({}) == ""
+
+
+def test_build_analysis_summary_quality_flags():
+    """build_analysis_summary emits correct caveats for quality flags."""
+    from app.services.context_builders import build_analysis_summary
+
+    fallback = build_analysis_summary({"analysis_quality": "fallback"})
+    assert "fell back to defaults" in fallback
+
+    failed = build_analysis_summary({"analysis_quality": "failed"})
+    assert "failed completely" in failed
+
+    # 'full' and 'cached' should NOT produce warnings
+    full = build_analysis_summary({"analysis_quality": "full", "task_type": "coding"})
+    assert "fell back" not in full
+    assert "failed" not in full
+
+
+def test_build_analysis_summary_codebase_informed():
+    """build_analysis_summary emits correct notes for codebase_informed values."""
+    from app.services.context_builders import build_analysis_summary
+
+    partial = build_analysis_summary({"codebase_informed": "partial"})
+    assert "partially informed" in partial
+
+    failed = build_analysis_summary({"codebase_informed": "failed"})
+    assert "no codebase grounding" in failed
+
+    no_cb = build_analysis_summary({"codebase_informed": False})
+    assert "no codebase grounding" in no_cb
+
+    # True should NOT produce a warning
+    with_cb = build_analysis_summary({"codebase_informed": True, "task_type": "coding"})
+    assert "partially" not in with_cb
+    assert "grounding" not in with_cb
+
+
+def test_build_strategy_summary_empty_returns_empty():
+    """build_strategy_summary returns empty string for None and empty dict."""
+    from app.services.context_builders import build_strategy_summary
+
+    assert build_strategy_summary(None) == ""
+    assert build_strategy_summary({}) == ""

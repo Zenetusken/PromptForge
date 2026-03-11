@@ -209,25 +209,31 @@ def build_strategy_summary(strategy: dict) -> str:
 
 # ── Shared context injection helpers ──────────────────────────────────────────
 
-# Limits shared across analyzer and optimizer to keep prompts consistent.
-_MAX_FILE_CONTEXTS = 5
-_MAX_URL_CONTEXTS = 3
-_MAX_CONTENT_CHARS = 1500
+# Public caps — used by pipeline.py for global truncation and by the format_*
+# helpers below for per-call safety.  Keeping them in one place prevents
+# silent divergence when a cap is changed.
+MAX_FILE_CONTEXTS = 5
+MAX_URL_CONTEXTS = 3
+MAX_INSTRUCTIONS = 10
+_MAX_CONTENT_CHARS = 1500  # internal — only affects formatting, not pipeline caps
 
 
 def format_file_contexts(file_contexts: list[dict] | None) -> str:
     """Format attached file contexts into an injection block.
 
     Returns empty string when there are no file contexts.
+    Skips items with missing or empty content (mirrors format_url_contexts).
     """
     if not file_contexts:
         return ""
     blocks = []
-    for fc in file_contexts[:_MAX_FILE_CONTEXTS]:
+    for fc in file_contexts[:MAX_FILE_CONTEXTS]:
+        if not fc.get("content"):
+            continue
         name = fc.get("name", "file")
-        content = str(fc.get("content", ""))[:_MAX_CONTENT_CHARS]
+        content = str(fc["content"])[:_MAX_CONTENT_CHARS]
         blocks.append(f"[{name}]\n{content}")
-    return "\n\nAttached files:\n" + "\n\n".join(blocks)
+    return ("\n\nAttached files:\n" + "\n\n".join(blocks)) if blocks else ""
 
 
 def format_url_contexts(url_fetched_contexts: list[dict] | None) -> str:
@@ -238,10 +244,23 @@ def format_url_contexts(url_fetched_contexts: list[dict] | None) -> str:
     if not url_fetched_contexts:
         return ""
     blocks = []
-    for uc in url_fetched_contexts[:_MAX_URL_CONTEXTS]:
+    for uc in url_fetched_contexts[:MAX_URL_CONTEXTS]:
         if uc.get("error") or not uc.get("content"):
             continue
         url = uc.get("url", "url")
-        content = str(uc.get("content", ""))[:_MAX_CONTENT_CHARS]
+        content = str(uc["content"])[:_MAX_CONTENT_CHARS]
         blocks.append(f"[{url}]\n{content}")
     return ("\n\nReferenced URLs:\n" + "\n\n".join(blocks)) if blocks else ""
+
+
+def format_instructions(instructions: list[str] | None, *, label: str = "User-specified output constraints") -> str:
+    """Format user instructions into an injection block.
+
+    Returns empty string when there are no instructions.
+    Caps at :data:`MAX_INSTRUCTIONS` items — the same constant the pipeline
+    uses for global context truncation.
+    """
+    if not instructions:
+        return ""
+    constraint_block = "\n".join(f"  - {i}" for i in instructions[:MAX_INSTRUCTIONS])
+    return f"\n\n{label}:\n{constraint_block}"

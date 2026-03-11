@@ -72,3 +72,4 @@ feature_list_gen.py
 .claude_settings.json
 generations/
 docs/marketplace-webhook.md
+docs/superpowers/

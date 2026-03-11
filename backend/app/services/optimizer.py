@@ -18,6 +18,7 @@ from app.services.context_builders import (
     build_codebase_summary,
     build_strategy_summary,
     format_file_contexts,
+    format_instructions,
     format_url_contexts,
 )
 
@@ -87,12 +88,11 @@ async def run_optimize(
         )
 
     # N25: prepend instruction constraints so they take highest priority
-    if instructions:
-        constraint_block = "\n".join(f"  - {i}" for i in instructions[:10])
-        user_message = (
-            f"User-specified output constraints (MUST follow):\n{constraint_block}\n\n"
-            + user_message
-        )
+    instr_block = format_instructions(
+        instructions, label="User-specified output constraints (MUST follow)"
+    )
+    if instr_block:
+        user_message = instr_block.lstrip("\n") + "\n\n" + user_message
 
     model = MODEL_ROUTING["optimize"]
     framework_applied = strategy.get("primary_framework", "")
