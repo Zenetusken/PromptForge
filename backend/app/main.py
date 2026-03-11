@@ -1,6 +1,6 @@
 """FastAPI application entry point for Project Synthesis.
 
-Creates the FastAPI app with title="Project Synthesis API", version="2.0.0",
+Creates the FastAPI app with title="Project Synthesis API",
 CORS middleware allowing http://localhost:5199, includes all routers
 with /api prefix, lifespan handler that initializes database on startup,
 and mounts /api/docs for Swagger UI.
@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 
+from app._version import __version__
 from app.config import settings
 from app.database import create_tables
 from app.mcp_server import HAS_MCP, create_mcp_server, make_websocket_asgi
@@ -26,6 +27,7 @@ from app.routers.auth import router as jwt_auth_router
 from app.routers.github import router as github_router
 from app.routers.github_config import router as github_config_router
 from app.routers.onboarding import router as onboarding_router
+from app.routers.provider_config import router as provider_config_router
 from app.routers.providers import router as providers_router
 from app.routers.settings import router as settings_router
 from app.services.cleanup import cleanup_loop
@@ -146,13 +148,23 @@ async def lifespan(app: FastAPI):
     # Load persisted GitHub App credentials (hot-reload before first request)
     load_credentials_from_file()
 
-    # Detect LLM provider (raises ProviderNotAvailableError if none found)
+    # Load persisted API key (if any) before provider detection
+    from app.services.api_credentials_service import load_api_key_from_file
+
+    load_api_key_from_file()
+
+    # Detect LLM provider — graceful degradation if none available.
+    # The pipeline returns 503 when provider is None (optimize.py:58),
+    # health reports provider: "none", and providers router shows "unavailable".
     try:
         provider = await detect_provider()
-    except ProviderNotAvailableError as e:
-        logger.error("LLM Provider detection failed:\n%s", e)
-        raise
-    logger.info("LLM Provider: %s", provider.name)
+        logger.info("LLM Provider: %s", provider.name)
+    except ProviderNotAvailableError:
+        logger.warning(
+            "No LLM provider available — pipeline disabled until "
+            "an API key is configured via UI or environment variable"
+        )
+        provider = None
 
     # Store provider on app state for access elsewhere
     app.state.provider = provider
@@ -163,7 +175,7 @@ async def lifespan(app: FastAPI):
     logger.info("Background cleanup task started")
 
     # B2: Mount MCP server — provider injected so tools never call detect_provider()
-    if HAS_MCP:
+    if HAS_MCP and provider is not None:
         mcp = create_mcp_server(provider)
         _mcp_http_app = mcp.streamable_http_app()
         _mcp_ws_asgi = make_websocket_asgi(mcp)
@@ -178,8 +190,17 @@ async def lifespan(app: FastAPI):
         async with mcp.session_manager.run():
             logger.info("Project Synthesis ready")
             yield
+    elif not HAS_MCP:
+        logger.info(
+            "Project Synthesis ready (MCP not available — "
+            "install fastmcp to enable)"
+        )
+        yield
     else:
-        logger.info("Project Synthesis ready (MCP not available)")
+        logger.info(
+            "Project Synthesis ready (MCP disabled — "
+            "no LLM provider configured)"
+        )
         yield
 
     # Shutdown
@@ -199,7 +220,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Project Synthesis API",
-    version="2.0.0",
+    version=__version__,
     description="Multi-Agent Development Platform",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -259,6 +280,7 @@ app.include_router(github_router)
 app.include_router(settings_router)
 app.include_router(jwt_auth_router)
 app.include_router(github_config_router)
+app.include_router(provider_config_router)
 app.include_router(onboarding_router)
 
 if settings.TESTING:
@@ -288,7 +310,7 @@ async def root():
     """Root endpoint returning API info."""
     return {
         "app": "Project Synthesis API",
-        "version": "2.0.0",
+        "version": __version__,
         "docs": "/api/docs",
     }
 

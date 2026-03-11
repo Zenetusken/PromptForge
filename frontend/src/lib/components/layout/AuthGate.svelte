@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { workbench } from '$lib/stores/workbench.svelte';
-  import { getGitHubLoginUrl, saveGitHubAppConfig } from '$lib/api/client';
+  import { getGitHubLoginUrl, saveGitHubAppConfig, getProviderConfig, saveApiKey, type ProviderConfigResponse } from '$lib/api/client';
 
   // ── Clipboard state ───────────────────────────────────────────────────────
   let copied = $state<string | null>(null);
@@ -17,7 +18,42 @@
     window.location.href = getGitHubLoginUrl();
   }
 
-  // ── Credential form state ─────────────────────────────────────────────────
+  // ── Provider config state ─────────────────────────────────────────────────
+  let providerConfig = $state<ProviderConfigResponse | null>(null);
+  let needsApiKey = $derived(
+    providerConfig !== null && !providerConfig.provider_available
+  );
+  let isBootstrap = $derived(
+    providerConfig !== null && providerConfig.bootstrap_mode
+  );
+
+  // ── API key form state ────────────────────────────────────────────────────
+  let apiKey = $state('');
+  let showApiKey = $state(false);
+  let savingApiKey = $state(false);
+  let apiKeyError = $state('');
+  let apiKeySaved = $state(false);
+
+  async function handleSaveApiKey() {
+    apiKeyError = '';
+    savingApiKey = true;
+    try {
+      const result = await saveApiKey(apiKey.trim());
+      if (result.provider_available) {
+        apiKeySaved = true;
+        // Refresh provider config
+        providerConfig = await getProviderConfig();
+      } else {
+        apiKeyError = 'Key saved but provider could not be initialized. Check the key.';
+      }
+    } catch (err) {
+      apiKeyError = (err as Error).message;
+    } finally {
+      savingApiKey = false;
+    }
+  }
+
+  // ── GitHub credential form state ──────────────────────────────────────────
   let clientId = $state('');
   let clientSecret = $state('');
   let showSecret = $state(false);
@@ -41,6 +77,15 @@
   // Derive from current origin so it's correct in both dev (port 5199 via
   // Vite proxy) and production (port 80 via nginx reverse proxy).
   const CALLBACK_URL = `${window.location.origin}/auth/github/callback`;
+
+  // Fetch provider config on mount to determine bootstrap state
+  onMount(async () => {
+    try {
+      providerConfig = await getProviderConfig();
+    } catch {
+      // Backend not reachable — fall through to existing behaviour
+    }
+  });
 </script>
 
 <!-- ── Full-screen centred card ──────────────────────────────────────────── -->
@@ -68,7 +113,242 @@
     <!-- ── Divider ────────────────────────────────────────────────────────── -->
     <div class="border-t border-border-subtle"></div>
 
-    {#if workbench.githubOAuthEnabled}
+    {#if isBootstrap && needsApiKey}
+
+      <!-- ══════════════════════════════════════════════════════════════════
+           FULL BOOTSTRAP — No provider AND no GitHub OAuth configured.
+           Combined flow: API key first, then GitHub App credentials.
+           ══════════════════════════════════════════════════════════════════ -->
+      <div class="px-8 py-6" data-testid="auth-gate-bootstrap">
+
+        <!-- Status badge -->
+        <div class="flex items-center gap-2.5 mb-5">
+          <span class="font-mono text-[8px] uppercase tracking-[0.14em] text-neon-red border border-neon-red/35 px-1.5 py-[3px] leading-none">
+            SETUP REQUIRED
+          </span>
+          <span class="font-mono text-[9px] text-text-dim">First-time configuration</span>
+        </div>
+
+        <!-- ── Step 01: API Key ─────────────────────────────────────────── -->
+        <div class="step-row">
+          <span class="step-num">01</span>
+          <div class="step-body">
+            <div class="step-title">Anthropic API Key</div>
+            <p class="font-mono text-[9px] text-text-dim leading-snug mb-2">
+              Required to power the optimization pipeline.
+            </p>
+
+            {#if apiKeySaved}
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 bg-neon-green shrink-0"></span>
+                <span class="font-mono text-[9px] text-neon-green">API key configured</span>
+              </div>
+            {:else}
+              <div class="relative">
+                <input
+                  id="auth-api-key"
+                  type={showApiKey ? 'text' : 'password'}
+                  placeholder="sk-ant-..."
+                  bind:value={apiKey}
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="w-full bg-bg-input border border-border-subtle px-2.5 py-1.5 pr-8
+                         font-mono text-[11px] text-text-primary
+                         focus:outline-none focus:border-neon-cyan/30
+                         placeholder:text-text-dim/40
+                         transition-colors duration-150"
+                />
+                <button
+                  type="button"
+                  class="absolute right-2 top-1/2 -translate-y-1/2
+                         text-text-dim hover:text-text-secondary
+                         transition-colors duration-150"
+                  onclick={() => { showApiKey = !showApiKey; }}
+                  aria-label={showApiKey ? 'Hide key' : 'Show key'}
+                >
+                  {#if showApiKey}
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                    </svg>
+                  {:else}
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                  {/if}
+                </button>
+              </div>
+              <button
+                class="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2
+                  bg-neon-cyan text-bg-primary border border-neon-cyan
+                  hover:bg-[#00cce6] active:bg-[#00b8cf]
+                  transition-colors duration-150
+                  font-mono text-[10px] tracking-[0.07em] uppercase
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+                onclick={handleSaveApiKey}
+                disabled={savingApiKey || !apiKey.trim()}
+              >
+                {savingApiKey ? 'SAVING...' : 'SAVE API KEY'}
+              </button>
+              {#if apiKeyError}
+                <p class="font-mono text-[9px] text-neon-red mt-1.5 leading-snug">{apiKeyError}</p>
+              {/if}
+            {/if}
+          </div>
+        </div>
+
+        <div class="step-divider"></div>
+
+        <!-- ── Step 02: Create GitHub App ─────────────────────────────────── -->
+        <div class="step-row">
+          <span class="step-num">02</span>
+          <div class="step-body">
+            <div class="step-title">GitHub App (Authentication)</div>
+            <a
+              href="https://github.com/organizations/project-synthesis/settings/apps/new"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="font-mono text-[9px] text-neon-cyan/70 hover:text-neon-cyan
+                transition-colors duration-150 inline-flex items-center gap-1 mt-0.5 mb-2"
+            >
+              <svg class="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+              </svg>
+              github.com/organizations/.../settings/apps/new
+            </a>
+            <div class="bg-bg-input border border-border-subtle px-2.5 py-1.5">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-[8px] text-text-dim/60 uppercase tracking-[0.08em] shrink-0">Callback URL</span>
+                <span class="font-mono text-[8px] text-text-secondary flex-1 truncate">
+                  {CALLBACK_URL}
+                </span>
+                <button
+                  class="copy-pill {copied === 'cb' ? 'copied' : ''}"
+                  onclick={() => copy(CALLBACK_URL, 'cb')}
+                  title="Copy callback URL"
+                >
+                  {copied === 'cb' ? '✓' : 'COPY'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="step-divider"></div>
+
+        <!-- ── Step 03: Enter GitHub credentials ──────────────────────────── -->
+        <div class="step-row">
+          <span class="step-num">03</span>
+          <div class="step-body">
+            <div class="step-title">Enter GitHub Credentials</div>
+
+            <div class="mt-2">
+              <label
+                for="auth-client-id"
+                class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-1"
+              >
+                GitHub App Client ID
+              </label>
+              <input
+                id="auth-client-id"
+                type="text"
+                placeholder="Iv1.xxxxxxxxxxxxxxxxxxxx"
+                bind:value={clientId}
+                autocomplete="off"
+                spellcheck="false"
+                class="w-full bg-bg-input border border-border-subtle px-2.5 py-1.5
+                       font-mono text-[11px] text-text-primary
+                       focus:outline-none focus:border-neon-cyan/30
+                       placeholder:text-text-dim/40
+                       transition-colors duration-150"
+              />
+            </div>
+
+            <div class="mt-2">
+              <label
+                for="auth-client-secret"
+                class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-1"
+              >
+                GitHub App Client Secret
+              </label>
+              <div class="relative">
+                <input
+                  id="auth-client-secret"
+                  type={showSecret ? 'text' : 'password'}
+                  placeholder="••••••••••••••••••••••••••••••••"
+                  bind:value={clientSecret}
+                  autocomplete="new-password"
+                  spellcheck="false"
+                  class="w-full bg-bg-input border border-border-subtle px-2.5 py-1.5 pr-8
+                         font-mono text-[11px] text-text-primary
+                         focus:outline-none focus:border-neon-cyan/30
+                         placeholder:text-text-dim/40
+                         transition-colors duration-150"
+                />
+                <button
+                  type="button"
+                  class="absolute right-2 top-1/2 -translate-y-1/2
+                         text-text-dim hover:text-text-secondary
+                         transition-colors duration-150"
+                  onclick={() => { showSecret = !showSecret; }}
+                  title={showSecret ? 'Hide secret' : 'Show secret'}
+                  aria-label={showSecret ? 'Hide client secret' : 'Show client secret'}
+                >
+                  {#if showSecret}
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                    </svg>
+                  {:else}
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                  {/if}
+                </button>
+              </div>
+            </div>
+
+            <button
+              class="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5
+                bg-neon-cyan text-bg-primary border border-neon-cyan
+                hover:bg-[#00cce6] active:bg-[#00b8cf]
+                transition-colors duration-150
+                font-mono text-[11px] tracking-[0.07em] uppercase
+                disabled:opacity-40 disabled:cursor-not-allowed"
+              onclick={handleSave}
+              disabled={saving || !clientId.trim() || !clientSecret.trim()}
+              data-testid="auth-gate-save"
+            >
+              {saving ? 'SAVING...' : 'SAVE & CONNECT'}
+            </button>
+
+            {#if error}
+              <p class="font-mono text-[9px] text-neon-red mt-2 leading-snug">
+                {error}
+              </p>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Footer links -->
+        <div class="mt-5 pt-4 border-t border-border-subtle flex items-center justify-between">
+          <span class="font-mono text-[8px] text-text-dim/50 uppercase tracking-[0.1em]">
+            zenresources.net
+          </span>
+          <a
+            href="https://github.com/organizations/project-synthesis/settings/apps"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-mono text-[8px] text-text-dim/50 hover:text-text-dim
+              transition-colors duration-150 uppercase tracking-[0.1em]"
+          >
+            Manage Apps →
+          </a>
+        </div>
+
+      </div>
+
+    {:else if workbench.githubOAuthEnabled}
 
       <!-- ══════════════════════════════════════════════════════════════════
            CONFIGURED STATE — clean OAuth login
@@ -100,7 +380,8 @@
     {:else}
 
       <!-- ══════════════════════════════════════════════════════════════════
-           UNCONFIGURED STATE — live credential form
+           UNCONFIGURED STATE — GitHub App credential form only
+           (provider is available but no GitHub OAuth)
            ══════════════════════════════════════════════════════════════════ -->
       <div class="px-8 py-6" data-testid="auth-gate-unconfigured">
 
@@ -127,7 +408,7 @@
               <svg class="w-2.5 h-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
               </svg>
-              github.com/organizations/…/settings/apps/new
+              github.com/organizations/.../settings/apps/new
             </a>
             <!-- Required callback value -->
             <div class="bg-bg-input border border-border-subtle px-2.5 py-1.5">
@@ -238,7 +519,7 @@
               disabled={saving || !clientId.trim() || !clientSecret.trim()}
               data-testid="auth-gate-save"
             >
-              {saving ? 'SAVING…' : 'SAVE & CONNECT'}
+              {saving ? 'SAVING...' : 'SAVE & CONNECT'}
             </button>
 
             {#if error}

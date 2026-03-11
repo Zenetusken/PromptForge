@@ -1,4 +1,8 @@
+import json
 import logging
+import os
+import secrets as secrets_mod
+from pathlib import Path
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
@@ -8,6 +12,8 @@ _WEAK_DEFAULTS = {
     "JWT_SECRET": "dev-jwt-secret-change-in-prod",
     "JWT_REFRESH_SECRET": "dev-refresh-secret-change-in-prod",
 }
+
+_SECRETS_FILE = Path("data/.app_secrets")
 
 
 class Settings(BaseSettings):
@@ -73,6 +79,8 @@ class Settings(BaseSettings):
     RATE_LIMIT_GITHUB_REPOS: str = "30/minute"
     RATE_LIMIT_GITHUB_REPOS_WRITE: str = "10/minute"
     RATE_LIMIT_SETTINGS: str = "30/minute"
+    RATE_LIMIT_PROVIDER_READ: str = "30/minute"
+    RATE_LIMIT_PROVIDER_WRITE: str = "10/minute"
 
     # Trusted reverse-proxy IPs (comma-separated). X-Forwarded-For is only
     # honoured when the direct connection comes from one of these addresses.
@@ -101,8 +109,50 @@ class Settings(BaseSettings):
     # Test mode — enables test-only endpoints. Never set True in production.
     TESTING: bool = False
 
+    def _bootstrap_secret(self, field_name: str, weak_default: str) -> None:
+        """Auto-generate a crypto secret if using the weak dev default.
+
+        On first startup, generates a random 32-byte hex token and persists it
+        to ``data/.app_secrets`` (0o600). Subsequent startups load from the file.
+        If the user has set a real value via env var, it takes precedence.
+        """
+        if getattr(self, field_name) != weak_default:
+            return  # User set a real value via env var — respect it
+
+        # Load or generate
+        stored: dict = {}
+        if _SECRETS_FILE.exists():
+            try:
+                stored = json.loads(_SECRETS_FILE.read_text())
+            except (json.JSONDecodeError, OSError):
+                stored = {}
+
+        if field_name in stored:
+            object.__setattr__(self, field_name, stored[field_name])
+            return
+
+        # Generate new secret
+        new_secret = secrets_mod.token_hex(32)
+        stored[field_name] = new_secret
+
+        # Atomic write with restricted permissions
+        _SECRETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(_SECRETS_FILE), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, json.dumps(stored).encode())
+        finally:
+            os.close(fd)
+
+        object.__setattr__(self, field_name, new_secret)
+
     def model_post_init(self, __context) -> None:
         _log = logging.getLogger(__name__)
+
+        # Auto-generate crypto secrets if using weak defaults
+        for field, weak in _WEAK_DEFAULTS.items():
+            self._bootstrap_secret(field, weak)
+
+        # Warn if still using weak defaults (should only happen if file I/O failed)
         for field, weak in _WEAK_DEFAULTS.items():
             if getattr(self, field) == weak:
                 _log.warning(

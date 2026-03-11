@@ -501,6 +501,64 @@ export async function updateSettings(
   return res.json();
 }
 
+// ---- Provider Config (API key management) ----
+
+export interface ProviderConfigResponse {
+  provider_active: string;
+  provider_available: boolean;
+  api_key: {
+    configured: boolean;
+    source: 'environment' | 'app' | 'none';
+    masked: string;
+  };
+  bootstrap_mode: boolean;
+}
+
+export interface SaveApiKeyResponse {
+  ok: boolean;
+  provider_active: string;
+  provider_available: boolean;
+  api_key: {
+    configured: boolean;
+    source: 'environment' | 'app' | 'none';
+    masked: string;
+  };
+}
+
+/** Always public — used by UI to check provider setup state. */
+export async function getProviderConfig(): Promise<ProviderConfigResponse> {
+  const res = await globalThis.fetch(`${BASE}/api/provider/config`);
+  if (!res.ok) throw new Error(`Provider config check failed: ${res.status}`);
+  return res.json();
+}
+
+/** Save an Anthropic API key. Bootstrap mode allows unauthenticated access. */
+export async function saveApiKey(apiKey: string): Promise<SaveApiKeyResponse> {
+  const res = await apiFetch(`${BASE}/api/provider/api-key`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+  if (!res.ok) {
+    let detail = `Save failed (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err.detail) {
+        detail = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+      }
+    } catch { /* ignore parse errors */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+/** Remove saved API key. JWT required. */
+export async function deleteApiKey(): Promise<SaveApiKeyResponse> {
+  const res = await apiFetch(`${BASE}/api/provider/api-key`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Delete API key failed: ${res.status}`);
+  return res.json();
+}
+
 // ---- Providers ----
 
 export interface ProviderDetectResponse {

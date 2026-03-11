@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { fetchSettings, updateSettings, fetchProviderStatus, fetchProviderDetect, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, logoutDevice, fetchGitHubAppConfig, saveGitHubAppConfig, fetchAuthMe, patchAuthMe, refreshGitHubToken, type AppSettings, type GitHubAppConfig, type ProviderDetectResponse, type ProviderStatusResponse } from '$lib/api/client';
+  import { fetchSettings, updateSettings, fetchProviderStatus, fetchProviderDetect, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, logoutDevice, fetchGitHubAppConfig, saveGitHubAppConfig, fetchAuthMe, patchAuthMe, refreshGitHubToken, getProviderConfig, saveApiKey, deleteApiKey, type AppSettings, type GitHubAppConfig, type ProviderDetectResponse, type ProviderStatusResponse, type ProviderConfigResponse } from '$lib/api/client';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { github } from '$lib/stores/github.svelte';
   import { auth } from '$lib/stores/auth.svelte';
@@ -30,18 +30,86 @@
     configSecret = '';
   }
 
+  // ── LLM Provider API key management ───────────────────────────────────────
+  let providerCfg = $state<ProviderConfigResponse | null>(null);
+  let expandApiKey = $state(false);
+  let apiKeyInput = $state('');
+  let showApiKeyInput = $state(false);
+  let savingApiKey = $state(false);
+  let apiKeyError = $state('');
+  let deletingApiKey = $state(false);
+
+  function cancelApiKeyEdit() {
+    expandApiKey = false;
+    apiKeyError = '';
+    apiKeyInput = '';
+    showApiKeyInput = false;
+  }
+
+  async function handleSaveApiKey() {
+    apiKeyError = '';
+    savingApiKey = true;
+    try {
+      const result = await saveApiKey(apiKeyInput.trim());
+      providerCfg = {
+        provider_active: result.provider_active,
+        provider_available: result.provider_available,
+        api_key: result.api_key,
+        bootstrap_mode: false,
+      };
+      expandApiKey = false;
+      apiKeyInput = '';
+      showApiKeyInput = false;
+      toast.success('API key saved');
+      // Update workbench provider state
+      if (result.provider_available) {
+        workbench.provider = result.provider_active as typeof workbench.provider;
+        workbench.isConnected = true;
+      }
+    } catch (err) {
+      apiKeyError = (err as Error).message;
+    } finally {
+      savingApiKey = false;
+    }
+  }
+
+  async function handleDeleteApiKey() {
+    if (!confirm('Remove saved API key? The pipeline will stop working if no other provider is available.')) return;
+    deletingApiKey = true;
+    try {
+      const result = await deleteApiKey();
+      providerCfg = {
+        provider_active: result.provider_active,
+        provider_available: result.provider_available,
+        api_key: result.api_key,
+        bootstrap_mode: false,
+      };
+      toast.success('API key removed');
+      if (!result.provider_available) {
+        workbench.provider = 'unknown';
+        workbench.isConnected = false;
+      }
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      deletingApiKey = false;
+    }
+  }
+
   async function loadSettings() {
     loading = true;
     error = null;
     try {
-      const [s, status, cfg] = await Promise.all([
+      const [s, status, cfg, pcfg] = await Promise.all([
         fetchSettings(),
         fetchProviderStatus().catch(() => null),
-        fetchGitHubAppConfig().catch(() => null)
+        fetchGitHubAppConfig().catch(() => null),
+        getProviderConfig().catch(() => null),
       ]);
       settings = s;
       if (status) workbench.isConnected = status.healthy;
       if (cfg) appConfig = cfg;
+      if (pcfg) providerCfg = pcfg;
     } catch (err) {
       error = (err as Error).message;
     } finally {
@@ -427,6 +495,133 @@
               <div class="font-mono text-[9px] text-text-dim ml-3">detected: {providerTestResult.providers}</div>
             {/if}
           </div>
+        {/if}
+      </div>
+
+      <!-- LLM Provider API Key -->
+      <div class="space-y-1 mb-3 p-2 bg-bg-card border border-border-subtle">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="font-display text-[11px] font-bold uppercase text-text-dim">LLM Provider</span>
+            {#if providerCfg}
+              <span class="font-mono text-[9px] text-text-dim/60 truncate">
+                {#if providerCfg.api_key.source === 'environment'}
+                  via env var
+                {:else if providerCfg.api_key.source === 'app'}
+                  via app
+                {:else if !providerCfg.api_key.configured}
+                  Not configured
+                {/if}
+              </span>
+            {/if}
+          </div>
+          {#if providerCfg?.api_key.source !== 'environment'}
+            <button
+              class="font-mono text-[9px] text-neon-cyan/70 hover:text-neon-cyan shrink-0
+                     transition-colors duration-150"
+              onclick={() => { if (expandApiKey) cancelApiKeyEdit(); else { expandApiKey = true; apiKeyError = ''; } }}
+            >
+              {expandApiKey ? 'CANCEL' : (providerCfg?.api_key.configured ? 'UPDATE' : 'CONFIGURE')}
+            </button>
+          {/if}
+        </div>
+
+        {#if providerCfg?.api_key.configured}
+          <div class="flex items-center gap-1.5 mt-0.5">
+            <span class="w-1.5 h-1.5 bg-neon-green"></span>
+            <span class="font-mono text-[10px] text-text-dim truncate">{providerCfg.api_key.masked}</span>
+          </div>
+          {#if providerCfg.api_key.source === 'environment'}
+            <span class="font-mono text-[9px] text-text-dim/50 ml-3">Read-only (set via environment variable)</span>
+          {/if}
+        {:else}
+          <div class="flex items-center gap-1.5 mt-0.5">
+            <span class="w-1.5 h-1.5 bg-neon-red"></span>
+            <span class="font-mono text-[10px] text-text-dim">No API key configured</span>
+          </div>
+        {/if}
+
+        {#if expandApiKey}
+          <div class="mt-2 space-y-1.5">
+            <div>
+              <label
+                for="nav-api-key"
+                class="font-mono text-[8px] text-text-dim uppercase tracking-[0.08em] block mb-0.5"
+              >Anthropic API Key</label>
+              <div class="relative">
+                <input
+                  id="nav-api-key"
+                  type={showApiKeyInput ? 'text' : 'password'}
+                  placeholder="sk-ant-..."
+                  bind:value={apiKeyInput}
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="w-full bg-bg-input border border-border-subtle px-2 py-1 pr-7
+                         font-mono text-[10px] text-text-primary
+                         focus:outline-none focus:border-neon-cyan/30
+                         placeholder:text-text-dim/40
+                         transition-colors duration-150"
+                />
+                <button
+                  type="button"
+                  class="absolute right-1.5 top-1/2 -translate-y-1/2
+                         text-text-dim hover:text-text-secondary
+                         transition-colors duration-150"
+                  onclick={() => { showApiKeyInput = !showApiKeyInput; }}
+                  aria-label={showApiKeyInput ? 'Hide key' : 'Show key'}
+                >
+                  {#if showApiKeyInput}
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                    </svg>
+                  {:else}
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                  {/if}
+                </button>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1.5 pt-0.5">
+              <button
+                class="flex-1 px-2 py-1 bg-neon-cyan text-bg-primary border border-neon-cyan
+                       hover:bg-[#00cce6] active:bg-[#00b8cf]
+                       transition-colors duration-150
+                       font-mono text-[9px] tracking-[0.07em] uppercase
+                       disabled:opacity-40 disabled:cursor-not-allowed"
+                onclick={handleSaveApiKey}
+                disabled={savingApiKey || !apiKeyInput.trim()}
+              >
+                {savingApiKey ? 'SAVING...' : 'SAVE'}
+              </button>
+              <button
+                class="px-2 py-1 border border-border-subtle text-text-dim
+                       hover:border-neon-cyan/25 hover:text-text-secondary
+                       transition-colors duration-150
+                       font-mono text-[9px] uppercase"
+                onclick={cancelApiKeyEdit}
+              >
+                CANCEL
+              </button>
+            </div>
+
+            {#if apiKeyError}
+              <p class="font-mono text-[9px] text-neon-red leading-snug">{apiKeyError}</p>
+            {/if}
+          </div>
+        {/if}
+
+        {#if providerCfg?.api_key.configured && providerCfg.api_key.source === 'app' && !expandApiKey}
+          <button
+            onclick={handleDeleteApiKey}
+            disabled={deletingApiKey}
+            class="font-mono text-[9px] text-neon-red/50 hover:text-neon-red mt-1
+                   disabled:opacity-40 transition-colors duration-150"
+          >
+            {deletingApiKey ? '...' : 'Remove saved key'}
+          </button>
         {/if}
       </div>
 

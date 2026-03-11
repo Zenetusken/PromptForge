@@ -210,14 +210,23 @@ async def test_github_token_cross_validation_passes_matching_user():
 # ── Group E — Config secret warning ───────────────────────────────────────
 
 
-def test_weak_secret_emits_warning(caplog):
-    """Settings with a weak JWT_SECRET emits a SECURITY warning."""
+def test_weak_secret_auto_generated(tmp_path, monkeypatch):
+    """Settings with a weak JWT_SECRET auto-generates a strong replacement."""
     from app.config import Settings
 
-    with caplog.at_level(logging.WARNING, logger="app.config"):
-        Settings(JWT_SECRET="dev-jwt-secret-change-in-prod")
+    # Point _SECRETS_FILE to a temp location so it doesn't pollute real data/
+    import app.config as config_mod
 
-    assert any("JWT_SECRET" in r.message for r in caplog.records)
+    monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
+
+    s = Settings(JWT_SECRET="dev-jwt-secret-change-in-prod")
+
+    # Auto-generation should have replaced the weak default
+    assert s.JWT_SECRET != "dev-jwt-secret-change-in-prod"
+    assert len(s.JWT_SECRET) >= 32  # token_hex(32) = 64 hex chars
+
+    # Secrets file should have been created
+    assert (tmp_path / ".app_secrets").exists()
 
 
 def test_strong_secret_no_warning(caplog):
