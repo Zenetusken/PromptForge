@@ -76,7 +76,10 @@ async def _opt_session(
                  user are returned. Omit for unscoped access.
     """
     async with async_session() as session:
-        query = select(Optimization).where(Optimization.id == optimization_id)
+        query = select(Optimization).where(
+            Optimization.id == optimization_id,
+            Optimization.deleted_at.is_(None),
+        )
         if user_id:
             query = query.where(Optimization.user_id == user_id)
         result = await session.execute(query)
