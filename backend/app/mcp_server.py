@@ -601,6 +601,56 @@ def create_mcp_server(provider=None) -> FastMCP:
         return json.dumps({"restored": True, "id": optimization_id})
 
     @mcp.tool(
+        name="batch_delete_optimizations",
+        annotations=ToolAnnotations(
+            title="Batch Delete Optimizations",
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    async def batch_delete_optimizations(
+        ids: list[str], user_id: Optional[str] = None
+    ) -> str:
+        """Batch soft-delete multiple optimization records (sets deleted_at; purged after 7 days).
+
+        All-or-nothing: if any ID is not found, none are deleted.
+        Maximum 50 IDs per request.
+
+        Args:
+            ids: List of optimization UUIDs to delete (1–50 items).
+                 Use list_optimizations to discover valid IDs.
+            user_id: Optional owner filter. When set, all records must belong to
+                     this user. Omit for unscoped access (single-user/localhost mode).
+
+        Returns:
+            JSON {"deleted_count": N, "ids": [...]} on success.
+            Returns {"error": ...} on validation failure.
+        """
+        if len(ids) < 1 or len(ids) > 50:
+            return json.dumps({
+                "error": "ids must contain 1–50 items",
+                "count": len(ids),
+            })
+
+        from app.services.optimization_service import (
+            batch_delete_optimizations as svc_batch_delete,
+        )
+
+        try:
+            async with async_session() as session:
+                deleted_ids = await svc_batch_delete(session, user_id or "", ids)
+                await session.commit()
+        except Exception as e:
+            # Service raises HTTPException for 404/403 — extract detail
+            detail = getattr(e, "detail", str(e))
+            status = getattr(e, "status_code", 500)
+            return json.dumps({"error": detail, "status": status})
+
+        return json.dumps({"deleted_count": len(deleted_ids), "ids": deleted_ids})
+
+    @mcp.tool(
         name="search_optimizations",
         annotations=ToolAnnotations(
             title= "Search Optimizations",
