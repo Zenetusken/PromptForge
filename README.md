@@ -17,7 +17,11 @@ docker compose up --build -d
 
 All secrets (including the Redis password) are auto-generated on first startup.
 
-Open **http://localhost** — the in-app setup flow walks you through Anthropic API key configuration and GitHub App authentication setup (both required). Once authenticated, linking a specific repository for codebase-aware optimization is optional.
+Open **http://localhost** — the in-app setup flow walks you through LLM provider configuration and GitHub App authentication setup (both required for full functionality). Once authenticated, linking a specific repository for codebase-aware optimization is optional.
+
+**LLM provider options** (choose one):
+- **Claude Max subscription** (recommended) — if the `claude` CLI is installed and authenticated on the host, the app detects it automatically at startup. Zero API cost, nothing to configure.
+- **Anthropic API key** — enter your `sk-ant-...` key through the in-app setup flow or set `ANTHROPIC_API_KEY` in `.env.docker`.
 
 ## How It Works
 
@@ -34,7 +38,6 @@ The roadmap is wide open and growing. Some of the directions we're exploring:
 - **Prompt chains and composition** — multi-step prompt workflows where one optimization feeds into the next, building compound instructions that handle complex tasks no single prompt can
 - **Team workspaces** — shared optimization history, collective strategy refinement, and organizational prompt libraries that get smarter as your team uses them
 - **Custom strategy authoring** — define your own optimization frameworks tuned to your domain, your codebase, your way of thinking
-- **Provider flexibility** — support for additional LLM providers beyond Anthropic, so you can optimize prompts for the model that will actually run them
 - **Deeper codebase understanding** — richer semantic indexing, cross-repository awareness, dependency graph analysis, and architectural pattern recognition that makes context injection even more precise
 - **Quality feedback loops** — track how optimized prompts perform in practice and feed that signal back into the optimization pipeline itself
 - **Plugin and extension system** — open the pipeline to community-built stages, custom validators, and domain-specific analyzers
@@ -51,6 +54,7 @@ What you can count on today:
 - Five-stage optimization pipeline with real-time SSE streaming
 - GitHub repository integration with semantic codebase indexing
 - MCP server for CLI-native workflows
+- Works with Claude Max subscription (zero API cost) or Anthropic API key
 - Encrypted credential storage with in-app configuration
 - Docker deployment with auto-generated secrets
 

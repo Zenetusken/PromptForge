@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed README to clarify Claude Max subscription as the recommended (zero-cost) LLM provider
+- Removed multi-provider roadmap item — Project Synthesis is built for Claude
 - Added auto-generated Redis password via `secrets-init` init container (zero-config Docker deployment)
 - Removed manual `REDIS_PASSWORD` requirement from `.env.docker.example`
 - Added single-source-of-truth versioning via `backend/app/_version.py`
