@@ -236,17 +236,26 @@ EXPLORE_OUTPUT_SCHEMA: dict = {
                 },
                 "required": ["file", "context"],
             },
-            "description": "Code snippets structurally relevant to the prompt intent — entry points, interfaces, data shapes",
+            "description": (
+                "Code snippets structurally relevant to the prompt intent"
+                " — entry points, interfaces, data shapes"
+            ),
         },
         "codebase_observations": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Architectural observations: project structure, data flow, component relationships, patterns",
+            "description": (
+                "Architectural observations: project structure, data flow,"
+                " component relationships, patterns"
+            ),
         },
         "prompt_grounding_notes": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Context intelligence: maps prompt intent to codebase locations, key abstractions, and navigation hints for an executor",
+            "description": (
+                "Context intelligence: maps prompt intent to codebase"
+                " locations, key abstractions, and navigation hints"
+            ),
         },
         "coverage_pct": {
             "type": "integer",
