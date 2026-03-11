@@ -15,7 +15,9 @@ Evaluate the raw prompt against these dimensions:
 7. Examples - Are illustrative examples included where helpful?
 8. Persona/Role - Is there a useful role assignment?
 
-If codebase context is provided, also evaluate the prompt's accuracy relative to the codebase.
+If codebase context is provided, use it to better understand the prompt's domain, tech stack,
+and architectural scope — this helps you classify the task type more accurately and identify
+domain-specific weaknesses or strengths. Do NOT use it to judge correctness of the prompt's claims.
 
 If attached files are provided under "Attached files:", read them carefully — they may
 reveal the domain, data structures, or conventions the prompt will operate in. Use them

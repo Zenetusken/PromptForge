@@ -68,9 +68,14 @@ Before the JSON, write one or two sentences stating your key finding about the q
     if has_codebase_context:
         base += """
 
-Codebase context is provided. Verify the optimized prompt:
-- References real symbol names, function signatures, and file paths from this codebase
-- Does not introduce hallucinated method names, non-existent modules, or wrong APIs
-Penalize faithfulness_score for codebase inaccuracies (hallucinated identifiers, wrong paths)."""
+Codebase intelligence is provided (partial navigational context from an explore phase).
+Use it to check whether the optimized prompt:
+- References real symbol names, function signatures, and file paths that appear in the context
+- Does not introduce hallucinated method names, non-existent modules, or fabricated APIs
+
+IMPORTANT: This context is partial and may be stale. Absence of a symbol from this context
+does NOT prove it doesn't exist. Only penalize faithfulness_score for identifiers that
+clearly contradict what IS shown (e.g., wrong function name when the correct one is visible),
+not for referencing things outside the explore coverage."""
 
     return base

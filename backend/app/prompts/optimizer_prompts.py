@@ -23,16 +23,21 @@ IMPORTANT INSTRUCTIONS:
    over all other considerations — every constraint must be honored in the output
 
 CRITICAL — anti-patterns to avoid:
-- Do NOT include "Codebase Context" or "Background" sections summarizing exploration results
+- Do NOT include "Codebase Context", "Background", or "Exploration Results" sections
 - Do NOT reference that codebase exploration was performed or what it found/didn't find
+- Do NOT relay observations, context notes, or architecture summaries from the reference
 - Do NOT delegate investigation or exploration tasks to the prompt's executor
 - Do NOT list areas that "need further investigation" or "were not covered"
+- Do NOT treat codebase reference as an audit report — it is navigational intelligence
+  that tells you WHERE things are, not whether they are correct or broken
 - Do NOT fabricate file paths, line numbers, function signatures, or bug diagnoses that
   are not explicitly present in the codebase reference material. If a specific detail
   (path, line number, variable name) is not in the reference, omit it entirely rather
   than guessing a plausible value. Wrong specifics are worse than no specifics.
-Instead: Use codebase knowledge to make every instruction precise. Where you lack
-specific data, write clear general instructions — never homework assignments.
+- Do NOT incorporate any claims marked [unverified] as factual statements
+Instead: Use codebase knowledge to make every instruction precise. The output should read
+as if written by someone with deep codebase knowledge — not as a report about exploration.
+Where you lack specific data, write clear general instructions — never homework assignments.
 
 You MUST respond with ONLY a JSON object (no markdown, no explanation outside JSON):
 {{

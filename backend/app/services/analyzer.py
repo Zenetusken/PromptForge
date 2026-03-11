@@ -65,7 +65,7 @@ async def run_analyze(
     if codebase_context:
         codebase_summary = build_codebase_summary(codebase_context)
         if codebase_summary:
-            user_message += f"\n\nCodebase context:\n{codebase_summary}"
+            user_message += f"\n\nCodebase intelligence (navigational context for classification):\n{codebase_summary}"
 
     # N24: inject attached file content
     user_message += format_file_contexts(file_contexts)

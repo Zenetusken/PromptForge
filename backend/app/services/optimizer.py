@@ -61,11 +61,20 @@ async def run_optimize(
         codebase_summary = build_codebase_summary(codebase_context)
         if codebase_summary:
             user_message += (
-                "\n\n--- Codebase reference (for YOUR understanding only) ---\n"
-                "Absorb this to write a precise prompt. Do NOT relay exploration "
-                "findings, add context sections, or delegate investigation in the output.\n"
-                "ONLY use file paths, line numbers, function names, and technical details "
-                "that appear explicitly below. Do NOT invent or extrapolate specifics.\n"
+                "\n\n--- Codebase reference (INTELLIGENCE LAYER — for YOUR understanding only) ---\n"
+                "This is navigational context from a codebase exploration phase. It tells you\n"
+                "WHERE things are and HOW components connect — it is NOT an audit or correctness\n"
+                "assessment. Absorb it to write a surgically precise prompt.\n\n"
+                "DO:\n"
+                "- Use file paths, function names, data shapes, and architectural patterns\n"
+                "  that appear explicitly below to make your prompt precise\n"
+                "- Let this context inform the precision and specificity of your instructions\n\n"
+                "DO NOT:\n"
+                "- Relay any exploration findings, observations, or context notes in the output\n"
+                "- Add 'Codebase Context' or 'Background' sections\n"
+                "- Treat any observation marked [unverified] as fact\n"
+                "- Delegate investigation or exploration tasks to the executor\n"
+                "- Invent or extrapolate specifics beyond what appears below\n"
                 f"{codebase_summary}\n"
                 "--- End codebase reference ---"
             )

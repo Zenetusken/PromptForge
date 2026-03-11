@@ -74,7 +74,7 @@ async def run_strategy(
     if codebase_context:
         codebase_summary = build_codebase_summary(codebase_context)
         if codebase_summary:
-            user_message += f"\n\nCodebase context:\n{codebase_summary}"
+            user_message += f"\n\nCodebase intelligence (navigational context):\n{codebase_summary}"
 
     # Inject attached files / URLs / user constraints so strategy selection
     # can account for domain-specific signals (the strategy prompt already

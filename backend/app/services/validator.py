@@ -106,7 +106,11 @@ async def run_validate(
         codebase_summary = build_codebase_summary(codebase_context)
         if codebase_summary:
             user_message += (
-                f"\n\nCodebase context (verify optimized prompt references real symbols/APIs):\n"
+                f"\n\nCodebase intelligence (navigational context from explore phase — "
+                f"may be partial or stale):\n"
+                f"Use this to verify the optimized prompt does not fabricate file paths, "
+                f"function names, or API signatures. However, absence from this context "
+                f"does NOT mean something doesn't exist — this is partial coverage.\n"
                 f"{codebase_summary[:2500]}"
             )
 
