@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { fetchSettings, updateSettings, fetchProviderStatus, fetchProviderDetect, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, fetchGitHubAppConfig, saveGitHubAppConfig, fetchAuthMe, patchAuthMe, refreshGitHubToken, type AppSettings, type GitHubAppConfig, type ProviderDetectResponse, type ProviderStatusResponse } from '$lib/api/client';
+  import { fetchSettings, updateSettings, fetchProviderStatus, fetchProviderDetect, disconnectGitHub, unlinkRepo, getGitHubLoginUrl, logoutAllDevices, logoutDevice, fetchGitHubAppConfig, saveGitHubAppConfig, fetchAuthMe, patchAuthMe, refreshGitHubToken, type AppSettings, type GitHubAppConfig, type ProviderDetectResponse, type ProviderStatusResponse } from '$lib/api/client';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { github } from '$lib/stores/github.svelte';
   import { auth } from '$lib/stores/auth.svelte';
@@ -128,6 +128,7 @@
   }
 
   let loggingOutAll = $state(false);
+  let loggingOut = $state(false);
   let reconnecting = $state(false);
   let reconnectError = $state('');   // actual failures — shown in neon-red
   let reconnectInfo = $state('');    // informational skipped-reason — shown in text-dim
@@ -160,6 +161,19 @@
       reconnectError = (e as Error).message;
     } finally {
       reconnecting = false;
+    }
+  }
+
+  async function handleLogoutDevice() {
+    if (loggingOut) return;
+    loggingOut = true;
+    try {
+      const result = await logoutDevice();
+      toast.success(`Signed out (${result.revoked_count} session${result.revoked_count !== 1 ? 's' : ''} revoked)`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      loggingOut = false;
     }
   }
 
@@ -715,6 +729,18 @@
       {#if auth.isAuthenticated}
         <div class="space-y-1 mt-3 pt-3 border-t border-border-subtle">
           <div class="font-display text-[11px] font-bold uppercase text-text-dim mb-2">Session</div>
+          <button
+            onclick={handleLogoutDevice}
+            disabled={loggingOut}
+            class="w-full flex items-center justify-between px-2 py-1.5
+                   border border-border-subtle text-text-secondary
+                   hover:border-neon-cyan/30 hover:text-text-primary
+                   disabled:opacity-40 disabled:cursor-not-allowed
+                   transition-colors font-mono text-[10px] uppercase tracking-[0.05em]"
+          >
+            <span>{loggingOut ? 'Signing out...' : 'Sign out'}</span>
+            <span class="text-[9px] text-text-dim/60">this device</span>
+          </button>
           <button
             onclick={handleLogoutAllDevices}
             disabled={loggingOutAll}

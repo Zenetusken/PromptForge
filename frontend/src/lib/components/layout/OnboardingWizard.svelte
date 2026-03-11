@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { editor } from '$lib/stores/editor.svelte';
   import { workbench } from '$lib/stores/workbench.svelte';
   import { patchAuthMe, fetchAuthMe, trackOnboardingEvent } from '$lib/api/client';
@@ -8,16 +9,35 @@
 
   interface Props {
     onComplete: () => void;
+    githubConnected?: boolean;
   }
-  const { onComplete }: Props = $props();
+  const { onComplete, githubConnected = false }: Props = $props();
 
-  let step = $state(1);
+  const STEP_KEY = 'pf_onboarding_step';
+
+  // Restore step from localStorage on mount
+  let step = $state((() => {
+    if (typeof window === 'undefined') return 1;
+    const stored = localStorage.getItem(STEP_KEY);
+    if (stored) {
+      const n = parseInt(stored, 10);
+      if (n >= 1 && n <= 4) return n;
+    }
+    return 1;
+  })());
+
+  let stepEnteredAt = $state(Date.now());
   let displayName = $state('');
   let saving = $state(false);
   let error = $state('');
 
   // IDE tour hover state
   let hoveredZone = $state<string | null>(null);
+
+  onMount(() => {
+    trackOnboardingEvent('wizard_started', { restored_step: step > 1 });
+    stepEnteredAt = Date.now();
+  });
 
   const zones = [
     { id: 'activity', label: 'ACTIVITY BAR', desc: 'Switch panels: Files, History, Templates, GitHub, Settings', shortcut: 'Ctrl+Shift+*', col: '1', row: '1' },
@@ -32,19 +52,34 @@
 
   function nextStep() {
     if (step < 4) {
-      trackOnboardingEvent(`wizard_step_${step}`).catch(() => {});
+      const durationMs = Date.now() - stepEnteredAt;
+      trackOnboardingEvent(`wizard_step_${step}`, { duration_ms: durationMs });
       step++;
+      stepEnteredAt = Date.now();
+      if (typeof window !== 'undefined') localStorage.setItem(STEP_KEY, String(step));
+      // Persist step to backend (best-effort)
+      patchAuthMe({ onboarding_step: step }).catch(() => {});
+      // Eagerly save display name when leaving step 1
+      if (step === 2 && displayName.trim()) {
+        patchAuthMe({ display_name: displayName.trim() }).catch(() => {});
+      }
     }
   }
 
   function prevStep() {
-    if (step > 1) step--;
+    if (step > 1) {
+      step--;
+      stepEnteredAt = Date.now();
+      if (typeof window !== 'undefined') localStorage.setItem(STEP_KEY, String(step));
+    }
   }
 
   async function handleSkip() {
-    trackOnboardingEvent('wizard_skipped', { at_step: step }).catch(() => {});
-    patchAuthMe({ onboarding_completed: true }).catch(() => {});
+    const durationMs = Date.now() - stepEnteredAt;
+    trackOnboardingEvent('wizard_skipped', { at_step: step, duration_ms: durationMs });
+    patchAuthMe({ onboarding_completed: true, onboarding_step: null }).catch(() => {});
     user.onboardingCompleted = true;
+    if (typeof window !== 'undefined') localStorage.removeItem(STEP_KEY);
     onComplete();
   }
 
@@ -56,9 +91,10 @@
         await patchAuthMe({
           display_name: displayName.trim(),
           onboarding_completed: true,
+          onboarding_step: null,
         });
       } else {
-        await patchAuthMe({ onboarding_completed: true });
+        await patchAuthMe({ onboarding_completed: true, onboarding_step: null });
       }
       try { user.setProfile(await fetchAuthMe()); } catch { /* non-fatal */ }
     } catch (err) {
@@ -89,6 +125,7 @@
     }
 
     saving = false;
+    if (typeof window !== 'undefined') localStorage.removeItem(STEP_KEY);
     onComplete();
   }
 </script>
@@ -281,8 +318,23 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
         </svg>
         <div>
-          <div class="font-display text-[10px] uppercase text-text-primary">Connect GitHub first</div>
-          <div class="font-mono text-[9px] text-text-dim mt-0.5">Link a repo for codebase-aware optimization</div>
+          <div class="font-display text-[10px] uppercase text-text-primary flex items-center gap-1.5">
+            {#if githubConnected}
+              Explore your codebase
+            {:else}
+              Connect GitHub first
+            {/if}
+            {#if githubConnected}
+              <span class="font-mono text-[8px] text-neon-cyan/60 normal-case tracking-normal">(recommended)</span>
+            {/if}
+          </div>
+          <div class="font-mono text-[9px] text-text-dim mt-0.5">
+            {#if githubConnected}
+              Your repo is linked — optimize with full codebase context
+            {:else}
+              Link a repo for codebase-aware optimization
+            {/if}
+          </div>
         </div>
       </button>
     </div>

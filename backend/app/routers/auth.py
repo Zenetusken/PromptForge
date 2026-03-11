@@ -21,13 +21,22 @@ from app.schemas.auth import (
     ERR_TOKEN_REVOKED,
     AuthenticatedUser,
     GetAuthMeResponse,
+    LogoutResponse,
     PatchAuthMeRequest,
     SessionsResponse,
     TokenResponse,
 )
-from app.services.auth_service import issue_jwt_pair
+from app.services.audit_service import (
+    AUTH_LOGOUT,
+    AUTH_LOGOUT_ALL,
+    AUTH_REFRESH,
+    AUTH_TOKEN_EXCHANGE,
+    log_auth_event,
+)
+from app.services.auth_service import issue_jwt_pair, set_refresh_cookie
 from app.utils.jwt import (
     decode_refresh_token,
+    decode_token,
     ensure_utc,
     hash_token,
 )
@@ -36,7 +45,11 @@ router = APIRouter(tags=["jwt-auth"])
 
 
 @router.get("/auth/token", response_model=TokenResponse)
-async def get_auth_token(request: Request, response: Response) -> dict:
+async def get_auth_token(
+    request: Request,
+    response: Response,
+    _rl: None = Depends(RateLimit(lambda: settings.RATE_LIMIT_AUTH_TOKEN)),
+) -> dict:
     """Exchange the one-time session token for the JWT access token.
 
     Called by the frontend immediately after the OAuth callback redirect.
@@ -49,6 +62,7 @@ async def get_auth_token(request: Request, response: Response) -> dict:
             status_code=401,
             detail={"code": ERR_TOKEN_MISSING, "message": "No pending auth token — please log in again"},
         )
+    await log_auth_event(AUTH_TOKEN_EXCHANGE, request, user_id=None, metadata={"source": "session"})
     return {"access_token": token, "token_type": "bearer"}
 
 
@@ -75,6 +89,7 @@ async def get_auth_me(
         "display_name": user.display_name,
         "onboarding_completed": user.onboarding_completed_at is not None,
         "onboarding_completed_at": user.onboarding_completed_at.isoformat() if user.onboarding_completed_at else None,
+        "onboarding_step": user.onboarding_step,
         "preferences": json.loads(user.preferences) if user.preferences else {},
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         "created_at": user.created_at.isoformat(),
@@ -89,26 +104,30 @@ async def patch_auth_me(
 ) -> dict:
     """Update the authenticated user's profile.
 
-    Accepted fields: ``display_name``, ``email``, ``onboarding_completed``.
     All fields are optional; only supplied fields are changed.
-    Setting ``onboarding_completed=true`` stamps ``onboarding_completed_at``
-    with the current UTC time; ``false`` clears it.
+
+    - ``display_name``, ``email``: set to string or explicitly ``null`` to clear.
+    - ``onboarding_completed``: ``true`` stamps ``onboarding_completed_at``; ``false`` clears it.
+    - ``onboarding_step``: current wizard step (1-4) or ``null`` to clear.
+    - ``preferences``: arbitrary JSON dict (dismissed tips, milestones, etc.).
     """
     result = await session.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if data.display_name is not None:
-        user.display_name = data.display_name.strip() or None
-    if data.email is not None:
-        user.email = data.email.strip() or None
+    if "display_name" in data.model_fields_set:
+        user.display_name = data.display_name.strip() if data.display_name else None
+    if "email" in data.model_fields_set:
+        user.email = data.email.strip() if data.email else None
     if data.onboarding_completed is True and user.onboarding_completed_at is None:
         user.onboarding_completed_at = datetime.now(timezone.utc)
     elif data.onboarding_completed is False:
         user.onboarding_completed_at = None
-    if data.preferences is not None:
-        user.preferences = json.dumps(data.preferences)
+    if "onboarding_step" in data.model_fields_set:
+        user.onboarding_step = data.onboarding_step
+    if "preferences" in data.model_fields_set:
+        user.preferences = json.dumps(data.preferences) if data.preferences else None
 
     await session.commit()
     return {"updated": True}
@@ -116,6 +135,7 @@ async def patch_auth_me(
 
 @router.delete("/auth/sessions", response_model=SessionsResponse)
 async def logout_all_devices(
+    request: Request,
     response: Response,
     current_user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
@@ -136,7 +156,71 @@ async def logout_all_devices(
     # Clear the refresh cookie on this device
     response.delete_cookie(key="jwt_refresh_token", path="/auth/jwt/refresh")
 
+    await log_auth_event(AUTH_LOGOUT_ALL, request, user_id=current_user.id, metadata={"revoked_count": len(active_rts)})
+
     return {"revoked_sessions": len(active_rts)}
+
+
+@router.post("/auth/logout", response_model=LogoutResponse)
+async def logout_single_device(
+    request: Request,
+    response: Response,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    _rl: None = Depends(RateLimit(lambda: settings.RATE_LIMIT_AUTH_LOGOUT)),
+) -> dict:
+    """Log out the current device by revoking its refresh tokens.
+
+    Extracts ``device_id`` from the JWT access token to identify which
+    refresh tokens belong to this device.  If the token has no ``device_id``
+    (legacy token), the most-recent non-revoked refresh token for the user
+    is revoked instead.
+    """
+    # Extract device_id from the raw JWT payload
+    auth_header = request.headers.get("Authorization", "")
+    raw_token = auth_header[len("Bearer "):] if auth_header.startswith("Bearer ") else ""
+    device_id: str | None = None
+    if raw_token:
+        try:
+            payload = decode_token(raw_token)
+            device_id = payload.get("device_id")
+        except Exception:
+            pass  # Token already validated by get_current_user; ignore decode errors here
+
+    count = 0
+    if device_id:
+        # Revoke all non-revoked refresh tokens for this user + device
+        rt_result = await session.execute(
+            select(RefreshToken)
+            .where(
+                RefreshToken.user_id == current_user.id,
+                RefreshToken.device_id == device_id,
+                RefreshToken.revoked.is_(False),
+            )
+        )
+        tokens = rt_result.scalars().all()
+        for rt in tokens:
+            rt.revoked = True
+        count = len(tokens)
+    else:
+        # Legacy token: revoke the most-recent non-revoked RT for this user
+        rt_result = await session.execute(
+            select(RefreshToken)
+            .where(RefreshToken.user_id == current_user.id, RefreshToken.revoked.is_(False))
+            .order_by(RefreshToken.created_at.desc())
+            .limit(1)
+        )
+        rt = rt_result.scalar_one_or_none()
+        if rt is not None:
+            rt.revoked = True
+            count = 1
+
+    # Clear the refresh cookie on this device
+    response.delete_cookie(key="jwt_refresh_token", path="/auth/jwt/refresh")
+
+    await log_auth_event(AUTH_LOGOUT, request, user_id=current_user.id, metadata={"device_id": device_id, "revoked_count": count})
+
+    return {"revoked_count": count}
 
 
 @router.post("/auth/jwt/refresh", response_model=TokenResponse)
@@ -231,14 +315,8 @@ async def jwt_refresh(
         session, user, device_id=stored_rt.device_id
     )
 
-    response.set_cookie(
-        key="jwt_refresh_token",
-        value=new_raw_refresh,
-        httponly=True,
-        samesite="strict",   # was "lax" — safe since this is same-origin XHR only
-        path="/auth/jwt/refresh",
-        max_age=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        secure=settings.JWT_COOKIE_SECURE,
-    )
+    set_refresh_cookie(response, new_raw_refresh)
+
+    await log_auth_event(AUTH_REFRESH, request, user_id=user_id)
 
     return {"access_token": access_token, "token_type": "bearer"}

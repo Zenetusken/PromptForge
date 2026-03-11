@@ -17,8 +17,14 @@ class AuthStore {
   /** Whether a silent token refresh is in progress. */
   refreshing = $state(false);
 
+  /** True when the access token is within 2 minutes of expiry and refresh hasn't succeeded. */
+  tokenExpiringSoon = $state(false);
+
   /** Timer handle for proactive token rotation. */
   private _refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Timer handle for the near-expiry warning. */
+  private _warningTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Token management ──────────────────────────────────────────────────
 
@@ -28,15 +34,22 @@ class AuthStore {
    */
   setToken(token: string): void {
     this.accessToken = token;
+    this.tokenExpiringSoon = false;  // Reset warning on fresh token
     this._scheduleRefresh(token);
+    this._scheduleWarning(token);
   }
 
   /** Clear the access token and cancel any pending rotation. */
   clearToken(): void {
     this.accessToken = null;
+    this.tokenExpiringSoon = false;
     if (this._refreshTimer !== null) {
       clearTimeout(this._refreshTimer);
       this._refreshTimer = null;
+    }
+    if (this._warningTimer !== null) {
+      clearTimeout(this._warningTimer);
+      this._warningTimer = null;
     }
   }
 
@@ -108,6 +121,22 @@ class AuthStore {
     if (expMs === null) return;
     const delay = Math.max(0, expMs - Date.now() - REFRESH_BUFFER_MS);
     this._refreshTimer = setTimeout(() => this.refresh(), delay);
+  }
+
+  private _scheduleWarning(token: string): void {
+    if (this._warningTimer !== null) clearTimeout(this._warningTimer);
+    const expMs = this._expiryMs(token);
+    if (expMs === null) return;
+    // Warn 2 minutes before expiry (the refresh fires at 1 minute, so this
+    // only shows if the refresh failed or hasn't run yet)
+    const WARNING_BUFFER_MS = 120_000;
+    const delay = Math.max(0, expMs - Date.now() - WARNING_BUFFER_MS);
+    this._warningTimer = setTimeout(() => {
+      // Only warn if refresh hasn't already replaced the token
+      if (this.accessToken === token) {
+        this.tokenExpiringSoon = true;
+      }
+    }, delay);
   }
 }
 

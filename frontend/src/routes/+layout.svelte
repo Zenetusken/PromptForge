@@ -6,7 +6,7 @@
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { github } from '$lib/stores/github.svelte';
-  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe, unlinkRepo } from '$lib/api/client';
+  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe, unlinkRepo, trackOnboardingEvent } from '$lib/api/client';
   import { toast } from '$lib/stores/toast.svelte';
   import type { RepoInfo } from '$lib/api/client';
   import { user } from '$lib/stores/user.svelte';
@@ -131,6 +131,24 @@
       .finally(() => { user.loading = false; _profileFetching = false; });
   });
 
+  // Auto-resume onboarding wizard for users who haven't completed it.
+  // Only triggers on return visits (not initial auth callback — that's handled in onMount).
+  $effect(() => {
+    if (
+      authChecked
+      && auth.isAuthenticated
+      && !user.onboardingCompleted
+      && !user.loading  // Wait for profile hydration
+      && !workbench.showOnboarding  // Don't double-trigger
+    ) {
+      // Check if there's a persisted wizard step (user was mid-wizard)
+      const storedStep = typeof window !== 'undefined' ? localStorage.getItem('pf_onboarding_step') : null;
+      if (storedStep) {
+        workbench.showOnboarding = true;
+      }
+    }
+  });
+
   // Auth gate — false until the silent refresh attempt resolves
   let authChecked = $state(false);
 
@@ -138,6 +156,7 @@
   let showWelcomeBack = $derived(
     authChecked && auth.isAuthenticated && user.isNewUser
     && !workbench.showOnboarding
+    && !user.loading  // Wait for profile to load before showing
     && !user.preferences.dismissedTips.includes('welcome-back-banner')
   );
   $effect(() => {
@@ -295,6 +314,7 @@
           if (res.ok) {
             const data: { access_token: string } = await res.json();
             auth.setToken(data.access_token);
+            trackOnboardingEvent('auth_completed', { is_new: isNewUser });
             if (isNewUser) {
               workbench.showOnboarding = true;
             }
@@ -627,6 +647,19 @@
     </div>
   {/if}
 
+  <!-- Session expiry warning -->
+  {#if auth.tokenExpiringSoon}
+    <div class="fixed top-0 left-0 right-0 z-50 bg-bg-card border-b border-neon-yellow/30 px-4 py-2 flex items-center justify-between animate-fade-in">
+      <span class="font-mono text-[10px] text-neon-yellow">
+        Session expiring soon — refreshing...
+      </span>
+      <button
+        onclick={() => { auth.refresh(); }}
+        class="font-mono text-[10px] text-neon-cyan hover:text-neon-cyan/80"
+      >REFRESH NOW</button>
+    </div>
+  {/if}
+
   <!-- Global overlays -->
   <CommandPalette />
   <ToastContainer />
@@ -634,6 +667,6 @@
     <SpotlightOverlay />
   {/if}
   {#if workbench.showOnboarding}
-    <OnboardingModal onComplete={() => { workbench.showOnboarding = false; }} />
+    <OnboardingModal onComplete={() => { workbench.showOnboarding = false; }} githubConnected={github.isConnected} />
   {/if}
 {/if}

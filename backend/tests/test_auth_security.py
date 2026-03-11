@@ -262,10 +262,12 @@ async def test_logout_all_devices_endpoint_exists_and_revokes_all_tokens():
     mock_session.execute = AsyncMock(return_value=rt_result)
 
     mock_response = MagicMock()
+    mock_request = MagicMock()
 
-    result = await logout_all_devices(
-        response=mock_response, current_user=current_user, session=mock_session
-    )
+    with patch("app.routers.auth.log_auth_event", new_callable=AsyncMock):
+        result = await logout_all_devices(
+            request=mock_request, response=mock_response, current_user=current_user, session=mock_session
+        )
 
     assert rt1.revoked is True
     assert rt2.revoked is True
@@ -789,27 +791,27 @@ async def test_user_not_found_and_token_not_found_return_same_error_body():
 
 
 def test_set_refresh_cookie_uses_samesite_strict():
-    """The JWT refresh cookie must use SameSite=Strict (not Lax)."""
+    """The shared set_refresh_cookie helper must use SameSite=Strict (not Lax)."""
     import inspect
 
-    from app.routers import github_auth
+    from app.services.auth_service import set_refresh_cookie
 
-    source = inspect.getsource(github_auth._set_refresh_cookie)
+    source = inspect.getsource(set_refresh_cookie)
     assert 'samesite="strict"' in source or "samesite='strict'" in source, (
         "Refresh cookie must use SameSite=Strict — 'lax' found instead. "
         "The refresh endpoint is only called via same-origin fetch, not top-level navigation."
     )
 
 
-def test_jwt_refresh_response_cookie_uses_samesite_strict():
-    """The new cookie set by /auth/jwt/refresh must also use SameSite=Strict."""
+def test_jwt_refresh_uses_shared_set_refresh_cookie():
+    """jwt_refresh must use the shared set_refresh_cookie helper (not inline set_cookie)."""
     import inspect
 
     from app.routers import auth
 
     source = inspect.getsource(auth.jwt_refresh)
-    assert 'samesite="strict"' in source or "samesite='strict'" in source, (
-        "jwt_refresh cookie must use SameSite=Strict"
+    assert "set_refresh_cookie" in source, (
+        "jwt_refresh must delegate to set_refresh_cookie helper, not call set_cookie inline"
     )
 
 

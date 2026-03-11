@@ -19,7 +19,8 @@ from app.models.github import GitHubToken
 from app.routers.github_repos import evict_repo_cache
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.github import GitHubUserInfo
-from app.services.auth_service import issue_jwt_pair
+from app.services.audit_service import AUTH_LOGIN, AUTH_LOGIN_NEW_USER, log_auth_event
+from app.services.auth_service import issue_jwt_pair, set_refresh_cookie
 from app.services.github_app_service import refresh_user_token
 from app.services.github_service import encrypt_token
 from app.utils.jwt import decode_token
@@ -68,16 +69,8 @@ async def _upsert_user(
 
 
 def _set_refresh_cookie(response: Response | RedirectResponse, raw_refresh: str) -> None:
-    """Set the httponly refresh token cookie on any response type."""
-    response.set_cookie(
-        key="jwt_refresh_token",
-        value=raw_refresh,
-        httponly=True,
-        samesite="strict",   # was "lax" — safe since /auth/jwt/refresh is same-origin XHR only
-        path="/auth/jwt/refresh",
-        max_age=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        secure=settings.JWT_COOKIE_SECURE,
-    )
+    """Set the httponly refresh token cookie — delegates to auth_service.set_refresh_cookie."""
+    set_refresh_cookie(response, raw_refresh)
 
 
 # CSRF state is time-bound: expires after 10 minutes (per spec)
@@ -275,7 +268,8 @@ async def github_callback(
     )
     new_token.session_id = new_session_id
 
-    # Emit structured audit log
+    # Emit structured audit log — both the token-level event (github_app_service)
+    # and the auth-level event (audit_service) for compliance.
     try:
         from app.services.github_app_service import log_token_event
         log_token_event(
@@ -287,6 +281,11 @@ async def github_callback(
         )
     except Exception:
         pass
+    event_type = AUTH_LOGIN_NEW_USER if is_new else AUTH_LOGIN
+    await log_auth_event(
+        event_type, request, user_id=user.id,
+        metadata={"github_login": github_login, "is_new": is_new},
+    )
 
     # Redirect to frontend; token is retrieved via GET /auth/token (never in URL).
     # Append ?new=1 for brand-new users so the frontend can show the onboarding modal.
