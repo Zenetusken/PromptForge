@@ -189,3 +189,69 @@ async def test_restore_endpoint_wrong_user_raises_403():
         assert False, "Expected HTTPException 403"
     except HTTPException as exc:
         assert exc.status_code == 403
+
+
+# ── PATCH / retry soft-delete filter tests ────────────────────────────────
+
+
+async def test_patch_rejects_soft_deleted_record():
+    """PATCH /api/optimize/{id} must return 404 for soft-deleted records."""
+    from fastapi import HTTPException
+
+    from app.routers.optimize import patch_optimization
+    from app.schemas.optimization import PatchOptimizationRequest
+
+    mock_user = MagicMock()
+    mock_user.id = "user-id"
+
+    # Simulate soft-deleted record: execute returns None because
+    # the WHERE clause includes deleted_at IS NULL
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=execute_result)
+
+    patch_body = PatchOptimizationRequest(title="Should Fail")
+
+    try:
+        await patch_optimization(
+            optimization_id="soft-deleted-id",
+            patch=patch_body,
+            session=mock_session,
+            current_user=mock_user,
+        )
+        assert False, "Expected HTTPException 404"
+    except HTTPException as exc:
+        assert exc.status_code == 404
+
+
+# ── MCP _opt_session soft-delete filter tests ─────────────────────────────
+
+
+async def test_mcp_opt_session_excludes_soft_deleted():
+    """_opt_session must filter deleted_at IS NULL so soft-deleted records are invisible."""
+    from app.mcp_server import _opt_session
+
+    execute_result = MagicMock()
+    execute_result.scalar_one_or_none = MagicMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=execute_result)
+
+    with patch("app.mcp_server.async_session") as mock_async_session:
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_async_session.return_value = mock_ctx
+
+        async with _opt_session("deleted-id") as (session, opt):
+            assert opt is None, "Soft-deleted record should not be returned"
+
+        # Verify the query included deleted_at filter
+        call_args = mock_session.execute.call_args
+        query = call_args[0][0]
+        compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+        assert "deleted_at" in compiled, (
+            f"Query should filter deleted_at but got: {compiled}"
+        )

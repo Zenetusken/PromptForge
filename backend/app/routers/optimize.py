@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -61,8 +61,9 @@ async def optimize_prompt(
     start_time = time.time()
 
     async def event_stream():
+        # Session 1: create the record in pending state
         async with async_session() as s:
-            optimization = Optimization(
+            s.add(Optimization(
                 id=opt_id,
                 raw_prompt=request.prompt,
                 status="running",
@@ -73,16 +74,18 @@ async def optimize_prompt(
                 linked_repo_branch=request.repo_branch,
                 retry_of=retry_of,
                 user_id=current_user.id,
-            )
-            s.add(optimization)
+            ))
             await s.commit()
+
+        # Accumulate field updates as pipeline events arrive (no ORM object needed)
+        updates: dict = {}
+        total_tokens = 0
+        pipeline_failed = False
+        pipeline_error_message = None
+
         try:
             # Import pipeline here to avoid circular imports
             from app.services.pipeline import run_pipeline
-
-            total_tokens = 0
-            pipeline_failed = False
-            pipeline_error_message = None
 
             # N26/N30: pre-fetch URL contexts with HTML stripping (shared service)
             url_fetched = await fetch_url_contexts(request.url_contexts)
@@ -96,10 +99,10 @@ async def optimize_prompt(
                     repo_full_name=request.repo_full_name,
                     repo_branch=request.repo_branch,
                     session_id=req.session.get("session_id"),
-                    github_token=request.github_token,          # N23
-                    file_contexts=request.file_contexts,        # N24
-                    instructions=request.instructions,          # N25
-                    url_fetched_contexts=url_fetched,           # N26
+                    github_token=request.github_token,
+                    file_contexts=request.file_contexts,
+                    instructions=request.instructions,
+                    url_fetched_contexts=url_fetched,
                 ):
                     yield _sse_event(event_type, event_data)
 
@@ -112,7 +115,7 @@ async def optimize_prompt(
                         pipeline_failed = True
                         pipeline_error_message = event_data.get("error", "Unknown stage failure")
 
-                    # Update the optimization record with pipeline results
+                    # Accumulate DB field updates from pipeline events
                     if event_type == "codebase_context":
                         _snapshot = json.dumps(event_data)
                         if len(_snapshot) > 65536:
@@ -120,8 +123,6 @@ async def optimize_prompt(
                                 "codebase_context_snapshot truncated from %d to 65536 chars for opt %s",
                                 len(_snapshot), opt_id,
                             )
-                            # JSON-safe truncation: reduce content and re-serialize
-                            # rather than slicing raw JSON which can produce invalid output
                             truncated_data = {
                                 k: v for k, v in event_data.items()
                                 if k in ("model", "repo", "branch", "files_read_count",
@@ -131,30 +132,30 @@ async def optimize_prompt(
                             _snapshot = json.dumps(truncated_data)
                             if len(_snapshot) > 65536:
                                 _snapshot = json.dumps({"_truncated": True, "model": event_data.get("model")})
-                        optimization.codebase_context_snapshot = _snapshot
-                        optimization.model_explore = event_data.get("model")
+                        updates["codebase_context_snapshot"] = _snapshot
+                        updates["model_explore"] = event_data.get("model")
                     elif event_type == "analysis":
-                        optimization.task_type = event_data.get("task_type")
-                        optimization.complexity = event_data.get("complexity")
-                        optimization.weaknesses = json.dumps(event_data.get("weaknesses", []))
-                        optimization.strengths = json.dumps(event_data.get("strengths", []))
-                        optimization.model_analyze = event_data.get("model")
-                        optimization.analysis_quality = event_data.get("analysis_quality")
+                        updates["task_type"] = event_data.get("task_type")
+                        updates["complexity"] = event_data.get("complexity")
+                        updates["weaknesses"] = json.dumps(event_data.get("weaknesses", []))
+                        updates["strengths"] = json.dumps(event_data.get("strengths", []))
+                        updates["model_analyze"] = event_data.get("model")
+                        updates["analysis_quality"] = event_data.get("analysis_quality")
                     elif event_type == "strategy":
-                        optimization.primary_framework = event_data.get("primary_framework")
-                        optimization.secondary_frameworks = json.dumps(
+                        updates["primary_framework"] = event_data.get("primary_framework")
+                        updates["secondary_frameworks"] = json.dumps(
                             event_data.get("secondary_frameworks", [])
                         )
-                        optimization.approach_notes = event_data.get("approach_notes")
-                        optimization.strategy_rationale = event_data.get("rationale")
-                        optimization.strategy_source = event_data.get("strategy_source")
-                        optimization.model_strategy = event_data.get("model")
+                        updates["approach_notes"] = event_data.get("approach_notes")
+                        updates["strategy_rationale"] = event_data.get("rationale")
+                        updates["strategy_source"] = event_data.get("strategy_source")
+                        updates["model_strategy"] = event_data.get("model")
                     elif event_type == "optimization":
-                        optimization.optimized_prompt = event_data.get("optimized_prompt")
-                        optimization.changes_made = json.dumps(event_data.get("changes_made", []))
-                        optimization.framework_applied = event_data.get("framework_applied")
-                        optimization.optimization_notes = event_data.get("optimization_notes")
-                        optimization.model_optimize = event_data.get("model")
+                        updates["optimized_prompt"] = event_data.get("optimized_prompt")
+                        updates["changes_made"] = json.dumps(event_data.get("changes_made", []))
+                        updates["framework_applied"] = event_data.get("framework_applied")
+                        updates["optimization_notes"] = event_data.get("optimization_notes")
+                        updates["model_optimize"] = event_data.get("model")
                     elif event_type == "validation":
                         if "scores" not in event_data:
                             logger.error(
@@ -162,34 +163,36 @@ async def optimize_prompt(
                                 opt_id, list(event_data.keys())
                             )
                         scores = event_data.get("scores", {})
-                        optimization.clarity_score = scores.get("clarity_score")
-                        optimization.specificity_score = scores.get("specificity_score")
-                        optimization.structure_score = scores.get("structure_score")
-                        optimization.faithfulness_score = scores.get("faithfulness_score")
-                        optimization.conciseness_score = scores.get("conciseness_score")
-                        optimization.overall_score = scores.get("overall_score")
-                        optimization.is_improvement = event_data.get("is_improvement")
-                        optimization.verdict = event_data.get("verdict")
-                        optimization.issues = json.dumps(event_data.get("issues", []))
-                        optimization.model_validate = event_data.get("model")
-                        optimization.validation_quality = event_data.get("validation_quality")
+                        updates["clarity_score"] = scores.get("clarity_score")
+                        updates["specificity_score"] = scores.get("specificity_score")
+                        updates["structure_score"] = scores.get("structure_score")
+                        updates["faithfulness_score"] = scores.get("faithfulness_score")
+                        updates["conciseness_score"] = scores.get("conciseness_score")
+                        updates["overall_score"] = scores.get("overall_score")
+                        updates["is_improvement"] = event_data.get("is_improvement")
+                        updates["verdict"] = event_data.get("verdict")
+                        updates["issues"] = json.dumps(event_data.get("issues", []))
+                        updates["model_validate"] = event_data.get("model")
+                        updates["validation_quality"] = event_data.get("validation_quality")
 
-                # Finalize
+                # Finalize — success or partial failure
                 duration_ms = int((time.time() - start_time) * 1000)
-                optimization.duration_ms = duration_ms
-                optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
-                optimization.provider_used = req.app.state.provider.name
+                updates["duration_ms"] = duration_ms
+                updates["updated_at"] = datetime.now(timezone.utc)
+                updates["provider_used"] = req.app.state.provider.name
 
                 if pipeline_failed:
-                    # A stage failed and subsequent stages were skipped
-                    optimization.status = "failed"
-                    optimization.error_message = pipeline_error_message
+                    updates["status"] = "failed"
+                    updates["error_message"] = pipeline_error_message
                 else:
-                    optimization.status = "completed"
+                    updates["status"] = "completed"
 
-                # Persist final state
                 async with async_session() as s:
-                    await s.merge(optimization)
+                    await s.execute(
+                        update(Optimization)
+                        .where(Optimization.id == opt_id)
+                        .values(**updates)
+                    )
                     await s.commit()
 
                 if not pipeline_failed:
@@ -204,14 +207,18 @@ async def optimize_prompt(
                 "Pipeline timeout (%ds) for opt %s",
                 settings.PIPELINE_TIMEOUT_SECONDS, opt_id,
             )
-            optimization.status = "failed"
-            optimization.error_message = (
+            updates["status"] = "failed"
+            updates["error_message"] = (
                 f"Pipeline timed out after {settings.PIPELINE_TIMEOUT_SECONDS}s"
             )
-            optimization.duration_ms = int((time.time() - start_time) * 1000)
-            optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            updates["duration_ms"] = int((time.time() - start_time) * 1000)
+            updates["updated_at"] = datetime.now(timezone.utc)
             async with async_session() as s:
-                await s.merge(optimization)
+                await s.execute(
+                    update(Optimization)
+                    .where(Optimization.id == opt_id)
+                    .values(**updates)
+                )
                 await s.commit()
             yield _sse_event("error", {
                 "stage": "pipeline",
@@ -222,15 +229,18 @@ async def optimize_prompt(
 
         except Exception as e:
             logger.exception(f"Pipeline error for {opt_id}: {e}")
-            duration_ms = int((time.time() - start_time) * 1000)
-            optimization.status = "failed"
-            optimization.error_message = str(e)
-            optimization.duration_ms = duration_ms
-            optimization.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+            updates["status"] = "failed"
+            updates["error_message"] = str(e)
+            updates["duration_ms"] = int((time.time() - start_time) * 1000)
+            updates["updated_at"] = datetime.now(timezone.utc)
 
             try:
                 async with async_session() as s:
-                    await s.merge(optimization)
+                    await s.execute(
+                        update(Optimization)
+                        .where(Optimization.id == opt_id)
+                        .values(**updates)
+                    )
                     await s.commit()
             except Exception:
                 logger.exception("Failed to save error state")
@@ -259,9 +269,15 @@ async def get_optimization(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get a single optimization by ID."""
-    from app.services.optimization_service import get_optimization_orm
-    optimization = await get_optimization_orm(session, optimization_id)
-    if not optimization or optimization.user_id != current_user.id:
+    result = await session.execute(
+        select(Optimization).where(
+            Optimization.id == optimization_id,
+            Optimization.deleted_at.is_(None),
+            Optimization.user_id == current_user.id,
+        )
+    )
+    optimization = result.scalar_one_or_none()
+    if not optimization:
         raise HTTPException(status_code=404, detail="Optimization not found")
     return optimization.to_dict()
 
@@ -275,10 +291,14 @@ async def patch_optimization(
 ):
     """Update metadata on an optimization."""
     result = await session.execute(
-        select(Optimization).where(Optimization.id == optimization_id)
+        select(Optimization).where(
+            Optimization.id == optimization_id,
+            Optimization.deleted_at.is_(None),
+            Optimization.user_id == current_user.id,
+        )
     )
     optimization = result.scalar_one_or_none()
-    if not optimization or optimization.user_id != current_user.id:
+    if not optimization:
         raise HTTPException(status_code=404, detail="Optimization not found")
 
     if patch.expected_version is not None and optimization.row_version != patch.expected_version:
@@ -316,10 +336,14 @@ async def retry_optimization(
 ):
     """Retry an optimization with optional strategy override."""
     result = await session.execute(
-        select(Optimization).where(Optimization.id == optimization_id)
+        select(Optimization).where(
+            Optimization.id == optimization_id,
+            Optimization.deleted_at.is_(None),
+            Optimization.user_id == current_user.id,
+        )
     )
     original = result.scalar_one_or_none()
-    if not original or original.user_id != current_user.id:
+    if not original:
         raise HTTPException(status_code=404, detail="Optimization not found")
 
     # Create a new optimize request based on the original
