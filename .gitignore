@@ -27,7 +27,9 @@ test-results/
 
 # Environment
 .env
+.env.docker
 !.env.example
+!.env.docker.example
 
 # IDE
 .vscode/

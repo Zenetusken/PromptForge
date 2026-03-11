@@ -18,6 +18,9 @@ RUN npm ci --omit=dev
 # ── Stage 3: Runtime ──
 FROM node:24-slim
 
+ARG VERSION=dev
+LABEL org.opencontainers.image.version=$VERSION
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends tini curl && \
     rm -rf /var/lib/apt/lists/*

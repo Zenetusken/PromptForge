@@ -15,6 +15,9 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 # ── Runtime stage ──
 FROM python:3.14-slim
 
+ARG VERSION=dev
+LABEL org.opencontainers.image.version=$VERSION
+
 # tini: proper PID 1 for signal forwarding (graceful uvicorn shutdown).
 # curl: used by Docker health checks.
 RUN apt-get update && \
