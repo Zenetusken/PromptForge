@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added auto-generated Redis password via `secrets-init` init container (zero-config Docker deployment)
+- Removed manual `REDIS_PASSWORD` requirement from `.env.docker.example`
 - Added single-source-of-truth versioning via `backend/app/_version.py`
 - Added version display in the status bar (far right, dim text)
 - Added version to MCP server `initialize` response

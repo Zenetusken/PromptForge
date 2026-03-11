@@ -301,3 +301,122 @@ async def test_expired_token_not_redirected_from_login():
             await github_login(request=mock_request)
 
     assert exc_info.value.status_code == 400
+
+
+# ── Group G — Redis password file resolution ──────────────────────────
+
+
+def test_redis_password_loaded_from_file(tmp_path, monkeypatch):
+    """_resolve_redis_password reads the password from data/.redis_password."""
+    import app.config as config_mod
+    from app.config import Settings
+
+    pw_file = tmp_path / ".redis_password"
+    pw_file.write_text("a" * 64)  # 64-char hex string
+
+    monkeypatch.setattr(config_mod, "_REDIS_PASSWORD_FILE", pw_file)
+    monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
+
+    s = Settings(REDIS_PASSWORD="")
+    assert s.REDIS_PASSWORD == "a" * 64
+
+
+def test_redis_password_env_var_takes_precedence(tmp_path, monkeypatch):
+    """Explicit REDIS_PASSWORD env var overrides the file-based value."""
+    import app.config as config_mod
+    from app.config import Settings
+
+    pw_file = tmp_path / ".redis_password"
+    pw_file.write_text("file-password-" + "x" * 50)
+
+    monkeypatch.setattr(config_mod, "_REDIS_PASSWORD_FILE", pw_file)
+    monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
+
+    s = Settings(REDIS_PASSWORD="explicit-env-password-at-least-32chars")
+    assert s.REDIS_PASSWORD == "explicit-env-password-at-least-32chars"
+
+
+def test_redis_password_missing_file_no_error(tmp_path, monkeypatch):
+    """No file and no env var → empty password (local dev mode)."""
+    import app.config as config_mod
+    from app.config import Settings
+
+    monkeypatch.setattr(
+        config_mod, "_REDIS_PASSWORD_FILE", tmp_path / "nonexistent"
+    )
+    monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
+
+    s = Settings(REDIS_PASSWORD="")
+    assert s.REDIS_PASSWORD == ""
+
+
+def test_redis_password_rejects_short_file(tmp_path, monkeypatch, caplog):
+    """Password file with <32 chars is rejected as potentially corrupted."""
+    import app.config as config_mod
+    from app.config import Settings
+
+    pw_file = tmp_path / ".redis_password"
+    pw_file.write_text("tooshort")
+
+    monkeypatch.setattr(config_mod, "_REDIS_PASSWORD_FILE", pw_file)
+    monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
+
+    with caplog.at_level(logging.WARNING, logger="app.config"):
+        s = Settings(REDIS_PASSWORD="")
+
+    assert s.REDIS_PASSWORD == ""
+    assert any("corrupted" in r.message for r in caplog.records)
+
+
+def test_redis_password_rejects_empty_file(tmp_path, monkeypatch, caplog):
+    """Empty password file is rejected with a warning."""
+    import app.config as config_mod
+    from app.config import Settings
+
+    pw_file = tmp_path / ".redis_password"
+    pw_file.write_text("")
+
+    monkeypatch.setattr(config_mod, "_REDIS_PASSWORD_FILE", pw_file)
+    monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
+
+    with caplog.at_level(logging.WARNING, logger="app.config"):
+        s = Settings(REDIS_PASSWORD="")
+
+    assert s.REDIS_PASSWORD == ""
+    assert any("empty" in r.message for r in caplog.records)
+
+
+def test_redis_password_strips_whitespace(tmp_path, monkeypatch):
+    """File-based password is stripped of leading/trailing whitespace."""
+    import app.config as config_mod
+    from app.config import Settings
+
+    pw_file = tmp_path / ".redis_password"
+    pw_file.write_text("  " + "b" * 64 + "\n")
+
+    monkeypatch.setattr(config_mod, "_REDIS_PASSWORD_FILE", pw_file)
+    monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
+
+    s = Settings(REDIS_PASSWORD="")
+    assert s.REDIS_PASSWORD == "b" * 64
+
+
+def test_redis_password_unreadable_file_warns(tmp_path, monkeypatch, caplog):
+    """Unreadable password file emits a warning, doesn't crash."""
+    import app.config as config_mod
+    from app.config import Settings
+
+    pw_file = tmp_path / ".redis_password"
+    pw_file.write_text("secret")
+    pw_file.chmod(0o000)
+
+    monkeypatch.setattr(config_mod, "_REDIS_PASSWORD_FILE", pw_file)
+    monkeypatch.setattr(config_mod, "_SECRETS_FILE", tmp_path / ".app_secrets")
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="app.config"):
+            s = Settings(REDIS_PASSWORD="")
+        assert s.REDIS_PASSWORD == ""
+        assert any("unreadable" in r.message for r in caplog.records)
+    finally:
+        pw_file.chmod(0o644)  # restore for cleanup
