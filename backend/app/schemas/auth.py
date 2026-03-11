@@ -31,6 +31,12 @@ class PatchAuthMeRequest(BaseModel):
         default=None,
         description="User preferences JSON (dismissed tips, milestones, walkthrough state, etc.).",
     )
+    onboarding_step: int | None = Field(
+        default=None,
+        ge=1,
+        le=4,
+        description="Current wizard step (1-4). Persisted so users can resume after navigation.",
+    )
 
 
 class GetAuthMeResponse(BaseModel):
@@ -44,6 +50,7 @@ class GetAuthMeResponse(BaseModel):
     display_name: str | None
     onboarding_completed: bool
     onboarding_completed_at: str | None
+    onboarding_step: int | None
     preferences: dict
     last_login_at: str | None
     created_at: str
@@ -52,6 +59,11 @@ class GetAuthMeResponse(BaseModel):
 class SessionsResponse(BaseModel):
     """Response body for DELETE /auth/sessions."""
     revoked_sessions: int
+
+
+class LogoutResponse(BaseModel):
+    """Response body for POST /auth/logout."""
+    revoked_count: int
 
 
 # Error code constants — used in HTTPException detail dicts

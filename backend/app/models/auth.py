@@ -36,6 +36,7 @@ class User(Base):
     avatar_url = Column(Text, nullable=True)
     display_name = Column(Text, nullable=True)
     onboarding_completed_at = Column(DateTime, nullable=True)
+    onboarding_step = Column(Integer, nullable=True, default=None)  # Current wizard step (1-4), null = not started
     preferences = Column(Text, nullable=True)  # JSON — user preferences (dismissed tips, milestones, etc.)
     last_login_at = Column(DateTime, nullable=True)
 

@@ -1,6 +1,7 @@
 import logging
 import os
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -61,6 +62,18 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
+@asynccontextmanager
+async def get_session_context():
+    """Async context manager for database sessions outside FastAPI DI."""
+    async with async_session() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
 async def _migrate_add_missing_columns() -> None:
     """Add any new columns to existing tables (SQLite ALTER TABLE migration).
 
@@ -95,6 +108,7 @@ async def _migrate_add_missing_columns() -> None:
             "avatar_url": "TEXT",
             "display_name": "TEXT",
             "onboarding_completed_at": "DATETIME",
+            "onboarding_step": "INTEGER",
             "preferences": "TEXT",
             "last_login_at": "DATETIME",
         },
@@ -179,6 +193,7 @@ async def _migrate_add_missing_indexes(eng=None) -> None:
 async def create_tables():
     """Create all tables on startup. Acts as simple migration."""
     # Import all models so they register with Base.metadata
+    import app.models.audit_log  # noqa: F401
     import app.models.auth  # noqa: F401
     import app.models.github  # noqa: F401
     import app.models.onboarding_event  # noqa: F401

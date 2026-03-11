@@ -14,7 +14,7 @@ import threading
 from typing import Optional
 
 import anyio
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, MultiFernet
 from github import Auth, Github
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Encryption helpers
 # ───────────────────────────────────────────────────────────────────────
 
-_fernet: Optional[Fernet] = None
+_fernet: Optional[MultiFernet] = None
 _fernet_lock = threading.Lock()
 
 # File extensions and directories to exclude when browsing repos
@@ -48,8 +48,12 @@ EXCLUDED_DIRECTORIES = frozenset({
 MAX_FILE_SIZE_BYTES = 100 * 1024  # 100 KB
 
 
-def _get_fernet() -> Fernet:
-    """Return a Fernet instance, creating/loading the key as needed.
+def _get_fernet() -> MultiFernet:
+    """Return a MultiFernet instance, creating/loading the key as needed.
+
+    Supports key rotation: the primary key (GITHUB_TOKEN_ENCRYPTION_KEY) is
+    used for encryption; any comma-separated old keys in
+    GITHUB_TOKEN_ENCRYPTION_KEY_OLD are tried during decryption.
 
     Thread-safe: uses a lock to prevent concurrent first-access from
     generating different keys (race condition).
@@ -65,7 +69,16 @@ def _get_fernet() -> Fernet:
 
         key = settings.GITHUB_TOKEN_ENCRYPTION_KEY
         if key:
-            _fernet = Fernet(key.encode() if isinstance(key, str) else key)
+            primary = Fernet(key.encode() if isinstance(key, str) else key)
+            # Build rotation list: primary key first, then any old keys
+            fernet_list = [primary]
+            old_keys = settings.GITHUB_TOKEN_ENCRYPTION_KEY_OLD
+            if old_keys:
+                for old_key in old_keys.split(","):
+                    old_key = old_key.strip()
+                    if old_key:
+                        fernet_list.append(Fernet(old_key.encode() if isinstance(old_key, str) else old_key))
+            _fernet = MultiFernet(fernet_list)
             return _fernet
 
         # Auto-generate and persist a key if not configured
@@ -85,7 +98,7 @@ def _get_fernet() -> Fernet:
                 os.close(fd)
             logger.info("Generated new GitHub token encryption key at %s", key_path)
 
-        _fernet = Fernet(key_bytes)
+        _fernet = MultiFernet([Fernet(key_bytes)])
         return _fernet
 
 
