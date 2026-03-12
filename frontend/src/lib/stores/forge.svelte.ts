@@ -169,7 +169,10 @@ class ForgeStore {
   setStageRunning(stage: string) {
     this.currentStage = stage;
     this.stageStatuses[stage] = 'running';
-    // Clear accumulated streaming text so retries start fresh
+    // Clear streaming text so retries / re-runs start fresh
+    if (stage === 'optimize') {
+      this.streamingText = '';
+    }
     if (this.liveStageText[stage] !== undefined) {
       this.liveStageText = { ...this.liveStageText, [stage]: '' };
     }
@@ -367,7 +370,7 @@ class ForgeStore {
   /**
    * Shared SSE stream consumer used by retryForge (and callable by startForge
    * if it ever moves into the store). Reads the ReadableStream from an SSE
-   * Response, dispatches every event through _handleSSEEvent, and falls back
+   * Response, dispatches every event through handleSSEEvent, and falls back
    * to polling when the stream drops mid-run (matching the behaviour of
    * startOptimization in client.ts).
    */
@@ -405,7 +408,7 @@ class ForgeStore {
             } catch {
               parsed = payload;
             }
-            this._handleSSEEvent({ event: typeMatch[1], data: parsed });
+            this.handleSSEEvent({ event: typeMatch[1], data: parsed });
             await Promise.resolve(); // yield so Svelte flushes between events
           }
         }
@@ -434,7 +437,7 @@ class ForgeStore {
       try {
         const record = await fetchOptimization(id);
         if (record.status === 'completed') {
-          this._handleSSEEvent({ event: 'complete', data: { optimization_id: id, total_duration_ms: record.duration_ms, total_tokens: null } });
+          this.handleSSEEvent({ event: 'complete', data: { optimization_id: id, total_duration_ms: record.duration_ms, total_tokens: null } });
           this.finishForge();
           return;
         }
@@ -451,7 +454,7 @@ class ForgeStore {
   }
 
   /** Dispatch a single SSE event into the store's state machine. */
-  private _handleSSEEvent(event: SSEEvent): void {
+  handleSSEEvent(event: SSEEvent): void {
     if (typeof event.data !== 'object' || event.data === null) return;
     const data = event.data as Record<string, unknown>;
     switch (event.event) {
@@ -524,7 +527,9 @@ class ForgeStore {
       }
       case 'optimization':
         this.setStageComplete('optimize', { stage: 'optimize', data, duration: data.duration_ms as number | undefined });
-        if (data.optimized_prompt) {
+        // Only overwrite if streaming didn't already populate the text
+        // (batch mode / JSON fallback still needs atomic replacement)
+        if (data.optimized_prompt && !this.streamingText) {
           this.streamingText = data.optimized_prompt as string;
         }
         break;

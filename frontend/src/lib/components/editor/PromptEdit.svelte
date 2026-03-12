@@ -229,209 +229,70 @@
         url_contexts: urlContexts.length > 0 ? urlContexts : undefined,
       },
       (event: SSEEvent) => {
-        if (typeof event.data !== 'object' || event.data === null) {
-          return;
-        }
-        const data = event.data as Record<string, unknown>;
-        switch (event.event) {
-          case 'stage': {
-            const stageName = data.stage as string;
-            if (data.status === 'started') {
-              forge.setStageRunning(stageName);
-            } else if (data.status === 'complete') {
-              // Always capture duration and token count from stage complete event
-              // (it's the authoritative source — dedicated result events don't include it)
-              if (forge.stageResults[stageName]) {
-                forge.stageResults[stageName] = {
-                  ...forge.stageResults[stageName],
-                  duration: data.duration_ms as number | undefined,
-                  tokenCount: data.token_count as number | undefined
-                };
-              }
-              // Only mark complete if a result event hasn't already done so
-              if (forge.stageStatuses[stageName] !== 'done') {
-                forge.setStageComplete(stageName, {
-                  stage: stageName,
-                  data,
-                  duration: data.duration_ms as number | undefined,
-                  tokenCount: data.token_count as number | undefined
-                });
-              }
-            } else if (data.status === 'skipped') {
-              forge.setStageSkipped(stageName);
-            } else if (data.status === 'failed') {
-              // Explore-specific graceful failure: pipeline continues, but stage is red
-              forge.setStageFailed(stageName, data.error as string || `Stage ${stageName} failed`);
-            }
-            break;
-          }
-          case 'codebase_context': {
-            // Store the result for display in StageExplore — but only mark complete
-            // if explore actually succeeded. Failed explores emit status:"failed" via
-            // the 'stage' event that follows, which calls setStageFailed and sets red icon.
-            // Merge into any existing explore result (e.g. explore_info may have arrived first)
-            // rather than replacing it wholesale, to preserve branch_fallback etc.
-            const existingExplore = forge.stageResults['explore'];
-            const mergedData = { ...(existingExplore?.data ?? {}), ...data };
-            forge.stageResults['explore'] = { stage: 'explore', data: mergedData };
-            if (!data.explore_failed) {
-              forge.setStageComplete('explore', { stage: 'explore', data: mergedData });
-            }
-            break;
-          }
-          case 'explore_info':
-            // Supplemental metadata about the explore stage (branch fallback, coverage).
-            // Merge into the existing explore stage result data rather than replacing it.
-            if (forge.stageResults['explore']) {
-              forge.stageResults['explore'] = {
-                ...forge.stageResults['explore'],
-                data: { ...forge.stageResults['explore'].data, ...data }
-              };
-            } else {
-              forge.stageResults['explore'] = { stage: 'explore', data };
-            }
-            break;
-          case 'analysis':
-            forge.setStageComplete('analyze', { stage: 'analyze', data, duration: data.duration_ms as number | undefined });
-            break;
-          case 'strategy':
-            forge.setStageComplete('strategy', { stage: 'strategy', data, duration: data.duration_ms as number | undefined });
-            break;
-          case 'agent_text': {
-            const agentContent = (data.content as string) ?? '';
-            if (agentContent) forge.addAgentReasoning(agentContent);
-            break;
-          }
-          case 'step_progress': {
-            const step = data.step as string;
-            const chunk = (data.content as string) || '';
-            if (step === 'optimize') {
-              forge.appendStreamingText(chunk);
-            } else if (step) {
-              forge.appendStageText(step, chunk);
-            }
-            break;
-          }
-          case 'optimization':
-            forge.setStageComplete('optimize', { stage: 'optimize', data, duration: data.duration_ms as number | undefined });
-            // Replace accumulated raw JSON tokens with the parsed optimized prompt text
-            if (data.optimized_prompt) {
-              forge.streamingText = data.optimized_prompt as string;
-            }
-            break;
-          case 'validation':
-            forge.setStageComplete('validate', { stage: 'validate', data, duration: data.duration_ms as number | undefined });
-            if (data.overall_score != null) {
-              forge.overallScore = data.overall_score as number;
-            } else {
-              const scores = data.scores as Record<string, number> | undefined;
-              if (scores?.overall_score != null) {
-                forge.overallScore = scores.overall_score;
-              }
-            }
-            break;
-          case 'complete':
-            if (data.optimization_id) {
-              const optId = data.optimization_id as string;
-              forge.optimizationId = optId;
-              // Write to the tab via the store (owns the objects) rather than
-              // mutating the prop directly — avoids Svelte 5 ownership warning.
-              // Use tab.id not editor.activeTabId: user may have switched tabs.
-              const storeTab = editor.openTabs.find(t => t.id === tab.id);
-              if (storeTab) storeTab.optimizationId = optId;
-              const validateScores = forge.stageResults?.validate?.data?.scores as Record<string, number> | undefined;
-              const record: ForgeRecord = {
-                id: optId,
-                raw_prompt: forge.rawPrompt,
-                optimized_prompt: forge.streamingText,
-                overall_score: forge.overallScore,
-                // Strategy fields (N13)
-                primary_framework: (forge.stageResults?.strategy?.data?.primary_framework as string) ?? null,
-                secondary_frameworks: (forge.stageResults?.strategy?.data?.secondary_frameworks as string[]) ?? [],
-                approach_notes: (forge.stageResults?.strategy?.data?.approach_notes as string) ?? null,
-                strategy_rationale: (forge.stageResults?.strategy?.data?.rationale as string) ?? null,
-                // Analysis fields
-                task_type: (forge.stageResults?.analyze?.data?.task_type as string) ?? null,
-                complexity: (forge.stageResults?.analyze?.data?.complexity as string) ?? null,
-                weaknesses: (forge.stageResults?.analyze?.data?.weaknesses as string[]) ?? null,
-                strengths: (forge.stageResults?.analyze?.data?.strengths as string[]) ?? null,
-                // Live-session only — no DB column (N19)
-                recommended_frameworks: (forge.stageResults?.analyze?.data?.recommended_frameworks as string[]) ?? [],
-                // Validation scores — keys must match the _score-suffix shape
-                // that the validator emits (clarity_score, not clarity, etc.)
-                clarity_score: validateScores?.clarity_score ?? null,
-                specificity_score: validateScores?.specificity_score ?? null,
-                structure_score: validateScores?.structure_score ?? null,
-                faithfulness_score: validateScores?.faithfulness_score ?? null,
-                conciseness_score: validateScores?.conciseness_score ?? null,
-                // Use event data directly — forge.totalDuration/Tokens are set by
-                // finishForge() called below, so they'd be null at this point
-                duration_ms: (data.total_duration_ms as number) ?? null,
-                total_tokens: (data.total_tokens as number) ?? null,
-              };
-              forge.cacheRecord(optId, record);
-            }
-            forge.finishForge(forge.overallScore ?? undefined, data.total_duration_ms as number | undefined, data.total_tokens as number | undefined);
+        // Delegate all event dispatching to the store (single source of truth)
+        forge.handleSSEEvent(event);
 
-            // Milestone + celebration system
-            const usedChips = [
-              ...fileChips.map(c => c.label),
-              ...instructionChips.map(() => 'instruction'),
-              ...urlChips.map(() => 'URL'),
-            ];
-            const isFirstForge = history.totalCount === 0;
-            if (isFirstForge) {
-              patchAuthMe({ onboarding_completed: true }).catch(() => {});
-              user.onboardingCompleted = true;
-              trackOnboardingEvent('first_forge', { score: forge.overallScore }).catch(() => {});
-            }
-
-            // Check all milestones (including first-forge) — dedup handled by dismissMilestone
-            const achieved = checkAndCelebrateMilestones({
-              forgeCount: history.totalCount + 1,
-              score: forge.overallScore,
-              usedContext: usedChips.length > 0,
-              strategy: strategy,
-              repoLinked: !!github.selectedRepo,
-            });
-
-            // Standard completion toast only when no milestones fired
-            if (achieved.length === 0) {
-              if (usedChips.length > 0) {
-                toast.success(`Forge complete — ${usedChips.length} context item${usedChips.length !== 1 ? 's' : ''} applied`);
-              } else {
-                toast.success('Forge complete — prompt optimized!');
-              }
-            }
-            break;
-          case 'error': {
-            const errStage = (data.stage as string) || 'pipeline';
-            forge.setStageFailed(errStage, data.error as string);
-            // Record per-stage error detail for inline display
-            forge.stageErrors[errStage] = {
-              error: (data.error as string) || `Stage ${errStage} failed`,
-              recoverable: data.recoverable !== false,
+        // Post-processing for 'complete' event only (tab linkage, caching, milestones)
+        if (event.event === 'complete' && typeof event.data === 'object' && event.data !== null) {
+          const data = event.data as Record<string, unknown>;
+          if (data.optimization_id) {
+            const optId = data.optimization_id as string;
+            const storeTab = editor.openTabs.find(t => t.id === tab.id);
+            if (storeTab) storeTab.optimizationId = optId;
+            const validateScores = forge.stageResults?.validate?.data?.scores as Record<string, number> | undefined;
+            const record: ForgeRecord = {
+              id: optId,
+              raw_prompt: forge.rawPrompt,
+              optimized_prompt: forge.streamingText,
+              overall_score: forge.overallScore,
+              primary_framework: (forge.stageResults?.strategy?.data?.primary_framework as string) ?? null,
+              secondary_frameworks: (forge.stageResults?.strategy?.data?.secondary_frameworks as string[]) ?? [],
+              approach_notes: (forge.stageResults?.strategy?.data?.approach_notes as string) ?? null,
+              strategy_rationale: (forge.stageResults?.strategy?.data?.rationale as string) ?? null,
+              task_type: (forge.stageResults?.analyze?.data?.task_type as string) ?? null,
+              complexity: (forge.stageResults?.analyze?.data?.complexity as string) ?? null,
+              weaknesses: (forge.stageResults?.analyze?.data?.weaknesses as string[]) ?? null,
+              strengths: (forge.stageResults?.analyze?.data?.strengths as string[]) ?? null,
+              recommended_frameworks: (forge.stageResults?.analyze?.data?.recommended_frameworks as string[]) ?? [],
+              clarity_score: validateScores?.clarity_score ?? null,
+              specificity_score: validateScores?.specificity_score ?? null,
+              structure_score: validateScores?.structure_score ?? null,
+              faithfulness_score: validateScores?.faithfulness_score ?? null,
+              conciseness_score: validateScores?.conciseness_score ?? null,
+              duration_ms: (data.total_duration_ms as number) ?? null,
+              total_tokens: (data.total_tokens as number) ?? null,
             };
-            // Non-recoverable errors signal pipeline termination — stop forging immediately
-            // rather than waiting for the stream to close (avoids stale "forging" UI state)
-            if (data.recoverable === false) {
-              forge.finishForge();
-            }
-            break;
+            forge.cacheRecord(optId, record);
           }
-          case 'context_warning':
-            // Store dropped-context metadata for optional display in the UI
-            forge.contextWarning = data as unknown as import('$lib/stores/forge.svelte').ContextWarning;
-            break;
-          case 'rate_limit_warning':
-            // Non-fatal warning — show toast but do NOT stop the pipeline
-            toast.warning(data.message as string || 'Rate limit warning — retrying');
-            break;
-          case 'tool_call':
-            forge.addToolCall(data.tool as string, (data.input as Record<string, unknown>) ?? {});
-            break;
-          default:
-            break;
+
+          // Milestone + celebration system
+          const usedChips = [
+            ...fileChips.map(c => c.label),
+            ...instructionChips.map(() => 'instruction'),
+            ...urlChips.map(() => 'URL'),
+          ];
+          const isFirstForge = history.totalCount === 0;
+          if (isFirstForge) {
+            patchAuthMe({ onboarding_completed: true }).catch(() => {});
+            user.onboardingCompleted = true;
+            trackOnboardingEvent('first_forge', { score: forge.overallScore }).catch(() => {});
+          }
+
+          const achieved = checkAndCelebrateMilestones({
+            forgeCount: history.totalCount + 1,
+            score: forge.overallScore,
+            usedContext: usedChips.length > 0,
+            strategy: strategy,
+            repoLinked: !!github.selectedRepo,
+          });
+
+          if (achieved.length === 0) {
+            if (usedChips.length > 0) {
+              toast.success(`Forge complete — ${usedChips.length} context item${usedChips.length !== 1 ? 's' : ''} applied`);
+            } else {
+              toast.success('Forge complete — prompt optimized!');
+            }
+          }
         }
       },
       (err: Error) => {
