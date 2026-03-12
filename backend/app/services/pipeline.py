@@ -18,6 +18,7 @@ from app.services.context_builders import (
     MAX_URL_CONTEXTS,
 )
 from app.services.optimizer import run_optimize
+from app.services.settings_service import load_settings
 from app.services.strategy import run_strategy
 from app.services.validator import run_validate
 
@@ -327,6 +328,13 @@ async def run_pipeline(
         return
 
     # ---- Stage 4: Validate ----
+    # Check auto_validate setting — skip when disabled by user
+    app_settings = load_settings()
+    if not app_settings.get("auto_validate", True):
+        logger.info("Stage 4 (Validate) skipped — auto_validate is disabled in settings")
+        yield ("stage", {"stage": "validate", "status": "skipped"})
+        return
+
     try:
         yield ("stage", {"stage": "validate", "status": "started"})
         start = time.time()

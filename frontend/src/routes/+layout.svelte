@@ -6,7 +6,7 @@
   import { editor } from '$lib/stores/editor.svelte';
   import { forge } from '$lib/stores/forge.svelte';
   import { github } from '$lib/stores/github.svelte';
-  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe, unlinkRepo, trackOnboardingEvent, notifyAuthReady } from '$lib/api/client';
+  import { fetchHealth, fetchGitHubAuthStatus, fetchGitHubRepos, fetchLinkedRepo, fetchOptimization, fetchAuthMe, unlinkRepo, trackOnboardingEvent, notifyAuthReady, fetchHistoryStats } from '$lib/api/client';
   import { toast } from '$lib/stores/toast.svelte';
   import type { RepoInfo } from '$lib/api/client';
   import { user } from '$lib/stores/user.svelte';
@@ -117,6 +117,19 @@
         // Not connected or auth check failed — leave github store in default state
       })
       .finally(() => { _githubFetching = false; });
+  });
+
+  // Eagerly fetch history stats so WelcomeTab checklist "First synthesis complete"
+  // persists across page reloads without requiring the History panel to mount.
+  let _historyStatsFetching = false;
+  $effect(() => {
+    if (!auth.isAuthenticated) { _historyStatsFetching = false; return; }
+    if (_historyStatsFetching) return;
+    _historyStatsFetching = true;
+    fetchHistoryStats()
+      .then(stats => { history.totalCount = stats.total_optimizations; })
+      .catch(() => { /* API not ready yet — checklist stays unchecked until health reconnects */ })
+      .finally(() => { _historyStatsFetching = false; });
   });
 
   // Hydrate User profile (display_name, avatar_url, email) when authenticated.

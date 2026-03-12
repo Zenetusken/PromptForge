@@ -76,7 +76,8 @@ async def test_pipeline_forwards_file_contexts_to_run_optimize():
     with patch("app.services.pipeline.run_analyze", mock_analyze), \
          patch("app.services.pipeline.run_strategy", mock_strategy), \
          patch("app.services.pipeline.run_optimize", mock_optimize), \
-         patch("app.services.pipeline.run_validate", mock_validate):
+         patch("app.services.pipeline.run_validate", mock_validate), \
+         patch("app.services.pipeline.load_settings", return_value={"auto_validate": True}):
         async for _ in run_pipeline(
             provider=MagicMock(),
             raw_prompt="Optimize this prompt for a Python service",
@@ -162,6 +163,7 @@ async def test_pipeline_retry_also_forwards_file_contexts():
          patch("app.services.pipeline.run_strategy", mock_strategy), \
          patch("app.services.pipeline.run_optimize", mock_optimize), \
          patch("app.services.pipeline.run_validate", mock_validate), \
+         patch("app.services.pipeline.load_settings", return_value={"auto_validate": True}), \
          patch("app.services.pipeline.settings") as mock_settings:
         mock_settings.MAX_PIPELINE_RETRIES = 1
         mock_settings.ANALYZE_TIMEOUT_SECONDS = 30
@@ -299,7 +301,8 @@ async def test_empty_analysis_defaults_to_general():
     with patch("app.services.pipeline.run_analyze", mock_analyze_empty), \
          patch("app.services.pipeline.run_strategy", mock_strategy), \
          patch("app.services.pipeline.run_optimize", mock_optimize), \
-         patch("app.services.pipeline.run_validate", mock_validate):
+         patch("app.services.pipeline.run_validate", mock_validate), \
+         patch("app.services.pipeline.load_settings", return_value={"auto_validate": True}):
         async for event_type, event_data in run_pipeline(
             provider=provider,
             raw_prompt="test prompt",
@@ -387,6 +390,7 @@ async def test_retry_exception_emits_error_event():
          patch("app.services.pipeline.run_strategy", mock_strategy), \
          patch("app.services.pipeline.run_optimize", mock_optimize), \
          patch("app.services.pipeline.run_validate", mock_validate), \
+         patch("app.services.pipeline.load_settings", return_value={"auto_validate": True}), \
          patch("app.services.pipeline.settings") as mock_settings:
         mock_settings.MAX_PIPELINE_RETRIES = 1
         mock_settings.ANALYZE_TIMEOUT_SECONDS = 30
@@ -406,6 +410,57 @@ async def test_retry_exception_emits_error_event():
         "Retry exception must emit a recoverable error event"
     assert "validate" in retry_errors[0]["stage"], \
         "Error event must identify the validate stage"
+
+
+# ---------------------------------------------------------------------------
+# P-skip-validate: auto_validate=False skips Stage 4
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_pipeline_skips_validate_when_auto_validate_false():
+    """When auto_validate is disabled in settings, Stage 4 should be skipped."""
+    from app.services.pipeline import run_pipeline
+
+    async def mock_analyze(*args, **kwargs):
+        yield ("analysis", {"task_type": "general", "complexity": "simple",
+                            "weaknesses": [], "strengths": [], "recommended_frameworks": []})
+
+    async def mock_strategy(*args, **kwargs):
+        yield ("strategy", {"primary_framework": "CO-STAR", "secondary_frameworks": [],
+                            "rationale": "test", "approach_notes": ""})
+
+    async def mock_optimize(*args, **kwargs):
+        yield ("optimization", {"optimized_prompt": "improved", "changes_made": [],
+                                "framework_applied": "CO-STAR", "optimization_notes": ""})
+
+    validate_called = False
+
+    async def mock_validate(*args, **kwargs):
+        nonlocal validate_called
+        validate_called = True
+        yield ("validation", {"scores": {"overall_score": 8}, "is_improvement": True,
+                              "verdict": "good", "issues": []})
+
+    events = []
+    with patch("app.services.pipeline.run_analyze", mock_analyze), \
+         patch("app.services.pipeline.run_strategy", mock_strategy), \
+         patch("app.services.pipeline.run_optimize", mock_optimize), \
+         patch("app.services.pipeline.run_validate", mock_validate), \
+         patch("app.services.pipeline.load_settings", return_value={"auto_validate": False}):
+        async for event_type, event_data in run_pipeline(
+            provider=MagicMock(),
+            raw_prompt="Test prompt",
+            optimization_id="skip-validate-test",
+        ):
+            events.append((event_type, event_data))
+
+    assert not validate_called, "run_validate must not be called when auto_validate is False"
+
+    # Validate stage must be emitted as skipped
+    validate_stages = [(et, ed) for et, ed in events
+                       if et == "stage" and ed.get("stage") == "validate"]
+    assert len(validate_stages) == 1
+    assert validate_stages[0][1]["status"] == "skipped"
 
 
 # ---------------------------------------------------------------------------
