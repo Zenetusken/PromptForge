@@ -112,7 +112,7 @@ async def run_validate(
                 f"Use this to verify the optimized prompt does not fabricate file paths, "
                 f"function names, or API signatures. However, absence from this context "
                 f"does NOT mean something doesn't exist — this is partial coverage.\n"
-                f"{codebase_summary[:2500]}"
+                f"{codebase_summary[:4000]}"
             )
 
     model = model or MODEL_ROUTING["validate"]
