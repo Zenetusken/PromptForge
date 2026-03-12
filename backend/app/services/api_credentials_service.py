@@ -1,7 +1,7 @@
 """Anthropic API key encrypted persistence and hot-reload.
 
 Modeled after ``github_credentials_service.py`` but uses Fernet encryption
-via the shared ``github_service.encrypt_token / decrypt_token`` infrastructure.
+via the shared ``encryption_service.encrypt_token / decrypt_token`` infrastructure.
 
 The API key is stored Fernet-encrypted at ``data/.api_credentials`` with 0o600
 permissions.  At startup ``load_api_key_from_file()`` decrypts and applies the
@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 
 from app.config import settings
-from app.services.github_service import decrypt_token, encrypt_token
+from app.services.encryption_service import decrypt_token, encrypt_token
 
 logger = logging.getLogger(__name__)
 

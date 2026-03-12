@@ -20,7 +20,7 @@ from typing import Optional
 import httpx
 
 from app.config import settings
-from app.services.github_service import decrypt_token
+from app.services.encryption_service import decrypt_token
 
 logger = logging.getLogger(__name__)
 

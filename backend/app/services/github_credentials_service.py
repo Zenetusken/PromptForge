@@ -37,7 +37,7 @@ def load_credentials_from_file() -> None:
         # Try decrypting first (new encrypted format)
         data = None
         try:
-            from app.services.github_service import decrypt_token
+            from app.services.encryption_service import decrypt_token
 
             decrypted = decrypt_token(raw)
             data = json.loads(decrypted)
@@ -77,7 +77,7 @@ def save_credentials(client_id: str, client_secret: str) -> None:
     Uses a temp-file + os.replace() pattern so that a crash or SIGKILL mid-write
     can never leave a partially-written (corrupted) credentials file.
     """
-    from app.services.github_service import encrypt_token
+    from app.services.encryption_service import encrypt_token
 
     _CREDS_FILE.parent.mkdir(parents=True, exist_ok=True)
     plaintext = json.dumps({"client_id": client_id, "client_secret": client_secret})
