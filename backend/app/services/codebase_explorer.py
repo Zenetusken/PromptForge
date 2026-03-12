@@ -271,6 +271,117 @@ EXPLORE_OUTPUT_SCHEMA: dict = {
 }
 
 
+# ── Intent classification schema ──────────────────────────────────────
+# Used by _classify_prompt_intent() to classify the user's prompt intent
+# before synthesis, so the explore model can adapt its observations.
+
+INTENT_CLASSIFICATION_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "intent_category": {
+            "type": "string",
+            "enum": [
+                "refactoring", "api_design", "feature_build", "testing",
+                "debugging", "architecture_review", "performance",
+                "documentation", "migration", "security", "general",
+            ],
+        },
+        "observation_directives": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "2-4 specific instructions for what the explore model should focus on",
+        },
+        "snippet_priorities": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "2-3 types of code regions to prioritize in snippet extraction",
+        },
+        "depth": {
+            "type": "string",
+            "enum": ["structural", "behavioral", "relational"],
+            "description": "Observation depth preference",
+        },
+    },
+    "required": ["intent_category", "observation_directives", "snippet_priorities", "depth"],
+}
+
+_INTENT_DEFAULT: dict = {
+    "intent_category": "general",
+    "depth": "structural",
+    "observation_directives": [],
+    "snippet_priorities": [],
+}
+
+_INTENT_SYSTEM_PROMPT = """\
+You are a prompt intent classifier for a codebase exploration system.
+
+Given a user's prompt, classify what KIND of codebase intelligence a downstream
+prompt optimizer will need to write a surgically precise optimized version.
+
+Your classification drives what the codebase explorer focuses on:
+- "structural" depth: module layout, file organization, component locations
+- "behavioral" depth: function behaviors, hardcoded values, conditional branches, side effects
+- "relational" depth: dependencies, data flow, integration points, contracts between modules
+
+Intent categories and their typical focus:
+- refactoring: code smells, cross-cutting concerns, hardcoded values, duplication, behavioral patterns
+- api_design: endpoint structure, request/response shapes, middleware chain, data contracts
+- feature_build: module layout, extension points, existing patterns to follow, conventions
+- testing: test coverage signals, testability barriers, mock patterns, fixture setup
+- debugging: error paths, state mutations, side effects, exception handling patterns
+- architecture_review: dependency graph, layer violations, coupling points, module boundaries
+- performance: hot paths, caching patterns, I/O boundaries, concurrency primitives
+- documentation: public APIs, module purposes, data flow overview, configuration surface
+- migration: dependencies, integration boundaries, version-specific patterns
+- security: auth flows, input validation, credential handling, encryption patterns
+- general: module layout, key abstractions, data flow patterns (use when no specific intent)
+
+Observation directives tell the explorer WHAT to look for. Be specific:
+  Good: "Identify behavioral patterns with specific values (hardcoded constants, magic numbers)"
+  Bad: "Look at the code structure"
+
+Snippet priorities tell the explorer WHICH code regions to extract:
+  Good: "Functions with conditional branching or multiple code paths"
+  Bad: "Important functions"
+
+Your response must be a JSON object matching the required schema."""
+
+
+async def _classify_prompt_intent(
+    provider: "LLMProvider",
+    raw_prompt: str,
+    model: str = "claude-haiku-4-5",
+    timeout_seconds: float = 8.0,
+) -> dict:
+    """Classify the user's prompt intent for adaptive explore synthesis.
+
+    Returns a dict with intent_category, observation_directives,
+    snippet_priorities, and depth. On any failure, returns the default
+    (general/structural) — this is a best-effort enhancement, not a gate.
+    """
+    try:
+        result = await asyncio.wait_for(
+            provider.complete_json(
+                system=_INTENT_SYSTEM_PROMPT,
+                user=raw_prompt,
+                model=model,
+                schema=INTENT_CLASSIFICATION_SCHEMA,
+            ),
+            timeout=timeout_seconds,
+        )
+        # Validate required fields are present
+        if not isinstance(result, dict) or "intent_category" not in result:
+            logger.warning("Intent classification returned invalid result, using default")
+            return dict(_INTENT_DEFAULT)
+        return result
+    except asyncio.TimeoutError:
+        logger.warning("Intent classification timed out after %.1fs", timeout_seconds)
+        return dict(_INTENT_DEFAULT)
+    except Exception as e:
+        logger.warning("Intent classification failed: %s", e)
+        return dict(_INTENT_DEFAULT)
+
+
 @dataclass
 class CodebaseContext:
     repo: str = ""

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.codebase_explorer import (
+    INTENT_CLASSIFICATION_SCHEMA,
     CodebaseContext,
+    _classify_prompt_intent,
     _extract_prompt_referenced_files,
     _format_files_for_llm,
     _get_anchor_paths,
@@ -828,3 +831,79 @@ class TestValidateExploreOutput:
         file_contents = {"a.py": "x"}
         s, o, g = _validate_explore_output(snippets, [], [], file_contents, max_lines_shown=300)
         assert s[0]["context"] == "ok"  # can't parse "various", so left alone
+
+
+class TestIntentClassification:
+    """Tests for the pre-explore intent classification microstep."""
+
+    def test_schema_has_required_fields(self):
+        """INTENT_CLASSIFICATION_SCHEMA requires all four output fields."""
+        assert set(INTENT_CLASSIFICATION_SCHEMA["required"]) == {
+            "intent_category", "observation_directives", "snippet_priorities", "depth"
+        }
+
+    def test_schema_intent_category_is_enum(self):
+        """intent_category is constrained to known categories."""
+        enum_vals = INTENT_CLASSIFICATION_SCHEMA["properties"]["intent_category"]["enum"]
+        assert "refactoring" in enum_vals
+        assert "general" in enum_vals
+        assert "api_design" in enum_vals
+        assert len(enum_vals) == 11
+
+    def test_schema_depth_is_enum(self):
+        """depth is constrained to structural/behavioral/relational."""
+        enum_vals = INTENT_CLASSIFICATION_SCHEMA["properties"]["depth"]["enum"]
+        assert set(enum_vals) == {"structural", "behavioral", "relational"}
+
+    @pytest.mark.asyncio
+    async def test_returns_default_on_provider_failure(self):
+        """On provider error, returns general/structural fallback."""
+        provider = AsyncMock()
+        provider.complete_json = AsyncMock(side_effect=Exception("API error"))
+        result = await _classify_prompt_intent(provider, "some prompt")
+        assert result["intent_category"] == "general"
+        assert result["depth"] == "structural"
+        assert result["observation_directives"] == []
+        assert result["snippet_priorities"] == []
+
+    @pytest.mark.asyncio
+    async def test_returns_default_on_timeout(self):
+        """On timeout, returns general/structural fallback."""
+        async def slow_call(**kwargs):
+            await asyncio.sleep(20)
+            return {}
+
+        provider = AsyncMock()
+        provider.complete_json = slow_call
+        result = await _classify_prompt_intent(provider, "some prompt", timeout_seconds=0.1)
+        assert result["intent_category"] == "general"
+
+    @pytest.mark.asyncio
+    async def test_passes_schema_to_provider(self):
+        """Verifies complete_json is called with the schema parameter."""
+        provider = AsyncMock()
+        provider.complete_json = AsyncMock(return_value={
+            "intent_category": "refactoring",
+            "observation_directives": ["find smells"],
+            "snippet_priorities": ["complex functions"],
+            "depth": "behavioral",
+        })
+        result = await _classify_prompt_intent(provider, "refactor this code")
+        provider.complete_json.assert_called_once()
+        call_kwargs = provider.complete_json.call_args.kwargs
+        assert call_kwargs["schema"] is INTENT_CLASSIFICATION_SCHEMA
+        assert result["intent_category"] == "refactoring"
+
+    @pytest.mark.asyncio
+    async def test_returns_parsed_result_on_success(self):
+        """Successful classification returns the parsed dict."""
+        expected = {
+            "intent_category": "testing",
+            "observation_directives": ["find test patterns", "check coverage"],
+            "snippet_priorities": ["test files"],
+            "depth": "behavioral",
+        }
+        provider = AsyncMock()
+        provider.complete_json = AsyncMock(return_value=expected)
+        result = await _classify_prompt_intent(provider, "write tests for auth")
+        assert result == expected
