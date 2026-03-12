@@ -2,11 +2,29 @@
 
 ## Unreleased
 
+- Fixed history list, stats, and prompt history not auto-refreshing after forge completion — added reactive `completionSeq` counter with coordinating layout effect
+- Fixed editor tab not syncing new optimization ID after retry (stale tab association)
+- Fixed record cache not invalidated after inline title/tag edits in ForgeArtifact
+- Fixed PromptHistory clobbering NavigatorHistory entries with separate fetch (shared store method)
+- Fixed forge record cache not invalidated on single delete, batch delete, restore, and history-panel title edit — deleted records could appear as ghost artifacts
+- Fixed deleting the currently-viewed optimization leaving stale data in ForgeArtifact (now resets pipeline)
+- Changed CLI provider `stream()` from simulated chunking (Agent SDK) to true token-level streaming via `claude` subprocess with `--include-partial-messages`
+- Fixed StageOptimize showing "batch mode" during Opus 4.6 adaptive thinking phase — backend now propagates `streaming` boolean through SSE stage event for correct three-way UI state
+- Fixed Analyze and Strategy cache keys ignoring system prompt content — template edits now auto-invalidate cached results (cache prefix bumped to v3)
+- Added `stage_durations` column to persist per-stage timing and token counts to the database — history TraceView now shows real durations instead of "---"
+- Added intent-specific scoring calibration to validator — discovery intents (refactoring, architecture_review) penalize pre-identified scope items as faithfulness concerns; prescriptive intents (debugging, testing, feature_build, security) reward them
+- Added user-specified output constraints injection to validator — `instructions` are now passed through and verified as faithfulness requirements
+- Added intent-aware framework hint to strategy stage — explore-derived `intent_category` is surfaced as a soft signal for framework selection
 - Added pre-explore intent classification to adapt codebase observations to prompt intent (refactoring, api_design, testing, debugging, etc.)
 - Improved explore synthesis prompt with behavioral specificity guidance, cross-cutting pattern tracing, and quantitative metadata instructions
 - Changed context builder caps: observations 8→12, grounding notes 8→12, snippets 5→10, snippet content 600→1200 chars, key files 10→20, tech stack 10→15
 - Added intent-specific weaving guidance to optimizer codebase context injection (positive instructions per intent category)
+- Changed refactoring and architecture_review weaving guidance to frame scope zones as structural observations with discovery preservation — executor draws conclusions, listed zones are starting points not exhaustive
+- Improved conciseness calibration to prevent section proliferation — constraints fold into the section they govern instead of creating separate Rules/Constraints sections
 - Added codebase-aware paragraphs to coding, analysis, reasoning, and general optimizer prompts
+- Improved validator scoring rubrics — dimension descriptions now distinguish earned precision from bloat, protective constraints from restrictive ones, and proportional structure from over-engineering
+- Added "Do NOT penalize" counterbalance to low-score patterns — codebase-grounded references, informed scope narrowing, and protective constraints are legitimate techniques
+- Added codebase-aware scoring calibration to validator — specificity rewards code navigation precision, conciseness ignores earned length, faithfulness accepts informed scope narrowing
 - Changed validator codebase summary cap from 2500 to 4000 chars
 - Fixed streaming optimize showing raw JSON tokens instead of clean prompt text — new `OptimizeStreamParser` extracts prompt from metadata in real-time
 - Fixed `streamingText` not clearing on optimize retry (stale text + new chunks concatenated)
