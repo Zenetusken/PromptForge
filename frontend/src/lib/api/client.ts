@@ -252,13 +252,15 @@ export async function startOptimization(
           for (const raw of events) {
             if (!raw.trim()) continue;
             const typeMatch = raw.match(/^event: (.+)$/m);
-            const dataMatch = raw.match(/^data: (.+)$/m);
-            if (typeMatch && dataMatch) {
+            // Concatenate all `data:` lines per SSE spec (multi-line safe)
+            const dataLines = raw.match(/^data: (.+)$/gm);
+            if (typeMatch && dataLines) {
+              const payload = dataLines.map((l) => l.slice(6)).join('\n');
               try {
-                const parsed = JSON.parse(dataMatch[1]);
+                const parsed = JSON.parse(payload);
                 wrappedOnEvent({ event: typeMatch[1], data: parsed });
               } catch {
-                wrappedOnEvent({ event: typeMatch[1], data: dataMatch[1] });
+                wrappedOnEvent({ event: typeMatch[1], data: payload });
               }
               await Promise.resolve(); // yield so Svelte flushes between events
             }

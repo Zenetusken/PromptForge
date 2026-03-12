@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Changed `sort` and `order` query parameters to return 400 on invalid values instead of silently defaulting
+- Improved SSE parser in `client.ts` to concatenate multi-line `data:` fields per SSE spec
 - Added wiring for all 6 pipeline settings — `default_model`, `pipeline_timeout`, `max_retries`, `default_strategy`, `stream_optimize`, and `auto_validate` now control pipeline behavior
 - Added `model` parameter to all 5 stage services (`run_analyze`, `run_strategy`, `run_optimize`, `run_validate`, `run_explore`)
 - Added `streaming` parameter to `run_optimize` — when disabled, uses single `complete()` call instead of streaming

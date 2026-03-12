@@ -188,9 +188,11 @@ async def list_optimizations(
 
     # Sorting — whitelist prevents getattr on arbitrary user input
     if sort not in VALID_SORT_COLUMNS:
-        sort = "created_at"
+        raise ValueError(
+            f"Invalid sort column '{sort}'. Must be one of: {', '.join(sorted(VALID_SORT_COLUMNS))}"
+        )
     if order not in ("asc", "desc"):
-        order = "desc"
+        raise ValueError(f"Invalid order '{order}'. Must be 'asc' or 'desc'.")
     sort_column = getattr(Optimization, sort)
     if order == "asc":
         query = query.order_by(sort_column.asc())

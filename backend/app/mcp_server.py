@@ -426,9 +426,13 @@ def create_mcp_server(
             Use next_offset with a follow-up call to paginate through results.
         """
         if sort not in _SORT_COLUMNS:
-            sort = "created_at"
+            return json.dumps({
+                "error": f"Invalid sort column '{sort}'. Must be one of: {', '.join(sorted(_SORT_COLUMNS))}",
+            })
         if order not in ("asc", "desc"):
-            order = "desc"
+            return json.dumps({
+                "error": f"Invalid order '{order}'. Must be 'asc' or 'desc'.",
+            })
         limit = min(max(1, limit), 100)
 
         query = select(Optimization).where(Optimization.deleted_at.is_(None))

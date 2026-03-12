@@ -104,9 +104,15 @@ async def list_history(
 
     # Sorting — whitelist prevents getattr on arbitrary user input
     if sort not in VALID_SORT_COLUMNS:
-        sort = "created_at"
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid sort column '{sort}'. Must be one of: {', '.join(sorted(VALID_SORT_COLUMNS))}",
+        )
     if order not in ("asc", "desc"):
-        order = "desc"
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid order '{order}'. Must be 'asc' or 'desc'.",
+        )
     sort_column = getattr(Optimization, sort)
     if order == "asc":
         query = query.order_by(sort_column.asc())
