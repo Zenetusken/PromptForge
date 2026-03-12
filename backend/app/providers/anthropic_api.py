@@ -4,7 +4,7 @@ import json
 import logging
 from typing import AsyncGenerator, Callable
 
-from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, parse_json_robust
+from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, invoke_tool, parse_json_robust
 
 logger = logging.getLogger(__name__)
 
@@ -225,33 +225,29 @@ class AnthropicAPIProvider(LLMProvider):
                                 tool_calls=all_tool_calls,
                                 output=block.input,
                             )
-                        if on_tool_call:
-                            on_tool_call(block.name, block.input)
-
-                        # Isolate tool handler errors: return an error tool_result
-                        # so the model can try an alternate strategy instead of
-                        # crashing the entire agentic loop.
-                        is_error = False
-                        try:
-                            if block.name not in tool_map:
-                                raise KeyError(
-                                    f"Model requested unknown tool {block.name!r}. "
-                                    f"Available: {list(tool_map)}"
-                                )
-                            result_str = await tool_map[block.name](block.input)
-                        except Exception as tool_exc:
-                            logger.warning(
-                                "Tool %r raised %s: %s — returning error result to model",
-                                block.name, type(tool_exc).__name__, tool_exc,
+                        if block.name not in tool_map:
+                            # Unknown tool — return error result to model
+                            result_str = (
+                                f"Error: KeyError: Model requested unknown tool {block.name!r}. "
+                                f"Available: {list(tool_map)}"
                             )
-                            result_str = f"Error: {type(tool_exc).__name__}: {tool_exc}"
                             is_error = True
+                            all_tool_calls.append({
+                                "name": block.name,
+                                "input": block.input,
+                                "output": result_str[:500],
+                            })
+                            if on_tool_call:
+                                try:
+                                    on_tool_call(block.name, block.input)
+                                except Exception as cb_err:
+                                    logger.warning("on_tool_call callback raised: %s", cb_err)
+                        else:
+                            result_str, is_error = await invoke_tool(
+                                block.name, block.input, tool_map[block.name],
+                                all_tool_calls, on_tool_call,
+                            )
 
-                        all_tool_calls.append({
-                            "name": block.name,
-                            "input": block.input,
-                            "output": result_str[:500] if result_str else "",
-                        })
                         tool_result: dict = {
                             "type": "tool_result",
                             "tool_use_id": block.id,

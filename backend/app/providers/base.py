@@ -5,7 +5,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Awaitable, Callable
+from typing import AsyncGenerator, Awaitable, Callable  # noqa: F401 — Awaitable used by invoke_tool
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,56 @@ class AgenticResult:
       "tool_error" — a tool call failed after exhausting retries
       "cancelled"  — loop was cancelled externally
     """
+
+
+async def invoke_tool(
+    name: str,
+    input_data: dict,
+    handler: Callable[[dict], Awaitable[str]],
+    tool_calls: list[dict],
+    on_tool_call: Callable[[str, dict], None] | None = None,
+) -> tuple[str, bool]:
+    """Execute a tool handler, log errors, truncate output, and append to tool_calls.
+
+    Shared by AnthropicAPIProvider and ClaudeCLIProvider to avoid
+    duplicating the try/except/log/truncate/append pattern.
+
+    Args:
+        name: Tool name.
+        input_data: Tool input arguments dict.
+        handler: Async callable that executes the tool.
+        tool_calls: Mutable list to append the call record to.
+        on_tool_call: Optional sync callback fired after execution.
+
+    Returns:
+        (result_str, is_error) tuple.
+    """
+    is_error = False
+    try:
+        result_str = await handler(input_data)
+        if not isinstance(result_str, str):
+            result_str = str(result_str)
+    except Exception as tool_exc:
+        logger.warning(
+            "Tool %r raised %s: %s — returning error result to model",
+            name, type(tool_exc).__name__, tool_exc,
+        )
+        result_str = f"Error: {type(tool_exc).__name__}: {tool_exc}"
+        is_error = True
+
+    tool_calls.append({
+        "name": name,
+        "input": input_data,
+        "output": result_str[:500] if result_str else "",
+    })
+
+    if on_tool_call:
+        try:
+            on_tool_call(name, input_data)
+        except Exception as cb_err:
+            logger.warning("on_tool_call callback raised: %s", cb_err)
+
+    return result_str, is_error
 
 
 class LLMProvider(ABC):

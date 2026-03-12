@@ -6,7 +6,7 @@ import logging
 import os
 from typing import AsyncGenerator, Callable
 
-from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, parse_json_robust
+from app.providers.base import AgenticResult, LLMProvider, ToolDefinition, invoke_tool, parse_json_robust
 
 logger = logging.getLogger(__name__)
 
@@ -178,18 +178,7 @@ class ClaudeCLIProvider(LLMProvider):
                 _on=on_tool_call,
                 _calls=tool_calls,
             ) -> dict:
-                result = await _handler(args)
-                result_str = result if isinstance(result, str) else str(result)
-                if _on:
-                    try:
-                        _on(_name, args)
-                    except Exception as _cb_err:
-                        logger.warning("on_tool_call callback raised: %s", _cb_err)
-                _calls.append({
-                    "name": _name,
-                    "input": args,
-                    "output": result_str[:500] if result_str else "",
-                })
+                result_str, _ = await invoke_tool(_name, args, _handler, _calls, _on)
                 return {"content": [{"type": "text", "text": result_str}]}
 
             sdk_tools.append(_tool_fn)
