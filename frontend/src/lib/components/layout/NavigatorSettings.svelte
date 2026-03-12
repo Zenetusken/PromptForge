@@ -892,7 +892,7 @@
           </div>
           <span class="text-[10px] text-text-secondary">Auto-validate</span>
         </label>
-        <label class="flex items-center gap-1.5 cursor-pointer" title="Stream tokens in real-time during optimization. Disable for batch mode (faster, no live preview).">
+        <label class="flex items-center gap-1.5 cursor-pointer" title="Stream tokens progressively during optimization. Disable for batch mode (single response, no live preview).">
           <div class="relative w-7 h-3.5 shrink-0">
             <input
               type="checkbox" class="sr-only peer"
