@@ -50,6 +50,131 @@ def _skip_remaining(remaining_stages: list[str]):
         yield ("stage", {"stage": stage_name, "status": "skipped"})
 
 
+async def _run_optimize_validate(
+    provider: LLMProvider,
+    raw_prompt: str,
+    analysis: dict,
+    strategy_result: dict,
+    codebase_context: dict | None,
+    file_contexts: list[dict] | None,
+    url_fetched_contexts: list[dict] | None,
+    instructions: list[str] | None,
+    model_override: str | None,
+    stream_optimize: bool,
+    retry_constraints: dict | None = None,
+) -> AsyncGenerator[tuple, None]:
+    """Run optimize + validate stages and yield all events.
+
+    After yielding all stage events, yields a final sentinel:
+        ("_ov_result", {
+            "optimization_result": dict | None,
+            "validation": dict | None,
+            "tokens": int,
+            "opt_failed": bool,
+        })
+
+    The sentinel has an underscore prefix and is stripped by the caller
+    before yielding to the external consumer.
+    """
+    total_tokens = 0
+
+    # ---- Optimize ----
+    yield ("stage", {"stage": "optimize", "status": "started", "streaming": stream_optimize})
+    start = time.time()
+
+    optimization_result = None
+    async for event_type, event_data in run_optimize(
+        provider=provider,
+        raw_prompt=raw_prompt,
+        analysis=analysis,
+        strategy=strategy_result,
+        codebase_context=codebase_context,
+        file_contexts=file_contexts,
+        url_fetched_contexts=url_fetched_contexts,
+        instructions=instructions,
+        retry_constraints=retry_constraints,
+        model=model_override,
+        streaming=stream_optimize,
+    ):
+        if event_type == "optimization":
+            optimization_result = event_data
+            optimization_result["model"] = model_override or MODEL_ROUTING["optimize"]
+        yield (event_type, event_data)
+
+    opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
+    stage_tokens = _estimate_tokens(opt_text)
+    if not retry_constraints:
+        # Full token estimate for primary run
+        stage_tokens = (
+            _estimate_tokens(raw_prompt) + _estimate_tokens(json.dumps(analysis))
+            + _estimate_tokens(json.dumps(strategy_result)) + _estimate_tokens(opt_text)
+        )
+    total_tokens += stage_tokens
+
+    yield ("stage", {
+        "stage": "optimize",
+        "status": "complete",
+        "duration_ms": int((time.time() - start) * 1000),
+        "token_count": stage_tokens,
+    })
+
+    opt_failed = bool((optimization_result or {}).get("optimization_failed", False))
+    if opt_failed:
+        yield ("_ov_result", {
+            "optimization_result": optimization_result,
+            "validation": None,
+            "tokens": total_tokens,
+            "opt_failed": True,
+        })
+        return
+
+    # ---- Validate ----
+    yield ("stage", {"stage": "validate", "status": "started"})
+    start = time.time()
+
+    optimized_prompt = optimization_result.get("optimized_prompt", "") if optimization_result else ""
+    changes_made = optimization_result.get("changes_made", []) if optimization_result else []
+
+    validation = None
+    async for event_type, event_data in run_validate(
+        provider=provider,
+        original_prompt=raw_prompt,
+        optimized_prompt=optimized_prompt,
+        changes_made=changes_made,
+        codebase_context=codebase_context,
+        instructions=instructions,
+        model=model_override,
+    ):
+        if event_type == "validation":
+            validation = event_data
+        else:
+            yield (event_type, event_data)
+
+    validation = validation or {}
+    validation["model"] = model_override or MODEL_ROUTING["validate"]
+
+    stage_tokens = (
+        _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt)
+        + _estimate_tokens(json.dumps(validation))
+    )
+    total_tokens += stage_tokens
+
+    yield ("validation", validation)
+    yield ("stage", {
+        "stage": "validate",
+        "status": "complete",
+        "duration_ms": int((time.time() - start) * 1000),
+        "token_count": stage_tokens,
+    })
+
+    yield ("_ov_result", {
+        "optimization_result": optimization_result,
+        "validation": validation,
+        "tokens": total_tokens,
+        "opt_failed": False,
+    })
+
+
 async def run_pipeline(
     provider: LLMProvider,
     raw_prompt: str,
@@ -404,13 +529,7 @@ async def run_pipeline(
         return
 
     # ---- Retry on low score ----
-    # Retries up to settings.MAX_PIPELINE_RETRIES times when overall_score is
-    # below LOW_SCORE_THRESHOLD and the result is not an improvement.
-    # On the second retry (retry_count >= 1), focus_areas is narrowed to the
-    # single lowest-scoring dimension instead of all failing areas.
     retry_count = 0
-    # Use empty dict fallback (not validation itself) so the access pattern is
-    # consistent with the retry-narrowing block at the bottom of the loop.
     overall_score = validation.get("scores", {}).get("overall_score", 10)
     is_improvement = validation.get("is_improvement", False)
     while (
@@ -434,8 +553,6 @@ async def run_pipeline(
         })
 
         # Determine focus_areas for this retry attempt.
-        # First retry: all failing areas from validation issues.
-        # Second+ retry: only the single lowest-scoring dimension.
         if retry_count == 0:
             focus_areas = validation.get("issues", [])
         else:
@@ -451,55 +568,27 @@ async def run_pipeline(
             focus_areas = [lowest_dim]
             logger.info(f"Second retry: narrowing focus to lowest dimension '{lowest_dim}'")
 
-        _retry_active_stage = "optimize"  # Track which stage is active for error reporting
         try:
-            # Re-run optimize with adjusted constraints
-            yield ("stage", {"stage": "optimize", "status": "started", "streaming": stream_optimize})
-            start = time.time()
-
-            retry_optimization_result = None
-            async for event_type, event_data in run_optimize(
-                provider=provider,
-                raw_prompt=raw_prompt,
-                analysis=analysis,
-                strategy=strategy_result,
-                codebase_context=codebase_context,
-                file_contexts=file_contexts,
-                url_fetched_contexts=url_fetched_contexts,
-                instructions=instructions,
+            ov_result = None
+            async for event_type, event_data in _run_optimize_validate(
+                provider, raw_prompt, analysis, strategy_result, codebase_context,
+                file_contexts, url_fetched_contexts, instructions,
+                model_override, stream_optimize,
                 retry_constraints={
                     "min_score_target": LOW_SCORE_THRESHOLD + 2,
                     "previous_score": overall_score,
                     "focus_areas": focus_areas,
                     "retry_attempt": retry_count + 1,
                 },
-                model=model_override,
-                streaming=stream_optimize,
             ):
-                if event_type == "optimization":
-                    retry_optimization_result = event_data
-                    retry_optimization_result["model"] = model_override or MODEL_ROUTING["optimize"]
-                yield (event_type, event_data)
+                if event_type == "_ov_result":
+                    ov_result = event_data
+                else:
+                    yield (event_type, event_data)
 
-            # Gate: if retry optimizer also failed totally, skip validate and stop retrying
-            _retry_opt_failed = bool(
-                (retry_optimization_result or {}).get("optimization_failed", False)
-            )
-            if not _retry_opt_failed and retry_optimization_result:
-                optimization_result = retry_optimization_result
+            assert ov_result is not None
 
-            opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""
-            stage_tokens = _estimate_tokens(opt_text)
-            total_tokens += stage_tokens
-
-            yield ("stage", {
-                "stage": "optimize",
-                "status": "complete",
-                "duration_ms": int((time.time() - start) * 1000),
-                "token_count": stage_tokens,
-            })
-
-            if _retry_opt_failed:
+            if ov_result["opt_failed"]:
                 logger.error("Retry optimizer signalled failure; skipping validate and aborting retry loop")
                 yield ("stage", {"stage": "validate", "status": "skipped"})
                 yield ("error", {"stage": "optimize",
@@ -507,55 +596,17 @@ async def run_pipeline(
                                  "recoverable": False})
                 return
 
-            # Re-run validate
-            _retry_active_stage = "validate"
-            yield ("stage", {"stage": "validate", "status": "started"})
-            start = time.time()
-
-            optimized_prompt = optimization_result.get("optimized_prompt", "") if optimization_result else ""
-            changes_made = optimization_result.get("changes_made", []) if optimization_result else []
-
-            validation = None
-            async for event_type, event_data in run_validate(
-                provider=provider,
-                original_prompt=raw_prompt,
-                optimized_prompt=optimized_prompt,
-                changes_made=changes_made,
-                codebase_context=codebase_context,
-                instructions=instructions,
-                model=model_override,
-            ):
-                if event_type == "validation":
-                    validation = event_data
-                else:
-                    yield (event_type, event_data)
-
-            validation = validation or {}
-            validation["model"] = model_override or MODEL_ROUTING["validate"]
-
-            stage_tokens = (
-                _estimate_tokens(raw_prompt) + _estimate_tokens(optimized_prompt)
-                + _estimate_tokens(json.dumps(validation))
-            )
-            total_tokens += stage_tokens
-
-            yield ("validation", validation)
-            yield ("stage", {
-                "stage": "validate",
-                "status": "complete",
-                "duration_ms": int((time.time() - start) * 1000),
-                "token_count": stage_tokens,
-            })
-
-            # Update loop conditions for next iteration
+            # Update for next iteration
+            if ov_result["optimization_result"]:
+                optimization_result = ov_result["optimization_result"]
+            validation = ov_result["validation"] or {}
             overall_score = validation.get("scores", {}).get("overall_score", 10)
             is_improvement = validation.get("is_improvement", False)
 
         except Exception as e:
-            logger.warning(f"Retry {retry_count + 1} failed during {_retry_active_stage}: {e}. "
-                           "Using previous validation result.")
+            logger.warning(f"Retry {retry_count + 1} failed: {e}. Using previous validation result.")
             yield ("error", {
-                "stage": _retry_active_stage,
+                "stage": "optimize",
                 "error": f"Retry {retry_count + 1} failed: {e}",
                 "recoverable": True,
             })

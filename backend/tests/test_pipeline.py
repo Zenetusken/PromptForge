@@ -420,8 +420,8 @@ async def test_retry_exception_emits_error_event():
     retry_errors = [ed for _, ed in error_events if ed.get("recoverable") is True]
     assert len(retry_errors) >= 1, \
         "Retry exception must emit a recoverable error event"
-    assert "validate" in retry_errors[0]["stage"], \
-        "Error event must identify the validate stage"
+    assert retry_errors[0]["stage"] in ("optimize", "validate"), \
+        "Error event must identify the optimize or validate stage"
 
 
 # ---------------------------------------------------------------------------

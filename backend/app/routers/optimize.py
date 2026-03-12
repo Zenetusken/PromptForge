@@ -6,7 +6,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,10 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import async_session, get_session
 from app.dependencies.auth import get_current_user
+from app.errors import conflict, not_found, service_unavailable
 from app.models.optimization import Optimization
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.optimization import OptimizeRequest, PatchOptimizationRequest, RetryRequest
-from app.services.optimization_service import accumulate_pipeline_event
+from app.services.optimization_service import PipelineAccumulator
 from app.services.settings_service import load_settings
 from app.services.url_fetcher import fetch_url_contexts
 
@@ -57,7 +58,7 @@ async def optimize_prompt(
 ):
     """Run the optimization pipeline with SSE streaming."""
     if not req.app.state.provider:
-        raise HTTPException(status_code=503, detail="LLM provider not initialized")
+        raise service_unavailable("LLM provider not initialized")
 
     opt_id = str(uuid.uuid4())
     start_time = time.time()
@@ -79,25 +80,16 @@ async def optimize_prompt(
             ))
             await s.commit()
 
-        # Accumulate field updates as pipeline events arrive (no ORM object needed)
-        updates: dict = {}
-        total_tokens = 0
-        stage_timings: dict = {}
-        pipeline_failed = False
-        pipeline_error_message = None
+        acc = PipelineAccumulator()
 
         try:
-            # Import pipeline here to avoid circular imports
             from app.services.pipeline import run_pipeline
 
-            # N26/N30: pre-fetch URL contexts with HTML stripping (shared service)
             url_fetched = await fetch_url_contexts(request.url_contexts)
-
-            # Compute effective timeout: user setting capped by config.py ceiling
             user_settings = load_settings()
             effective_timeout = min(
                 user_settings.get("pipeline_timeout", settings.PIPELINE_TIMEOUT_SECONDS),
-                settings.PIPELINE_TIMEOUT_SECONDS,  # config.py ceiling
+                settings.PIPELINE_TIMEOUT_SECONDS,
             )
 
             async with asyncio.timeout(effective_timeout):
@@ -116,44 +108,14 @@ async def optimize_prompt(
                 ):
                     yield _sse_event(event_type, event_data)
 
-                    # Track total tokens and per-stage durations from stage complete events
-                    if event_type == "stage" and event_data.get("status") == "complete":
-                        total_tokens += event_data.get("token_count", 0)
-                        _sname = event_data.get("stage")
-                        if _sname:
-                            stage_timings[_sname] = {
-                                "duration_ms": event_data.get("duration_ms", 0),
-                                "token_count": event_data.get("token_count", 0),
-                            }
-
-                    # Detect non-recoverable pipeline errors (failed stage)
-                    if event_type == "error" and not event_data.get("recoverable", True):
-                        pipeline_failed = True
-                        pipeline_error_message = event_data.get("error", "Unknown stage failure")
-
-                    # Accumulate DB field updates from pipeline events
                     if event_type == "validation" and "scores" not in event_data:
                         logger.error(
                             "Validation event missing 'scores' sub-dict for opt %s; keys: %s",
                             opt_id, list(event_data.keys())
                         )
-                    updates.update(accumulate_pipeline_event(event_type, event_data))
+                    acc.process_event(event_type, event_data)
 
-                # Persist per-stage durations
-                if stage_timings:
-                    updates["stage_durations"] = json.dumps(stage_timings)
-
-                # Finalize — success or partial failure
-                duration_ms = int((time.time() - start_time) * 1000)
-                updates["duration_ms"] = duration_ms
-                updates["updated_at"] = datetime.now(timezone.utc)
-                updates["provider_used"] = req.app.state.provider.name
-
-                if pipeline_failed:
-                    updates["status"] = "failed"
-                    updates["error_message"] = pipeline_error_message
-                else:
-                    updates["status"] = "completed"
+                updates = acc.finalize(req.app.state.provider.name, start_time)
 
                 async with async_session() as s:
                     await s.execute(
@@ -163,26 +125,17 @@ async def optimize_prompt(
                     )
                     await s.commit()
 
-                if not pipeline_failed:
+                if not acc.pipeline_failed:
                     yield _sse_event("complete", {
                         "optimization_id": opt_id,
-                        "total_duration_ms": duration_ms,
-                        "total_tokens": total_tokens,
+                        "total_duration_ms": updates["duration_ms"],
+                        "total_tokens": acc.total_tokens,
                     })
 
         except asyncio.TimeoutError:
-            logger.error(
-                "Pipeline timeout (%ds) for opt %s",
-                effective_timeout, opt_id,
-            )
-            if stage_timings:
-                updates["stage_durations"] = json.dumps(stage_timings)
-            updates["status"] = "failed"
-            updates["error_message"] = (
-                f"Pipeline timed out after {effective_timeout}s"
-            )
-            updates["duration_ms"] = int((time.time() - start_time) * 1000)
-            updates["updated_at"] = datetime.now(timezone.utc)
+            logger.error("Pipeline timeout (%ds) for opt %s", effective_timeout, opt_id)
+            updates = acc.finalize(req.app.state.provider.name, start_time,
+                                   error=TimeoutError(f"Pipeline timed out after {effective_timeout}s"))
             async with async_session() as s:
                 await s.execute(
                     update(Optimization)
@@ -199,13 +152,7 @@ async def optimize_prompt(
 
         except Exception as e:
             logger.exception(f"Pipeline error for {opt_id}: {e}")
-            if stage_timings:
-                updates["stage_durations"] = json.dumps(stage_timings)
-            updates["status"] = "failed"
-            updates["error_message"] = str(e)
-            updates["duration_ms"] = int((time.time() - start_time) * 1000)
-            updates["updated_at"] = datetime.now(timezone.utc)
-
+            updates = acc.finalize(req.app.state.provider.name, start_time, error=e)
             try:
                 async with async_session() as s:
                     await s.execute(
@@ -216,7 +163,6 @@ async def optimize_prompt(
                     await s.commit()
             except Exception:
                 logger.exception("Failed to save error state")
-
             yield _sse_event("error", {
                 "stage": "pipeline",
                 "error": str(e),
@@ -250,7 +196,7 @@ async def get_optimization(
     )
     optimization = result.scalar_one_or_none()
     if not optimization:
-        raise HTTPException(status_code=404, detail="Optimization not found")
+        raise not_found("Optimization not found")
     return optimization.to_dict()
 
 
@@ -271,16 +217,13 @@ async def patch_optimization(
     )
     optimization = result.scalar_one_or_none()
     if not optimization:
-        raise HTTPException(status_code=404, detail="Optimization not found")
+        raise not_found("Optimization not found")
 
     if patch.expected_version is not None and optimization.row_version != patch.expected_version:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "VERSION_CONFLICT",
-                "message": "Record was modified by another request. Refetch and retry.",
-                "current_version": optimization.row_version,
-            },
+        raise conflict(
+            "Record was modified by another request. Refetch and retry.",
+            code="VERSION_CONFLICT",
+            current_version=optimization.row_version,
         )
 
     if patch.title is not None:
@@ -316,7 +259,7 @@ async def retry_optimization(
     )
     original = result.scalar_one_or_none()
     if not original:
-        raise HTTPException(status_code=404, detail="Optimization not found")
+        raise not_found("Optimization not found")
 
     # Create a new optimize request based on the original
     retry_request = OptimizeRequest(

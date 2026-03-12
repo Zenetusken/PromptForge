@@ -16,11 +16,11 @@ import logging
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 
 from app._version import __version__
 from app.config import settings
@@ -127,7 +127,7 @@ async def _run_and_persist(
     """Create Optimization record, run pipeline, persist results. Returns stage events dict."""
     import time
 
-    from app.services.optimization_service import accumulate_pipeline_event
+    from app.services.optimization_service import PipelineAccumulator
     from app.services.pipeline import run_pipeline
 
     async with async_session() as s:
@@ -143,9 +143,7 @@ async def _run_and_persist(
         ))
         await s.commit()
 
-    updates: dict = {}
-    results: dict = {}
-    stage_timings: dict = {}
+    acc = PipelineAccumulator()
     start = time.time()
 
     try:
@@ -161,28 +159,12 @@ async def _run_and_persist(
             instructions=instructions,
             url_fetched_contexts=url_fetched,
         ):
-            updates.update(accumulate_pipeline_event(event_type, event_data))
-            if event_type in ("analysis", "strategy", "optimization", "validation"):
-                results[event_type] = event_data
-            if event_type == "stage" and event_data.get("status") == "complete":
-                _sname = event_data.get("stage")
-                if _sname:
-                    stage_timings[_sname] = {
-                        "duration_ms": event_data.get("duration_ms", 0),
-                        "token_count": event_data.get("token_count", 0),
-                    }
+            acc.process_event(event_type, event_data)
 
-        updates["status"] = "completed"
+        updates = acc.finalize(provider.name, start)
     except Exception as e:
         logger.exception("MCP pipeline error for %s: %s", opt_id, e)
-        updates["status"] = "failed"
-        updates["error_message"] = str(e)
-
-    if stage_timings:
-        updates["stage_durations"] = json.dumps(stage_timings)
-    updates["duration_ms"] = int((time.time() - start) * 1000)
-    updates["provider_used"] = provider.name
-    updates["updated_at"] = datetime.now(timezone.utc)
+        updates = acc.finalize(provider.name, start, error=e)
 
     async with async_session() as s:
         await s.execute(
@@ -192,7 +174,7 @@ async def _run_and_persist(
         )
         await s.commit()
 
-    return results
+    return acc.results
 
 
 # ── Server factory ────────────────────────────────────────────────────────────
@@ -241,9 +223,13 @@ def create_mcp_server(
     # Server does — set it directly so MCP initialize responses include it.
     mcp._mcp_server.version = __version__
 
-    # Whitelisted sort columns — prevents getattr on arbitrary user input (B5)
-    from app.services.optimization_service import VALID_SORT_COLUMNS as _SORT_COLUMNS
-    from app.services.optimization_service import compute_stats, escape_like
+    # Optimization service imports — query building, sort validation, stats
+    from app.services.optimization_service import (
+        OptimizationQuery,
+        compute_stats,
+        query_optimizations,
+        validate_sort_params,
+    )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -435,57 +421,19 @@ def create_mcp_server(
             JSON with: items (array), total, count, offset, has_more, next_offset.
             Use next_offset with a follow-up call to paginate through results.
         """
-        if sort not in _SORT_COLUMNS:
-            return json.dumps({
-                "error": f"Invalid sort column '{sort}'. Must be one of: {', '.join(sorted(_SORT_COLUMNS))}",
-            })
-        if order not in ("asc", "desc"):
-            return json.dumps({
-                "error": f"Invalid order '{order}'. Must be 'asc' or 'desc'.",
-            })
         limit = min(max(1, limit), 100)
-
-        query = select(Optimization).where(Optimization.deleted_at.is_(None))
-        if user_id:
-            query = query.where(Optimization.user_id == user_id)
-        if project:
-            query = query.where(Optimization.project == project)
-        if task_type:
-            query = query.where(Optimization.task_type == task_type)
-        if min_score is not None:
-            query = query.where(Optimization.overall_score >= min_score)
-        if search:
-            escaped = escape_like(search)
-            pattern = f"%{escaped}%"
-            query = query.where(
-                (Optimization.raw_prompt.ilike(pattern, escape="\\"))
-                | (Optimization.title.ilike(pattern, escape="\\"))
-            )
-
-        sort_col = getattr(Optimization, sort)
-        query = query.order_by(sort_col.asc() if order == "asc" else sort_col.desc())
+        try:
+            validate_sort_params(sort, order)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
 
         async with async_session() as session:
-            # Total count for pagination metadata
-            count_result = await session.execute(
-                select(func.count()).select_from(query.subquery())
-            )
-            total = count_result.scalar() or 0
-
-            # Paginated results
-            result = await session.execute(query.offset(offset).limit(limit))
-            items = [o.to_dict() for o in result.scalars().all()]
-
-        fetched = len(items)
-        has_more = (offset + fetched) < total
-        return json.dumps({
-            "total": total,
-            "count": fetched,
-            "offset": offset,
-            "items": items,
-            "has_more": has_more,
-            "next_offset": offset + fetched if has_more else None,
-        }, indent=2)
+            envelope = await query_optimizations(session, OptimizationQuery(
+                limit=limit, offset=offset, project=project, task_type=task_type,
+                min_score=min_score, search=search, sort=sort, order=order,
+                user_id=user_id,
+            ))
+        return json.dumps(envelope, indent=2)
 
     @mcp.tool(
         name="get_stats",
@@ -582,38 +530,11 @@ def create_mcp_server(
             next_offset}. Each item includes id, raw_prompt, title, deleted_at,
             and created_at.
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         async with async_session() as session:
-            base = [
-                Optimization.deleted_at.isnot(None),
-                Optimization.deleted_at >= cutoff,
-            ]
-            if user_id:
-                base.append(Optimization.user_id == user_id)
-            count_result = await session.execute(
-                select(func.count(Optimization.id)).where(*base)
-            )
-            total = count_result.scalar() or 0
-
-            result = await session.execute(
-                select(Optimization)
-                .where(*base)
-                .order_by(Optimization.deleted_at.desc())
-                .offset(offset)
-                .limit(limit)
-            )
-            items = [opt.to_dict() for opt in result.scalars().all()]
-
-        fetched = len(items)
-        has_more = (offset + fetched) < total
-        return json.dumps({
-            "total": total,
-            "count": fetched,
-            "offset": offset,
-            "items": items,
-            "has_more": has_more,
-            "next_offset": offset + fetched if has_more else None,
-        }, indent=2, default=str)
+            envelope = await query_optimizations(session, OptimizationQuery(
+                limit=limit, offset=offset, user_id=user_id, deleted_only=True,
+            ))
+        return json.dumps(envelope, indent=2, default=str)
 
     @mcp.tool(
         name="restore_optimization",
@@ -735,34 +656,12 @@ def create_mcp_server(
             JSON with: items, total, count, offset, has_more, next_offset.
         """
         limit = min(max(1, limit), 100)
-        escaped = escape_like(query)
-        pattern = f"%{escaped}%"
-        stmt = select(Optimization).where(Optimization.deleted_at.is_(None))
-        if user_id:
-            stmt = stmt.where(Optimization.user_id == user_id)
-        stmt = stmt.where(
-            (Optimization.raw_prompt.ilike(pattern, escape="\\"))
-            | (Optimization.optimized_prompt.ilike(pattern, escape="\\"))
-            | (Optimization.title.ilike(pattern, escape="\\"))
-        ).order_by(Optimization.created_at.desc())
         async with async_session() as session:
-            count_result = await session.execute(
-                select(func.count()).select_from(stmt.subquery())
-            )
-            total = count_result.scalar() or 0
-            result = await session.execute(stmt.offset(offset).limit(limit))
-            items = [o.to_dict() for o in result.scalars().all()]
-
-        fetched = len(items)
-        has_more = (offset + fetched) < total
-        return json.dumps({
-            "total": total,
-            "count": fetched,
-            "offset": offset,
-            "items": items,
-            "has_more": has_more,
-            "next_offset": offset + fetched if has_more else None,
-        }, indent=2)
+            envelope = await query_optimizations(session, OptimizationQuery(
+                limit=limit, offset=offset, search=query,
+                search_columns=3, user_id=user_id,
+            ))
+        return json.dumps(envelope, indent=2)
 
     @mcp.tool(
         name="get_by_project",
@@ -793,22 +692,15 @@ def create_mcp_server(
         Returns:
             JSON array of optimization records. Empty array if project has no records.
         """
-        stmt = select(Optimization).where(
-            Optimization.project == project,
-            Optimization.deleted_at.is_(None),
-        )
-        if user_id:
-            stmt = stmt.where(Optimization.user_id == user_id)
-        stmt = stmt.order_by(Optimization.created_at.desc()).limit(limit)
         async with async_session() as session:
-            result = await session.execute(stmt)
-            items = []
-            for o in result.scalars().all():
-                d = o.to_dict()
-                if not include_prompts:
-                    d.pop("raw_prompt", None)
-                    d.pop("optimized_prompt", None)
-                items.append(d)
+            envelope = await query_optimizations(session, OptimizationQuery(
+                limit=limit, project=project, user_id=user_id,
+            ))
+        items = envelope["items"]
+        if not include_prompts:
+            for d in items:
+                d.pop("raw_prompt", None)
+                d.pop("optimized_prompt", None)
         return json.dumps(items, indent=2)
 
     @mcp.tool(
