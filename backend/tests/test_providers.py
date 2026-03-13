@@ -329,13 +329,14 @@ async def test_complete_json_without_schema_uses_parse_json_robust():
 
 
 # ---------------------------------------------------------------------------
-# P3 — ClaudeCLIProvider.complete_json() with schema uses parse_json_robust
+# P3 — ClaudeCLIProvider.complete_json() with schema injects schema instruction
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_cli_complete_json_with_schema_uses_parse_json_robust():
-    """ClaudeCLIProvider.complete_json(schema=...) calls complete() and
-    parses with parse_json_robust — no API delegation."""
+async def test_cli_complete_json_with_schema_injects_schema_instruction():
+    """ClaudeCLIProvider.complete_json(schema=...) injects the schema into
+    the system prompt (CLI lacks native output_config.format support) and
+    parses with parse_json_robust."""
     from claude_agent_sdk import AssistantMessage, TextBlock
 
     from app.providers.claude_cli import ClaudeCLIProvider
@@ -346,12 +347,15 @@ async def test_cli_complete_json_with_schema_uses_parse_json_robust():
         "additionalProperties": False,
     }
 
+    captured_system_prompts: list[str] = []
+
     real_msg = MagicMock(spec=AssistantMessage)
     real_block = MagicMock(spec=TextBlock)
     real_block.text = '{"x": "hello"}'
     real_msg.content = [real_block]
 
     async def mock_query(prompt, options):
+        captured_system_prompts.append(options.system_prompt)
         yield real_msg
 
     provider = ClaudeCLIProvider.__new__(ClaudeCLIProvider)
@@ -359,6 +363,10 @@ async def test_cli_complete_json_with_schema_uses_parse_json_robust():
 
     result = await provider.complete_json("sys", "user", "claude-haiku-4-5", schema=schema)
     assert result == {"x": "hello"}
+    # Verify schema was injected into the system prompt
+    assert len(captured_system_prompts) == 1
+    assert "JSON schema" in captured_system_prompts[0]
+    assert '"additionalProperties": false' in captured_system_prompts[0]
 
 
 # ---------------------------------------------------------------------------
@@ -822,3 +830,319 @@ def test_get_repo_summary_is_first_tool():
 # tested above via T-tools-1 and T-tools-2 — those remain valid since the
 # module is kept for MCP use.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# H2 — CompletionUsage dataclass and cost computation
+# ---------------------------------------------------------------------------
+
+def test_completion_usage_total_tokens():
+    from app.providers.base import CompletionUsage
+    u = CompletionUsage(input_tokens=100, output_tokens=50)
+    assert u.total_tokens == 150
+
+
+def test_completion_usage_estimated_cost_returns_none_when_estimated():
+    from app.providers.base import CompletionUsage
+    u = CompletionUsage(input_tokens=1000, output_tokens=500, is_estimated=True, model="claude-opus-4-6")
+    assert u.estimated_cost_usd() is None
+
+
+def test_completion_usage_estimated_cost_computes_for_api():
+    from app.providers.base import CompletionUsage
+    u = CompletionUsage(input_tokens=1_000_000, output_tokens=100_000, model="claude-sonnet-4-6")
+    cost = u.estimated_cost_usd()
+    assert cost is not None
+    # Sonnet: $3/M input + $15/M output = $3 + $1.5 = $4.5
+    assert abs(cost - 4.5) < 0.01
+
+
+def test_completion_usage_cost_with_cache():
+    from app.providers.base import CompletionUsage
+    u = CompletionUsage(
+        input_tokens=1_000_000, output_tokens=100_000,
+        cache_read_input_tokens=500_000, cache_creation_input_tokens=200_000,
+        model="claude-opus-4-6",
+    )
+    cost = u.estimated_cost_usd()
+    assert cost is not None
+    # Opus: 300K normal input * $15/M + 100K output * $75/M + 500K cache_read * $1.5/M + 200K cache_write * $18.75/M
+    # = 4.5 + 7.5 + 0.75 + 3.75 = 16.5
+    assert abs(cost - 16.5) < 0.01
+
+
+def test_completion_usage_iadd():
+    from app.providers.base import CompletionUsage
+    a = CompletionUsage(input_tokens=100, output_tokens=50, model="claude-opus-4-6")
+    b = CompletionUsage(input_tokens=200, output_tokens=100, is_estimated=True)
+    a += b
+    assert a.input_tokens == 300
+    assert a.output_tokens == 150
+    assert a.is_estimated is True  # Tainted by estimated usage
+    assert a.model == "claude-opus-4-6"
+
+
+def test_completion_usage_cost_clamps_negative_normal_input():
+    """Cache tokens exceeding total input should not produce negative cost."""
+    from app.providers.base import CompletionUsage
+    u = CompletionUsage(
+        input_tokens=100, output_tokens=50,
+        cache_read_input_tokens=80, cache_creation_input_tokens=50,
+        model="claude-sonnet-4-6",
+    )
+    cost = u.estimated_cost_usd()
+    assert cost is not None
+    assert cost >= 0  # Normal input clamped to 0, no negative component
+
+
+def test_completion_usage_unknown_model_returns_none_cost():
+    from app.providers.base import CompletionUsage
+    u = CompletionUsage(input_tokens=100, output_tokens=50, model="gpt-4o")
+    assert u.estimated_cost_usd() is None
+
+
+def test_mock_provider_get_last_usage():
+    from app.providers.mock import MockProvider
+    p = MockProvider()
+    usage = p.get_last_usage()
+    assert usage is not None
+    assert usage.input_tokens == 100
+    assert usage.output_tokens == 50
+    assert usage.is_estimated is True
+
+
+def test_anthropic_get_last_usage_returns_none_initially():
+    from app.providers.anthropic_api import AnthropicAPIProvider
+    provider = AnthropicAPIProvider.__new__(AnthropicAPIProvider)
+    assert provider.get_last_usage() is None
+
+
+@pytest.mark.asyncio
+async def test_anthropic_complete_captures_usage():
+    """After complete(), get_last_usage() returns real token counts."""
+    from app.providers.anthropic_api import AnthropicAPIProvider
+
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(type="text", text="hello")]
+    mock_usage = MagicMock()
+    mock_usage.input_tokens = 42
+    mock_usage.output_tokens = 17
+    mock_usage.cache_read_input_tokens = 0
+    mock_usage.cache_creation_input_tokens = 0
+    mock_response.usage = mock_usage
+
+    mock_stream = AsyncMock()
+    mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_stream.__aexit__ = AsyncMock(return_value=None)
+    mock_stream.get_final_message = AsyncMock(return_value=mock_response)
+
+    provider = AnthropicAPIProvider.__new__(AnthropicAPIProvider)
+    provider._client = MagicMock()
+    provider._client.messages.stream.return_value = mock_stream
+
+    await provider.complete("sys", "user", "claude-haiku-4-5")
+
+    usage = provider.get_last_usage()
+    assert usage is not None
+    assert usage.input_tokens == 42
+    assert usage.output_tokens == 17
+    assert usage.is_estimated is False
+
+
+@pytest.mark.asyncio
+async def test_cli_complete_captures_estimated_usage():
+    """After complete(), ClaudeCLIProvider.get_last_usage() returns estimated counts."""
+    from claude_agent_sdk import AssistantMessage, TextBlock
+
+    from app.providers.claude_cli import ClaudeCLIProvider
+
+    real_msg = MagicMock(spec=AssistantMessage)
+    real_block = MagicMock(spec=TextBlock)
+    real_block.text = "hello world"
+    real_msg.content = [real_block]
+
+    async def mock_query(prompt, options):
+        yield real_msg
+
+    provider = ClaudeCLIProvider.__new__(ClaudeCLIProvider)
+    provider._query = mock_query
+
+    await provider.complete("system prompt", "user message", "claude-haiku-4-5")
+
+    usage = provider.get_last_usage()
+    assert usage is not None
+    assert usage.is_estimated is True
+    assert usage.input_tokens > 0
+    assert usage.output_tokens > 0
+
+
+# ---------------------------------------------------------------------------
+# H4 — select_model() dynamic model routing
+# ---------------------------------------------------------------------------
+
+def test_select_model_default():
+    from app.providers.base import MODEL_ROUTING, select_model
+    assert select_model("strategy") == MODEL_ROUTING["strategy"]
+    assert select_model("optimize") == MODEL_ROUTING["optimize"]
+
+
+def test_select_model_simple_downgrade():
+    from app.providers.base import select_model
+    assert select_model("strategy", "simple") == "claude-sonnet-4-6"
+    assert select_model("optimize", "simple") == "claude-sonnet-4-6"
+
+
+def test_select_model_moderate_no_downgrade():
+    from app.providers.base import MODEL_ROUTING, select_model
+    assert select_model("strategy", "moderate") == MODEL_ROUTING["strategy"]
+
+
+def test_select_model_user_override_takes_precedence():
+    from app.providers.base import select_model
+    assert select_model("strategy", "simple", "claude-opus-4-6") == "claude-opus-4-6"
+
+
+def test_select_model_validate_no_downgrade():
+    """Validate stage has no downgrade rules — always uses default."""
+    from app.providers.base import MODEL_ROUTING, select_model
+    assert select_model("validate", "simple") == MODEL_ROUTING["validate"]
+
+
+# ---------------------------------------------------------------------------
+# H3 — AgenticResult.session_id
+# ---------------------------------------------------------------------------
+
+def test_agentic_result_session_id_defaults_to_none():
+    from app.providers.base import AgenticResult
+    r = AgenticResult(text="hi")
+    assert r.session_id is None
+
+
+def test_agentic_result_session_id_set():
+    from app.providers.base import AgenticResult
+    r = AgenticResult(text="hi", session_id="sess_123")
+    assert r.session_id == "sess_123"
+
+
+# ---------------------------------------------------------------------------
+# H5 — TOOL_CATEGORIES covers all registered tools
+# ---------------------------------------------------------------------------
+
+def test_tool_categories_covers_all_tools():
+    """TOOL_CATEGORIES must have an entry for every tool registered in the MCP server."""
+    from app.mcp_server import TOOL_CATEGORIES
+    expected_tools = {
+        "optimize", "retry_optimization",
+        "get_optimization", "list_optimizations", "search_optimizations",
+        "get_by_project", "get_stats",
+        "tag_optimization", "delete_optimization", "batch_delete_optimizations",
+        "list_trash", "restore_optimization",
+        "github_list_repos", "github_read_file", "github_search_code",
+    }
+    assert set(TOOL_CATEGORIES.keys()) == expected_tools
+
+
+# ---------------------------------------------------------------------------
+# H6 — AnthropicAPIProvider accepts betas parameter
+# ---------------------------------------------------------------------------
+
+def test_anthropic_provider_accepts_betas():
+    """AnthropicAPIProvider.__init__ accepts betas and sets the header."""
+    from unittest.mock import patch
+
+    with patch("anthropic.AsyncAnthropic") as mock_cls:
+        from app.providers.anthropic_api import AnthropicAPIProvider
+        AnthropicAPIProvider(api_key="sk-ant-test", betas=["context-1m-2025-08-07"])
+        call_kwargs = mock_cls.call_args.kwargs
+        assert "default_headers" in call_kwargs
+        assert call_kwargs["default_headers"]["anthropic-beta"] == "context-1m-2025-08-07"
+
+
+def test_anthropic_provider_no_betas_no_header():
+    """When betas is None, no extra headers are set."""
+    from unittest.mock import patch
+
+    with patch("anthropic.AsyncAnthropic") as mock_cls:
+        from app.providers.anthropic_api import AnthropicAPIProvider
+        AnthropicAPIProvider(api_key="sk-ant-test")
+        call_kwargs = mock_cls.call_args.kwargs
+        assert call_kwargs.get("default_headers") is None
+
+
+# ---------------------------------------------------------------------------
+# H2 — PipelineAccumulator usage accumulation
+# ---------------------------------------------------------------------------
+
+def test_pipeline_accumulator_usage_accumulation():
+    """PipelineAccumulator accumulates usage from stage events."""
+    from app.services.optimization_service import PipelineAccumulator
+    acc = PipelineAccumulator()
+
+    # Simulate analyze stage complete event with usage
+    acc.process_event("stage", {
+        "stage": "analyze",
+        "status": "complete",
+        "duration_ms": 500,
+        "token_count": 1000,
+        "usage": {
+            "input_tokens": 800,
+            "output_tokens": 200,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "is_estimated": False,
+            "model": "claude-sonnet-4-6",
+        },
+    })
+
+    assert acc.usage_totals.input_tokens == 800
+    assert acc.usage_totals.output_tokens == 200
+    assert acc.usage_totals.is_estimated is False
+
+    # Simulate optimize stage with estimated usage
+    acc.process_event("stage", {
+        "stage": "optimize",
+        "status": "complete",
+        "duration_ms": 2000,
+        "token_count": 3000,
+        "usage": {
+            "input_tokens": 2000,
+            "output_tokens": 1000,
+            "cache_read_input_tokens": 100,
+            "cache_creation_input_tokens": 0,
+            "is_estimated": True,
+            "model": "claude-opus-4-6",
+        },
+    })
+
+    assert acc.usage_totals.input_tokens == 2800
+    assert acc.usage_totals.output_tokens == 1200
+    assert acc.usage_totals.is_estimated is True  # Tainted
+
+
+def test_pipeline_accumulator_finalize_writes_cost_columns():
+    """finalize() populates cost columns when usage is present."""
+    import time
+    from app.services.optimization_service import PipelineAccumulator
+    acc = PipelineAccumulator()
+
+    acc.process_event("stage", {
+        "stage": "analyze",
+        "status": "complete",
+        "duration_ms": 500,
+        "token_count": 1000,
+        "usage": {
+            "input_tokens": 800,
+            "output_tokens": 200,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "is_estimated": False,
+            "model": "claude-sonnet-4-6",
+        },
+    })
+
+    updates = acc.finalize("mock", time.time())
+    assert "total_input_tokens" in updates
+    assert updates["total_input_tokens"] == 800
+    assert updates["total_output_tokens"] == 200
+    assert updates["estimated_cost_usd"] is not None
+    assert updates["usage_is_estimated"] is False

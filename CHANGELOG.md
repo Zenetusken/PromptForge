@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Fixed `_run_optimize_validate()` retry path bypassing dynamic model routing — now receives per-stage models instead of raw `model_override`
+- Fixed `_compute_cost()` producing negative cost when cache tokens exceed total input tokens — normal input clamped to zero
+- Fixed missing `model_*` columns in SQLite ALTER TABLE migration — `model_explore`, `model_analyze`, `model_strategy`, `model_optimize`, `model_validate` now added to existing databases on startup
+- Added cost tracking with `CompletionUsage` dataclass — real token counts from Anthropic API, estimated for CLI, per-stage usage in SSE events, accumulated totals in `complete` event and DB columns
+- Added dynamic model routing via `select_model()` — downgrades Opus to Sonnet for simple prompts after Analyze, emits `model_selection` SSE event for observability
+- Added 1M context window beta support — `CONTEXT_1M_ENABLED` config flag passes `anthropic-beta` header and expands explore limits (80 files, 50K lines, 2M chars)
+- Added parallel Explore + Analyze execution — runs concurrently via `asyncio.wait` with buffered deterministic event ordering, saving ~min(explore, analyze) seconds
+- Added SDK session resumption support — captures `session_id` from `ResultMessage` on `AgenticResult`, `resume_session_id` parameter on `complete_agentic()`
+- Added MCP tool category registry (`TOOL_CATEGORIES`) — structured metadata for all 15 tools enabling future tool search integration
+- Added `_MODEL_PRICING` table for Claude 4.x models with cache-aware cost computation
+- Added cost aggregation to `compute_stats()` — `total_input_tokens`, `total_output_tokens`, `total_cost_usd`
+- Fixed `ClaudeCLIProvider.complete_json()` silently ignoring schema parameter — now injects schema instruction into system prompt for best-effort compliance
+- Fixed `ClaudeCLIProvider` `ExceptionGroup` unwrapping with dead code and missing error logging on non-ExceptionGroup failures
+- Fixed detector not falling through to `AnthropicAPIProvider` when `ClaudeCLIProvider` instantiation fails with non-ImportError exceptions
+- Fixed inaccurate comment claiming Haiku 4.5 has "no thinking support" — it supports manual thinking, just not adaptive
+- Improved `LLMProvider.complete_json()` docstring to accurately document provider-specific schema enforcement capabilities
+- Improved `on_agent_text` callback docstring with per-provider granularity semantics
+- Changed SDK version constraints in `requirements.txt` — pinned `anthropic>=1.45.0,<2.0`, `mcp>=1.0,<2.0`, `claude-agent-sdk>=0.1.46,<1.0` to prevent breaking changes
+
 ## 0.7.0
 
 - Added intent-aware pipeline — pre-explore classification adapts codebase observations, strategy hints, optimizer weaving, and validator scoring per intent category (refactoring, api_design, testing, debugging, etc.)
