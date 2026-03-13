@@ -1,5 +1,6 @@
 <script lang="ts">
   import OnboardingWizard from './OnboardingWizard.svelte';
+  import Modal from '$lib/components/shared/Modal.svelte';
 
   interface Props {
     onComplete: () => void;
@@ -10,6 +11,8 @@
 </script>
 
 <!-- Full-screen onboarding overlay -->
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-bg-primary/90">
-  <OnboardingWizard {onComplete} {githubConnected} {repoLinked} />
-</div>
+<Modal backdropOpacity={90}>
+  <div class="flex items-center justify-center h-full pointer-events-auto">
+    <OnboardingWizard {onComplete} {githubConnected} {repoLinked} />
+  </div>
+</Modal>

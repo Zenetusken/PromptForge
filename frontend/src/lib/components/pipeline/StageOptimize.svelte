@@ -7,12 +7,12 @@
   {#if forge.stageStatuses['optimize'] === 'running'}
     <div class="space-y-2">
       <div class="flex items-center gap-2 text-neon-cyan">
-        <span class="w-3 h-3 rounded-full animate-spin" style="border: 1px solid transparent; border-top-color: #00e5ff;"></span>
+        <span class="w-3 h-3 animate-spin" style="border: 1px solid transparent; border-top-color: var(--color-neon-cyan);"></span>
         <span>Generating optimized prompt...</span>
       </div>
 
       {#if forge.streamingText}
-        <div class="bg-bg-primary border border-border-accent rounded-lg p-3 relative">
+        <div class="bg-bg-primary border border-border-accent p-3 relative">
           <pre class="text-text-primary text-[13px] font-sans whitespace-pre-wrap leading-relaxed">{forge.streamingText}<span class="streaming-cursor"></span></pre>
         </div>
       {:else if forge.optimizeStreaming === false}
@@ -34,9 +34,9 @@
       {/if}
     </div>
   {:else if forge.stageStatuses['optimize'] === 'done'}
-    <div class="bg-bg-primary border border-neon-green/20 rounded-lg p-3 relative">
+    <div class="bg-bg-primary border border-neon-green/20 p-3 relative">
       <div class="flex items-center justify-between mb-2">
-        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Optimized Prompt</span>
+        <span class="section-heading">Optimized Prompt</span>
         {#if forge.streamingText}
           <CopyButton text={forge.streamingText} />
         {/if}
@@ -61,7 +61,7 @@
     {@const changesMade = (optimizeData.changes_made || []) as string[]}
     {#if changesMade.length > 0}
       <div class="mt-2">
-        <span class="font-display text-[11px] font-bold uppercase text-text-dim">Changes Made</span>
+        <span class="section-heading">Changes Made</span>
         <ul class="mt-1 space-y-0.5">
           {#each changesMade as change}
             <li class="flex gap-1.5 items-start">

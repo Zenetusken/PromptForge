@@ -145,21 +145,21 @@
     </div>
 
     <div class="space-y-3 mb-6">
-      <div class="flex items-start gap-3 p-2 border border-border-subtle">
+      <div class="step-box">
         <span class="font-display text-[11px] text-neon-cyan shrink-0 w-6">01</span>
         <div>
           <div class="font-display text-[10px] uppercase text-text-primary">5-Stage AI Pipeline</div>
           <div class="font-mono text-[9px] text-text-dim mt-0.5">Analyze, strategize, optimize, validate automatically</div>
         </div>
       </div>
-      <div class="flex items-start gap-3 p-2 border border-border-subtle">
+      <div class="step-box">
         <span class="font-display text-[11px] text-neon-cyan shrink-0 w-6">02</span>
         <div>
           <div class="font-display text-[10px] uppercase text-text-primary">Codebase-Aware</div>
           <div class="font-mono text-[9px] text-text-dim mt-0.5">Connect GitHub for context-enriched optimization</div>
         </div>
       </div>
-      <div class="flex items-start gap-3 p-2 border border-border-subtle">
+      <div class="step-box">
         <span class="font-display text-[11px] text-neon-cyan shrink-0 w-6">03</span>
         <div>
           <div class="font-display text-[10px] uppercase text-text-primary">Framework Library</div>
@@ -188,21 +188,18 @@
     <div class="flex items-center gap-2">
       <button
         onclick={nextStep}
-        class="flex-1 px-4 py-2.5 bg-neon-cyan text-bg-primary border border-neon-cyan
-               hover:bg-[#00cce6] font-mono text-[11px] tracking-[0.07em] uppercase"
+        class="flex-1 btn-primary px-4 py-2.5 font-mono text-[11px] tracking-[0.07em] uppercase"
       >NEXT</button>
       <button
         onclick={handleSkip}
-        class="px-4 py-2.5 border border-border-subtle font-mono text-[10px]
-               text-text-dim tracking-[0.05em] uppercase hover:border-neon-cyan/30
-               hover:text-text-secondary transition-colors"
+        class="btn-outline-subtle px-4 py-2.5 font-mono text-[10px] tracking-[0.05em] uppercase"
       >SKIP ALL</button>
     </div>
 
   {:else if step === 2}
     <!-- Step 2: IDE Tour -->
     <div class="mb-4">
-      <h2 class="font-display text-[11px] uppercase tracking-[0.1em] text-neon-cyan mb-1">Your Workspace</h2>
+      <h2 class="section-heading text-neon-cyan mb-1">Your Workspace</h2>
       <p class="font-mono text-[9px] text-text-dim">Hover each zone to learn what it does.</p>
     </div>
 
@@ -241,22 +238,22 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <button onclick={prevStep} class="px-3 py-2 border border-border-subtle font-mono text-[10px] text-text-dim uppercase hover:border-neon-cyan/30 transition-colors">BACK</button>
-      <button onclick={nextStep} class="flex-1 px-4 py-2 bg-neon-cyan text-bg-primary border border-neon-cyan font-mono text-[11px] uppercase tracking-[0.07em] hover:bg-[#00cce6]">NEXT</button>
+      <button onclick={prevStep} class="btn-outline-subtle px-3 py-2 font-mono text-[10px] uppercase">BACK</button>
+      <button onclick={nextStep} class="flex-1 btn-primary px-4 py-2 font-mono text-[11px] uppercase tracking-[0.07em]">NEXT</button>
     </div>
 
   {:else if step === 3}
     <!-- Step 3: Pipeline Explainer -->
     <div class="mb-4">
-      <h2 class="font-display text-[11px] uppercase tracking-[0.1em] text-neon-cyan mb-1">The Forge Pipeline</h2>
+      <h2 class="section-heading text-neon-cyan mb-1">The Forge Pipeline</h2>
       <p class="font-mono text-[9px] text-text-dim">5 stages transform your prompt automatically.</p>
     </div>
 
     <div class="space-y-2 mb-4">
       {#each stages as stage, i}
         <div
-          class="flex items-start gap-3 p-2 border border-border-subtle animate-fade-in"
-          style="animation-delay: {i * 80}ms; border-left: 2px solid {stage.color};"
+          class="step-box animate-fade-in stagger-{i + 1}"
+          style:border-left="1px solid {stage.color}"
         >
           <span class="font-display text-[10px] shrink-0 w-16 uppercase" style="color: {stage.color}">
             {stage.name}
@@ -267,14 +264,14 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <button onclick={prevStep} class="px-3 py-2 border border-border-subtle font-mono text-[10px] text-text-dim uppercase hover:border-neon-cyan/30 transition-colors">BACK</button>
-      <button onclick={nextStep} class="flex-1 px-4 py-2 bg-neon-cyan text-bg-primary border border-neon-cyan font-mono text-[11px] uppercase tracking-[0.07em] hover:bg-[#00cce6]">NEXT</button>
+      <button onclick={prevStep} class="btn-outline-subtle px-3 py-2 font-mono text-[10px] uppercase">BACK</button>
+      <button onclick={nextStep} class="flex-1 btn-primary px-4 py-2 font-mono text-[11px] uppercase tracking-[0.07em]">NEXT</button>
     </div>
 
   {:else if step === 4}
     <!-- Step 4: First Action -->
     <div class="mb-4">
-      <h2 class="font-display text-[11px] uppercase tracking-[0.1em] text-neon-cyan mb-1">Ready to Forge?</h2>
+      <h2 class="section-heading text-neon-cyan mb-1">Ready to Forge?</h2>
       <p class="font-mono text-[9px] text-text-dim">Choose how to get started.</p>
     </div>
 
@@ -286,7 +283,7 @@
       <button
         onclick={() => handleComplete('sample')}
         disabled={saving}
-        class="w-full flex items-start gap-3 p-3 border border-border-subtle hover:border-neon-cyan/30 transition-colors text-left disabled:opacity-40"
+        class="w-full flex items-start gap-3 p-3 text-left btn-outline-subtle"
       >
         <svg class="w-4 h-4 text-neon-cyan shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z"></path>
@@ -300,7 +297,7 @@
       <button
         onclick={() => handleComplete('write')}
         disabled={saving}
-        class="w-full flex items-start gap-3 p-3 border border-border-subtle hover:border-neon-cyan/30 transition-colors text-left disabled:opacity-40"
+        class="w-full flex items-start gap-3 p-3 text-left btn-outline-subtle"
       >
         <svg class="w-4 h-4 text-neon-green shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -314,7 +311,7 @@
       <button
         onclick={() => handleComplete('github')}
         disabled={saving}
-        class="w-full flex items-start gap-3 p-3 border border-border-subtle hover:border-neon-cyan/30 transition-colors text-left disabled:opacity-40"
+        class="w-full flex items-start gap-3 p-3 text-left btn-outline-subtle"
       >
         <svg class="w-4 h-4 text-neon-purple shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
@@ -343,7 +340,7 @@
       </button>
     </div>
 
-    <button onclick={prevStep} class="px-3 py-2 border border-border-subtle font-mono text-[10px] text-text-dim uppercase hover:border-neon-cyan/30 transition-colors">BACK</button>
+    <button onclick={prevStep} class="btn-outline-subtle px-3 py-2 font-mono text-[10px] uppercase">BACK</button>
   {/if}
 
   <!-- Step indicator -->

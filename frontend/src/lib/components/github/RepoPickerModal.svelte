@@ -5,6 +5,7 @@
   import { context } from '$lib/stores/context.svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import RepoBadge from './RepoBadge.svelte';
+  import Modal from '$lib/components/shared/Modal.svelte';
 
   let {
     open = false,
@@ -189,23 +190,17 @@
   -->
   <div use:portal>
 
-    <!-- Backdrop — uses bg-bg-primary design token, not raw black -->
-    <div
-      class="fixed inset-0 bg-bg-primary/80 z-[200]"
-      onclick={() => onclose?.()}
-      role="presentation"
-    ></div>
-
-    <!-- Dialog -->
-    <div
-      class="fixed top-[10%] left-1/2 -translate-x-1/2
-             w-[520px] max-w-[92vw]
-             bg-bg-card border border-border-subtle
-             z-[200] overflow-hidden animate-dialog-in"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="repo-picker-heading"
-    >
+    <Modal onclose={() => onclose?.()} backdropOpacity={80}>
+      <!-- Dialog -->
+      <div
+        class="pointer-events-auto fixed top-[10%] left-1/2 -translate-x-1/2
+               w-[520px] max-w-[92vw]
+               bg-bg-card border border-border-subtle
+               overflow-hidden animate-dialog-in"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="repo-picker-heading"
+      >
       <!-- Header: section heading + search input + close button -->
       <div class="px-4 py-3 border-b border-border-subtle">
         <div class="flex items-center justify-between mb-2.5">
@@ -213,7 +208,7 @@
             {activeTab === 'files' ? 'Browse Files' : 'Select Repository'}
           </h2>
           <button
-            class="w-5 h-5 flex items-center justify-center text-text-dim hover:text-text-primary transition-colors duration-150"
+            class="btn-icon w-5 h-5"
             onclick={() => onclose?.()}
             aria-label="Close"
           >
@@ -227,17 +222,13 @@
         {#if github.selectedRepo}
           <div class="flex items-center gap-0 mb-2.5 border border-border-subtle" style="width: fit-content;">
             <button
-              class="px-3 py-1 text-[11px] font-mono transition-colors duration-150
-                     {activeTab === 'repos'
-                       ? 'bg-neon-cyan/10 text-neon-cyan border-r border-border-subtle'
-                       : 'text-text-dim hover:text-text-primary border-r border-border-subtle'}"
+              class="px-3 py-1 text-[11px] font-mono border-r border-border-subtle
+                     {activeTab === 'repos' ? 'tab-button-active' : 'tab-button'}"
               onclick={() => activeTab = 'repos'}
             >Repos</button>
             <button
-              class="px-3 py-1 text-[11px] font-mono transition-colors duration-150
-                     {activeTab === 'files'
-                       ? 'bg-neon-cyan/10 text-neon-cyan'
-                       : 'text-text-dim hover:text-text-primary'}"
+              class="px-3 py-1 text-[11px] font-mono
+                     {activeTab === 'files' ? 'tab-button-active' : 'tab-button'}"
               onclick={() => activeTab = 'files'}
             >Files {#if github.selectedFiles.length > 0}<span class="ml-1 text-neon-cyan">{github.selectedFiles.length}</span>{/if}</button>
           </div>
@@ -278,8 +269,7 @@
 
             <!-- Main row — click to expand / collapse branch selector -->
             <button
-              class="w-full text-left px-4 py-2.5 relative transition-colors duration-150
-                     hover:bg-bg-hover
+              class="w-full text-left px-4 py-2.5 relative btn-ghost
                      {github.selectedRepo === repo.full_name ? 'bg-neon-cyan/[0.04]' : ''}"
               onclick={() => toggleExpand(repo)}
             >
@@ -400,10 +390,8 @@
                     <span class="text-[10px] font-mono text-text-dim shrink-0">Branch</span>
                     {#each branches as branch}
                       <button
-                        class="text-[10px] font-mono px-2 py-0.5 border transition-colors duration-150
-                               {selectedBranch === branch.name
-                                 ? 'bg-neon-cyan/[0.08] border-neon-cyan/30 text-neon-cyan'
-                                 : 'bg-bg-input border-border-subtle text-text-dim hover:border-neon-cyan/20 hover:text-text-secondary'}"
+                        class="text-[10px] font-mono px-2 py-0.5 border border-border-subtle
+                               {selectedBranch === branch.name ? 'tab-button-active' : 'tab-button'}"
                         onclick={() => selectedBranch = branch.name}
                       >{branch.name}{#if branch.protected}&nbsp;🔒{/if}</button>
                     {/each}
@@ -439,7 +427,7 @@
             <div class="px-4 py-3">
               <p class="text-[11px] font-mono text-neon-red/80 mb-2">Failed to load: {github.treeError}</p>
               <button
-                class="text-[10px] font-mono px-2.5 py-1 border border-neon-cyan/30 text-neon-cyan hover:bg-neon-cyan/10 transition-colors"
+                class="btn-outline-cyan text-[10px] font-mono px-2.5 py-1"
                 onclick={retryLoadTree}
               >Retry</button>
             </div>
@@ -451,8 +439,7 @@
                 {#if node.type === 'tree'}
                   <!-- Directory row -->
                   <button
-                    class="w-full flex items-center gap-1.5 py-1 pr-3 text-left
-                           hover:bg-bg-hover transition-colors duration-100 group"
+                    class="w-full flex items-center gap-1.5 py-1 pr-3 text-left btn-ghost group"
                     style="padding-left: {12 + depth * 16}px; height: 28px;"
                     onclick={() => toggleDir(node.path)}
                   >
@@ -485,7 +472,7 @@
                   >
                     <input
                       type="checkbox"
-                      class="shrink-0 accent-[#00e5ff] cursor-pointer"
+                      class="shrink-0 accent-neon-cyan cursor-pointer"
                       style="width: 12px; height: 12px;"
                       checked={selected}
                       disabled={atCap}
@@ -522,6 +509,6 @@
       {/if}
 
     </div>
-
+    </Modal>
   </div>
 {/if}
