@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Added `pause_turn` stop reason handling in agentic loop — re-sends instead of terminating when server-side tool hits iteration limit
+- Added model-family effort parameter to `_make_extra()` — Opus `high`, Sonnet `medium`, Haiku `low` via `output_config.effort`
+- Added row version guard (`row_version == 0`) on all pipeline DB updates to prevent concurrent PATCH overwrites
+- Added compaction beta support (`COMPACTION_ENABLED` config flag) for automatic context summarization in agentic loops
+- Added `pre-pr-svelte.sh` hook — runs `svelte-check` before `git push` and `gh pr create`
+- Added `code-reviewer` subagent definition for architecture, brand, and consistency review
+- Added Claude Code automation section to `CLAUDE.md` documenting MCP, hooks, settings, and subagents
+- Changed 13 logger call sites from f-string interpolation to parameterized `%s`/`%d` format
 - Fixed `_run_optimize_validate()` retry path bypassing dynamic model routing — now receives per-stage models instead of raw `model_override`
 - Fixed `_compute_cost()` producing negative cost when cache tokens exceed total input tokens — normal input clamped to zero
 - Fixed missing `model_*` columns in SQLite ALTER TABLE migration — `model_explore`, `model_analyze`, `model_strategy`, `model_optimize`, `model_validate` now added to existing databases on startup

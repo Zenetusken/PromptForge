@@ -173,6 +173,27 @@ Single source of truth: `backend/app/_version.py`. All backend consumers import 
 
 Convention: `X.Y.Z` for releases, `X.Y.Z-dev` on main between releases. The frontend reads the version from the health endpoint at runtime — no build-time injection needed.
 
+## Claude Code automation
+
+### `.mcp.json`
+Auto-loads the Project Synthesis MCP server (`http://127.0.0.1:8001/mcp`) when this directory is open in Claude Code. Verify the server is running with `./init.sh status`.
+
+### Hooks (`.claude/hooks/`)
+Pre-tool-use hooks run automatically before `git push` and `gh pr create`:
+
+| Hook | Purpose | Timeout |
+|------|---------|---------|
+| `pre-pr-ruff.sh` | Python lint via Ruff on `backend/app/` and `backend/tests/` | 60s |
+| `pre-pr-svelte.sh` | Svelte type check via `npx svelte-check` on `frontend/` | 120s |
+
+Exit codes: `0` = allow, `2` = block (fix errors first). Configured in `.claude/settings.json`.
+
+### `.claude/settings.json`
+Auto-managed hook matchers. Safe to edit following the existing structure — each `PreToolUse` entry matches a tool name (e.g. `"Bash"`) and runs hooks sequentially.
+
+### Subagents (`.claude/agents/`)
+- **`code-reviewer.md`** — Architecture compliance, brand guidelines, sort whitelist consistency, parameterized logging, and type hint checks. Invoke via the `code-reviewer` agent type.
+
 ## Key architectural decisions
 
 - **Explore gate** (`pipeline.py`): runs when `repo_full_name AND (session_id OR github_token)`. MCP callers pass `github_token` directly since they have no session.
