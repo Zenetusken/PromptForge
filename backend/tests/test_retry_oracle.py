@@ -184,3 +184,78 @@ class TestDiagnosticMessage:
         msg = oracle.build_diagnostic_message(["clarity_score", "faithfulness_score"])
         assert "clarity" in msg.lower()
         assert "faithfulness" in msg.lower()
+
+
+import os
+from hypothesis import given, settings as h_settings, strategies as st
+
+h_settings.register_profile("ci", max_examples=200, deadline=5000)
+h_settings.register_profile("dev", max_examples=1000, deadline=10000)
+h_settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "ci"))
+
+score_strategy = st.integers(min_value=1, max_value=10)
+overall_strategy = st.floats(min_value=1.0, max_value=10.0, allow_nan=False, allow_infinity=False)
+
+
+class TestOraclePropertyBased:
+    @given(overall=overall_strategy)
+    def test_best_attempt_score_gte_minimum(self, overall):
+        oracle = RetryOracle(max_retries=3)
+        oracle.record_attempt(
+            scores={"overall_score": overall},
+            prompt=f"Test prompt {overall}",
+            focus_areas=[],
+        )
+        best_idx = oracle.best_attempt_index
+        best_score = oracle._attempts[best_idx].overall_score
+        min_score = min(a.overall_score for a in oracle._attempts)
+        assert best_score >= min_score
+
+    @given(threshold=st.floats(min_value=0.0, max_value=15.0, allow_nan=False, allow_infinity=False))
+    def test_threshold_always_bounded(self, threshold):
+        oracle = RetryOracle(max_retries=3, threshold=threshold)
+        assert 3.0 <= oracle.threshold <= 8.0
+
+    @given(
+        s1=overall_strategy,
+        s2=overall_strategy,
+        s3=overall_strategy,
+    )
+    def test_momentum_is_bounded(self, s1, s2, s3):
+        oracle = RetryOracle(max_retries=5)
+        for i, s in enumerate([s1, s2, s3]):
+            oracle.record_attempt(
+                scores={"overall_score": s},
+                prompt=f"Unique prompt version {i} score {s}",
+                focus_areas=[],
+            )
+        momentum = oracle._compute_momentum()
+        assert -10.0 <= momentum <= 10.0
+
+    @given(
+        clarity=score_strategy,
+        specificity=score_strategy,
+    )
+    def test_regression_ratio_bounded_zero_to_one(self, clarity, specificity):
+        oracle = RetryOracle(max_retries=3)
+        oracle.record_attempt(
+            scores={"clarity_score": 5, "specificity_score": 5, "overall_score": 5.0},
+            prompt="V1", focus_areas=[],
+        )
+        oracle.record_attempt(
+            scores={"clarity_score": clarity, "specificity_score": specificity, "overall_score": 5.0},
+            prompt="V2 unique", focus_areas=[],
+        )
+        ratio = oracle._compute_regression_ratio()
+        assert 0.0 <= ratio <= 1.0
+
+    @given(overall=overall_strategy)
+    def test_decision_is_valid_action(self, overall):
+        oracle = RetryOracle(max_retries=1)
+        oracle.record_attempt(
+            scores={"overall_score": overall},
+            prompt=f"Prompt {overall}",
+            focus_areas=[],
+        )
+        decision = oracle.should_retry()
+        assert decision.action in ("accept", "accept_best", "retry")
