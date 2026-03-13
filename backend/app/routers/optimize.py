@@ -120,11 +120,13 @@ async def optimize_prompt(
                 updates = acc.finalize(req.app.state.provider.name, start_time)
 
                 async with async_session() as s:
-                    await s.execute(
+                    result = await s.execute(
                         update(Optimization)
-                        .where(Optimization.id == opt_id)
-                        .values(**updates)
+                        .where(Optimization.id == opt_id, Optimization.row_version == 0)
+                        .values(**updates, row_version=1)
                     )
+                    if result.rowcount == 0:
+                        logger.error("Pipeline version conflict for opt %s", opt_id)
                     await s.commit()
 
                 if not acc.pipeline_failed:
@@ -143,11 +145,13 @@ async def optimize_prompt(
             updates = acc.finalize(req.app.state.provider.name, start_time,
                                    error=TimeoutError(f"Pipeline timed out after {effective_timeout}s"))
             async with async_session() as s:
-                await s.execute(
+                result = await s.execute(
                     update(Optimization)
-                    .where(Optimization.id == opt_id)
-                    .values(**updates)
+                    .where(Optimization.id == opt_id, Optimization.row_version == 0)
+                    .values(**updates, row_version=1)
                 )
+                if result.rowcount == 0:
+                    logger.error("Pipeline version conflict for opt %s", opt_id)
                 await s.commit()
             yield _sse_event("error", {
                 "stage": "pipeline",
@@ -157,15 +161,17 @@ async def optimize_prompt(
             return
 
         except Exception as e:
-            logger.exception(f"Pipeline error for {opt_id}: {e}")
+            logger.exception("Pipeline error for %s: %s", opt_id, e)
             updates = acc.finalize(req.app.state.provider.name, start_time, error=e)
             try:
                 async with async_session() as s:
-                    await s.execute(
+                    result = await s.execute(
                         update(Optimization)
-                        .where(Optimization.id == opt_id)
-                        .values(**updates)
+                        .where(Optimization.id == opt_id, Optimization.row_version == 0)
+                        .values(**updates, row_version=1)
                     )
+                    if result.rowcount == 0:
+                        logger.error("Pipeline version conflict for opt %s", opt_id)
                     await s.commit()
             except Exception:
                 logger.exception("Failed to save error state")

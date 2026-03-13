@@ -187,11 +187,13 @@ async def _run_and_persist(
         updates = acc.finalize(provider.name, start, error=e)
 
     async with async_session() as s:
-        await s.execute(
+        result = await s.execute(
             update(Optimization)
-            .where(Optimization.id == opt_id)
-            .values(**updates)
+            .where(Optimization.id == opt_id, Optimization.row_version == 0)
+            .values(**updates, row_version=1)
         )
+        if result.rowcount == 0:
+            logger.error("Pipeline version conflict for opt %s", opt_id)
         await s.commit()
 
     return acc.results
