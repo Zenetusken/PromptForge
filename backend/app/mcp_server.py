@@ -1226,8 +1226,9 @@ def create_mcp_server(
             await db.commit()
 
         # Trigger adaptation recomputation (matches REST router behavior)
-        from app.services.adaptation_engine import recompute_adaptation_safe
         import asyncio
+
+        from app.services.adaptation_engine import recompute_adaptation_safe
         asyncio.create_task(recompute_adaptation_safe(mcp_user))
 
         return FeedbackSubmitResult(**result)
