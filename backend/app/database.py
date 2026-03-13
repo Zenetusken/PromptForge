@@ -212,6 +212,7 @@ async def create_tables():
     import app.models.optimization  # noqa: F401
     import app.models.repo_index  # noqa: F401
     import app.models.feedback  # noqa: F401
+    import app.models.branch  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
