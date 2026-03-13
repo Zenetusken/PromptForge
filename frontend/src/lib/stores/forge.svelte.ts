@@ -671,6 +671,20 @@ class ForgeStore {
         // Store for inspector panel — no immediate UI action
         this.stageResults['adaptation'] = { stage: 'adaptation', data };
         break;
+      case 'adaptation_injected':
+        // Merge into adaptation results for UI consumption
+        this.stageResults['adaptation'] = {
+          stage: 'adaptation',
+          data: { ...(this.stageResults['adaptation']?.data ?? {}), ...data, adaptation_injected: true },
+        };
+        break;
+      case 'adaptation_impact':
+        // Merge impact data for UI consumption
+        this.stageResults['adaptation'] = {
+          stage: 'adaptation',
+          data: { ...(this.stageResults['adaptation']?.data ?? {}), adaptation_impact: data },
+        };
+        break;
       case 'branch_created':
         this.stageResults['branch'] = { stage: 'branch', data };
         break;

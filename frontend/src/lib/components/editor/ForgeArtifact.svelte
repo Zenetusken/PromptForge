@@ -12,6 +12,8 @@
   import StrategyBadge from '$lib/components/shared/StrategyBadge.svelte';
   import TraceView from '$lib/components/pipeline/TraceView.svelte';
   import FeedbackInline from '$lib/components/editor/FeedbackInline.svelte';
+  import FeedbackTier2 from '$lib/components/editor/FeedbackTier2.svelte';
+  import ResultAssessment from '$lib/components/editor/ResultAssessment.svelte';
   import RefinementInput from '$lib/components/editor/RefinementInput.svelte';
   import BranchIndicator from '$lib/components/pipeline/BranchIndicator.svelte';
   import { feedback } from '$lib/stores/feedback.svelte';
@@ -39,11 +41,89 @@
     if (forge.optimizationId) displayTitle = 'Forge Artifact';
   });
 
+  // ── Tier 2 / Result Assessment state ────────────────────────────────────────
+  let showTier2 = $state(false);
+  let issueSuggestions = $state<Array<{ issue_id: string; reason: string; confidence: number }>>([]);
+  let resultAssessment = $state<any>(null);
+  let feedbackInlineRef = $state<any>(null);
+
   $effect(() => {
     const optId = forge.optimizationId;
     if (optId && !forge.isForging) {
       feedback.loadFeedback(optId);
+      feedback.loadAdaptationPulse();
       refinement.loadBranches(optId);
+    }
+  });
+
+  // Load result assessment from SSE adaptation data when forge completes
+  $effect(() => {
+    if (forge.overallScore != null && !forge.isForging && forge.stageResults['validate']) {
+      // Build a basic assessment from available data if no SSE assessment arrived
+      const validateData = forge.stageResults['validate']?.data as Record<string, unknown> | undefined;
+      const adaptationData = forge.stageResults['adaptation']?.data as Record<string, unknown> | undefined;
+
+      if (adaptationData?.result_assessment) {
+        resultAssessment = adaptationData.result_assessment;
+      } else if (validateData) {
+        // Build minimal assessment from validation scores
+        const scores = (validateData.scores || {}) as Record<string, number>;
+        const overall = forge.overallScore ?? 0;
+        const verdict = overall >= 7.5 ? 'strong' : overall >= 6.0 ? 'solid' : overall >= 4.5 ? 'mixed' : 'weak';
+        resultAssessment = {
+          verdict,
+          confidence: 'medium',
+          headline: `Score: ${overall.toFixed(1)}/10`,
+          dimension_insights: Object.entries(scores)
+            .filter(([k]) => k !== 'overall_score')
+            .map(([dim, score]) => ({
+              dimension: dim,
+              score,
+              weight: 0.2,
+              label: dim.replace(/_score$/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+              assessment: `${score.toFixed(1)}/10`,
+              is_weak: score < 5,
+              is_strong: score >= 8,
+              delta_from_previous: null,
+              framework_avg: null,
+              user_priority: 'normal',
+            })),
+          trade_offs: [],
+          retry_journey: {
+            total_attempts: 1,
+            best_attempt: 1,
+            score_trajectory: [overall],
+            gate_sequence: [],
+            momentum_trend: 'stable',
+            summary: 'Single attempt.',
+          },
+          framework_fit: null,
+          improvement_signals: [],
+          next_actions: [],
+        };
+      }
+
+      // Load issue suggestions from adaptation data
+      if (adaptationData?.issue_suggestions) {
+        issueSuggestions = adaptationData.issue_suggestions as any[];
+      }
+    }
+  });
+
+  // Handle SSE events for adaptation_injected and adaptation_impact
+  $effect(() => {
+    const adaptData = forge.stageResults['adaptation']?.data as Record<string, unknown> | undefined;
+    if (adaptData?.adaptation_impact && feedbackInlineRef) {
+      const impact = adaptData.adaptation_impact as Record<string, unknown>;
+      if (impact.has_meaningful_change) {
+        const dims = impact.dimension_deltas as Array<{ dimension: string; delta: number }> | undefined;
+        if (dims?.length) {
+          const top = dims[0];
+          const label = top.dimension.replace(/_score$/, '').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          const sign = top.delta > 0 ? '+' : '';
+          feedbackInlineRef.flashImpactDelta(label, `${sign}${top.delta.toFixed(1)}`);
+        }
+      }
     }
   });
 
@@ -424,8 +504,32 @@
     {/if}
   </div>
 
+  <!-- Result Assessment (between content and feedback strip) -->
+  {#if forge.optimizationId && !forge.isForging && resultAssessment}
+    <div class="px-4 pb-2">
+      <ResultAssessment assessment={resultAssessment} />
+    </div>
+  {/if}
+
   {#if forge.optimizationId && !forge.isForging && forge.streamingText}
-    <FeedbackInline optimizationId={forge.optimizationId} />
+    <FeedbackInline
+      bind:this={feedbackInlineRef}
+      optimizationId={forge.optimizationId}
+      on:expandTier2={() => { showTier2 = true; }}
+      on:openTier3={() => {
+        // Dispatch to Inspector to show adaptation panel
+        const evt = new CustomEvent('open-inspector-adaptation', { bubbles: true });
+        document.dispatchEvent(evt);
+      }}
+    />
+  {/if}
+
+  {#if forge.optimizationId && showTier2}
+    <FeedbackTier2
+      optimizationId={forge.optimizationId}
+      {issueSuggestions}
+      onclose={() => { showTier2 = false; }}
+    />
   {/if}
 
   {#if forge.optimizationId && refinement.refinementOpen}
