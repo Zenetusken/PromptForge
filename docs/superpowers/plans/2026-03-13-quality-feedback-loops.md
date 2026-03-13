@@ -2085,14 +2085,16 @@ def adjust_weights_from_deltas(
         shift = max(-damping, min(damping, shift))
         adjusted[dim] = adjusted[dim] + shift
 
-    # Clamp
-    for dim in adjusted:
-        adjusted[dim] = max(WEIGHT_LOWER_BOUND, min(WEIGHT_UPPER_BOUND, adjusted[dim]))
-
-    # Normalize to sum to 1.0
-    total = sum(adjusted.values())
-    if total > 0:
-        adjusted = {k: v / total for k, v in adjusted.items()}
+    # Iterative clamp-then-normalize: normalization after clamping can push
+    # values back outside bounds, so repeat until convergence (2-3 iterations).
+    for _ in range(10):
+        for dim in adjusted:
+            adjusted[dim] = max(WEIGHT_LOWER_BOUND, min(WEIGHT_UPPER_BOUND, adjusted[dim]))
+        total = sum(adjusted.values())
+        if total > 0:
+            adjusted = {k: v / total for k, v in adjusted.items()}
+        if all(WEIGHT_LOWER_BOUND <= v <= WEIGHT_UPPER_BOUND for v in adjusted.values()):
+            break
 
     return adjusted
 
@@ -2243,8 +2245,7 @@ async def recompute_adaptation(
         threshold = compute_threshold_from_feedback(feedbacks)
         affinities = compute_strategy_affinities(feedbacks)
 
-        # Upsert user_adaptation
-        from sqlalchemy import select as sa_select
+        # Upsert user_adaptation (sa_select already imported above)
         stmt = sa_select(UserAdaptation).where(UserAdaptation.user_id == user_id)
         result = await db.execute(stmt)
         existing = result.scalar_one_or_none()
@@ -3898,6 +3899,32 @@ In `backend/app/services/validator.py`, add `user_weights: dict[str, float] | No
 
 ```python
     overall_score = compute_overall_score(raw, user_weights)
+```
+
+- [ ] **Step 2b: Thread user_weights through `_run_optimize_validate`**
+
+In `backend/app/services/pipeline.py`, add `user_weights: dict[str, float] | None = None` parameter to `_run_optimize_validate()` (~line 63). Then forward it to the `run_validate()` call inside (`~line 139`):
+
+```python
+    async for event_type, event_data in run_validate(
+        provider=provider,
+        original_prompt=raw_prompt,
+        optimized_prompt=optimized_prompt,
+        changes_made=changes_made,
+        codebase_context=codebase_context,
+        instructions=instructions,
+        model=model_validate,
+        user_weights=user_weights,  # ← ADD THIS
+    ):
+```
+
+Then update **both** call sites in `run_pipeline()`:
+- The first `_run_optimize_validate()` call (~line 560): add `user_weights=oracle_weights,`
+- The retry loop `_run_optimize_validate()` call (Task 18, Step 3e): add `user_weights=oracle_weights,`
+
+Where `oracle_weights` was defined in Task 18 Step 3d:
+```python
+oracle_weights = adaptation.get("dimension_weights") if adaptation else None
 ```
 
 - [ ] **Step 3: Add strategy_affinities to run_strategy**
