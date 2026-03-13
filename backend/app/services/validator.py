@@ -56,6 +56,31 @@ def compute_overall_score(
     return max(1.0, min(10.0, round(raw, 1)))
 
 
+def compute_effective_weights(
+    user_weights: dict[str, float] | None,
+    framework_profile: dict | None,
+) -> dict[str, float]:
+    """Combine user weights with framework profile multipliers, renormalize to sum=1.0."""
+    from app.services.prompt_diff import SCORE_DIMENSIONS
+
+    dims = sorted(SCORE_DIMENSIONS)
+    default_w = 1.0 / len(dims)
+    if not user_weights:
+        base = {d: default_w for d in dims}
+    else:
+        base = {d: user_weights.get(d, default_w) for d in dims}
+    if framework_profile:
+        emphasis = framework_profile.get("emphasis", {})
+        de_emphasis = framework_profile.get("de_emphasis", {})
+        for dim in dims:
+            multiplier = emphasis.get(dim, de_emphasis.get(dim, 1.0))
+            base[dim] *= multiplier
+    total = sum(base.values())
+    if total > 0:
+        base = {d: w / total for d, w in base.items()}
+    return base
+
+
 def _default_validation() -> dict:
     """Default validation result used when all providers fail."""
     return {

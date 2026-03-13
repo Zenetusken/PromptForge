@@ -19,12 +19,13 @@ from app.services.context_builders import (
     MAX_INSTRUCTIONS,
     MAX_URL_CONTEXTS,
 )
-from app.services.optimizer import run_optimize
+from app.services.framework_profiles import ISSUE_GUARDRAILS, get_profile
+from app.services.optimizer import build_adaptation_hints, run_optimize
 from app.services.refinement_service import create_trunk_branch
 from app.services.retry_oracle import RetryOracle
 from app.services.settings_service import load_settings
 from app.services.strategy import run_strategy
-from app.services.validator import run_validate
+from app.services.validator import compute_effective_weights, run_validate
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ async def _run_optimize_validate(
     stream_optimize: bool,
     retry_constraints: dict | None = None,
     user_weights: dict[str, float] | None = None,
+    adaptation_hints: str = "",
 ) -> AsyncGenerator[tuple, None]:
     """Run optimize + validate stages and yield all events.
 
@@ -95,6 +97,7 @@ async def _run_optimize_validate(
         retry_constraints=retry_constraints,
         model=model_optimize,
         streaming=stream_optimize,
+        adaptation_hints=adaptation_hints,
     ):
         if event_type == "optimization":
             optimization_result = event_data
@@ -520,6 +523,42 @@ async def run_pipeline(
             yield item
         return
 
+    # ---- Adaptation wiring (between strategy and optimize) ----
+    primary_framework = (strategy_result or {}).get("primary_framework", "")
+    fw_profile = get_profile(primary_framework) if primary_framework else None
+
+    # Build issue guardrails from feedback-reported issue frequency
+    issue_frequency = adaptation.get("issue_frequency") if adaptation else None
+    active_guardrails: list[str] = []
+    if issue_frequency:
+        active_guardrails = [
+            ISSUE_GUARDRAILS[issue_id]
+            for issue_id, count in issue_frequency.items()
+            if count >= settings.MIN_ISSUE_FREQUENCY_FOR_GUARDRAIL
+            and issue_id in ISSUE_GUARDRAILS
+        ][:settings.MAX_ISSUE_GUARDRAILS]
+
+    # Build adaptation hints for the optimizer
+    _adaptation_hints = build_adaptation_hints(
+        fw_profile, oracle_weights, active_guardrails,
+    )
+
+    # Compute effective weights for the validator (user weights + framework profile)
+    effective_weights = compute_effective_weights(oracle_weights, fw_profile)
+
+    # Update oracle with framework context (not known at init time)
+    if primary_framework:
+        oracle._framework = primary_framework
+
+    # Emit adaptation_injected event for observability
+    if adaptation:
+        yield ("adaptation_injected", {
+            "framework": primary_framework,
+            "has_user_weights": oracle_weights is not None,
+            "guardrail_count": len(active_guardrails),
+            "feedback_count": adaptation.get("feedback_count", 0),
+        })
+
     # ---- Stage 3: Optimize (streaming) ----
     _opt_failed = False  # M1: initialize before try so except path never leaves it unbound
     try:
@@ -538,6 +577,7 @@ async def run_pipeline(
             instructions=instructions,
             model=model_optimize,
             streaming=stream_optimize,
+            adaptation_hints=_adaptation_hints,
         ):
             if event_type == "optimization":
                 optimization_result = event_data
@@ -602,7 +642,7 @@ async def run_pipeline(
             codebase_context=codebase_context,
             instructions=instructions,
             model=model_validate,
-            user_weights=oracle_weights,
+            user_weights=effective_weights,
         ):
             if event_type == "validation":
                 validation = event_data
@@ -690,7 +730,8 @@ async def run_pipeline(
                     "previous_score": oracle._attempts[-1].overall_score,
                     "retry_attempt": oracle.attempt_count,
                 },
-                user_weights=oracle_weights,
+                user_weights=effective_weights,
+                adaptation_hints=_adaptation_hints,
             ):
                 if event_type == "_ov_result":
                     ov_result = event_data

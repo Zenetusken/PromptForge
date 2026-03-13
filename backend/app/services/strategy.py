@@ -20,7 +20,10 @@ from app.services.context_builders import (
     format_url_contexts,
 )
 from app.services.stage_runner import extract_json_with_fallback, stream_with_timeout
-from app.services.strategy_selector import heuristic_strategy_fallback
+from app.services.strategy_selector import (
+    build_affinity_prompt_section,
+    heuristic_strategy_fallback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +171,11 @@ async def run_strategy(
     user_message += format_url_contexts(url_fetched_contexts)
 
     user_message += format_instructions(instructions)
+
+    # Inject user framework preferences so the LLM can weight them during selection
+    affinity_section = build_affinity_prompt_section(task_type, strategy_affinities)
+    if affinity_section:
+        user_message += affinity_section
 
     model = model or MODEL_ROUTING["strategy"]
 
