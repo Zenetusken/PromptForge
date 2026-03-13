@@ -111,19 +111,36 @@
   });
 
   // Handle SSE events for adaptation_injected and adaptation_impact
+  let _lastImpactTs = $state(0);
   $effect(() => {
     const adaptData = forge.stageResults['adaptation']?.data as Record<string, unknown> | undefined;
-    if (adaptData?.adaptation_impact && feedbackInlineRef) {
-      const impact = adaptData.adaptation_impact as Record<string, unknown>;
-      if (impact.has_meaningful_change) {
-        const dims = impact.dimension_deltas as Array<{ dimension: string; delta: number }> | undefined;
-        if (dims?.length) {
-          const top = dims[0];
-          const label = top.dimension.replace(/_score$/, '').replace(/\b\w/g, (c: string) => c.toUpperCase());
-          const sign = top.delta > 0 ? '+' : '';
-          feedbackInlineRef.flashImpactDelta(label, `${sign}${top.delta.toFixed(1)}`);
-        }
+    if (!adaptData?.adaptation_impact) return;
+
+    const impact = adaptData.adaptation_impact as Record<string, unknown>;
+    const ts = (impact._ts as number) || Date.now();
+    if (ts <= _lastImpactTs) return;
+    _lastImpactTs = ts;
+
+    if (impact.has_meaningful_change) {
+      const dims = impact.dimension_deltas as Array<{ dimension: string; delta: number }> | undefined;
+      if (dims?.length && feedbackInlineRef) {
+        const top = dims[0];
+        const label = top.dimension.replace(/_score$/, '').replace(/\b\w/g, (c: string) => c.toUpperCase());
+        const sign = top.delta > 0 ? '+' : '';
+        feedbackInlineRef.flashImpactDelta(label, `${sign}${top.delta.toFixed(1)}`);
       }
+      // Toast for meaningful adaptation impact
+      toast.info(
+        `Adaptation impact: ${(impact.estimated_impact as string) || 'weights updated'}`,
+        4000,
+      );
+    }
+  });
+
+  // Surface feedback store errors as persistent toasts
+  $effect(() => {
+    if (feedback.error) {
+      toast.error(`Feedback failed: ${feedback.error}`);
     }
   });
 

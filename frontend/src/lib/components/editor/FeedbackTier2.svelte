@@ -79,10 +79,10 @@
   async function handleSave() {
     const confirmation = await feedback.submit(optimizationId);
     if (confirmation) {
-      toast.success(
-        confirmation.summary,
-        5000,
-      );
+      const msg = confirmation.effects.length > 0
+        ? `${confirmation.summary} ${confirmation.effects.join(', ')}`
+        : confirmation.summary;
+      toast.success(msg, 5000);
       onclose?.();
     } else if (feedback.error) {
       toast.error(`Feedback failed: ${feedback.error}`);
