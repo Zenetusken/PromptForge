@@ -11,6 +11,11 @@
   import DiffView from '$lib/components/shared/DiffView.svelte';
   import StrategyBadge from '$lib/components/shared/StrategyBadge.svelte';
   import TraceView from '$lib/components/pipeline/TraceView.svelte';
+  import FeedbackInline from '$lib/components/editor/FeedbackInline.svelte';
+  import RefinementInput from '$lib/components/editor/RefinementInput.svelte';
+  import BranchIndicator from '$lib/components/pipeline/BranchIndicator.svelte';
+  import { feedback } from '$lib/stores/feedback.svelte';
+  import { refinement } from '$lib/stores/refinement.svelte';
   import { toast } from '$lib/stores/toast.svelte';
   import { getScoreColor } from '$lib/utils/colors';
 
@@ -32,6 +37,14 @@
 
   $effect(() => {
     if (forge.optimizationId) displayTitle = 'Forge Artifact';
+  });
+
+  $effect(() => {
+    const optId = forge.optimizationId;
+    if (optId && !forge.isForging) {
+      feedback.loadFeedback(optId);
+      refinement.loadBranches(optId);
+    }
   });
 
   $effect(() => {
@@ -292,6 +305,9 @@
           Re-run
         </button>
       {/if}
+      {#if !forge.isForging && forge.optimizationId && refinement.branchCount > 1}
+        <BranchIndicator optimizationId={forge.optimizationId} />
+      {/if}
       {#if forge.overallScore != null}
         <ScoreCircle score={forge.overallScore} size={28} />
       {/if}
@@ -407,4 +423,12 @@
       <TraceView />
     {/if}
   </div>
+
+  {#if forge.optimizationId && !forge.isForging && forge.streamingText}
+    <FeedbackInline optimizationId={forge.optimizationId} />
+  {/if}
+
+  {#if forge.optimizationId && refinement.refinementOpen}
+    <RefinementInput optimizationId={forge.optimizationId} />
+  {/if}
 </div>
