@@ -69,7 +69,7 @@
            border border-neon-purple/30 bg-neon-purple/5 text-neon-purple
            hover:bg-neon-purple/10 hover:border-neon-purple/50
            transition-colors"
-    onclick={() => refinement.branchCount > 1 ? openDropdown() : null}
+    onclick={() => { if (refinement.branchCount > 1) openDropdown(); }}
     aria-haspopup={refinement.branchCount > 1 ? 'listbox' : undefined}
     aria-expanded={refinement.branchCount > 1 ? dropdownOpen : undefined}
     aria-label="Branch indicator: {refinement.activeBranch?.label ?? 'none'}"

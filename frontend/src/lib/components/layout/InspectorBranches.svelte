@@ -81,11 +81,11 @@
             </div>
             <div class="flex gap-1 shrink-0">
               <button
-                class="border border-[#a855f7]/60 text-[#a855f7] text-[9px] font-mono uppercase px-1.5 py-0.5 hover:bg-[#a855f7]/10 transition-colors"
+                class="border border-neon-purple/60 text-neon-purple text-[9px] font-mono uppercase px-1.5 py-0.5 hover:bg-neon-purple/10 transition-colors"
                 onclick={() => handleFork(node.branch)}
               >Fork</button>
               <button
-                class="border border-[#4d8eff]/60 text-[#4d8eff] text-[9px] font-mono uppercase px-1.5 py-0.5 hover:bg-[#4d8eff]/10 transition-colors"
+                class="border border-neon-blue/60 text-neon-blue text-[9px] font-mono uppercase px-1.5 py-0.5 hover:bg-neon-blue/10 transition-colors"
                 onclick={() => handleCompare(node.branch)}
               >Cmp</button>
               <button
@@ -99,7 +99,7 @@
           {#each node.children as child}
             <div class="flex ml-4">
               <!-- 1px neon-purple connector -->
-              <div class="w-px self-stretch" style="background: #a855f7; opacity: 0.5;"></div>
+              <div class="w-px self-stretch bg-neon-purple opacity-50"></div>
               <div class="flex-1 flex items-start gap-2 p-1.5 bg-bg-card border border-border-subtle border-l-0 ml-1">
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-1.5 flex-wrap">
@@ -117,11 +117,11 @@
                 </div>
                 <div class="flex gap-1 shrink-0">
                   <button
-                    class="border border-[#a855f7]/60 text-[#a855f7] text-[9px] font-mono uppercase px-1.5 py-0.5 hover:bg-[#a855f7]/10 transition-colors"
+                    class="border border-neon-purple/60 text-neon-purple text-[9px] font-mono uppercase px-1.5 py-0.5 hover:bg-neon-purple/10 transition-colors"
                     onclick={() => handleFork(child)}
                   >Fork</button>
                   <button
-                    class="border border-[#4d8eff]/60 text-[#4d8eff] text-[9px] font-mono uppercase px-1.5 py-0.5 hover:bg-[#4d8eff]/10 transition-colors"
+                    class="border border-neon-blue/60 text-neon-blue text-[9px] font-mono uppercase px-1.5 py-0.5 hover:bg-neon-blue/10 transition-colors"
                     onclick={() => handleCompare(child)}
                   >Cmp</button>
                   <button

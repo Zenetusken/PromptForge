@@ -88,13 +88,13 @@
           <span class="font-mono text-[10px] {isOverridden ? 'text-neon-cyan' : 'text-text-dim'} capitalize">{dim}</span>
           <div class="flex items-center gap-1">
             <button
-              class="w-4 h-4 flex items-center justify-center border border-border-subtle text-text-dim hover:border-neon-cyan/50 hover:text-neon-cyan text-[10px] leading-none"
+              class="w-6 h-6 flex items-center justify-center border border-border-subtle text-text-dim hover:border-neon-cyan/50 hover:text-neon-cyan text-[10px] leading-none transition-colors"
               onclick={() => stepDimension(dim, -1)}
               aria-label="Decrease {dim} score"
             >−</button>
             <span class="font-mono text-[10px] text-text-primary w-6 text-center">{score}/10</span>
             <button
-              class="w-4 h-4 flex items-center justify-center border border-border-subtle text-text-dim hover:border-neon-cyan/50 hover:text-neon-cyan text-[10px] leading-none"
+              class="w-6 h-6 flex items-center justify-center border border-border-subtle text-text-dim hover:border-neon-cyan/50 hover:text-neon-cyan text-[10px] leading-none transition-colors"
               onclick={() => stepDimension(dim, 1)}
               aria-label="Increase {dim} score"
             >+</button>
@@ -109,8 +109,8 @@
 
   <!-- Comment textarea -->
   <textarea
-    class="w-full border border-border-subtle text-xs text-text-primary font-mono p-2 resize-none placeholder-text-dim outline-none focus:border-neon-cyan/40"
-    style="background: #0a0a14; height: 80px;"
+    class="w-full border border-border-subtle bg-bg-input text-xs text-text-primary font-mono p-2 resize-none placeholder-text-dim outline-none focus:border-neon-cyan/40"
+    style="height: 80px;"
     placeholder="Optional comment…"
     bind:value={feedback.currentFeedback.comment}
   ></textarea>

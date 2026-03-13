@@ -60,7 +60,7 @@
           <span
             class="shrink-0 border text-[9px] font-mono uppercase px-1 py-0.5 h-fit {item.source === 'user'
               ? 'border-neon-cyan text-neon-cyan'
-              : 'text-[#7b61ff] border-[#7b61ff]'}"
+              : 'text-neon-indigo border-neon-indigo'}"
           >{item.source === 'user' ? 'USR' : 'AUTO'}</span>
           <p class="text-[10px] text-text-secondary leading-snug line-clamp-2 break-words min-w-0">
             {item.summary}

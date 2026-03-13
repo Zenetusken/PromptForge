@@ -5,7 +5,7 @@
 
   let { optimizationId }: { optimizationId: string } = $props();
 
-  // Dimension definitions: abbreviation → score key
+  // Dimension definitions: abbreviation -> score key
   const DIMENSIONS: { abbr: string; key: string; label: string }[] = [
     { abbr: 'CLR', key: 'clarity_score',      label: 'Clarity' },
     { abbr: 'SPC', key: 'specificity_score',  label: 'Specificity' },
@@ -58,20 +58,20 @@
 </script>
 
 <!--
-  FeedbackInline — 32px-height strip beneath the optimized prompt.
+  FeedbackInline — compact strip beneath the optimized prompt.
   Thumbs + dimension chips + Refine ghost button.
   Zero-effects: 1px solid borders only; no box-shadow, text-shadow, drop-shadow.
 -->
 <div
-  class="flex items-center h-8 px-3 gap-2 border-t border-[rgba(74,74,106,0.15)] bg-[#11111e]"
+  class="flex items-center h-7 px-3 gap-2 border-t border-border-subtle bg-bg-card"
   aria-label="Inline feedback controls"
 >
   <!-- Thumbs Up -->
   <button
     class="inline-flex items-center justify-center w-6 h-6 transition-colors
            {currentRating === 1
-             ? 'border border-[#22ff88] bg-[#22ff88]/8 text-[#22ff88]'
-             : 'border border-[rgba(74,74,106,0.15)] text-[#7a7a9e] hover:border-[#22ff88]/40 hover:text-[#22ff88]'}"
+             ? 'border border-neon-green bg-neon-green/8 text-neon-green'
+             : 'border border-border-subtle text-text-dim hover:border-neon-green/40 hover:text-neon-green'}"
     onclick={handleThumbUp}
     disabled={feedback.currentFeedback.submitting}
     aria-label="Thumbs up"
@@ -90,8 +90,8 @@
   <button
     class="inline-flex items-center justify-center w-6 h-6 transition-colors
            {currentRating === -1
-             ? 'border border-[#ff3366] bg-[#ff3366]/8 text-[#ff3366]'
-             : 'border border-[rgba(74,74,106,0.15)] text-[#7a7a9e] hover:border-[#ff3366]/40 hover:text-[#ff3366]'}"
+             ? 'border border-neon-red bg-neon-red/8 text-neon-red'
+             : 'border border-border-subtle text-text-dim hover:border-neon-red/40 hover:text-neon-red'}"
     onclick={handleThumbDown}
     disabled={feedback.currentFeedback.submitting}
     aria-label="Thumbs down"
@@ -107,7 +107,7 @@
   </button>
 
   <!-- Divider -->
-  <div class="w-px h-4 bg-[rgba(74,74,106,0.25)]" aria-hidden="true"></div>
+  <div class="w-px h-4 bg-border-subtle" aria-hidden="true"></div>
 
   <!-- Dimension chips -->
   {#each DIMENSIONS as dim}
@@ -116,10 +116,10 @@
     <button
       class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono border transition-colors
              {isOverridden
-               ? 'border-[#a855f7] bg-[#a855f7]/8 text-[#a855f7]'
+               ? 'border-neon-purple bg-neon-purple/8 text-neon-purple'
                : score != null
-                 ? 'border-[rgba(74,74,106,0.15)] text-[#8b8ba8] hover:border-[#00e5ff]/30 hover:text-[#00e5ff]'
-                 : 'border-[rgba(74,74,106,0.10)] text-[#7a7a9e]/60 hover:border-[#00e5ff]/20 hover:text-[#8b8ba8]'}"
+                 ? 'border-border-subtle text-text-secondary hover:border-neon-cyan/30 hover:text-neon-cyan'
+                 : 'border-border-subtle/60 text-text-dim/60 hover:border-neon-cyan/20 hover:text-text-secondary'}"
       onclick={() => handleDimensionClick(dim.key)}
       aria-label="{dim.label} dimension{isOverridden ? ' (overridden)' : ''}"
       aria-pressed={isOverridden}
@@ -138,15 +138,15 @@
   <!-- Refine ghost button -->
   <button
     class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono border
-           border-[rgba(74,74,106,0.15)] text-[#8b8ba8]
-           hover:border-[#00e5ff]/30 hover:text-[#00e5ff]
+           border-border-subtle text-text-secondary
+           hover:border-neon-cyan/30 hover:text-neon-cyan
            transition-colors"
     onclick={handleRefine}
     aria-label="Open refinement panel"
     title="Open refinement panel"
   >
     {#if refinement.branchCount > 0}
-      <span class="text-[#a855f7]">◈</span>
+      <span class="text-neon-purple">&#x25C8;</span>
       <span>{refinement.branchCount}</span>
     {:else}
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

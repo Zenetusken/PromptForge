@@ -1,6 +1,6 @@
 # Project Synthesis MCP Server
 
-Project Synthesis exposes 15 tools over the Model Context Protocol (MCP), allowing Claude Code and other MCP clients to optimize prompts, query history, manage trash/restore, and interact with linked GitHub repositories directly from a chat session. The explore stage uses semantic retrieval (pre-built embedding index) for fast codebase analysis.
+Project Synthesis exposes 18 tools over the Model Context Protocol (MCP), allowing Claude Code and other MCP clients to optimize prompts, query history, manage trash/restore, interact with linked GitHub repositories, and submit feedback on optimizations directly from a chat session. The explore stage uses semantic retrieval (pre-built embedding index) for fast codebase analysis.
 
 ## Transports
 
@@ -294,6 +294,50 @@ Search for a pattern within a repository using the GitHub code search API.
 | `extension` | string | no | Restrict results to files with this extension (e.g. `py`) |
 
 Returns up to 20 matches with `path` and `name`.
+
+---
+
+### Feedback and refinement tools
+
+#### `submit_feedback`
+Submit quality feedback (thumbs up/down + dimension overrides) on an optimization. Triggers background adaptation recomputation.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `optimization_id` | string | yes | UUID of the optimization |
+| `rating` | int | yes | Feedback rating: `-1` (negative), `0` (neutral), `1` (positive) |
+| `dimension_overrides` | dict | no | Per-dimension score overrides, e.g. `{"clarity_score": 8, "specificity_score": 7}` |
+| `comment` | string | no | Free-text feedback comment |
+
+Returns the upserted feedback record as JSON. One feedback per optimization per user (upsert semantics).
+
+Annotations: `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`
+
+---
+
+#### `get_branches`
+List all refinement branches for an optimization.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `optimization_id` | string | yes | UUID of the optimization |
+
+Returns `{"branches": [...], "total": N}` where each branch includes `id`, `label`, `status`, `turn_count`, `scores`, and `optimized_prompt`.
+
+Annotations: `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`
+
+---
+
+#### `get_adaptation_state`
+Retrieve the current learned adaptation state for a user (dimension weights, retry threshold, strategy affinities).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `user_id` | string | yes | User identifier |
+
+Returns the adaptation state object or `{"error": "No adaptation found"}` if the user has insufficient feedback history.
+
+Annotations: `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false`
 
 ---
 
