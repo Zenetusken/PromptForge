@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # EXPLORE_AGENTIC_TIMEOUT_SECONDS: int = 600
     ANALYZE_TIMEOUT_SECONDS: int = 90    # Simple completion; CLI startup ~7–15s
     STRATEGY_TIMEOUT_SECONDS: int = 90   # Simple completion; same startup cost
-    OPTIMIZE_TIMEOUT_SECONDS: int = 120  # Streaming rewrite; longest content
+    OPTIMIZE_TIMEOUT_SECONDS: int = 300  # Streaming rewrite; longest content (5 min)
     VALIDATE_TIMEOUT_SECONDS: int = 90   # Simple completion; same startup cost
 
     # Maximum number of optimize+validate retry cycles on low score (default 1).

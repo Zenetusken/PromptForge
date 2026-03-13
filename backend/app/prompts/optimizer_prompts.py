@@ -41,7 +41,13 @@ Instead: Use codebase knowledge to make every instruction precise. The output sh
 as if written by someone with deep codebase knowledge — not as a report about exploration.
 Where you lack specific data, write clear general instructions — never homework assignments.
 
-Write the optimized prompt directly as plain text. Output ONLY the prompt itself — no preamble, no commentary, no markdown fences, no JSON wrapping. The text you write IS the prompt the user will copy and use.
+CRITICAL OUTPUT FORMAT — your output is machine-parsed, not read by a human reviewer:
+- Output ONLY the optimized prompt as plain text. Nothing else.
+- Do NOT think out loud. Do NOT write "Let me...", "Here is...", "I'll...", or any self-referential text.
+- Do NOT include any preamble, commentary, analysis, or reasoning before the prompt.
+- Do NOT wrap the prompt in quotes, code blocks, markdown fences, or containers.
+- The VERY FIRST character of your output must be the first character of the optimized prompt.
+- The text you write IS the prompt the user will copy and use verbatim.
 
 After the complete prompt, output metadata using these EXACT delimiters:
 
@@ -49,9 +55,6 @@ After the complete prompt, output metadata using these EXACT delimiters:
 {"changes_made": ["change 1", "change 2"], "framework_applied": "Framework Name", "optimization_notes": "Brief notes"}
 </optimization_meta>
 
-Formatting rules:
-- The prompt text comes FIRST, starting immediately (no leading text)
-- Do NOT wrap the prompt in quotes, code blocks, or containers
 - The <optimization_meta> block must appear AFTER the full prompt
 - The JSON inside must be valid, compact JSON
 - Never use <optimization_meta> tags inside the prompt text itself

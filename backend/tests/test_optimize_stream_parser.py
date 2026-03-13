@@ -156,16 +156,17 @@ class TestSafetyBuffer:
         assert metadata is None  # JSON fallback fails on "Hi"
 
     def test_progressive_flush(self):
-        """Text beyond the safety margin is emitted progressively."""
+        """Text beyond the preamble buffer + safety margin is emitted progressively."""
         parser = OptimizeStreamParser()
-        # Feed a long string with no marker
-        text = "A" * 100
+        # Feed enough text to exceed the 600-char preamble buffer threshold
+        # so preamble detection completes and progressive flushing kicks in.
+        text = "A" * 700
         safe = parser.feed(text)
         prompt, _ = parser.finalize()
 
-        # Some text should have been emitted (beyond safety margin)
+        # Text beyond preamble buffer should have been emitted (minus safety margin)
         assert len(safe) > 0
-        assert len(safe) < 100  # Safety margin retained
+        assert len(safe) < 700  # Safety margin retained
         # Full text recovered after finalize
         assert prompt == text
 
@@ -335,12 +336,13 @@ class TestEdgeCases:
     def test_accumulated_prompt_property(self):
         """accumulated_prompt reflects prompt text seen so far (for timeout recovery)."""
         parser = OptimizeStreamParser()
-        # Feed enough to exceed safety buffer
-        long_prompt = "X" * 100
+        # Feed enough to exceed the 600-char preamble buffer so text
+        # flows into the main buffer and is visible via accumulated_prompt.
+        long_prompt = "X" * 700
         parser.feed(long_prompt)
 
         # accumulated_prompt should contain everything fed (prompt_text + buffer)
-        assert len(parser.accumulated_prompt) == 100
+        assert len(parser.accumulated_prompt) == 700
 
     def test_metadata_in_stream_suppressed(self):
         """After the marker, no metadata text leaks to the safe output."""

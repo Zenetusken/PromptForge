@@ -8,6 +8,7 @@ Streams token by token via SSE step_progress events.
 import asyncio
 import json
 import logging
+import re
 from typing import AsyncGenerator, Optional
 
 from app.config import settings
@@ -78,6 +79,70 @@ OPTIMIZATION_META_OPEN = "<optimization_meta>"
 OPTIMIZATION_META_CLOSE = "</optimization_meta>"
 
 
+    # ── Preamble detection ─────────────────────────────────────────────
+    # LLMs sometimes emit self-referential reasoning ("Let me read…",
+    # "I have enough…", "Here is the optimized prompt:") before the
+    # actual prompt text.  This pattern detects and strips such preamble
+    # so neither the streamed display nor the stored prompt is polluted.
+
+_PREAMBLE_PHRASES = re.compile(
+    r"(?:^|\n)\s*(?:"
+    r"Let me |I'll |I have |I need |I will |I should |I can see |"
+    r"Here is |Here's |Based on |Looking at |Now I |Now let me |"
+    r"Ok(?:ay)?,? |Alright,? |First,? let me |"
+    r"I've (?:read|reviewed|analyzed|examined|looked)|"
+    r"After (?:reading|reviewing|analyzing)|"
+    r"Having (?:read|reviewed|analyzed)"
+    r")",
+    re.IGNORECASE,
+)
+_PREAMBLE_MAX_CHARS = 600  # Don't scan beyond this for preamble
+
+
+def _strip_preamble(text: str) -> str:
+    """Remove LLM reasoning preamble from the start of optimizer output.
+
+    Detects self-referential reasoning paragraphs before the actual prompt
+    and strips them.  Only operates on the first ~600 chars to avoid
+    false positives deep inside a legitimate prompt.
+    """
+    if not text:
+        return text
+
+    # Look for a double-newline boundary in the first 600 chars
+    scan_zone = text[:_PREAMBLE_MAX_CHARS]
+    split_pos = scan_zone.find("\n\n")
+
+    if split_pos == -1:
+        # No paragraph break — check if the ENTIRE text starts with preamble
+        # (single-line reasoning like "Let me produce it now. Audit all...")
+        # Look for a sentence-ending period followed by a capital letter
+        m = re.match(
+            r"^((?:Let me|I'll|I have|I need|I will|Here is|Here's|Now )[^.]*\.)\s*",
+            text,
+            re.IGNORECASE,
+        )
+        if m:
+            stripped = text[m.end():]
+            logger.info("Stripped single-line preamble (%d chars)", m.end())
+            return stripped  # May be empty during streaming — that's correct
+        return text
+
+    first_para = scan_zone[:split_pos].strip()
+
+    # Check if the first paragraph looks like LLM reasoning
+    if _PREAMBLE_PHRASES.search(first_para):
+        stripped = text[split_pos:].lstrip("\n")
+        logger.info(
+            "Stripped preamble paragraph (%d chars): %r",
+            split_pos,
+            first_para[:100],
+        )
+        return stripped  # May be empty during streaming — that's correct
+
+    return text
+
+
 class OptimizeStreamParser:
     """Separates prompt text from metadata during streaming.
 
@@ -85,7 +150,8 @@ class OptimizeStreamParser:
     The <optimization_meta> block is silently accumulated and extracted
     after streaming completes via finalize().
 
-    Handles: cross-boundary markers, pure-JSON fallback, partial timeout.
+    Handles: cross-boundary markers, pure-JSON fallback, partial timeout,
+    and LLM preamble stripping.
     """
 
     def __init__(self) -> None:
@@ -95,12 +161,15 @@ class OptimizeStreamParser:
         self._meta_text: str = ""
         self._in_meta: bool = False
         self._marker_len: int = len(OPTIMIZATION_META_OPEN)
+        # Preamble detection: buffer the first paragraph before yielding
+        self._preamble_checked: bool = False
+        self._preamble_buf: str = ""
 
     def feed(self, chunk: str) -> str:
         """Feed a streamed chunk. Returns text safe to yield to the user.
 
-        Returns empty string when buffering (potential partial marker)
-        or when in the metadata section.
+        Returns empty string when buffering (potential partial marker,
+        preamble detection, or metadata section).
         """
         self._full_text += chunk
 
@@ -108,8 +177,27 @@ class OptimizeStreamParser:
             self._meta_text += chunk
             return ""
 
-        self._buffer += chunk
+        # Phase 1: Buffer initial text for preamble detection.
+        # Wait for a double newline (paragraph boundary) or 600 chars
+        # before deciding whether to strip.
+        if not self._preamble_checked:
+            self._preamble_buf += chunk
 
+            has_para_break = "\n\n" in self._preamble_buf
+            over_limit = len(self._preamble_buf) > _PREAMBLE_MAX_CHARS
+
+            if has_para_break or over_limit:
+                self._preamble_checked = True
+                cleaned = _strip_preamble(self._preamble_buf)
+                self._buffer = cleaned
+                # Fall through to normal marker detection below
+            else:
+                return ""  # Still buffering for preamble check
+
+        else:
+            self._buffer += chunk
+
+        # Phase 2: Normal marker detection (existing logic)
         marker_pos = self._buffer.find(OPTIMIZATION_META_OPEN)
         if marker_pos != -1:
             safe_text = self._buffer[:marker_pos]
@@ -137,6 +225,23 @@ class OptimizeStreamParser:
         2. No marker, JSON fallback → (optimized_prompt from JSON, full_dict)
         3. All parsing fails → (full_text, None)
         """
+        # Flush any un-checked preamble buffer (short outputs that never
+        # hit the paragraph-break threshold).  Run marker detection inline
+        # (not via feed(), which would double-count _full_text).
+        if not self._preamble_checked and self._preamble_buf:
+            self._preamble_checked = True
+            cleaned = _strip_preamble(self._preamble_buf)
+            self._preamble_buf = ""
+            if cleaned:
+                # Check for metadata marker in the cleaned text
+                marker_pos = cleaned.find(OPTIMIZATION_META_OPEN)
+                if marker_pos != -1:
+                    self._prompt_text += cleaned[:marker_pos]
+                    self._meta_text = cleaned[marker_pos + self._marker_len :]
+                    self._in_meta = True
+                else:
+                    self._buffer += cleaned
+
         if not self._in_meta and self._buffer:
             self._prompt_text += self._buffer
             self._buffer = ""
