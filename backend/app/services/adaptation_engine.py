@@ -167,6 +167,9 @@ def compute_strategy_affinities(
 
         # Apply decay
         if created and isinstance(created, datetime):
+            # Ensure tz-aware comparison (DB may store naive UTC)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             age = (now - created).days
             if age > decay_days:
                 continue

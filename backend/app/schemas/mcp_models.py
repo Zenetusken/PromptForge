@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ── Input Models ─────────────────────────────────────────────────────────────
 #
@@ -342,6 +342,25 @@ class OptimizationRecord(BaseModel):
 
     # Allow "model_*" fields (ORM column names) and extra fields (future-proof).
     model_config = ConfigDict(extra="allow", protected_namespaces=())
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_none_lists(cls, data: Any) -> Any:
+        """Convert explicit None to [] for list fields.
+
+        The ORM to_dict() returns None for NULL JSON columns, but Pydantic
+        does not apply the field default when an explicit None is passed.
+        """
+        if isinstance(data, dict):
+            _LIST_FIELDS = {
+                "weaknesses", "strengths", "changes_made",
+                "secondary_frameworks", "issues", "tags",
+                "retry_history", "per_instruction_compliance",
+            }
+            for field_name in _LIST_FIELDS:
+                if field_name in data and data[field_name] is None:
+                    data[field_name] = []
+        return data
 
     id: str
     created_at: str | None = None
