@@ -27,26 +27,29 @@ SCORE_WEIGHTS = {
 }
 
 
-def compute_overall_score(scores: dict) -> float | None:
+def compute_overall_score(
+    scores: dict,
+    user_weights: dict[str, float] | None = None,
+) -> float | None:
     """Compute weighted average overall score.
 
-    Weights: clarity 20%, specificity 20%, structure 15%,
-             faithfulness 25%, conciseness 20%
+    Uses user-adapted weights when available, falls back to defaults.
 
     Returns: float 1.0-10.0 rounded to 1 decimal place,
              or None if no valid scores are present.
     """
+    weights = user_weights if user_weights else SCORE_WEIGHTS
     weighted_sum = 0.0
     total_weight = 0.0
 
-    for field, weight in SCORE_WEIGHTS.items():
+    for field, weight in weights.items():
         value = scores.get(field)
         if value is not None and isinstance(value, (int, float)):
             weighted_sum += value * weight
             total_weight += weight
 
     if total_weight == 0:
-        return None  # no valid scores — distinguish from a real score
+        return None
 
     raw = weighted_sum / total_weight
     return max(1.0, min(10.0, round(raw, 1)))
@@ -75,6 +78,7 @@ async def run_validate(
     codebase_context: dict | None = None,
     instructions: list[str] | None = None,
     model: str | None = None,
+    user_weights: dict[str, float] | None = None,
 ) -> AsyncGenerator[tuple[str, dict], None]:
     """Run Stage 4 validation.
 
@@ -165,7 +169,7 @@ async def run_validate(
             raw[field] = 5
 
     # ALWAYS compute overall_score server-side (never trust LLM arithmetic)
-    overall_score = compute_overall_score(raw)
+    overall_score = compute_overall_score(raw, user_weights)
 
     # Canonical scores sub-dict (single authoritative source for all scores)
     scores = {

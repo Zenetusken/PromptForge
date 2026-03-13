@@ -35,6 +35,7 @@ async def run_strategy(
     url_fetched_contexts: list[dict] | None = None,
     instructions: list[str] | None = None,
     model: str | None = None,
+    strategy_affinities: dict | None = None,
 ) -> AsyncGenerator[tuple[str, dict], None]:
     """Run Stage 2 strategy selection.
 
@@ -137,5 +138,12 @@ async def run_strategy(
     # Cache successful LLM results
     if cache and cache_key and result.get("strategy_source") in ("llm", "llm_json"):
         await cache.set(cache_key, result, ttl_seconds=_STRATEGY_CACHE_TTL)
+
+    # If user has strategy affinities, add soft bias
+    if strategy_affinities:
+        task = analysis.get("task_type", "")
+        affinities = strategy_affinities.get(task, {})
+        if affinities:
+            result["user_affinities"] = affinities
 
     yield ("strategy", result)

@@ -61,6 +61,7 @@ async def _run_optimize_validate(
     model_validate: str | None,
     stream_optimize: bool,
     retry_constraints: dict | None = None,
+    user_weights: dict[str, float] | None = None,
 ) -> AsyncGenerator[tuple, None]:
     """Run optimize + validate stages and yield all events.
 
@@ -144,6 +145,7 @@ async def _run_optimize_validate(
         codebase_context=codebase_context,
         instructions=instructions,
         model=model_validate,
+        user_weights=user_weights,
     ):
         if event_type == "validation":
             validation = event_data
@@ -459,6 +461,7 @@ async def run_pipeline(
             }
         else:
             strategy_result = None
+            strategy_affinities = adaptation.get("strategy_affinities") if adaptation else None
             async for event_type, event_data in run_strategy(
                 provider=provider,
                 raw_prompt=raw_prompt,
@@ -468,6 +471,7 @@ async def run_pipeline(
                 url_fetched_contexts=url_fetched_contexts,
                 instructions=instructions,
                 model=model_strategy,
+                strategy_affinities=strategy_affinities,
             ):
                 if event_type == "strategy":
                     strategy_result = event_data
@@ -582,6 +586,7 @@ async def run_pipeline(
             codebase_context=codebase_context,
             instructions=instructions,
             model=model_validate,
+            user_weights=oracle_weights,
         ):
             if event_type == "validation":
                 validation = event_data
@@ -667,6 +672,7 @@ async def run_pipeline(
                     "previous_score": oracle._attempts[-1].overall_score,
                     "retry_attempt": oracle.attempt_count,
                 },
+                user_weights=oracle_weights,
             ):
                 if event_type == "_ov_result":
                     ov_result = event_data
