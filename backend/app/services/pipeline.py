@@ -22,11 +22,11 @@ from app.services.optimizer import run_optimize
 from app.services.settings_service import load_settings
 from app.services.strategy import run_strategy
 from app.services.validator import run_validate
+from app.services.retry_oracle import RetryOracle
+from app.services.adaptation_engine import load_adaptation
+from app.services.refinement_service import create_trunk_branch
 
 logger = logging.getLogger(__name__)
-
-# Retry threshold: if overall_score < this, retry optimize+validate once
-LOW_SCORE_THRESHOLD = 5.0
 
 
 def _estimate_tokens(text: str) -> int:
@@ -189,6 +189,7 @@ async def run_pipeline(
     file_contexts: list[dict] | None = None,
     url_fetched_contexts: list[dict] | None = None,
     instructions: list[str] | None = None,
+    user_id: str | None = None,
 ) -> AsyncGenerator[tuple, None]:
     """Run the full optimization pipeline, yielding (event_type, event_data) tuples.
 
@@ -223,6 +224,22 @@ async def run_pipeline(
     codebase_context = None
 
     total_tokens = 0
+
+    # Load user adaptation (if authenticated)
+    adaptation = None
+    if user_id:
+        from app.database import get_session_context
+        async with get_session_context() as db:
+            adaptation = await load_adaptation(user_id, db)
+
+    # Initialize oracle (replaces LOW_SCORE_THRESHOLD)
+    oracle_threshold = adaptation.get("retry_threshold", 5.0) if adaptation else 5.0
+    oracle_weights = adaptation.get("dimension_weights") if adaptation else None
+    oracle = RetryOracle(
+        max_retries=effective_max_retries,
+        threshold=oracle_threshold,
+        user_weights=oracle_weights,
+    )
 
     # ---- Context truncation ----
     # Enforce injection caps BEFORE stages run. Slices happen here so every
@@ -598,46 +615,45 @@ async def run_pipeline(
         })
         return
 
-    # ---- Retry on low score ----
-    retry_count = 0
-    overall_score = validation.get("scores", {}).get("overall_score", 10)
-    is_improvement = validation.get("is_improvement", False)
-    while (
-        retry_count < effective_max_retries
-        and overall_score is not None
-        and overall_score < LOW_SCORE_THRESHOLD
-        and not is_improvement
-    ):
-        logger.info(
-            "Overall score %s < %s (retry %d/%d): "
-            "retrying optimize+validate with adjusted constraints",
-            overall_score, LOW_SCORE_THRESHOLD,
-            retry_count + 1, effective_max_retries,
-        )
+    # ---- Oracle-driven retry loop ----
+    # Record first attempt
+    validation_scores = validation.get("scores", {})
+    optimized_prompt = (optimization_result or {}).get("optimized_prompt", "")
+    oracle.record_attempt(validation_scores, optimized_prompt, [])
+    yield ("retry_diagnostics", oracle.get_diagnostics())
+
+    # Store all attempts for best-of-N selection
+    all_attempts = [{
+        "optimization_result": optimization_result,
+        "validation": validation,
+    }]
+
+    while True:
+        decision = oracle.should_retry()
+        if decision.action in ("accept", "accept_best"):
+            # Best-of-N: if accept_best, swap to the highest-scoring attempt
+            if decision.action == "accept_best" and decision.best_attempt is not None:
+                best = all_attempts[decision.best_attempt]
+                optimization_result = best["optimization_result"]
+                validation = best["validation"]
+                yield ("retry_best_selected", {
+                    "selected_attempt": decision.best_attempt + 1,
+                    "total_attempts": len(all_attempts),
+                    "reason": decision.reason,
+                })
+            break
+
+        # Retry: build diagnostic message for the optimizer
+        yield ("stage", {
+            "stage": "optimize",
+            "status": "retrying",
+            "attempt": oracle.attempt_count + 1,
+        })
+        diagnostic_msg = oracle.build_diagnostic_message(decision.focus_areas)
         yield ("rate_limit_warning", {
-            "message": (
-                f"Score {overall_score}/10 below threshold — "
-                f"retrying with stricter constraints "
-                f"(attempt {retry_count + 1}/{effective_max_retries})"
-            ),
+            "message": diagnostic_msg,
             "stage": "validate",
         })
-
-        # Determine focus_areas for this retry attempt.
-        if retry_count == 0:
-            focus_areas = validation.get("issues", [])
-        else:
-            scores = validation.get("scores", {})
-            score_dims = {
-                "clarity": scores.get("clarity_score", 10),
-                "specificity": scores.get("specificity_score", 10),
-                "structure": scores.get("structure_score", 10),
-                "faithfulness": scores.get("faithfulness_score", 10),
-                "conciseness": scores.get("conciseness_score", 10),
-            }
-            lowest_dim = min(score_dims, key=score_dims.get)
-            focus_areas = [lowest_dim]
-            logger.info("Second retry: narrowing focus to lowest dimension '%s'", lowest_dim)
 
         try:
             ov_result = None
@@ -646,10 +662,10 @@ async def run_pipeline(
                 file_contexts, url_fetched_contexts, instructions,
                 model_optimize, model_validate, stream_optimize,
                 retry_constraints={
-                    "min_score_target": LOW_SCORE_THRESHOLD + 2,
-                    "previous_score": overall_score,
-                    "focus_areas": focus_areas,
-                    "retry_attempt": retry_count + 1,
+                    "focus_areas": decision.focus_areas,
+                    "min_score_target": oracle.threshold + 2,
+                    "previous_score": oracle._attempts[-1].overall_score,
+                    "retry_attempt": oracle.attempt_count,
                 },
             ):
                 if event_type == "_ov_result":
@@ -660,27 +676,58 @@ async def run_pipeline(
             assert ov_result is not None
 
             if ov_result["opt_failed"]:
-                logger.error("Retry optimizer signalled failure; skipping validate and aborting retry loop")
+                logger.error("Retry optimizer failed; aborting retry loop")
                 yield ("stage", {"stage": "validate", "status": "skipped"})
                 yield ("error", {"stage": "optimize",
-                                 "error": "Retry optimizer failed; no prompt to validate.",
+                                 "error": "Retry optimizer failed",
                                  "recoverable": False})
                 return
 
-            # Update for next iteration
-            if ov_result["optimization_result"]:
-                optimization_result = ov_result["optimization_result"]
-            validation = ov_result["validation"] or {}
-            overall_score = validation.get("scores", {}).get("overall_score", 10)
-            is_improvement = validation.get("is_improvement", False)
+            # Record new attempt
+            new_opt = ov_result["optimization_result"]
+            new_val = ov_result["validation"] or {}
+            new_scores = new_val.get("scores", {})
+            new_prompt = (new_opt or {}).get("optimized_prompt", "")
+            oracle.record_attempt(new_scores, new_prompt, decision.focus_areas)
+            yield ("retry_diagnostics", oracle.get_diagnostics())
+
+            all_attempts.append({
+                "optimization_result": new_opt,
+                "validation": new_val,
+            })
+
+            # Update running references
+            if new_opt:
+                optimization_result = new_opt
+            validation = new_val
 
         except Exception as e:
-            logger.warning("Retry %d failed: %s. Using previous validation result.", retry_count + 1, e)
+            logger.warning("Retry %d failed: %s", oracle.attempt_count, e)
             yield ("error", {
                 "stage": "optimize",
-                "error": f"Retry {retry_count + 1} failed: {e}",
+                "error": f"Retry failed: {e}",
                 "recoverable": True,
             })
             break
 
-        retry_count += 1
+    # Create trunk branch for refinement support
+    try:
+        from app.database import get_session_context as _gs
+        async with _gs() as db:
+            final_prompt = (optimization_result or {}).get("optimized_prompt", "")
+            final_scores = validation.get("scores", {})
+            if final_prompt:
+                trunk = await create_trunk_branch(
+                    optimization_id=optimization_id,
+                    prompt=final_prompt,
+                    scores=final_scores,
+                    db=db,
+                )
+                await db.commit()
+                yield ("branch_created", {"branch": trunk})
+    except Exception as e:
+        logger.warning("Trunk branch creation failed: %s (non-fatal)", e)
+
+    # Store adaptation snapshot for transparency
+    if adaptation:
+        yield ("adaptation_snapshot", adaptation)

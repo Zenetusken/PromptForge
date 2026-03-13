@@ -84,6 +84,7 @@ async def optimize_prompt(
                     file_contexts=request.file_contexts,
                     instructions=request.instructions,
                     url_fetched_contexts=url_fetched,
+                    user_id=current_user.id,
                 ):
                     yield sse_event(event_type, event_data)
 
