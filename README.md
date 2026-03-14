@@ -22,6 +22,8 @@ Your prompts carry intent, but most of it gets lost in translation. Project Synt
 
 Link a GitHub repository and it goes deeper: it reads your codebase, maps the architecture, and bakes that context directly into the prompt. The result reads like it was written by someone who already knows your code.
 
+Rate the results and the pipeline learns. Every thumbs-up or thumbs-down shifts the dimension weights, tunes strategy selection, and adjusts retry thresholds — so the next optimization already knows what quality means to you.
+
 Everything happens inside a data-dense, VS Code-style IDE — prompts stream in real time, scores render across multiple quality dimensions, and diffs show exactly what changed and why. The interface is built for the same people who live in terminals and code editors: compact, keyboard-driven, and information-rich without getting in the way.
 
 ## 🚀 Getting Started
@@ -41,13 +43,15 @@ Open **http://localhost** — the in-app setup flow walks you through LLM provid
 
 ## ⚙️ How It Works
 
-Your prompt moves through five stages — **Explore, Analyze, Strategy, Optimize, Validate** — each one building on the last. Explore reads your linked repo for architectural context. Analyze classifies the task. Strategy picks the right optimization framework. Optimize rewrites the prompt. Validate scores the result and tells you if it's actually better.
+Your prompt moves through five stages — **Explore, Analyze, Strategy, Optimize, Validate** — each one building on the last. Explore reads your linked repo for architectural context. Analyze classifies the task. Strategy picks the right optimization framework. Optimize rewrites the prompt. Validate scores the result across multiple quality dimensions and tells you if it's actually better.
+
+After validation, you rate the result. That feedback feeds back into the pipeline: dimension weights shift toward what you care about, strategy selection favors frameworks that have worked for your task types, and the retry oracle recalibrates its thresholds. The adaptation is progressive — it starts from the first rating and compounds with consistency.
 
 There's also an [MCP server](docs/MCP.md) that exposes the full API as tools, so you can run optimizations directly from Claude Code without touching the browser.
 
 ## 🗺️ Where This Is Going
 
-What exists today is a working core — a five-stage pipeline, codebase-aware context injection, real-time streaming, GitHub integration, and an MCP interface. It works, and it works well for what it does. But it's a fraction of what we have in mind.
+What exists today is a working core — a five-stage pipeline, codebase-aware context injection, adaptive feedback loops, real-time streaming, GitHub integration, and an MCP interface. It works, and it works well for what it does. But it's a fraction of what we have in mind.
 
 The roadmap is wide open and growing. Some of the directions we're exploring:
 
