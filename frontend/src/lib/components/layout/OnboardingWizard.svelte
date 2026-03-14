@@ -11,8 +11,10 @@
     onComplete: () => void;
     githubConnected?: boolean;
     repoLinked?: boolean;
+    providerReady?: boolean;
+    providerType?: string;
   }
-  const { onComplete, githubConnected = false, repoLinked = false }: Props = $props();
+  const { onComplete, githubConnected = false, repoLinked = false, providerReady = false, providerType = 'unknown' }: Props = $props();
 
   const STEP_KEY = 'pf_onboarding_step';
 
@@ -378,21 +380,80 @@
     </div>
 
   {:else if step === 5}
-    <!-- Step 5: First Action -->
+    <!-- Step 5: Ready to Forge -->
     <div class="mb-4">
-      <h2 class="section-heading text-neon-cyan mb-1">Ready to Forge?</h2>
-      <p class="font-mono text-[9px] text-text-dim">Choose how to get started.</p>
+      <h2 class="section-heading text-neon-cyan mb-1">Ready to Forge</h2>
+      <p class="font-mono text-[9px] text-text-dim">
+        {#if providerReady}Your pipeline is live. Choose how to start.{:else}One thing left before you can forge.{/if}
+      </p>
     </div>
 
     {#if error}
       <p class="font-mono text-[9px] text-neon-red mb-3">{error}</p>
     {/if}
 
+    <!-- Setup status checklist -->
+    <div class="border border-border-subtle p-2 mb-4 space-y-1.5">
+      <div class="font-mono text-[8px] text-text-dim/60 uppercase tracking-widest mb-1">System Status</div>
+      <!-- Provider -->
+      <div class="flex items-center gap-2">
+        <span class="w-1.5 h-1.5 shrink-0 {providerReady ? 'bg-neon-green' : 'bg-neon-red'}"></span>
+        <span class="font-mono text-[9px] {providerReady ? 'text-text-secondary' : 'text-text-primary'}">
+          LLM Provider
+        </span>
+        <span class="font-mono text-[8px] ml-auto {providerReady ? 'text-neon-green' : 'text-neon-red'}">
+          {#if providerReady}
+            {providerType === 'claude_cli' ? 'CLI' : providerType === 'anthropic_api' ? 'API' : 'Active'}
+          {:else}
+            Not configured
+          {/if}
+        </span>
+      </div>
+      <!-- GitHub -->
+      <div class="flex items-center gap-2">
+        <span class="w-1.5 h-1.5 shrink-0 {githubConnected ? 'bg-neon-green' : 'bg-text-dim/30'}"></span>
+        <span class="font-mono text-[9px] text-text-secondary">GitHub</span>
+        <span class="font-mono text-[8px] ml-auto {githubConnected ? 'text-neon-green' : 'text-text-dim'}">
+          {githubConnected ? 'Connected' : 'Optional'}
+        </span>
+      </div>
+      <!-- Repo -->
+      <div class="flex items-center gap-2">
+        <span class="w-1.5 h-1.5 shrink-0 {repoLinked ? 'bg-neon-green' : 'bg-text-dim/30'}"></span>
+        <span class="font-mono text-[9px] text-text-secondary">Repository</span>
+        <span class="font-mono text-[8px] ml-auto {repoLinked ? 'text-neon-green' : 'text-text-dim'}">
+          {repoLinked ? 'Linked' : 'Optional'}
+        </span>
+      </div>
+    </div>
+
+    <!-- Provider missing callout -->
+    {#if !providerReady}
+      <div class="border border-neon-red/25 bg-neon-red/[0.03] p-2 mb-4">
+        <div class="font-display text-[10px] uppercase text-neon-red mb-1">API Key Required</div>
+        <p class="font-mono text-[9px] text-text-dim leading-snug mb-2">
+          The optimization pipeline needs an LLM provider. Open Settings to enter your Anthropic API key.
+        </p>
+        <button
+          onclick={() => { handleComplete('write'); setTimeout(() => workbench.setActivity('settings'), 100); }}
+          disabled={saving}
+          class="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono text-neon-cyan border border-neon-cyan/30 hover:bg-neon-cyan/5 transition-colors"
+        >
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          Open Settings
+        </button>
+      </div>
+    {/if}
+
+    <!-- Action buttons -->
     <div class="space-y-2 mb-4">
       <button
         onclick={() => handleComplete('sample')}
         disabled={saving}
-        class="w-full flex items-start gap-3 p-3 text-left btn-outline-subtle"
+        class="w-full flex items-start gap-3 p-2 text-left btn-outline-subtle"
       >
         <svg class="w-4 h-4 text-neon-cyan shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z"></path>
@@ -406,7 +467,7 @@
       <button
         onclick={() => handleComplete('write')}
         disabled={saving}
-        class="w-full flex items-start gap-3 p-3 text-left btn-outline-subtle"
+        class="w-full flex items-start gap-3 p-2 text-left btn-outline-subtle"
       >
         <svg class="w-4 h-4 text-neon-green shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
@@ -417,36 +478,34 @@
         </div>
       </button>
 
-      <button
-        onclick={() => handleComplete('github')}
-        disabled={saving}
-        class="w-full flex items-start gap-3 p-3 text-left btn-outline-subtle"
-      >
-        <svg class="w-4 h-4 text-neon-purple shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
-        </svg>
-        <div>
-          <div class="font-display text-[10px] uppercase text-text-primary flex items-center gap-1.5">
-            {#if repoLinked}
-              Explore your codebase
-              <span class="font-mono text-[8px] text-neon-cyan/60 normal-case tracking-normal">(recommended)</span>
-            {:else if githubConnected}
-              Link a repository
-            {:else}
-              Connect GitHub first
-            {/if}
+      {#if githubConnected}
+        <button
+          onclick={() => handleComplete('github')}
+          disabled={saving}
+          class="w-full flex items-start gap-3 p-2 text-left btn-outline-subtle"
+        >
+          <svg class="w-4 h-4 text-neon-purple shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+          </svg>
+          <div>
+            <div class="font-display text-[10px] uppercase text-text-primary flex items-center gap-1.5">
+              {#if repoLinked}
+                Explore your codebase
+                <span class="font-mono text-[8px] text-neon-cyan/60 normal-case tracking-normal">(recommended)</span>
+              {:else}
+                Link a repository
+              {/if}
+            </div>
+            <div class="font-mono text-[9px] text-text-dim mt-0.5">
+              {#if repoLinked}
+                Your repo is linked — optimize with full codebase context
+              {:else}
+                Select a repo for codebase-aware optimization
+              {/if}
+            </div>
           </div>
-          <div class="font-mono text-[9px] text-text-dim mt-0.5">
-            {#if repoLinked}
-              Your repo is linked — optimize with full codebase context
-            {:else if githubConnected}
-              GitHub connected — select a repo for codebase-aware optimization
-            {:else}
-              Link a repo for codebase-aware optimization
-            {/if}
-          </div>
-        </div>
-      </button>
+        </button>
+      {/if}
     </div>
 
     <button onclick={prevStep} class="btn-outline-subtle px-3 py-2 font-mono text-[10px] uppercase">BACK</button>

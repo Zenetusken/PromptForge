@@ -701,6 +701,12 @@
     <SpotlightOverlay />
   {/if}
   {#if workbench.showOnboarding}
-    <OnboardingModal onComplete={() => { workbench.showOnboarding = false; }} githubConnected={github.isConnected} repoLinked={github.selectedRepo != null} />
+    <OnboardingModal
+      onComplete={() => { workbench.showOnboarding = false; }}
+      githubConnected={github.isConnected}
+      repoLinked={github.selectedRepo != null}
+      providerReady={workbench.isConnected && workbench.provider !== 'unknown'}
+      providerType={workbench.provider}
+    />
   {/if}
 {/if}
