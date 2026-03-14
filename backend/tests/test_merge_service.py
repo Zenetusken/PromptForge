@@ -1,12 +1,17 @@
 """Tests for merge_service — LLM prompt construction."""
 
-import pytest
-from app.services.merge_service import build_merge_system_prompt
 from app.schemas.compare_models import (
-    CompareResponse, CompareGuidance, ScoreComparison,
-    StructuralComparison, EfficiencyComparison, StrategyComparison,
-    ContextComparison, ValidationComparison, AdaptationComparison,
+    AdaptationComparison,
+    CompareGuidance,
+    CompareResponse,
+    ContextComparison,
+    EfficiencyComparison,
+    ScoreComparison,
+    StrategyComparison,
+    StructuralComparison,
+    ValidationComparison,
 )
+from app.services.merge_service import build_merge_system_prompt
 
 
 def _build_mock_compare_response() -> CompareResponse:
@@ -46,7 +51,11 @@ def _build_mock_compare_response() -> CompareResponse:
             a_issues=[], b_issues=["verbose"], a_changes_made=["added context section"],
             b_changes_made=["added role persona"], a_is_improvement=True, b_is_improvement=True,
         ),
-        adaptation=AdaptationComparison(feedbacks_between=3, weight_shifts={"clarity": 0.08}, guardrails_added=["clarity-focus"]),
+        adaptation=AdaptationComparison(
+            feedbacks_between=3,
+            weight_shifts={"clarity": 0.08},
+            guardrails_added=["clarity-focus"],
+        ),
         top_insights=["Clarity gap is structural", "Both 7.0 conciseness", "Repo context ROI marginal"],
         cross_patterns=[],
         a_is_trashed=False, b_is_trashed=False,

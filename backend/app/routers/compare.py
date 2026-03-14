@@ -12,7 +12,7 @@ from sqlalchemy import select
 from app.database import async_session
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import RateLimit
-from app.errors import not_found, bad_request
+from app.errors import bad_request, not_found
 from app.models.optimization import Optimization
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.compare_models import CompareResponse, MergeAcceptRequest, MergeAcceptResponse

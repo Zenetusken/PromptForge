@@ -46,6 +46,7 @@ Logs: `data/backend.log`, `data/frontend.log`, `data/mcp.log`
 - `feedback.py` — feedback CRUD, stats, and history (`POST/GET /api/feedback`)
 - `framework.py` — framework validation profiles and per-user framework performance data (`GET /api/framework-profiles`, `/api/framework-performance/{task_type}`)
 - `refinement.py` — refine, fork, select, compare branches (`POST/GET /api/refinement`)
+- `compare.py` — cross-optimization comparison, merge SSE streaming, merge accept (`GET /api/compare`, `POST /api/compare/merge`, `POST /api/compare/merge/accept`)
 
 ### Services (`backend/app/services/`)
 - `pipeline.py` — orchestrates the 5 stages; call `run_pipeline()` for SSE events
@@ -73,6 +74,8 @@ Logs: `data/backend.log`, `data/frontend.log`, `data/mcp.log`
 - `retry_oracle.py` — 7-gate adaptive retry algorithm replacing fixed threshold
 - `session_context.py` — Session abstraction + compaction for multi-turn refinement
 - `prompt_diff.py` — Prompt hashing, dimension deltas, and cycle detection
+- `compare_service.py` — Cross-optimization comparison engine: situation classification, 8-category insight extraction, merge directive generation
+- `merge_service.py` — LLM merge prompt construction (11 intelligence sections) + streaming merge execution
 
 ### Providers (`backend/app/providers/`)
 - `detector.py` — auto-selects provider in order: Claude CLI → Anthropic API

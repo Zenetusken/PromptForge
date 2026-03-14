@@ -317,7 +317,7 @@ def compute_modifiers(a: Any, b: Any) -> list[str]:
     created_b = getattr(b, "created_at", None)
     if created_a and created_b:
         try:
-            from datetime import datetime, timezone
+            from datetime import datetime
 
             def _to_dt(val: Any) -> datetime | None:
                 if isinstance(val, datetime):
@@ -409,7 +409,8 @@ def generate_top_insights(
                 assessment = "worthwhile" if abs(best_dim[1] or 0) > 1.0 else "marginal"
                 candidates.append((
                     2.5,
-                    f"{slower}'s codebase context: +{diff_s:.1f}s for +{abs(best_dim[1] or 0):.1f} {best_dim[0]} — ROI {assessment}",
+                    f"{slower}'s codebase context: +{diff_s:.1f}s for "
+                    f"+{abs(best_dim[1] or 0):.1f} {best_dim[0]} — ROI {assessment}",
                 ))
 
     # Context insight: repo added
@@ -489,7 +490,8 @@ def generate_merge_directives(
             more_concise = "A" if a_exp < b_exp else "B"
             directives.append((
                 1.5,
-                f"Use {more_concise}'s structure density ({min(a_exp, b_exp):.1f}x vs {max(a_exp, b_exp):.1f}x expansion)",
+                f"Use {more_concise}'s structure density "
+                f"({min(a_exp, b_exp):.1f}x vs {max(a_exp, b_exp):.1f}x expansion)",
             ))
 
     # Repo context directive
@@ -554,8 +556,11 @@ def generate_cross_patterns(a: Any, b: Any, scores: dict) -> list[str]:
     raw_b = getattr(b, "raw_prompt", "") or ""
     len_ratio = len(raw_a.split()) / max(len(raw_b.split()), 1)
     if len_ratio > 2.0 or len_ratio < 0.5:
+        a_words = len(raw_a.split())
+        b_words = len(raw_b.split())
         patterns.append(
-            f"Significant input length disparity ({len(raw_a.split())} vs {len(raw_b.split())} words) — different prompt philosophies"
+            f"Significant input length disparity "
+            f"({a_words} vs {b_words} words) — different prompt philosophies"
         )
 
     return patterns

@@ -1,7 +1,6 @@
 """Tests for compare_service — classification and data extraction."""
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 
 from app.services.compare_service import classify_situation, extract_scores, generate_top_insights
 
@@ -112,8 +111,15 @@ class TestInsightGeneration:
             structural={"a_input_words": 45, "b_input_words": 120},
             efficiency={"a_duration_ms": 4100, "b_duration_ms": 6500},
             strategy={"a_framework": "CO-STAR", "b_framework": "RISEN"},
-            context={"a_repo": None, "b_repo": "owner/repo", "a_has_codebase": False, "b_has_codebase": True},
-            validation={"a_verdict": "Strong improvement", "b_verdict": "Moderate improvement", "a_issues": [], "b_issues": ["verbose"]},
+            context={
+                "a_repo": None, "b_repo": "owner/repo",
+                "a_has_codebase": False, "b_has_codebase": True,
+            },
+            validation={
+                "a_verdict": "Strong improvement",
+                "b_verdict": "Moderate improvement",
+                "a_issues": [], "b_issues": ["verbose"],
+            },
             adaptation={"feedbacks_between": 3, "weight_shifts": {"clarity": 0.08}},
             situation="STRATEGY",
         )

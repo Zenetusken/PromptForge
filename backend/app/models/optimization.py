@@ -136,7 +136,11 @@ class Optimization(Base):
             if isinstance(value, datetime):
                 value = value.isoformat()
             # Parse JSON fields (list columns — default to [] on error)
-            if col.name in ("weaknesses", "strengths", "changes_made", "issues", "tags", "secondary_frameworks", "merge_parents"):
+            _json_list_cols = (
+                "weaknesses", "strengths", "changes_made", "issues",
+                "tags", "secondary_frameworks", "merge_parents",
+            )
+            if col.name in _json_list_cols:
                 if value and isinstance(value, str):
                     try:
                         value = json.loads(value)
