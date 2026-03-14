@@ -1,5 +1,6 @@
 <script lang="ts">
   import { forge } from '$lib/stores/forge.svelte';
+  import ScoreCircle from '$lib/components/shared/ScoreCircle.svelte';
 
   let { assessment }: {
     assessment: {
@@ -95,7 +96,6 @@
   }
 
   let overallScore = $derived(forge.overallScore ?? 0);
-  let overallScoreClass = $derived(getScoreClass(overallScore));
   let verdictClass = $derived(verdictClasses[assessment.verdict] ?? 'text-neon-yellow');
   let verdictBorder = $derived(verdictBorderColors[assessment.verdict] ?? 'border-neon-yellow');
 
@@ -135,30 +135,24 @@
 <div class="border border-border-subtle bg-bg-card">
   <!-- L0 Verdict Bar (always visible) -->
   <button
-    class="w-full flex items-center gap-2 px-2 py-1.5 transition-colors hover:bg-bg-primary/30"
+    class="w-full flex items-center gap-2 px-2 py-1.5 transition-colors duration-200 hover:bg-bg-hover/50"
     onclick={toggleL1}
     aria-expanded={expandedL1}
     aria-label="Toggle result assessment details"
+    data-testid="assessment-toggle"
   >
     <!-- Score circle -->
-    <div
-      class="shrink-0 flex items-center justify-center border-0 font-mono text-[11px] font-bold {overallScoreClass}"
-      style="width: 36px; height: 36px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px currentColor;"
-    >
-      {overallScore.toFixed(1)}
-    </div>
+    <ScoreCircle score={overallScore} size={36} />
 
     <!-- Verdict badge -->
     <span
       class="shrink-0 px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase border {verdictBorder} {verdictClass}"
-      style="border-radius: 2px;"
     >
       {assessment.verdict.toUpperCase()}
     </span>
 
     <!-- Confidence badge -->
-    <span class="shrink-0 px-1 py-0.5 text-[8px] font-mono text-text-dim border border-border-subtle"
-          style="border-radius: 2px;">
+    <span class="shrink-0 px-1 py-0.5 text-[8px] font-mono text-text-dim border border-border-subtle">
       {confidenceLabels[assessment.confidence] ?? 'MED'}
     </span>
 
@@ -182,10 +176,13 @@
     {/if}
 
     <!-- Chevron -->
-    <span class="shrink-0 text-[10px] text-text-dim transition-transform"
-          class:rotate-180={expandedL1}>
-      &#x25BE;
-    </span>
+    <svg
+      class="w-3 h-3 shrink-0 text-text-dim transition-transform duration-200"
+      class:rotate-180={expandedL1}
+      fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"
+    >
+      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
+    </svg>
   </button>
 
   <!-- L1 Dimension Map (expanded) -->
@@ -201,9 +198,10 @@
         <!-- Dimension row -->
         <button
           class="w-full flex items-center gap-2 px-2 py-1 border-b border-border-subtle/50
-                 hover:bg-bg-primary/20 transition-colors text-left"
+                 hover:bg-bg-hover/50 transition-colors duration-200 text-left"
           onclick={() => toggleDimension(insight.dimension)}
           aria-expanded={isExpanded}
+          data-testid="assessment-dimension-{insight.dimension}"
         >
           <!-- Score -->
           <span
@@ -221,8 +219,7 @@
             <div class="flex items-center gap-1.5">
               <span class="text-[10px] font-mono text-text-primary">{insight.label}</span>
               {#if insight.user_priority === 'high'}
-                <span class="text-[8px] font-mono text-neon-purple px-0.5 border border-neon-purple/40"
-                      style="border-radius: 2px;">PRI</span>
+                <span class="text-[8px] font-mono text-neon-purple px-0.5 border border-neon-purple/40">PRI</span>
               {/if}
               {#if insight.delta_from_previous != null && Math.abs(insight.delta_from_previous) >= 0.5}
                 <span class="text-[9px] font-mono {insight.delta_from_previous > 0 ? 'text-neon-green' : 'text-neon-red'}">
@@ -230,8 +227,7 @@
                 </span>
               {/if}
               {#if isTradeOff}
-                <span class="text-[8px] font-mono text-neon-yellow px-0.5 border border-neon-yellow/40"
-                      style="border-radius: 2px;">TRADE-OFF</span>
+                <span class="text-[8px] font-mono text-neon-yellow px-0.5 border border-neon-yellow/40">TRADE-OFF</span>
               {/if}
             </div>
             <p class="text-[9px] font-mono text-text-dim truncate">{insight.assessment}</p>
@@ -252,7 +248,7 @@
             <div class="grid grid-cols-2 gap-3" style="grid-template-columns: 1fr 1fr;">
               <!-- Left: Retry journey -->
               <div class="space-y-1.5">
-                <p class="text-[9px] font-mono text-text-dim uppercase">Retry Journey</p>
+                <p class="text-[9px] font-display font-bold uppercase tracking-wider text-text-dim">Retry Journey</p>
                 {#if assessment.retry_journey.score_trajectory.length > 1}
                   <div class="flex items-end gap-0.5 h-6">
                     {#each assessment.retry_journey.score_trajectory as score, j}
@@ -270,15 +266,14 @@
 
               <!-- Right: Framework fit -->
               <div class="space-y-1.5">
-                <p class="text-[9px] font-mono text-text-dim uppercase">Framework Fit</p>
+                <p class="text-[9px] font-display font-bold uppercase tracking-wider text-text-dim">Framework Fit</p>
                 {#if assessment.framework_fit}
                   <div class="space-y-0.5">
                     <div class="flex items-center gap-1">
                       <span class="text-[10px] font-mono text-text-primary">
                         {assessment.framework_fit.framework}
                       </span>
-                      <span class="text-[8px] font-mono text-text-dim border border-border-subtle px-0.5"
-                            style="border-radius: 2px;">
+                      <span class="text-[8px] font-mono text-text-dim border border-border-subtle px-0.5">
                         {assessment.framework_fit.fit_label}
                       </span>
                     </div>

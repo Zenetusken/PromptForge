@@ -81,17 +81,17 @@
 >
   <!-- Thumbs Up -->
   <button
-    class="inline-flex items-center justify-center w-6 h-6 transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+    class="inline-flex items-center justify-center w-6 h-6 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed
            {currentRating === 1
              ? 'border border-neon-green bg-neon-green/8 text-neon-green'
              : 'border border-border-subtle text-text-dim hover:border-neon-green/40 hover:text-neon-green'}"
-    style="border-radius: 4px;"
     onclick={handleThumbUp}
     disabled={feedback.currentFeedback.submitting}
     role="radio"
     aria-label="Thumbs up"
     aria-pressed={currentRating === 1}
     title="Positive feedback"
+    data-testid="feedback-thumb-up"
   >
     <svg width="12" height="12" viewBox="0 0 24 24" fill={currentRating === 1 ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round"
@@ -103,17 +103,17 @@
 
   <!-- Thumbs Down -->
   <button
-    class="inline-flex items-center justify-center w-6 h-6 transition-colors disabled:opacity-40 disabled:cursor-not-allowed
+    class="inline-flex items-center justify-center w-6 h-6 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed
            {currentRating === -1
              ? 'border border-neon-red bg-neon-red/8 text-neon-red'
              : 'border border-border-subtle text-text-dim hover:border-neon-red/40 hover:text-neon-red'}"
-    style="border-radius: 4px;"
     onclick={handleThumbDown}
     disabled={feedback.currentFeedback.submitting}
     role="radio"
     aria-label="Thumbs down"
     aria-pressed={currentRating === -1}
     title="Negative feedback"
+    data-testid="feedback-thumb-down"
   >
     <svg width="12" height="12" viewBox="0 0 24 24" fill={currentRating === -1 ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round"
@@ -149,28 +149,22 @@
 
   <!-- Details button -->
   <button
-    class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono border
-           border-border-subtle text-text-secondary
-           hover:border-neon-cyan/30 hover:text-neon-cyan
-           transition-colors"
-    style="border-radius: 4px;"
+    class="btn-ghost inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono"
     onclick={handleDetails}
     aria-label="Open adaptation details"
     title="View adaptation intelligence"
+    data-testid="feedback-details"
   >
     Details
   </button>
 
   <!-- Refine ghost button -->
   <button
-    class="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono border
-           border-border-subtle text-text-secondary
-           hover:border-neon-cyan/30 hover:text-neon-cyan
-           transition-colors"
-    style="border-radius: 4px;"
+    class="btn-ghost inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono"
     onclick={handleRefine}
     aria-label="Open refinement panel"
     title="Open refinement panel"
+    data-testid="feedback-refine"
   >
     {#if refinement.branchCount > 0}
       <span class="text-neon-purple">&#x25C8;</span>

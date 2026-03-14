@@ -114,46 +114,46 @@
       <span class="text-[10px] font-mono text-text-dim uppercase">Rating</span>
       <div class="flex items-center gap-1">
         <button
-          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors
+          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors duration-200
                  {currentRating === 1
                    ? 'border-neon-green bg-neon-green/8 text-neon-green'
                    : 'border-border-subtle text-text-dim hover:border-neon-green/40 hover:text-neon-green'}"
-          style="border-radius: 4px;"
           onclick={() => setRating(1)}
           role="radio"
           aria-pressed={currentRating === 1}
           aria-label="Positive"
+          data-testid="feedback-tier2-positive"
         >+</button>
         <button
-          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors
+          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors duration-200
                  {currentRating === 0
                    ? 'border-neon-cyan bg-neon-cyan/8 text-neon-cyan'
                    : 'border-border-subtle text-text-dim hover:border-neon-cyan/40 hover:text-neon-cyan'}"
-          style="border-radius: 4px;"
           onclick={() => setRating(0)}
           role="radio"
           aria-pressed={currentRating === 0}
           aria-label="Neutral"
+          data-testid="feedback-tier2-neutral"
         >=</button>
         <button
-          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors
+          class="inline-flex items-center justify-center w-7 h-6 text-[10px] font-mono border transition-colors duration-200
                  {currentRating === -1
                    ? 'border-neon-red bg-neon-red/8 text-neon-red'
                    : 'border-border-subtle text-text-dim hover:border-neon-red/40 hover:text-neon-red'}"
-          style="border-radius: 4px;"
           onclick={() => setRating(-1)}
           role="radio"
           aria-pressed={currentRating === -1}
           aria-label="Negative"
+          data-testid="feedback-tier2-negative"
         >-</button>
       </div>
     </div>
 
     <!-- Issue checkboxes in 2-column grid -->
-    <div class="grid grid-cols-2 gap-x-4" style="gap-y: 3px;">
+    <div class="grid grid-cols-2 gap-x-4 gap-y-[3px]">
       <!-- Fidelity group -->
       <div role="group" aria-label="Fidelity issues">
-        <p class="text-[9px] font-mono uppercase mb-1 text-neon-yellow">Fidelity</p>
+        <p class="text-[9px] font-display font-bold uppercase tracking-wider mb-1 text-neon-yellow">Fidelity</p>
         {#each FIDELITY_ISSUES as issue}
           {@const checked = isIssueChecked(issue.id)}
           {@const suggested = suggestedIds.has(issue.id)}
@@ -167,7 +167,6 @@
                        : suggested
                          ? 'border-neon-yellow/50 text-transparent'
                          : 'border-border-subtle text-transparent group-hover:border-text-dim'}"
-              style="border-radius: 2px;"
               role="checkbox"
               aria-checked={checked}
             >
@@ -193,7 +192,7 @@
 
       <!-- Quality group -->
       <div role="group" aria-label="Quality issues">
-        <p class="text-[9px] font-mono uppercase mb-1 text-neon-blue">Quality</p>
+        <p class="text-[9px] font-display font-bold uppercase tracking-wider mb-1 text-neon-blue">Quality</p>
         {#each QUALITY_ISSUES as issue}
           {@const checked = isIssueChecked(issue.id)}
           {@const suggested = suggestedIds.has(issue.id)}
@@ -207,7 +206,6 @@
                        : suggested
                          ? 'border-neon-yellow/50 text-transparent'
                          : 'border-border-subtle text-transparent group-hover:border-text-dim'}"
-              style="border-radius: 2px;"
               role="checkbox"
               aria-checked={checked}
             >
@@ -234,7 +232,7 @@
 
     <!-- Dimension override grid: 5 columns -->
     <div>
-      <p class="text-[9px] font-mono text-text-dim uppercase mb-1">Dimension Overrides</p>
+      <p class="text-[9px] font-display font-bold uppercase tracking-wider text-text-dim mb-1">Dimension Overrides</p>
       <div class="grid grid-cols-5 gap-1">
         {#each DIMENSIONS as dim}
           {@const baseScore = validateScores[dim.key]}
@@ -242,11 +240,11 @@
           {@const displayVal = overrideVal ?? (baseScore != null ? Math.round(baseScore) : '—')}
           {@const isOverridden = dim.key in dimensionOverrides}
           <div
-            class="flex flex-col items-center p-1 border transition-colors
+            class="flex flex-col items-center p-1 border transition-colors duration-200
                    {isOverridden
                      ? 'border-neon-purple/50 bg-neon-purple/5'
                      : 'border-border-subtle'}"
-            style="border-radius: 6px; padding: 8px 4px;"
+            style="padding: 8px 4px;"
           >
             <span class="text-[9px] font-mono text-text-dim">{dim.abbr}</span>
             <span class="text-xs font-mono {isOverridden ? 'text-neon-purple' : 'text-text-primary'}">
@@ -255,17 +253,17 @@
             <div class="flex items-center gap-0.5 mt-1">
               <button
                 class="w-4 h-4 inline-flex items-center justify-center text-[10px] border border-border-subtle
-                       text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors"
-                style="border-radius: 2px;"
+                       text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors duration-200"
                 onclick={() => adjustOverride(dim.key, -1)}
                 aria-label="Decrease {dim.label}"
+                data-testid="feedback-dim-{dim.abbr.toLowerCase()}-dec"
               >-</button>
               <button
                 class="w-4 h-4 inline-flex items-center justify-center text-[10px] border border-border-subtle
-                       text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors"
-                style="border-radius: 2px;"
+                       text-text-dim hover:border-neon-cyan/30 hover:text-neon-cyan transition-colors duration-200"
                 onclick={() => adjustOverride(dim.key, 1)}
                 aria-label="Increase {dim.label}"
+                data-testid="feedback-dim-{dim.abbr.toLowerCase()}-inc"
               >+</button>
             </div>
           </div>
@@ -278,29 +276,28 @@
       <textarea
         class="w-full bg-bg-primary border border-border-subtle text-[11px] font-mono text-text-primary
                p-1.5 focus:outline-none focus:border-neon-cyan/40 resize-none"
-        style="border-radius: 4px;"
         rows="2"
         placeholder="Optional comment..."
         bind:value={feedback.currentFeedback.comment}
+        data-testid="feedback-comment"
       ></textarea>
     </div>
 
     <!-- Action bar -->
     <div class="flex items-center gap-2">
       <button
-        class="flex-1 py-1.5 text-[11px] font-mono uppercase tracking-wider border
-               border-neon-cyan/40 text-neon-cyan
-               hover:bg-neon-cyan/10 transition-colors
+        class="btn-outline-cyan flex-1 py-1.5 text-[11px] font-mono uppercase tracking-wider
                disabled:opacity-40 disabled:cursor-not-allowed"
-        style="border-radius: 4px;"
         onclick={handleSave}
         disabled={feedback.currentFeedback.submitting || currentRating === null}
+        data-testid="feedback-save"
       >
         {feedback.currentFeedback.submitting ? 'Saving...' : 'Save Feedback'}
       </button>
       <button
-        class="px-3 py-1.5 text-[11px] font-mono text-text-dim hover:text-text-secondary transition-colors"
+        class="px-3 py-1.5 text-[11px] font-mono text-text-dim hover:text-text-secondary transition-colors duration-200"
         onclick={handleClose}
+        data-testid="feedback-cancel"
       >
         Cancel
       </button>

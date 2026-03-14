@@ -59,7 +59,7 @@
 </script>
 
 <div class="space-y-3">
-  <h3 class="font-display text-[12px] font-bold uppercase text-text-dim">Adaptation</h3>
+  <h3 class="section-heading">Adaptation</h3>
 
   {#if !state && !summary}
     <p class="text-xs text-text-dim">No adaptation data.</p>
@@ -210,11 +210,19 @@
 
     <!-- L3 Technical Details -->
     <button
-      class="w-full text-left text-[10px] font-mono text-text-dim hover:text-neon-cyan/70
-             border border-border-subtle p-1.5 transition-colors"
+      class="w-full flex items-center gap-1.5 text-[10px] font-mono text-text-dim hover:text-neon-cyan/70
+             border border-border-subtle p-1.5 transition-colors duration-200"
       onclick={() => { showTechnicalDetails = !showTechnicalDetails; }}
+      data-testid="adaptation-technical-toggle"
     >
-      {showTechnicalDetails ? '\u25B4' : '\u25BE'} Technical Details
+      <svg
+        class="w-3 h-3 transition-transform duration-200"
+        class:rotate-180={showTechnicalDetails}
+        fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
+      </svg>
+      Technical Details
     </button>
     {#if showTechnicalDetails && state}
       <div class="p-1.5 bg-bg-primary border border-border-subtle text-[9px] font-mono text-text-dim space-y-1">
