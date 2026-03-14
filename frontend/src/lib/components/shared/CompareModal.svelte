@@ -379,7 +379,7 @@
                   {@const aScore = compareData.scores.a_scores[dim] ?? null}
                   {@const bScore = compareData.scores.b_scores[dim] ?? null}
                   {@const d = compareData.scores.deltas[dim] ?? null}
-                  {@const winnerSide = d != null ? (d > 0 ? 'b' : d < 0 ? 'a' : null) : null}
+                  {@const winnerSide = d != null ? (d > 0 ? 'a' : d < 0 ? 'b' : null) : null}
                   <tr class="h-5 border-b border-border-subtle/30">
                     <td class="pr-2 font-mono text-[10px] text-text-secondary capitalize" style="font-variant-numeric: tabular-nums;">
                       <span class="flex items-center gap-1">
@@ -504,14 +504,18 @@
               <!-- Duration bars -->
               <div class="mb-1.5">
                 <div class="font-mono text-[8px] text-text-dim uppercase mb-0.5">Duration</div>
-                {#each [{ label: 'a', val: eff.a_duration_ms, color: 'neon-purple' }, { label: 'b', val: eff.b_duration_ms, color: 'neon-blue' }] as row}
-                  <div class="flex items-center gap-2 h-5" style="font-variant-numeric: tabular-nums;">
-                    <span class="font-mono text-[10px] text-{row.color}/80 w-12 text-right shrink-0">{fmtDuration(row.val)}</span>
+                <div class="flex items-center gap-2 h-5" style="font-variant-numeric: tabular-nums;">
+                    <span class="font-mono text-[10px] text-neon-purple/80 w-12 text-right shrink-0">{fmtDuration(eff.a_duration_ms)}</span>
                     <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden">
-                      <div class="h-full bg-{row.color}/30" style="width: {effBarWidth(row.val, Math.max(eff.a_duration_ms ?? 0, eff.b_duration_ms ?? 0))}"></div>
+                      <div class="h-full bg-neon-purple/30" style="width: {effBarWidth(eff.a_duration_ms, Math.max(eff.a_duration_ms ?? 0, eff.b_duration_ms ?? 0))}"></div>
                     </div>
                   </div>
-                {/each}
+                  <div class="flex items-center gap-2 h-5" style="font-variant-numeric: tabular-nums;">
+                    <span class="font-mono text-[10px] text-neon-blue/80 w-12 text-right shrink-0">{fmtDuration(eff.b_duration_ms)}</span>
+                    <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden">
+                      <div class="h-full bg-neon-blue/30" style="width: {effBarWidth(eff.b_duration_ms, Math.max(eff.a_duration_ms ?? 0, eff.b_duration_ms ?? 0))}"></div>
+                    </div>
+                  </div>
               </div>
               <!-- Token bars -->
               <div class="mb-1.5">
@@ -652,7 +656,7 @@
 
         <!-- Guidance card -->
         {#if compareData.guidance && phase === 'analyze'}
-          <div class="border-border-accent bg-neon-cyan/[0.015] p-1.5 mx-2 my-1.5 border">
+          <div class="border-border-accent bg-neon-cyan/5 p-1.5 mx-2 my-1.5 border">
             <div class="font-display text-[9px] font-bold uppercase tracking-wider text-text-dim mb-1">
               Guidance
             </div>
@@ -748,6 +752,7 @@
             class="font-mono text-[10px] px-3 py-1 border border-neon-teal/40 text-neon-teal bg-neon-teal/5 hover:bg-neon-teal/10 transition-colors duration-200 uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed"
             onclick={startMerge}
             disabled={!compareData.guidance}
+            title={compareData.guidance ? 'Synthesize best qualities from both prompts' : 'Merge unavailable — guidance generation failed'}
           >
             Merge Insights
           </button>

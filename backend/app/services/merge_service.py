@@ -336,18 +336,15 @@ async def stream_merge(
         f"## Prompt B ({b_label})\n\n{b_prompt}"
     )
 
-    # Resolve model — "auto" means use provider default (pass None)
-    resolved_model = model if model != "auto" else None
+    # Resolve model — "auto" falls back to a concrete model string because
+    # provider.stream() requires model as a positional argument.
+    resolved_model = model if model != "auto" else "claude-sonnet-4-5-20250514"
 
     logger.info(
         "Starting merge stream: model=%s, situation=%s",
-        resolved_model or "default",
+        resolved_model,
         compare.situation,
     )
 
-    kwargs: dict = {"system": system_prompt, "user": user_message}
-    if resolved_model is not None:
-        kwargs["model"] = resolved_model
-
-    async for chunk in provider.stream(**kwargs):
+    async for chunk in provider.stream(system=system_prompt, user=user_message, model=resolved_model):
         yield chunk

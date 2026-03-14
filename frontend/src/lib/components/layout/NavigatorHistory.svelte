@@ -387,6 +387,7 @@
               <option value="completed">completed</option>
               <option value="failed">failed</option>
               <option value="running">running</option>
+              <option value="merged">merged</option>
             </select>
           </div>
           <!-- Clear filters -->
