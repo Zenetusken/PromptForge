@@ -144,12 +144,10 @@ def build_merge_system_prompt(compare: CompareResponse) -> str:
 
     sections.append(
         f"## STRATEGY INTELLIGENCE\n"
-        f"A: {strategy.a_framework or 'unknown'} (source: {strategy.a_source or 'unknown'}, "
-        f"confidence: {strategy.a_source or 'N/A'})\n"
+        f"A: {strategy.a_framework or 'unknown'} (selection: {strategy.a_source or 'unknown'})\n"
         f"  Rationale: {strategy.a_rationale or 'none'}\n"
         f"  Guardrails: {a_guardrails_str}\n"
-        f"B: {strategy.b_framework or 'unknown'} (source: {strategy.b_source or 'unknown'}, "
-        f"confidence: {strategy.b_source or 'N/A'})\n"
+        f"B: {strategy.b_framework or 'unknown'} (selection: {strategy.b_source or 'unknown'})\n"
         f"  Rationale: {strategy.b_rationale or 'none'}\n"
         f"  Guardrails: {b_guardrails_str}\n"
         f"Cross-framework analysis: {cross_fw}"

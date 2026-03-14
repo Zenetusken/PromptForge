@@ -74,6 +74,15 @@ class TestClassifySituation:
         assert classify_situation(0.45, "X", "X") == "EVOLVED"
         assert classify_situation(0.44, "X", "X") == "CROSS"
 
+    # Levenshtein fallback uses lower thresholds (0.80/0.35)
+    def test_levenshtein_boundary_high(self):
+        assert classify_situation(0.80, "X", "X", used_embeddings=False) == "REFORGE"
+        assert classify_situation(0.79, "X", "X", used_embeddings=False) == "EVOLVED"
+
+    def test_levenshtein_boundary_low(self):
+        assert classify_situation(0.35, "X", "X", used_embeddings=False) == "EVOLVED"
+        assert classify_situation(0.34, "X", "X", used_embeddings=False) == "CROSS"
+
 
 class TestScoreExtraction:
     def test_extracts_all_dimensions(self):

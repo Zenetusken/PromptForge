@@ -60,31 +60,47 @@ def classify_situation(
     similarity: float,
     fw_a: str | None,
     fw_b: str | None,
+    used_embeddings: bool = True,
 ) -> str:
     """Pure function: classify the comparison relationship.
 
-    Thresholds:
+    Cosine thresholds (embeddings):
       >= 0.85 + same framework   → REFORGE
       >= 0.85 + different         → STRATEGY
       0.45 – 0.84                → EVOLVED
       < 0.45                     → CROSS
+
+    Levenshtein thresholds (fallback — shifted lower because Levenshtein
+    penalizes word reordering that cosine similarity tolerates):
+      >= 0.80 → HIGH
+      0.35 – 0.79 → MODERATE
+      < 0.35 → LOW
     """
-    if similarity >= 0.85:
+    high = 0.85 if used_embeddings else 0.80
+    low = 0.45 if used_embeddings else 0.35
+
+    if similarity >= high:
         if fw_a and fw_b and fw_a == fw_b:
             return "REFORGE"
         return "STRATEGY"
-    if similarity >= 0.45:
+    if similarity >= low:
         return "EVOLVED"
     return "CROSS"
 
 
 # ── 2. compute_similarity ────────────────────────────────────────────────
 
-async def compute_similarity(text_a: str, text_b: str) -> float:
+async def compute_similarity(text_a: str, text_b: str) -> tuple[float, bool]:
     """Compute semantic similarity between two texts.
 
     Uses the embedding service for cosine similarity when available.
     Falls back to normalized Levenshtein ratio when embeddings are not ready.
+
+    Returns:
+        Tuple of (similarity_score, used_embeddings). The boolean flag
+        indicates whether cosine similarity (True) or Levenshtein fallback
+        (False) was used — callers may need to apply different classification
+        thresholds.
     """
     try:
         from app.services.embedding_service import get_embedding_service
@@ -96,12 +112,12 @@ async def compute_similarity(text_a: str, text_b: str) -> float:
             if vec_a.size > 0 and vec_b.size > 0:
                 # Cosine similarity (vectors are already L2-normalized)
                 sim = float(np.dot(vec_a, vec_b))
-                return max(0.0, min(1.0, sim))
+                return max(0.0, min(1.0, sim)), True
     except Exception:
         logger.debug("Embedding similarity failed, falling back to Levenshtein")
 
     # Fallback: normalized Levenshtein ratio
-    return _levenshtein_ratio(text_a, text_b)
+    return _levenshtein_ratio(text_a, text_b), False
 
 
 def _levenshtein_ratio(a: str, b: str) -> float:
@@ -572,12 +588,12 @@ async def compute_comparison(
     # Compute similarity
     raw_a = getattr(a, "raw_prompt", "") or ""
     raw_b = getattr(b, "raw_prompt", "") or ""
-    similarity = await compute_similarity(raw_a, raw_b)
+    similarity, used_embeddings = await compute_similarity(raw_a, raw_b)
 
-    # Classify situation
+    # Classify situation (thresholds differ based on similarity method)
     fw_a = getattr(a, "primary_framework", None)
     fw_b = getattr(b, "primary_framework", None)
-    situation = classify_situation(similarity, fw_a, fw_b)
+    situation = classify_situation(similarity, fw_a, fw_b, used_embeddings=used_embeddings)
 
     # Build score comparison
     deltas: dict[str, float | None] = {}
