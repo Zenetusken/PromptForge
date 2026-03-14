@@ -325,14 +325,27 @@
       {/if}
     </div>
 
-    <!-- Loading skeleton -->
+    <!-- Loading: branded thinking blocks -->
     {#if loading}
-      <div class="flex-1 flex items-center justify-center p-8">
-        <div class="flex flex-col items-center gap-2">
-          <div class="w-32 h-1 bg-border-subtle overflow-hidden">
-            <div class="h-full bg-neon-cyan/40" style="width:60%;"></div>
+      <div class="flex-1 flex items-center justify-center">
+        <div class="w-72 space-y-3">
+          <!-- Indeterminate progress bar -->
+          <div class="h-0.5 w-full bg-border-subtle overflow-hidden">
+            <div class="h-full w-1/3 bg-neon-cyan/40 animate-indeterminate"></div>
           </div>
-          <span class="font-mono text-[10px] text-text-dim">Analyzing optimizations...</span>
+          <!-- Staggered thinking steps -->
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-2" style="animation: list-item-in 0.2s cubic-bezier(0.16,1,0.3,1) 0ms both;">
+              <span class="w-3 h-3 rounded-full shrink-0 border-t animate-spin" style="border-color: transparent; border-top-color: #00e5ff;"></span>
+              <span class="font-mono text-[10px] text-text-dim">Computing semantic similarity...</span>
+            </div>
+            <div class="flex items-center gap-2" style="animation: list-item-in 0.2s cubic-bezier(0.16,1,0.3,1) 300ms both;">
+              <span class="font-mono text-[10px] text-text-dim">Extracting score intelligence...</span>
+            </div>
+            <div class="flex items-center gap-2" style="animation: list-item-in 0.2s cubic-bezier(0.16,1,0.3,1) 600ms both;">
+              <span class="font-mono text-[10px] text-text-dim">Generating merge directives...</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -703,26 +716,52 @@
         {#if phase === 'merge' || phase === 'commit'}
           <div class="px-2 py-1.5">
             <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
-              {phase === 'merge' ? 'Merging...' : 'Merged Prompt'}
+              {phase === 'commit' ? 'Merged Prompt' : 'Synthesizing'}
             </div>
-            <div
-              class="bg-bg-input p-1.5 font-mono text-[10px] max-h-40 overflow-y-auto whitespace-pre-wrap break-words border {mergeError ? 'border-neon-red/40' : 'border-neon-teal/20'}"
-            >
-              {mergedText || (phase === 'merge' ? 'Waiting for stream...' : '')}
-            </div>
-            {#if phase === 'merge'}
+
+            {#if mergeError}
+              <!-- Error state -->
+              <div class="bg-bg-input border border-neon-red/40 p-1.5">
+                {#if mergedText}
+                  <pre class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words leading-relaxed max-h-40 overflow-y-auto">{mergedText}</pre>
+                {/if}
+                <div class="flex items-center justify-between mt-1.5">
+                  <span class="font-mono text-[9px] text-neon-red/70">Stream interrupted</span>
+                  <button
+                    class="font-mono text-[10px] px-2 py-0.5 border border-neon-teal/40 text-neon-teal hover:bg-neon-teal/10 transition-colors duration-200"
+                    onclick={retryMerge}
+                  >Retry</button>
+                </div>
+              </div>
+
+            {:else if phase === 'merge' && mergedText.length === 0}
+              <!-- Thinking state: spinner + indeterminate bar -->
+              <div class="bg-bg-input border border-neon-teal/20 p-1.5">
+                <div class="flex items-center gap-2">
+                  <span class="w-3 h-3 rounded-full shrink-0 border-t animate-spin"
+                        style="border-color: transparent; border-top-color: #00d4aa;"></span>
+                  <span class="font-mono text-[10px] text-neon-teal/60">Synthesizing merge...</span>
+                </div>
+                <div class="h-0.5 w-full bg-border-subtle overflow-hidden mt-2">
+                  <div class="h-full w-1/3 bg-neon-teal/40 animate-indeterminate"></div>
+                </div>
+              </div>
+
+            {:else if phase === 'merge'}
+              <!-- Streaming state: text + blinking cursor -->
+              <div class="bg-bg-input border border-neon-teal/20 p-1.5">
+                <pre class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words leading-relaxed max-h-40 overflow-y-auto">{mergedText}<span class="streaming-cursor"></span></pre>
+              </div>
               <div class="flex items-center justify-between mt-1">
                 <span class="font-mono text-[9px] text-text-dim">
                   Streaming &middot; ~{mergeTokens} words
                 </span>
-                {#if mergeError}
-                  <button
-                    class="font-mono text-[10px] px-2 py-0.5 border border-neon-teal/40 text-neon-teal hover:bg-neon-teal/10 transition-colors duration-200"
-                    onclick={retryMerge}
-                  >
-                    Retry
-                  </button>
-                {/if}
+              </div>
+
+            {:else}
+              <!-- Commit state: final text, no cursor, border intensified -->
+              <div class="bg-bg-input border border-neon-teal/30 p-1.5">
+                <pre class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words leading-relaxed max-h-40 overflow-y-auto">{mergedText}</pre>
               </div>
             {/if}
           </div>
