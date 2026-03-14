@@ -11,7 +11,7 @@ from app.schemas.compare_models import (
     StructuralComparison,
     ValidationComparison,
 )
-from app.services.merge_service import build_merge_system_prompt
+from app.services.merge_service import _parse_merge_response, build_merge_system_prompt
 
 
 def _build_mock_compare_response() -> CompareResponse:
@@ -85,7 +85,7 @@ class TestMergePromptConstruction:
         assert "VALIDATION INTELLIGENCE" in prompt
         assert "MERGE DIRECTIVES" in prompt
         assert "DIMENSION TARGETS" in prompt
-        assert "CONSTRAINTS" in prompt
+        assert "OUTPUT FORMAT" in prompt
 
     def test_directives_included(self):
         compare = _build_mock_compare_response()
@@ -104,7 +104,7 @@ class TestMergePromptConstruction:
         prompt = build_merge_system_prompt(compare)
         assert "master-class prompt synthesis engine" in prompt.lower() or "prompt synthesis" in prompt.lower()
 
-    def test_constraints_section_present(self):
+    def test_output_format_rules_present(self):
         compare = _build_mock_compare_response()
         prompt = build_merge_system_prompt(compare)
         assert "Output ONLY" in prompt or "output only" in prompt.lower()
@@ -152,7 +152,7 @@ class TestMergePromptConstruction:
         # Should still include all sections, just with empty/fallback directives
         assert "SITUATION" in prompt
         assert "MERGE DIRECTIVES" in prompt
-        assert "CONSTRAINTS" in prompt
+        assert "OUTPUT FORMAT" in prompt
 
     def test_situation_classification_present(self):
         compare = _build_mock_compare_response()
@@ -164,3 +164,69 @@ class TestMergePromptConstruction:
         compare = _build_mock_compare_response()
         prompt = build_merge_system_prompt(compare)
         assert "owner/repo" in prompt
+
+    def test_output_format_json_instruction(self):
+        compare = _build_mock_compare_response()
+        prompt = build_merge_system_prompt(compare)
+        assert '"specs"' in prompt
+        assert '"merged_prompt"' in prompt
+        assert '"validation"' in prompt
+        assert "JSON object" in prompt
+
+
+class TestParseMergeResponse:
+    def test_valid_json(self):
+        raw = (
+            '{"specs": ["step 1"], "merged_prompt": "Hello world",'
+            ' "validation": {"clarity": 8.5, "overall": 8.0, "reasoning": "Good"}}'
+        )
+        result = _parse_merge_response(raw)
+        assert result["specs"] == ["step 1"]
+        assert result["merged_prompt"] == "Hello world"
+        assert result["validation"]["clarity"] == 8.5
+
+    def test_json_with_markdown_fencing(self):
+        raw = '```json\n{"specs": ["a"], "merged_prompt": "text", "validation": {}}\n```'
+        result = _parse_merge_response(raw)
+        assert result["specs"] == ["a"]
+        assert result["merged_prompt"] == "text"
+
+    def test_raw_text_fallback(self):
+        raw = "This is just plain text, not JSON"
+        result = _parse_merge_response(raw)
+        assert result["specs"] == []
+        assert result["merged_prompt"] == raw
+        assert result["validation"] == {}
+
+    def test_partial_json_missing_keys(self):
+        raw = '{"merged_prompt": "Only prompt"}'
+        result = _parse_merge_response(raw)
+        assert result["specs"] == []
+        assert result["merged_prompt"] == "Only prompt"
+        assert result["validation"] == {}
+
+    def test_specs_wrong_type_coerced(self):
+        """If LLM returns specs as a string instead of array, default to empty."""
+        raw = '{"specs": "not an array", "merged_prompt": "text", "validation": {}}'
+        result = _parse_merge_response(raw)
+        assert result["specs"] == []
+        assert result["merged_prompt"] == "text"
+
+    def test_specs_items_coerced_to_str(self):
+        """Non-string items in specs array are coerced to strings."""
+        raw = '{"specs": [1, true, "ok"], "merged_prompt": "text", "validation": {}}'
+        result = _parse_merge_response(raw)
+        assert result["specs"] == ["1", "True", "ok"]
+
+    def test_validation_wrong_type_defaults(self):
+        """If LLM returns validation as a string, default to empty dict."""
+        raw = '{"specs": [], "merged_prompt": "text", "validation": "invalid"}'
+        result = _parse_merge_response(raw)
+        assert result["validation"] == {}
+
+    def test_empty_response(self):
+        """Empty string falls back to raw text (empty prompt)."""
+        result = _parse_merge_response("")
+        assert result["specs"] == []
+        assert result["merged_prompt"] == ""
+        assert result["validation"] == {}

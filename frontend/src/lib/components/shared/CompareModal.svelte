@@ -6,6 +6,7 @@
     mergeOptimizations,
     acceptMerge,
     type CompareResponse,
+    type MergeValidation,
   } from '$lib/api/client';
   import DiffView from '$lib/components/shared/DiffView.svelte';
   import { editor } from '$lib/stores/editor.svelte';
@@ -79,8 +80,11 @@
   let mergedText = $state('');
   let mergeError = $state(false);
   let mergeTokens = $state(0);
-  let mergeModel = $state('');
   let mergeController = $state<AbortController | null>(null);
+  let mergeSpecs = $state<string[]>([]);
+  let mergeValidation = $state<MergeValidation | null>(null);
+  let mergePromptText = $state('');
+  let mergeStreaming = $state(false);
   let compareController = $state<AbortController | null>(null);
   let accepting = $state(false);
 
@@ -184,26 +188,39 @@
   async function startMerge() {
     phase = 'merge';
     mergedText = '';
+    mergePromptText = '';
+    mergeSpecs = [];
+    mergeValidation = null;
+    mergeStreaming = true;
     mergeError = false;
     mergeTokens = 0;
     // Collapse all accordions
     openAccordions = { structural: false, efficiency: false, strategy: false, context: false };
 
-    mergeController = await mergeOptimizations(
-      idA,
-      idB,
-      (chunk: string) => {
+    mergeController = await mergeOptimizations(idA, idB, {
+      onStreaming: (chunk: string) => {
         mergedText += chunk;
-        mergeTokens += chunk.split(/\s+/).filter(Boolean).length;
       },
-      (err: Error) => {
+      onSpecs: (specs: string[]) => {
+        mergeSpecs = specs;
+      },
+      onPrompt: (text: string) => {
+        mergePromptText = text || mergedText;
+        mergeStreaming = false;
+        mergeTokens = mergePromptText.split(/\s+/).filter(Boolean).length;
+      },
+      onValidation: (data: MergeValidation) => {
+        mergeValidation = data;
+      },
+      onError: (err: Error) => {
         mergeError = true;
+        mergeStreaming = false;
         toast.error(`Merge error: ${err.message}`);
       },
-      () => {
+      onComplete: () => {
         phase = 'commit';
       },
-    );
+    });
   }
 
   function retryMerge() {
@@ -215,14 +232,15 @@
   async function handleAccept() {
     if (accepting) return;
     accepting = true;
+    const promptToAccept = mergePromptText || mergedText;
     try {
-      const result = await acceptMerge(idA, idB, mergedText);
+      const result = await acceptMerge(idA, idB, promptToAccept);
       // Open the merged prompt as a new prompt tab — user forges it through the pipeline
       editor.openTab({
         id: `prompt-${result.optimization_id}`,
         label: 'Merged Prompt',
         type: 'prompt',
-        promptText: mergedText,
+        promptText: promptToAccept,
         dirty: false,
       });
       // Refresh history
@@ -282,6 +300,27 @@
   function effBarWidth(val: number | null | undefined, max: number): string {
     if (val == null || max === 0) return '0%';
     return `${Math.max(0, Math.min(100, (val / max) * 100))}%`;
+  }
+
+  // ---- Merge validation helpers ----
+  function computeTarget(dim: string): number | null {
+    if (!compareData) return null;
+    const aVal = compareData.scores.a_scores[dim] ?? null;
+    const bVal = compareData.scores.b_scores[dim] ?? null;
+    const delta = compareData.scores.deltas[dim] ?? null;
+    if (aVal == null && bVal == null) return null;
+    const aSafe = aVal ?? 0;
+    const bSafe = bVal ?? 0;
+    if (delta != null && delta === 0) return Math.min(aSafe + 0.5, 10.0);
+    return Math.max(aSafe, bSafe);
+  }
+
+  function computeOverallTarget(): number | null {
+    if (!compareData) return null;
+    const aVal = aOpt?.overall_score as number | null | undefined;
+    const bVal = bOpt?.overall_score as number | null | undefined;
+    if (aVal == null && bVal == null) return null;
+    return Math.max(aVal ?? 0, bVal ?? 0);
   }
 </script>
 
@@ -749,58 +788,144 @@
           </div>
         {/if}
 
-        <!-- Phase 2: Merge streaming preview -->
+        <!-- Phase 2/3: Structured merge output -->
         {#if phase === 'merge' || phase === 'commit'}
-          <div class="px-2 py-1.5">
-            <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
-              {phase === 'commit' ? 'Merged Prompt' : 'Synthesizing'}
-            </div>
+          <div class="px-2 py-1.5 space-y-2">
 
-            {#if mergeError}
-              <!-- Error state -->
-              <div class="bg-bg-input border border-neon-red/40 p-1.5">
-                {#if mergedText}
-                  <pre class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words leading-relaxed max-h-40 overflow-y-auto">{mergedText}</pre>
-                {/if}
-                <div class="flex items-center justify-between mt-1.5">
-                  <span class="font-mono text-[9px] text-neon-red/70">Stream interrupted</span>
-                  <button
-                    class="font-mono text-[10px] px-2 py-0.5 border border-neon-teal/40 text-neon-teal hover:bg-neon-teal/10 transition-colors duration-200"
-                    onclick={retryMerge}
-                  >Retry</button>
+            <!-- MERGE SPECS -->
+            {#if mergeSpecs.length > 0}
+              <div>
+                <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
+                  Merge Specs
                 </div>
-              </div>
-
-            {:else if phase === 'merge' && mergedText.length === 0}
-              <!-- Thinking state: spinner + indeterminate bar -->
-              <div class="bg-bg-input border border-neon-teal/20 p-1.5">
-                <div class="flex items-center gap-2">
-                  <span class="w-3 h-3 rounded-full shrink-0 border-t animate-spin"
-                        style="border-color: transparent; border-top-color: #00d4aa;"></span>
-                  <span class="font-mono text-[10px] text-neon-teal/60">Synthesizing merge...</span>
+                <div class="border border-border-subtle p-1.5 space-y-0.5">
+                  {#each mergeSpecs as spec}
+                    <div class="flex items-start gap-1.5 font-mono text-[9px] text-text-secondary leading-snug">
+                      <span class="text-neon-teal shrink-0 mt-px">&#8594;</span>
+                      <span>{spec}</span>
+                    </div>
+                  {/each}
                 </div>
-                <div class="h-0.5 w-full bg-border-subtle overflow-hidden mt-2">
-                  <div class="h-full w-1/3 bg-neon-teal/40 animate-indeterminate"></div>
-                </div>
-              </div>
-
-            {:else if phase === 'merge'}
-              <!-- Streaming state: text + blinking cursor -->
-              <div class="bg-bg-input border border-neon-teal/20 p-1.5">
-                <pre class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words leading-relaxed max-h-40 overflow-y-auto">{mergedText}<span class="streaming-cursor"></span></pre>
-              </div>
-              <div class="flex items-center justify-between mt-1">
-                <span class="font-mono text-[9px] text-text-dim">
-                  Streaming &middot; ~{mergeTokens} words
-                </span>
-              </div>
-
-            {:else}
-              <!-- Commit state: final text, no cursor, border intensified -->
-              <div class="bg-bg-input border border-neon-teal/30 p-1.5">
-                <pre class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words leading-relaxed max-h-40 overflow-y-auto">{mergedText}</pre>
               </div>
             {/if}
+
+            <!-- MERGED PROMPT -->
+            <div>
+              <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
+                {mergePromptText ? 'Merged Prompt' : 'Synthesizing'}
+              </div>
+
+              {#if mergeError}
+                <div class="bg-bg-input border border-neon-red/40 p-1.5">
+                  {#if mergedText}
+                    <pre class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words leading-relaxed max-h-40 overflow-y-auto">{mergedText}</pre>
+                  {/if}
+                  <div class="flex items-center justify-between mt-1.5">
+                    <span class="font-mono text-[9px] text-neon-red/70">Stream interrupted</span>
+                    <button
+                      class="font-mono text-[10px] px-2 py-0.5 border border-neon-teal/40 text-neon-teal hover:bg-neon-teal/10 transition-colors duration-200"
+                      onclick={retryMerge}
+                    >Retry</button>
+                  </div>
+                </div>
+
+              {:else if mergeStreaming && !mergePromptText}
+                <div class="bg-bg-input border border-neon-teal/20 p-1.5">
+                  <div class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full shrink-0 border-t animate-spin"
+                          style="border-color: transparent; border-top-color: #00d4aa;"></span>
+                    <span class="font-mono text-[10px] text-neon-teal/60">Synthesizing merge...</span>
+                  </div>
+                  <div class="h-0.5 w-full bg-border-subtle overflow-hidden mt-2">
+                    <div class="h-full w-1/3 bg-neon-teal/40 animate-indeterminate"></div>
+                  </div>
+                </div>
+
+              {:else if mergePromptText}
+                <div class="bg-bg-input border border-neon-teal/30 p-1.5">
+                  <pre class="font-mono text-[10px] text-text-secondary whitespace-pre-wrap break-words leading-relaxed max-h-40 overflow-y-auto">{mergePromptText}</pre>
+                </div>
+                <div class="flex items-center justify-end mt-0.5">
+                  <span class="font-mono text-[9px] text-text-dim">
+                    ~{mergeTokens} words
+                  </span>
+                </div>
+              {/if}
+            </div>
+
+            <!-- VALIDATION SCORECARD (only render when LLM returned actual scores) -->
+            {#if mergeValidation && mergeValidation.overall != null && compareData}
+              <div>
+                <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
+                  Validation
+                </div>
+                <div class="border border-border-subtle p-1.5">
+                  <table class="w-full border-collapse">
+                    <thead>
+                      <tr class="border-b border-border-subtle">
+                        <th class="text-left py-0.5 pr-2 font-mono text-[9px] font-medium uppercase tracking-wider text-text-dim">Dimension</th>
+                        <th class="text-right py-0.5 px-2 font-mono text-[9px] font-medium text-text-dim">Target</th>
+                        <th class="text-right py-0.5 px-2 font-mono text-[9px] font-medium text-text-dim">Actual</th>
+                        <th class="text-right py-0.5 pl-2 font-mono text-[9px] font-medium text-text-dim">Delta</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each compareData.scores.dimensions as dim}
+                        {@const target = computeTarget(dim)}
+                        {@const actual = (mergeValidation as Record<string, unknown>)[dim] as number | undefined}
+                        {@const vDelta = target != null && actual != null ? actual - target : null}
+                        <tr class="h-5 border-b border-border-subtle/30">
+                          <td class="pr-2 font-mono text-[10px] text-text-secondary capitalize" style="font-variant-numeric: tabular-nums;">
+                            {dim.replace(/_/g, ' ')}
+                          </td>
+                          <td class="px-2 text-right font-mono text-[10px] text-text-dim" style="font-variant-numeric: tabular-nums;">
+                            {target != null ? target.toFixed(1) : '\u2014'}
+                          </td>
+                          <td class="px-2 text-right font-mono text-[10px] text-text-secondary" style="font-variant-numeric: tabular-nums;">
+                            {actual != null ? actual.toFixed(1) : '\u2014'}
+                          </td>
+                          <td class="pl-2 text-right font-mono text-[10px] font-semibold {deltaClass(vDelta)}" style="font-variant-numeric: tabular-nums;">
+                            {deltaLabel(vDelta)}
+                          </td>
+                        </tr>
+                      {/each}
+                      <!-- Overall row -->
+                      {#if mergeValidation.overall != null}
+                        {@const overallTarget = computeOverallTarget()}
+                        {@const overallDelta = overallTarget != null ? (mergeValidation.overall ?? 0) - overallTarget : null}
+                        <tr class="h-5 border-t border-border-subtle">
+                          <td class="pr-2 font-mono text-[10px] text-text-primary font-semibold uppercase" style="font-variant-numeric: tabular-nums;">
+                            Overall
+                          </td>
+                          <td class="px-2 text-right font-mono text-[10px] text-text-dim font-semibold" style="font-variant-numeric: tabular-nums;">
+                            {overallTarget != null ? overallTarget.toFixed(1) : '\u2014'}
+                          </td>
+                          <td class="px-2 text-right font-mono text-[10px] text-text-primary font-semibold" style="font-variant-numeric: tabular-nums;">
+                            {mergeValidation.overall.toFixed(1)}
+                          </td>
+                          <td class="pl-2 text-right font-mono text-[10px] font-bold {deltaClass(overallDelta)}" style="font-variant-numeric: tabular-nums;">
+                            {deltaLabel(overallDelta)}
+                          </td>
+                        </tr>
+                      {/if}
+                    </tbody>
+                  </table>
+                  <!-- Reasoning -->
+                  {#if mergeValidation.reasoning}
+                    <div class="mt-1.5 pt-1 border-t border-border-subtle/50 font-mono text-[9px] text-text-secondary leading-snug">
+                      {mergeValidation.reasoning}
+                    </div>
+                  {/if}
+                  <!-- Missed targets warning -->
+                  {#if mergeValidation.targets_missed && mergeValidation.targets_missed.length > 0}
+                    <div class="mt-1 font-mono text-[8px] text-neon-yellow">
+                      Missed targets on: {mergeValidation.targets_missed.join(', ')} &#8212; consider discarding and adjusting guidance.
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
           </div>
         {/if}
 
@@ -838,7 +963,7 @@
           </span>
           <button
             class="font-mono text-[10px] px-2 py-1 text-text-dim hover:text-text-primary transition-colors duration-200"
-            onclick={() => { mergeController?.abort(); phase = 'analyze'; mergedText = ''; }}
+            onclick={() => { mergeController?.abort(); phase = 'analyze'; mergedText = ''; mergePromptText = ''; mergeSpecs = []; mergeValidation = null; mergeStreaming = false; }}
           >
             Cancel
           </button>

@@ -1156,12 +1156,32 @@ export async function streamCompareOptimizations(
   return controller;
 }
 
+export interface MergeValidation {
+  clarity?: number;
+  faithfulness?: number;
+  specificity?: number;
+  structure?: number;
+  conciseness?: number;
+  overall?: number;
+  targets_met?: string[];
+  targets_missed?: string[];
+  reasoning?: string;
+  [key: string]: unknown;
+}
+
+export interface MergeCallbacks {
+  onStreaming?: (text: string) => void;
+  onSpecs?: (specs: string[]) => void;
+  onPrompt?: (text: string) => void;
+  onValidation?: (data: MergeValidation) => void;
+  onError: (err: Error) => void;
+  onComplete: () => void;
+}
+
 export async function mergeOptimizations(
   idA: string,
   idB: string,
-  onChunk: (text: string) => void,
-  onError: (err: Error) => void,
-  onComplete: () => void,
+  callbacks: MergeCallbacks,
 ): Promise<AbortController> {
   const controller = new AbortController();
   const res = await apiFetch(`${BASE}/api/compare/merge`, {
@@ -1171,7 +1191,7 @@ export async function mergeOptimizations(
     signal: controller.signal,
   });
   if (!res.ok) {
-    onError(await apiError(res, 'Merge failed'));
+    callbacks.onError(await apiError(res, 'Merge failed'));
     return controller;
   }
 
@@ -1191,14 +1211,19 @@ export async function mergeOptimizations(
           if (!line.startsWith('data: ')) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.type === 'chunk') onChunk(data.text);
-            else if (data.type === 'complete') onComplete();
-            else if (data.type === 'error') onError(new Error(data.message));
+            switch (data.type) {
+              case 'streaming': callbacks.onStreaming?.(data.text); break;
+              case 'specs': callbacks.onSpecs?.(data.data); break;
+              case 'prompt': callbacks.onPrompt?.(data.text); break;
+              case 'validation': callbacks.onValidation?.(data.data); break;
+              case 'complete': callbacks.onComplete(); break;
+              case 'error': callbacks.onError(new Error(data.message)); break;
+            }
           } catch { /* skip malformed lines */ }
         }
       }
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') onError(err as Error);
+      if ((err as Error).name !== 'AbortError') callbacks.onError(err as Error);
     }
   })();
 

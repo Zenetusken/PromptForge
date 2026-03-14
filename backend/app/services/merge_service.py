@@ -9,6 +9,7 @@ Used by:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, AsyncGenerator
 
@@ -300,32 +301,94 @@ def build_merge_system_prompt(compare: CompareResponse) -> str:
     targets_str = "\n".join(target_lines)
     sections.append(f"## DIMENSION TARGETS\n{targets_str}")
 
-    # ── 11. CONSTRAINTS ──────────────────────────────────────────────────
+    # ── 11. OUTPUT FORMAT ────────────────────────────────────────────────
     shorter_words = min(structural.a_output_words, structural.b_output_words)
     longer_words = max(structural.a_output_words, structural.b_output_words)
 
     sections.append(
-        f"## CONSTRAINTS\n"
-        f"- Output ONLY the merged prompt text. No commentary, no explanations, "
-        f"no preamble, no postscript.\n"
-        f"- Do not hallucinate information not present in either parent prompt.\n"
-        f"- Target the shorter prompt's length range: {shorter_words}–{longer_words} words.\n"
-        f"- Preserve all factual content and domain-specific terminology from both parents.\n"
-        f"- The merged prompt must be self-contained and immediately usable."
+        "## OUTPUT FORMAT\n\n"
+        "You must respond with a JSON object containing exactly three keys:\n\n"
+        '1. "specs" \u2014 An array of 4\u20137 specific construction steps describing HOW you '
+        "will build the merged prompt. Each step MUST:\n"
+        "   - Reference a concrete element from Prompt A or B by quoting its actual text\n"
+        "   - Cite the score data from SCORE INTELLIGENCE that justifies the decision\n"
+        "   - Describe the structural placement (opening, section N, closing, etc.)\n"
+        "   Do NOT write generic directives like 'Preserve A's clarity'. Instead write:\n"
+        '   "Open with B\'s role anchor (\'You are a senior...\') \u2014 B\'s faithfulness 8.5 '
+        "vs A's 6.5 traces to this persona grounding\"\n\n"
+        '2. "merged_prompt" \u2014 The synthesized prompt text. Every sentence must trace to '
+        "content in A or B. Structure and phrasing follow the specs above.\n\n"
+        '3. "validation" \u2014 Self-assessment of the merged prompt against the DIMENSION '
+        "TARGETS above:\n"
+        "   {\n"
+        '     "clarity": <1-10>,\n'
+        '     "faithfulness": <1-10>,\n'
+        '     "specificity": <1-10>,\n'
+        '     "structure": <1-10>,\n'
+        '     "conciseness": <1-10>,\n'
+        '     "overall": <weighted 1-10>,\n'
+        '     "targets_met": [<dimension names where target was met or exceeded>],\n'
+        '     "targets_missed": [<dimension names where target was missed>],\n'
+        '     "reasoning": "<2-3 sentences explaining synthesis decisions and tradeoffs>"\n'
+        "   }\n\n"
+        "RULES:\n"
+        "- Output ONLY the JSON object. No markdown fencing, no commentary outside.\n"
+        "- Do not hallucinate information not present in either parent prompt.\n"
+        "- Preserve all factual content and domain-specific terminology.\n"
+        f"- Target length: {shorter_words}\u2013{longer_words} words.\n"
+        "- The merged prompt must be self-contained and immediately usable."
     )
 
     return "\n\n".join(sections)
+
+
+def _parse_merge_response(raw: str) -> dict:
+    """Parse the structured JSON merge response with fallback for raw text.
+
+    Validates types: ``specs`` must be a list of strings,
+    ``merged_prompt`` must be a string, ``validation`` must be a dict.
+    Invalid types are coerced or defaulted.
+    """
+    text = raw.strip()
+    # Strip markdown fencing if LLM wrapped the JSON
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines)
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("Merge response was not valid JSON, falling back to raw text")
+        return {"specs": [], "merged_prompt": text, "validation": {}}
+
+    # Type-safe extraction with coercion
+    raw_specs = parsed.get("specs", [])
+    specs = [str(s) for s in raw_specs] if isinstance(raw_specs, list) else []
+
+    raw_prompt = parsed.get("merged_prompt", "")
+    merged_prompt = str(raw_prompt) if raw_prompt else ""
+
+    raw_validation = parsed.get("validation", {})
+    validation = raw_validation if isinstance(raw_validation, dict) else {}
+
+    return {"specs": specs, "merged_prompt": merged_prompt, "validation": validation}
 
 
 async def stream_merge(
     provider: LLMProvider,
     compare: CompareResponse,
     model: str = "auto",
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[dict, None]:
     """Stream a merged prompt from two compared optimizations.
 
     Builds the system prompt from the CompareResponse, constructs a user
     message with both optimized prompts, and streams the LLM response.
+    On completion, parses the structured JSON and yields typed events:
+    ``streaming``, ``specs``, ``prompt``, and ``validation``.
 
     Args:
         provider: LLM provider instance.
@@ -333,7 +396,8 @@ async def stream_merge(
         model: Model to use. "auto" uses the provider's default.
 
     Yields:
-        Text chunks as they arrive from the LLM.
+        Event dicts with ``type`` key: ``streaming`` (raw chunk),
+        ``specs`` (list), ``prompt`` (text), ``validation`` (dict).
     """
     system_prompt = build_merge_system_prompt(compare)
 
@@ -359,5 +423,13 @@ async def stream_merge(
         compare.situation,
     )
 
+    full_response = ""
     async for chunk in provider.stream(system=system_prompt, user=user_message, model=resolved_model):
-        yield chunk
+        full_response += chunk
+        yield {"type": "streaming", "text": chunk}
+
+    # Parse structured JSON and emit typed events
+    parsed = _parse_merge_response(full_response)
+    yield {"type": "specs", "data": parsed["specs"]}
+    yield {"type": "prompt", "text": parsed["merged_prompt"]}
+    yield {"type": "validation", "data": parsed["validation"]}

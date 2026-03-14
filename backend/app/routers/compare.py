@@ -168,8 +168,8 @@ async def merge_optimizations(
 
     async def event_stream():
         try:
-            async for chunk in stream_merge(provider, compare, model):
-                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+            async for event in stream_merge(provider, compare, model):
+                yield f"data: {json.dumps(event)}\n\n"
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
         except Exception as e:
             logger.error("Merge stream error: %s", e, exc_info=True)
