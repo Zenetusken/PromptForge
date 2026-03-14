@@ -21,7 +21,7 @@
     (workbench.mcpConnected ? 1 : 0) +
     (github.isConnected ? 1 : 0) +
     (github.selectedRepo ? 1 : 0) +
-    (history.totalCount > 0 ? 1 : 0)
+    (history.unfilteredTotal > 0 ? 1 : 0)
   );
 
   function openWelcomeTab() {

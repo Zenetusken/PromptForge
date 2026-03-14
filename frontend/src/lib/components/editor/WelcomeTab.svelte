@@ -16,7 +16,7 @@
     { label: 'MCP server online', done: workbench.mcpConnected, action: null },
     { label: 'GitHub account linked', done: github.isConnected, action: () => workbench.setActivity('github') },
     { label: 'Repository selected', done: !!github.selectedRepo, action: () => workbench.setActivity('github') },
-    { label: 'First synthesis complete', done: history.totalCount > 0, action: () => { if (samplePrompts.length > 0) loadSample(samplePrompts[0]); } },
+    { label: 'First synthesis complete', done: history.unfilteredTotal > 0, action: () => { if (samplePrompts.length > 0) loadSample(samplePrompts[0]); } },
   ]);
 
   let completedCount = $derived(checklistItems.filter(i => i.done).length);

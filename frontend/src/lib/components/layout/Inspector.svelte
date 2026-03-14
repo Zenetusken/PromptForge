@@ -340,7 +340,7 @@
                 <div class="flex items-center justify-between h-5 text-[10px]">
                   <span class="text-text-dim">Total runs</span>
                   <span class="font-mono text-text-primary"
-                    >{history.totalCount || history.entries.length}</span
+                    >{history.unfilteredTotal || history.entries.length}</span
                   >
                 </div>
                 {#if avgScore}

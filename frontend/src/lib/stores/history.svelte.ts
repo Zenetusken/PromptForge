@@ -71,6 +71,9 @@ function saveFilters(filters: HistoryFilters) {
 class HistoryStore {
   entries = $state<HistoryEntry[]>([]);
   totalCount = $state(0);
+  /** Unfiltered total — set only by stats endpoint, immune to filter changes.
+   *  Use this for "has the user ever forged?" checks (checklist, milestones). */
+  unfilteredTotal = $state(0);
   isLoading = $state(false);
   selectedId = $state<string | null>(null);
   filters = $state<HistoryFilters>(loadFilters());

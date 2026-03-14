@@ -127,7 +127,7 @@
     if (_historyStatsFetching) return;
     _historyStatsFetching = true;
     fetchHistoryStats()
-      .then(stats => { history.totalCount = stats.total_optimizations; })
+      .then(stats => { history.unfilteredTotal = stats.total_optimizations; })
       .catch(() => { /* API not ready yet — checklist stays unchecked until health reconnects */ })
       .finally(() => { _historyStatsFetching = false; });
   });
@@ -148,7 +148,7 @@
 
     // Refresh stats (total count, avg score, framework breakdown)
     fetchHistoryStats()
-      .then(s => { history.totalCount = s.total_optimizations; })
+      .then(s => { history.unfilteredTotal = s.total_optimizations; })
       .catch(() => {});
   });
 

@@ -379,7 +379,7 @@
             ...instructionChips.map(() => 'instruction'),
             ...urlChips.map(() => 'URL'),
           ];
-          const isFirstForge = history.totalCount === 0;
+          const isFirstForge = history.unfilteredTotal === 0;
           if (isFirstForge) {
             patchAuthMe({ onboarding_completed: true }).catch(() => {});
             user.onboardingCompleted = true;
@@ -387,7 +387,7 @@
           }
 
           const achieved = checkAndCelebrateMilestones({
-            forgeCount: history.totalCount + 1,
+            forgeCount: history.unfilteredTotal + 1,
             score: forge.overallScore,
             usedContext: usedChips.length > 0,
             strategy: strategy,
