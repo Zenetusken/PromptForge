@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.8.0-dev
+
+- Added cross-optimization comparison engine with 4-situation classification (REFORGE, STRATEGY, EVOLVED, CROSS) via semantic similarity
+- Added 8 insight categories: score analysis, structural, efficiency, strategy, context, adaptation, validation, and cross-prompt patterns
+- Added intelligent merge workflow that synthesizes two optimized prompts using full comparison intelligence as LLM guidance
+- Added 3-phase CompareModal: Analyze (read-only assessment) → Merge (LLM streaming) → Commit Gate (accept/discard)
+- Added `GET /api/compare`, `POST /api/compare/merge` (SSE), `POST /api/compare/merge/accept` endpoints
+- Added `merge_parents` column to Optimization model for lineage tracking
+- Added `merged` status to optimization lifecycle
+- Added Levenshtein fallback with adjusted thresholds when embedding model unavailable
+- Improved brand compliance: Navigator search input density, StrategyExplainer border width, CompareModal typography and opacity tiers
+
 ## 0.7.0-dev
 
 - Added framework performance tracking model with per-user, per-task, per-framework scoring

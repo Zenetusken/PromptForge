@@ -105,6 +105,7 @@ class Optimization(Base):
     session_id = Column(Text, nullable=True)
     refinement_turns = Column(Integer, default=0)
     active_branch_id = Column(Text, nullable=True)  # app-layer FK to refinement_branch
+    merge_parents = Column(Text, nullable=True)  # JSON: [parent_id_a, parent_id_b]
     branch_count = Column(Integer, default=0)
     adaptation_snapshot = Column(Text, nullable=True)  # JSON
 
@@ -135,7 +136,11 @@ class Optimization(Base):
             if isinstance(value, datetime):
                 value = value.isoformat()
             # Parse JSON fields (list columns — default to [] on error)
-            if col.name in ("weaknesses", "strengths", "changes_made", "issues", "tags", "secondary_frameworks"):
+            _json_list_cols = (
+                "weaknesses", "strengths", "changes_made", "issues",
+                "tags", "secondary_frameworks", "merge_parents",
+            )
+            if col.name in _json_list_cols:
                 if value and isinstance(value, str):
                     try:
                         value = json.loads(value)

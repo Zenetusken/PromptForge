@@ -45,12 +45,12 @@
         {:else if workbench.activeActivity === 'github'}
           <NavigatorGitHub />
         {:else if workbench.activeActivity === 'search'}
-          <div class="p-3">
+          <div class="p-2">
             <input
               type="text"
               name="nav-search"
               placeholder="Search prompts..."
-              class="w-full bg-bg-input border border-border-subtle rounded px-2 py-1.5 text-sm text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30"
+              class="w-full bg-bg-input border border-border-subtle px-2 py-1 text-[11px] text-text-primary placeholder:text-text-dim focus:outline-none focus:border-neon-cyan/30"
             />
           </div>
         {:else if workbench.activeActivity === 'settings'}

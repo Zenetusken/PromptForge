@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["history"])
 
 # Valid status values for the status filter query parameter.
-VALID_STATUSES: frozenset[str] = frozenset({"running", "completed", "failed", "pending"})
+VALID_STATUSES: frozenset[str] = frozenset({"running", "completed", "failed", "pending", "merged"})
 
 
 class BatchDeleteRequest(BaseModel):

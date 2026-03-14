@@ -1045,3 +1045,118 @@ export async function compareBranches(
   if (!res.ok) throw new Error(`Compare branches failed: ${res.status}`);
   return res.json();
 }
+
+// ---- Compare & Merge ----
+
+export interface CompareResponse {
+  situation: string;
+  situation_label: string;
+  insight_headline: string;
+  modifiers: string[];
+  a: Record<string, unknown>;
+  b: Record<string, unknown>;
+  scores: {
+    dimensions: string[];
+    a_scores: Record<string, number | null>;
+    b_scores: Record<string, number | null>;
+    deltas: Record<string, number | null>;
+    overall_delta: number | null;
+    winner: string | null;
+    ceilings: string[];
+    floors: string[];
+  };
+  structural: Record<string, unknown>;
+  efficiency: Record<string, unknown>;
+  strategy: Record<string, unknown>;
+  context: Record<string, unknown>;
+  validation: Record<string, unknown>;
+  adaptation: Record<string, unknown>;
+  top_insights: string[];
+  cross_patterns: string[];
+  a_is_trashed: boolean;
+  b_is_trashed: boolean;
+  guidance: {
+    headline: string;
+    merge_suggestion: string;
+    strengths_a: string[];
+    strengths_b: string[];
+    persistent_weaknesses: string[];
+    actionable: string[];
+    merge_directives: string[];
+  } | null;
+}
+
+export async function compareOptimizations(idA: string, idB: string): Promise<CompareResponse> {
+  const res = await apiFetch(
+    `${BASE}/api/compare?a=${encodeURIComponent(idA)}&b=${encodeURIComponent(idB)}`
+  );
+  if (!res.ok) throw new Error(`Compare failed: ${res.status}`);
+  return res.json();
+}
+
+export async function mergeOptimizations(
+  idA: string,
+  idB: string,
+  onChunk: (text: string) => void,
+  onError: (err: Error) => void,
+  onComplete: () => void,
+): Promise<AbortController> {
+  const controller = new AbortController();
+  const res = await apiFetch(`${BASE}/api/compare/merge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ optimization_id_a: idA, optimization_id_b: idB }),
+    signal: controller.signal,
+  });
+  if (!res.ok) {
+    onError(new Error(`Merge failed: ${res.status}`));
+    return controller;
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'chunk') onChunk(data.text);
+            else if (data.type === 'complete') onComplete();
+            else if (data.type === 'error') onError(new Error(data.message));
+          } catch { /* skip malformed lines */ }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') onError(err as Error);
+    }
+  })();
+
+  return controller;
+}
+
+export async function acceptMerge(
+  idA: string,
+  idB: string,
+  mergedPrompt: string,
+): Promise<{ optimization_id: string }> {
+  const res = await apiFetch(`${BASE}/api/compare/merge/accept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      optimization_id_a: idA,
+      optimization_id_b: idB,
+      merged_prompt: mergedPrompt,
+    }),
+  });
+  if (!res.ok) throw new Error(`Accept merge failed: ${res.status}`);
+  return res.json();
+}
