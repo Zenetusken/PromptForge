@@ -42,6 +42,14 @@ async def optimize_prompt(
     start_time = time.time()
 
     async def event_stream() -> AsyncGenerator[str, None]:
+        # Event ordering note: the pipeline yields step_progress (streaming
+        # text chunks) followed by an optimization event (authoritative result).
+        # Due to SSE transport buffering, late step_progress events may arrive
+        # at the frontend after the optimization event.  The frontend mitigates
+        # this via the streamComplete guard in forge.svelte.ts — once the
+        # optimization event is processed, further appendStreamingText calls
+        # are no-ops, and buildRecordFromState prefers authoritativePrompt.
+
         # Session 1: create the record in pending state
         async with async_session() as s:
             s.add(Optimization(

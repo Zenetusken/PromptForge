@@ -824,6 +824,10 @@ async def run_explore(
     })
 
     # ── Phase 3: Single-shot LLM synthesis ────────────────────────────
+    # NOTE: Synthesis uses complete_parsed() (non-streaming) intentionally.
+    # The output is structured JSON (CodebaseContext), not user-facing text.
+    # Streaming raw JSON tokens would produce meaningless UI output and the
+    # complete response is needed for Pydantic validation before yielding.
     yield ("agent_text", {"content": "Synthesizing codebase analysis..."})
     yield ("tool_call", {
         "tool": "llm_synthesis",

@@ -194,7 +194,7 @@ async def run_strategy(
         settings.STRATEGY_TIMEOUT_SECONDS, "Stage 2 (Strategy)",
     ):
         if status == "chunk":
-            yield ("step_progress", {"step": "strategy", "content": text})
+            yield ("step_progress", {"step": "strategy", "content": text, "type": "text_delta"})
         elif status == "done":
             full_text = text  # type: ignore[assignment]
             stream_ok = True

@@ -464,6 +464,8 @@ async def run_pipeline(
                 model=model_override,
             ):
                 if event_type == "explore_result":
+                    # Captured internally — re-emitted as "codebase_context"
+                    # SSE event below (after adding duration_ms and model).
                     codebase_context = event_data
                 else:
                     explore_events.append((event_type, event_data))
@@ -741,6 +743,9 @@ async def run_pipeline(
     # Update oracle with framework context (not known at init time)
     if primary_framework:
         oracle.framework = primary_framework
+    # Inject framework performance for Gate 0 advisory check
+    if framework_performance:
+        oracle._framework_perf = framework_performance
 
     # Emit adaptation_injected event for observability
     if adaptation:
@@ -775,6 +780,10 @@ async def run_pipeline(
             if event_type == "optimization":
                 optimization_result = event_data
                 optimization_result["model"] = model_optimize
+                # Mark that the SSE stream completed delivery of the
+                # authoritative optimized prompt (used by the frontend's
+                # streamComplete guard and persisted via stream_status column).
+                optimization_result["stream_status"] = "complete"
             yield (event_type, event_data)
 
         opt_text = optimization_result.get("optimized_prompt", "") if optimization_result else ""

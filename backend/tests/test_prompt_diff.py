@@ -148,7 +148,10 @@ class TestPromptDivergence:
             "Write a Python function to sort a list",
             "Explain quantum mechanics in simple terms for children",
         )
-        assert d >= 0.7
+        # 3-signal formula (0.5 token + 0.3 struct + 0.2 length): length
+        # component is low when prompts are similar size, so threshold is
+        # lower than the old 2-signal formula.
+        assert d >= 0.5
 
     def test_minor_rephrasing_low_divergence(self):
         d = compute_prompt_divergence(

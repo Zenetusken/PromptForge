@@ -72,6 +72,10 @@ class Optimization(Base):
     model_optimize = Column(Text, nullable=True)
     model_validate = Column(Text, nullable=True)
 
+    # Streaming status — tracks whether the optimize stage's SSE stream completed
+    # fully ("complete") or was interrupted ("partial").  NULL for pre-migration rows.
+    stream_status = Column(Text, nullable=True)
+
     # Status
     status = Column(Text, default="completed", nullable=False)
     error_message = Column(Text, nullable=True)

@@ -496,7 +496,7 @@ async def run_optimize(
                 full_text += text  # type: ignore[operator]
                 safe_text = parser.feed(text)  # type: ignore[arg-type]
                 if safe_text:
-                    yield ("step_progress", {"step": "optimize", "content": safe_text})
+                    yield ("step_progress", {"step": "optimize", "content": safe_text, "type": "text_delta"})
             elif status == "done":
                 pass  # full_text already accumulated
             elif status == "timeout":

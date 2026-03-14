@@ -133,22 +133,24 @@ def compute_prompt_divergence(prompt_a: str, prompt_b: str) -> float:
             return 0.0
         return 1.0 - len(a & b) / len(union)
 
-    # Blend sentence-level and word-level Jaccard for robustness:
-    # sentence-level captures structural/semantic changes,
-    # word-level captures fine-grained token overlap.
+    # Token-level Jaccard: blend sentence-level (semantic changes) and
+    # word-level (fine-grained overlap) for robustness.
     sent_dist = _jaccard(_sentences(prompt_a), _sentences(prompt_b))
     word_dist = _jaccard(_words(prompt_a), _words(prompt_b))
-    content_dist = 0.5 * sent_dist + 0.5 * word_dist
+    token_jaccard = 0.5 * sent_dist + 0.5 * word_dist
 
     # --- Structure signal: normalized structural distance ---
     struct_a = extract_structure(prompt_a)
     struct_b = extract_structure(prompt_b)
-    struct_dist = _normalized_struct_distance(struct_a, struct_b)
+    structural_delta = _normalized_struct_distance(struct_a, struct_b)
 
-    # Weighted combination: content is primary, structure is secondary
-    content_weight = 0.7
-    structure_weight = 0.3
-    raw = content_weight * content_dist + structure_weight * struct_dist
+    # --- Length signal: normalized absolute length difference ---
+    len_a, len_b = len(prompt_a), len(prompt_b)
+    length_delta = abs(len_a - len_b) / max(len_a, len_b, 1)
+
+    # Weighted combination per spec:
+    # 0.5 content (token Jaccard) + 0.3 structure + 0.2 length
+    raw = 0.5 * token_jaccard + 0.3 * structural_delta + 0.2 * length_delta
 
     return round(max(0.0, min(1.0, raw)), 4)
 

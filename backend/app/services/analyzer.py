@@ -102,7 +102,7 @@ async def run_analyze(
         settings.ANALYZE_TIMEOUT_SECONDS, "Stage 1 (Analyze)",
     ):
         if status == "chunk":
-            yield ("step_progress", {"step": "analyze", "content": text})
+            yield ("step_progress", {"step": "analyze", "content": text, "type": "text_delta"})
         elif status == "done":
             full_text = text  # type: ignore[assignment]
             stream_ok = True

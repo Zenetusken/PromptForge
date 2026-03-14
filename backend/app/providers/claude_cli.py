@@ -126,7 +126,7 @@ class ClaudeCLIProvider(LLMProvider):
         _output_chars = 0
         try:
             async for line_bytes in proc.stdout:
-                line = line_bytes.decode("utf-8").strip()
+                line = line_bytes.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
                 try:
@@ -320,16 +320,19 @@ class ClaudeCLIProvider(LLMProvider):
         try:
             async for msg in self._query(prompt=_prompt_stream(), options=options):
                 if isinstance(msg, AssistantMessage):
-                    msg_text = "".join(
+                    # Fire on_agent_text once per TextBlock (not once per
+                    # AssistantMessage) to match AnthropicAPIProvider granularity
+                    # and give downstream consumers finer-grained streaming.
+                    for block in msg.content:
+                        if isinstance(block, TextBlock) and block.text:
+                            if on_agent_text:
+                                try:
+                                    on_agent_text(block.text)
+                                except Exception:
+                                    pass
+                    full_text = "".join(
                         block.text for block in msg.content if isinstance(block, TextBlock)
-                    )
-                    if msg_text:
-                        if on_agent_text:
-                            try:
-                                on_agent_text(msg_text)
-                            except Exception:
-                                pass
-                        full_text = msg_text
+                    ) or full_text
                 else:
                     # Check for ResultMessage with structured_output (SDK output_format support)
                     structured = getattr(msg, "structured_output", None)

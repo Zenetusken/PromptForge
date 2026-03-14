@@ -29,7 +29,8 @@ async def stream_with_timeout(
     Yields:
         ("chunk", text)     — each streamed text chunk
         ("done", full_text) — streaming completed successfully
-        ("timeout", partial_text_or_empty) — streaming timed out
+        ("timeout", partial_text_or_empty) — streaming timed out (internal
+            to stage runners; never propagated as an SSE event to clients)
         ("error", None)     — streaming failed with an exception
     """
     full_text = ""

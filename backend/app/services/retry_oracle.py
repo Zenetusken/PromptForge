@@ -86,6 +86,7 @@ class RetryOracle:
         threshold: float = DEFAULT_THRESHOLD,
         user_weights: dict[str, float] | None = None,
         framework: str | None = None,
+        framework_perf: dict | None = None,
     ) -> None:
         self.max_retries = max_retries
         self.threshold = max(
@@ -93,6 +94,9 @@ class RetryOracle:
         )
         self.user_weights = user_weights
         self._framework = framework
+        # Framework performance data for Gate 0 advisory check.
+        # Expected keys: user_rating_avg (float), sample_count (int).
+        self._framework_perf = framework_perf or {}
         self._attempts: list[_Attempt] = []
         self._elasticity: dict[str, list[bool]] = {d: [] for d in SCORE_DIMENSIONS}
         self._elasticity_matrix: dict[str, dict[str, float]] = {}
@@ -100,6 +104,8 @@ class RetryOracle:
         self._last_divergence: float = 1.0
         self._last_prompt: str = ""
         self._last_decision: RetryDecision | None = None
+        # Gate 0 advisory diagnostic (never blocks, just records)
+        self._gate0_warning: str | None = None
 
     @property
     def framework(self) -> str | None:
@@ -116,6 +122,11 @@ class RetryOracle:
     @property
     def last_decision(self) -> RetryDecision | None:
         return self._last_decision
+
+    @property
+    def gate0_warning(self) -> str | None:
+        """Advisory Gate 0 warning message, or None if no mismatch detected."""
+        return self._gate0_warning
 
     def get_elasticity_snapshot(self) -> dict[str, dict[str, float]]:
         """Return a copy of the elasticity matrix for persistence."""
@@ -312,6 +323,24 @@ class RetryOracle:
             return decision
 
         latest = self._attempts[-1]
+
+        # Gate 0 (advisory): Framework mismatch warning.
+        # Fires if user has rated this framework negatively (avg < -0.3)
+        # with sufficient sample size (>= 3 runs). Advisory only — logs
+        # a diagnostic but NEVER blocks or changes the retry decision.
+        if self._framework and self._framework_perf:
+            perf_rating = self._framework_perf.get("user_rating_avg", 0.0)
+            perf_count = self._framework_perf.get("sample_count", 0)
+            if perf_rating < -0.3 and perf_count >= 3:
+                self._gate0_warning = (
+                    f"Framework '{self._framework}' has low user satisfaction "
+                    f"({perf_rating:.2f} avg over {perf_count} runs). "
+                    f"Consider switching frameworks."
+                )
+                logger.info(
+                    "retry_oracle gate0 advisory: %s",
+                    self._gate0_warning,
+                )
 
         # Gate 1: Score >= adapted threshold -> ACCEPT
         if latest.overall_score >= self.threshold:
