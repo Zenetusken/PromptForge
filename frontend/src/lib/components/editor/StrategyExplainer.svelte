@@ -54,7 +54,7 @@
     <!-- Strategy cards -->
     <div class="space-y-2">
       {#each filtered as strategy (strategy.id)}
-        <div class="border border-border-subtle hover:border-opacity-60 transition-colors" style="border-left: 2px solid {strategy.color};">
+        <div class="border border-border-subtle hover:border-opacity-60 transition-colors" style="border-left: 1px solid {strategy.color};">
           <!-- Header — always visible -->
           <button
             class="w-full flex items-start gap-3 p-3 text-left"

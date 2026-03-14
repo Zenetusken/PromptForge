@@ -329,7 +329,7 @@
       <div class="flex-1 flex items-center justify-center p-8">
         <div class="flex flex-col items-center gap-2">
           <div class="w-32 h-1 bg-border-subtle overflow-hidden">
-            <div class="h-full bg-neon-cyan/40" style="width:60%; animation: shimmer 2s linear infinite; background: linear-gradient(90deg, var(--color-neon-cyan) 25%, transparent 50%, var(--color-neon-cyan) 75%); background-size: 200% 100%; opacity: 0.4;"></div>
+            <div class="h-full bg-neon-cyan/40" style="width:60%;"></div>
           </div>
           <span class="font-mono text-[10px] text-text-dim">Analyzing optimizations...</span>
         </div>
@@ -442,7 +442,7 @@
             class="h-7 flex items-center justify-between px-2 cursor-pointer hover:bg-bg-hover/15 transition-colors duration-200 w-full text-left"
             onclick={() => toggleAccordion('structural')}
           >
-            <span class="font-display text-[9px] font-bold uppercase tracking-wider text-text-dim">
+            <span class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim">
               Structural
             </span>
             <span class="font-mono text-[9px] text-text-dim">
@@ -491,7 +491,7 @@
             class="h-7 flex items-center justify-between px-2 cursor-pointer hover:bg-bg-hover/15 transition-colors duration-200 w-full text-left"
             onclick={() => toggleAccordion('efficiency')}
           >
-            <span class="font-display text-[9px] font-bold uppercase tracking-wider text-text-dim">
+            <span class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim">
               Efficiency
             </span>
             <span class="font-mono text-[9px] text-text-dim">
@@ -557,7 +557,7 @@
             class="h-7 flex items-center justify-between px-2 cursor-pointer hover:bg-bg-hover/15 transition-colors duration-200 w-full text-left"
             onclick={() => toggleAccordion('strategy')}
           >
-            <span class="font-display text-[9px] font-bold uppercase tracking-wider text-text-dim">
+            <span class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim">
               Strategy
             </span>
             <span class="font-mono text-[9px] text-text-dim">
@@ -604,7 +604,7 @@
             class="h-7 flex items-center justify-between px-2 cursor-pointer hover:bg-bg-hover/15 transition-colors duration-200 w-full text-left"
             onclick={() => toggleAccordion('context')}
           >
-            <span class="font-display text-[9px] font-bold uppercase tracking-wider text-text-dim">
+            <span class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim">
               Context &amp; Adaptation
             </span>
             <span class="font-mono text-[9px] text-text-dim">
@@ -656,7 +656,7 @@
         <!-- Guidance card -->
         {#if compareData.guidance && phase === 'analyze'}
           <div class="border-border-accent bg-neon-cyan/5 p-1.5 mx-2 my-1.5 border">
-            <div class="font-display text-[9px] font-bold uppercase tracking-wider text-text-dim mb-1">
+            <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
               Guidance
             </div>
             <div class="font-mono text-[10px] text-text-primary mb-1">
@@ -688,7 +688,7 @@
         <!-- DiffView (Phase 1) -->
         {#if phase === 'analyze'}
           <div class="px-2 py-1.5 border-b border-border-subtle">
-            <div class="font-display text-[9px] font-bold uppercase tracking-wider text-text-dim mb-1">
+            <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
               Prompt Diff
             </div>
             <DiffView
@@ -701,7 +701,7 @@
         <!-- Phase 2: Merge streaming preview -->
         {#if phase === 'merge' || phase === 'commit'}
           <div class="px-2 py-1.5">
-            <div class="font-display text-[9px] font-bold uppercase tracking-wider text-text-dim mb-1">
+            <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
               {phase === 'merge' ? 'Merging...' : 'Merged Prompt'}
             </div>
             <div
@@ -748,7 +748,7 @@
             Close
           </button>
           <button
-            class="font-mono text-[10px] px-3 py-1 border border-neon-teal/40 text-neon-teal bg-neon-teal/5 hover:bg-neon-teal/10 transition-colors duration-200 uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed"
+            class="font-mono text-[10px] px-3 py-1 border border-neon-teal/40 text-neon-teal bg-neon-teal/5 hover:bg-neon-teal/10 transition-colors duration-200 uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
             onclick={startMerge}
             disabled={!compareData.guidance}
             title={compareData.guidance ? 'Synthesize best qualities from both prompts' : 'Merge unavailable — guidance generation failed'}
