@@ -182,7 +182,6 @@
       },
       () => {
         phase = 'commit';
-        mergeModel = 'claude';
       },
     );
   }
@@ -330,7 +329,7 @@
       <div class="flex-1 flex items-center justify-center p-8">
         <div class="flex flex-col items-center gap-2">
           <div class="w-32 h-1 bg-border-subtle overflow-hidden">
-            <div class="h-full bg-neon-cyan/40 animate-pulse" style="width:60%"></div>
+            <div class="h-full bg-neon-cyan/40" style="width:60%; animation: shimmer 2s linear infinite; background: linear-gradient(90deg, var(--color-neon-cyan) 25%, transparent 50%, var(--color-neon-cyan) 75%); background-size: 200% 100%; opacity: 0.4;"></div>
           </div>
           <span class="font-mono text-[10px] text-text-dim">Analyzing optimizations...</span>
         </div>
@@ -348,7 +347,7 @@
           {#if compareData.modifiers.length > 0}
             <div class="flex flex-wrap gap-1 mb-1">
               {#each compareData.modifiers as mod}
-                <span class="font-mono text-[8px] px-1 py-0.5 border border-border-subtle text-text-dim">
+                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-teal/25 text-neon-teal uppercase tracking-wider">
                   {mod}
                 </span>
               {/each}
@@ -680,7 +679,7 @@
                 <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-blue/25 text-neon-blue/70">B: {s}</span>
               {/each}
               {#each compareData.guidance.persistent_weaknesses as w}
-                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-red/20 text-neon-red/60">{w}</span>
+                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-yellow/20 text-neon-yellow/70 capitalize">{w}</span>
               {/each}
             </div>
           </div>
@@ -713,7 +712,7 @@
             {#if phase === 'merge'}
               <div class="flex items-center justify-between mt-1">
                 <span class="font-mono text-[9px] text-text-dim">
-                  {mergeModel || 'claude'} &middot; ~{mergeTokens} tokens
+                  Streaming &middot; ~{mergeTokens} words
                 </span>
                 {#if mergeError}
                   <button
