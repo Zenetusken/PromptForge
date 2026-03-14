@@ -22,6 +22,7 @@ from app.mcp_server import HAS_MCP, create_mcp_server, make_websocket_asgi
 from app.providers.detector import ProviderNotAvailableError, detect_provider
 
 # Import routers
+from app.routers import compare as compare_router
 from app.routers import github_auth, github_repos, health, history, optimize
 from app.routers.auth import router as jwt_auth_router
 from app.routers.feedback import router as feedback_router
@@ -285,6 +286,7 @@ app.include_router(feedback_router)
 app.include_router(framework_router)
 app.include_router(onboarding_router)
 app.include_router(refinement_router)
+app.include_router(compare_router.router)
 
 if settings.TESTING:
     from app.routers.test_helpers import router as test_helpers_router
