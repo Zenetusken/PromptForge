@@ -465,6 +465,7 @@
 
         <!-- Scores -->
         {#if compareData.scores.dimensions.length > 0}
+          {@const maxAbsDelta = Math.max(...compareData!.scores.dimensions.map(d => Math.abs(compareData!.scores.deltas[d] ?? 0)), 0.1)}
           <div class="px-2 py-1.5 border-b border-border-subtle">
             <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">Scores</div>
             <table class="w-full border-collapse">
@@ -506,7 +507,7 @@
                       <span class="inline-flex items-center gap-1 justify-end">
                         <span class="{deltaClass(d)}">{deltaLabel(d)}</span>
                         {#if d != null && d !== 0}
-                          <span class="inline-block h-1.5 {d > 0 ? 'bg-neon-green' : 'bg-neon-red'}" style="width: {Math.min(40, Math.abs(d) * 20)}px"></span>
+                          <span class="inline-block h-1.5 {d > 0 ? 'bg-neon-green' : 'bg-neon-red'}" style="width: {Math.max(4, Math.round((Math.abs(d) / maxAbsDelta) * 48))}px"></span>
                         {/if}
                       </span>
                     </td>
@@ -619,9 +620,10 @@
               Efficiency
             </span>
             <span class="font-mono text-[9px] text-text-dim">
-              {fmtDuration(eff.a_duration_ms)} / {fmtDuration(eff.b_duration_ms)}
-              {#if eff.a_tokens != null || eff.b_tokens != null}
-                &middot; {fmtTokens(eff.a_tokens)}{eff.a_is_estimated ? ' est.' : ''} / {fmtTokens(eff.b_tokens)}{eff.b_is_estimated ? ' est.' : ''} tok
+              {#if buildEffSummary().length > 0}
+                {buildEffSummary().join(' \u00B7 ')}
+              {:else}
+                {fmtDuration(eff.a_duration_ms)} / {fmtDuration(eff.b_duration_ms)}
               {/if}
             </span>
           </button>
@@ -649,33 +651,23 @@
                   <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-blue/30" style="width: {effBarWidth(eff.b_tokens, maxTok)}"></div></div>
                   <span class="text-neon-blue/80 w-11 text-right shrink-0">{fmtTokens(eff.b_tokens)}</span>
                 </div>
-                <!-- Cost row (only if data exists) -->
-                {#if eff.a_cost != null || eff.b_cost != null}
-                  <div class="flex items-center gap-2 h-5 font-mono text-[10px]">
-                    <span class="text-text-dim text-[8px] uppercase w-14 shrink-0">Cost</span>
-                    <span class="text-neon-purple/80 w-11 text-right shrink-0">{fmtCost(eff.a_cost)}</span>
-                    <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-purple/30" style="width: {effBarWidth(eff.a_cost, maxCost)}"></div></div>
-                    <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-blue/30" style="width: {effBarWidth(eff.b_cost, maxCost)}"></div></div>
-                    <span class="text-neon-blue/80 w-11 text-right shrink-0">{fmtCost(eff.b_cost)}</span>
-                  </div>
-                {/if}
-                <!-- Score/tok row -->
-                {#if eff.a_score_per_token != null || eff.b_score_per_token != null}
-                  <div class="flex items-center gap-2 h-5 font-mono text-[10px]">
-                    <span class="text-text-dim text-[8px] uppercase w-14 shrink-0">Score/tok</span>
-                    <span class="text-neon-purple/80 w-11 text-right shrink-0">{eff.a_score_per_token?.toFixed(1) ?? '\u2014'}</span>
-                    <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-purple/30" style="width: {effBarWidth(eff.a_score_per_token, maxSpt)}"></div></div>
-                    <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-blue/30" style="width: {effBarWidth(eff.b_score_per_token, maxSpt)}"></div></div>
-                    <span class="text-neon-blue/80 w-11 text-right shrink-0">{eff.b_score_per_token?.toFixed(1) ?? '\u2014'}</span>
-                  </div>
-                {/if}
-              </div>
-              <!-- Comparative summary line -->
-              {#if buildEffSummary().length > 0}
-                <div class="mt-1.5 font-mono text-[9px] text-neon-cyan/70" style="font-variant-numeric: tabular-nums;">
-                  {buildEffSummary().join(' \u00B7 ')}
+                <!-- Cost row -->
+                <div class="flex items-center gap-2 h-5 font-mono text-[10px]">
+                  <span class="text-text-dim text-[8px] uppercase w-14 shrink-0">Cost</span>
+                  <span class="text-neon-purple/80 w-11 text-right shrink-0">{fmtCost(eff.a_cost)}</span>
+                  <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-purple/30" style="width: {effBarWidth(eff.a_cost, maxCost)}"></div></div>
+                  <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-blue/30" style="width: {effBarWidth(eff.b_cost, maxCost)}"></div></div>
+                  <span class="text-neon-blue/80 w-11 text-right shrink-0">{fmtCost(eff.b_cost)}</span>
                 </div>
-              {/if}
+                <!-- Score/tok row -->
+                <div class="flex items-center gap-2 h-5 font-mono text-[10px]">
+                  <span class="text-text-dim text-[8px] uppercase w-14 shrink-0">Score/tok</span>
+                  <span class="text-neon-purple/80 w-11 text-right shrink-0">{eff.a_score_per_token?.toFixed(1) ?? '\u2014'}</span>
+                  <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-purple/30" style="width: {effBarWidth(eff.a_score_per_token, maxSpt)}"></div></div>
+                  <div class="flex-1 h-2 bg-bg-secondary/40 overflow-hidden"><div class="h-full bg-neon-blue/30" style="width: {effBarWidth(eff.b_score_per_token, maxSpt)}"></div></div>
+                  <span class="text-neon-blue/80 w-11 text-right shrink-0">{eff.b_score_per_token?.toFixed(1) ?? '\u2014'}</span>
+                </div>
+              </div>
             </div>
           {/if}
         </div>
