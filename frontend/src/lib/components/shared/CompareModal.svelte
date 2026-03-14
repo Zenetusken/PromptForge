@@ -562,21 +562,27 @@
                   </div>
                 </div>
               </div>
-              <!-- Cost + Score/Token -->
-              <div class="flex gap-4 font-mono text-[10px]" style="font-variant-numeric: tabular-nums;">
-                <div>
-                  <span class="text-text-dim text-[8px] uppercase">Cost: </span>
-                  <span class="text-neon-purple/80">{fmtCost(eff.a_cost)}</span>
-                  <span class="text-text-dim/40 mx-1">/</span>
-                  <span class="text-neon-blue/80">{fmtCost(eff.b_cost)}</span>
+              <!-- Cost + Score/Token (hidden when no data) -->
+              {#if eff.a_cost != null || eff.b_cost != null || eff.a_score_per_token != null || eff.b_score_per_token != null}
+                <div class="flex gap-4 font-mono text-[10px]" style="font-variant-numeric: tabular-nums;">
+                  {#if eff.a_cost != null || eff.b_cost != null}
+                    <div>
+                      <span class="text-text-dim text-[8px] uppercase">Cost: </span>
+                      <span class="text-neon-purple/80">{fmtCost(eff.a_cost)}</span>
+                      <span class="text-text-dim/40 mx-1">/</span>
+                      <span class="text-neon-blue/80">{fmtCost(eff.b_cost)}</span>
+                    </div>
+                  {/if}
+                  {#if eff.a_score_per_token != null || eff.b_score_per_token != null}
+                    <div>
+                      <span class="text-text-dim text-[8px] uppercase">Score/tok: </span>
+                      <span class="text-neon-purple/80">{eff.a_score_per_token?.toFixed(2) ?? '\u2014'}</span>
+                      <span class="text-text-dim/40 mx-1">/</span>
+                      <span class="text-neon-blue/80">{eff.b_score_per_token?.toFixed(2) ?? '\u2014'}</span>
+                    </div>
+                  {/if}
                 </div>
-                <div>
-                  <span class="text-text-dim text-[8px] uppercase">Score/Token: </span>
-                  <span class="text-neon-purple/80">{eff.a_score_per_token?.toFixed(4) ?? '\u2014'}</span>
-                  <span class="text-text-dim/40 mx-1">/</span>
-                  <span class="text-neon-blue/80">{eff.b_score_per_token?.toFixed(4) ?? '\u2014'}</span>
-                </div>
-              </div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -599,26 +605,38 @@
               <div class="grid grid-cols-2 gap-1.5">
                 <!-- A card -->
                 <div class="border border-neon-purple/15 p-1.5">
-                  <div class="font-mono text-[10px] text-neon-purple/80 font-semibold mb-0.5">{strat.a_framework ?? 'None'}</div>
-                  <div class="font-mono text-[9px] text-text-dim mb-0.5">{strat.a_source ?? ''}</div>
-                  <div class="font-mono text-[9px] text-text-secondary">{strat.a_rationale ?? ''}</div>
+                  <div class="flex items-center gap-1.5 mb-0.5">
+                    <span class="font-mono text-[10px] text-neon-purple/80 font-semibold">{strat.a_framework ?? 'None'}</span>
+                    {#if strat.a_source}
+                      <span class="font-mono text-[7px] px-1 border border-border-subtle text-text-dim uppercase">{strat.a_source}</span>
+                    {/if}
+                  </div>
+                  {#if strat.a_rationale}
+                    <div class="font-mono text-[9px] text-text-secondary leading-snug max-h-12 overflow-hidden">{strat.a_rationale}</div>
+                  {/if}
                   {#if strat.a_guardrails.length > 0}
                     <div class="flex flex-wrap gap-0.5 mt-1">
                       {#each strat.a_guardrails as g}
-                        <span class="font-mono text-[8px] px-1 py-0.5 border border-border-subtle text-text-dim">{g}</span>
+                        <span class="font-mono text-[7px] px-1 py-0.5 border border-neon-yellow/20 text-neon-yellow/70">{g}</span>
                       {/each}
                     </div>
                   {/if}
                 </div>
                 <!-- B card -->
                 <div class="border border-neon-blue/15 p-1.5">
-                  <div class="font-mono text-[10px] text-neon-blue/80 font-semibold mb-0.5">{strat.b_framework ?? 'None'}</div>
-                  <div class="font-mono text-[9px] text-text-dim mb-0.5">{strat.b_source ?? ''}</div>
-                  <div class="font-mono text-[9px] text-text-secondary">{strat.b_rationale ?? ''}</div>
+                  <div class="flex items-center gap-1.5 mb-0.5">
+                    <span class="font-mono text-[10px] text-neon-blue/80 font-semibold">{strat.b_framework ?? 'None'}</span>
+                    {#if strat.b_source}
+                      <span class="font-mono text-[7px] px-1 border border-border-subtle text-text-dim uppercase">{strat.b_source}</span>
+                    {/if}
+                  </div>
+                  {#if strat.b_rationale}
+                    <div class="font-mono text-[9px] text-text-secondary leading-snug max-h-12 overflow-hidden">{strat.b_rationale}</div>
+                  {/if}
                   {#if strat.b_guardrails.length > 0}
                     <div class="flex flex-wrap gap-0.5 mt-1">
                       {#each strat.b_guardrails as g}
-                        <span class="font-mono text-[8px] px-1 py-0.5 border border-border-subtle text-text-dim">{g}</span>
+                        <span class="font-mono text-[7px] px-1 py-0.5 border border-neon-yellow/20 text-neon-yellow/70">{g}</span>
                       {/each}
                     </div>
                   {/if}
@@ -651,7 +669,7 @@
                   <span class="text-neon-blue/80">{ctx.b_repo ?? 'none'}{ctx.b_has_codebase ? ' (indexed)' : ''}</span>
                 </div>
               </div>
-              <!-- Feedbacks & weight shifts -->
+              <!-- Feedbacks -->
               <div class="mb-1.5">
                 <div class="font-mono text-[8px] text-text-dim uppercase mb-0.5">Feedbacks Between</div>
                 <div class="font-mono text-[10px] text-text-secondary" style="font-variant-numeric: tabular-nums;">
@@ -683,33 +701,36 @@
           {/if}
         </div>
 
-        <!-- Guidance card -->
+        <!-- Merge directives card -->
         {#if compareData.guidance && phase === 'analyze'}
           <div class="border-border-accent bg-neon-cyan/5 p-1.5 mx-2 my-1.5 border">
-            <div class="font-display text-[10px] font-bold uppercase tracking-wider text-text-dim mb-1">
-              Guidance
-            </div>
-            <div class="font-mono text-[10px] text-text-primary mb-1">
-              {compareData.guidance.headline}
+            <div class="font-display text-[10px] font-bold uppercase tracking-wider text-neon-cyan mb-1">
+              Merge Directives
             </div>
             {#if compareData.guidance.merge_directives.length > 0}
-              <div class="mb-1">
-                {#each compareData.guidance.merge_directives as directive}
-                  <div class="font-mono text-[10px] text-text-secondary" style="font-variant-numeric: tabular-nums;">
-                    &#8594; {directive}
+              <div class="mb-1.5">
+                {#each compareData.guidance.merge_directives.slice(0, 5) as directive}
+                  <div class="font-mono text-[9px] text-text-secondary leading-snug">
+                    <span class="text-neon-teal">&#8594;</span> {directive}
                   </div>
                 {/each}
               </div>
             {/if}
             <div class="flex flex-wrap gap-1">
-              {#each compareData.guidance.strengths_a as s}
-                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-purple/25 text-neon-purple/70">A: {s}</span>
+              {#each compareData.guidance.strengths_a.slice(0, 3) as s}
+                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-purple/25 text-neon-purple/70 capitalize" title={s}>
+                  A: {s.length > 25 ? s.slice(0, 25) + '...' : s}
+                </span>
               {/each}
-              {#each compareData.guidance.strengths_b as s}
-                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-blue/25 text-neon-blue/70">B: {s}</span>
+              {#each compareData.guidance.strengths_b.slice(0, 3) as s}
+                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-blue/25 text-neon-blue/70 capitalize" title={s}>
+                  B: {s.length > 25 ? s.slice(0, 25) + '...' : s}
+                </span>
               {/each}
-              {#each compareData.guidance.persistent_weaknesses as w}
-                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-yellow/20 text-neon-yellow/70 capitalize">{w}</span>
+              {#each compareData.guidance.persistent_weaknesses.slice(0, 3) as w}
+                <span class="font-mono text-[8px] px-1 py-0.5 border border-neon-yellow/20 text-neon-yellow/70 capitalize" title={w}>
+                  {w.length > 25 ? w.slice(0, 25) + '...' : w}
+                </span>
               {/each}
             </div>
           </div>
