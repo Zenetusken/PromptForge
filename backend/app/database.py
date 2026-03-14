@@ -131,6 +131,7 @@ async def _migrate_add_missing_columns() -> None:
             "framework": "TEXT",
             "active_guardrails": "TEXT",
             "stream_status": "TEXT",
+            "merge_parents": "TEXT",
         },
         "github_tokens": {
             "avatar_url": "TEXT",              # cached avatar URL
