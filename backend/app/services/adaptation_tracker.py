@@ -1,0 +1,129 @@
+"""Adaptation tracker — counter-based strategy affinity tracking from user feedback."""
+
+import json
+import logging
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import PROMPTS_DIR
+from app.models import StrategyAffinity
+from app.services.prompt_loader import PromptLoader
+
+logger = logging.getLogger(__name__)
+
+
+class AdaptationTracker:
+    """Tracks strategy affinities from user feedback using simple counters.
+
+    Each (task_type, strategy) pair maintains thumbs_up and thumbs_down counts
+    along with a recomputed approval_rate after every update.
+    """
+
+    def __init__(self, session: AsyncSession, prompts_dir: Path = PROMPTS_DIR) -> None:
+        self._session = session
+        self._loader = PromptLoader(prompts_dir)
+
+    async def update_affinity(self, task_type: str, strategy: str, rating: str) -> None:
+        """Increment thumbs_up or thumbs_down for the task_type+strategy pair.
+
+        Creates a new row if none exists. Recomputes approval_rate after update.
+        Commits the session.
+
+        Args:
+            task_type: Task classification (e.g. "generation", "classification").
+            strategy: Strategy name (e.g. "chain_of_thought", "few_shot").
+            rating: Either "thumbs_up" or "thumbs_down".
+        """
+        stmt = select(StrategyAffinity).where(
+            StrategyAffinity.task_type == task_type,
+            StrategyAffinity.strategy == strategy,
+        )
+        result = await self._session.execute(stmt)
+        row = result.scalar_one_or_none()
+
+        if row is None:
+            row = StrategyAffinity(
+                task_type=task_type,
+                strategy=strategy,
+                thumbs_up=0,
+                thumbs_down=0,
+                approval_rate=0.0,
+            )
+            self._session.add(row)
+
+        if rating == "thumbs_up":
+            row.thumbs_up = (row.thumbs_up or 0) + 1
+        elif rating == "thumbs_down":
+            row.thumbs_down = (row.thumbs_down or 0) + 1
+        else:
+            raise ValueError(f"Invalid rating '{rating}': must be 'thumbs_up' or 'thumbs_down'")
+
+        total = row.thumbs_up + row.thumbs_down
+        row.approval_rate = row.thumbs_up / total if total > 0 else 0.0
+
+        await self._session.commit()
+
+    async def get_affinities(self, task_type: str) -> dict[str, dict]:
+        """Return strategy affinity data for the given task_type.
+
+        Returns:
+            Dict mapping strategy name to {thumbs_up, thumbs_down, approval_rate}.
+            Returns {} if no data exists for the task_type.
+        """
+        stmt = select(StrategyAffinity).where(StrategyAffinity.task_type == task_type)
+        result = await self._session.execute(stmt)
+        rows = result.scalars().all()
+
+        return {
+            row.strategy: {
+                "thumbs_up": row.thumbs_up,
+                "thumbs_down": row.thumbs_down,
+                "approval_rate": row.approval_rate,
+            }
+            for row in rows
+        }
+
+    async def render_adaptation_state(self, task_type: str) -> str | None:
+        """Render the adaptation.md template with affinities for the given task_type.
+
+        Returns:
+            Rendered template string, or None if no affinity data exists for task_type.
+        """
+        affinities = await self.get_affinities(task_type)
+        if not affinities:
+            return None
+
+        affinities_json = json.dumps({task_type: affinities}, indent=2)
+        return self._loader.render("adaptation.md", {"task_type_affinities": affinities_json})
+
+    async def check_degenerate(self, task_type: str, strategy: str) -> bool:
+        """Return True if 10+ feedbacks exist and >90% are the same rating.
+
+        A degenerate signal means user feedback is so one-sided that further
+        adaptation for this pair offers diminishing value.
+
+        Args:
+            task_type: Task classification.
+            strategy: Strategy name.
+
+        Returns:
+            True if the feedback distribution is degenerate, False otherwise.
+        """
+        stmt = select(StrategyAffinity).where(
+            StrategyAffinity.task_type == task_type,
+            StrategyAffinity.strategy == strategy,
+        )
+        result = await self._session.execute(stmt)
+        row = result.scalar_one_or_none()
+
+        if row is None:
+            return False
+
+        total = (row.thumbs_up or 0) + (row.thumbs_down or 0)
+        if total < 10:
+            return False
+
+        dominant = max(row.thumbs_up or 0, row.thumbs_down or 0)
+        return (dominant / total) > 0.90
