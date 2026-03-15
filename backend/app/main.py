@@ -63,4 +63,16 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.routers.history import router as history_router
+    app.include_router(history_router)
+except ImportError:
+    pass
+
+try:
+    from app.routers.feedback import router as feedback_router
+    app.include_router(feedback_router)
+except ImportError:
+    pass
+
 asgi_app = app
