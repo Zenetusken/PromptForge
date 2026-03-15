@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
+from app.dependencies.rate_limit import RateLimit
 from app.services.feedback_service import FeedbackService
 
 router = APIRouter(prefix="/api", tags=["feedback"])
@@ -17,7 +19,11 @@ class FeedbackRequest(BaseModel):
 
 
 @router.post("/feedback")
-async def submit_feedback(body: FeedbackRequest, db: AsyncSession = Depends(get_db)):
+async def submit_feedback(
+    body: FeedbackRequest,
+    db: AsyncSession = Depends(get_db),
+    _rate: None = Depends(RateLimit(lambda: settings.FEEDBACK_RATE_LIMIT)),
+):
     svc = FeedbackService(db)
     try:
         fb = await svc.create_feedback(body.optimization_id, body.rating, body.comment)

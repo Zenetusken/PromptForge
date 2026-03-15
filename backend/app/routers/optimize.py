@@ -9,8 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import PROMPTS_DIR
+from app.config import PROMPTS_DIR, settings
 from app.database import get_db
+from app.dependencies.rate_limit import RateLimit
 from app.models import Optimization
 from app.services.pipeline import PipelineOrchestrator
 
@@ -34,6 +35,7 @@ async def optimize(
     body: OptimizeRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    _rate: None = Depends(RateLimit(lambda: settings.OPTIMIZE_RATE_LIMIT)),
 ):
     provider = getattr(request.app.state, "provider", None)
     if not provider:
