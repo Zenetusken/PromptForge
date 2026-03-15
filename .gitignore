@@ -77,4 +77,6 @@ feature_list_gen.py
 .claude_settings.json
 generations/
 docs/marketplace-webhook.md
+# Archived v2 source (local reference only — v2 preserved in git history)
+archive/
 .superpowers/
