@@ -17,6 +17,9 @@ python-multipart==0.0.22
 # Security
 cryptography==46.0.5
 
+# Rate limiting
+limits==5.8.0
+
 # Scoring heuristics
 textstat==0.7.13
 
