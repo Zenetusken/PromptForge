@@ -28,8 +28,10 @@ from app.schemas.pipeline_contracts import (
     PipelineResult,
     ScoreResult,
 )
+from app.config import DATA_DIR
 from app.services.prompt_loader import PromptLoader
 from app.services.strategy_loader import StrategyLoader
+from app.services.trace_logger import TraceLogger
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,13 @@ class PipelineOrchestrator:
         self.prompt_loader = PromptLoader(prompts_dir)
         self.strategy_loader = StrategyLoader(prompts_dir / "strategies")
         self._system_prompt: str | None = None
+
+        # Trace logger — optional; skip if directory cannot be created
+        try:
+            self.trace_logger: TraceLogger | None = TraceLogger(DATA_DIR / "traces")
+        except OSError:
+            logger.warning("Could not create traces directory; trace logging disabled")
+            self.trace_logger = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -161,6 +170,7 @@ class PipelineOrchestrator:
                 "available_strategies": available_strategies,
             })
 
+            phase_start = time.monotonic()
             analysis: AnalysisResult = await self._call_provider(
                 provider,
                 system_prompt=system_prompt,
@@ -171,6 +181,15 @@ class PipelineOrchestrator:
             )
 
             yield PipelineEvent(event="status", data={"phase": "analyze", "status": "complete"})
+
+            if self.trace_logger:
+                self.trace_logger.log_phase(
+                    trace_id=trace_id, phase="analyze",
+                    duration_ms=int((time.monotonic() - phase_start) * 1000),
+                    tokens_in=0, tokens_out=0,
+                    model=MODEL_SONNET, provider=provider.name,
+                    result={"task_type": analysis.task_type, "strategy": analysis.selected_strategy},
+                )
 
             # Semantic check
             confidence = self._semantic_check(analysis.task_type, raw_prompt, analysis.confidence)
@@ -212,6 +231,7 @@ class PipelineOrchestrator:
 
             dynamic_max_tokens = max(16384, len(raw_prompt) // 4 * 2)
 
+            phase_start = time.monotonic()
             optimization: OptimizationResult = await self._call_provider(
                 provider,
                 system_prompt=system_prompt,
@@ -223,6 +243,16 @@ class PipelineOrchestrator:
             )
 
             yield PipelineEvent(event="status", data={"phase": "optimize", "status": "complete"})
+
+            if self.trace_logger:
+                self.trace_logger.log_phase(
+                    trace_id=trace_id, phase="optimize",
+                    duration_ms=int((time.monotonic() - phase_start) * 1000),
+                    tokens_in=0, tokens_out=0,
+                    model=MODEL_OPUS, provider=provider.name,
+                    result={"strategy_used": optimization.strategy_used},
+                )
+
             yield PipelineEvent(event="prompt_preview", data={
                 "optimized_prompt": optimization.optimized_prompt,
                 "changes_summary": optimization.changes_summary,
@@ -253,6 +283,7 @@ class PipelineOrchestrator:
             scoring_system = self.prompt_loader.load("scoring.md")
             scorer_msg = f"## Prompt A\n\n{prompt_a}\n\n## Prompt B\n\n{prompt_b}"
 
+            phase_start = time.monotonic()
             scores: ScoreResult = await self._call_provider(
                 provider,
                 system_prompt=scoring_system,
@@ -264,6 +295,14 @@ class PipelineOrchestrator:
 
             yield PipelineEvent(event="status", data={"phase": "score", "status": "complete"})
 
+            if self.trace_logger:
+                self.trace_logger.log_phase(
+                    trace_id=trace_id, phase="score",
+                    duration_ms=int((time.monotonic() - phase_start) * 1000),
+                    tokens_in=0, tokens_out=0,
+                    model=MODEL_SONNET, provider=provider.name,
+                )
+
             # Map A/B scores back to original/optimized
             if original_first:
                 original_scores = scores.prompt_a_scores
@@ -273,6 +312,12 @@ class PipelineOrchestrator:
                 optimized_scores = scores.prompt_a_scores
 
             deltas = self._compute_deltas(original_scores, optimized_scores)
+
+            if optimized_scores.faithfulness < 6.0:
+                logger.warning(
+                    "Low faithfulness score (%.1f) — optimization may have altered intent. trace_id=%s",
+                    optimized_scores.faithfulness, trace_id,
+                )
 
             yield PipelineEvent(event="score_card", data={
                 "original_scores": original_scores.model_dump(),
@@ -308,6 +353,7 @@ class PipelineOrchestrator:
                 context_sources=context_sources or {},
                 original_scores=original_scores.model_dump(),
                 score_deltas=deltas,
+                tokens_by_phase={},
             )
             db.add(db_opt)
             await db.commit()
