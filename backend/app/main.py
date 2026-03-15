@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import logging
 from contextlib import asynccontextmanager
 
 import aiosqlite
@@ -9,22 +10,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from app._version import __version__
 from app.config import settings, DATA_DIR
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
-    # Startup
     settings.SECRET_KEY = settings.resolve_secret_key()
 
-    # Enable WAL mode for SQLite read/write concurrency
     db_path = DATA_DIR / "synthesis.db"
     if db_path.exists():
         async with aiosqlite.connect(str(db_path)) as db:
             await db.execute("PRAGMA journal_mode=WAL")
             await db.execute("PRAGMA busy_timeout=5000")
 
+    # Detect LLM provider
+    try:
+        from app.providers.detector import detect_provider
+        provider = detect_provider()
+    except ImportError:
+        provider = None
+    app.state.provider = provider
+    logger.info("Provider detected: %s", provider.name if provider else "none")
+
     yield
-    # Shutdown
 
 
 app = FastAPI(
@@ -33,7 +42,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.FRONTEND_URL, "http://localhost:5199"],
@@ -42,5 +50,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ASGI app for uvicorn
+# Routers (imported lazily — may not exist yet during phased development)
+try:
+    from app.routers.health import router as health_router
+    app.include_router(health_router)
+except ImportError:
+    pass
+
+try:
+    from app.routers.optimize import router as optimize_router
+    app.include_router(optimize_router)
+except ImportError:
+    pass
+
 asgi_app = app
