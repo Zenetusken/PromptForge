@@ -1,0 +1,77 @@
+"""TraceLogger — writes per-phase JSONL trace entries to data/traces/."""
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+
+class TraceLogger:
+    """Append-only JSONL trace logger.
+
+    Each call to ``log_phase`` appends a single JSON line to a daily file
+    ``<traces_dir>/traces-YYYY-MM-DD.jsonl``.  ``read_trace`` scans all
+    ``.jsonl`` files in the directory and returns every entry whose
+    ``trace_id`` matches the requested value.
+    """
+
+    def __init__(self, traces_dir: str | Path = "data/traces") -> None:
+        self.traces_dir = Path(traces_dir)
+        self.traces_dir.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def log_phase(
+        self,
+        trace_id: str,
+        phase: str,
+        duration_ms: int,
+        tokens_in: int,
+        tokens_out: int,
+        model: str,
+        provider: str,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        """Append one trace entry to today's JSONL file."""
+        entry: dict[str, Any] = {
+            "trace_id": trace_id,
+            "phase": phase,
+            "duration_ms": duration_ms,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "model": model,
+            "provider": provider,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        if result is not None:
+            entry["result"] = result
+
+        daily_file = self._daily_file()
+        with daily_file.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def read_trace(self, trace_id: str) -> list[dict[str, Any]]:
+        """Return all entries for *trace_id* across all daily files, in order."""
+        matches: list[dict[str, Any]] = []
+        for path in sorted(self.traces_dir.glob("traces-*.jsonl")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if entry.get("trace_id") == trace_id:
+                    matches.append(entry)
+        return matches
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _daily_file(self) -> Path:
+        date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+        return self.traces_dir / f"traces-{date_str}.jsonl"
