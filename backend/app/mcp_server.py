@@ -168,6 +168,29 @@ async def synthesis_optimize(
             elapsed_ms, result.get("id", ""), result.get("strategy_used", ""),
         )
 
+        # Notify backend event bus via HTTP (MCP runs in a separate process,
+        # so pipeline.py's own event_bus.publish goes to a dead bus here)
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    "http://127.0.0.1:8000/api/events/_publish",
+                    json={
+                        "event_type": "optimization_created",
+                        "data": {
+                            "optimization_id": result.get("id", ""),
+                            "task_type": result.get("task_type", ""),
+                            "strategy_used": result.get("strategy_used", ""),
+                            "overall_score": result.get("overall_score"),
+                            "provider": provider.name,
+                            "status": "completed",
+                        },
+                    },
+                    timeout=5.0,
+                )
+        except Exception:
+            logger.debug("Failed to notify backend event bus", exc_info=True)
+
         return {
             "optimization_id": result.get("id", ""),
             "optimized_prompt": result.get("optimized_prompt", ""),
@@ -402,17 +425,28 @@ async def synthesis_save_result(
 
         await db.commit()
 
-        # Publish real-time event for cross-source notifications
-        from app.services.event_bus import event_bus
-        event_bus.publish("optimization_created", {
-            "id": opt_id,
-            "trace_id": trace_id,
-            "task_type": task_type or "unknown",
-            "strategy_used": strategy_used or "unknown",
-            "overall_score": overall,
-            "provider": "mcp_passthrough",
-            "status": "completed",
-        })
+        # Notify backend event bus via HTTP (MCP runs in a separate process)
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    "http://127.0.0.1:8000/api/events/_publish",
+                    json={
+                        "event_type": "optimization_created",
+                        "data": {
+                            "id": opt_id,
+                            "trace_id": trace_id,
+                            "task_type": task_type or "unknown",
+                            "strategy_used": strategy_used or "unknown",
+                            "overall_score": overall,
+                            "provider": "mcp_passthrough",
+                            "status": "completed",
+                        },
+                    },
+                    timeout=5.0,
+                )
+        except Exception:
+            logger.debug("Failed to notify backend event bus", exc_info=True)
 
     logger.info(
         "synthesis_save_result completed: optimization_id=%s strategy_compliance=%s flags=%d",

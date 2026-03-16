@@ -418,16 +418,19 @@ class PipelineOrchestrator:
             await db.commit()
 
             # Publish real-time event for cross-source notifications
-            from app.services.event_bus import event_bus
-            event_bus.publish("optimization_created", {
-                "id": opt_id,
-                "trace_id": trace_id,
-                "task_type": analysis.task_type,
-                "strategy_used": optimization.strategy_used,
-                "overall_score": optimized_scores.overall,
-                "provider": provider.name,
-                "status": "completed",
-            })
+            try:
+                from app.services.event_bus import event_bus
+                event_bus.publish("optimization_created", {
+                    "id": opt_id,
+                    "trace_id": trace_id,
+                    "task_type": analysis.task_type,
+                    "strategy_used": optimization.strategy_used,
+                    "overall_score": optimized_scores.overall,
+                    "provider": provider.name,
+                    "status": "completed",
+                })
+            except Exception:
+                logger.debug("Event bus publish failed", exc_info=True)
 
             # ---------------------------------------------------------------
             # Final event
@@ -482,6 +485,16 @@ class PipelineOrchestrator:
                 await db.commit()
             except Exception as db_exc:
                 logger.error("Failed to persist failed optimization: %s", db_exc)
+
+            # Publish failure event for cross-source notifications
+            try:
+                from app.services.event_bus import event_bus
+                event_bus.publish("optimization_failed", {
+                    "trace_id": trace_id,
+                    "error": str(exc),
+                })
+            except Exception:
+                pass
 
             yield PipelineEvent(event="error", data={
                 "trace_id": trace_id,
