@@ -16,6 +16,8 @@ build/
 .pytest_cache/
 .ruff_cache/
 .hypothesis/
+.coverage
+htmlcov/
 
 # Database & runtime data
 data/*
