@@ -227,14 +227,197 @@ class TestSettingsRouter:
         assert "trace_retention_days" in data
 
 
-class TestGitHubStubs:
-    async def test_github_auth_returns_501(self, app_client):
+class TestGitHubAuth:
+    async def test_github_login_returns_url(self, app_client):
+        """Login endpoint generates OAuth URL — no auth required."""
         resp = await app_client.get("/api/github/auth/login")
-        assert resp.status_code == 501
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "url" in data
+        assert "github.com/login/oauth/authorize" in data["url"]
 
-    async def test_github_repos_returns_501(self, app_client):
+    async def test_github_me_unauthenticated(self, app_client):
+        """me endpoint returns 401 without session cookie."""
+        resp = await app_client.get("/api/github/auth/me")
+        assert resp.status_code == 401
+
+    async def test_github_logout_unauthenticated(self, app_client):
+        """logout is idempotent — returns 200 even without session."""
+        resp = await app_client.post("/api/github/auth/logout")
+        assert resp.status_code == 200
+
+    async def test_github_callback_bad_state(self, app_client):
+        """Callback with mismatched state returns 400."""
+        resp = await app_client.get(
+            "/api/github/auth/callback?code=abc&state=wrong_state"
+        )
+        assert resp.status_code == 400
+
+    async def test_github_me_with_token(self, app_client, db_session):
+        """me endpoint returns user info when valid session+token exists."""
+        import base64
+        import hashlib
+        from cryptography.fernet import Fernet
+        from app.models import GitHubToken
+
+        secret_key = "test-secret-key"
+        key = hashlib.sha256(secret_key.encode()).digest()
+        fernet = Fernet(base64.urlsafe_b64encode(key))
+        encrypted = fernet.encrypt(b"ghp_dummy_token")
+
+        row = GitHubToken(
+            session_id="test-session-me",
+            token_encrypted=encrypted,
+            github_login="testuser",
+            github_user_id="12345",
+            avatar_url="https://avatars.example.com/u/12345",
+        )
+        db_session.add(row)
+        await db_session.commit()
+
+        from app.config import settings
+        original_secret = settings.SECRET_KEY
+        settings.SECRET_KEY = secret_key
+
+        try:
+            resp = await app_client.get(
+                "/api/github/auth/me",
+                cookies={"session_id": "test-session-me"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["login"] == "testuser"
+            assert data["avatar_url"] == "https://avatars.example.com/u/12345"
+            assert data["github_user_id"] == "12345"
+        finally:
+            settings.SECRET_KEY = original_secret
+
+    async def test_github_logout_deletes_token(self, app_client, db_session):
+        """logout removes the token row from DB."""
+        import base64
+        import hashlib
+        from cryptography.fernet import Fernet
+        from sqlalchemy import select
+        from app.models import GitHubToken
+
+        secret_key = "test-secret-key"
+        key = hashlib.sha256(secret_key.encode()).digest()
+        fernet = Fernet(base64.urlsafe_b64encode(key))
+        encrypted = fernet.encrypt(b"ghp_logout_token")
+
+        row = GitHubToken(
+            session_id="test-session-logout",
+            token_encrypted=encrypted,
+            github_login="logoutuser",
+            github_user_id="99999",
+        )
+        db_session.add(row)
+        await db_session.commit()
+
+        resp = await app_client.post(
+            "/api/github/auth/logout",
+            cookies={"session_id": "test-session-logout"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+        result = await db_session.execute(
+            select(GitHubToken).where(GitHubToken.session_id == "test-session-logout")
+        )
+        assert result.scalar_one_or_none() is None
+
+
+class TestGitHubRepos:
+    async def test_list_repos_unauthenticated(self, app_client):
+        """repos listing returns 401 without session cookie."""
         resp = await app_client.get("/api/github/repos")
-        assert resp.status_code == 501
+        assert resp.status_code == 401
+
+    async def test_linked_repo_unauthenticated(self, app_client):
+        """linked endpoint returns 401 without session cookie."""
+        resp = await app_client.get("/api/github/repos/linked")
+        assert resp.status_code == 401
+
+    async def test_unlink_repo_unauthenticated(self, app_client):
+        """unlink returns 401 without session cookie."""
+        resp = await app_client.delete("/api/github/repos/unlink")
+        assert resp.status_code == 401
+
+    async def test_link_repo_unauthenticated(self, app_client):
+        """link returns 401 without session cookie."""
+        resp = await app_client.post(
+            "/api/github/repos/link", json={"full_name": "owner/repo"}
+        )
+        assert resp.status_code == 401
+
+    async def test_get_linked_no_repo(self, app_client, db_session):
+        """linked returns 404 when no repo is linked for the session."""
+        import base64
+        import hashlib
+        from cryptography.fernet import Fernet
+        from app.models import GitHubToken
+
+        secret_key = "test-secret-key"
+        key = hashlib.sha256(secret_key.encode()).digest()
+        fernet = Fernet(base64.urlsafe_b64encode(key))
+        encrypted = fernet.encrypt(b"ghp_norepo_token")
+
+        row = GitHubToken(
+            session_id="test-session-norepo",
+            token_encrypted=encrypted,
+            github_login="norepouser",
+            github_user_id="77777",
+        )
+        db_session.add(row)
+        await db_session.commit()
+
+        from app.config import settings
+        original_secret = settings.SECRET_KEY
+        settings.SECRET_KEY = secret_key
+
+        try:
+            resp = await app_client.get(
+                "/api/github/repos/linked",
+                cookies={"session_id": "test-session-norepo"},
+            )
+            assert resp.status_code == 404
+        finally:
+            settings.SECRET_KEY = original_secret
+
+    async def test_unlink_repo_idempotent(self, app_client, db_session):
+        """unlink is idempotent — returns 200 even when nothing is linked."""
+        import base64
+        import hashlib
+        from cryptography.fernet import Fernet
+        from app.models import GitHubToken
+
+        secret_key = "test-secret-key"
+        key = hashlib.sha256(secret_key.encode()).digest()
+        fernet = Fernet(base64.urlsafe_b64encode(key))
+        encrypted = fernet.encrypt(b"ghp_unlink_token")
+
+        row = GitHubToken(
+            session_id="test-session-unlink",
+            token_encrypted=encrypted,
+            github_login="unlinkuser",
+            github_user_id="55555",
+        )
+        db_session.add(row)
+        await db_session.commit()
+
+        from app.config import settings
+        original_secret = settings.SECRET_KEY
+        settings.SECRET_KEY = secret_key
+
+        try:
+            resp = await app_client.delete(
+                "/api/github/repos/unlink",
+                cookies={"session_id": "test-session-unlink"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["ok"] is True
+        finally:
+            settings.SECRET_KEY = original_secret
 
 
 class TestHealthMetrics:

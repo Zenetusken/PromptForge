@@ -1,25 +1,148 @@
-"""GitHub OAuth stubs — returns 501 until Phase 2."""
+"""GitHub OAuth flow — login, callback, me, logout."""
 
-from fastapi import APIRouter, HTTPException
+import json
+import secrets
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.database import get_db
+from app.models import GitHubToken
+from app.services.github_client import GitHubClient
+from app.services.github_service import GitHubService
 
 router = APIRouter(prefix="/api/github", tags=["github"])
 
 
+async def _get_session_token(request: Request, db: AsyncSession) -> tuple[str, str]:
+    """Get session_id and decrypted token from request cookie."""
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        raise HTTPException(401, "Not authenticated")
+    result = await db.execute(
+        select(GitHubToken).where(GitHubToken.session_id == session_id)
+    )
+    token_row = result.scalar_one_or_none()
+    if not token_row:
+        raise HTTPException(401, "Not authenticated")
+    github_svc = GitHubService(secret_key=settings.resolve_secret_key())
+    return session_id, github_svc.decrypt_token(token_row.token_encrypted)
+
+
 @router.get("/auth/login")
-async def github_login():
-    raise HTTPException(status_code=501, detail="GitHub integration not yet implemented")
+async def github_login(response: Response):
+    """Generate OAuth URL, set state cookie, return URL."""
+    state = secrets.token_urlsafe(32)
+    response.set_cookie("github_oauth_state", state, httponly=True, max_age=600)
+    github_svc = GitHubService(
+        secret_key=settings.resolve_secret_key(),
+        client_id=settings.GITHUB_OAUTH_CLIENT_ID,
+    )
+    url = github_svc.build_oauth_url(state=state)
+    return {"url": url}
 
 
 @router.get("/auth/callback")
-async def github_callback():
-    raise HTTPException(status_code=501, detail="GitHub integration not yet implemented")
+async def github_callback(
+    code: str,
+    state: str,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange code for token, encrypt, store in DB."""
+    cookie_state = request.cookies.get("github_oauth_state")
+    if not cookie_state or cookie_state != state:
+        raise HTTPException(400, "Invalid OAuth state")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://github.com/login/oauth/access_token",
+            json={
+                "client_id": settings.GITHUB_OAUTH_CLIENT_ID,
+                "client_secret": settings.GITHUB_OAUTH_CLIENT_SECRET,
+                "code": code,
+            },
+            headers={"Accept": "application/json"},
+        )
+        data = resp.json()
+
+    access_token = data.get("access_token")
+    if not access_token:
+        raise HTTPException(400, "GitHub OAuth failed")
+
+    github_client = GitHubClient()
+    user = await github_client.get_user(access_token)
+
+    github_svc = GitHubService(secret_key=settings.resolve_secret_key())
+    encrypted = github_svc.encrypt_token(access_token)
+
+    session_id = request.cookies.get("session_id") or secrets.token_urlsafe(32)
+
+    result = await db.execute(
+        select(GitHubToken).where(GitHubToken.session_id == session_id)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.token_encrypted = encrypted
+        existing.github_login = user.get("login")
+        existing.github_user_id = str(user.get("id", ""))
+        existing.avatar_url = user.get("avatar_url")
+    else:
+        row = GitHubToken(
+            session_id=session_id,
+            token_encrypted=encrypted,
+            github_login=user.get("login"),
+            github_user_id=str(user.get("id", "")),
+            avatar_url=user.get("avatar_url"),
+        )
+        db.add(row)
+    await db.commit()
+
+    response.set_cookie("session_id", session_id, httponly=True, max_age=86400 * 30)
+    return {"login": user.get("login"), "avatar_url": user.get("avatar_url")}
 
 
 @router.get("/auth/me")
-async def github_me():
-    raise HTTPException(status_code=501, detail="GitHub integration not yet implemented")
+async def github_me(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return current user info from stored token."""
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        raise HTTPException(401, "Not authenticated")
+    result = await db.execute(
+        select(GitHubToken).where(GitHubToken.session_id == session_id)
+    )
+    token_row = result.scalar_one_or_none()
+    if not token_row:
+        raise HTTPException(401, "Not authenticated")
+    return {
+        "login": token_row.github_login,
+        "avatar_url": token_row.avatar_url,
+        "github_user_id": token_row.github_user_id,
+    }
 
 
 @router.post("/auth/logout")
-async def github_logout():
-    raise HTTPException(status_code=501, detail="GitHub integration not yet implemented")
+async def github_logout(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete token from DB and clear session cookie."""
+    session_id = request.cookies.get("session_id")
+    if session_id:
+        result = await db.execute(
+            select(GitHubToken).where(GitHubToken.session_id == session_id)
+        )
+        token_row = result.scalar_one_or_none()
+        if token_row:
+            await db.delete(token_row)
+            await db.commit()
+    response.delete_cookie("session_id")
+    return {"ok": True}
