@@ -256,6 +256,7 @@
           <!-- Inline editor (expands below the row) -->
           {#if editingStrategy === strat.name}
             <div class="strategy-editor">
+              <span class="strategy-file-path">prompts/strategies/{strat.name}.md</span>
               <textarea
                 class="strategy-textarea"
                 value={editContent}
@@ -268,12 +269,11 @@
                   onclick={saveStrategyEdit}
                   disabled={editSaving || !editDirty}
                 >
-                  {editSaving ? 'Saving...' : 'Save'}
+                  {editSaving ? 'Saving...' : 'SAVE'}
                 </button>
                 <button class="action-btn" onclick={discardStrategyEdit}>
-                  Discard
+                  DISCARD
                 </button>
-                <span class="strategy-file-path">strategies/{strat.name}.md</span>
               </div>
             </div>
           {/if}
@@ -671,23 +671,31 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 4px;
-    border-top: 1px solid var(--color-border-subtle);
-    padding-top: 4px;
+    padding: 4px 6px 6px;
+    border: 1px solid var(--color-border-subtle);
+    border-top: none;
+    background: var(--color-bg-card);
+  }
+
+  .strategy-file-path {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--color-text-dim);
+    padding: 2px 0;
   }
 
   .strategy-textarea {
     width: 100%;
-    min-height: 120px;
-    max-height: 300px;
+    min-height: 200px;
+    max-height: 400px;
     resize: vertical;
     font-family: var(--font-mono);
     font-size: 10px;
-    line-height: 1.4;
+    line-height: 1.5;
     background: var(--color-bg-input);
     border: 1px solid var(--color-border-subtle);
     color: var(--color-text-primary);
-    padding: 4px;
+    padding: 6px;
     tab-size: 2;
   }
 
@@ -700,13 +708,6 @@
     display: flex;
     align-items: center;
     gap: 4px;
-  }
-
-  .strategy-file-path {
-    margin-left: auto;
-    font-family: var(--font-mono);
-    font-size: 9px;
-    color: var(--color-text-dim);
   }
 
   /* ---- Row items ---- */
