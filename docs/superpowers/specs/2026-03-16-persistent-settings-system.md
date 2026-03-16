@@ -93,20 +93,23 @@ Persists the user's preferred strategy across sessions. Applied when no explicit
 ```python
 class PreferencesService:
     DEFAULTS = {
+        "schema_version": 1,
         "models": {"analyzer": "sonnet", "optimizer": "opus", "scorer": "sonnet"},
         "pipeline": {"enable_explore": True, "enable_scoring": True, "enable_adaptation": True},
         "defaults": {"strategy": "auto"},
     }
 
     def __init__(self, data_dir: Path): ...
-    def load(self) -> dict: ...         # Read + deep-merge with defaults
-    def save(self, prefs: dict): ...    # Atomic write
-    def get(self, path: str) -> Any: ...    # Dot-path accessor: "models.analyzer"
+    def load(self) -> dict: ...         # Read + deep-merge with defaults (single disk read)
+    def save(self, prefs: dict): ...    # Validate + atomic write
+    def get(self, path: str, snapshot: dict | None = None) -> Any: ...  # Dot-path accessor
     def patch(self, updates: dict): ... # Deep-merge updates into existing
-    def resolve_model(self, phase: str) -> str: ...  # "analyzer" -> "claude-sonnet-4-6"
+    def resolve_model(self, phase: str, snapshot: dict | None = None) -> str: ...
 ```
 
 `resolve_model()` maps short names ("sonnet", "opus", "haiku") to full model IDs from `config.py`.
+
+**Snapshot pattern**: `load()` returns a frozen dict. Pipeline callers load ONCE at the start of a run and pass the snapshot to `get()` and `resolve_model()` to avoid mid-pipeline preference changes. The optional `snapshot` parameter operates on the provided dict instead of re-reading from disk.
 
 ---
 
@@ -133,54 +136,79 @@ Preferences apply to **all pipeline contexts**: main pipeline, refinement servic
 
 ### 5a. Main Pipeline (`pipeline.py`)
 
-**Model selection** — replace hardcoded model constants:
+**Snapshot semantics** — load preferences ONCE at the start of `run()`, freeze for the entire pipeline execution:
 ```python
 prefs = PreferencesService(DATA_DIR)
-model=prefs.resolve_model("analyzer")   # Phase 1
-model=prefs.resolve_model("optimizer")  # Phase 2
-model=prefs.resolve_model("scorer")     # Phase 3
+prefs_snapshot = prefs.load()  # single read, frozen for this run
+# All subsequent calls use the snapshot:
+model=prefs.resolve_model("analyzer", prefs_snapshot)
+model=prefs.resolve_model("optimizer", prefs_snapshot)
+model=prefs.resolve_model("scorer", prefs_snapshot)
 ```
 
-**`model_used` tracking** — the `Optimization` DB record and `PipelineResult` event must store the actual resolved model, not hardcoded `settings.MODEL_OPUS`:
+**`model_used` tracking** — DB record and PipelineResult must store the actual resolved model:
 ```python
-optimizer_model = prefs.resolve_model("optimizer")
-# ... later in DB persist:
+optimizer_model = prefs.resolve_model("optimizer", prefs_snapshot)
 model_used=optimizer_model  # NOT settings.MODEL_OPUS
 ```
 
 **Phase skipping:**
 
-- **Explore** (`enable_explore`): `if prefs.get("pipeline.enable_explore") and repo_full_name: ...`
-- **Scoring** (`enable_scoring`): when OFF, skip Phase 3. Set `scoring_mode="skipped"`, scores to None. DB record persists with null scores. History panel shows dash for null `overall_score` (existing `scoreColor` already handles null).
+- **Explore** (`enable_explore`): `if prefs.get("pipeline.enable_explore", prefs_snapshot) and repo_full_name: ...`
+- **Scoring** (`enable_scoring`): when OFF, skip Phase 3 entirely. Do NOT emit `status: {stage: 'score'}` or `score_card` SSE events. Pipeline jumps from optimize-complete directly to `optimization_complete`. Set `scoring_mode="skipped"`, scores to None.
 - **Adaptation** (`enable_adaptation`): when OFF, pass `adaptation_state=None` to optimizer template.
 
+**Schema change required** — `PipelineResult` in `pipeline_contracts.py` must make score fields optional:
+```python
+optimized_scores: DimensionScores | None = None
+original_scores: DimensionScores | None = None
+score_deltas: dict[str, float] | None = None
+overall_score: float | None = None
+```
+
 **Scoring-disabled interactions:**
-- History panel: null `overall_score` renders as "—" (already handled)
+- History panel: null `overall_score` renders as "—" (existing `scoreColor` handles null)
+- Inspector: when `forgeStore.scores` is null in `complete` state, show "Scoring disabled" indicator instead of empty space
 - Refinement from a scoring-skipped optimization: first refinement turn re-runs scoring to establish a baseline (automatic — refinement always scores)
+- `score_card` SSE event is NOT emitted — frontend status goes directly from 'optimizing' to 'complete'
 
 ### 5b. Refinement Service (`refinement_service.py`)
 
-Same model substitution at 4 callsites:
-- Analyze phase (line ~188): `prefs.resolve_model("analyzer")`
-- Refine phase (line ~215): `prefs.resolve_model("optimizer")`
-- Score phase (line ~247): `prefs.resolve_model("scorer")`
+Same snapshot pattern — load prefs once at the start of `create_refinement_turn()`:
+```python
+prefs_snapshot = prefs.load()
+```
+
+Model substitution at 4 callsites:
+- Analyze phase (line ~188): `prefs.resolve_model("analyzer", prefs_snapshot)`
+- Refine phase (line ~215): `prefs.resolve_model("optimizer", prefs_snapshot)`
+- Score phase (line ~247): `prefs.resolve_model("scorer", prefs_snapshot)`
 - Suggest phase (line ~457): always `settings.MODEL_HAIKU` (intentionally not configurable — suggestions are lightweight)
 
 ### 5c. MCP Server (`mcp_server.py`)
 
-`synthesis_analyze` reads preferences for model selection:
+`synthesis_analyze` has 3 model references — all must use preferences:
 ```python
-prefs = PreferencesService(DATA_DIR)
-model=prefs.resolve_model("analyzer")  # Phase 1
-model=prefs.resolve_model("scorer")    # Phase 2 (baseline scoring)
+prefs_snapshot = prefs.load()
+model=prefs.resolve_model("analyzer", prefs_snapshot)   # line ~250 (analyze call)
+model=prefs.resolve_model("scorer", prefs_snapshot)      # line ~274 (score call)
+model_used=prefs.resolve_model("analyzer", prefs_snapshot)  # line ~314 (DB persist)
 ```
 
 `synthesis_optimize` delegates to `PipelineOrchestrator` which inherits pipeline.py changes automatically.
 
-### 5d. Default Strategy
+### 5d. Codebase Explorer (`codebase_explorer.py`)
 
-Applied in `optimize.py` router when request has no explicit strategy:
+Uses `settings.MODEL_HAIKU` at line ~198 for synthesis. **Intentionally not configurable** — same rationale as suggestions (lightweight, always Haiku). Document this decision in CLAUDE.md.
+
+### 5e. Default Strategy
+
+Applied in `optimize.py` router when request has no explicit strategy. Requires importing PreferencesService:
 ```python
+from app.services.preferences import PreferencesService
+from app.config import DATA_DIR
+
+prefs = PreferencesService(DATA_DIR)
 strategy = request.strategy or prefs.get("defaults.strategy") or "auto"
 ```
 
@@ -251,18 +279,20 @@ The GitHub icon in the activity bar switches to the settings panel and scrolls t
 
 | File | Action |
 |------|--------|
-| `backend/app/services/preferences.py` | **Create** — PreferencesService |
-| `backend/app/routers/preferences.py` | **Create** — GET/PATCH endpoints |
-| `backend/app/main.py` | **Modify** — register preferences router (`from app.routers.preferences import router`) |
-| `backend/app/services/pipeline.py` | **Modify** — model selection + phase skipping + model_used tracking |
-| `backend/app/services/refinement_service.py` | **Modify** — model selection at 4 callsites |
-| `backend/app/mcp_server.py` | **Modify** — model selection in synthesis_analyze |
-| `backend/app/routers/optimize.py` | **Modify** — default strategy from prefs |
+| `backend/app/services/preferences.py` | **Create** — PreferencesService with snapshot pattern |
+| `backend/app/routers/preferences.py` | **Create** — GET/PATCH endpoints with validation |
+| `backend/app/schemas/pipeline_contracts.py` | **Modify** — make score fields Optional on PipelineResult |
+| `backend/app/main.py` | **Modify** — register preferences router |
+| `backend/app/services/pipeline.py` | **Modify** — snapshot load, model selection, phase skipping, model_used tracking |
+| `backend/app/services/refinement_service.py` | **Modify** — snapshot load, model selection at 4 callsites |
+| `backend/app/mcp_server.py` | **Modify** — model selection + model_used in synthesis_analyze (3 refs) |
+| `backend/app/routers/optimize.py` | **Modify** — default strategy from prefs (import PreferencesService) |
 | `frontend/src/lib/stores/preferences.svelte.ts` | **Create** — reactive store |
 | `frontend/src/lib/api/client.ts` | **Modify** — add getPreferences/patchPreferences |
 | `frontend/src/routes/+layout.svelte` | **Modify** — init preferences store on app load |
 | `frontend/src/lib/components/layout/Navigator.svelte` | **Modify** — expanded settings panel + GitHub consolidation |
-| `CLAUDE.md` | **Modify** — document preferences system |
+| `frontend/src/lib/components/layout/EditorGroups.svelte` | **Modify** — Inspector "scoring disabled" indicator |
+| `CLAUDE.md` | **Modify** — document preferences system + non-configurable model decisions |
 
 ---
 
