@@ -23,6 +23,10 @@ class ForgeStore {
   private controller: AbortController | null = null;
 
   forge() {
+    // Abort any in-flight SSE stream
+    this.controller?.abort();
+    this.controller = null;
+
     const trimmed = this.prompt.trim();
     if (!trimmed) return;
     if (trimmed.length < 20) {
@@ -87,6 +91,10 @@ class ForgeStore {
         data.scores = data.optimized_scores;
       }
       this.result = data as OptimizationResult;
+      // Sync top-level score fields from result
+      if (data.scores) this.scores = data.scores as DimensionScores;
+      if (data.original_scores) this.originalScores = data.original_scores as DimensionScores;
+      if (data.score_deltas) this.scoreDeltas = data.score_deltas as Record<string, number>;
       this.status = 'complete';
     } else if (eventType === 'error') {
       this.error = (event.error || event.message) as string;
@@ -94,28 +102,40 @@ class ForgeStore {
     }
   }
 
+  private _reconnecting = false;
+
   private async reconnect() {
-    if (!this.traceId) return;
-    const maxAttempts = 30; // 30 * 2s = 60s
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      try {
-        const result = await getOptimization(this.traceId);
-        if (result.status === 'completed') {
-          this.result = result;
-          this.status = 'complete';
-          return;
+    if (!this.traceId || this._reconnecting) return;
+    this._reconnecting = true;
+    try {
+      const maxAttempts = 30; // 30 * 2s = 60s
+      for (let i = 0; i < maxAttempts; i++) {
+        if (this.status === 'idle' || this.status === 'complete') break; // cancelled or already resolved
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const result = await getOptimization(this.traceId!);
+          if (result.status === 'completed') {
+            this.result = result;
+            this.status = 'complete';
+            return;
+          }
+        } catch {
+          /* keep polling */
         }
-      } catch {
-        /* keep polling */
       }
+      if (this.status !== 'complete' && this.status !== 'idle') {
+        this.error = 'Optimization may still be running. Check history.';
+        this.status = 'error';
+      }
+    } finally {
+      this._reconnecting = false;
     }
-    this.error = 'Optimization may still be running. Check history.';
-    this.status = 'error';
   }
 
   cancel() {
     this.controller?.abort();
+    this.controller = null;
+    this.traceId = null; // prevent reconnect from running
     this.status = 'idle';
   }
 
@@ -130,6 +150,8 @@ class ForgeStore {
   }
 
   reset() {
+    this.controller?.abort();
+    this.controller = null;
     this.prompt = '';
     this.strategy = null;
     this.status = 'idle';

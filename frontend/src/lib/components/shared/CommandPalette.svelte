@@ -1,5 +1,6 @@
 <script lang="ts">
   import { forgeStore } from '$lib/stores/forge.svelte';
+  import { editorStore } from '$lib/stores/editor.svelte';
 
   // Actions available in the palette
   interface PaletteAction {
@@ -20,6 +21,7 @@
       label: 'New Prompt',
       run: () => {
         forgeStore.reset();
+        window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'editor' }));
         close();
       },
     },
@@ -28,6 +30,17 @@
       label: 'Forge',
       run: () => {
         forgeStore.forge();
+        // Watch for traceId to open result tab
+        const check = setInterval(() => {
+          if (forgeStore.traceId) {
+            clearInterval(check);
+            editorStore.openResult(forgeStore.traceId);
+          }
+          if (forgeStore.status === 'error' || forgeStore.status === 'idle') {
+            clearInterval(check);
+          }
+        }, 200);
+        window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'editor' }));
         close();
       },
     },
@@ -51,10 +64,8 @@
       id: 'toggle-diff',
       label: 'Toggle Diff',
       run: () => {
-        import('$lib/stores/editor.svelte').then(({ editorStore }) => {
-          const id = forgeStore.result?.id ?? 'current';
-          editorStore.openDiff(id);
-        });
+        const id = forgeStore.result?.id ?? 'current';
+        editorStore.openDiff(id);
         close();
       },
     },

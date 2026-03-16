@@ -41,6 +41,10 @@ class RefinementStore {
 
   refine(request: string) {
     if (!this.optimizationId) return;
+    // Abort any in-flight stream
+    this.controller?.abort();
+    this.controller = null;
+    this.suggestions = []; // clear old suggestions
     this.status = 'refining';
     this.error = null;
 
@@ -85,6 +89,8 @@ class RefinementStore {
   }
 
   reset() {
+    this.controller?.abort();
+    this.controller = null;
     this.optimizationId = null;
     this.turns = [];
     this.branches = [];

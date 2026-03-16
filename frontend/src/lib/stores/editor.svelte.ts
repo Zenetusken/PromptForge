@@ -26,8 +26,12 @@ class EditorStore {
 
   closeTab(id: string) {
     this.tabs = this.tabs.filter((t) => t.id !== id);
-    if (this.activeTabId === id && this.tabs.length > 0) {
-      this.activeTabId = this.tabs[this.tabs.length - 1].id;
+    if (this.activeTabId === id) {
+      if (this.tabs.length > 0) {
+        this.activeTabId = this.tabs[this.tabs.length - 1].id;
+      } else {
+        this.activeTabId = '';
+      }
     }
   }
 

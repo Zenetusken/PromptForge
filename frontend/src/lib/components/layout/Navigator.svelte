@@ -99,6 +99,10 @@
   });
 
   async function loadHistoryItem(item: HistoryItem) {
+    // Cancel any in-flight optimization first
+    if (forgeStore.status !== 'idle' && forgeStore.status !== 'complete' && forgeStore.status !== 'error') {
+      forgeStore.cancel();
+    }
     try {
       const opt = await getOptimization(item.trace_id);
       forgeStore.result = opt;

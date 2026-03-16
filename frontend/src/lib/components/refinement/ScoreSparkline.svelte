@@ -9,7 +9,7 @@
   const HEIGHT = 24;
   const PADDING = 2;
 
-  const points = $derived(() => {
+  const points = $derived.by(() => {
     if (scores.length < 2) return '';
     const min = Math.min(...scores);
     const max = Math.max(...scores);
@@ -35,7 +35,7 @@
     role="img"
   >
     <polyline
-      points={points()}
+      points={points}
       fill="none"
       stroke="var(--color-neon-cyan)"
       stroke-width="1.5"

@@ -17,7 +17,7 @@
     forgeStore.status !== 'error'
   );
 
-  const phaseLabel = $derived(() => {
+  const phaseLabel = $derived.by(() => {
     switch (forgeStore.status) {
       case 'analyzing': return 'Analyzing...';
       case 'optimizing': return 'Optimizing...';
@@ -68,8 +68,8 @@
 
     <div class="spacer"></div>
 
-    {#if phaseLabel()}
-      <span class="phase-label">{phaseLabel()}</span>
+    {#if phaseLabel}
+      <span class="phase-label">{phaseLabel}</span>
     {/if}
 
     <button

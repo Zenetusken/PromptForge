@@ -7,7 +7,7 @@
 
   type BadgeVariant = 'cli' | 'api' | 'mcp' | 'none';
 
-  const variant = $derived((): BadgeVariant => {
+  const variant = $derived.by((): BadgeVariant => {
     if (!provider) return 'none';
     const p = provider.toLowerCase();
     if (p.includes('cli')) return 'cli';
@@ -16,7 +16,7 @@
     return 'none';
   });
 
-  const label = $derived(() => {
+  const label = $derived.by(() => {
     if (!provider) return 'None';
     const p = provider.toLowerCase();
     if (p.includes('cli')) return 'CLI';
@@ -28,14 +28,14 @@
 
 <span
   class="provider-badge"
-  class:variant-cli={variant() === 'cli'}
-  class:variant-api={variant() === 'api'}
-  class:variant-mcp={variant() === 'mcp'}
-  class:variant-none={variant() === 'none'}
-  aria-label="Active provider: {label()}"
+  class:variant-cli={variant === 'cli'}
+  class:variant-api={variant === 'api'}
+  class:variant-mcp={variant === 'mcp'}
+  class:variant-none={variant === 'none'}
+  aria-label="Active provider: {label}"
   title="Provider: {provider ?? 'None'}"
 >
-  {label()}
+  {label}
 </span>
 
 <style>

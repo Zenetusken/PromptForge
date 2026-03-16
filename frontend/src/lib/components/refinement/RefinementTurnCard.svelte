@@ -17,14 +17,14 @@
     conciseness: 'Conciseness',
   };
 
-  const overallScore = $derived(() => {
+  const overallScore = $derived.by(() => {
     if (!turn.scores) return null;
     const vals = Object.values(turn.scores);
     if (vals.length === 0) return null;
     return vals.reduce((a, b) => a + b, 0) / vals.length;
   });
 
-  const topDeltas = $derived(() => {
+  const topDeltas = $derived.by(() => {
     if (!turn.deltas) return [];
     return Object.entries(turn.deltas)
       .filter(([, v]) => v !== 0)
@@ -48,10 +48,10 @@
       {turn.refinement_request || 'Initial optimization'}
     </span>
     <span class="turn-spacer"></span>
-    {#if overallScore() !== null}
-      <span class="overall-score">{overallScore()!.toFixed(1)}</span>
+    {#if overallScore !== null}
+      <span class="overall-score">{overallScore.toFixed(1)}</span>
     {/if}
-    {#each topDeltas() as [dim, delta]}
+    {#each topDeltas as [dim, delta]}
       <span
         class="delta-badge"
         class:positive={delta > 0}
