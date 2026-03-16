@@ -301,13 +301,13 @@
               </div>
             {/if}
           </div>
-          <div class="api-key-form">
+          <form class="api-key-form" onsubmit={(e: Event) => { e.preventDefault(); handleSetApiKey(); }} autocomplete="off">
             <input
               class="api-key-input"
               type="password"
               placeholder="sk-..."
+              autocomplete="new-password"
               bind:value={apiKeyInput}
-              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleSetApiKey(); }}
             />
             <div class="api-key-actions">
               <button
@@ -323,7 +323,7 @@
                 </button>
               {/if}
             </div>
-          </div>
+          </form>
           {#if apiKeyError}
             <p class="empty-note" style="color: var(--color-neon-red);">{apiKeyError}</p>
           {/if}
