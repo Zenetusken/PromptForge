@@ -44,8 +44,7 @@
     align-items: center;
     font-size: 10px;
     font-family: var(--font-mono);
-    padding: 0 6px;   /* px-1.5 */
-    height: 16px;
+    padding: 1px 6px;
     border: 1px solid var(--color-border-subtle);
     border-radius: 2px; /* rounded-sm */
     color: var(--color-text-dim);
@@ -55,7 +54,7 @@
   }
 
   .variant-cli {
-    border-color: var(--color-neon-cyan);
+    border-color: rgba(0, 229, 255, 0.3);
     color: var(--color-neon-cyan);
   }
 

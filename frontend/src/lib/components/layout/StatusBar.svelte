@@ -4,13 +4,15 @@
   import ProviderBadge from '$lib/components/shared/ProviderBadge.svelte';
 
   let provider = $state<string | null>(null);
+  let version = $state<string | null>(null);
 
   onMount(async () => {
     try {
       const health = await getHealth();
       provider = health.provider;
+      version = health.version;
     } catch {
-      // Backend not reachable — leave provider null
+      // Backend not reachable — leave provider/version null
     }
   });
 </script>
@@ -21,15 +23,15 @@
   aria-label="Status bar"
   style="background: var(--color-bg-secondary); border-top: 1px solid var(--color-border-subtle);"
 >
-  <!-- Left side: provider badge + repo badge placeholders -->
+  <!-- Left side: provider badge + version -->
   <div class="status-left">
     <ProviderBadge {provider} />
-    <span class="status-item"><!-- RepoBadge --></span>
+    <span class="status-item">Project Synthesis{version ? ` v${version}` : ''}</span>
   </div>
 
   <!-- Right side: keyboard shortcut hint -->
   <div class="status-right">
-    <span class="status-item" aria-label="Open command palette with Ctrl+K">Ctrl+K</span>
+    <span class="status-kbd" aria-label="Open command palette with Ctrl+K">Ctrl+K</span>
   </div>
 </div>
 
@@ -38,8 +40,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 24px; /* h-[24px] */
-    padding: 0 8px;
+    height: 20px;
+    padding: 0 4px;
     overflow: hidden;
   }
 
@@ -47,13 +49,22 @@
   .status-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
   }
 
   .status-item {
-    font-size: 10px; /* text-[10px] */
-    font-family: var(--font-mono); /* font-mono */
+    font-size: 10px;
+    font-family: var(--font-mono);
     color: var(--color-text-dim);
+    white-space: nowrap;
+  }
+
+  .status-kbd {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--color-text-dim);
+    border: 1px solid var(--color-border-subtle);
+    padding: 1px 6px;
     white-space: nowrap;
   }
 </style>

@@ -115,14 +115,14 @@
   .tab-bar {
     display: flex;
     align-items: stretch;
-    height: 32px; /* h-8 */
+    height: 24px;
     background: var(--color-bg-secondary);
     border-bottom: 1px solid var(--color-border-subtle);
     overflow-x: auto;
     overflow-y: hidden;
     flex-shrink: 0;
-    gap: 4px; /* gap-1 */
-    padding: 0 4px;
+    gap: 0;
+    padding: 0 1px;
   }
 
   .tab-bar::-webkit-scrollbar {
@@ -132,9 +132,9 @@
   .tab {
     display: flex;
     align-items: center;
-    gap: 4px; /* gap-1 */
+    gap: 2px;
     height: 100%;
-    padding: 0 10px; /* px-2.5 */
+    padding: 0 4px;
     border: none;
     border-bottom: 1px solid transparent;
     background: transparent;
@@ -184,7 +184,7 @@
     border: none;
     background: transparent;
     color: var(--color-text-dim);
-    font-size: 12px;
+    font-size: 10px;
     line-height: 1;
     cursor: pointer;
     opacity: 0;

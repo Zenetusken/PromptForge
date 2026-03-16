@@ -126,8 +126,8 @@
   .inspector-header {
     display: flex;
     align-items: center;
-    height: 32px; /* h-8 */
-    padding: 0 8px; /* px-2 */
+    height: 24px;
+    padding: 0 6px;
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
   }
@@ -135,7 +135,7 @@
   .inspector-body {
     flex: 1;
     overflow-y: auto;
-    padding: 8px; /* p-2 */
+    padding: 6px;
   }
 
   /* Empty state */

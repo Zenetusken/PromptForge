@@ -53,7 +53,7 @@
   .workbench {
     display: grid;
     grid-template-columns: 48px 240px 1fr 280px;
-    grid-template-rows: 1fr 24px;
+    grid-template-rows: 1fr 20px;
     height: 100vh;
     width: 100vw;
     overflow: hidden;

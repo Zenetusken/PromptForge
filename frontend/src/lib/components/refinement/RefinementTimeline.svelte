@@ -126,7 +126,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 28px;
+    height: 32px;
     padding: 0 8px;
     background: var(--color-bg-secondary);
     border-bottom: 1px solid var(--color-border-subtle);

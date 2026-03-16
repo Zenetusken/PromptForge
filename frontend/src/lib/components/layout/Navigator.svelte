@@ -356,14 +356,14 @@
   .panel-header {
     display: flex;
     align-items: center;
-    height: 32px;
-    padding: 0 8px;
+    height: 24px;
+    padding: 0 6px;
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
   }
 
   .panel-body {
-    padding: 8px;
+    padding: 6px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -533,12 +533,24 @@
 
   .action-btn--primary {
     color: var(--color-neon-cyan);
-    border-color: var(--color-border-accent);
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    background: rgba(0, 229, 255, 0.05);
+    font-family: var(--font-display);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0 8px;
+    height: 20px;
+    line-height: 18px;
+    width: calc(100% - 12px);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .action-btn--primary:hover {
     color: var(--color-neon-cyan);
-    background: rgba(0, 229, 255, 0.05);
+    background: rgba(0, 229, 255, 0.1);
+    border-color: var(--color-neon-cyan);
   }
 
   /* ---- Empty state ---- */

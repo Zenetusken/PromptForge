@@ -104,9 +104,9 @@
   .toolbar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 32px;
-    padding: 0 8px;
+    gap: 4px;
+    height: 24px;
+    padding: 0 4px;
     background: var(--color-bg-secondary);
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
@@ -115,19 +115,20 @@
   .toolbar-label {
     font-size: 10px;
     font-family: var(--font-display);
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--color-text-dim);
   }
 
   .strategy-select {
-    height: 28px;
-    padding: 0 6px;
+    height: 18px;
+    padding: 0 3px;
     background: var(--color-bg-input);
     border: 1px solid var(--color-border-subtle);
     color: var(--color-text-primary);
-    font-size: 11px;
-    font-family: var(--font-sans);
+    font-size: 10px;
+    font-family: var(--font-mono);
     cursor: pointer;
     transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
     outline: none;
@@ -148,29 +149,34 @@
 
   .phase-label {
     font-size: 10px;
-    font-family: var(--font-sans);
+    font-family: var(--font-mono);
     color: var(--color-neon-cyan);
-    letter-spacing: 0.05em;
   }
 
   .forge-btn {
-    height: 24px;
-    padding: 0 12px;
-    background: transparent;
-    border: 1px solid var(--color-neon-cyan);
-    color: var(--color-neon-cyan);
     font-family: var(--font-display);
-    font-size: 11px;
+    font-size: 10px;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
+    color: var(--color-neon-cyan);
+    border: 1px solid var(--color-neon-cyan);
+    background: transparent;
+    padding: 0 6px;
+    height: 18px;
+    line-height: 16px;
     cursor: pointer;
-    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
     white-space: nowrap;
   }
 
   .forge-btn:hover:not(:disabled) {
-    background: rgba(0, 229, 255, 0.08);
+    transform: translateY(-1px);
+    background: rgba(0, 229, 255, 0.06);
+  }
+
+  .forge-btn:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .forge-btn:disabled {

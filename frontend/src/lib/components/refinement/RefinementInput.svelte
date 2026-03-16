@@ -51,7 +51,7 @@
 
   .input-field {
     flex: 1;
-    height: 28px;
+    height: 20px;
     padding: 0 8px;
     font-size: 11px;
     font-family: var(--font-sans);
@@ -76,13 +76,14 @@
   }
 
   .submit-btn {
-    height: 28px;
-    padding: 0 12px;
+    height: 20px;
+    padding: 0 8px;
+    line-height: 18px;
     background: transparent;
     border: 1px solid var(--color-neon-cyan);
     color: var(--color-neon-cyan);
     font-family: var(--font-display);
-    font-size: 11px;
+    font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     cursor: pointer;

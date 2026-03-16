@@ -3,11 +3,11 @@
 
   let { active = $bindable('editor') }: { active: Activity } = $props();
 
-  const activities: { id: Activity; icon: string; label: string }[] = [
-    { id: 'editor', icon: '✎', label: 'Editor' },
-    { id: 'history', icon: '⏱', label: 'History' },
-    { id: 'github', icon: '⑂', label: 'GitHub' },
-    { id: 'settings', icon: '⚙', label: 'Settings' },
+  const activities: { id: Activity; label: string }[] = [
+    { id: 'editor', label: 'Editor' },
+    { id: 'history', label: 'History' },
+    { id: 'github', label: 'GitHub' },
+    { id: 'settings', label: 'Settings' },
   ];
 </script>
 
@@ -25,7 +25,15 @@
       aria-label={act.label}
       aria-pressed={active === act.id}
     >
-      <span class="text-base">{act.icon}</span>
+      {#if act.id === 'editor'}
+        <svg class="icon-svg" viewBox="0 0 18 18" aria-hidden="true"><path d="M13.5 2.5l2 2-9 9H4.5v-2l9-9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {:else if act.id === 'history'}
+        <svg class="icon-svg" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 5v4l3 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      {:else if act.id === 'github'}
+        <svg class="icon-svg" viewBox="0 0 18 18" aria-hidden="true"><circle cx="6" cy="4.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="4.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="13.5" r="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 6v6M12 6c0 4-6 4-6 6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      {:else if act.id === 'settings'}
+        <svg class="icon-svg" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9 1.5v2M9 14.5v2M1.5 9h2M14.5 9h2M3.3 3.3l1.4 1.4M13.3 13.3l1.4 1.4M3.3 14.7l1.4-1.4M13.3 4.7l1.4-1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      {/if}
     </button>
   {/each}
 </nav>
@@ -41,8 +49,8 @@
   }
 
   .activity-icon {
-    width: 40px;
-    height: 40px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -81,5 +89,11 @@
   .activity-icon:active {
     transform: none;
     border-color: transparent;
+  }
+
+  .icon-svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
   }
 </style>
