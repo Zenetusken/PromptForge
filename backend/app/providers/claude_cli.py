@@ -71,7 +71,35 @@ class ClaudeCLIProvider(LLMProvider):
             )
 
         raw = json.loads(stdout.decode())
-        result = output_format.model_validate(raw)
 
-        logger.info("claude_cli complete_parsed model=%s returncode=0", model)
+        # The CLI --output-format json returns a wrapper: {"type":"result", "result":"...", ...}
+        # Extract the actual content from the "result" field
+        content = raw
+        if isinstance(raw, dict) and "result" in raw and isinstance(raw["result"], str):
+            content_str = raw["result"].strip()
+            # Strip markdown code fencing if present
+            if content_str.startswith("```"):
+                # Remove opening fence (```json or ```)
+                first_newline = content_str.find("\n")
+                if first_newline != -1:
+                    content_str = content_str[first_newline + 1:]
+                # Remove closing fence
+                if content_str.rstrip().endswith("```"):
+                    content_str = content_str.rstrip()[:-3].rstrip()
+            try:
+                content = json.loads(content_str)
+            except json.JSONDecodeError:
+                logger.error("Failed to parse CLI result as JSON: %s", content_str[:200])
+                raise RuntimeError(
+                    f"Claude CLI returned invalid JSON in result field. "
+                    f"First 200 chars: {content_str[:200]}"
+                )
+
+        result = output_format.model_validate(content)
+
+        logger.info(
+            "claude_cli complete_parsed model=%s duration_ms=%s",
+            model,
+            raw.get("duration_ms") if isinstance(raw, dict) else "?",
+        )
         return result
