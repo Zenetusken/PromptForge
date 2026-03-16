@@ -166,7 +166,7 @@
 
   .action-btn:hover {
     background: var(--color-bg-hover);
-    border-color: var(--color-border-default);
+    border-color: var(--color-border-accent);
     color: var(--color-text-primary);
   }
 
@@ -265,7 +265,7 @@
 
   .feedback-btn:hover {
     background: var(--color-bg-hover);
-    border-color: var(--color-border-default);
+    border-color: var(--color-border-accent);
     color: var(--color-text-primary);
   }
 

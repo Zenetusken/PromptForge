@@ -1,6 +1,5 @@
 <script lang="ts">
   import { forgeStore } from '$lib/stores/forge.svelte';
-  import { goto } from '$app/navigation';
 
   // Actions available in the palette
   interface PaletteAction {
@@ -36,7 +35,7 @@
       id: 'view-history',
       label: 'View History',
       run: () => {
-        goto('/history');
+        window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'history' }));
         close();
       },
     },
@@ -44,7 +43,7 @@
       id: 'link-repo',
       label: 'Link Repo',
       run: () => {
-        goto('/github');
+        window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'github' }));
         close();
       },
     },

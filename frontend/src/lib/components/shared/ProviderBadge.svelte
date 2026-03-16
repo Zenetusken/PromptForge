@@ -60,8 +60,8 @@
   }
 
   .variant-api {
-    border-color: #a855f7; /* purple */
-    color: #a855f7;
+    border-color: var(--color-neon-purple); /* purple */
+    color: var(--color-neon-purple);
   }
 
   .variant-mcp {

@@ -159,13 +159,13 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    padding: 16px 0;
+    padding: 8px 0;
   }
 
   .spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--color-border-subtle);
+    border: 1px solid var(--color-border-subtle);
     border-top-color: var(--color-neon-cyan);
     animation: spin 800ms linear infinite;
     flex-shrink: 0;
@@ -257,7 +257,7 @@
     flex-direction: column;
     align-items: center;
     gap: 6px;
-    padding: 16px 0;
+    padding: 8px 0;
   }
 
   .error-icon {

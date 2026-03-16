@@ -2,7 +2,8 @@
   import { onMount } from 'svelte';
   import { githubStore } from '$lib/stores/github.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
-  import { getSettings, getProviders, getHistory } from '$lib/api/client';
+  import { editorStore } from '$lib/stores/editor.svelte';
+  import { getSettings, getProviders, getHistory, getOptimization } from '$lib/api/client';
   import type { SettingsResponse, ProvidersResponse, HistoryItem } from '$lib/api/client';
 
   type Activity = 'editor' | 'history' | 'github' | 'settings';
@@ -59,6 +60,30 @@
     return 'var(--color-neon-red)';
   }
 
+  // Fix 7: Reset historyLoaded when a new optimization completes
+  $effect(() => {
+    if (forgeStore.status === 'complete') {
+      historyLoaded = false;
+    }
+  });
+
+  async function loadHistoryItem(item: HistoryItem) {
+    try {
+      const opt = await getOptimization(item.id);
+      forgeStore.result = opt;
+      forgeStore.status = 'complete';
+      forgeStore.prompt = opt.raw_prompt;
+      editorStore.openResult(item.id);
+      // Switch to editor activity
+      window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'editor' }));
+    } catch {
+      // Fallback: populate from the history item directly
+      forgeStore.prompt = item.raw_prompt;
+      forgeStore.status = 'idle';
+      window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'editor' }));
+    }
+  }
+
   function selectStrategy(id: string) {
     forgeStore.strategy = forgeStore.strategy === id ? null : id;
   }
@@ -107,7 +132,7 @@
           <p class="empty-note">No optimizations yet.</p>
         {:else}
           {#each historyItems as item (item.id)}
-            <button class="row-item history-row" onclick={() => {}}>
+            <button class="row-item history-row" onclick={() => loadHistoryItem(item)}>
               <div class="history-meta">
                 <span class="row-label">{item.task_type}</span>
                 <span

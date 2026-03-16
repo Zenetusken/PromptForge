@@ -128,19 +128,18 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const getHealth = () => apiFetch<HealthResponse>('/health');
 
-// ---- Optimize (SSE) ----
+// ---- SSE Stream Helper ----
 
-export function optimizeSSE(
-  prompt: string,
-  strategy: string | null,
+function streamSSE(
+  url: string,
+  body: string,
   onEvent: (event: SSEEvent) => void,
   onError: (err: Error) => void,
   onComplete: () => void,
 ): AbortController {
   const controller = new AbortController();
-  const body = JSON.stringify({ prompt, strategy: strategy || undefined });
 
-  fetch(`${BASE_URL}/optimize`, {
+  fetch(`${BASE_URL}${url}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -166,8 +165,7 @@ export function optimizeSSE(
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
-              onEvent(data);
+              onEvent(JSON.parse(line.slice(6)));
             } catch { /* skip malformed */ }
           }
         }
@@ -179,6 +177,24 @@ export function optimizeSSE(
     });
 
   return controller;
+}
+
+// ---- Optimize (SSE) ----
+
+export function optimizeSSE(
+  prompt: string,
+  strategy: string | null,
+  onEvent: (event: SSEEvent) => void,
+  onError: (err: Error) => void,
+  onComplete: () => void,
+): AbortController {
+  return streamSSE(
+    '/optimize',
+    JSON.stringify({ prompt, strategy: strategy || undefined }),
+    onEvent,
+    onError,
+    onComplete,
+  );
 }
 
 // ---- Optimize (poll for reconnection) ----
@@ -274,52 +290,17 @@ export function refineSSE(
   onError: (err: Error) => void,
   onComplete: () => void,
 ): AbortController {
-  const controller = new AbortController();
-  const body = JSON.stringify({
-    optimization_id: optimizationId,
-    refinement_request: refinementRequest,
-    branch_id: branchId || undefined,
-  });
-
-  fetch(`${BASE_URL}/refine`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body,
-    signal: controller.signal,
-  })
-    .then(async (resp) => {
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
-        throw new ApiError(resp.status, err.detail || resp.statusText);
-      }
-      const reader = resp.body?.getReader();
-      if (!reader) throw new Error('No response body');
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              onEvent(data);
-            } catch { /* skip malformed */ }
-          }
-        }
-      }
-      onComplete();
-    })
-    .catch((err) => {
-      if (err.name !== 'AbortError') onError(err);
-    });
-
-  return controller;
+  return streamSSE(
+    '/refine',
+    JSON.stringify({
+      optimization_id: optimizationId,
+      refinement_request: refinementRequest,
+      branch_id: branchId || undefined,
+    }),
+    onEvent,
+    onError,
+    onComplete,
+  );
 }
 
 export const getRefinementVersions = (optimizationId: string, branchId?: string) => {

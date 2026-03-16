@@ -11,14 +11,14 @@
   <div class="diff-col">
     <div class="section-heading col-header">ORIGINAL</div>
     <div class="diff-pane">
-      <pre class="diff-content">{original}</pre>
+      <pre class="diff-content diff-content--original">{original}</pre>
     </div>
   </div>
   <div class="diff-divider" aria-hidden="true"></div>
   <div class="diff-col">
     <div class="section-heading col-header">OPTIMIZED</div>
     <div class="diff-pane">
-      <pre class="diff-content">{optimized}</pre>
+      <pre class="diff-content diff-content--optimized">{optimized}</pre>
     </div>
   </div>
 </div>
@@ -60,6 +60,14 @@
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
+    color: var(--color-text-primary);
+  }
+
+  .diff-content--original {
+    color: var(--color-text-secondary);
+  }
+
+  .diff-content--optimized {
     color: var(--color-text-primary);
   }
 

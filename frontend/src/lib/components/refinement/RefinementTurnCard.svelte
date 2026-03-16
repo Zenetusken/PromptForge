@@ -107,7 +107,7 @@
   }
 
   .turn-card:hover {
-    border-color: var(--color-border-default);
+    border-color: var(--color-border-accent);
   }
 
   .turn-header {
