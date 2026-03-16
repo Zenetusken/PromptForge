@@ -99,4 +99,10 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.routers.refinement import router as refinement_router
+    app.include_router(refinement_router)
+except ImportError:
+    pass
+
 asgi_app = app
