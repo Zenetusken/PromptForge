@@ -67,3 +67,27 @@ class PromptLoader:
         template = re.sub(r"\n{3,}", "\n\n", template)
 
         return template.strip()
+
+    def validate_all(self) -> None:
+        """Validate all templates listed in manifest.json at startup.
+
+        Checks: (1) file exists, (2) all required placeholders present.
+        Raises RuntimeError on any validation failure.
+        """
+        manifest = self.manifest
+        errors = []
+        for template_name, spec in manifest.items():
+            path = self.prompts_dir / template_name
+            if not path.exists():
+                errors.append(f"Template file missing: {template_name}")
+                continue
+            content = path.read_text()
+            for required_var in spec.get("required", []):
+                placeholder = "{{" + required_var + "}}"
+                if placeholder not in content:
+                    errors.append(f"Template '{template_name}' missing required variable {placeholder}")
+        if errors:
+            msg = "Startup template validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+            logger.error(msg)
+            raise RuntimeError(msg)
+        logger.info("Template validation passed: %d templates verified", len(manifest))

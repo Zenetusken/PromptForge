@@ -33,6 +33,19 @@ async def lifespan(app: FastAPI):
     app.state.provider = provider
     logger.info("Provider detected: %s", provider.name if provider else "none")
 
+    # Validate prompt templates at startup
+    from app.services.prompt_loader import PromptLoader
+    from app.services.strategy_loader import StrategyLoader
+    from app.config import PROMPTS_DIR
+    try:
+        loader = PromptLoader(PROMPTS_DIR)
+        loader.validate_all()
+        StrategyLoader(PROMPTS_DIR / "strategies").validate()
+    except RuntimeError as exc:
+        logger.error("Template validation failed: %s", exc)
+        # Don't prevent startup — log error but continue
+        # (templates might be updated before first request)
+
     yield
 
     # Shutdown: mark in-flight optimizations as interrupted

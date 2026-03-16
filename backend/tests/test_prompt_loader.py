@@ -55,3 +55,34 @@ class TestPromptLoader:
         (tmp_prompts / "static.md").write_text("Updated content")
         result2 = loader.load("static.md")
         assert result2 == "Updated content"
+
+
+class TestStartupValidation:
+    def test_validate_all_passes(self, tmp_prompts):
+        loader = PromptLoader(tmp_prompts)
+        loader.validate_all()  # should not raise
+
+    def test_validate_all_fails_missing_file(self, tmp_prompts):
+        manifest = json.loads((tmp_prompts / "manifest.json").read_text())
+        manifest["nonexistent.md"] = {"required": ["foo"], "optional": []}
+        (tmp_prompts / "manifest.json").write_text(json.dumps(manifest))
+        loader = PromptLoader(tmp_prompts)
+        with pytest.raises(RuntimeError, match="Template file missing"):
+            loader.validate_all()
+
+    def test_validate_all_fails_missing_placeholder(self, tmp_prompts):
+        (tmp_prompts / "broken.md").write_text("No placeholders here.")
+        manifest = json.loads((tmp_prompts / "manifest.json").read_text())
+        manifest["broken.md"] = {"required": ["missing_var"], "optional": []}
+        (tmp_prompts / "manifest.json").write_text(json.dumps(manifest))
+        loader = PromptLoader(tmp_prompts)
+        with pytest.raises(RuntimeError, match="missing required variable"):
+            loader.validate_all()
+
+    def test_validate_all_skips_empty_required(self, tmp_prompts):
+        (tmp_prompts / "static2.md").write_text("Just text.")
+        manifest = json.loads((tmp_prompts / "manifest.json").read_text())
+        manifest["static2.md"] = {"required": [], "optional": []}
+        (tmp_prompts / "manifest.json").write_text(json.dumps(manifest))
+        loader = PromptLoader(tmp_prompts)
+        loader.validate_all()

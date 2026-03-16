@@ -42,3 +42,14 @@ class TestStrategyLoader:
         strat_dir.mkdir()
         loader = StrategyLoader(strat_dir)
         assert loader.list_strategies() == []
+
+    def test_validate_passes(self, tmp_strategies):
+        loader = StrategyLoader(tmp_strategies)
+        loader.validate()
+
+    def test_validate_fails_empty(self, tmp_path):
+        empty = tmp_path / "strategies"
+        empty.mkdir()
+        loader = StrategyLoader(empty)
+        with pytest.raises(RuntimeError, match="No strategy files"):
+            loader.validate()

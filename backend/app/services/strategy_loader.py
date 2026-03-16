@@ -35,3 +35,12 @@ class StrategyLoader:
         if not strategies:
             return "No strategies available."
         return "\n".join(f"- {s}" for s in strategies)
+
+    def validate(self) -> None:
+        """Verify strategies directory is non-empty. Raises RuntimeError if empty."""
+        strategies = self.list_strategies()
+        if not strategies:
+            raise RuntimeError(
+                f"No strategy files found in {self.strategies_dir}. At least one .md file is required."
+            )
+        logger.info("Strategy validation passed: %d strategies available", len(strategies))
