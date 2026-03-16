@@ -46,6 +46,7 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 - `adaptation_tracker.py` — strategy affinity tracking with degenerate pattern detection
 - `heuristic_scorer.py` — 5-dimension heuristics (clarity, specificity, structure, faithfulness, conciseness) + `score_prompt()` facade + passthrough bias correction
 - `score_blender.py` — hybrid scoring engine: blends LLM + heuristic scores with z-score normalization and divergence detection
+- `preferences.py` — persistent user preferences (model selection, pipeline toggles, default strategy). File-based JSON at `data/preferences.json`. Snapshot pattern for pipeline consistency.
 - `refinement_service.py` — refinement sessions, version CRUD, branching/rollback, suggestion generation
 - `trace_logger.py` — per-phase JSONL traces to `data/traces/`, daily rotation
 - `embedding_service.py` — singleton sentence-transformers (`all-MiniLM-L6-v2`, 384-dim). Async wrappers via `aembed_single`/`aembed_texts`.
@@ -58,7 +59,7 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 - `workspace_intelligence.py` — zero-config workspace analysis (project type, tech stack from manifest files)
 
 ### Model configuration
-Model IDs are centralized in `config.py` as `MODEL_SONNET`, `MODEL_OPUS`, `MODEL_HAIKU` (default: `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`). Never hardcode model IDs in service code.
+Model IDs are centralized in `config.py` as `MODEL_SONNET`, `MODEL_OPUS`, `MODEL_HAIKU` (default: `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`). Never hardcode model IDs in service code — use `PreferencesService.resolve_model(phase, snapshot)` which maps user preferences to full model IDs.
 
 ### Providers (`backend/app/providers/`)
 - `detector.py` — auto-selects: Claude CLI → Anthropic API
@@ -74,7 +75,8 @@ Provider is detected **once at startup** and stored in `app.state.provider`. Nev
 - `feedback.py` — `POST /api/feedback`, `GET /api/feedback?optimization_id=X`
 - `refinement.py` — `POST /api/refine` (SSE), `GET /api/refine/{id}/versions`, `POST /api/refine/{id}/rollback`
 - `providers.py` — `GET /api/providers`, `GET/PATCH/DELETE /api/provider/api-key`
-- `settings.py` — `GET /api/settings` (read-only)
+- `preferences.py` — `GET /api/preferences`, `PATCH /api/preferences` (persistent user settings)
+- `settings.py` — `GET /api/settings` (read-only server config)
 - `github_auth.py` — OAuth flow (login, callback, me, logout)
 - `github_repos.py` — repo management (list, link, linked, unlink)
 - `health.py` — `GET /api/health` (status, provider, score_health, recent_errors, avg_duration_ms)
@@ -188,6 +190,7 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 - **Provider injection**: detected once at startup, injected via `app.state.provider` and MCP lifespan context.
 - **Prompt templates**: all prompts live in `prompts/` with `{{variable}}` substitution. Validated at startup. Hot-reloaded on every call. Never hardcode prompts in application code.
 - **Scorer bias mitigation**: A/B randomized presentation order + **hybrid scoring** (LLM scores blended with model-independent heuristics via `score_blender.py`). Dimension-specific weights: structure 50% heuristic, conciseness/specificity 40%, clarity 30%, faithfulness 20%. Z-score normalization applied when ≥10 historical samples exist. Divergence flags when LLM and heuristic disagree by >2.5 points.
+- **User preferences**: file-based JSON (`data/preferences.json`), loaded as frozen snapshot per pipeline run. Model selection per phase (analyzer/optimizer/scorer), pipeline toggles (explore/scoring/adaptation), default strategy. Non-configurable: explore synthesis and suggestions always use Haiku. Lean mode = explore+scoring off = 2 LLM calls only.
 - **Passthrough protocol**: MCP `synthesis_prepare_optimization` assembles the full prompt; external LLM processes it; `synthesis_save_result` persists with heuristic bias correction.
 - **Pagination envelope**: all list endpoints return `{total, count, offset, items, has_more, next_offset}`.
 - **GitHub token layer**: tokens are Fernet-encrypted at rest. `github_service.encrypt_token` / `decrypt_token` are the only entry points.
