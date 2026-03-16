@@ -1,6 +1,6 @@
 """Standalone MCP server with 3 optimization tools.
 
-Copyright 2025 Project Synthesis contributors.
+Copyright 2025-2026 Project Synthesis contributors.
 """
 
 import logging
@@ -23,6 +23,16 @@ async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Detect the LLM provider once at startup and expose it to tools."""
     global _provider
     from app.providers.detector import detect_provider
+
+    # Enable WAL mode for SQLite (same as main.py)
+    import aiosqlite
+    from app.config import DATA_DIR
+    db_path = DATA_DIR / "synthesis.db"
+    if db_path.exists():
+        async with aiosqlite.connect(str(db_path)) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA busy_timeout=5000")
+        logger.info("MCP lifespan: SQLite WAL mode enabled")
 
     _provider = detect_provider()
     if _provider:
@@ -89,6 +99,7 @@ async def synthesis_optimize(
             db=db,
             strategy_override=strategy,
             codebase_guidance=guidance,
+            repo_full_name=repo_full_name,
         ):
             if event.event == "optimization_complete":
                 result = event.data
@@ -169,8 +180,32 @@ async def synthesis_prepare_optimization(
         "adaptation_state": None,
     })
 
+    # Enforce max_context_tokens budget
+    estimated_tokens = len(assembled) // 4
+    if estimated_tokens > max_context_tokens:
+        max_chars = max_context_tokens * 4
+        assembled = assembled[:max_chars]
+        context_size_tokens = max_context_tokens
+    else:
+        context_size_tokens = estimated_tokens
+
     trace_id = str(uuid.uuid4())
-    context_size_tokens = len(assembled) // 4  # rough estimate
+
+    # Store pending optimization with raw_prompt for later save_result linkage
+    from app.database import async_session_factory
+    from app.models import Optimization
+
+    async with async_session_factory() as db:
+        pending = Optimization(
+            id=str(uuid.uuid4()),
+            raw_prompt=prompt,
+            status="pending",
+            trace_id=trace_id,
+            provider="mcp_passthrough",
+            strategy_used=strategy_name,
+        )
+        db.add(pending)
+        await db.commit()
 
     return {
         "trace_id": trace_id,
@@ -197,6 +232,8 @@ async def synthesis_save_result(
 
     Applies bias correction to self-rated scores.
     """
+    from sqlalchemy import select
+
     from app.database import async_session_factory
     from app.models import Optimization
     from app.services.heuristic_scorer import HeuristicScorer
@@ -215,49 +252,88 @@ async def synthesis_save_result(
 
         bias_corrected = HeuristicScorer.apply_bias_correction(clean_scores)
 
-        # Run heuristic checks
-        heuristic_structure = HeuristicScorer.heuristic_structure(optimized_prompt)
-        heuristic_specificity = HeuristicScorer.heuristic_specificity(optimized_prompt)
-        heuristic_scores = {
-            "structure": heuristic_structure,
-            "specificity": heuristic_specificity,
-        }
+        # Run all available heuristic checks
+        heuristic_scores: dict[str, float] = {}
+        heuristic_scores["structure"] = HeuristicScorer.heuristic_structure(optimized_prompt)
+        heuristic_scores["specificity"] = HeuristicScorer.heuristic_specificity(optimized_prompt)
+        heuristic_scores["conciseness"] = HeuristicScorer.heuristic_conciseness(optimized_prompt)
+        heuristic_scores["clarity"] = HeuristicScorer.heuristic_clarity(optimized_prompt)
+        # Note: heuristic_faithfulness requires both original and optimized prompts.
+        # Skipped here because passthrough doesn't always have the original.
+
         heuristic_flags = HeuristicScorer.detect_divergence(
             clean_scores, heuristic_scores
         )
 
-    # Determine strategy compliance
-    strategy_compliance = "unknown"
-    if strategy_used:
-        strategy_compliance = "matched"  # simplified — full check needs trace lookup
-
-    # Persist
-    opt_id = str(uuid.uuid4())
+    # Persist — look up pending optimization created by prepare, or create new
     async with async_session_factory() as db:
-        opt = Optimization(
-            id=opt_id,
-            raw_prompt="",  # not available in passthrough
-            optimized_prompt=optimized_prompt,
-            task_type=task_type or "unknown",
-            strategy_used=strategy_used or "unknown",
-            changes_summary=changes_summary or "",
-            score_clarity=bias_corrected.get("clarity"),
-            score_specificity=bias_corrected.get("specificity"),
-            score_structure=bias_corrected.get("structure"),
-            score_faithfulness=bias_corrected.get("faithfulness"),
-            score_conciseness=bias_corrected.get("conciseness"),
-            overall_score=(
-                sum(bias_corrected.values()) / max(len(bias_corrected), 1)
-                if bias_corrected
-                else None
-            ),
-            provider="mcp_passthrough",
-            model_used=model or "unknown",
-            scoring_mode="self_rated",
-            status="completed",
-            trace_id=trace_id,
+        # Look up pending optimization created by synthesis_prepare_optimization
+        result = await db.execute(
+            select(Optimization).where(Optimization.trace_id == trace_id)
         )
-        db.add(opt)
+        opt = result.scalar_one_or_none()
+
+        # Determine strategy compliance by comparing prepare vs save
+        strategy_compliance = "unknown"
+        if opt and opt.strategy_used and strategy_used:
+            if opt.strategy_used == strategy_used:
+                strategy_compliance = "matched"
+            else:
+                strategy_compliance = "partial"
+                logger.info(
+                    "Strategy mismatch: requested=%s, used=%s",
+                    opt.strategy_used,
+                    strategy_used,
+                )
+        elif strategy_used:
+            strategy_compliance = "matched"  # no prepare to compare against
+
+        overall = (
+            sum(bias_corrected.values()) / max(len(bias_corrected), 1)
+            if bias_corrected
+            else None
+        )
+
+        if opt:
+            # Update existing pending record from prepare
+            opt.optimized_prompt = optimized_prompt
+            opt.task_type = task_type or "unknown"
+            opt.strategy_used = strategy_used or opt.strategy_used or "unknown"
+            opt.changes_summary = changes_summary or ""
+            opt.score_clarity = bias_corrected.get("clarity")
+            opt.score_specificity = bias_corrected.get("specificity")
+            opt.score_structure = bias_corrected.get("structure")
+            opt.score_faithfulness = bias_corrected.get("faithfulness")
+            opt.score_conciseness = bias_corrected.get("conciseness")
+            opt.overall_score = overall
+            opt.model_used = model or "unknown"
+            opt.scoring_mode = "self_rated"
+            opt.status = "completed"
+            opt_id = opt.id
+        else:
+            # No prepare was called — create new record (standalone save)
+            opt_id = str(uuid.uuid4())
+            opt = Optimization(
+                id=opt_id,
+                raw_prompt="",
+                optimized_prompt=optimized_prompt,
+                task_type=task_type or "unknown",
+                strategy_used=strategy_used or "unknown",
+                changes_summary=changes_summary or "",
+                score_clarity=bias_corrected.get("clarity"),
+                score_specificity=bias_corrected.get("specificity"),
+                score_structure=bias_corrected.get("structure"),
+                score_faithfulness=bias_corrected.get("faithfulness"),
+                score_conciseness=bias_corrected.get("conciseness"),
+                overall_score=overall,
+                provider="mcp_passthrough",
+                model_used=model or "unknown",
+                scoring_mode="self_rated",
+                status="completed",
+                trace_id=trace_id,
+            )
+            db.add(opt)
+
         await db.commit()
 
     return {
