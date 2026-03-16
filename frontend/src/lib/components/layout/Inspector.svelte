@@ -74,10 +74,10 @@
           </div>
         {/if}
 
-        {#if forgeStore.result?.primary_framework}
+        {#if forgeStore.result?.strategy_used}
           <div class="strategy-section">
             <div class="section-heading" style="margin-bottom: 4px;">Strategy</div>
-            <span class="strategy-value">{forgeStore.result.primary_framework}</span>
+            <span class="strategy-value">{forgeStore.result.strategy_used}</span>
           </div>
         {/if}
 
