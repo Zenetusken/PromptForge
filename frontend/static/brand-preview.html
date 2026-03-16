@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Project Synthesis — Logo Suite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #06060c; color: #e4e4f0; font-family: 'Space Grotesk', sans-serif; padding: 40px; }
+  h1 { font-family: 'Syne', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; color: #8b8ba8; margin-bottom: 32px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 48px; }
+  .card { border: 1px solid rgba(74, 74, 106, 0.15); padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .card-label { font-family: 'Syne', sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: #7a7a9e; }
+  .card-use { font-size: 11px; color: #8b8ba8; text-align: center; line-height: 1.5; }
+  .on-light { background: #e4e4f0; border-color: rgba(74, 74, 106, 0.3); }
+  .on-light .card-label, .on-light .card-use { color: #06060c; }
+  hr { border: none; border-top: 1px solid rgba(74, 74, 106, 0.15); margin: 8px 0 32px; }
+</style>
+</head>
+<body>
+
+<h1>Project Synthesis — Logo Suite Preview</h1>
+<hr>
+
+<h1>1. Icon Mark (Favicon / App Icon)</h1>
+<div class="grid">
+  <div class="card">
+    <svg width="64" height="64" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+        <clipPath id="th_g1"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_g1"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#06060c"/>
+      <g clip-path="url(#th_g1)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g1)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_g1)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g1)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#06060c"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#00e5ff" opacity="0.5"/>
+      <rect x="18" y="17" width="4" height="0.8" fill="#a855f7" opacity="0.4"/>
+    </svg>
+    <div class="card-label">64px — Favicon</div>
+    <div class="card-use">Browser tab, bookmarks bar</div>
+  </div>
+  <div class="card">
+    <svg width="128" height="128" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+        <clipPath id="th_g2"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_g2"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#06060c"/>
+      <g clip-path="url(#th_g2)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g2)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_g2)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g2)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#06060c"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#00e5ff" opacity="0.5"/>
+      <rect x="18" y="17" width="4" height="0.8" fill="#a855f7" opacity="0.4"/>
+    </svg>
+    <div class="card-label">128px — App Icon</div>
+    <div class="card-use">Desktop shortcut, PWA icon, Docker hub</div>
+  </div>
+  <div class="card on-light">
+    <svg width="64" height="64" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+        <clipPath id="th_g3"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_g3"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#e4e4f0"/>
+      <g clip-path="url(#th_g3)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g3)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_g3)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g3)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#e4e4f0"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#00e5ff" opacity="0.5"/>
+      <rect x="18" y="17" width="4" height="0.8" fill="#a855f7" opacity="0.4"/>
+    </svg>
+    <div class="card-label">64px — Light Background</div>
+    <div class="card-use">GitHub repo avatar, light-mode contexts</div>
+  </div>
+</div>
+
+<h1>2. Full Logotype (Icon + Wordmark)</h1>
+<div class="grid">
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <svg width="36" height="36" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="g4" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+        <clipPath id="th_g4"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_g4"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#06060c"/>
+      <g clip-path="url(#th_g4)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g4)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_g4)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g4)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#06060c"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#00e5ff" opacity="0.5"/>
+      <rect x="18" y="17" width="4" height="0.8" fill="#a855f7" opacity="0.4"/>
+    </svg>
+      <div>
+        <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:800;letter-spacing:0.08em;color:#e4e4f0;">PROJECT</div>
+        <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:800;letter-spacing:0.08em;background:linear-gradient(135deg,#00e5ff,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">SYNTHESIS</div>
+      </div>
+    </div>
+    <div class="card-label">Stacked Wordmark</div>
+    <div class="card-use">Login page, README header, documentation</div>
+  </div>
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <svg width="28" height="28" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="g5" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+        <clipPath id="th_g5"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_g5"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#06060c"/>
+      <g clip-path="url(#th_g5)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g5)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_g5)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g5)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#06060c"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#00e5ff" opacity="0.5"/>
+      <rect x="18" y="17" width="4" height="0.8" fill="#a855f7" opacity="0.4"/>
+    </svg>
+      <div>
+        <div style="display:flex;gap:4px;"><span style="font-family:'Syne',sans-serif;font-size:11px;font-weight:800;letter-spacing:0.1em;color:#e4e4f0;">PROJECT</span><span style="font-family:'Syne',sans-serif;font-size:11px;font-weight:800;letter-spacing:0.1em;background:linear-gradient(135deg,#00e5ff,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">SYNTHESIS</span></div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:#7a7a9e;letter-spacing:0.06em;">AI-Powered Prompt Optimization</div>
+      </div>
+    </div>
+    <div class="card-label">Inline Wordmark + Tagline</div>
+    <div class="card-use">Header bar, splash screen, About dialog</div>
+  </div>
+</div>
+
+<h1>3. Wordmark Only</h1>
+<div class="grid">
+  <div class="card">
+    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800;letter-spacing:0.1em;"><span style="color:#e4e4f0;">PROJECT </span><span style="background:linear-gradient(135deg,#00e5ff,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">SYNTHESIS</span></div>
+    <div class="card-label">Gradient Wordmark</div>
+    <div class="card-use">Status bar, compact headers</div>
+  </div>
+  <div class="card">
+    <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:800;letter-spacing:0.1em;"><span style="color:#00e5ff;">PROJECT </span><span style="color:#a855f7;">SYNTHESIS</span></div>
+    <div class="card-label">Dual-Tone Wordmark</div>
+    <div class="card-use">Fallback for email, print</div>
+  </div>
+  <div class="card">
+    <div style="font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.1em;background:linear-gradient(135deg,#00e5ff,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">SYNTHESIS</div>
+    <div class="card-label">Short Mark</div>
+    <div class="card-use">Tab bar, MCP tool prefix, compact UI</div>
+  </div>
+</div>
+
+<h1>4. Monochrome Variants</h1>
+<div class="grid">
+  <div class="card">
+    <svg width="64" height="64" viewBox="0 0 32 32">
+      <defs>
+        <clipPath id="th_m64"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_m64"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#06060c"/>
+      <g clip-path="url(#th_m64)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="#00e5ff" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_m64)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="#00e5ff" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#06060c"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#00e5ff" opacity="0.4"/>
+    </svg>
+    <div class="card-label">Mono Cyan</div>
+    <div class="card-use">Terminal, CLI branding</div>
+  </div>
+  <div class="card">
+    <svg width="64" height="64" viewBox="0 0 32 32">
+      <defs>
+        <clipPath id="th_m64"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_m64"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#06060c"/>
+      <g clip-path="url(#th_m64)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="#e4e4f0" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_m64)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="#e4e4f0" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#06060c"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#e4e4f0" opacity="0.4"/>
+    </svg>
+    <div class="card-label">Mono White</div>
+    <div class="card-use">High contrast, accessibility</div>
+  </div>
+  <div class="card on-light">
+    <svg width="64" height="64" viewBox="0 0 32 32">
+      <defs>
+        <clipPath id="th_m64"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_m64"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#e4e4f0"/>
+      <g clip-path="url(#th_m64)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="#06060c" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_m64)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="#06060c" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#e4e4f0"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#06060c" opacity="0.4"/>
+    </svg>
+    <div class="card-label">Mono Dark (Inverted)</div>
+    <div class="card-use">Light backgrounds, B&W print</div>
+  </div>
+</div>
+
+<h1>5. In-Context Usage</h1>
+<div class="grid">
+  <div class="card" style="padding:0;">
+    <div style="width:100%;height:20px;background:#0c0c16;border-top:1px solid rgba(74,74,106,0.15);display:flex;align-items:center;padding:0 6px;gap:6px;">
+      <svg width="14" height="14" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="g10" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+        <clipPath id="th_g10"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_g10"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#0c0c16"/>
+      <g clip-path="url(#th_g10)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g10)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_g10)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g10)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#0c0c16"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#00e5ff" opacity="0.5"/>
+      <rect x="18" y="17" width="4" height="0.8" fill="#a855f7" opacity="0.4"/>
+    </svg>
+      <span style="font-family:'Syne',sans-serif;font-size:9px;font-weight:700;letter-spacing:0.08em;color:#7a7a9e;text-transform:uppercase;">Synthesis</span>
+      <span style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:#7a7a9e;">v0.1.0</span>
+      <span style="flex:1"></span>
+      <span style="font-size:9px;font-family:monospace;color:#00e5ff;border:1px solid rgba(0,229,255,0.3);padding:0 4px;">CLI</span>
+      <span style="font-size:9px;font-family:monospace;color:#7a7a9e;border:1px solid rgba(74,74,106,0.15);padding:0 4px;">Ctrl+K</span>
+    </div>
+    <div class="card-label" style="padding:12px 0 8px;">Status Bar Integration</div>
+  </div>
+  <div class="card" style="padding:48px 24px;">
+    <svg width="48" height="48" viewBox="0 0 32 32">
+      <defs>
+        <linearGradient id="g11" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+        <clipPath id="th_g11"><rect x="0" y="0" width="32" height="15"/></clipPath>
+        <clipPath id="bh_g11"><rect x="0" y="17" width="32" height="15"/></clipPath>
+      </defs>
+      <rect width="32" height="32" fill="#06060c"/>
+      <g clip-path="url(#th_g11)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g11)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <g clip-path="url(#bh_g11)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#g11)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
+      <rect x="0" y="15" width="32" height="2" fill="#06060c"/>
+      <rect x="8" y="15.5" width="16" height="1" fill="#00e5ff" opacity="0.5"/>
+      <rect x="18" y="17" width="4" height="0.8" fill="#a855f7" opacity="0.4"/>
+    </svg>
+    <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:800;letter-spacing:0.1em;color:#e4e4f0;margin-top:8px;">PROJECT <span style="background:linear-gradient(135deg,#00e5ff,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">SYNTHESIS</span></div>
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:10px;color:#7a7a9e;letter-spacing:0.05em;">AI-Powered Prompt Optimization</div>
+    <div class="card-label" style="margin-top:16px;">Loading / Splash Screen</div>
+  </div>
+</div>
+
+</body>
+</html>
