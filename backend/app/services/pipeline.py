@@ -148,6 +148,8 @@ class PipelineOrchestrator:
         codebase_context: str | None = None,
         adaptation_state: str | None = None,
         context_sources: dict[str, bool] | None = None,
+        repo_full_name: str | None = None,
+        github_token: str | None = None,
     ) -> AsyncGenerator[PipelineEvent, None]:
         """Execute the full pipeline, yielding SSE events."""
         trace_id = str(uuid.uuid4())
@@ -157,6 +159,38 @@ class PipelineOrchestrator:
         yield PipelineEvent(event="optimization_start", data={"trace_id": trace_id})
 
         try:
+            # ---------------------------------------------------------------
+            # Phase 0: Explore (optional — codebase context injection)
+            # ---------------------------------------------------------------
+            if repo_full_name and github_token and codebase_context is None:
+                try:
+                    from app.services.codebase_explorer import CodebaseExplorer
+                    from app.services.embedding_service import EmbeddingService
+                    from app.services.github_client import GitHubClient
+
+                    explorer = CodebaseExplorer(
+                        prompt_loader=self.prompt_loader,
+                        github_client=GitHubClient(),
+                        embedding_service=EmbeddingService(),
+                        provider=provider,
+                    )
+                    branch = "main"
+                    codebase_context = await explorer.explore(
+                        raw_prompt=raw_prompt,
+                        repo_full_name=repo_full_name,
+                        branch=branch,
+                        token=github_token,
+                    )
+                    if codebase_context:
+                        logger.info(
+                            "Explore context injected (%d chars) trace_id=%s",
+                            len(codebase_context), trace_id,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Explore failed, proceeding without codebase context: %s", exc,
+                    )
+
             # ---------------------------------------------------------------
             # Phase 1: Analyze
             # ---------------------------------------------------------------
@@ -327,6 +361,34 @@ class PipelineOrchestrator:
             })
 
             # ---------------------------------------------------------------
+            # Intent drift gate
+            # ---------------------------------------------------------------
+            warnings: list[str] = []
+            try:
+                import numpy as np
+                from app.services.embedding_service import EmbeddingService
+
+                drift_svc = EmbeddingService()
+                orig_vec = drift_svc.embed_single(raw_prompt)
+                opt_vec = drift_svc.embed_single(optimization.optimized_prompt)
+                similarity = float(
+                    np.dot(orig_vec, opt_vec)
+                    / (np.linalg.norm(orig_vec) * np.linalg.norm(opt_vec) + 1e-9)
+                )
+
+                if similarity < 0.5:
+                    warnings.append(
+                        f"Intent drift detected: semantic similarity {similarity:.2f} "
+                        f"between original and optimized prompt is below threshold (0.50)"
+                    )
+                    logger.warning(
+                        "Intent drift detected: similarity=%.2f trace_id=%s",
+                        similarity, trace_id,
+                    )
+            except Exception as exc:
+                logger.debug("Intent drift check skipped: %s", exc)
+
+            # ---------------------------------------------------------------
             # Persist to DB
             # ---------------------------------------------------------------
             duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -379,6 +441,7 @@ class PipelineOrchestrator:
                 duration_ms=duration_ms,
                 status="completed",
                 context_sources=context_sources or {},
+                warnings=warnings if warnings else [],
             )
 
             yield PipelineEvent(
