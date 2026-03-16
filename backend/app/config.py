@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # --- Explore Cache ---
     EXPLORE_RESULT_CACHE_TTL: int = 3600  # seconds
 
+    # --- Models ---
+    MODEL_SONNET: str = "claude-sonnet-4-6"
+    MODEL_OPUS: str = "claude-opus-4-6"
+    MODEL_HAIKU: str = "claude-haiku-4-5"
+
     # --- Traces ---
     TRACE_RETENTION_DAYS: int = 30
 

@@ -446,3 +446,118 @@ class TestHealthMetrics:
         assert "last_n_stddev" in data["score_health"]
         assert "count" in data["score_health"]
         assert data["avg_duration_ms"] is not None
+
+    async def test_health_includes_recent_errors(self, app_client, db_session):
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        assert "recent_errors" in data
+        assert "last_hour" in data["recent_errors"]
+        assert "last_24h" in data["recent_errors"]
+
+    async def test_health_counts_failed_optimizations(self, app_client, db_session):
+        from app.models import Optimization
+
+        db_session.add(Optimization(
+            id="fail-1", raw_prompt="p", status="failed", provider="mock",
+        ))
+        db_session.add(Optimization(
+            id="fail-2", raw_prompt="p", status="failed", provider="mock",
+        ))
+        db_session.add(Optimization(
+            id="ok-1", raw_prompt="p", optimized_prompt="b",
+            status="completed", provider="mock",
+        ))
+        await db_session.commit()
+
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        assert data["recent_errors"]["last_hour"] == 2
+        assert data["recent_errors"]["last_24h"] == 2
+
+    async def test_health_phase_durations(self, app_client, db_session):
+        from app.models import Optimization
+
+        db_session.add(Optimization(
+            id="pd-1", raw_prompt="p", optimized_prompt="b",
+            status="completed", provider="mock", duration_ms=5000,
+            tokens_by_phase={"analyze_ms": 1000, "optimize_ms": 3000, "score_ms": 1000},
+        ))
+        db_session.add(Optimization(
+            id="pd-2", raw_prompt="p", optimized_prompt="b",
+            status="completed", provider="mock", duration_ms=7000,
+            tokens_by_phase={"analyze_ms": 2000, "optimize_ms": 4000, "score_ms": 1000},
+        ))
+        await db_session.commit()
+
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        avg = data["avg_duration_ms"]
+        assert isinstance(avg, dict)
+        assert avg["analyze_ms"] == 1500
+        assert avg["optimize_ms"] == 3500
+        assert avg["score_ms"] == 1000
+        assert avg["total"] == 6000
+
+
+class TestApiKeyManagement:
+    async def test_get_api_key_not_configured(self, app_client):
+        from app.config import settings
+        original = settings.ANTHROPIC_API_KEY
+        settings.ANTHROPIC_API_KEY = ""
+        try:
+            resp = await app_client.get("/api/provider/api-key")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["configured"] is False
+        finally:
+            settings.ANTHROPIC_API_KEY = original
+
+    async def test_set_and_get_api_key(self, app_client):
+        from app.config import settings, DATA_DIR
+        original = settings.ANTHROPIC_API_KEY
+        settings.ANTHROPIC_API_KEY = ""
+        try:
+            resp = await app_client.patch(
+                "/api/provider/api-key",
+                json={"api_key": "sk-test-key-1234567890"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["masked_key"] == "sk-...7890"
+
+            # Verify GET returns configured
+            resp = await app_client.get("/api/provider/api-key")
+            assert resp.json()["configured"] is True
+            assert resp.json()["masked_key"] == "sk-...7890"
+        finally:
+            settings.ANTHROPIC_API_KEY = original
+            # Clean up credential file
+            cred_file = DATA_DIR / ".api_credentials"
+            if cred_file.exists():
+                cred_file.unlink()
+
+    async def test_delete_api_key(self, app_client):
+        from app.config import settings, DATA_DIR
+        original = settings.ANTHROPIC_API_KEY
+        settings.ANTHROPIC_API_KEY = ""
+        try:
+            # Set first
+            await app_client.patch(
+                "/api/provider/api-key",
+                json={"api_key": "sk-test-key-1234567890"},
+            )
+            # Delete
+            resp = await app_client.delete("/api/provider/api-key")
+            assert resp.status_code == 200
+            assert resp.json()["configured"] is False
+        finally:
+            settings.ANTHROPIC_API_KEY = original
+            cred_file = DATA_DIR / ".api_credentials"
+            if cred_file.exists():
+                cred_file.unlink()
+
+    async def test_set_invalid_key_rejected(self, app_client):
+        resp = await app_client.patch(
+            "/api/provider/api-key",
+            json={"api_key": "not-a-valid-key"},
+        )
+        assert resp.status_code == 400

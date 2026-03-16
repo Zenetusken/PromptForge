@@ -1,7 +1,15 @@
-"""Provider info endpoint."""
+"""Provider info and API key management endpoints."""
 
-from fastapi import APIRouter, Request
+import base64
+import hashlib
+import logging
 
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+
+from app.config import settings, DATA_DIR
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["providers"])
 
 
@@ -12,3 +20,83 @@ async def get_providers(request: Request):
         "active_provider": provider.name if provider else None,
         "available": ["claude_cli", "anthropic_api", "mcp_passthrough"],
     }
+
+
+@router.get("/provider/api-key")
+async def get_api_key():
+    """Return masked API key (last 4 chars only)."""
+    key = _read_api_key()
+    if not key:
+        return {"configured": False, "masked_key": None}
+    masked = f"sk-...{key[-4:]}" if len(key) > 4 else "****"
+    return {"configured": True, "masked_key": masked}
+
+
+class ApiKeyRequest(BaseModel):
+    api_key: str
+
+
+@router.patch("/provider/api-key")
+async def set_api_key(body: ApiKeyRequest, request: Request):
+    """Set or update the Anthropic API key. Persists encrypted to disk."""
+    key = body.api_key.strip()
+    if not key.startswith("sk-"):
+        raise HTTPException(400, "Invalid API key format")
+
+    _write_api_key(key)
+
+    # Hot-reload: update the provider if we now have an API key
+    if not getattr(request.app.state, "provider", None):
+        try:
+            from app.providers.anthropic_api import AnthropicAPIProvider
+            request.app.state.provider = AnthropicAPIProvider(api_key=key)
+            logger.info("Provider hot-reloaded: anthropic_api")
+        except Exception:
+            logger.warning("Could not hot-reload provider after API key set")
+
+    return {"configured": True, "masked_key": f"sk-...{key[-4:]}"}
+
+
+@router.delete("/provider/api-key")
+async def delete_api_key():
+    """Remove the stored API key."""
+    cred_file = DATA_DIR / ".api_credentials"
+    if cred_file.exists():
+        cred_file.unlink()
+    return {"configured": False, "masked_key": None}
+
+
+def _read_api_key() -> str | None:
+    """Read API key: check env var first, then encrypted file."""
+    if settings.ANTHROPIC_API_KEY:
+        return settings.ANTHROPIC_API_KEY
+    cred_file = DATA_DIR / ".api_credentials"
+    if not cred_file.exists():
+        return None
+    try:
+        from cryptography.fernet import Fernet
+
+        secret = settings.resolve_secret_key()
+        fernet_key = base64.urlsafe_b64encode(
+            hashlib.sha256(secret.encode()).digest()
+        )
+        f = Fernet(fernet_key)
+        return f.decrypt(cred_file.read_bytes()).decode()
+    except Exception:
+        logger.warning("Failed to decrypt API credentials")
+        return None
+
+
+def _write_api_key(key: str) -> None:
+    """Encrypt and persist API key to disk."""
+    from cryptography.fernet import Fernet
+
+    secret = settings.resolve_secret_key()
+    fernet_key = base64.urlsafe_b64encode(
+        hashlib.sha256(secret.encode()).digest()
+    )
+    f = Fernet(fernet_key)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    cred_file = DATA_DIR / ".api_credentials"
+    cred_file.write_bytes(f.encrypt(key.encode()))
+    cred_file.chmod(0o600)

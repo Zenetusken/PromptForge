@@ -18,6 +18,8 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)):
     # Pipeline metrics
     score_health = None
     avg_duration_ms = None
+    recent_errors = {"last_hour": 0, "last_24h": 0}
+    phase_durations: dict[str, int] = {}
     try:
         svc = OptimizationService(db)
         stats = await svc.get_score_distribution()
@@ -40,6 +42,12 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)):
         durations = [opt.duration_ms for opt in result["items"] if opt.duration_ms]
         if durations:
             avg_duration_ms = round(sum(durations) / len(durations))
+
+        # Recent error counts
+        recent_errors = await svc.get_recent_error_counts()
+
+        # Per-phase average durations
+        phase_durations = await svc.get_avg_duration_by_phase()
     except Exception:
         pass  # Non-fatal — health endpoint should always respond
 
@@ -48,5 +56,6 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)):
         "version": __version__,
         "provider": provider.name if provider else None,
         "score_health": score_health,
-        "avg_duration_ms": avg_duration_ms,
+        "avg_duration_ms": phase_durations if phase_durations else avg_duration_ms,
+        "recent_errors": recent_errors,
     }

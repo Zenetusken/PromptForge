@@ -28,18 +28,11 @@ from app.schemas.pipeline_contracts import (
     PipelineEvent,
     ScoreResult,
 )
+from app.config import settings
 from app.services.prompt_loader import PromptLoader
 from app.services.strategy_loader import StrategyLoader
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-MODEL_SONNET = "claude-sonnet-4-20250514"
-MODEL_OPUS = "claude-opus-4-0-20250514"
-MODEL_HAIKU = "claude-haiku-4-20250414"
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +177,7 @@ class RefinementService:
         })
 
         analysis: AnalysisResult = await self.provider.complete_parsed(
-            model=MODEL_SONNET,
+            model=settings.MODEL_SONNET,
             system_prompt=system_prompt,
             user_message=analyze_msg,
             output_format=AnalysisResult,
@@ -211,7 +204,7 @@ class RefinementService:
         })
 
         refined: OptimizationResult = await self.provider.complete_parsed(
-            model=MODEL_OPUS,
+            model=settings.MODEL_OPUS,
             system_prompt=system_prompt,
             user_message=refine_msg,
             output_format=OptimizationResult,
@@ -243,7 +236,7 @@ class RefinementService:
         scorer_msg = f"## Prompt A\n\n{prompt_a}\n\n## Prompt B\n\n{prompt_b}"
 
         scores: ScoreResult = await self.provider.complete_parsed(
-            model=MODEL_SONNET,
+            model=settings.MODEL_SONNET,
             system_prompt=scoring_system,
             user_message=scorer_msg,
             output_format=ScoreResult,
@@ -431,7 +424,7 @@ class RefinementService:
         system_prompt = self.prompt_loader.load("agent-guidance.md")
 
         result: SuggestionsOutput = await self.provider.complete_parsed(
-            model=MODEL_HAIKU,
+            model=settings.MODEL_HAIKU,
             system_prompt=system_prompt,
             user_message=suggest_msg,
             output_format=SuggestionsOutput,

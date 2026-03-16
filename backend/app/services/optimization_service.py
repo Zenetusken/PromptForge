@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import asc, desc, func, select
@@ -177,3 +178,74 @@ class OptimizationService:
             }
 
         return distribution
+
+    # ------------------------------------------------------------------
+    # Error counts
+    # ------------------------------------------------------------------
+
+    async def get_recent_error_counts(self) -> dict[str, int]:
+        """Count failed optimizations in the last hour and last 24 hours."""
+        now = datetime.now(timezone.utc)
+        one_hour_ago = now - timedelta(hours=1)
+        one_day_ago = now - timedelta(hours=24)
+
+        last_hour = (
+            await self._session.execute(
+                select(func.count(Optimization.id)).where(
+                    Optimization.status == "failed",
+                    Optimization.created_at >= one_hour_ago,
+                )
+            )
+        ).scalar() or 0
+
+        last_24h = (
+            await self._session.execute(
+                select(func.count(Optimization.id)).where(
+                    Optimization.status == "failed",
+                    Optimization.created_at >= one_day_ago,
+                )
+            )
+        ).scalar() or 0
+
+        return {"last_hour": last_hour, "last_24h": last_24h}
+
+    # ------------------------------------------------------------------
+    # Per-phase average durations
+    # ------------------------------------------------------------------
+
+    async def get_avg_duration_by_phase(self, limit: int = 50) -> dict[str, int]:
+        """Get average per-phase duration from recent completed optimizations.
+
+        Reads the ``tokens_by_phase`` JSON column which stores phase timing
+        data (e.g. ``{"analyze_ms": N, "optimize_ms": N, "score_ms": N}``).
+        Also computes total average from ``duration_ms``.
+        """
+        result = await self._session.execute(
+            select(Optimization.tokens_by_phase, Optimization.duration_ms)
+            .where(
+                Optimization.status == "completed",
+                Optimization.tokens_by_phase.isnot(None),
+            )
+            .order_by(desc(Optimization.created_at))
+            .limit(limit)
+        )
+        rows = result.all()
+        if not rows:
+            return {}
+
+        totals: dict[str, list[int]] = {}
+        total_durations: list[int] = []
+        for phase_data, duration_ms in rows:
+            if isinstance(phase_data, dict):
+                for key, val in phase_data.items():
+                    if isinstance(val, (int, float)):
+                        totals.setdefault(key, []).append(int(val))
+            if duration_ms:
+                total_durations.append(duration_ms)
+
+        avg: dict[str, int] = {}
+        for key, vals in totals.items():
+            avg[key] = round(sum(vals) / len(vals))
+        if total_durations:
+            avg["total"] = round(sum(total_durations) / len(total_durations))
+        return avg

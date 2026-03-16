@@ -9,7 +9,13 @@ export interface HealthResponse {
   version: string;
   provider: string | null;
   score_health: { last_n_mean: number; last_n_stddev: number; count: number; clustering_warning: boolean } | null;
-  avg_duration_ms: number | null;
+  avg_duration_ms: number | Record<string, number> | null;
+  recent_errors: { last_hour: number; last_24h: number };
+}
+
+export interface ApiKeyStatus {
+  configured: boolean;
+  masked_key: string | null;
 }
 
 export interface DimensionScores {
@@ -313,3 +319,14 @@ export const rollbackRefinement = (optimizationId: string, toVersion: number) =>
     method: 'POST',
     body: JSON.stringify({ to_version: toVersion }),
   });
+
+// ---- API Key Management ----
+
+export const getApiKey = () => apiFetch<ApiKeyStatus>('/provider/api-key');
+export const setApiKey = (apiKey: string) =>
+  apiFetch<ApiKeyStatus>('/provider/api-key', {
+    method: 'PATCH',
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+export const deleteApiKey = () =>
+  apiFetch<ApiKeyStatus>('/provider/api-key', { method: 'DELETE' });

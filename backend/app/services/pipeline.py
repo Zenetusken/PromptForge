@@ -28,7 +28,7 @@ from app.schemas.pipeline_contracts import (
     PipelineResult,
     ScoreResult,
 )
-from app.config import DATA_DIR
+from app.config import DATA_DIR, settings
 from app.services.prompt_loader import PromptLoader
 from app.services.strategy_loader import StrategyLoader
 from app.services.trace_logger import TraceLogger
@@ -48,9 +48,6 @@ CODING_KEYWORDS: set[str] = {
     "script", "endpoint", "database", "module", "import",
 }
 
-# Model tiers
-MODEL_SONNET = "claude-sonnet-4-20250514"
-MODEL_OPUS = "claude-opus-4-0-20250514"
 
 
 class PipelineOrchestrator:
@@ -147,6 +144,8 @@ class PipelineOrchestrator:
 
         yield PipelineEvent(event="optimization_start", data={"trace_id": trace_id})
 
+        phase_durations: dict[str, int] = {}
+
         try:
             # ---------------------------------------------------------------
             # Phase 0: Explore (optional — codebase context injection)
@@ -199,18 +198,21 @@ class PipelineOrchestrator:
                 system_prompt=system_prompt,
                 user_message=analyze_msg,
                 output_format=AnalysisResult,
-                model=MODEL_SONNET,
+                model=settings.MODEL_SONNET,
                 effort="medium",
             )
 
             yield PipelineEvent(event="status", data={"stage": "analyze", "state": "complete"})
 
+            analyze_duration = int((time.monotonic() - phase_start) * 1000)
+            phase_durations["analyze_ms"] = analyze_duration
+
             if self.trace_logger:
                 self.trace_logger.log_phase(
                     trace_id=trace_id, phase="analyze",
-                    duration_ms=int((time.monotonic() - phase_start) * 1000),
+                    duration_ms=analyze_duration,
                     tokens_in=0, tokens_out=0,
-                    model=MODEL_SONNET, provider=provider.name,
+                    model=settings.MODEL_SONNET, provider=provider.name,
                     result={"task_type": analysis.task_type, "strategy": analysis.selected_strategy},
                 )
 
@@ -260,19 +262,22 @@ class PipelineOrchestrator:
                 system_prompt=system_prompt,
                 user_message=optimize_msg,
                 output_format=OptimizationResult,
-                model=MODEL_OPUS,
+                model=settings.MODEL_OPUS,
                 effort="high",
                 max_tokens=dynamic_max_tokens,
             )
 
             yield PipelineEvent(event="status", data={"stage": "optimize", "state": "complete"})
 
+            optimize_duration = int((time.monotonic() - phase_start) * 1000)
+            phase_durations["optimize_ms"] = optimize_duration
+
             if self.trace_logger:
                 self.trace_logger.log_phase(
                     trace_id=trace_id, phase="optimize",
-                    duration_ms=int((time.monotonic() - phase_start) * 1000),
+                    duration_ms=optimize_duration,
                     tokens_in=0, tokens_out=0,
-                    model=MODEL_OPUS, provider=provider.name,
+                    model=settings.MODEL_OPUS, provider=provider.name,
                     result={"strategy_used": optimization.strategy_used},
                 )
 
@@ -311,18 +316,21 @@ class PipelineOrchestrator:
                 system_prompt=scoring_system,
                 user_message=scorer_msg,
                 output_format=ScoreResult,
-                model=MODEL_SONNET,
+                model=settings.MODEL_SONNET,
                 effort="medium",
             )
 
             yield PipelineEvent(event="status", data={"stage": "score", "state": "complete"})
 
+            score_duration = int((time.monotonic() - phase_start) * 1000)
+            phase_durations["score_ms"] = score_duration
+
             if self.trace_logger:
                 self.trace_logger.log_phase(
                     trace_id=trace_id, phase="score",
-                    duration_ms=int((time.monotonic() - phase_start) * 1000),
+                    duration_ms=score_duration,
                     tokens_in=0, tokens_out=0,
-                    model=MODEL_SONNET, provider=provider.name,
+                    model=settings.MODEL_SONNET, provider=provider.name,
                 )
 
             # Map A/B scores back to original/optimized
@@ -395,7 +403,7 @@ class PipelineOrchestrator:
                 score_conciseness=optimized_scores.conciseness,
                 overall_score=optimized_scores.overall,
                 provider=provider.name,
-                model_used=MODEL_OPUS,
+                model_used=settings.MODEL_OPUS,
                 scoring_mode="independent",
                 duration_ms=duration_ms,
                 status="completed",
@@ -403,7 +411,7 @@ class PipelineOrchestrator:
                 context_sources=context_sources or {},
                 original_scores=original_scores.model_dump(),
                 score_deltas=deltas,
-                tokens_by_phase={},
+                tokens_by_phase=phase_durations,
             )
             db.add(db_opt)
             await db.commit()
@@ -424,7 +432,7 @@ class PipelineOrchestrator:
                 score_deltas=deltas,
                 overall_score=optimized_scores.overall,
                 provider=provider.name,
-                model_used=MODEL_OPUS,
+                model_used=settings.MODEL_OPUS,
                 scoring_mode="independent",
                 duration_ms=duration_ms,
                 status="completed",

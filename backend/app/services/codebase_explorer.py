@@ -195,7 +195,7 @@ class CodebaseExplorer:
 
         # 9. Single-shot synthesis via provider
         result: ExploreOutput = await self._provider.complete_parsed(
-            model="claude-haiku-4-5",
+            model=settings.MODEL_HAIKU,
             system_prompt=EXPLORE_SYSTEM_PROMPT,
             user_message=rendered,
             output_format=ExploreOutput,

@@ -3,8 +3,8 @@
   import { githubStore } from '$lib/stores/github.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
-  import { getSettings, getProviders, getHistory, getOptimization } from '$lib/api/client';
-  import type { SettingsResponse, ProvidersResponse, HistoryItem } from '$lib/api/client';
+  import { getSettings, getProviders, getHistory, getOptimization, getApiKey, setApiKey, deleteApiKey } from '$lib/api/client';
+  import type { SettingsResponse, ProvidersResponse, HistoryItem, ApiKeyStatus } from '$lib/api/client';
 
   type Activity = 'editor' | 'history' | 'github' | 'settings';
 
@@ -29,14 +29,45 @@
   let settings = $state<SettingsResponse | null>(null);
   let providers = $state<ProvidersResponse | null>(null);
 
+  // ---- API Key state ----
+  let apiKeyStatus = $state<ApiKeyStatus | null>(null);
+  let apiKeyInput = $state('');
+  let apiKeyError = $state<string | null>(null);
+  let apiKeySaving = $state(false);
+
   onMount(async () => {
     // Pre-fetch for settings panel (best effort)
     try {
-      [settings, providers] = await Promise.all([getSettings(), getProviders()]);
+      [settings, providers, apiKeyStatus] = await Promise.all([
+        getSettings(), getProviders(), getApiKey(),
+      ]);
     } catch {
       // Silently ignore — backend may not be running
     }
   });
+
+  async function handleSetApiKey() {
+    if (!apiKeyInput.trim()) return;
+    apiKeySaving = true;
+    apiKeyError = null;
+    try {
+      apiKeyStatus = await setApiKey(apiKeyInput.trim());
+      apiKeyInput = '';
+    } catch (err: any) {
+      apiKeyError = err?.message || 'Failed to set API key';
+    } finally {
+      apiKeySaving = false;
+    }
+  }
+
+  async function handleDeleteApiKey() {
+    apiKeyError = null;
+    try {
+      apiKeyStatus = await deleteApiKey();
+    } catch (err: any) {
+      apiKeyError = err?.message || 'Failed to remove API key';
+    }
+  }
 
   // Fetch history when the history panel becomes active
   $effect(() => {
@@ -225,6 +256,51 @@
               </div>
             {/if}
           </div>
+        </div>
+
+        <!-- API Key -->
+        <div class="sub-section">
+          <span class="sub-heading">API Key</span>
+          <div class="info-block">
+            <div class="info-row">
+              <span class="info-key">Status</span>
+              <span class="info-val font-mono" style="color: {apiKeyStatus?.configured ? 'var(--color-neon-green)' : 'var(--color-text-dim)'};">
+                {apiKeyStatus?.configured ? 'configured' : 'not set'}
+              </span>
+            </div>
+            {#if apiKeyStatus?.masked_key}
+              <div class="info-row">
+                <span class="info-key">Key</span>
+                <span class="info-val font-mono">{apiKeyStatus.masked_key}</span>
+              </div>
+            {/if}
+          </div>
+          <div class="api-key-form">
+            <input
+              class="api-key-input"
+              type="password"
+              placeholder="sk-..."
+              bind:value={apiKeyInput}
+              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleSetApiKey(); }}
+            />
+            <div class="api-key-actions">
+              <button
+                class="action-btn"
+                onclick={handleSetApiKey}
+                disabled={apiKeySaving || !apiKeyInput.trim()}
+              >
+                {apiKeySaving ? 'Saving...' : 'Set key'}
+              </button>
+              {#if apiKeyStatus?.configured}
+                <button class="action-btn" onclick={handleDeleteApiKey}>
+                  Remove
+                </button>
+              {/if}
+            </div>
+          </div>
+          {#if apiKeyError}
+            <p class="empty-note" style="color: var(--color-neon-red);">{apiKeyError}</p>
+          {/if}
         </div>
 
         <!-- Config values -->
@@ -468,5 +544,45 @@
     padding: 4px 6px;
     line-height: 1.5;
     margin: 0 0 6px;
+  }
+
+  /* ---- API Key form ---- */
+  .api-key-form {
+    padding: 0 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .api-key-input {
+    width: 100%;
+    height: 22px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--color-text-primary);
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-subtle);
+    outline: none;
+    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .api-key-input:focus {
+    border-color: var(--color-border-accent);
+  }
+
+  .api-key-input::placeholder {
+    color: var(--color-text-dim);
+  }
+
+  .api-key-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .api-key-actions .action-btn {
+    flex: 1;
+    margin: 0;
+    width: auto;
   }
 </style>
