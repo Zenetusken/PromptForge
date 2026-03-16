@@ -165,3 +165,41 @@ class TestPipelineOrchestrator:
         ):
             pass
         assert mock_provider.complete_parsed.call_count == 3
+
+    async def test_scoring_disabled_skips_phase_3(self, orchestrator, mock_provider, db_session, tmp_path):
+        """When enable_scoring=False, pipeline skips Phase 3 and returns null scores."""
+        import json
+
+        # Write preferences with scoring disabled
+        prefs_path = tmp_path / "preferences.json"
+        prefs_path.write_text(json.dumps({
+            "schema_version": 1,
+            "models": {"analyzer": "sonnet", "optimizer": "opus", "scorer": "sonnet"},
+            "pipeline": {"enable_explore": True, "enable_scoring": False, "enable_adaptation": True},
+            "defaults": {"strategy": "auto"},
+        }))
+
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(), _make_optimization(),
+            # No third call — scoring is skipped
+        ]
+
+        with patch("app.services.pipeline.DATA_DIR", tmp_path):
+            events = []
+            async for event in orchestrator.run(
+                raw_prompt="test prompt for scoring disabled",
+                provider=mock_provider, db=db_session,
+            ):
+                events.append(event)
+
+        event_types = [e.event for e in events]
+        # score_card should NOT be emitted
+        assert "score_card" not in event_types
+        # optimization_complete should still be emitted
+        assert "optimization_complete" in event_types
+        # Provider should only be called twice (analyze + optimize, no score)
+        assert mock_provider.complete_parsed.call_count == 2
+        # Result should have scoring_mode="skipped"
+        complete_event = next(e for e in events if e.event == "optimization_complete")
+        assert complete_event.data.get("scoring_mode") == "skipped"
+        assert complete_event.data.get("optimized_scores") is None
