@@ -1,9 +1,12 @@
 """TraceLogger — writes per-phase JSONL trace entries to data/traces/."""
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class TraceLogger:
@@ -67,6 +70,25 @@ class TraceLogger:
                 if entry.get("trace_id") == trace_id:
                     matches.append(entry)
         return matches
+
+    def rotate(self, retention_days: int = 30) -> int:
+        """Delete JSONL trace files older than retention_days. Returns count deleted."""
+        from datetime import timedelta
+
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+        deleted = 0
+        for path in self.traces_dir.glob("*.jsonl"):
+            # Parse date from filename: traces-YYYY-MM-DD.jsonl
+            try:
+                date_str = path.stem.replace("traces-", "")
+                file_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
+                if file_date < cutoff:
+                    path.unlink()
+                    deleted += 1
+                    logger.info("Deleted old trace file: %s", path.name)
+            except (ValueError, OSError) as exc:
+                logger.warning("Could not process trace file %s: %s", path.name, exc)
+        return deleted
 
     # ------------------------------------------------------------------
     # Internal helpers

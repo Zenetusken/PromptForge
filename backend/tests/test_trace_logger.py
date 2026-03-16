@@ -8,6 +8,11 @@ import pytest
 from app.services.trace_logger import TraceLogger
 
 
+@pytest.fixture
+def trace_dir(tmp_path: Path) -> Path:
+    return tmp_path
+
+
 def test_write_and_read(tmp_path: Path) -> None:
     """Write one phase entry, read it back, verify all fields are present."""
     logger = TraceLogger(traces_dir=tmp_path)
@@ -114,3 +119,29 @@ def test_jsonl_format(tmp_path: Path) -> None:
     required_fields = {"trace_id", "phase", "duration_ms", "tokens_in", "tokens_out", "model", "provider", "timestamp"}
     for obj in parsed:
         assert required_fields.issubset(obj.keys()), f"Missing fields in: {obj}"
+
+
+class TestTraceRotation:
+    def test_rotate_deletes_old_files(self, trace_dir: Path) -> None:
+        tl = TraceLogger(trace_dir)
+        # Create files with old dates
+        (trace_dir / "traces-2020-01-01.jsonl").write_text('{"trace_id":"old"}\n')
+        (trace_dir / "traces-2020-06-15.jsonl").write_text('{"trace_id":"old2"}\n')
+        # Create a recent file
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        (trace_dir / f"traces-{today}.jsonl").write_text('{"trace_id":"recent"}\n')
+
+        deleted = tl.rotate(retention_days=30)
+        assert deleted == 2
+        assert not (trace_dir / "traces-2020-01-01.jsonl").exists()
+        assert (trace_dir / f"traces-{today}.jsonl").exists()
+
+    def test_rotate_no_old_files(self, trace_dir: Path) -> None:
+        tl = TraceLogger(trace_dir)
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        (trace_dir / f"traces-{today}.jsonl").write_text('{"trace_id":"recent"}\n')
+
+        deleted = tl.rotate(retention_days=30)
+        assert deleted == 0

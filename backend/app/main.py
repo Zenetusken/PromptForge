@@ -35,6 +35,33 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    # Shutdown: mark in-flight optimizations as interrupted
+    logger.info("Shutting down — marking in-flight optimizations as interrupted")
+    try:
+        from app.database import async_session_factory
+        from app.models import Optimization
+        from sqlalchemy import update
+        async with async_session_factory() as db:
+            await db.execute(
+                update(Optimization)
+                .where(Optimization.status == "running")
+                .values(status="interrupted")
+            )
+            await db.commit()
+    except Exception as exc:
+        logger.error("Shutdown cleanup failed: %s", exc)
+
+    # Run trace rotation
+    try:
+        from app.services.trace_logger import TraceLogger
+        from app.config import DATA_DIR, settings
+        tl = TraceLogger(DATA_DIR / "traces")
+        deleted = tl.rotate(retention_days=settings.TRACE_RETENTION_DAYS)
+        if deleted:
+            logger.info("Trace rotation: deleted %d old files", deleted)
+    except Exception as exc:
+        logger.error("Trace rotation failed: %s", exc)
+
 
 app = FastAPI(
     title="Project Synthesis",
