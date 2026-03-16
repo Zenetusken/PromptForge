@@ -15,14 +15,17 @@
         onclick={() => editorStore.setActive(tab.id)}
       >
         <span class="tab-title">{tab.title}</span>
-        <button
+        <span
           class="tab-close"
+          role="button"
+          tabindex="-1"
           aria-label="Close {tab.title}"
           onclick={(e) => {
             e.stopPropagation();
             editorStore.closeTab(tab.id);
           }}
-        >×</button>
+          onkeydown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); editorStore.closeTab(tab.id); } }}
+        >×</span>
       </button>
     {/each}
   </div>
@@ -94,7 +97,7 @@
     height: 100%;
     padding: 0 10px; /* px-2.5 */
     border: none;
-    border-bottom: 2px solid transparent;
+    border-bottom: 1px solid transparent;
     background: transparent;
     color: var(--color-text-dim);
     font-size: 11px; /* text-[11px] */
