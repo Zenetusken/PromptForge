@@ -278,7 +278,7 @@ class PipelineOrchestrator:
                     duration_ms=optimize_duration,
                     tokens_in=0, tokens_out=0,
                     model=settings.MODEL_OPUS, provider=provider.name,
-                    result={"strategy_used": optimization.strategy_used},
+                    result={"strategy_used": effective_strategy},
                 )
 
             yield PipelineEvent(event="prompt_preview", data={
@@ -395,7 +395,7 @@ class PipelineOrchestrator:
                 raw_prompt=raw_prompt,
                 optimized_prompt=optimization.optimized_prompt,
                 task_type=analysis.task_type,
-                strategy_used=optimization.strategy_used,
+                strategy_used=effective_strategy,
                 changes_summary=optimization.changes_summary,
                 score_clarity=optimized_scores.clarity,
                 score_specificity=optimized_scores.specificity,
@@ -424,7 +424,7 @@ class PipelineOrchestrator:
                     "id": opt_id,
                     "trace_id": trace_id,
                     "task_type": analysis.task_type,
-                    "strategy_used": optimization.strategy_used,
+                    "strategy_used": effective_strategy,
                     "overall_score": optimized_scores.overall,
                     "provider": provider.name,
                     "status": "completed",
@@ -441,7 +441,7 @@ class PipelineOrchestrator:
                 raw_prompt=raw_prompt,
                 optimized_prompt=optimization.optimized_prompt,
                 task_type=analysis.task_type,
-                strategy_used=optimization.strategy_used,
+                strategy_used=effective_strategy,
                 changes_summary=optimization.changes_summary,
                 optimized_scores=optimized_scores,
                 original_scores=original_scores,
@@ -458,7 +458,7 @@ class PipelineOrchestrator:
 
             logger.info(
                 "Pipeline completed: trace_id=%s duration=%dms strategy=%s overall=%.2f",
-                trace_id, duration_ms, optimization.strategy_used, optimized_scores.overall,
+                trace_id, duration_ms, effective_strategy, optimized_scores.overall,
             )
 
             yield PipelineEvent(
