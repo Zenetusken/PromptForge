@@ -47,6 +47,13 @@ class DimensionScores(BaseModel):
         mean = (self.clarity + self.specificity + self.structure + self.faithfulness + self.conciseness) / 5
         return round(mean, 2)
 
+    @classmethod
+    def compute_deltas(cls, original: "DimensionScores", optimized: "DimensionScores") -> dict[str, float]:
+        return {
+            dim: round(getattr(optimized, dim) - getattr(original, dim), 2)
+            for dim in ("clarity", "specificity", "structure", "faithfulness", "conciseness")
+        }
+
 
 class AnalysisResult(BaseModel):
     """LLM output from the Analyze stage."""

@@ -1,5 +1,6 @@
 """Singleton sentence-transformers embedding service."""
 
+import asyncio
 import logging
 
 import numpy as np
@@ -30,6 +31,12 @@ class EmbeddingService:
             return []
         embeddings = self.model.encode(texts, convert_to_numpy=True)
         return [embeddings[i] for i in range(len(texts))]
+
+    async def aembed_single(self, text: str) -> np.ndarray:
+        return await asyncio.to_thread(self.embed_single, text)
+
+    async def aembed_texts(self, texts: list[str]) -> list[np.ndarray]:
+        return await asyncio.to_thread(self.embed_texts, texts)
 
     @staticmethod
     def cosine_search(

@@ -130,6 +130,9 @@ class RefinementService:
         optimization_id: str,
         branch_id: str,
         refinement_request: str,
+        codebase_guidance: str | None = None,
+        codebase_context: str | None = None,
+        adaptation_state: str | None = None,
     ) -> AsyncGenerator[PipelineEvent, None]:
         """Run a refinement pipeline and yield SSE events.
 
@@ -170,7 +173,7 @@ class RefinementService:
         # ---------------------------------------------------------------
         # Stage 1: Analyze
         # ---------------------------------------------------------------
-        yield PipelineEvent(event="status", data={"phase": "analyze", "status": "running"})
+        yield PipelineEvent(event="status", data={"stage": "analyze", "state": "running"})
 
         system_prompt = self.prompt_loader.load("agent-guidance.md")
         available_strategies = self.strategy_loader.format_available()
@@ -188,12 +191,12 @@ class RefinementService:
             effort="medium",
         )
 
-        yield PipelineEvent(event="status", data={"phase": "analyze", "status": "complete"})
+        yield PipelineEvent(event="status", data={"stage": "analyze", "state": "complete"})
 
         # ---------------------------------------------------------------
         # Stage 2: Refine
         # ---------------------------------------------------------------
-        yield PipelineEvent(event="status", data={"phase": "refine", "status": "running"})
+        yield PipelineEvent(event="status", data={"stage": "refine", "state": "running"})
 
         strategy_instructions = self.strategy_loader.load(strategy_name)
 
@@ -202,6 +205,9 @@ class RefinementService:
             "refinement_request": refinement_request,
             "original_prompt": original_prompt,
             "strategy_instructions": strategy_instructions,
+            "codebase_guidance": codebase_guidance,
+            "codebase_context": codebase_context,
+            "adaptation_state": adaptation_state,
         })
 
         refined: OptimizationResult = await self.provider.complete_parsed(
@@ -213,17 +219,16 @@ class RefinementService:
         )
 
         yield PipelineEvent(event="prompt_preview", data={
-            "optimized_prompt": refined.optimized_prompt,
-            "changes_summary": refined.changes_summary,
-            "strategy_used": refined.strategy_used,
+            "prompt": refined.optimized_prompt,
+            "changes": [refined.changes_summary],
         })
 
-        yield PipelineEvent(event="status", data={"phase": "refine", "status": "complete"})
+        yield PipelineEvent(event="status", data={"stage": "refine", "state": "complete"})
 
         # ---------------------------------------------------------------
         # Stage 3: Score
         # ---------------------------------------------------------------
-        yield PipelineEvent(event="status", data={"phase": "score", "status": "running"})
+        yield PipelineEvent(event="status", data={"stage": "score", "state": "running"})
 
         # Randomize A/B assignment to prevent position bias
         original_first = random.choice([True, False])
@@ -254,7 +259,7 @@ class RefinementService:
             optimized_scores = scores.prompt_a_scores
 
         # Compute deltas (current refinement vs original)
-        deltas = self._compute_deltas(original_scores, optimized_scores)
+        deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
 
         # Compute deltas from previous turn
         deltas_from_prev = None
@@ -269,17 +274,17 @@ class RefinementService:
 
         yield PipelineEvent(event="score_card", data={
             "original_scores": original_scores.model_dump(),
-            "optimized_scores": optimized_scores.model_dump(),
+            "scores": optimized_scores.model_dump(),
             "deltas": deltas,
             "overall_score": optimized_scores.overall,
         })
 
-        yield PipelineEvent(event="status", data={"phase": "score", "status": "complete"})
+        yield PipelineEvent(event="status", data={"stage": "score", "state": "complete"})
 
         # ---------------------------------------------------------------
         # Stage 4: Suggest
         # ---------------------------------------------------------------
-        yield PipelineEvent(event="status", data={"phase": "suggest", "status": "running"})
+        yield PipelineEvent(event="status", data={"stage": "suggest", "state": "running"})
 
         suggestions_list = await self._generate_suggestions(
             optimized_prompt=refined.optimized_prompt,
@@ -289,7 +294,7 @@ class RefinementService:
         )
 
         yield PipelineEvent(event="suggestions", data={"suggestions": suggestions_list})
-        yield PipelineEvent(event="status", data={"phase": "suggest", "status": "complete"})
+        yield PipelineEvent(event="status", data={"stage": "suggest", "state": "complete"})
 
         # ---------------------------------------------------------------
         # Persist new turn
@@ -435,13 +440,3 @@ class RefinementService:
 
         return result.suggestions
 
-    @staticmethod
-    def _compute_deltas(
-        original: DimensionScores,
-        optimized: DimensionScores,
-    ) -> dict[str, float]:
-        """Compute per-dimension deltas (optimized - original)."""
-        return {
-            dim: round(getattr(optimized, dim) - getattr(original, dim), 2)
-            for dim in ("clarity", "specificity", "structure", "faithfulness", "conciseness")
-        }

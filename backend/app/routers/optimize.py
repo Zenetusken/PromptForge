@@ -1,6 +1,5 @@
 """Optimization endpoints — POST /api/optimize (SSE) and GET /api/optimize/{trace_id}."""
 
-import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -14,6 +13,7 @@ from app.database import get_db
 from app.dependencies.rate_limit import RateLimit
 from app.models import Optimization
 from app.services.pipeline import PipelineOrchestrator
+from app.utils.sse import format_sse
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +21,8 @@ router = APIRouter(prefix="/api", tags=["optimize"])
 
 
 class OptimizeRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, description="The raw prompt to optimize")
+    prompt: str = Field(..., min_length=20, description="The raw prompt to optimize")
     strategy: str | None = Field(None, description="Strategy override")
-
-
-def _format_sse(event_type: str, data: dict) -> str:
-    payload = json.dumps({"event": event_type, **data})
-    return f"data: {payload}\n\n"
 
 
 @router.post("/optimize")
@@ -48,7 +43,7 @@ async def optimize(
             raw_prompt=body.prompt, provider=provider, db=db,
             strategy_override=body.strategy,
         ):
-            yield _format_sse(event.event, event.data)
+            yield format_sse(event.event, event.data)
 
     return StreamingResponse(
         event_stream(),

@@ -45,6 +45,7 @@ async def test_build_index_creates_meta(db_session):
     es = MagicMock()
     zero_vec = np.zeros(384, dtype=np.float32)
     es.embed_texts.return_value = [zero_vec]
+    es.aembed_texts = AsyncMock(return_value=[zero_vec])
 
     svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
     await svc.build_index("owner/repo", "main", "ghp_token")
@@ -79,6 +80,7 @@ async def test_query_relevant_files(db_session):
     gc = AsyncMock()
     es = MagicMock()
     es.embed_single.return_value = zero_vec
+    es.aembed_single = AsyncMock(return_value=zero_vec)
     # cosine_search is a staticmethod; mock it on the class instance too
     es.cosine_search = MagicMock(return_value=[(0, 0.95)])
 

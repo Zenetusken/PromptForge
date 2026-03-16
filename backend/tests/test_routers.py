@@ -87,7 +87,7 @@ class TestOptimizeRouter:
 
     async def test_no_provider_returns_503(self, app_client):
         app_client._transport.app.state.provider = None
-        resp = await app_client.post("/api/optimize", json={"prompt": "test prompt"})
+        resp = await app_client.post("/api/optimize", json={"prompt": "This is a test prompt that is long enough to pass validation"})
         assert resp.status_code == 503
 
 

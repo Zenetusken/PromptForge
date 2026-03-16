@@ -168,6 +168,46 @@ class HeuristicScorer:
         score = 2.0 + hits * 1.3
         return round(min(10.0, score), 2)
 
+    @staticmethod
+    def heuristic_clarity(prompt: str) -> float:
+        """Clarity via readability score and ambiguity markers."""
+        try:
+            import textstat
+            flesch = textstat.flesch_reading_ease(prompt)
+        except Exception:
+            flesch = 50.0
+
+        # Map Flesch score (0-100) to our scale (1-10)
+        # Higher Flesch = easier to read = more clear
+        score = 3.0 + (flesch / 100.0) * 5.0
+
+        # Penalize ambiguity markers
+        ambiguity = ["maybe", "perhaps", "somehow", "something", "stuff", "things", "etc"]
+        hits = sum(1 for w in ambiguity if w in prompt.lower())
+        score -= hits * 0.5
+
+        return round(max(1.0, min(10.0, score)), 1)
+
+    @staticmethod
+    def heuristic_faithfulness(original: str, optimized: str) -> float:
+        """Faithfulness via embedding cosine similarity between original and optimized."""
+        try:
+            from app.services.embedding_service import EmbeddingService
+            import numpy as np
+            svc = EmbeddingService()
+            orig_vec = svc.embed_single(original)
+            opt_vec = svc.embed_single(optimized)
+            similarity = float(np.dot(orig_vec, opt_vec) / (np.linalg.norm(orig_vec) * np.linalg.norm(opt_vec) + 1e-9))
+            # Map similarity (0-1) to score (1-10). Sweet spot: 0.6-0.85
+            if similarity >= 0.85:
+                return 9.0
+            elif similarity >= 0.6:
+                return 6.0 + (similarity - 0.6) / 0.25 * 3.0
+            else:
+                return max(1.0, similarity * 10.0)
+        except Exception:
+            return 5.0  # neutral default if embedding unavailable
+
     # ------------------------------------------------------------------
     # Divergence detection
     # ------------------------------------------------------------------

@@ -5,6 +5,8 @@ Copyright 2025 Project Synthesis contributors.
 
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP
 
@@ -12,11 +14,33 @@ from app.config import PROMPTS_DIR
 
 logger = logging.getLogger(__name__)
 
+# Module-level provider cache — set once by the lifespan, read by tools.
+_provider = None
+
+
+@asynccontextmanager
+async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
+    """Detect the LLM provider once at startup and expose it to tools."""
+    global _provider
+    from app.providers.detector import detect_provider
+
+    _provider = detect_provider()
+    if _provider:
+        logger.info("MCP lifespan: provider detected — %s", _provider.name)
+    else:
+        logger.warning("MCP lifespan: no LLM provider available")
+
+    yield {"provider": _provider}
+
+    _provider = None
+
+
 mcp = FastMCP(
     "synthesis_mcp",
     host="127.0.0.1",
     port=8001,
     streamable_http_path="/mcp",
+    lifespan=_mcp_lifespan,
 )
 
 
@@ -38,9 +62,7 @@ async def synthesis_optimize(
     if len(prompt) > 200000:
         raise ValueError("Prompt too long (maximum 200000 characters)")
 
-    from app.providers.detector import detect_provider
-
-    provider = detect_provider()
+    provider = _provider
     if not provider:
         raise ValueError("No LLM provider available")
 

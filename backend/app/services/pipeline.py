@@ -111,17 +111,6 @@ class PipelineOrchestrator:
         raise last_exc  # type: ignore[misc]
 
     @staticmethod
-    def _compute_deltas(
-        original: DimensionScores,
-        optimized: DimensionScores,
-    ) -> dict[str, float]:
-        """Compute per-dimension deltas (optimized - original)."""
-        return {
-            dim: round(getattr(optimized, dim) - getattr(original, dim), 2)
-            for dim in ("clarity", "specificity", "structure", "faithfulness", "conciseness")
-        }
-
-    @staticmethod
     def _semantic_check(task_type: str, raw_prompt: str, confidence: float) -> float:
         """If task_type is 'coding' but no coding keywords found, reduce confidence."""
         if task_type == "coding":
@@ -194,7 +183,7 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------------
             # Phase 1: Analyze
             # ---------------------------------------------------------------
-            yield PipelineEvent(event="status", data={"phase": "analyze", "status": "running"})
+            yield PipelineEvent(event="status", data={"stage": "analyze", "state": "running"})
 
             system_prompt = self._load_system_prompt()
             available_strategies = self.strategy_loader.format_available()
@@ -214,7 +203,7 @@ class PipelineOrchestrator:
                 effort="medium",
             )
 
-            yield PipelineEvent(event="status", data={"phase": "analyze", "status": "complete"})
+            yield PipelineEvent(event="status", data={"stage": "analyze", "state": "complete"})
 
             if self.trace_logger:
                 self.trace_logger.log_phase(
@@ -243,7 +232,7 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------------
             # Phase 2: Optimize
             # ---------------------------------------------------------------
-            yield PipelineEvent(event="status", data={"phase": "optimize", "status": "running"})
+            yield PipelineEvent(event="status", data={"stage": "optimize", "state": "running"})
 
             strategy_instructions = self.strategy_loader.load(effective_strategy)
             analysis_summary = (
@@ -276,7 +265,7 @@ class PipelineOrchestrator:
                 max_tokens=dynamic_max_tokens,
             )
 
-            yield PipelineEvent(event="status", data={"phase": "optimize", "status": "complete"})
+            yield PipelineEvent(event="status", data={"stage": "optimize", "state": "complete"})
 
             if self.trace_logger:
                 self.trace_logger.log_phase(
@@ -288,15 +277,14 @@ class PipelineOrchestrator:
                 )
 
             yield PipelineEvent(event="prompt_preview", data={
-                "optimized_prompt": optimization.optimized_prompt,
-                "changes_summary": optimization.changes_summary,
-                "strategy_used": optimization.strategy_used,
+                "prompt": optimization.optimized_prompt,
+                "changes": [optimization.changes_summary],
             })
 
             # ---------------------------------------------------------------
             # Phase 3: Score
             # ---------------------------------------------------------------
-            yield PipelineEvent(event="status", data={"phase": "score", "status": "running"})
+            yield PipelineEvent(event="status", data={"stage": "score", "state": "running"})
 
             # Randomize A/B assignment
             original_first = random.choice([True, False])
@@ -327,7 +315,7 @@ class PipelineOrchestrator:
                 effort="medium",
             )
 
-            yield PipelineEvent(event="status", data={"phase": "score", "status": "complete"})
+            yield PipelineEvent(event="status", data={"stage": "score", "state": "complete"})
 
             if self.trace_logger:
                 self.trace_logger.log_phase(
@@ -345,7 +333,7 @@ class PipelineOrchestrator:
                 original_scores = scores.prompt_b_scores
                 optimized_scores = scores.prompt_a_scores
 
-            deltas = self._compute_deltas(original_scores, optimized_scores)
+            deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
 
             if optimized_scores.faithfulness < 6.0:
                 logger.warning(
@@ -355,7 +343,7 @@ class PipelineOrchestrator:
 
             yield PipelineEvent(event="score_card", data={
                 "original_scores": original_scores.model_dump(),
-                "optimized_scores": optimized_scores.model_dump(),
+                "scores": optimized_scores.model_dump(),
                 "deltas": deltas,
                 "overall_score": optimized_scores.overall,
             })
@@ -369,8 +357,8 @@ class PipelineOrchestrator:
                 from app.services.embedding_service import EmbeddingService
 
                 drift_svc = EmbeddingService()
-                orig_vec = drift_svc.embed_single(raw_prompt)
-                opt_vec = drift_svc.embed_single(optimization.optimized_prompt)
+                orig_vec = await drift_svc.aembed_single(raw_prompt)
+                opt_vec = await drift_svc.aembed_single(optimization.optimized_prompt)
                 similarity = float(
                     np.dot(orig_vec, opt_vec)
                     / (np.linalg.norm(orig_vec) * np.linalg.norm(opt_vec) + 1e-9)

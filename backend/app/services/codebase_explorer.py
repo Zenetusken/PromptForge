@@ -210,8 +210,8 @@ class CodebaseExplorer:
 
         try:
             # Attempt semantic ranking
-            query_vec = self._es.embed_single(raw_prompt)
-            path_vecs = self._es.embed_texts(paths)
+            query_vec = await self._es.aembed_single(raw_prompt)
+            path_vecs = await self._es.aembed_texts(paths)
             ranked = self._es.cosine_search(query_vec, path_vecs, top_k=len(paths))
             return [paths[idx] for idx, _score in ranked]
         except Exception:

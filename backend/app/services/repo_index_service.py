@@ -110,7 +110,7 @@ class RepoIndexService:
 
             embeddings: list[np.ndarray] = []
             if texts_to_embed:
-                embeddings = self._es.embed_texts(texts_to_embed)
+                embeddings = await self._es.aembed_texts(texts_to_embed)
 
             # Persist file index rows
             file_count = 0
@@ -172,7 +172,7 @@ class RepoIndexService:
         if not rows:
             return []
 
-        query_vec: np.ndarray = self._es.embed_single(query)
+        query_vec: np.ndarray = await self._es.aembed_single(query)
 
         corpus_vecs = [
             np.frombuffer(row.embedding, dtype=np.float32) for row in rows

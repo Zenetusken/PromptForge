@@ -1,6 +1,5 @@
 """Refinement endpoints — POST /api/refine (SSE), GET versions, POST rollback."""
 
-import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PROMPTS_DIR
 from app.database import get_db
+from app.utils.sse import format_sse
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +29,6 @@ class RefineRequest(BaseModel):
 
 class RollbackRequest(BaseModel):
     to_version: int = Field(..., ge=1)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _format_sse(event_type: str, data: dict) -> str:
-    payload = json.dumps({"event": event_type, **data})
-    return f"data: {payload}\n\n"
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +81,7 @@ async def refine(
         async for event in ref_svc.create_refinement_turn(
             body.optimization_id, branch_id, body.refinement_request,
         ):
-            yield _format_sse(event.event, event.data)
+            yield format_sse(event.event, event.data)
 
     return StreamingResponse(
         event_stream(),
