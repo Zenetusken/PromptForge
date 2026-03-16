@@ -1,0 +1,20 @@
+services:
+  synthesis:
+    build: .
+    ports:
+      - "80:80"
+      - "127.0.0.1:8001:8001"
+    volumes:
+      - db-data:/app/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    security_opt:
+      - no-new-privileges
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    restart: unless-stopped
+
+volumes:
+  db-data:
