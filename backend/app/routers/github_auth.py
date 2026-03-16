@@ -1,6 +1,5 @@
 """GitHub OAuth flow — login, callback, me, logout."""
 
-import json
 import secrets
 
 import httpx

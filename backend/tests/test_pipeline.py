@@ -1,11 +1,15 @@
 """Tests for the pipeline orchestrator."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.providers.base import LLMProvider
 from app.schemas.pipeline_contracts import (
-    AnalysisResult, DimensionScores, OptimizationResult, ScoreResult,
+    AnalysisResult,
+    DimensionScores,
+    OptimizationResult,
+    ScoreResult,
 )
 from app.services.pipeline import PipelineOrchestrator
 

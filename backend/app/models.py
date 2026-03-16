@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    JSON,
     Column,
     DateTime,
     Float,
@@ -12,7 +13,6 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
-    JSON,
 )
 from sqlalchemy.orm import DeclarativeBase
 

@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import Optimization, RefinementBranch, RefinementTurn
 from app.providers.base import LLMProvider
 from app.schemas.pipeline_contracts import (
@@ -28,7 +29,6 @@ from app.schemas.pipeline_contracts import (
     PipelineEvent,
     ScoreResult,
 )
-from app.config import settings
 from app.services.prompt_loader import PromptLoader
 from app.services.strategy_loader import StrategyLoader
 

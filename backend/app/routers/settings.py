@@ -1,6 +1,7 @@
 """Read-only settings endpoint."""
 
 from fastapi import APIRouter
+
 from app.config import settings
 
 router = APIRouter(prefix="/api", tags=["settings"])

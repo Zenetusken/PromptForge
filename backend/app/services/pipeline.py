@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import DATA_DIR, settings
 from app.models import Optimization
 from app.providers.base import LLMProvider
 from app.schemas.pipeline_contracts import (
@@ -28,7 +29,6 @@ from app.schemas.pipeline_contracts import (
     PipelineResult,
     ScoreResult,
 )
-from app.config import DATA_DIR, settings
 from app.services.prompt_loader import PromptLoader
 from app.services.strategy_loader import StrategyLoader
 from app.services.trace_logger import TraceLogger
@@ -362,6 +362,7 @@ class PipelineOrchestrator:
             warnings: list[str] = []
             try:
                 import numpy as np
+
                 from app.services.embedding_service import EmbeddingService
 
                 drift_svc = EmbeddingService()

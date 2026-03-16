@@ -1,5 +1,5 @@
 import time
-import pytest
+
 from app.services.explore_cache import ExploreCache
 
 

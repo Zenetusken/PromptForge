@@ -67,8 +67,9 @@ class ContextResolver:
 
         # --- Auto-scan workspace if no explicit guidance provided ---
         if codebase_guidance is None and workspace_path:
-            from app.services.roots_scanner import RootsScanner
             from pathlib import Path
+
+            from app.services.roots_scanner import RootsScanner
 
             scanner = RootsScanner()
             codebase_guidance = scanner.scan(Path(workspace_path))

@@ -1,7 +1,6 @@
 """Tests for GitHubService — Fernet token encryption and OAuth URL building."""
 
 import pytest
-from cryptography.fernet import InvalidToken
 
 from app.services.github_service import GitHubService
 

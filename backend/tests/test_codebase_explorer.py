@@ -1,11 +1,9 @@
 """Tests for CodebaseExplorer — semantic retrieval + synthesis."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
-from pydantic import BaseModel, ConfigDict
 
 from app.services.codebase_explorer import CodebaseExplorer, ExploreOutput
 
@@ -196,7 +194,7 @@ async def test_explore_respects_file_limit(tmp_path):
 @pytest.mark.asyncio
 async def test_explore_uses_cache(tmp_path):
     """Second call with same SHA returns cached result without calling provider."""
-    from app.services.codebase_explorer import _explore_cache, ExploreOutput
+    from app.services.codebase_explorer import ExploreOutput, _explore_cache
 
     # Clear cache to avoid test pollution
     _explore_cache._store.clear()

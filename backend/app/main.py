@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app._version import __version__
-from app.config import settings, DATA_DIR, PROMPTS_DIR
+from app.config import DATA_DIR, PROMPTS_DIR, settings
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,10 @@ async def lifespan(app: FastAPI):
     # Shutdown: mark in-flight optimizations as interrupted
     logger.info("Shutting down — marking in-flight optimizations as interrupted")
     try:
+        from sqlalchemy import update
+
         from app.database import async_session_factory
         from app.models import Optimization
-        from sqlalchemy import update
         async with async_session_factory() as db:
             await db.execute(
                 update(Optimization)

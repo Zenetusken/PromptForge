@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.schemas.pipeline_contracts import AnalysisResult
-
 
 # ---------------------------------------------------------------------------
 # Base provider — thinking_config

@@ -1,11 +1,8 @@
 """Tests for AdaptationTracker — TDD: tests written before implementation."""
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import StrategyAffinity
 from app.services.adaptation_tracker import AdaptationTracker
-
 
 # ---------------------------------------------------------------------------
 # Tests

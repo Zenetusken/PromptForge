@@ -1,6 +1,7 @@
 """Tests for score clustering detection via optimization_service."""
 
 import pytest
+
 from app.models import Optimization
 from app.services.optimization_service import OptimizationService
 

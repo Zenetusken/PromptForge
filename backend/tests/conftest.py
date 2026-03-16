@@ -40,8 +40,8 @@ async def mock_provider():
 
 @pytest_asyncio.fixture
 async def app_client(mock_provider, db_session):
-    from app.main import app
     from app.database import get_db
+    from app.main import app
 
     app.state.provider = mock_provider
 

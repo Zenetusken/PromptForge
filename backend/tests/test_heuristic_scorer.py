@@ -4,7 +4,6 @@ import pytest
 
 from app.services.heuristic_scorer import HeuristicScorer
 
-
 # ---------------------------------------------------------------------------
 # apply_bias_correction
 # ---------------------------------------------------------------------------

@@ -3,9 +3,8 @@
 import pytest
 
 from app.config import settings
-from app.services.context_resolver import ContextResolver
 from app.schemas.pipeline_contracts import ResolvedContext
-
+from app.services.context_resolver import ContextResolver
 
 _VALID_PROMPT = "Write a Python function that parses JSON."
 

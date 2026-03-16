@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from app.models import Optimization, RefinementBranch, RefinementTurn
+from app.models import Optimization
 from app.schemas.pipeline_contracts import (
     AnalysisResult,
     DimensionScores,
@@ -12,7 +12,6 @@ from app.schemas.pipeline_contracts import (
     ScoreResult,
 )
 from app.services.refinement_service import SuggestionsOutput
-
 
 # ---------------------------------------------------------------------------
 # Helper factories

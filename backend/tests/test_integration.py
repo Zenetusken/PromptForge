@@ -2,8 +2,6 @@
 
 import json
 
-import pytest
-
 from app.schemas.pipeline_contracts import (
     AnalysisResult,
     DimensionScores,

@@ -101,10 +101,9 @@ async def get_versions(
     db: AsyncSession = Depends(get_db),
 ):
     """Return all refinement turns for an optimization, optionally filtered by branch."""
-    from app.services.refinement_service import RefinementService
-
     # Verify optimization exists
     from app.services.optimization_service import OptimizationService
+    from app.services.refinement_service import RefinementService
     opt_svc = OptimizationService(db)
     opt = await opt_svc.get_by_id(optimization_id)
     if not opt:
