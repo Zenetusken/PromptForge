@@ -151,4 +151,10 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.routers.preferences import router as preferences_router
+    app.include_router(preferences_router)
+except ImportError:
+    pass
+
 asgi_app = app
