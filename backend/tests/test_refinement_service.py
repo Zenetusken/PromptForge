@@ -1,7 +1,8 @@
 """Tests for the refinement service."""
 
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
 
 from app.models import Optimization, RefinementBranch, RefinementTurn
 from app.providers.base import LLMProvider
@@ -201,7 +202,7 @@ class TestRefinementService:
 
     async def test_get_branches(self, service, sample_opt, db_session):
         """Lists branches for an optimization."""
-        turn1 = await service.create_initial_turn(
+        await service.create_initial_turn(
             optimization_id=sample_opt.id,
             prompt="v1 prompt",
             scores_dict={"clarity": 6.0},

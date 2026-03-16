@@ -9,15 +9,14 @@ from app.schemas.pipeline_contracts import (
     AnalysisResult,
     AnalyzerInput,
     DimensionScores,
-    OptimizerInput,
     OptimizationResult,
+    OptimizerInput,
     PipelineEvent,
     PipelineResult,
     ResolvedContext,
     ScoreResult,
     ScorerInput,
 )
-
 
 # ---------------------------------------------------------------------------
 # DimensionScores
@@ -79,7 +78,7 @@ class TestDimensionScores:
         assert scores.overall == 7.0
 
     def test_overall_rounded_to_2_decimals(self):
-        scores = DimensionScores(
+        _scores = DimensionScores(
             clarity=7.0,
             specificity=8.0,
             structure=6.0,

@@ -1,7 +1,10 @@
 import json
-import pytest
+
 from app.schemas.pipeline_contracts import (
-    AnalysisResult, DimensionScores, OptimizationResult, ScoreResult,
+    AnalysisResult,
+    DimensionScores,
+    OptimizationResult,
+    ScoreResult,
 )
 
 
@@ -87,7 +90,10 @@ class TestOptimizeRouter:
 
     async def test_no_provider_returns_503(self, app_client):
         app_client._transport.app.state.provider = None
-        resp = await app_client.post("/api/optimize", json={"prompt": "This is a test prompt that is long enough to pass validation"})
+        resp = await app_client.post(
+            "/api/optimize",
+            json={"prompt": "This is a test prompt that is long enough to pass validation"},
+        )
         assert resp.status_code == 503
 
 
@@ -257,7 +263,9 @@ class TestGitHubAuth:
         """me endpoint returns user info when valid session+token exists."""
         import base64
         import hashlib
+
         from cryptography.fernet import Fernet
+
         from app.models import GitHubToken
 
         secret_key = "test-secret-key"
@@ -296,8 +304,10 @@ class TestGitHubAuth:
         """logout removes the token row from DB."""
         import base64
         import hashlib
+
         from cryptography.fernet import Fernet
         from sqlalchemy import select
+
         from app.models import GitHubToken
 
         secret_key = "test-secret-key"
@@ -354,7 +364,9 @@ class TestGitHubRepos:
         """linked returns 404 when no repo is linked for the session."""
         import base64
         import hashlib
+
         from cryptography.fernet import Fernet
+
         from app.models import GitHubToken
 
         secret_key = "test-secret-key"
@@ -388,7 +400,9 @@ class TestGitHubRepos:
         """unlink is idempotent — returns 200 even when nothing is linked."""
         import base64
         import hashlib
+
         from cryptography.fernet import Fernet
+
         from app.models import GitHubToken
 
         secret_key = "test-secret-key"
@@ -513,7 +527,7 @@ class TestApiKeyManagement:
             settings.ANTHROPIC_API_KEY = original
 
     async def test_set_and_get_api_key(self, app_client):
-        from app.config import settings, DATA_DIR
+        from app.config import DATA_DIR, settings
         original = settings.ANTHROPIC_API_KEY
         settings.ANTHROPIC_API_KEY = ""
         try:
@@ -536,7 +550,7 @@ class TestApiKeyManagement:
                 cred_file.unlink()
 
     async def test_delete_api_key(self, app_client):
-        from app.config import settings, DATA_DIR
+        from app.config import DATA_DIR, settings
         original = settings.ANTHROPIC_API_KEY
         settings.ANTHROPIC_API_KEY = ""
         try:

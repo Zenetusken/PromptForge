@@ -103,7 +103,7 @@ class HeuristicScorer:
 
         Result is clamped to [1.0, 10.0].
         """
-        _FILLERS = [
+        fillers = [
             r"\bplease note that\b",
             r"\bit is (?:very |quite |extremely )?important (?:that|to)\b",
             r"\bmake sure to\b",
@@ -132,7 +132,7 @@ class HeuristicScorer:
         score = 5.0 + (ttr - 0.6) * 5.0
 
         # Penalise filler phrases
-        for pattern in _FILLERS:
+        for pattern in fillers:
             matches = re.findall(pattern, prompt, re.IGNORECASE)
             score -= 0.8 * len(matches)
 
@@ -152,7 +152,7 @@ class HeuristicScorer:
 
         Each *category* is counted once (binary hit). Result is capped at 10.0.
         """
-        _CHECKS: list[tuple[str, int]] = [
+        checks: list[tuple[str, int]] = [
             # (pattern, re_flags)
             (r"\b(?:must|shall|should)\b", re.IGNORECASE),
             (r"\b(?:return|raise|output|yield)\b", re.IGNORECASE),
@@ -163,7 +163,7 @@ class HeuristicScorer:
         ]
 
         hits = sum(
-            1 for pattern, flags in _CHECKS if re.search(pattern, prompt, flags)
+            1 for pattern, flags in checks if re.search(pattern, prompt, flags)
         )
         score = 2.0 + hits * 1.3
         return round(min(10.0, score), 2)
@@ -192,8 +192,9 @@ class HeuristicScorer:
     def heuristic_faithfulness(original: str, optimized: str) -> float:
         """Faithfulness via embedding cosine similarity between original and optimized."""
         try:
-            from app.services.embedding_service import EmbeddingService
             import numpy as np
+
+            from app.services.embedding_service import EmbeddingService
             svc = EmbeddingService()
             orig_vec = svc.embed_single(original)
             opt_vec = svc.embed_single(optimized)

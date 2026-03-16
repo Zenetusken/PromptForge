@@ -2,17 +2,15 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.schemas.pipeline_contracts import AnalysisResult
 
 
 class TestPromptCaching:
     async def test_api_provider_sets_cache_control(self):
         """Verify system prompt includes cache_control for prompt caching."""
-        with patch("app.providers.anthropic_api.AsyncAnthropic") as MockClass:
+        with patch("app.providers.anthropic_api.AsyncAnthropic") as mock_cls:
             client = MagicMock()
-            MockClass.return_value = client
+            mock_cls.return_value = client
 
             mock_response = MagicMock()
             mock_response.parsed_output = AnalysisResult(
@@ -43,9 +41,9 @@ class TestPromptCaching:
 
     async def test_cache_control_present_across_models(self):
         """All model calls should include cache_control on system prompt."""
-        with patch("app.providers.anthropic_api.AsyncAnthropic") as MockClass:
+        with patch("app.providers.anthropic_api.AsyncAnthropic") as mock_cls:
             client = MagicMock()
-            MockClass.return_value = client
+            mock_cls.return_value = client
 
             mock_response = MagicMock()
             mock_response.parsed_output = AnalysisResult(

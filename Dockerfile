@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Runtime
-FROM python:3.13-slim
+FROM python:3.14-slim
 WORKDIR /app
 
 # Install nginx

@@ -1,6 +1,7 @@
 import json
+
 import pytest
-from pathlib import Path
+
 from app.services.prompt_loader import PromptLoader
 
 
@@ -51,7 +52,7 @@ class TestPromptLoader:
 
     def test_hot_reload(self, tmp_prompts):
         loader = PromptLoader(tmp_prompts)
-        result1 = loader.load("static.md")
+        loader.load("static.md")
         (tmp_prompts / "static.md").write_text("Updated content")
         result2 = loader.load("static.md")
         assert result2 == "Updated content"

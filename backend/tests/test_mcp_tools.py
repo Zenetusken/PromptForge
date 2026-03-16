@@ -10,7 +10,6 @@ from app.mcp_server import (
     synthesis_save_result,
 )
 
-
 # ---------------------------------------------------------------------------
 # synthesis_prepare_optimization
 # ---------------------------------------------------------------------------
@@ -81,7 +80,10 @@ async def test_save_result_applies_bias_correction(db_session) -> None:
 
         result = await synthesis_save_result(
             trace_id="test-trace-id",
-            optimized_prompt="## Task\nWrite a well-structured Python function.\n\n## Requirements\n- Must validate input\n- Must return bool",
+            optimized_prompt=(
+                "## Task\nWrite a well-structured Python function.\n\n"
+                "## Requirements\n- Must validate input\n- Must return bool"
+            ),
             changes_summary="Added structure and constraints",
             task_type="coding",
             strategy_used="structured-output",
