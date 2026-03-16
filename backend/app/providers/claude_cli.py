@@ -54,8 +54,6 @@ class ClaudeCLIProvider(LLMProvider):
             augmented_system,
             "--output-format",
             "json",
-            "--max-tokens",
-            str(max_tokens),
         ]
 
         logger.debug("claude_cli executing model=%s", model)
