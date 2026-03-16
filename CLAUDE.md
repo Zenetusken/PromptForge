@@ -44,7 +44,8 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 - `optimization_service.py` — CRUD, sort/filter, score distribution tracking, recent error counts
 - `feedback_service.py` — feedback CRUD + synchronous adaptation tracker update
 - `adaptation_tracker.py` — strategy affinity tracking with degenerate pattern detection
-- `heuristic_scorer.py` — passthrough bias correction + 5-dimension heuristics (clarity, specificity, structure, faithfulness, conciseness)
+- `heuristic_scorer.py` — 5-dimension heuristics (clarity, specificity, structure, faithfulness, conciseness) + `score_prompt()` facade + passthrough bias correction
+- `score_blender.py` — hybrid scoring engine: blends LLM + heuristic scores with z-score normalization and divergence detection
 - `refinement_service.py` — refinement sessions, version CRUD, branching/rollback, suggestion generation
 - `trace_logger.py` — per-phase JSONL traces to `data/traces/`, daily rotation
 - `embedding_service.py` — singleton sentence-transformers (`all-MiniLM-L6-v2`, 384-dim). Async wrappers via `aembed_single`/`aembed_texts`.
@@ -186,7 +187,7 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 - **Pipeline**: 3 subagent phases (analyze → optimize → score) orchestrated by `pipeline.py`. Each phase is an independent LLM call with a fresh context window. Explore phase runs when a GitHub repo is linked.
 - **Provider injection**: detected once at startup, injected via `app.state.provider` and MCP lifespan context.
 - **Prompt templates**: all prompts live in `prompts/` with `{{variable}}` substitution. Validated at startup. Hot-reloaded on every call. Never hardcode prompts in application code.
-- **Scorer bias mitigation**: A/B randomized presentation order. Scorer sees "Prompt A" and "Prompt B", not "original" and "optimized".
+- **Scorer bias mitigation**: A/B randomized presentation order + **hybrid scoring** (LLM scores blended with model-independent heuristics via `score_blender.py`). Dimension-specific weights: structure 50% heuristic, conciseness/specificity 40%, clarity 30%, faithfulness 20%. Z-score normalization applied when ≥10 historical samples exist. Divergence flags when LLM and heuristic disagree by >2.5 points.
 - **Passthrough protocol**: MCP `synthesis_prepare_optimization` assembles the full prompt; external LLM processes it; `synthesis_save_result` persists with heuristic bias correction.
 - **Pagination envelope**: all list endpoints return `{total, count, offset, items, has_more, next_offset}`.
 - **GitHub token layer**: tokens are Fernet-encrypted at rest. `github_service.encrypt_token` / `decrypt_token` are the only entry points.

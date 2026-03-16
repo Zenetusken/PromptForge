@@ -29,7 +29,9 @@ from app.schemas.pipeline_contracts import (
     PipelineResult,
     ScoreResult,
 )
+from app.services.heuristic_scorer import HeuristicScorer
 from app.services.prompt_loader import PromptLoader
+from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
 from app.services.trace_logger import TraceLogger
 
@@ -335,11 +337,49 @@ class PipelineOrchestrator:
 
             # Map A/B scores back to original/optimized
             if original_first:
-                original_scores = scores.prompt_a_scores
-                optimized_scores = scores.prompt_b_scores
+                llm_original_scores = scores.prompt_a_scores
+                llm_optimized_scores = scores.prompt_b_scores
             else:
-                original_scores = scores.prompt_b_scores
-                optimized_scores = scores.prompt_a_scores
+                llm_original_scores = scores.prompt_b_scores
+                llm_optimized_scores = scores.prompt_a_scores
+
+            # ---------------------------------------------------------------
+            # Hybrid scoring: blend LLM + heuristic scores
+            # ---------------------------------------------------------------
+            heur_original = HeuristicScorer.score_prompt(raw_prompt)
+            heur_optimized = HeuristicScorer.score_prompt(
+                optimization.optimized_prompt, original=raw_prompt,
+            )
+
+            # Fetch historical stats for z-score normalization (non-fatal)
+            historical_stats: dict | None = None
+            try:
+                from app.services.optimization_service import OptimizationService
+                opt_svc = OptimizationService(db)
+                historical_stats = await opt_svc.get_score_distribution()
+            except Exception as exc:
+                logger.debug("Historical stats unavailable for normalization: %s", exc)
+
+            blended_original = blend_scores(
+                llm_original_scores, heur_original, historical_stats,
+            )
+            blended_optimized = blend_scores(
+                llm_optimized_scores, heur_optimized, historical_stats,
+            )
+
+            original_scores = blended_original.to_dimension_scores()
+            optimized_scores = blended_optimized.to_dimension_scores()
+
+            logger.info(
+                "Hybrid scoring complete: llm_opt=%.1f heur_opt=%s blended_opt=%.1f "
+                "divergence=%s normalized=%s trace_id=%s",
+                llm_optimized_scores.overall,
+                {k: round(v, 1) for k, v in heur_optimized.items()},
+                optimized_scores.overall,
+                blended_optimized.divergence_flags,
+                blended_optimized.normalization_applied,
+                trace_id,
+            )
 
             deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
 
@@ -360,6 +400,12 @@ class PipelineOrchestrator:
             # Intent drift gate
             # ---------------------------------------------------------------
             warnings: list[str] = []
+            if blended_optimized.divergence_flags:
+                warnings.append(
+                    "Score divergence between LLM and heuristic on: "
+                    + ", ".join(blended_optimized.divergence_flags)
+                )
+
             try:
                 import numpy as np
 
@@ -405,7 +451,7 @@ class PipelineOrchestrator:
                 overall_score=optimized_scores.overall,
                 provider=provider.name,
                 model_used=settings.MODEL_OPUS,
-                scoring_mode="independent",
+                scoring_mode="hybrid",
                 duration_ms=duration_ms,
                 status="completed",
                 trace_id=trace_id,

@@ -149,7 +149,10 @@ class TestPipelineOrchestrator:
             ):
                 events.append(event)
         score_card = next(e for e in events if e.event == "score_card")
-        assert score_card.data["deltas"]["clarity"] == 4.0
+        # Hybrid scoring blends LLM + heuristic, so exact values change.
+        # Verify deltas are present and directionally correct (optimized > original).
+        assert "clarity" in score_card.data["deltas"]
+        assert score_card.data["deltas"]["clarity"] > 0
 
     async def test_strategy_override(self, orchestrator, mock_provider, db_session):
         mock_provider.complete_parsed.side_effect = [

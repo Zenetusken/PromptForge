@@ -215,6 +215,38 @@ class HeuristicScorer:
             return 5.0  # neutral default if embedding unavailable
 
     # ------------------------------------------------------------------
+    # Convenience facade
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def score_prompt(
+        cls,
+        prompt: str,
+        original: str | None = None,
+    ) -> dict[str, float]:
+        """Compute all 5 heuristic dimension scores for a prompt.
+
+        Args:
+            prompt: The prompt to score.
+            original: If provided, used for faithfulness comparison.
+                      If None, faithfulness defaults to 5.0 (self-baseline).
+
+        Returns:
+            Dict with keys: clarity, specificity, structure, faithfulness, conciseness.
+        """
+        return {
+            "clarity": cls.heuristic_clarity(prompt),
+            "specificity": cls.heuristic_specificity(prompt),
+            "structure": cls.heuristic_structure(prompt),
+            "faithfulness": (
+                cls.heuristic_faithfulness(original, prompt)
+                if original
+                else 5.0
+            ),
+            "conciseness": cls.heuristic_conciseness(prompt),
+        }
+
+    # ------------------------------------------------------------------
     # Divergence detection
     # ------------------------------------------------------------------
 
