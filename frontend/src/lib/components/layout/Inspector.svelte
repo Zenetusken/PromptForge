@@ -1,6 +1,8 @@
 <script lang="ts">
   import { forgeStore } from '$lib/stores/forge.svelte';
+  import { refinementStore } from '$lib/stores/refinement.svelte';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
+  import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
 
   const DIMENSION_LABELS: Record<string, string> = {
     clarity: 'Clarity',
@@ -90,6 +92,14 @@
               deltas={forgeStore.scoreDeltas}
               overallScore={forgeStore.result?.overall_score ?? null}
             />
+          </div>
+        {/if}
+
+        {#if refinementStore.scoreProgression.length >= 2}
+          <div class="sparkline-section">
+            <div class="section-heading" style="margin-bottom: 4px;">Score Trend</div>
+            <ScoreSparkline scores={refinementStore.scoreProgression} />
+            <span class="sparkline-label">{refinementStore.turns.length} versions</span>
           </div>
         {/if}
 
@@ -263,5 +273,18 @@
     font-family: var(--font-sans);
     text-align: center;
     word-break: break-word;
+  }
+
+  /* Sparkline section */
+  .sparkline-section {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .sparkline-label {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--color-text-dim);
   }
 </style>

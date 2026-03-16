@@ -1,9 +1,30 @@
 <script lang="ts">
   import { editorStore } from '$lib/stores/editor.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
+  import { refinementStore } from '$lib/stores/refinement.svelte';
   import PromptEdit from '$lib/components/editor/PromptEdit.svelte';
   import ForgeArtifact from '$lib/components/editor/ForgeArtifact.svelte';
   import DiffView from '$lib/components/shared/DiffView.svelte';
+  import RefinementTimeline from '$lib/components/refinement/RefinementTimeline.svelte';
+
+  // Initialize refinement when result tab is active and forge is complete
+  let lastInitId = $state<string | null>(null);
+  $effect(() => {
+    const tab = editorStore.activeTab;
+    if (
+      tab?.type === 'result' &&
+      forgeStore.status === 'complete' &&
+      forgeStore.result?.id &&
+      forgeStore.result.id !== lastInitId
+    ) {
+      lastInitId = forgeStore.result.id;
+      refinementStore.init(forgeStore.result.id);
+    }
+  });
+
+  const showRefinement = $derived(
+    editorStore.activeTab?.type === 'result' && forgeStore.status === 'complete'
+  );
 </script>
 
 <div class="editor-groups">
@@ -47,7 +68,18 @@
         {#if tab.type === 'prompt'}
           <PromptEdit />
         {:else if tab.type === 'result'}
-          <ForgeArtifact />
+          {#if showRefinement}
+            <div class="result-split">
+              <div class="result-split-top">
+                <ForgeArtifact />
+              </div>
+              <div class="result-split-bottom">
+                <RefinementTimeline />
+              </div>
+            </div>
+          {:else}
+            <ForgeArtifact />
+          {/if}
         {:else if tab.type === 'diff'}
           {#if forgeStore.prompt && forgeStore.result?.optimized_prompt}
             <DiffView
@@ -205,5 +237,27 @@
     font-size: 11px;
     color: var(--color-text-dim);
     font-family: var(--font-mono);
+  }
+
+  /* Result split pane */
+  .result-split {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .result-split-top {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .result-split-bottom {
+    flex-shrink: 0;
+    height: 240px;
+    min-height: 120px;
+    max-height: 50%;
+    overflow: hidden;
   }
 </style>
