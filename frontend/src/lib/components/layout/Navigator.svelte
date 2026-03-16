@@ -3,22 +3,76 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
-  import { getSettings, getProviders, getHistory, getOptimization, getApiKey, setApiKey, deleteApiKey } from '$lib/api/client';
-  import type { SettingsResponse, ProvidersResponse, HistoryItem, ApiKeyStatus } from '$lib/api/client';
+  import { getSettings, getProviders, getHistory, getOptimization, getApiKey, setApiKey, deleteApiKey, getStrategies, getStrategy, updateStrategy } from '$lib/api/client';
+  import type { SettingsResponse, ProvidersResponse, HistoryItem, ApiKeyStatus, StrategyInfo } from '$lib/api/client';
 
   type Activity = 'editor' | 'history' | 'github' | 'settings';
 
   let { active }: { active: Activity } = $props();
 
   // ---- Editor panel state ----
-  const strategies: { id: string; label: string; description: string }[] = [
-    { id: 'chain-of-thought', label: 'Chain of Thought', description: 'Step-by-step reasoning' },
-    { id: 'few-shot', label: 'Few-Shot', description: 'Example-driven prompting' },
-    { id: 'role-playing', label: 'Role-Playing', description: 'Expert persona framing' },
-    { id: 'structured-output', label: 'Structured Output', description: 'Format + constraints' },
-    { id: 'meta-prompting', label: 'Meta-Prompting', description: 'Structural improvement' },
-    { id: 'auto', label: 'Auto', description: 'Let the optimizer decide' },
-  ];
+  let strategiesList = $state<StrategyInfo[]>([]);
+  let editingStrategy = $state<string | null>(null);
+  let editContent = $state('');
+  let editSaving = $state(false);
+  let editDirty = $state(false);
+
+  // Load strategies from backend on mount
+  let strategiesLoaded = false;
+  $effect(() => {
+    if (strategiesLoaded) return;
+    strategiesLoaded = true;
+    getStrategies()
+      .then((list) => { strategiesList = list; })
+      .catch(() => {
+        // Fallback: hardcoded list if backend unavailable
+        strategiesList = [
+          { name: 'chain-of-thought', description: 'Guide the AI through explicit reasoning steps before producing output.' },
+          { name: 'few-shot', description: 'Provide concrete input/output examples to demonstrate the expected behavior.' },
+          { name: 'role-playing', description: 'Frame the AI as a domain expert with specific credentials and perspective.' },
+          { name: 'structured-output', description: 'Define explicit output format, constraints, and validation rules.' },
+          { name: 'meta-prompting', description: 'Improve the prompt\'s structure, clarity, and organization.' },
+          { name: 'auto', description: 'Analyze the prompt yourself and select the best optimization approach.' },
+        ];
+      });
+  });
+
+  function formatStrategyLabel(name: string): string {
+    return name.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+
+  async function openStrategyEditor(name: string) {
+    if (editingStrategy === name) {
+      editingStrategy = null;
+      return;
+    }
+    try {
+      const detail = await getStrategy(name);
+      editContent = detail.content;
+      editingStrategy = name;
+      editDirty = false;
+    } catch {
+      editingStrategy = null;
+    }
+  }
+
+  async function saveStrategyEdit() {
+    if (!editingStrategy || !editDirty) return;
+    editSaving = true;
+    try {
+      await updateStrategy(editingStrategy, editContent);
+      editDirty = false;
+      // Refresh descriptions
+      const list = await getStrategies();
+      strategiesList = list;
+    } catch { /* save failed */ }
+    editSaving = false;
+  }
+
+  function discardStrategyEdit() {
+    editingStrategy = null;
+    editDirty = false;
+  }
 
   // ---- History panel state ----
   let historyItems = $state<HistoryItem[]>([]);
@@ -161,18 +215,52 @@
         <span class="section-heading">Strategies</span>
       </header>
       <div class="panel-body">
-        {#each strategies as strat}
-          <button
-            class="row-item"
-            class:row-item--active={forgeStore.strategy === strat.id}
-            onclick={() => selectStrategy(strat.id)}
-            title={strat.description}
-          >
-            <span class="row-label">{strat.label}</span>
-            {#if forgeStore.strategy === strat.id}
-              <span class="row-badge">active</span>
+        {#each strategiesList as strat (strat.name)}
+          <!-- Strategy row -->
+          <div class="strategy-card" class:strategy-card--active={forgeStore.strategy === strat.name}>
+            <button
+              class="strategy-header"
+              onclick={() => selectStrategy(strat.name)}
+            >
+              <span class="row-label">{formatStrategyLabel(strat.name)}</span>
+              {#if forgeStore.strategy === strat.name}
+                <span class="row-badge">active</span>
+              {/if}
+            </button>
+            <p class="strategy-tip">{strat.description}</p>
+            <button
+              class="strategy-edit-btn"
+              onclick={() => openStrategyEditor(strat.name)}
+              title="Edit strategy template"
+            >
+              {editingStrategy === strat.name ? 'close' : 'edit'}
+            </button>
+
+            <!-- Inline editor (expanded) -->
+            {#if editingStrategy === strat.name}
+              <div class="strategy-editor">
+                <textarea
+                  class="strategy-textarea"
+                  value={editContent}
+                  oninput={(e) => { editContent = (e.target as HTMLTextAreaElement).value; editDirty = true; }}
+                  spellcheck="false"
+                ></textarea>
+                <div class="strategy-editor-actions">
+                  <button
+                    class="action-btn action-btn--primary"
+                    onclick={saveStrategyEdit}
+                    disabled={editSaving || !editDirty}
+                  >
+                    {editSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button class="action-btn" onclick={discardStrategyEdit}>
+                    Discard
+                  </button>
+                  <span class="strategy-file-path">strategies/{strat.name}.md</span>
+                </div>
+              </div>
             {/if}
-          </button>
+          </div>
         {/each}
       </div>
     </div>
@@ -494,6 +582,114 @@
     min-height: 0;
   }
 
+  /* ---- Strategy cards ---- */
+  .strategy-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-card);
+    padding: 4px 6px;
+    gap: 2px;
+    position: relative;
+    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .strategy-card:hover {
+    border-color: var(--color-border-accent);
+  }
+
+  .strategy-card--active {
+    border-color: var(--color-neon-cyan);
+  }
+
+  .strategy-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    height: 18px;
+    cursor: pointer;
+  }
+
+  .strategy-header:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .strategy-tip {
+    font-size: 10px;
+    font-family: var(--font-sans);
+    color: var(--color-text-dim);
+    margin: 0;
+    line-height: 1.3;
+  }
+
+  .strategy-edit-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--color-text-dim);
+    background: transparent;
+    border: none;
+    padding: 0 3px;
+    height: 14px;
+    line-height: 14px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .strategy-card:hover .strategy-edit-btn,
+  .strategy-edit-btn:focus-visible {
+    opacity: 1;
+  }
+
+  .strategy-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: 4px;
+  }
+
+  .strategy-textarea {
+    width: 100%;
+    min-height: 120px;
+    max-height: 300px;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.4;
+    background: var(--color-bg-input);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-primary);
+    padding: 4px;
+    tab-size: 2;
+  }
+
+  .strategy-textarea:focus {
+    border-color: rgba(0, 229, 255, 0.3);
+    outline: none;
+  }
+
+  .strategy-editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .strategy-file-path {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--color-text-dim);
+  }
+
   /* ---- Row items ---- */
   .row-item {
     display: flex;
@@ -522,27 +718,9 @@
     transform: none;
   }
 
-  .row-item--active {
-    color: var(--color-neon-cyan);
-    background: var(--color-bg-hover);
-    border-color: transparent;
-  }
-
-  .row-item--active:hover {
-    color: var(--color-neon-cyan);
-  }
-
   .row-label {
     font-size: 10px;
     flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .row-desc {
-    font-size: 10px;
-    color: var(--color-text-dim);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

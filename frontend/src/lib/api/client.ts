@@ -361,6 +361,28 @@ export const patchPreferences = (updates: Record<string, any>) =>
     body: JSON.stringify(updates),
   });
 
+// ---- Strategies ----
+
+export interface StrategyInfo {
+  name: string;
+  description: string;
+}
+
+export interface StrategyDetail {
+  name: string;
+  content: string;
+}
+
+export const getStrategies = () => apiFetch<StrategyInfo[]>('/strategies');
+
+export const getStrategy = (name: string) => apiFetch<StrategyDetail>(`/strategies/${name}`);
+
+export const updateStrategy = (name: string, content: string) =>
+  apiFetch<StrategyDetail>(`/strategies/${name}`, {
+    method: 'PUT',
+    body: JSON.stringify({ content }),
+  });
+
 // ---- Real-time event stream ----
 
 export type EventHandler = (type: string, data: Record<string, unknown>) => void;

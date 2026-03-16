@@ -157,4 +157,10 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.routers.strategies import router as strategies_router
+    app.include_router(strategies_router)
+except ImportError:
+    pass
+
 asgi_app = app
