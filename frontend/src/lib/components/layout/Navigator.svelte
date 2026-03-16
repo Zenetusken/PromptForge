@@ -302,9 +302,11 @@
             {/if}
           </div>
           <form class="api-key-form" onsubmit={(e: Event) => { e.preventDefault(); handleSetApiKey(); }} autocomplete="off">
+            <input type="text" name="username" value="anthropic-api-key" autocomplete="username" class="sr-only" tabindex="-1" aria-hidden="true" />
             <input
               class="api-key-input"
               type="password"
+              name="password"
               placeholder="sk-..."
               autocomplete="new-password"
               bind:value={apiKeyInput}
