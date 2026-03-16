@@ -6,11 +6,16 @@
   import Inspector from '$lib/components/layout/Inspector.svelte';
   import StatusBar from '$lib/components/layout/StatusBar.svelte';
   import CommandPalette from '$lib/components/shared/CommandPalette.svelte';
+  import { preferencesStore } from '$lib/stores/preferences.svelte';
 
   let { children } = $props();
 
   type Activity = 'editor' | 'history' | 'github' | 'settings';
   let activeActivity = $state<Activity>('editor');
+
+  $effect(() => {
+    preferencesStore.init();
+  });
 
   $effect(() => {
     const handler = (e: Event) => {

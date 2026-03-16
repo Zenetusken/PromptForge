@@ -351,6 +351,16 @@ export const setApiKey = (apiKey: string) =>
 export const deleteApiKey = () =>
   apiFetch<ApiKeyStatus>('/provider/api-key', { method: 'DELETE' });
 
+// ---- Preferences ----
+
+export const getPreferences = () => apiFetch<Record<string, any>>('/preferences');
+
+export const patchPreferences = (updates: Record<string, any>) =>
+  apiFetch<Record<string, any>>('/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+
 // ---- Real-time event stream ----
 
 export type EventHandler = (type: string, data: Record<string, unknown>) => void;
