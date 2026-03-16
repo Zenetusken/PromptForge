@@ -189,6 +189,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -361,7 +362,7 @@ class PreferencesService:
             )
 
     def _write(self, prefs: dict[str, Any]) -> None:
-        """Atomic write via temp file + rename."""
+        """Atomic write via temp file + rename. Sets mode 0o644."""
         self._data_dir.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(
             dir=str(self._data_dir), suffix=".tmp", prefix="prefs_",
@@ -370,6 +371,7 @@ class PreferencesService:
             with open(fd, "w", encoding="utf-8") as f:
                 json.dump(prefs, f, indent=2)
                 f.write("\n")
+            os.chmod(tmp, 0o644)
             Path(tmp).replace(self._path)
         except Exception:
             Path(tmp).unlink(missing_ok=True)
@@ -659,13 +661,14 @@ Replace 3 references:
 
 Add imports at top of `optimize.py`:
 ```python
+from app.config import DATA_DIR
 from app.services.preferences import PreferencesService
 ```
 
 In the `optimize()` handler, before passing to orchestrator:
 ```python
 _prefs = PreferencesService(DATA_DIR)
-effective_strategy = body.strategy or _prefs.get("defaults.strategy") or None
+effective_strategy = body.strategy or _prefs.get("defaults.strategy") or "auto"
 # ... pass to orchestrator:
 strategy_override=effective_strategy,
 ```
@@ -898,7 +901,7 @@ Replace the entire `{:else if active === 'settings'}` block (lines 262-361) with
 
 - [ ] **Step 3: Update GitHub activity bar to redirect to settings**
 
-In `+layout.svelte`, when the GitHub activity bar icon is clicked, set `activeActivity = 'settings'` and auto-scroll to the GitHub section. The simplest approach: clicking the GitHub icon in ActivityBar dispatches `switch-activity` with `'settings'`.
+In `ActivityBar.svelte`, change the GitHub icon's click handler from dispatching `switch-activity` with `'github'` to dispatching `'settings'`. This consolidates GitHub into the settings panel. The GitHub activity bar icon changes to navigate to settings.
 
 - [ ] **Step 4: Run svelte-check**
 
@@ -914,9 +917,104 @@ git commit -m "feat: expanded settings panel with models, pipeline toggles, and 
 
 ---
 
+### Task 8: Inspector Scoring-Disabled Indicator
+
+**Files:**
+- Modify: `frontend/src/lib/components/layout/Inspector.svelte` (or equivalent component that renders scores)
+
+- [ ] **Step 1: Find the score display conditional**
+
+The Inspector uses `{#if forgeStore.scores}` to conditionally render ScoreCard. Add an `{:else}` block for when scoring is disabled but the forge is complete:
+
+```svelte
+{#if forgeStore.scores}
+  <!-- existing ScoreCard rendering -->
+{:else if forgeStore.status === 'complete'}
+  <div class="info-row">
+    <span class="info-key" style="color: var(--color-text-dim);">Scoring</span>
+    <span class="info-val font-mono" style="color: var(--color-neon-yellow);">disabled</span>
+  </div>
+{/if}
+```
+
+- [ ] **Step 2: Run svelte-check**
+
+Run: `cd frontend && npx svelte-check --tsconfig ./tsconfig.json`
+Expected: 0 errors
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add frontend/src/lib/components/layout/Inspector.svelte
+git commit -m "feat: Inspector shows 'scoring disabled' indicator for lean mode"
+```
+
+---
+
+### Task 9: Scoring-Disabled Pipeline Test
+
+**Files:**
+- Modify: `backend/tests/test_pipeline.py`
+
+- [ ] **Step 1: Add scoring-disabled test**
+
+```python
+async def test_scoring_disabled_skips_phase_3(self, orchestrator, mock_provider, db_session, tmp_path):
+    """When enable_scoring=False, pipeline skips Phase 3 and returns null scores."""
+    # Write preferences with scoring disabled
+    import json
+    prefs_path = tmp_path / "preferences.json"
+    prefs_path.write_text(json.dumps({
+        "schema_version": 1,
+        "models": {"analyzer": "sonnet", "optimizer": "opus", "scorer": "sonnet"},
+        "pipeline": {"enable_explore": True, "enable_scoring": False, "enable_adaptation": True},
+        "defaults": {"strategy": "auto"},
+    }))
+
+    mock_provider.complete_parsed.side_effect = [
+        _make_analysis(), _make_optimization(),
+        # No third call — scoring is skipped
+    ]
+
+    with patch("app.services.pipeline.DATA_DIR", tmp_path):
+        events = []
+        async for event in orchestrator.run(
+            raw_prompt="test prompt for scoring disabled",
+            provider=mock_provider, db=db_session,
+        ):
+            events.append(event)
+
+    event_types = [e.event for e in events]
+    # score_card should NOT be emitted
+    assert "score_card" not in event_types
+    # optimization_complete should still be emitted
+    assert "optimization_complete" in event_types
+
+    # Provider should only be called twice (analyze + optimize, no score)
+    assert mock_provider.complete_parsed.call_count == 2
+
+    # Result should have scoring_mode="skipped"
+    complete_event = next(e for e in events if e.event == "optimization_complete")
+    assert complete_event.data.get("scoring_mode") == "skipped"
+```
+
+- [ ] **Step 2: Run test**
+
+Run: `cd backend && source .venv/bin/activate && pytest tests/test_pipeline.py::TestPipelineOrchestrator::test_scoring_disabled_skips_phase_3 -v`
+Expected: PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add backend/tests/test_pipeline.py
+git commit -m "test: add scoring-disabled pipeline verification"
+```
+
+---
+
 ## Chunk 4: Documentation + Verification
 
-### Task 8: CLAUDE.md + Final Verification
+### Task 10: CLAUDE.md + Final Verification
 
 **Files:**
 - Modify: `CLAUDE.md`
