@@ -62,9 +62,9 @@
     width: 100vw;
     overflow: hidden;
   }
-  .activity-bar { grid-row: 1 / 2; grid-column: 1; }
-  .navigator { grid-row: 1 / 2; grid-column: 2; }
-  .editor-area { grid-row: 1 / 2; grid-column: 3; }
-  .inspector { grid-row: 1 / 2; grid-column: 4; }
+  .activity-bar { grid-row: 1 / 2; grid-column: 1; overflow: hidden; }
+  .navigator { grid-row: 1 / 2; grid-column: 2; overflow: hidden; }
+  .editor-area { grid-row: 1 / 2; grid-column: 3; overflow: hidden; }
+  .inspector { grid-row: 1 / 2; grid-column: 4; overflow: hidden; }
   .status-bar { grid-row: 2; grid-column: 1 / -1; }
 </style>

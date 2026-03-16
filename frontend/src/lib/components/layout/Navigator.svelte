@@ -35,6 +35,10 @@
   let apiKeyError = $state<string | null>(null);
   let apiKeySaving = $state(false);
 
+  // ---- Settings accordion state ----
+  let showProvider = $state(false);
+  let showSystem = $state(false);
+
   // Pre-fetch for settings panel (one-time on mount, best effort)
   let settingsLoaded = false;
   $effect(() => {
@@ -267,7 +271,7 @@
         <span class="section-heading">Settings</span>
       </header>
       <div class="panel-body">
-        <!-- Models -->
+        <!-- Models (always visible — primary control) -->
         <div class="sub-section">
           <span class="sub-heading">Models</span>
           <div class="info-block">
@@ -292,7 +296,7 @@
           </div>
         </div>
 
-        <!-- Pipeline -->
+        <!-- Pipeline (always visible — primary control) -->
         <div class="sub-section">
           <span class="sub-heading">Pipeline</span>
           <div class="info-block">
@@ -323,7 +327,7 @@
           </div>
         </div>
 
-        <!-- Defaults -->
+        <!-- Defaults (always visible — primary control) -->
         <div class="sub-section">
           <span class="sub-heading">Defaults</span>
           <div class="info-block">
@@ -345,145 +349,111 @@
           </div>
         </div>
 
-        <!-- Provider -->
+        <!-- Provider + API Key (collapsible — secondary) -->
         <div class="sub-section">
-          <span class="sub-heading">Provider</span>
-          <div class="info-block">
-            <div class="info-row">
-              <span class="info-key">Active</span>
-              <span class="info-val font-mono" style="color: var(--color-neon-cyan);">
-                {providers?.active_provider ?? '—'}
-              </span>
-            </div>
-            {#if providers?.available?.length}
-              <div class="info-row">
-                <span class="info-key">Available</span>
-                <span class="info-val">{providers.available.join(', ')}</span>
-              </div>
-            {/if}
-          </div>
-        </div>
-
-        <!-- API Key -->
-        <div class="sub-section">
-          <span class="sub-heading">API Key</span>
-          <div class="info-block">
-            <div class="info-row">
-              <span class="info-key">Status</span>
-              <span class="info-val font-mono" style="color: {apiKeyStatus?.configured ? 'var(--color-neon-green)' : 'var(--color-text-dim)'};">
-                {apiKeyStatus?.configured ? 'configured' : 'not set'}
-              </span>
-            </div>
-            {#if apiKeyStatus?.masked_key}
-              <div class="info-row">
-                <span class="info-key">Key</span>
-                <span class="info-val font-mono">{apiKeyStatus.masked_key}</span>
-              </div>
-            {/if}
-          </div>
-          <form class="api-key-form" onsubmit={(e: Event) => { e.preventDefault(); handleSetApiKey(); }} autocomplete="off">
-            <input type="text" name="username" value="anthropic-api-key" autocomplete="username" class="sr-only" tabindex="-1" aria-hidden="true" />
-            <input
-              class="api-key-input"
-              type="password"
-              name="password"
-              placeholder="sk-..."
-              autocomplete="new-password"
-              bind:value={apiKeyInput}
-            />
-            <div class="api-key-actions">
-              <button
-                class="action-btn"
-                onclick={handleSetApiKey}
-                disabled={apiKeySaving || !apiKeyInput.trim()}
-              >
-                {apiKeySaving ? 'Saving...' : 'Set key'}
-              </button>
+          <button
+            class="accordion-heading"
+            onclick={() => showProvider = !showProvider}
+            aria-expanded={showProvider}
+          >
+            <span class="accordion-arrow" class:accordion-arrow--open={showProvider}>&#x25B8;</span>
+            <span class="sub-heading">Provider</span>
+            <span class="accordion-summary">
+              {providers?.active_provider ?? '—'}
               {#if apiKeyStatus?.configured}
-                <button class="action-btn" onclick={handleDeleteApiKey}>
-                  Remove
-                </button>
+                <span style="color: var(--color-neon-green);">&#x2713;</span>
               {/if}
-            </div>
-          </form>
-          {#if apiKeyError}
-            <p class="empty-note" style="color: var(--color-neon-red);">{apiKeyError}</p>
-          {/if}
-        </div>
-
-        <!-- Config values -->
-        {#if settings}
-          <div class="sub-section">
-            <span class="sub-heading">Config</span>
+            </span>
+          </button>
+          {#if showProvider}
             <div class="info-block">
               <div class="info-row">
-                <span class="info-key">Max chars</span>
-                <span class="info-val font-mono">{settings.max_raw_prompt_chars.toLocaleString()}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-key">Model</span>
-                <span class="info-val font-mono">{settings.embedding_model}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-key">Rate limit</span>
-                <span class="info-val font-mono">{settings.optimize_rate_limit}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-key">Retention</span>
-                <span class="info-val font-mono">{settings.trace_retention_days}d</span>
-              </div>
-            </div>
-          </div>
-        {:else}
-          <p class="empty-note">Backend offline — settings unavailable</p>
-        {/if}
-
-        <!-- GitHub -->
-        <div class="sub-section">
-          <span class="sub-heading">GitHub</span>
-          {#if githubStore.linkedRepo}
-            <div class="info-block">
-              <div class="info-row">
-                <span class="info-key">Repo</span>
-                <span class="info-val font-mono">{githubStore.linkedRepo.full_name}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-key">Branch</span>
-                <span class="info-val font-mono">
-                  {githubStore.linkedRepo.branch ?? githubStore.linkedRepo.default_branch}
+                <span class="info-key">Active</span>
+                <span class="info-val font-mono" style="color: var(--color-neon-cyan);">
+                  {providers?.active_provider ?? '—'}
                 </span>
               </div>
-              {#if githubStore.linkedRepo.language}
+              {#if providers?.available?.length}
                 <div class="info-row">
-                  <span class="info-key">Lang</span>
-                  <span class="info-val">{githubStore.linkedRepo.language}</span>
+                  <span class="info-key">Available</span>
+                  <span class="info-val">{providers.available.join(', ')}</span>
                 </div>
               {/if}
-            </div>
-            <button
-              class="action-btn"
-              onclick={() => githubStore.unlinkRepo()}
-            >
-              Unlink repo
-            </button>
-          {:else if githubStore.user}
-            <div class="info-block">
               <div class="info-row">
-                <span class="info-key">User</span>
-                <span class="info-val font-mono">{githubStore.user.login}</span>
+                <span class="info-key">API key</span>
+                <span class="info-val font-mono" style="color: {apiKeyStatus?.configured ? 'var(--color-neon-green)' : 'var(--color-text-dim)'};">
+                  {apiKeyStatus?.configured ? apiKeyStatus.masked_key || 'configured' : 'not set'}
+                </span>
               </div>
             </div>
-            <p class="empty-note">No repo linked. Use Repo Picker in the editor to link one.</p>
-          {:else}
-            <p class="empty-note">Sign in to GitHub to link a repository for context-aware optimization.</p>
-            <button
-              class="action-btn action-btn--primary"
-              onclick={() => githubStore.login()}
-            >
-              Connect GitHub
-            </button>
+            <form class="api-key-form" onsubmit={(e: Event) => { e.preventDefault(); handleSetApiKey(); }} autocomplete="off">
+              <input type="text" name="username" value="anthropic-api-key" autocomplete="username" class="sr-only" tabindex="-1" aria-hidden="true" />
+              <input
+                class="api-key-input"
+                type="password"
+                name="password"
+                placeholder="sk-..."
+                autocomplete="new-password"
+                bind:value={apiKeyInput}
+              />
+              <div class="api-key-actions">
+                <button
+                  class="action-btn"
+                  onclick={handleSetApiKey}
+                  disabled={apiKeySaving || !apiKeyInput.trim()}
+                >
+                  {apiKeySaving ? 'Saving...' : 'Set key'}
+                </button>
+                {#if apiKeyStatus?.configured}
+                  <button class="action-btn" onclick={handleDeleteApiKey}>
+                    Remove
+                  </button>
+                {/if}
+              </div>
+            </form>
+            {#if apiKeyError}
+              <p class="empty-note" style="color: var(--color-neon-red);">{apiKeyError}</p>
+            {/if}
           {/if}
         </div>
+
+        <!-- System config (collapsible — tertiary) -->
+        {#if settings}
+          <div class="sub-section">
+            <button
+              class="accordion-heading"
+              onclick={() => showSystem = !showSystem}
+              aria-expanded={showSystem}
+            >
+              <span class="accordion-arrow" class:accordion-arrow--open={showSystem}>&#x25B8;</span>
+              <span class="sub-heading">System</span>
+            </button>
+            {#if showSystem}
+              <div class="info-block">
+                <div class="info-row">
+                  <span class="info-key">Max chars</span>
+                  <span class="info-val font-mono">{settings.max_raw_prompt_chars.toLocaleString()}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-key">Embedding</span>
+                  <span class="info-val font-mono">{settings.embedding_model}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-key">Rate limit</span>
+                  <span class="info-val font-mono">{settings.optimize_rate_limit}</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-key">Retention</span>
+                  <span class="info-val font-mono">{settings.trace_retention_days}d</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-key">Scoring</span>
+                  <span class="info-val font-mono">hybrid</span>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
     </div>
   {/if}
@@ -827,5 +797,48 @@
     padding: 0 4px;
     line-height: 16px;
     letter-spacing: 0.08em;
+  }
+
+  /* ---- Accordion headings (progressive disclosure) ---- */
+  .accordion-heading {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    height: 20px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .accordion-heading:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .accordion-heading:hover .sub-heading {
+    color: var(--color-text-primary);
+  }
+
+  .accordion-arrow {
+    font-size: 10px;
+    color: var(--color-text-dim);
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    flex-shrink: 0;
+    width: 10px;
+    text-align: center;
+  }
+
+  .accordion-arrow--open {
+    transform: rotate(90deg);
+  }
+
+  .accordion-summary {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-dim);
   }
 </style>
