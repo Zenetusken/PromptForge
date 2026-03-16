@@ -187,3 +187,58 @@ async def test_explore_respects_file_limit(tmp_path):
 
     # Verify file reads were capped at 40
     assert gc.get_file_content.await_count <= 40
+
+
+# ---------------------------------------------------------------------------
+# Test 4: explore caches results — second call with same SHA skips provider
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_explore_uses_cache(tmp_path):
+    """Second call with same SHA returns cached result without calling provider."""
+    from app.services.codebase_explorer import _explore_cache, ExploreOutput
+
+    # Clear cache to avoid test pollution
+    _explore_cache._store.clear()
+
+    loader = _make_prompt_loader(tmp_path)
+
+    gc = AsyncMock()
+    gc.get_branch_head_sha = AsyncMock(return_value="sha1")
+    gc.get_tree = AsyncMock(return_value=[
+        {"path": "src/main.py", "type": "blob", "sha": "a1", "size": 100},
+    ])
+    gc.get_file_content = AsyncMock(return_value="def main(): pass")
+
+    es = MagicMock()
+    es.aembed_single = AsyncMock(return_value=np.zeros(384))
+    es.aembed_texts = AsyncMock(return_value=[np.zeros(384)])
+    es.cosine_search = MagicMock(return_value=[(0, 0.9)])
+
+    provider = AsyncMock()
+    provider.complete_parsed = AsyncMock(
+        return_value=ExploreOutput(context="Synthesized context")
+    )
+
+    explorer = CodebaseExplorer(
+        prompt_loader=loader,
+        github_client=gc,
+        embedding_service=es,
+        provider=provider,
+    )
+
+    # First call — cache miss
+    result1 = await explorer.explore("Write a function", "owner/repo", "main", "token")
+    assert result1 == "Synthesized context"
+    assert provider.complete_parsed.call_count == 1
+
+    # Second call — cache hit (same SHA + prompt)
+    result2 = await explorer.explore("Write a function", "owner/repo", "main", "token")
+    assert result2 == "Synthesized context"
+    # Provider should NOT have been called again
+    assert provider.complete_parsed.call_count == 1
+
+    # Third call with different prompt — cache miss
+    result3 = await explorer.explore("Write a different thing", "owner/repo", "main", "token")
+    assert result3 == "Synthesized context"
+    assert provider.complete_parsed.call_count == 2

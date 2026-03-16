@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     TRUSTED_PROXIES: str = "127.0.0.1"
     FRONTEND_URL: str = "http://localhost:5199"
 
+    # --- Explore Cache ---
+    EXPLORE_RESULT_CACHE_TTL: int = 3600  # seconds
+
     # --- Traces ---
     TRACE_RETENTION_DAYS: int = 30
 

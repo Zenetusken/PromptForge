@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from app.config import settings
 from app.providers.base import LLMProvider
 from app.services.embedding_service import EmbeddingService
+from app.services.explore_cache import ExploreCache
 from app.services.github_client import GitHubClient
 from app.services.prompt_loader import PromptLoader
 
@@ -28,6 +29,9 @@ _CODE_EXTENSIONS = {
     ".sh", ".bash", ".zsh", ".fish",
     ".sql", ".graphql",
 }
+
+# Module-level cache singleton — shared across explorer instances
+_explore_cache = ExploreCache(ttl_seconds=settings.EXPLORE_RESULT_CACHE_TTL)
 
 EXPLORE_SYSTEM_PROMPT = (
     "You are a codebase analysis assistant. "
@@ -107,6 +111,13 @@ class CodebaseExplorer:
             "Explore: %s@%s HEAD=%s, %d files in tree",
             repo_full_name, branch, head_sha[:8], len(tree),
         )
+
+        # Check cache before running full pipeline
+        cache_key = _explore_cache.build_key(repo_full_name, branch, head_sha, raw_prompt)
+        cached = _explore_cache.get(cache_key)
+        if cached is not None:
+            logger.info("Explore cache hit for %s@%s (SHA=%s)", repo_full_name, branch, head_sha[:8])
+            return cached
 
         # 2. Filter to indexable files
         indexable = [
@@ -194,6 +205,9 @@ class CodebaseExplorer:
             "Explore synthesis complete for %s@%s: %d chars context",
             repo_full_name, branch, len(result.context),
         )
+
+        # Cache the result
+        _explore_cache.set(cache_key, result.context)
 
         return result.context
 
