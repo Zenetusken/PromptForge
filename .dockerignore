@@ -1,0 +1,39 @@
+# Dependencies
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+frontend/node_modules/
+frontend/.svelte-kit/
+
+# Build artifacts
+frontend/build/
+dist/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# Data (mounted as volume)
+data/
+
+# Git
+.git/
+.gitignore
+
+# Docs
+docs/
+archive/
+*.md
+!prompts/*.md
+!prompts/strategies/*.md
+
+# CI/CD
+.github/
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
