@@ -1,4 +1,4 @@
-"""Standalone MCP server with 3 optimization tools.
+"""Standalone MCP server with 4 optimization tools.
 
 Copyright 2025-2026 Project Synthesis contributors.
 """
@@ -9,6 +9,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 from mcp.server.fastmcp import Context, FastMCP
@@ -18,6 +19,7 @@ from app.config import DATA_DIR, PROMPTS_DIR, settings
 from app.database import async_session_factory
 from app.models import Optimization
 from app.providers.detector import detect_provider
+from app.schemas.pipeline_contracts import AnalysisResult, DimensionScores, ScoreResult
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.pipeline import PipelineOrchestrator
 from app.services.prompt_loader import PromptLoader
@@ -204,7 +206,193 @@ async def synthesis_optimize(
         }
 
 
-# ---- Tool 2: synthesis_prepare_optimization ----
+# ---- Tool 2: synthesis_analyze ----
+
+
+@mcp.tool()
+async def synthesis_analyze(
+    prompt: str,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Analyze a prompt and score it.
+
+    Returns task type, weaknesses, strengths, strategy recommendation,
+    and baseline quality scores (5 dimensions). Persists to history as an
+    'analyzed' entry. Use the returned optimization_ready params to run
+    synthesis_optimize if the analysis suggests improvement is worthwhile.
+    """
+    if len(prompt) < 20:
+        raise ValueError(
+            "Prompt too short (%d chars). Minimum is 20 characters." % len(prompt)
+        )
+
+    provider = _provider
+    if not provider:
+        raise ValueError(
+            "No LLM provider available. Set ANTHROPIC_API_KEY or install the Claude CLI."
+        )
+
+    start = time.monotonic()
+    logger.info("synthesis_analyze called: prompt_len=%d", len(prompt))
+
+    loader = PromptLoader(PROMPTS_DIR)
+    strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
+
+    # --- Phase 1: Analyze ---
+    system_prompt = loader.load("agent-guidance.md")
+    analyze_msg = loader.render("analyze.md", {
+        "raw_prompt": prompt,
+        "available_strategies": strategy_loader.format_available(),
+    })
+
+    try:
+        analysis: AnalysisResult = await provider.complete_parsed(
+            model=settings.MODEL_SONNET,
+            system_prompt=system_prompt,
+            user_message=analyze_msg,
+            output_format=AnalysisResult,
+            max_tokens=16384,
+            effort="medium",
+        )
+    except Exception as exc:
+        logger.error("synthesis_analyze Phase 1 (analyze) failed: %s", exc)
+        raise ValueError("Analysis failed: %s" % exc) from exc
+
+    analyze_ms = int((time.monotonic() - start) * 1000)
+    logger.info(
+        "synthesis_analyze Phase 1 complete in %dms: task_type=%s strategy=%s confidence=%.2f",
+        analyze_ms, analysis.task_type, analysis.selected_strategy, analysis.confidence,
+    )
+
+    # --- Phase 2: Score original prompt ---
+    # Send the same prompt as both A and B — scorer evaluates it on its own merits.
+    scoring_system = loader.load("scoring.md")
+    scorer_msg = f"## Prompt A\n\n{prompt}\n\n## Prompt B\n\n{prompt}"
+
+    try:
+        score_result: ScoreResult = await provider.complete_parsed(
+            model=settings.MODEL_SONNET,
+            system_prompt=scoring_system,
+            user_message=scorer_msg,
+            output_format=ScoreResult,
+            max_tokens=16384,
+            effort="medium",
+        )
+    except Exception as exc:
+        logger.error("synthesis_analyze Phase 2 (score) failed: %s", exc)
+        raise ValueError("Scoring failed: %s" % exc) from exc
+
+    # Both A and B are the same prompt — use prompt_a_scores as baseline
+    baseline: DimensionScores = score_result.prompt_a_scores
+    overall = baseline.overall
+
+    total_ms = int((time.monotonic() - start) * 1000)
+    logger.info(
+        "synthesis_analyze Phase 2 complete: overall=%.1f total_ms=%d",
+        overall, total_ms,
+    )
+
+    # --- Persist to DB ---
+    opt_id = str(uuid.uuid4())
+    trace_id = str(uuid.uuid4())
+
+    async with async_session_factory() as db:
+        opt = Optimization(
+            id=opt_id,
+            raw_prompt=prompt,
+            optimized_prompt="",
+            task_type=analysis.task_type,
+            strategy_used=analysis.selected_strategy,
+            changes_summary="",
+            score_clarity=baseline.clarity,
+            score_specificity=baseline.specificity,
+            score_structure=baseline.structure,
+            score_faithfulness=baseline.faithfulness,
+            score_conciseness=baseline.conciseness,
+            overall_score=overall,
+            provider=provider.name,
+            model_used=settings.MODEL_SONNET,
+            scoring_mode="baseline",
+            status="analyzed",
+            trace_id=trace_id,
+            duration_ms=total_ms,
+        )
+        db.add(opt)
+        await db.commit()
+
+    logger.info(
+        "synthesis_analyze persisted: optimization_id=%s trace_id=%s",
+        opt_id, trace_id,
+    )
+
+    # --- Notify event bus ---
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                "http://127.0.0.1:8000/api/events/_publish",
+                json={
+                    "event_type": "optimization_analyzed",
+                    "data": {
+                        "id": opt_id,
+                        "trace_id": trace_id,
+                        "task_type": analysis.task_type,
+                        "strategy": analysis.selected_strategy,
+                        "overall_score": overall,
+                        "provider": provider.name,
+                        "status": "analyzed",
+                    },
+                },
+                timeout=5.0,
+            )
+    except Exception:
+        logger.debug("Failed to notify backend event bus", exc_info=True)
+
+    # --- Build actionable next steps ---
+    next_steps = [
+        "Run `synthesis_optimize(prompt=..., strategy='%s')` to improve this prompt"
+        % analysis.selected_strategy,
+    ]
+    # Add weakness-specific suggestions
+    for weakness in analysis.weaknesses[:3]:
+        next_steps.append("Address: %s" % weakness)
+
+    # Find lowest-scoring dimension for targeted advice
+    dim_scores = {
+        "clarity": baseline.clarity,
+        "specificity": baseline.specificity,
+        "structure": baseline.structure,
+        "faithfulness": baseline.faithfulness,
+        "conciseness": baseline.conciseness,
+    }
+    weakest_dim = min(dim_scores, key=dim_scores.get)  # type: ignore[arg-type]
+    weakest_val = dim_scores[weakest_dim]
+    if weakest_val < 7.0:
+        next_steps.append(
+            "Focus on %s (scored %.1f/10) — this is the biggest opportunity for improvement"
+            % (weakest_dim, weakest_val)
+        )
+
+    return {
+        "optimization_id": opt_id,
+        "task_type": analysis.task_type,
+        "weaknesses": analysis.weaknesses,
+        "strengths": analysis.strengths,
+        "selected_strategy": analysis.selected_strategy,
+        "strategy_rationale": analysis.strategy_rationale,
+        "confidence": analysis.confidence,
+        "baseline_scores": dim_scores,
+        "overall_score": overall,
+        "duration_ms": total_ms,
+        "next_steps": next_steps,
+        "optimization_ready": {
+            "prompt": prompt,
+            "strategy": analysis.selected_strategy,
+        },
+    }
+
+
+# ---- Tool 3: synthesis_prepare_optimization ----
 
 
 @mcp.tool()
@@ -298,7 +486,7 @@ async def synthesis_prepare_optimization(
     }
 
 
-# ---- Tool 3: synthesis_save_result ----
+# ---- Tool 4: synthesis_save_result ----
 
 
 @mcp.tool()

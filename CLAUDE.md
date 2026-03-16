@@ -130,8 +130,9 @@ Variable reference: `prompts/manifest.json`
 
 ## MCP server
 
-3 tools with `synthesis_` prefix on port 8001 (`http://127.0.0.1:8001/mcp`):
+4 tools with `synthesis_` prefix on port 8001 (`http://127.0.0.1:8001/mcp`):
 - `synthesis_optimize` — full pipeline execution
+- `synthesis_analyze` — analysis + baseline scoring (task type, weaknesses, strengths, strategy, original scores, actionable next steps)
 - `synthesis_prepare_optimization` — assemble prompt + context for external LLM (supports `workspace_path` for roots scanning)
 - `synthesis_save_result` — persist result with bias correction
 
