@@ -43,7 +43,14 @@
     { dim: 'Conciseness', before: 8.0, after: 7.2, delta: -0.8, color: 'var(--color-neon-pink)' },
   ];
 
-  const ideLabels = ['Claude Code', 'Cursor', 'Windsurf', 'VS Code', 'Zed', 'JetBrains'];
+  const ideLogos = [
+    { name: 'Claude Code', icon: '◆', color: 'var(--color-neon-cyan)' },
+    { name: 'Cursor', icon: '▲', color: 'var(--color-neon-purple)' },
+    { name: 'Windsurf', icon: '◈', color: 'var(--color-neon-teal)' },
+    { name: 'VS Code', icon: '⬡', color: 'var(--color-neon-blue)' },
+    { name: 'Zed', icon: '◇', color: 'var(--color-neon-yellow)' },
+    { name: 'JetBrains', icon: '■', color: 'var(--color-neon-orange)' },
+  ];
 </script>
 
 <Navbar />
@@ -295,8 +302,11 @@
       <!-- Logo strip -->
       <div class="logo-strip" aria-label="Supported editors">
         <div class="logo-strip__inner">
-          {#each [...ideLabels, ...ideLabels] as label}
-            <span class="logo-strip__label font-mono">{label}</span>
+          {#each [...ideLogos, ...ideLogos] as ide}
+            <span class="logo-strip__badge">
+              <span class="logo-strip__icon" style="color:{ide.color};">{ide.icon}</span>
+              <span class="logo-strip__name font-mono">{ide.name}</span>
+            </span>
           {/each}
         </div>
       </div>
@@ -907,20 +917,37 @@
 
   .logo-strip__inner {
     display: flex;
-    gap: 48px;
+    gap: 32px;
     animation: scroll-logos 25s linear infinite;
     width: max-content;
     align-items: center;
   }
 
-  .logo-strip__label {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--color-text-dim);
+  .logo-strip__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-subtle);
     white-space: nowrap;
     flex-shrink: 0;
-    letter-spacing: 0.03em;
-    transition: color 300ms var(--ease-spring);
+    transition: border-color var(--duration-hover) var(--ease-spring);
+  }
+
+  .logo-strip__badge:hover {
+    border-color: var(--color-border-accent);
+  }
+
+  .logo-strip__icon {
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .logo-strip__name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.02em;
   }
 
   /* ================================================================

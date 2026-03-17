@@ -63,13 +63,10 @@
   }
 
   .footer__grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
+    display: flex;
+    justify-content: center;
+    gap: 80px;
     margin-bottom: 20px;
-    max-width: 480px;
-    margin-left: auto;
-    margin-right: auto;
   }
 
   .footer__heading {
