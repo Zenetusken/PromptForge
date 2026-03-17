@@ -435,6 +435,23 @@
                 <span class="lean-badge">LEAN MODE</span>
               </div>
             {/if}
+            <!-- Force sampling — rendered separately for disabled-state support -->
+            <div class="info-row">
+              <span class="info-key" title="Use IDE's LLM for the 3-phase pipeline via MCP sampling">Force IDE sampling</span>
+              <button
+                class="toggle-track"
+                class:toggle-track--on={preferencesStore.pipeline.force_sampling}
+                onclick={() => preferencesStore.setPipelineToggle('force_sampling', !preferencesStore.pipeline.force_sampling)}
+                role="switch"
+                aria-checked={preferencesStore.pipeline.force_sampling}
+                aria-label="Toggle Force IDE sampling"
+                disabled={forgeStore.noProvider}
+                title={forgeStore.noProvider ? 'No local provider to bypass — sampling is already the active path' : undefined}
+                style={forgeStore.noProvider ? 'opacity: 0.4; cursor: not-allowed;' : undefined}
+              >
+                <span class="toggle-thumb"></span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -454,6 +471,11 @@
                 {/each}
               </select>
             </div>
+            {#if preferencesStore.pipeline.force_sampling && !forgeStore.noProvider}
+              <div class="info-row">
+                <span class="lean-badge" style="color: var(--color-accent, #00e5ff); border-color: var(--color-accent, #00e5ff);">SAMPLING</span>
+              </div>
+            {/if}
           </div>
         </div>
 
