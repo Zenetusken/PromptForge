@@ -1,0 +1,57 @@
+/* Scroll-driven reveal animation */
+@supports (animation-timeline: view()) {
+  [data-reveal] {
+    animation: reveal-up 1s var(--ease-spring) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 100%;
+  }
+
+  [data-reveal-stagger] > * {
+    animation: reveal-up 1s var(--ease-spring) both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 100%;
+    animation-delay: calc(var(--i, 0) * 80ms);
+  }
+}
+
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(16px); }
+}
+
+/* Counter animation for metrics */
+@property --num {
+  syntax: '<integer>';
+  initial-value: 0;
+  inherits: false;
+}
+
+/* Parallax for hero sections */
+@supports (animation-timeline: scroll()) {
+  .hero-parallax {
+    animation: parallax linear both;
+    animation-timeline: scroll();
+  }
+}
+
+@keyframes parallax {
+  to { transform: translateY(var(--parallax-distance, 40px)); }
+}
+
+/* Smooth details expand */
+details .details-content {
+  overflow: hidden;
+}
+
+@supports (interpolate-size: allow-keywords) {
+  details[open] .details-content {
+    interpolate-size: allow-keywords;
+    opacity: 1;
+    height: auto;
+    transition: opacity 300ms var(--ease-spring), height 300ms var(--ease-spring);
+  }
+
+  details:not([open]) .details-content {
+    opacity: 0;
+    height: 0;
+  }
+}
