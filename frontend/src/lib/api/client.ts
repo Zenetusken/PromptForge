@@ -365,6 +365,7 @@ export const patchPreferences = (updates: Record<string, any>) =>
 
 export interface StrategyInfo {
   name: string;
+  tagline: string;
   description: string;
 }
 

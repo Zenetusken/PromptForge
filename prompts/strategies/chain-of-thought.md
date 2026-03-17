@@ -1,3 +1,8 @@
+---
+tagline: reasoning
+description: Guide the AI through explicit reasoning steps before producing output.
+---
+
 # Chain of Thought Strategy
 
 Guide the AI through explicit reasoning steps before producing output.

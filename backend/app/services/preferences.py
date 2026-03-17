@@ -14,19 +14,20 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from app.config import settings
+from app.config import PROMPTS_DIR, settings
 
 logger = logging.getLogger(__name__)
 
 VALID_MODELS: set[str] = {"sonnet", "opus", "haiku"}
-VALID_STRATEGIES: set[str] = {
-    "auto",
-    "chain-of-thought",
-    "few-shot",
-    "meta-prompting",
-    "role-playing",
-    "structured-output",
-}
+
+
+def _discover_strategies() -> set[str]:
+    """Discover available strategies from disk (prompts/strategies/*.md)."""
+    strategies_dir = PROMPTS_DIR / "strategies"
+    if not strategies_dir.is_dir():
+        return {"auto"}
+    found = {p.stem for p in strategies_dir.glob("*.md")}
+    return found if found else {"auto"}
 
 DEFAULTS: dict[str, Any] = {
     "schema_version": 1,
@@ -146,7 +147,8 @@ class PreferencesService:
                 models[role] = default_val
 
         strategy = prefs.get("defaults", {}).get("strategy")
-        if strategy not in VALID_STRATEGIES:
+        valid_strategies = _discover_strategies()
+        if strategy not in valid_strategies:
             default_strategy = DEFAULTS["defaults"]["strategy"]
             logger.warning(
                 "Invalid strategy '%s' — falling back to '%s'", strategy, default_strategy
@@ -177,10 +179,12 @@ class PreferencesService:
                 )
 
         strategy = prefs.get("defaults", {}).get("strategy")
-        if strategy is not None and strategy not in VALID_STRATEGIES:
-            raise ValueError(
-                f"Invalid strategy '{strategy}'. Valid: {sorted(VALID_STRATEGIES)}"
-            )
+        if strategy is not None:
+            valid_strategies = _discover_strategies()
+            if strategy not in valid_strategies:
+                raise ValueError(
+                    f"Invalid strategy '{strategy}'. Valid: {sorted(valid_strategies)}"
+                )
 
         pipeline = prefs.get("pipeline", {})
         for toggle in ("enable_explore", "enable_scoring", "enable_adaptation"):

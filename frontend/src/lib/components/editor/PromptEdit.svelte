@@ -2,15 +2,32 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
+  import { getStrategies } from '$lib/api/client';
+  import type { StrategyInfo } from '$lib/api/client';
 
-  const strategies = [
-    { value: '', label: 'Auto' },
-    { value: 'chain-of-thought', label: 'chain-of-thought' },
-    { value: 'few-shot', label: 'few-shot' },
-    { value: 'role-playing', label: 'role-playing' },
-    { value: 'structured-output', label: 'structured-output' },
-    { value: 'meta-prompting', label: 'meta-prompting' },
-  ];
+  // Dynamic strategy list — fetched from disk via API
+  let strategyOptions = $state<{ value: string; label: string }[]>([{ value: '', label: 'Auto' }]);
+
+  let strategiesLoaded = false;
+  $effect(() => {
+    if (strategiesLoaded) return;
+    strategiesLoaded = true;
+    getStrategies().then((list: StrategyInfo[]) => {
+      // Auto is always first (value='' means "let analyzer decide")
+      const auto = list.find(s => s.name === 'auto');
+      const rest = list.filter(s => s.name !== 'auto');
+      strategyOptions = [
+        { value: '', label: auto ? 'Auto' : 'Auto' },
+        ...rest.map(s => ({
+          value: s.name,
+          label: s.name.split('-').map((w, i) =>
+            // Title case, but keep prepositions lowercase
+            ['of', 'and', 'the', 'in', 'for'].includes(w) && i > 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)
+          ).join(' '),
+        })),
+      ];
+    }).catch(() => {});
+  });
 
   const isForging = $derived(
     forgeStore.status !== 'idle' &&
@@ -66,7 +83,7 @@
       value={selectValue}
       onchange={handleStrategyChange}
     >
-      {#each strategies as s}
+      {#each strategyOptions as s}
         <option value={s.value}>{s.label}</option>
       {/each}
     </select>

@@ -1,3 +1,8 @@
+---
+tagline: examples
+description: Provide concrete input/output examples to demonstrate the expected behavior.
+---
+
 # Few-Shot Strategy
 
 Provide concrete input/output examples to demonstrate the expected behavior.

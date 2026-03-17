@@ -19,8 +19,8 @@ from pydantic import BaseModel, Field, model_validator
 # Canonical task type values — must match the analyze.md template prompt
 TaskType = Literal["coding", "writing", "analysis", "creative", "data", "system", "general"]
 
-# Canonical strategy names — must match prompts/strategies/*.md filenames
-StrategyName = Literal["auto", "chain-of-thought", "few-shot", "meta-prompting", "role-playing", "structured-output"]
+# Strategy names are now fully adaptive — discovered from prompts/strategies/*.md files.
+# No hardcoded Literal. The analyzer outputs a string validated against available files.
 
 # ---------------------------------------------------------------------------
 # LLM output contracts — extra="forbid"
@@ -68,7 +68,7 @@ class AnalysisResult(BaseModel):
     task_type: TaskType
     weaknesses: list[str]
     strengths: list[str]
-    selected_strategy: StrategyName
+    selected_strategy: str
     strategy_rationale: str
     confidence: float = Field(ge=0.0, le=1.0)
 

@@ -1,3 +1,8 @@
+---
+tagline: structure
+description: Optimize the prompt by making its structure and intent more explicit to the AI.
+---
+
 # Meta-Prompting Strategy
 
 Optimize the prompt by making its structure and intent more explicit to the AI.

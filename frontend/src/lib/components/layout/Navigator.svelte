@@ -23,39 +23,16 @@
     if (strategiesLoaded) return;
     strategiesLoaded = true;
     getStrategies()
-      .then((list) => { strategiesList = list; })
-      .catch(() => {
-        // Fallback: hardcoded list if backend unavailable
-        strategiesList = [
-          { name: 'chain-of-thought', description: 'Guide the AI through explicit reasoning steps before producing output.' },
-          { name: 'few-shot', description: 'Provide concrete input/output examples to demonstrate the expected behavior.' },
-          { name: 'role-playing', description: 'Frame the AI as a domain expert with specific credentials and perspective.' },
-          { name: 'structured-output', description: 'Define explicit output format, constraints, and validation rules.' },
-          { name: 'meta-prompting', description: 'Improve the prompt\'s structure, clarity, and organization.' },
-          { name: 'auto', description: 'Analyze the prompt yourself and select the best optimization approach.' },
-        ];
-      });
+      .then((list: any[]) => { strategiesList = list; })
+      .catch(() => {});
   });
 
-  // Title-case with lowercase prepositions
-  const STRATEGY_LABELS: Record<string, string> = {
-    'chain-of-thought': 'Chain of Thought',
-    'few-shot': 'Few-Shot',
-    'role-playing': 'Role-Playing',
-    'structured-output': 'Structured Output',
-    'meta-prompting': 'Meta-Prompting',
-    'auto': 'Auto',
-  };
-
-  // 2-word max inline tags — full description in tooltip
-  const STRATEGY_TAGS: Record<string, string> = {
-    'chain-of-thought': 'reasoning',
-    'few-shot': 'examples',
-    'role-playing': 'persona',
-    'structured-output': 'format',
-    'meta-prompting': 'structure',
-    'auto': 'adaptive',
-  };
+  // Derive label from filename: "chain-of-thought" → "Chain of Thought"
+  function stratLabel(name: string): string {
+    return name.split('-').map((w, i) =>
+      ['of', 'and', 'the', 'in', 'for'].includes(w) && i > 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)
+    ).join(' ');
+  }
 
   async function openStrategyEditor(name: string) {
     if (editingStrategy === name) {
@@ -242,8 +219,8 @@
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectStrategy(strat.name); } }}
             title={strat.description}
           >
-            <span class="strat-name">{STRATEGY_LABELS[strat.name] ?? strat.name}</span>
-            <span class="strat-tag">{STRATEGY_TAGS[strat.name] ?? ''}</span>
+            <span class="strat-name">{stratLabel(strat.name)}</span>
+            <span class="strat-tag">{strat.tagline ?? ''}</span>
             <button
               class="strat-edit"
               onclick={(e: MouseEvent) => { e.stopPropagation(); openStrategyEditor(strat.name); }}

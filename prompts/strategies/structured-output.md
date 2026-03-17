@@ -1,3 +1,8 @@
+---
+tagline: format
+description: Define explicit output format, constraints, and validation rules.
+---
+
 # Structured Output Strategy
 
 Define explicit output format, constraints, and validation rules.

@@ -1,3 +1,8 @@
+---
+tagline: persona
+description: Assign a specific expert persona to focus the AI's knowledge and tone.
+---
+
 # Role-Playing Strategy
 
 Assign a specific expert persona to focus the AI's knowledge and tone.
