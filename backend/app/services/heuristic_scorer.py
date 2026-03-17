@@ -194,15 +194,23 @@ class HeuristicScorer:
 
     @staticmethod
     def heuristic_faithfulness(original: str, optimized: str) -> float:
-        """Faithfulness via embedding cosine similarity between original and optimized."""
+        """Faithfulness via embedding cosine similarity between original and optimized.
+
+        Returns 5.0 (neutral) if embedding is unavailable or inputs are invalid.
+        """
+        if not original or not optimized:
+            return 5.0
         try:
             import numpy as np
 
-            from app.services.embedding_service import EmbeddingService
+            from app.services.embedding_service import EmbeddingError, EmbeddingService
             svc = EmbeddingService()
             orig_vec = svc.embed_single(original)
             opt_vec = svc.embed_single(optimized)
-            similarity = float(np.dot(orig_vec, opt_vec) / (np.linalg.norm(orig_vec) * np.linalg.norm(opt_vec) + 1e-9))
+            similarity = float(
+                np.dot(orig_vec, opt_vec)
+                / (np.linalg.norm(orig_vec) * np.linalg.norm(opt_vec) + 1e-9)
+            )
             # Map similarity (0-1) to score (1-10). Sweet spot: 0.6-0.85
             if similarity >= 0.85:
                 return 9.0
@@ -210,9 +218,9 @@ class HeuristicScorer:
                 return 6.0 + (similarity - 0.6) / 0.25 * 3.0
             else:
                 return max(1.0, similarity * 10.0)
-        except Exception:
+        except (ImportError, EmbeddingError, ValueError, MemoryError):
             logger.debug("Embedding unavailable for faithfulness heuristic — returning neutral score")
-            return 5.0  # neutral default if embedding unavailable
+            return 5.0
 
     # ------------------------------------------------------------------
     # Convenience facade

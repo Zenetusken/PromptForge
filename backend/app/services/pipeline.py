@@ -439,7 +439,7 @@ class PipelineOrchestrator:
                             "Intent drift detected: similarity=%.2f trace_id=%s",
                             similarity, trace_id,
                         )
-                except Exception as exc:
+                except (ImportError, RuntimeError, ValueError, MemoryError) as exc:
                     logger.debug("Intent drift check skipped: %s", exc)
             else:
                 # Scoring disabled — skip Phase 3 entirely
