@@ -43,3 +43,29 @@ details .details-content {
     height: 0;
   }
 }
+
+/* Pipeline phase reveal (scroll-driven, desktop only) */
+@supports (animation-timeline: view()) {
+  @media (min-width: 768px) {
+    .pipeline-phase {
+      opacity: 0;
+      transform: translateY(24px);
+      animation: phase-reveal 1s var(--ease-spring) both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 80%;
+    }
+  }
+}
+@keyframes phase-reveal { to { opacity: 1; transform: translateY(0); } }
+
+/* Score bar fill (scroll-driven) */
+@supports (animation-timeline: view()) {
+  .score-bar-fill { animation: bar-fill 1s var(--ease-spring) both; animation-timeline: view(); animation-range: entry 0% entry 100%; }
+}
+@keyframes bar-fill { from { width: 0; } }
+
+/* Logo strip infinite scroll */
+@keyframes scroll-logos { to { transform: translateX(-50%); } }
+
+/* Hero phase type-in (page load, not scroll) */
+@keyframes phase-type-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
