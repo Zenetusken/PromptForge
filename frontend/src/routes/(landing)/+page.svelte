@@ -322,19 +322,23 @@
 
       <!-- Logo strip — Simple Icons CDN (CC0 licensed) -->
       <div class="logo-strip" aria-label="Supported editors">
-        <div class="logo-strip__inner">
-          {#each [...ideLogos, ...ideLogos] as ide}
-            <span class="logo-strip__badge">
-              <img
-                class="logo-strip__img"
-                src="https://cdn.simpleicons.org/{ide.slug}/{ide.cdnColor}"
-                alt=""
-                width="16"
-                height="16"
-                loading="lazy"
-              />
-              <span class="logo-strip__name font-mono">{ide.name}</span>
-            </span>
+        <div class="logo-strip__track">
+          {#each [0, 1] as _copy}
+            <div class="logo-strip__set" aria-hidden={_copy === 1 ? 'true' : undefined}>
+              {#each ideLogos as ide}
+                <span class="logo-strip__badge">
+                  <img
+                    class="logo-strip__img"
+                    src="https://cdn.simpleicons.org/{ide.slug}/{ide.cdnColor}"
+                    alt=""
+                    width="16"
+                    height="16"
+                    loading="lazy"
+                  />
+                  <span class="logo-strip__name font-mono">{ide.name}</span>
+                </span>
+              {/each}
+            </div>
           {/each}
         </div>
       </div>
@@ -984,16 +988,25 @@
     border-top: 1px solid var(--color-border-subtle);
     border-bottom: 1px solid var(--color-border-subtle);
     padding: 12px 0;
-    mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
   }
 
-  .logo-strip__inner {
+  .logo-strip__track {
     display: flex;
-    gap: 32px;
-    animation: scroll-logos 25s linear infinite;
     width: max-content;
-    align-items: center;
+    animation: scroll-logos 30s linear infinite;
+  }
+
+  .logo-strip__set {
+    display: flex;
+    gap: 24px;
+    padding-right: 24px;
+    flex-shrink: 0;
+  }
+
+  @keyframes scroll-logos {
+    to { transform: translateX(-50%); }
   }
 
   .logo-strip__badge {
