@@ -110,8 +110,7 @@ class ForgeStore {
         try {
           const result = await getOptimization(this.traceId!);
           if (result.status === 'completed') {
-            this.result = result;
-            this.status = 'complete';
+            this.loadFromRecord(result);
             return;
           }
         } catch {

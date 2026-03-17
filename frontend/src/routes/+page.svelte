@@ -2,7 +2,6 @@
   import EditorGroups from '$lib/components/layout/EditorGroups.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
-  import { githubStore } from '$lib/stores/github.svelte';
   import { getHealth, connectEventStream } from '$lib/api/client';
   import type { HealthResponse } from '$lib/api/client';
 
