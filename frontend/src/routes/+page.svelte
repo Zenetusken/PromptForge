@@ -18,6 +18,9 @@
       if (type === 'feedback_submitted') {
         window.dispatchEvent(new CustomEvent('feedback-event', { detail: data }));
       }
+      if (type === 'strategy_changed') {
+        window.dispatchEvent(new CustomEvent('strategy-changed', { detail: data }));
+      }
     });
     return () => eventSource?.close();
   });
