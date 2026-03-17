@@ -12,9 +12,9 @@
   const anchorPrefix = $derived(isContentPage ? `${base}/` : '');
 
   const navLinks = $derived([
-    { label: 'Features', href: `${anchorPrefix}#features` },
-    { label: 'How It Works', href: `${anchorPrefix}#how-it-works` },
-    { label: 'Testimonials', href: `${anchorPrefix}#testimonials` },
+    { label: 'Pipeline', href: `${anchorPrefix}#pipeline` },
+    { label: 'Example', href: `${anchorPrefix}#example` },
+    { label: 'Integrations', href: `${anchorPrefix}#integrations` },
   ]);
 
   $effect(() => {

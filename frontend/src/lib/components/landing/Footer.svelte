@@ -6,28 +6,10 @@
     {
       title: 'Product',
       links: [
-        { label: 'Pipeline', href: `${base}/pipeline` },
-        { label: 'Scoring', href: `${base}/scoring` },
-        { label: 'Refinement', href: `${base}/refinement` },
-        { label: 'Integrations', href: `${base}/integrations` },
-      ],
-    },
-    {
-      title: 'Resources',
-      links: [
-        { label: 'Documentation', href: `${base}/documentation` },
-        { label: 'API Reference', href: `${base}/api-reference` },
-        { label: 'MCP Server', href: `${base}/mcp-server` },
+        { label: 'Pipeline', href: '#pipeline' },
+        { label: 'Live Example', href: '#example' },
+        { label: 'Integrations', href: '#integrations' },
         { label: 'Changelog', href: `${base}/changelog` },
-      ],
-    },
-    {
-      title: 'Company',
-      links: [
-        { label: 'About', href: `${base}/about` },
-        { label: 'Blog', href: `${base}/blog` },
-        { label: 'Careers', href: `${base}/careers` },
-        { label: 'Contact', href: `${base}/contact` },
       ],
     },
     {
@@ -60,7 +42,10 @@
 
     <div class="footer__bottom">
       <span class="footer__copyright">&copy; {year} Project Synthesis</span>
-      <span class="footer__version">v{APP_VERSION}</span>
+      <div class="footer__meta">
+        <span class="footer__version">v{APP_VERSION}</span>
+        <a href="https://github.com/project-synthesis/ProjectSynthesis" class="footer__github" target="_blank" rel="noopener">GitHub</a>
+      </div>
     </div>
   </div>
 </footer>
@@ -79,7 +64,7 @@
 
   .footer__grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 24px;
     margin-bottom: 20px;
   }
@@ -128,16 +113,27 @@
     color: var(--color-text-dim);
   }
 
+  .footer__meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .footer__version {
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--color-text-dim);
   }
 
-  @media (max-width: 640px) {
-    .footer__grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-    }
+  .footer__github {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-dim);
+    text-decoration: none;
+    transition: color var(--duration-hover) var(--ease-spring);
+  }
+
+  .footer__github:hover {
+    color: var(--color-text-primary);
   }
 </style>
