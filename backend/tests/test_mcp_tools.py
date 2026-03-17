@@ -15,11 +15,15 @@ from app.mcp_server import (
 # ---------------------------------------------------------------------------
 
 
-async def test_prepare_returns_assembled_prompt() -> None:
+async def test_prepare_returns_assembled_prompt(db_session) -> None:
     """synthesis_prepare_optimization assembles a passthrough prompt with all expected fields."""
-    result = await synthesis_prepare_optimization(
-        prompt="Write a Python function that validates email addresses using RFC 5322 regex.",
-    )
+    with patch("app.mcp_server.async_session_factory") as mock_factory:
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await synthesis_prepare_optimization(
+            prompt="Write a Python function that validates email addresses using RFC 5322 regex.",
+        )
 
     assert "trace_id" in result
     assert len(result["trace_id"]) == 36  # UUID format
@@ -31,24 +35,32 @@ async def test_prepare_returns_assembled_prompt() -> None:
     assert result["strategy_requested"] == "auto"  # default when none specified
 
 
-async def test_prepare_with_explicit_strategy() -> None:
+async def test_prepare_with_explicit_strategy(db_session) -> None:
     """Explicit strategy name is reflected in the returned strategy_requested."""
-    result = await synthesis_prepare_optimization(
-        prompt="Write a Python function that validates email addresses using RFC 5322 regex.",
-        strategy="chain-of-thought",
-    )
+    with patch("app.mcp_server.async_session_factory") as mock_factory:
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await synthesis_prepare_optimization(
+            prompt="Write a Python function that validates email addresses using RFC 5322 regex.",
+            strategy="chain-of-thought",
+        )
 
     assert result["strategy_requested"] == "chain-of-thought"
     # Strategy instructions should be embedded in the assembled prompt
     assert len(result["assembled_prompt"]) > 100
 
 
-async def test_prepare_falls_back_to_auto_for_unknown_strategy() -> None:
+async def test_prepare_falls_back_to_auto_for_unknown_strategy(db_session) -> None:
     """Unknown strategy falls back to auto without raising."""
-    result = await synthesis_prepare_optimization(
-        prompt="Write a Python function that validates email addresses using RFC 5322 regex.",
-        strategy="nonexistent-strategy-xyz",
-    )
+    with patch("app.mcp_server.async_session_factory") as mock_factory:
+        mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
+        mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await synthesis_prepare_optimization(
+            prompt="Write a Python function that validates email addresses using RFC 5322 regex.",
+            strategy="nonexistent-strategy-xyz",
+        )
 
     assert result["strategy_requested"] == "auto"
 
