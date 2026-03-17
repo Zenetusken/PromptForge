@@ -392,9 +392,9 @@ export function connectEventStream(onEvent: EventHandler): EventSource {
     const es = new EventSource(`${BASE_URL.replace('/api', '')}/api/events`);
 
     const eventTypes = [
-        'optimization_created', 'feedback_submitted',
-        'refinement_turn', 'optimization_failed',
-        'strategy_changed',
+        'optimization_created', 'optimization_analyzed',
+        'feedback_submitted', 'refinement_turn',
+        'optimization_failed', 'strategy_changed',
     ];
     for (const type of eventTypes) {
         es.addEventListener(type, (e: MessageEvent) => {

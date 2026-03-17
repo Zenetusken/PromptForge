@@ -29,8 +29,10 @@ from app.schemas.pipeline_contracts import (
     PipelineEvent,
     ScoreResult,
 )
+from app.services.heuristic_scorer import HeuristicScorer
 from app.services.preferences import PreferencesService
 from app.services.prompt_loader import PromptLoader
+from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
 
 logger = logging.getLogger(__name__)
@@ -258,11 +260,21 @@ class RefinementService:
 
         # Map A/B scores back to original/optimized
         if original_first:
-            original_scores = scores.prompt_a_scores
-            optimized_scores = scores.prompt_b_scores
+            llm_original = scores.prompt_a_scores
+            llm_optimized = scores.prompt_b_scores
         else:
-            original_scores = scores.prompt_b_scores
-            optimized_scores = scores.prompt_a_scores
+            llm_original = scores.prompt_b_scores
+            llm_optimized = scores.prompt_a_scores
+
+        # Hybrid scoring: blend LLM + heuristic (same as main pipeline)
+        heur_original = HeuristicScorer.score_prompt(original_prompt)
+        heur_optimized = HeuristicScorer.score_prompt(
+            refined.optimized_prompt, original=original_prompt,
+        )
+        blended_original = blend_scores(llm_original, heur_original)
+        blended_optimized = blend_scores(llm_optimized, heur_optimized)
+        original_scores = blended_original.to_dimension_scores()
+        optimized_scores = blended_optimized.to_dimension_scores()
 
         # Compute deltas (current refinement vs original)
         deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)

@@ -111,7 +111,7 @@ src/lib/components/
   editor/       # PromptEdit, ForgeArtifact
   refinement/   # RefinementTimeline, RefinementTurnCard, SuggestionChips,
                 # BranchSwitcher, ScoreSparkline, RefinementInput
-  shared/       # CommandPalette, DiffView, ProviderBadge, ScoreCard
+  shared/       # CommandPalette, DiffView, MarkdownRenderer, ProviderBadge, ScoreCard, Toast
 ```
 
 ## Prompt templates

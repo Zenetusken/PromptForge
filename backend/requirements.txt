@@ -21,6 +21,9 @@ cryptography==46.0.5
 # Rate limiting
 limits==5.8.0
 
+# File watching
+watchfiles>=1.0.0
+
 # Scoring heuristics
 textstat==0.7.13
 

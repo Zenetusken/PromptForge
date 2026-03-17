@@ -12,7 +12,7 @@
   // Real-time event stream
   $effect(() => {
     eventSource = connectEventStream((type, data) => {
-      if (type === 'optimization_created' || type === 'refinement_turn') {
+      if (type === 'optimization_created' || type === 'optimization_analyzed' || type === 'refinement_turn') {
         window.dispatchEvent(new CustomEvent('optimization-event', { detail: data }));
       }
       if (type === 'feedback_submitted') {
