@@ -192,15 +192,15 @@
     <div class="callout-bar__inner">
       <div class="callout-item">
         <span class="callout-item__icon" style="color:var(--color-neon-green);">&#10003;</span>
-        <span class="callout-item__text"><strong>Completely free.</strong> No subscription. No API key. No paid tier. Zero cost — ever.</span>
+        <div class="callout-item__text"><strong>Completely free.</strong><br/>No subscription. No API key. No paid tier.</div>
       </div>
       <div class="callout-item">
         <span class="callout-item__icon" style="color:var(--color-neon-cyan);">&#10003;</span>
-        <span class="callout-item__text"><strong>Your IDE's LLM does the work.</strong> Synthesis orchestrates — Cursor, Windsurf, VS Code, or any MCP-compatible editor provides the model.</span>
+        <div class="callout-item__text"><strong>Your IDE's model does the work.</strong><br/>Cursor, Windsurf, VS Code, Zed, JetBrains — via MCP.</div>
       </div>
       <div class="callout-item">
         <span class="callout-item__icon" style="color:var(--color-neon-purple);">&#10003;</span>
-        <span class="callout-item__text"><strong>Nothing to pay for.</strong> Open source. Self-hosted. The passthrough pipeline runs on your editor's existing model access.</span>
+        <div class="callout-item__text"><strong>Open source. Self-hosted.</strong><br/>Passthrough runs on your editor's existing model.</div>
       </div>
     </div>
   </section>
@@ -719,16 +719,16 @@
   .callout-bar__inner {
     max-width: 1120px;
     margin: 0 auto;
-    display: flex;
-    justify-content: center;
-    gap: 32px;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
   }
 
   .callout-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
+    padding: 8px;
   }
 
   .callout-item__icon {
@@ -1117,6 +1117,10 @@
     }
 
     .integrations-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .callout-bar__inner {
       grid-template-columns: 1fr;
     }
   }
