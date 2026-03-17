@@ -198,12 +198,11 @@
     try {
       const opt = await getOptimization(item.trace_id);
       forgeStore.loadFromRecord(opt);
-      editorStore.openResult(item.id);
-      window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'editor' }));
+      editorStore.openResult(item.id, opt);
+      // Stay on the current sidebar panel — don't switch away from history
     } catch {
       forgeStore.prompt = item.raw_prompt;
       forgeStore.status = 'idle';
-      window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'editor' }));
     }
   }
 

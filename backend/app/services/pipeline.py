@@ -367,7 +367,9 @@ class PipelineOrchestrator:
                 try:
                     from app.services.optimization_service import OptimizationService
                     opt_svc = OptimizationService(db)
-                    historical_stats = await opt_svc.get_score_distribution()
+                    historical_stats = await opt_svc.get_score_distribution(
+                        exclude_scoring_modes=["heuristic"],
+                    )
                 except Exception as exc:
                     logger.debug("Historical stats unavailable for normalization: %s", exc)
 

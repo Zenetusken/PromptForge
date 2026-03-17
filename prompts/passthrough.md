@@ -29,6 +29,9 @@ You are an expert prompt engineer. Optimize the user's prompt above, then score 
 - Remove filler and redundancy
 - Apply the strategy above (if provided)
 
+**Output format for the optimized prompt:**
+Always structure the optimized prompt using markdown `##` headers to delineate sections (e.g. `## Task`, `## Requirements`, `## Constraints`, `## Output`). Use bullet lists (`-`) for enumerations, numbered lists (`1.`) for sequential steps, and fenced code blocks for signatures, examples, and schemas. This ensures consistent rendering regardless of which strategy was applied.
+
 **Scoring guidelines:**
 Score both prompts on 5 dimensions (1-10 each):
 - **clarity** — How unambiguous is the prompt?

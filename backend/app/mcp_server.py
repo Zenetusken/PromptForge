@@ -21,6 +21,7 @@ from app.models import Optimization
 from app.providers.detector import detect_provider
 from app.schemas.pipeline_contracts import AnalysisResult, ScoreResult
 from app.services.heuristic_scorer import HeuristicScorer
+from app.services.passthrough import assemble_passthrough_prompt
 from app.services.pipeline import PipelineOrchestrator
 from app.services.preferences import PreferencesService
 from app.services.prompt_loader import PromptLoader
@@ -428,36 +429,15 @@ async def synthesis_prepare_optimization(
         len(prompt), strategy,
     )
 
-    loader = PromptLoader(PROMPTS_DIR)
-    strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
-
-    # Load strategy instructions — fall back to "auto" if requested strategy doesn't exist
-    strategy_name = strategy or "auto"
-    available = strategy_loader.list_strategies()
-    if available and strategy_name not in available:
-        logger.info("Strategy '%s' not found, falling back to 'auto'", strategy_name)
-        strategy_name = "auto" if "auto" in available else (available[0] if available else strategy_name)
-    strategy_instructions = strategy_loader.load(strategy_name)
-
-    # Load scoring rubric excerpt for passthrough
-    scoring_rubric = loader.load("scoring.md")
-    scoring_excerpt = (
-        scoring_rubric[:2000] + "..."
-        if len(scoring_rubric) > 2000
-        else scoring_rubric
-    )
-
     # Auto-discover workspace roots (zero-config) or fall back to workspace_path
     guidance = await _resolve_workspace_guidance(ctx, workspace_path)
 
-    assembled = loader.render("passthrough.md", {
-        "raw_prompt": prompt,
-        "strategy_instructions": strategy_instructions,
-        "scoring_rubric_excerpt": scoring_excerpt,
-        "codebase_guidance": guidance,
-        "codebase_context": None,
-        "adaptation_state": None,
-    })
+    assembled, strategy_name = assemble_passthrough_prompt(
+        prompts_dir=PROMPTS_DIR,
+        raw_prompt=prompt,
+        strategy_name=strategy,
+        codebase_guidance=guidance,
+    )
 
     # Enforce max_context_tokens budget
     estimated_tokens = len(assembled) // 4
@@ -479,6 +459,7 @@ async def synthesis_prepare_optimization(
             trace_id=trace_id,
             provider="mcp_passthrough",
             strategy_used=strategy_name,
+            task_type="general",
         )
         db.add(pending)
         await db.commit()
@@ -517,32 +498,21 @@ async def synthesis_save_result(
     """
     logger.info("synthesis_save_result called: trace_id=%s model=%s", trace_id, model)
 
-    # Apply bias correction if scores provided
+    # Determine scoring mode and compute final scores
     bias_corrected: dict[str, float] = {}
+    clean_scores: dict[str, float] = {}
     heuristic_flags: list[str] = []
+    scoring_mode = "heuristic"  # default: pure heuristic
+
     if scores:
-        # Coerce string values to floats
-        clean_scores: dict[str, float] = {}
+        # IDE provided self-rated scores — apply bias correction
+        scoring_mode = "self_rated"
         for k, v in scores.items():
             try:
                 clean_scores[k] = float(v)
             except (ValueError, TypeError):
                 clean_scores[k] = 5.0  # default
-
         bias_corrected = HeuristicScorer.apply_bias_correction(clean_scores)
-
-        # Run all available heuristic checks
-        heuristic_scores: dict[str, float] = {}
-        heuristic_scores["structure"] = HeuristicScorer.heuristic_structure(optimized_prompt)
-        heuristic_scores["specificity"] = HeuristicScorer.heuristic_specificity(optimized_prompt)
-        heuristic_scores["conciseness"] = HeuristicScorer.heuristic_conciseness(optimized_prompt)
-        heuristic_scores["clarity"] = HeuristicScorer.heuristic_clarity(optimized_prompt)
-        # Note: heuristic_faithfulness requires both original and optimized prompts.
-        # Skipped here because passthrough doesn't always have the original.
-
-        heuristic_flags = HeuristicScorer.detect_divergence(
-            clean_scores, heuristic_scores
-        )
 
     # Persist — look up pending optimization created by prepare, or create new
     async with async_session_factory() as db:
@@ -567,10 +537,27 @@ async def synthesis_save_result(
         elif strategy_used:
             strategy_compliance = "matched"  # no prepare to compare against
 
-        overall = (
-            sum(bias_corrected.values()) / max(len(bias_corrected), 1)
-            if bias_corrected
-            else None
+        # Always compute heuristic scores (used for divergence checks and fallback)
+        heuristic_scores = HeuristicScorer.score_prompt(
+            optimized_prompt,
+            original=opt.raw_prompt if opt and opt.raw_prompt else None,
+        )
+
+        # Divergence check: compare IDE self-rated scores against heuristics
+        if clean_scores:
+            heuristic_flags = HeuristicScorer.detect_divergence(
+                clean_scores, heuristic_scores,
+            )
+
+        # Final scores: bias-corrected IDE scores if available, else pure heuristic
+        if bias_corrected:
+            final_scores = bias_corrected
+        else:
+            final_scores = heuristic_scores
+            scoring_mode = "heuristic"
+
+        overall = round(
+            sum(final_scores.values()) / max(len(final_scores), 1), 2,
         )
 
         # Truncate codebase context if provided
@@ -578,43 +565,57 @@ async def synthesis_save_result(
         if codebase_context:
             context_snapshot = codebase_context[: settings.MAX_CODEBASE_CONTEXT_CHARS]
 
+        # Compute original prompt scores + deltas when raw_prompt is available
+        original_scores: dict[str, float] | None = None
+        deltas: dict[str, float] | None = None
+        if opt and opt.raw_prompt and final_scores:
+            original_scores = HeuristicScorer.score_prompt(opt.raw_prompt)
+            deltas = {
+                dim: round(final_scores[dim] - original_scores[dim], 2)
+                for dim in final_scores
+                if dim in original_scores
+            }
+
         if opt:
             # Update existing pending record from prepare
             opt.optimized_prompt = optimized_prompt
-            opt.task_type = task_type or "unknown"
-            opt.strategy_used = strategy_used or opt.strategy_used or "unknown"
+            opt.task_type = task_type or opt.task_type or "general"
+            opt.strategy_used = strategy_used or opt.strategy_used or "auto"
             opt.changes_summary = changes_summary or ""
-            opt.score_clarity = bias_corrected.get("clarity")
-            opt.score_specificity = bias_corrected.get("specificity")
-            opt.score_structure = bias_corrected.get("structure")
-            opt.score_faithfulness = bias_corrected.get("faithfulness")
-            opt.score_conciseness = bias_corrected.get("conciseness")
+            opt.score_clarity = final_scores.get("clarity")
+            opt.score_specificity = final_scores.get("specificity")
+            opt.score_structure = final_scores.get("structure")
+            opt.score_faithfulness = final_scores.get("faithfulness")
+            opt.score_conciseness = final_scores.get("conciseness")
             opt.overall_score = overall
-            opt.model_used = model or "unknown"
-            opt.scoring_mode = "self_rated"
+            opt.original_scores = original_scores
+            opt.score_deltas = deltas
+            opt.model_used = model or "external"
+            opt.scoring_mode = scoring_mode
             opt.status = "completed"
             if context_snapshot:
                 opt.codebase_context_snapshot = context_snapshot
             opt_id = opt.id
         else:
-            # No prepare was called — create new record (standalone save)
+            # No prepare was called — create new record (standalone save).
+            # No raw_prompt available, so no original_scores or deltas.
             opt_id = str(uuid.uuid4())
             opt = Optimization(
                 id=opt_id,
                 raw_prompt="",
                 optimized_prompt=optimized_prompt,
-                task_type=task_type or "unknown",
-                strategy_used=strategy_used or "unknown",
+                task_type=task_type or "general",
+                strategy_used=strategy_used or "auto",
                 changes_summary=changes_summary or "",
-                score_clarity=bias_corrected.get("clarity"),
-                score_specificity=bias_corrected.get("specificity"),
-                score_structure=bias_corrected.get("structure"),
-                score_faithfulness=bias_corrected.get("faithfulness"),
-                score_conciseness=bias_corrected.get("conciseness"),
+                score_clarity=final_scores.get("clarity"),
+                score_specificity=final_scores.get("specificity"),
+                score_structure=final_scores.get("structure"),
+                score_faithfulness=final_scores.get("faithfulness"),
+                score_conciseness=final_scores.get("conciseness"),
                 overall_score=overall,
                 provider="mcp_passthrough",
-                model_used=model or "unknown",
-                scoring_mode="self_rated",
+                model_used=model or "external",
+                scoring_mode=scoring_mode,
                 status="completed",
                 trace_id=trace_id,
                 codebase_context_snapshot=context_snapshot,
@@ -634,10 +635,10 @@ async def synthesis_save_result(
                         "data": {
                             "id": opt_id,
                             "trace_id": trace_id,
-                            "task_type": task_type or "unknown",
-                            "strategy_used": strategy_used or "unknown",
+                            "task_type": opt.task_type,
+                            "strategy_used": opt.strategy_used,
                             "overall_score": overall,
-                            "provider": "mcp_passthrough",
+                            "provider": opt.provider,
                             "status": "completed",
                         },
                     },
@@ -653,8 +654,11 @@ async def synthesis_save_result(
 
     return {
         "optimization_id": opt_id,
-        "scoring_mode": "self_rated",
-        "bias_corrected_scores": bias_corrected,
+        "scoring_mode": scoring_mode,
+        "scores": {k: round(v, 2) for k, v in final_scores.items()} if final_scores else {},
+        "original_scores": original_scores,
+        "score_deltas": deltas,
+        "overall_score": overall,
         "strategy_compliance": strategy_compliance,
         "heuristic_flags": heuristic_flags,
     }

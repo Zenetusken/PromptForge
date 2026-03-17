@@ -5,10 +5,10 @@
 
   let { provider = null }: Props = $props();
 
-  type BadgeVariant = 'cli' | 'api' | 'mcp' | 'none';
+  type BadgeVariant = 'cli' | 'api' | 'mcp' | 'passthrough' | 'none';
 
   const variant = $derived.by((): BadgeVariant => {
-    if (!provider) return 'none';
+    if (!provider) return 'passthrough';
     const p = provider.toLowerCase();
     if (p.includes('cli')) return 'cli';
     if (p.includes('mcp')) return 'mcp';
@@ -17,7 +17,7 @@
   });
 
   const label = $derived.by(() => {
-    if (!provider) return 'None';
+    if (!provider) return 'PASSTHROUGH';
     const p = provider.toLowerCase();
     if (p.includes('cli')) return 'CLI';
     if (p.includes('mcp')) return 'MCP';
@@ -31,6 +31,7 @@
   class:variant-cli={variant === 'cli'}
   class:variant-api={variant === 'api'}
   class:variant-mcp={variant === 'mcp'}
+  class:variant-passthrough={variant === 'passthrough'}
   class:variant-none={variant === 'none'}
   aria-label="Active provider: {label}"
   title="Provider: {provider ?? 'None'}"
@@ -66,6 +67,11 @@
   .variant-mcp {
     border-color: var(--color-neon-green);
     color: var(--color-neon-green);
+  }
+
+  .variant-passthrough {
+    border-color: var(--color-neon-yellow);
+    color: var(--color-neon-yellow);
   }
 
   .variant-none {

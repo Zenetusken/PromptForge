@@ -1,8 +1,12 @@
 // frontend/src/lib/stores/forge.svelte.ts
-import { optimizeSSE, getOptimization, submitFeedback as apiFeedback } from '$lib/api/client';
+import {
+  optimizeSSE, getOptimization, submitFeedback as apiFeedback,
+  preparePassthrough, savePassthrough,
+} from '$lib/api/client';
 import type { OptimizationResult, DimensionScores, SSEEvent } from '$lib/api/client';
+import { editorStore } from '$lib/stores/editor.svelte';
 
-export type ForgeStatus = 'idle' | 'analyzing' | 'optimizing' | 'scoring' | 'complete' | 'error';
+export type ForgeStatus = 'idle' | 'analyzing' | 'optimizing' | 'scoring' | 'complete' | 'error' | 'passthrough';
 
 class ForgeStore {
   prompt = $state('');
@@ -20,6 +24,14 @@ class ForgeStore {
   originalScores = $state<DimensionScores | null>(null);
   scoreDeltas = $state<Record<string, number> | null>(null);
 
+  // Passthrough state
+  assembledPrompt = $state<string | null>(null);
+  passthroughTraceId = $state<string | null>(null);
+  passthroughStrategy = $state<string | null>(null);
+
+  /** Set by +page.svelte after health check — true when health.provider is null. */
+  noProvider = $state(false);
+
   private controller: AbortController | null = null;
 
   forge() {
@@ -35,7 +47,7 @@ class ForgeStore {
       return;
     }
 
-    this.status = 'analyzing';
+    // Clear shared state
     this.error = null;
     this.result = null;
     this.feedback = null;
@@ -44,6 +56,27 @@ class ForgeStore {
     this.scores = null;
     this.originalScores = null;
     this.scoreDeltas = null;
+    this.assembledPrompt = null;
+    this.passthroughTraceId = null;
+    this.passthroughStrategy = null;
+
+    // Passthrough mode — no provider configured
+    if (this.noProvider) {
+      this.status = 'passthrough';
+      preparePassthrough(this.prompt, this.strategy)
+        .then((res) => {
+          this.assembledPrompt = res.assembled_prompt;
+          this.passthroughTraceId = res.trace_id;
+          this.passthroughStrategy = res.strategy_requested;
+        })
+        .catch((err) => {
+          this.error = err.message;
+          this.status = 'error';
+        });
+      return;
+    }
+
+    this.status = 'analyzing';
 
     this.controller = optimizeSSE(
       this.prompt,
@@ -62,6 +95,19 @@ class ForgeStore {
         }
       },
     );
+  }
+
+  async submitPassthrough(optimizedPrompt: string, changesSummary?: string) {
+    if (!this.passthroughTraceId) return;
+    try {
+      const result = await savePassthrough(
+        this.passthroughTraceId, optimizedPrompt, changesSummary,
+      );
+      this.loadFromRecord(result);
+    } catch (err: any) {
+      this.error = err.message;
+      this.status = 'error';
+    }
   }
 
   private handleEvent(event: SSEEvent) {
@@ -133,11 +179,23 @@ class ForgeStore {
     this.error = null;
     this.feedback = null;
 
+    // Clear assembled prompt (no longer needed) but keep passthroughTraceId
+    // alive so the SSE event filter in +page.svelte can suppress the self-toast.
+    // passthroughTraceId is cleared on next forge()/reset()/cancel().
+    this.assembledPrompt = null;
+    this.passthroughStrategy = null;
+
     // Normalize: SSE sends optimized_scores, REST sends scores
     const scores = opt.scores ?? (opt as any).optimized_scores ?? null;
     if (scores) this.scores = scores;
     this.originalScores = opt.original_scores ?? null;
     this.scoreDeltas = opt.score_deltas ?? null;
+
+    // Cache the result in the editor store so each result tab has its own data
+    if (opt.id) {
+      editorStore.cacheResult(opt.id, opt);
+    }
+
     this._saveSession();
   }
 
@@ -145,6 +203,9 @@ class ForgeStore {
     this.controller?.abort();
     this.controller = null;
     this.traceId = null; // prevent reconnect from running
+    this.assembledPrompt = null;
+    this.passthroughTraceId = null;
+    this.passthroughStrategy = null;
     this.status = 'idle';
   }
 
@@ -194,6 +255,9 @@ class ForgeStore {
     this.scores = null;
     this.originalScores = null;
     this.scoreDeltas = null;
+    this.assembledPrompt = null;
+    this.passthroughTraceId = null;
+    this.passthroughStrategy = null;
   }
 }
 

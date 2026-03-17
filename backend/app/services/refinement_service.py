@@ -277,7 +277,9 @@ class RefinementService:
         try:
             from app.services.optimization_service import OptimizationService
             opt_svc = OptimizationService(self.db)
-            historical_stats = await opt_svc.get_score_distribution()
+            historical_stats = await opt_svc.get_score_distribution(
+                exclude_scoring_modes=["heuristic"],
+            )
         except Exception:
             pass
 

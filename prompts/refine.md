@@ -34,6 +34,7 @@ The user has an existing optimized prompt (shown as "current prompt" above) and 
 - **Preserve all existing improvements.** The current prompt has already been optimized. Keep everything that works.
 - **Maintain the original intent.** The original prompt defines what the task should accomplish.
 - **Be surgical.** Small, targeted changes are better than wholesale rewrites.
+- **Preserve formatting.** Keep the existing markdown structure (`##` headers, lists, code blocks). If the current prompt uses headers, your output must use headers too.
 - If the request conflicts with the original intent, prioritize the original intent and note the conflict.
 
 Summarize exactly what you changed and why.

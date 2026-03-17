@@ -144,7 +144,10 @@ class OptimizationService:
     # Score distribution
     # ------------------------------------------------------------------
 
-    async def get_score_distribution(self) -> dict[str, dict[str, float | int]]:
+    async def get_score_distribution(
+        self,
+        exclude_scoring_modes: list[str] | None = None,
+    ) -> dict[str, dict[str, float | int]]:
         """Return per-dimension statistics: count, mean, and population stddev.
 
         Uses SQL aggregates (COUNT, AVG, and the sum-of-squares identity) to
@@ -154,6 +157,11 @@ class OptimizationService:
 
         Rows where the column is NULL are excluded from each dimension's stats.
         If a column has no non-null rows, stddev is 0.0 and mean is 0.0.
+
+        Args:
+            exclude_scoring_modes: If provided, exclude rows with these scoring_mode
+                values from the distribution (e.g. ``["heuristic"]`` to keep only
+                hybrid/independent scores for z-score normalization).
         """
         col_attrs = [getattr(Optimization, col) for col in _SCORE_COLUMNS]
 
@@ -168,7 +176,13 @@ class OptimizationService:
                 ]
             )
 
-        row = (await self._session.execute(select(*agg_exprs))).one()
+        stmt = select(*agg_exprs)
+        if exclude_scoring_modes:
+            stmt = stmt.where(
+                Optimization.scoring_mode.notin_(exclude_scoring_modes)
+            )
+
+        row = (await self._session.execute(stmt)).one()
 
         distribution: dict[str, dict[str, float | int]] = {}
         for i, col_name in enumerate(_SCORE_COLUMNS):

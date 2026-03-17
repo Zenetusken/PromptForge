@@ -232,6 +232,31 @@ export function optimizeSSE(
 export const getOptimization = (traceId: string) =>
   apiFetch<OptimizationResult>(`/optimize/${traceId}`);
 
+// ---- Passthrough (no-provider mode) ----
+
+export interface PassthroughPrepareResult {
+  trace_id: string;
+  optimization_id: string;
+  assembled_prompt: string;
+  strategy_requested: string;
+}
+
+export const preparePassthrough = (prompt: string, strategy: string | null) =>
+  apiFetch<PassthroughPrepareResult>('/optimize/passthrough', {
+    method: 'POST',
+    body: JSON.stringify({ prompt, strategy: strategy || undefined }),
+  });
+
+export const savePassthrough = (traceId: string, optimizedPrompt: string, changesSummary?: string) =>
+  apiFetch<OptimizationResult>('/optimize/passthrough/save', {
+    method: 'POST',
+    body: JSON.stringify({
+      trace_id: traceId,
+      optimized_prompt: optimizedPrompt,
+      changes_summary: changesSummary || undefined,
+    }),
+  });
+
 // ---- History ----
 
 export const getHistory = (params?: {

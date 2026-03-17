@@ -61,28 +61,23 @@
 </script>
 
 <div class="refinement-timeline">
-  <!-- Header -->
-  <div class="timeline-header">
-    <span class="section-heading">REFINEMENT</span>
-    {#if refinementStore.branches.length > 1}
-      <BranchSwitcher
-        branches={refinementStore.branches}
-        activeBranchId={refinementStore.activeBranchId ?? ''}
-        onSwitch={handleBranchSwitch}
-      />
-    {/if}
-    {#if refinementStore.status === 'refining'}
-      <span class="status-indicator">refining...</span>
-    {/if}
-  </div>
+  <!-- Header — only visible when turns exist -->
+  {#if refinementStore.turns.length > 0}
+    <div class="timeline-header">
+      <span class="section-heading">REFINEMENT</span>
+      {#if refinementStore.branches.length > 1}
+        <BranchSwitcher
+          branches={refinementStore.branches}
+          activeBranchId={refinementStore.activeBranchId ?? ''}
+          onSwitch={handleBranchSwitch}
+        />
+      {/if}
+      {#if refinementStore.status === 'refining'}
+        <span class="status-indicator">refining...</span>
+      {/if}
+    </div>
 
-  <!-- Scrollable turn list -->
-  <div class="timeline-scroll" bind:this={scrollContainer}>
-    {#if refinementStore.turns.length === 0}
-      <div class="empty-state">
-        <span class="empty-text">No refinement history</span>
-      </div>
-    {:else}
+    <div class="timeline-scroll" bind:this={scrollContainer}>
       <div class="turns-list">
         {#each refinementStore.turns as turn (turn.id)}
           <RefinementTurnCard
@@ -94,11 +89,14 @@
           />
         {/each}
       </div>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   <!-- Input area -->
   <div class="timeline-footer">
+    {#if refinementStore.status === 'refining'}
+      <span class="status-indicator">refining...</span>
+    {/if}
     {#if refinementStore.suggestions.length > 0}
       <SuggestionChips
         suggestions={refinementStore.suggestions}
@@ -127,9 +125,9 @@
   .timeline-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 32px;
-    padding: 0 8px;
+    gap: 6px;
+    height: 24px;
+    padding: 0 6px;
     background: var(--color-bg-secondary);
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
@@ -156,19 +154,6 @@
     min-height: 0;
   }
 
-  .empty-state {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 48px;
-  }
-
-  .empty-text {
-    font-size: 11px;
-    font-family: var(--font-sans);
-    color: var(--color-text-dim);
-  }
-
   .turns-list {
     display: flex;
     flex-direction: column;
@@ -178,7 +163,7 @@
 
   .timeline-footer {
     flex-shrink: 0;
-    padding: 6px 8px;
+    padding: 4px 6px;
     border-top: 1px solid var(--color-border-subtle);
     background: var(--color-bg-secondary);
     display: flex;

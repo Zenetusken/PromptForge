@@ -1,19 +1,61 @@
 // frontend/src/lib/stores/editor.svelte.ts
 
+import type { OptimizationResult } from '$lib/api/client';
+
 export type TabType = 'prompt' | 'result' | 'diff';
+
+/** The prompt tab ID is a constant — there is always exactly one prompt tab. */
+export const PROMPT_TAB_ID = 'prompt';
 
 export interface Tab {
   id: string;
   title: string;
   type: TabType;
+  /** If true, the tab cannot be closed by the user. */
+  pinned?: boolean;
+  /** The optimization ID this tab is associated with (result and diff tabs). */
+  optimizationId?: string;
 }
 
 class EditorStore {
-  tabs = $state<Tab[]>([{ id: 'prompt-1', title: 'New Prompt', type: 'prompt' }]);
-  activeTabId = $state('prompt-1');
+  tabs = $state<Tab[]>([
+    { id: PROMPT_TAB_ID, title: 'Prompt', type: 'prompt', pinned: true },
+  ]);
+  activeTabId = $state(PROMPT_TAB_ID);
+
+  /** Per-optimization result cache: optimization ID → data. */
+  private _resultCache = $state<Record<string, OptimizationResult>>({});
 
   get activeTab(): Tab | undefined {
     return this.tabs.find((t) => t.id === this.activeTabId);
+  }
+
+  /** Get the cached optimization data for the currently active tab. */
+  get activeResult(): OptimizationResult | null {
+    const tab = this.activeTab;
+    if (!tab?.optimizationId) return null;
+    return this._resultCache[tab.optimizationId] ?? null;
+  }
+
+  /** Get cached result by optimization ID. */
+  getResult(optimizationId: string): OptimizationResult | null {
+    return this._resultCache[optimizationId] ?? null;
+  }
+
+  /** Cache an optimization result by its ID and update any tab titles that reference it. */
+  cacheResult(optimizationId: string, data: OptimizationResult) {
+    this._resultCache = { ...this._resultCache, [optimizationId]: data };
+
+    // Update tab titles for any tabs that reference this optimization
+    const updated = this.tabs.map((t) => {
+      if (t.optimizationId !== optimizationId) return t;
+      const prefix = t.type === 'diff' ? '~' : '';
+      return { ...t, title: this._tabTitle(data.raw_prompt, prefix) };
+    });
+    // Only reassign if something changed
+    if (updated.some((t, i) => t !== this.tabs[i])) {
+      this.tabs = updated;
+    }
   }
 
   openTab(tab: Tab) {
@@ -25,13 +67,26 @@ class EditorStore {
   }
 
   closeTab(id: string) {
+    const tab = this.tabs.find((t) => t.id === id);
+    if (tab?.pinned) return;
     this.tabs = this.tabs.filter((t) => t.id !== id);
-    if (this.activeTabId === id) {
-      if (this.tabs.length > 0) {
-        this.activeTabId = this.tabs[this.tabs.length - 1].id;
-      } else {
-        this.activeTabId = '';
+
+    // Clean up cache if no other tab references this optimization
+    if (tab?.optimizationId) {
+      const stillReferenced = this.tabs.some(
+        (t) => t.optimizationId === tab.optimizationId,
+      );
+      if (!stillReferenced) {
+        const next = { ...this._resultCache };
+        delete next[tab.optimizationId];
+        this._resultCache = next;
       }
+    }
+
+    if (this.activeTabId === id) {
+      this.activeTabId = this.tabs.length > 0
+        ? this.tabs[this.tabs.length - 1].id
+        : PROMPT_TAB_ID;
     }
   }
 
@@ -39,12 +94,49 @@ class EditorStore {
     this.activeTabId = id;
   }
 
-  openResult(optimizationId: string) {
-    this.openTab({ id: `result-${optimizationId}`, title: 'Result', type: 'result' });
+  focusPrompt() {
+    this.activeTabId = PROMPT_TAB_ID;
+  }
+
+  /** Derive a short tab title from the raw prompt text. */
+  private _tabTitle(rawPrompt: string | undefined, prefix: string): string {
+    if (!rawPrompt) return prefix || 'Result';
+    // Take first 3 words, hard cap at 16 chars
+    const words = rawPrompt.split(/\s+/).slice(0, 3).join(' ');
+    const capped = words.length > 16 ? words.slice(0, 16).trimEnd() : words;
+    const label = rawPrompt.length > capped.length ? capped + '...' : capped;
+    return prefix ? `${prefix} ${label}` : label;
+  }
+
+  /** Open a result tab and optionally cache the optimization data. */
+  openResult(optimizationId: string, data?: OptimizationResult) {
+    if (data) {
+      this.cacheResult(optimizationId, data);
+    }
+    const cached = this._resultCache[optimizationId];
+    this.openTab({
+      id: `result-${optimizationId}`,
+      title: this._tabTitle(cached?.raw_prompt, ''),
+      type: 'result',
+      optimizationId,
+    });
   }
 
   openDiff(optimizationId: string) {
-    this.openTab({ id: `diff-${optimizationId}`, title: 'Diff', type: 'diff' });
+    const cached = this._resultCache[optimizationId];
+    this.openTab({
+      id: `diff-${optimizationId}`,
+      title: this._tabTitle(cached?.raw_prompt, '~'),
+      type: 'diff',
+      optimizationId,
+    });
+  }
+
+  /** Close all non-pinned tabs and clear the cache. */
+  closeAllResults() {
+    this.tabs = this.tabs.filter((t) => t.pinned);
+    this._resultCache = {};
+    this.activeTabId = PROMPT_TAB_ID;
   }
 }
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
-  import { getStrategies } from '$lib/api/client';
+  import { getStrategies, getHealth } from '$lib/api/client';
   import type { StrategyInfo } from '$lib/api/client';
 
   // Dynamic strategy list — fetched from disk via API
@@ -46,11 +46,16 @@
     return () => window.removeEventListener('strategy-changed', handler);
   });
 
-  const isForging = $derived(
+  const isSynthesizing = $derived(
     forgeStore.status !== 'idle' &&
     forgeStore.status !== 'complete' &&
-    forgeStore.status !== 'error'
+    forgeStore.status !== 'error' &&
+    forgeStore.status !== 'passthrough'
   );
+
+  const isPassthroughMode = $derived(forgeStore.noProvider);
+
+  const buttonLabel = $derived(isPassthroughMode ? 'PREPARE' : 'SYNTHESIZE');
 
   const phaseLabel = $derived.by(() => {
     switch (forgeStore.status) {
@@ -69,12 +74,22 @@
     forgeStore.strategy = val === '' ? null : val;
   }
 
-  function handleForge() {
+  async function handleSynthesize() {
+    // Re-check provider status before synthesizing — handles mid-session API key changes
+    try {
+      const h = await getHealth();
+      forgeStore.noProvider = !h.provider;
+    } catch { /* backend unreachable — forge() will fail with its own error */ }
+
     forgeStore.forge();
+
+    // Passthrough mode stays on the prompt tab (which renders PassthroughView)
+    if (forgeStore.status === 'passthrough') return;
+
     if (forgeStore.traceId) {
       editorStore.openResult(forgeStore.traceId);
     } else {
-      // Watch for traceId to be set after forge starts
+      // Watch for traceId to be set after SSE stream starts
       const unsub = $effect.root(() => {
         $effect(() => {
           if (forgeStore.traceId) {
@@ -88,9 +103,20 @@
 </script>
 
 <div class="prompt-edit">
-  <!-- Toolbar -->
-  <div class="toolbar">
-    <span class="toolbar-label">STRATEGY</span>
+  <!-- Editor area (top — takes all available space) -->
+  <div class="editor-area">
+    <textarea
+      class="prompt-textarea"
+      placeholder="Enter your prompt here..."
+      bind:value={forgeStore.prompt}
+      spellcheck="false"
+      aria-label="Prompt editor"
+    ></textarea>
+  </div>
+
+  <!-- Action bar (bottom — strategy select + phase label + synthesize button) -->
+  <div class="action-bar">
+    <span class="action-label">STRATEGY</span>
     <select
       class="strategy-select"
       value={selectValue}
@@ -108,23 +134,13 @@
     {/if}
 
     <button
-      class="forge-btn"
-      disabled={isForging}
-      onclick={handleForge}
+      class="synthesize-btn"
+      class:passthrough-mode={isPassthroughMode}
+      disabled={isSynthesizing}
+      onclick={handleSynthesize}
     >
-      FORGE
+      {buttonLabel}
     </button>
-  </div>
-
-  <!-- Editor area -->
-  <div class="editor-area">
-    <textarea
-      class="prompt-textarea"
-      placeholder="Enter your prompt here..."
-      bind:value={forgeStore.prompt}
-      spellcheck="false"
-      aria-label="Prompt editor"
-    ></textarea>
   </div>
 </div>
 
@@ -136,18 +152,46 @@
     overflow: hidden;
   }
 
-  .toolbar {
+  .editor-area {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .prompt-textarea {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    resize: none;
+    background: var(--color-bg-input);
+    border: none;
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 8px;
+    outline: none;
+    box-sizing: border-box;
+  }
+
+  .prompt-textarea::placeholder {
+    color: var(--color-text-dim);
+  }
+
+  /* Action bar — bottom of the prompt editor */
+  .action-bar {
     display: flex;
     align-items: center;
     gap: 4px;
-    height: 24px;
+    height: 28px;
     padding: 0 4px;
     background: var(--color-bg-secondary);
-    border-bottom: 1px solid var(--color-border-subtle);
+    border-top: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
   }
 
-  .toolbar-label {
+  .action-label {
     font-size: 10px;
     font-family: var(--font-display);
     font-weight: 700;
@@ -188,7 +232,7 @@
     color: var(--color-neon-cyan);
   }
 
-  .forge-btn {
+  .synthesize-btn {
     font-family: var(--font-display);
     font-size: 10px;
     font-weight: 700;
@@ -197,58 +241,34 @@
     color: var(--color-neon-cyan);
     border: 1px solid var(--color-neon-cyan);
     background: transparent;
-    padding: 0 6px;
-    height: 18px;
-    line-height: 16px;
+    padding: 0 8px;
+    height: 20px;
+    line-height: 18px;
     cursor: pointer;
     transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
     white-space: nowrap;
   }
 
-  .forge-btn:hover:not(:disabled) {
+  .synthesize-btn:hover:not(:disabled) {
     transform: translateY(-1px);
     background: rgba(0, 229, 255, 0.06);
   }
 
-  .forge-btn:active:not(:disabled) {
+  .synthesize-btn:active:not(:disabled) {
     transform: translateY(0);
   }
 
-  .forge-btn:disabled {
+  .synthesize-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
   }
 
-  .editor-area {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+  .synthesize-btn.passthrough-mode {
+    color: var(--color-neon-yellow);
+    border-color: var(--color-neon-yellow);
   }
 
-  .prompt-textarea {
-    flex: 1;
-    width: 100%;
-    height: 100%;
-    resize: none;
-    background: var(--color-bg-input);
-    border: none;
-    border-right: 1px solid var(--color-border-subtle);
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
-    font-size: 12px;
-    line-height: 1.6;
-    padding: 8px;
-    outline: none;
-    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
-    box-sizing: border-box;
-  }
-
-  .prompt-textarea::placeholder {
-    color: var(--color-text-dim);
-  }
-
-  .prompt-textarea:focus {
-    border-color: rgba(0, 229, 255, 0.3);
+  .synthesize-btn.passthrough-mode:hover:not(:disabled) {
+    background: rgba(251, 191, 36, 0.06);
   }
 </style>

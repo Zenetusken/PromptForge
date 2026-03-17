@@ -15,7 +15,8 @@
       if (type === 'optimization_created' || type === 'optimization_analyzed' || type === 'refinement_turn') {
         window.dispatchEvent(new CustomEvent('optimization-event', { detail: data }));
         // Toast for optimizations not from the current UI session (e.g., MCP)
-        if (type !== 'refinement_turn' && data.trace_id && data.trace_id !== forgeStore.traceId) {
+        const isOwnTrace = data.trace_id === forgeStore.traceId || data.trace_id === forgeStore.passthroughTraceId;
+        if (type !== 'refinement_turn' && data.trace_id && !isOwnTrace) {
           const label = type === 'optimization_analyzed' ? 'analyzed' : 'optimized';
           addToast('created', `Prompt ${label}`);
         }
@@ -42,7 +43,11 @@
     if (healthChecked) return;
     healthChecked = true;
     getHealth()
-      .then((h) => { health = h; backendError = null; })
+      .then((h) => {
+        health = h;
+        backendError = null;
+        forgeStore.noProvider = !h.provider;
+      })
       .catch(() => { backendError = 'Cannot connect to backend. Check that services are running.'; });
 
     // GitHub auth checked lazily when user navigates to GitHub panel
@@ -67,7 +72,10 @@
 
 {#if showNoProvider}
   <div class="error-banner error-warning">
-    <span>No provider configured. Set up Claude CLI or add an API key in Settings.</span>
+    <div class="banner-text">
+      <span>No provider configured — using manual passthrough mode.</span>
+      <span class="banner-subtitle">Prompts will be assembled for external LLM processing. Add an API key in Settings for full automation.</span>
+    </div>
   </div>
 {/if}
 
@@ -107,6 +115,17 @@
   .error-warning {
     border: 1px solid var(--color-neon-yellow);
     background: rgba(251, 191, 36, 0.06);
+  }
+
+  .banner-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .banner-subtitle {
+    font-size: 10px;
+    color: var(--color-text-dim);
   }
 
   .error-banner button {

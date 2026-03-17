@@ -20,6 +20,7 @@
       case 'analyzing': return 'analyzing';
       case 'optimizing': return 'optimizing';
       case 'scoring': return 'scoring';
+      case 'passthrough': return 'passthrough';
       default: return null;
     }
   });
@@ -54,7 +55,7 @@
     <ProviderBadge {provider} />
     <span class="status-item">{version ? `v${version}` : ''}</span>
     {#if phaseDisplay}
-      <span class="status-phase">{phaseDisplay}...</span>
+      <span class="status-phase" class:status-phase-passthrough={phaseDisplay === 'passthrough'}>{phaseDisplay}...</span>
     {:else if lastScore}
       <span class="status-metric">{lastScore}</span>
       {#if lastStrategy}
@@ -107,6 +108,10 @@
     font-size: 10px;
     color: var(--color-neon-cyan);
     white-space: nowrap;
+  }
+
+  .status-phase-passthrough {
+    color: var(--color-neon-yellow);
   }
 
   .status-metric {

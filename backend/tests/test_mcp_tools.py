@@ -94,18 +94,18 @@ async def test_save_result_applies_bias_correction(db_session) -> None:
     assert "optimization_id" in result
     assert result["scoring_mode"] == "self_rated"
     assert result["strategy_compliance"] == "matched"
+    assert result["overall_score"] is not None
 
-    # Every bias-corrected score should be below the raw input
-    for dim, corrected_value in result["bias_corrected_scores"].items():
-        assert corrected_value < raw_scores[dim], (
-            f"{dim}: corrected {corrected_value} should be < raw {raw_scores[dim]}"
+    # Scores should reflect bias correction (8.0 * 0.85 = 6.8)
+    for dim, score_value in result["scores"].items():
+        assert score_value < raw_scores[dim], (
+            f"{dim}: corrected {score_value} should be < raw {raw_scores[dim]}"
         )
-        # 8.0 * 0.85 = 6.8
-        assert corrected_value == pytest.approx(6.8, abs=0.01)
+        assert score_value == pytest.approx(6.8, abs=0.01)
 
 
 async def test_save_result_without_scores(db_session) -> None:
-    """Saving without scores produces empty bias_corrected_scores and no flags."""
+    """Saving without IDE scores falls back to heuristic scoring."""
     with patch("app.mcp_server.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -115,7 +115,10 @@ async def test_save_result_without_scores(db_session) -> None:
             optimized_prompt="A simple prompt without scores provided by the caller.",
         )
 
-    assert result["bias_corrected_scores"] == {}
+    # Falls back to heuristic scoring when no IDE scores are provided
+    assert result["scoring_mode"] == "heuristic"
+    assert result["scores"]  # non-empty — heuristic scores computed
+    assert result["overall_score"] is not None
     assert result["heuristic_flags"] == []
     assert result["strategy_compliance"] == "unknown"
 

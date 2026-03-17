@@ -8,13 +8,16 @@
   let showOriginal = $state(false);
   let renderMarkdown = $state(true);
 
+  // Use per-tab cached result if available, fall back to global forgeStore.result
+  const result = $derived(editorStore.activeResult ?? forgeStore.result);
+
   // The displayed prompt: original, selected refinement version, or latest optimized
   const displayPrompt = $derived.by(() => {
-    if (showOriginal) return forgeStore.prompt || forgeStore.result?.raw_prompt || '';
+    if (showOriginal) return result?.raw_prompt || forgeStore.prompt || '';
     // If a refinement version is selected, show that version's prompt
     const selected = refinementStore.selectedVersion;
     if (selected && selected.prompt) return selected.prompt;
-    return forgeStore.result?.optimized_prompt || '';
+    return result?.optimized_prompt || '';
   });
 
   const displayLabel = $derived.by(() => {
@@ -25,7 +28,7 @@
   });
 
   async function copyToClipboard() {
-    if (!forgeStore.result?.optimized_prompt) return;
+    if (!result?.optimized_prompt) return;
     try {
       await navigator.clipboard.writeText(displayPrompt);
       copied = true;
@@ -44,15 +47,15 @@
   }
 
   function viewDiff() {
-    if (!forgeStore.result?.id) return;
-    editorStore.openDiff(forgeStore.result.id);
+    if (!result?.id) return;
+    editorStore.openDiff(result.id);
   }
 </script>
 
 <div class="forge-artifact">
-  {#if !forgeStore.result}
+  {#if !result}
     <div class="empty-result">
-      <span class="empty-label">No result yet — run FORGE to optimize your prompt</span>
+      <span class="empty-label">No result yet — click SYNTHESIZE to optimize your prompt</span>
     </div>
   {:else}
     <!-- Header bar -->
@@ -82,6 +85,26 @@
         >
           DIFF
         </button>
+        <span class="header-divider"></span>
+        <button
+          class="feedback-btn"
+          class:feedback-btn--active={forgeStore.feedback === 'thumbs_up'}
+          onclick={() => forgeStore.submitFeedback('thumbs_up')}
+          aria-label="Thumbs up"
+          title="Good result"
+        >
+          <span class="feedback-icon">&#9650;</span>
+        </button>
+        <button
+          class="feedback-btn"
+          class:feedback-btn--active={forgeStore.feedback === 'thumbs_down'}
+          onclick={() => forgeStore.submitFeedback('thumbs_down')}
+          aria-label="Thumbs down"
+          title="Poor result"
+        >
+          <span class="feedback-icon">&#9660;</span>
+        </button>
+        <span class="header-divider"></span>
         <button
           class="action-btn action-btn--primary"
           onclick={copyToClipboard}
@@ -104,41 +127,17 @@
     </div>
 
     <!-- Changes summary -->
-    {#if forgeStore.result.changes_summary}
+    {#if result.changes_summary}
       <div class="changes-section">
         <div class="changes-header">
           <span class="section-title">CHANGES</span>
         </div>
         <div class="changes-body">
-          <MarkdownRenderer content={forgeStore.result.changes_summary} class="changes-md" />
+          <MarkdownRenderer content={result.changes_summary} class="changes-md" />
         </div>
       </div>
     {/if}
 
-    <!-- Feedback -->
-    <div class="feedback-section">
-      <span class="section-title">FEEDBACK</span>
-      <div class="feedback-buttons">
-        <button
-          class="feedback-btn"
-          class:feedback-btn--active={forgeStore.feedback === 'thumbs_up'}
-          onclick={() => forgeStore.submitFeedback('thumbs_up')}
-          aria-label="Thumbs up"
-          title="Good result"
-        >
-          <span class="feedback-icon">▲</span>
-        </button>
-        <button
-          class="feedback-btn"
-          class:feedback-btn--active={forgeStore.feedback === 'thumbs_down'}
-          onclick={() => forgeStore.submitFeedback('thumbs_down')}
-          aria-label="Thumbs down"
-          title="Poor result"
-        >
-          <span class="feedback-icon">▼</span>
-        </button>
-      </div>
-    </div>
   {/if}
 </div>
 
@@ -167,12 +166,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 28px;
-    padding: 0 6px;
+    height: 24px;
+    padding: 0 4px;
     background: var(--color-bg-secondary);
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
-    gap: 6px;
+    gap: 4px;
   }
 
   .section-title {
@@ -187,19 +186,20 @@
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
   }
 
   .action-btn {
-    height: 20px;
-    padding: 0 8px;
+    height: 18px;
+    padding: 0 6px;
     background: transparent;
     border: 1px solid var(--color-border-subtle);
     color: var(--color-text-dim);
     font-family: var(--font-display);
-    font-size: 10px;
+    font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
+    line-height: 16px;
     cursor: pointer;
     transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1),
                 border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -240,7 +240,7 @@
 
   .prompt-output {
     margin: 0;
-    padding: 8px;
+    padding: 6px;
     font-family: var(--font-sans);
     font-size: 12px;
     line-height: 1.6;
@@ -250,14 +250,14 @@
   }
 
   .prompt-output-md {
-    padding: 8px;
+    padding: 6px;
   }
 
   .changes-section {
     flex-shrink: 0;
     border-bottom: 1px solid var(--color-border-subtle);
-    max-height: 120px;
-    overflow: hidden;
+    max-height: 100px;
+    overflow: auto;
     display: flex;
     flex-direction: column;
   }
@@ -265,15 +265,15 @@
   .changes-header {
     display: flex;
     align-items: center;
-    height: 24px;
-    padding: 0 8px;
+    height: 22px;
+    padding: 0 6px;
     background: var(--color-bg-secondary);
     flex-shrink: 0;
   }
 
   .changes-body {
     overflow: auto;
-    padding: 6px 8px;
+    padding: 4px 6px;
     flex: 1;
   }
 
@@ -282,56 +282,44 @@
     color: var(--color-text-secondary);
   }
 
-  .feedback-section {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 28px;
-    padding: 0 6px;
-    background: var(--color-bg-secondary);
-    border-top: 1px solid var(--color-border-subtle);
+  .header-divider {
+    width: 1px;
+    height: 12px;
+    background: var(--color-border-subtle);
     flex-shrink: 0;
-  }
-
-  .feedback-buttons {
-    display: flex;
-    gap: 4px;
   }
 
   .feedback-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 20px;
+    width: 18px;
+    height: 16px;
     background: transparent;
-    border: 1px solid var(--color-border-subtle);
+    border: 1px solid transparent;
     color: var(--color-text-dim);
     cursor: pointer;
-    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .feedback-btn:hover {
-    background: var(--color-bg-hover);
-    border-color: var(--color-border-accent);
     color: var(--color-text-primary);
+    border-color: var(--color-border-subtle);
   }
 
   .feedback-btn--active {
-    border-color: var(--color-neon-cyan);
     color: var(--color-neon-cyan);
+    border-color: var(--color-neon-cyan);
   }
 
   .feedback-btn--active:hover {
-    background: rgba(0, 229, 255, 0.08);
-    border-color: var(--color-neon-cyan);
     color: var(--color-neon-cyan);
+    border-color: var(--color-neon-cyan);
   }
 
   .feedback-icon {
-    font-size: 12px;
+    font-size: 8px;
     line-height: 1;
   }
 </style>
