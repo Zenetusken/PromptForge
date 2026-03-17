@@ -17,6 +17,18 @@
     optimizing: 'Optimizing',
     scoring: 'Scoring',
   };
+
+  // Sync feedback state from real-time events (e.g. MCP or cross-tab submissions)
+  $effect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.optimization_id && detail.optimization_id === forgeStore.result?.id) {
+        forgeStore.feedback = detail.rating;
+      }
+    };
+    window.addEventListener('feedback-event', handler);
+    return () => window.removeEventListener('feedback-event', handler);
+  });
 </script>
 
 <aside
