@@ -23,7 +23,7 @@
 
 <div class="contact-form-wrapper" data-reveal>
   {#if submitted}
-    <div class="contact-form__success">
+    <div class="contact-form__success" role="status" aria-live="polite">
       <span class="contact-form__check" aria-hidden="true">✓</span>
       <p class="contact-form__success-msg">{successMessage}</p>
     </div>
@@ -146,7 +146,7 @@
     padding: 0 16px;
     background: var(--color-neon-cyan);
     border: 1px solid var(--color-neon-cyan);
-    color: #06060c;
+    color: var(--color-bg-primary);
     font-family: var(--font-sans);
     font-size: 10px;
     font-weight: 700;

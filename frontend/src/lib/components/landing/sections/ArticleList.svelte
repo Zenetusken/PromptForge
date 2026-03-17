@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import type { ArticleListSection } from '$lib/content/types';
 
   interface Props {
@@ -17,7 +18,7 @@
       <div class="article-card__main">
         <div class="article-card__text">
           {#if article.slug}
-            <a class="article-card__title" href="/content/{article.slug}">{article.title}</a>
+            <a class="article-card__title" href="{base}/landing/{article.slug}">{article.title}</a>
           {:else}
             <span class="article-card__title article-card__title--inactive">{article.title}</span>
           {/if}

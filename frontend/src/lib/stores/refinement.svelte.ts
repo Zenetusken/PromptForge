@@ -1,5 +1,6 @@
 import { refineSSE, getRefinementVersions, rollbackRefinement } from '$lib/api/client';
 import type { RefinementTurn, RefinementBranch, SSEEvent } from '$lib/api/client';
+import { forgeStore } from '$lib/stores/forge.svelte';
 
 class RefinementStore {
   optimizationId = $state<string | null>(null);
@@ -43,8 +44,14 @@ class RefinementStore {
         this.activeBranchId = this.turns[this.turns.length - 1].branch_id;
         const last = this.turns[this.turns.length - 1];
         this.suggestions = last.suggestions || [];
+      } else {
+        // No refinement turns yet — seed with initial suggestions from the pipeline
+        this.suggestions = forgeStore.initialSuggestions;
       }
-    } catch { /* no versions yet */ }
+    } catch {
+      // No versions yet — seed with initial suggestions from the pipeline
+      this.suggestions = forgeStore.initialSuggestions;
+    }
   }
 
   refine(request: string) {

@@ -25,18 +25,6 @@
   inherits: false;
 }
 
-/* Parallax for hero sections */
-@supports (animation-timeline: scroll()) {
-  .hero-parallax {
-    animation: parallax linear both;
-    animation-timeline: scroll();
-  }
-}
-
-@keyframes parallax {
-  to { transform: translateY(var(--parallax-distance, 40px)); }
-}
-
 /* Smooth details expand */
 details .details-content {
   overflow: hidden;

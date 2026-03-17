@@ -10,7 +10,7 @@ export const pipeline: ContentPage = {
       heading: 'THREE PHASES. ONE PIPELINE. ZERO GUESSWORK.',
       subheading:
         'Each optimization runs through three independent LLM subagents — analyzer, optimizer, scorer — each with its own context window, rubric, and output contract.',
-      cta: { label: 'Open the App', href: '/' },
+      cta: { label: 'View on GitHub', href: 'https://github.com/project-synthesis/ProjectSynthesis' },
     },
     {
       type: 'step-flow',

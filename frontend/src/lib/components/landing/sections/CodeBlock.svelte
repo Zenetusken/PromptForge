@@ -27,7 +27,7 @@
   {/if}
   <div class="code-block__body">
     <pre class="code-block__pre"><code>{code}</code></pre>
-    <button class="code-block__copy" onclick={handleCopy} aria-label="Copy code">
+    <button class="code-block__copy" onclick={handleCopy} aria-label="Copy code" aria-live="polite">
       {copyLabel}
     </button>
   </div>

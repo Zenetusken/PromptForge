@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import Navbar from '$lib/components/landing/Navbar.svelte';
   import Footer from '$lib/components/landing/Footer.svelte';
 </script>
@@ -10,7 +11,7 @@
     <p class="error-page__code">404</p>
     <h1 class="error-page__heading">PAGE NOT FOUND</h1>
     <p class="error-page__sub">This route doesn't exist in the pipeline.</p>
-    <a href="/landing" class="error-page__cta">Back to Home</a>
+    <a href="{base}/landing" class="error-page__cta">Back to Home</a>
   </div>
 </main>
 

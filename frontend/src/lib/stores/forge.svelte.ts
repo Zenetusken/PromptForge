@@ -29,6 +29,9 @@ class ForgeStore {
   passthroughTraceId = $state<string | null>(null);
   passthroughStrategy = $state<string | null>(null);
 
+  // Initial suggestions from the pipeline (before any refinement turns exist)
+  initialSuggestions = $state<Array<Record<string, string>>>([]);
+
   /** Set by +page.svelte after health check — true when health.provider is null. */
   noProvider = $state(false);
 
@@ -59,6 +62,7 @@ class ForgeStore {
     this.assembledPrompt = null;
     this.passthroughTraceId = null;
     this.passthroughStrategy = null;
+    this.initialSuggestions = [];
 
     // Passthrough mode — no provider configured
     if (this.noProvider) {
@@ -130,11 +134,17 @@ class ForgeStore {
       this.scores = (event.optimized_scores as DimensionScores) || (event.scores as DimensionScores);
       this.originalScores = event.original_scores as DimensionScores;
       this.scoreDeltas = event.deltas as Record<string, number>;
+    } else if (eventType === 'suggestions') {
+      this.initialSuggestions = (event.suggestions || []) as Array<Record<string, string>>;
     } else if (eventType === 'optimization_complete') {
       const data = event as any;
       // Normalize: SSE sends optimized_scores, REST sends scores
       if (data.optimized_scores && !data.scores) {
         data.scores = data.optimized_scores;
+      }
+      // Capture suggestions from the complete event if not already set via SSE
+      if (data.suggestions && this.initialSuggestions.length === 0) {
+        this.initialSuggestions = data.suggestions;
       }
       this.loadFromRecord(data as OptimizationResult);
     } else if (eventType === 'error') {
@@ -258,6 +268,7 @@ class ForgeStore {
     this.assembledPrompt = null;
     this.passthroughTraceId = null;
     this.passthroughStrategy = null;
+    this.initialSuggestions = [];
   }
 }
 

@@ -106,7 +106,7 @@
     font-size: 9px;
     font-weight: 700;
     padding: 1px 4px;
-    color: #06060c;
+    color: var(--color-bg-primary);
     flex-shrink: 0;
     line-height: 1.4;
   }

@@ -33,6 +33,7 @@
     background: var(--color-bg-primary);
   }
 
+  :global(html:has(.landing-root)),
   :global(body:has(.landing-root)) {
     overflow: auto;
     height: auto;
