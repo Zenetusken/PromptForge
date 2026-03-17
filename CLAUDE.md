@@ -33,12 +33,12 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 ### Layer rules
 - `routers/` → `services/` → `models/` only. Services must never import from routers.
 - `PromptLoader.load()` for static templates (no variables: `agent-guidance.md`, `scoring.md`). `PromptLoader.render()` for templates with `{{variables}}`.
-- `AnalysisResult.task_type` is a `Literal` — valid values: `coding`, `writing`, `analysis`, `creative`, `data`, `system`, `general`. Same constraint on `selected_strategy`: must match a filename in `prompts/strategies/`.
+- `AnalysisResult.task_type` is a `Literal` — valid values: `coding`, `writing`, `analysis`, `creative`, `data`, `system`, `general`. `selected_strategy` is a plain `str` — validated at runtime against files in `prompts/strategies/` (fully adaptive, no hardcoded list).
 
 ### Key services (`backend/app/services/`)
 - `pipeline.py` — orchestrates analyzer → optimizer → scorer (3-phase pipeline)
 - `prompt_loader.py` — template loading + variable substitution from `prompts/`. Validates all templates at startup.
-- `strategy_loader.py` — strategy file discovery from `prompts/strategies/`. Validates non-empty at startup.
+- `strategy_loader.py` — strategy file discovery from `prompts/strategies/` with YAML frontmatter parsing (tagline, description). Warns if empty at startup (does not crash). `load()` strips frontmatter before injection. Fully adaptive — adding/removing `.md` files changes available strategies.
 - `context_resolver.py` — per-source character caps, untrusted-context wrapping, workspace roots scanning
 - `roots_scanner.py` — discovers agent guidance files (CLAUDE.md, AGENTS.md, .cursorrules, etc.) from workspace paths
 - `optimization_service.py` — CRUD, sort/filter, score distribution tracking, recent error counts
@@ -131,7 +131,7 @@ All prompts live in `prompts/`. `{{variable}}` syntax. Hot-reloaded on each call
 | `explore.md` | Codebase exploration synthesis (Haiku) |
 | `adaptation.md` | Adaptation state formatter |
 | `passthrough.md` | MCP passthrough combined template |
-| `strategies/*.md` | 6 strategy files: chain-of-thought, few-shot, role-playing, structured-output, meta-prompting, auto |
+| `strategies/*.md` | Strategy files with YAML frontmatter (`tagline`, `description`). Fully adaptive — add/remove files to change available strategies. Ships with 6: auto, chain-of-thought, few-shot, meta-prompting, role-playing, structured-output |
 
 Variable reference: `prompts/manifest.json`
 
@@ -190,7 +190,7 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 
 ## Key architectural decisions
 
-- **Pipeline**: 3 subagent phases (analyze → optimize → score) orchestrated by `pipeline.py`. Each phase is an independent LLM call with a fresh context window. Explore phase runs when a GitHub repo is linked.
+- **Pipeline**: 3 subagent phases (analyze → optimize → score) orchestrated by `pipeline.py`. Each phase is an independent LLM call with a fresh context window. Explore phase runs when a GitHub repo is linked AND `enable_explore` preference is true. Scoring phase skippable via `enable_scoring` preference (lean mode = 2 LLM calls only).
 - **Provider injection**: detected once at startup, injected via `app.state.provider` and MCP lifespan context.
 - **Prompt templates**: all prompts live in `prompts/` with `{{variable}}` substitution. Validated at startup. Hot-reloaded on every call. Never hardcode prompts in application code.
 - **Scorer bias mitigation**: A/B randomized presentation order + **hybrid scoring** (LLM scores blended with model-independent heuristics via `score_blender.py`). Dimension-specific weights: structure 50% heuristic, conciseness/specificity 40%, clarity 30%, faithfulness 20%. Z-score normalization applied when ≥10 historical samples exist. Divergence flags when LLM and heuristic disagree by >2.5 points.
@@ -204,5 +204,5 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 - **Feedback adaptation**: simple strategy affinity counter. Degenerate pattern detection (>90% same rating over 10+ feedbacks).
 - **Refinement**: each turn is a fresh pipeline invocation (not multi-turn accumulation). Rollback creates a branch fork. 3 suggestions generated per turn.
 - **Trace logging**: `trace_logger.py` writes per-phase JSONL traces. Daily rotation with configurable retention (`TRACE_RETENTION_DAYS`).
-- **Real-time event bus**: `event_bus.py` publishes events (optimization_created, feedback_submitted, refinement_turn) to all SSE subscribers. MCP server (separate process) notifies via HTTP POST to `/api/events/_publish`. Frontend auto-refreshes History on events.
+- **Real-time event bus**: `event_bus.py` publishes events to all SSE subscribers. Event types: `optimization_created`, `optimization_analyzed`, `optimization_failed`, `feedback_submitted`, `refinement_turn`, `strategy_changed`. MCP server (separate process) notifies via HTTP POST to `/api/events/_publish`. Frontend auto-refreshes History on events, shows toast notifications, syncs Inspector feedback state, and updates StatusBar metrics.
 - **Workspace intelligence**: `workspace_intelligence.py` auto-detects project type from manifest files (package.json, requirements.txt, etc.) and injects workspace profile into MCP tool context via `roots/list`.
