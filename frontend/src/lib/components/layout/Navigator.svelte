@@ -27,12 +27,7 @@
       .catch(() => {});
   });
 
-  // Derive label from filename: "chain-of-thought" → "Chain of Thought"
-  function stratLabel(name: string): string {
-    return name.split('-').map((w, i) =>
-      ['of', 'and', 'the', 'in', 'for'].includes(w) && i > 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)
-    ).join(' ');
-  }
+  // No label transformation — filename IS the identity
 
   async function openStrategyEditor(name: string) {
     if (editingStrategy === name) {
@@ -219,7 +214,7 @@
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectStrategy(strat.name); } }}
             title={strat.description}
           >
-            <span class="strat-name">{stratLabel(strat.name)}</span>
+            <span class="strat-name">{strat.name}</span>
             <span class="strat-tag">{strat.tagline ?? ''}</span>
             <button
               class="strat-edit"
@@ -420,7 +415,7 @@
                 onchange={(e) => preferencesStore.setDefaultStrategy((e.target as HTMLSelectElement).value)}
               >
                 {#each strategiesList as strat (strat.name)}
-                  <option value={strat.name}>{stratLabel(strat.name)}</option>
+                  <option value={strat.name}>{strat.name}</option>
                 {/each}
               </select>
             </div>

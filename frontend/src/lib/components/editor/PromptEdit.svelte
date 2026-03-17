@@ -13,18 +13,12 @@
     if (strategiesLoaded) return;
     strategiesLoaded = true;
     getStrategies().then((list: StrategyInfo[]) => {
-      // Auto is always first (value='' means "let analyzer decide")
+      // Auto first (value='' means "let analyzer decide"), rest by filename
       const auto = list.find(s => s.name === 'auto');
       const rest = list.filter(s => s.name !== 'auto');
       strategyOptions = [
-        { value: '', label: auto ? 'Auto' : 'Auto' },
-        ...rest.map(s => ({
-          value: s.name,
-          label: s.name.split('-').map((w, i) =>
-            // Title case, but keep prepositions lowercase
-            ['of', 'and', 'the', 'in', 'for'].includes(w) && i > 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)
-          ).join(' '),
-        })),
+        { value: '', label: auto ? 'auto' : 'auto' },
+        ...rest.map(s => ({ value: s.name, label: s.name })),
       ];
     }).catch(() => {});
   });
