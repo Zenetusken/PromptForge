@@ -6,9 +6,11 @@ AI-powered prompt optimization. Paste a prompt, get a better version back with s
 
 Project Synthesis takes a raw prompt and runs it through a 3-phase optimization pipeline:
 
-1. **Analyze** — Classifies the prompt type, identifies weaknesses, selects the best strategy (Sonnet)
-2. **Optimize** — Rewrites the prompt using the selected strategy while preserving intent (Opus)
-3. **Score** — Independently evaluates both original and optimized on 5 dimensions with randomized A/B presentation to prevent bias (Sonnet)
+1. **Analyze** — Classifies the prompt type, identifies weaknesses, selects the best strategy
+2. **Optimize** — Rewrites the prompt using the selected strategy while preserving intent
+3. **Score** — Independently evaluates both original and optimized on 5 dimensions with hybrid scoring (LLM + heuristic blending) and randomized A/B presentation to prevent bias
+
+Models are configurable per phase via Settings (default: Opus for optimizer, Sonnet for analyzer/scorer). Scoring and explore phases can be disabled for lean 2-call runs.
 
 The result: an optimized prompt with per-dimension score deltas showing exactly what improved.
 
@@ -52,10 +54,10 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 ┌──────┬────────────┬──────────────────────┬─────────────┐
 │ Act. │ Navigator  │   Editor Groups      │  Inspector  │
 │ Bar  │            │                      │             │
-│      │ History    │  Prompt Editor       │  Scores     │
-│      │ GitHub     │  Result Viewer       │  Deltas     │
-│      │ Settings   │  Diff View           │  Sparkline  │
-│      │            │  Refinement Timeline │             │
+│      │ Strategies │  Prompt Editor       │  Scores     │
+│      │ History    │  Result (Markdown)   │  Deltas     │
+│      │ GitHub     │  Diff View           │  Sparkline  │
+│      │ Settings   │  Refinement Timeline │             │
 ├──────┴────────────┴──────────────────────┴─────────────┤
 │                      Status Bar                        │
 └────────────────────────────────────────────────────────┘
@@ -67,7 +69,8 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 | Frontend | SvelteKit 2 (Svelte 5 runes), Tailwind CSS 4 |
 | Database | SQLite (WAL mode) |
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2, 384-dim, CPU) |
-| LLM | Opus (optimizer), Sonnet (analyzer/scorer), Haiku (explore/suggestions) |
+| LLM | Configurable per phase — Opus, Sonnet, Haiku (via Settings) |
+| Scoring | Hybrid: LLM scores blended with model-independent heuristics + z-score normalization |
 | MCP | Streamable HTTP on port 8001 |
 
 ## Services
@@ -76,7 +79,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 |---------|------|---------|
 | Backend | 8000 | FastAPI API + pipeline orchestration |
 | Frontend | 5199 | SvelteKit dev server |
-| MCP Server | 8001 | 3-tool MCP server for IDE integration |
+| MCP Server | 8001 | 4-tool MCP server for IDE integration |
 
 ```bash
 ./init.sh start     # start all (with preflight checks + health probes)
@@ -88,25 +91,32 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 
 ## Features
 
-- **One-shot optimization** with 5-dimension scoring (clarity, specificity, structure, faithfulness, conciseness)
+- **One-shot optimization** with 5-dimension hybrid scoring (clarity, specificity, structure, faithfulness, conciseness)
 - **Conversational refinement** — iterative improvement with version history, branching, and rollback
 - **3 suggestions per turn** — score-driven, analysis-driven, and strategic
-- **Strategy selection** — 6 strategies (chain-of-thought, few-shot, role-playing, structured-output, meta-prompting, auto)
+- **Adaptive strategies** — file-driven from `prompts/strategies/*.md` with YAML frontmatter. Add/remove/edit `.md` files and they auto-appear in the UI via real-time file watching
+- **Inline strategy editor** — click to edit strategy templates directly from the sidebar with live disk save
+- **Persistent settings** — model selection per phase, pipeline toggle (explore/scoring/adaptation), default strategy. Survives restarts via `data/preferences.json`
+- **Session persistence** — page refresh restores your last optimization from the database
+- **Markdown rendering** — optimized prompts rendered with brand-compliant markdown (headers, code blocks, lists, tables)
+- **Production diff viewer** — unified and split modes with word-level highlighting
 - **GitHub integration** — link a repo for codebase-aware optimization via semantic embedding search
 - **MCP server** — use from any MCP-compatible IDE (Claude Code, Cursor, etc.)
 - **Passthrough mode** — IDE's own LLM does the optimization; server provides context + bias correction
 - **Workspace scanning** — automatically discovers CLAUDE.md, AGENTS.md, .cursorrules for context injection
-- **Score calibration** — anchored rubric with calibration examples, anti-clustering detection
+- **Hybrid scoring** — LLM scores blended with heuristic analysis (structure, readability, constraint density) + z-score normalization against historical distribution
+- **Real-time events** — SSE-based event bus with toast notifications for file changes, MCP operations, and pipeline status
 - **Feedback loop** — thumbs up/down drives strategy affinity adaptation
 - **API key management** — set/update/remove via UI with Fernet encryption at rest
 
 ## MCP Integration
 
-The MCP server provides 3 tools:
+The MCP server provides 4 tools:
 
 | Tool | Purpose |
 |------|---------|
 | `synthesis_optimize` | Full pipeline — send a prompt, get back optimized version with scores |
+| `synthesis_analyze` | Analysis + baseline scoring — task type, weaknesses, strategy recommendation, quality scores, actionable next steps |
 | `synthesis_prepare_optimization` | Assemble prompt + context for your IDE's LLM to process |
 | `synthesis_save_result` | Persist the IDE LLM's result with bias correction |
 
@@ -122,7 +132,7 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (227 tests, ~25s)
+# Backend tests (251 tests, ~30s)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
 # Frontend type check
@@ -141,12 +151,16 @@ cd frontend && npm run build
 | `/api/refine` | POST (SSE) | Run refinement turn |
 | `/api/refine/{id}/versions` | GET | List refinement versions |
 | `/api/refine/{id}/rollback` | POST | Fork from a version |
-| `/api/history` | GET | List past optimizations |
+| `/api/history` | GET | List past optimizations (with truncated prompts) |
 | `/api/feedback` | POST/GET | Submit/list feedback |
 | `/api/providers` | GET | Active provider info |
 | `/api/provider/api-key` | GET/PATCH/DELETE | API key management |
-| `/api/settings` | GET | Read-only config |
+| `/api/preferences` | GET/PATCH | Persistent user preferences |
+| `/api/strategies` | GET | List strategies (from disk, with frontmatter metadata) |
+| `/api/strategies/{name}` | GET/PUT | Read/update strategy template |
+| `/api/settings` | GET | Read-only server config |
 | `/api/health` | GET | Health + pipeline metrics |
+| `/api/events` | GET (SSE) | Real-time event stream |
 | `/api/github/auth/*` | GET/POST | GitHub OAuth flow |
 | `/api/github/repos/*` | GET/POST/DELETE | Repo management |
 
