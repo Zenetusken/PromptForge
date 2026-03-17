@@ -267,7 +267,7 @@
         <!-- Tier 1: Zero Config -->
         <div class="integration-card" data-animate style="--delay:0ms;">
           <div class="integration-icon" style="color:var(--color-neon-cyan);">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M11 2L5 11h4l-2 7 8-9h-5l3-7z" stroke="currentColor" stroke-width="1.2"/></svg>
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M11 2L5 11h4l-2 7 8-9h-5l3-7z" stroke="currentColor" stroke-width="1.2"/></svg>
           </div>
           <h3 class="integration-title">Zero Config</h3>
           <p class="integration-desc">Works with Claude CLI out of the box. Max subscription means zero marginal cost per optimization. No API key, no billing, no setup.</p>
@@ -276,7 +276,7 @@
         <!-- Tier 2: Your IDE, Your LLM -->
         <div class="integration-card" data-animate style="--delay:100ms;">
           <div class="integration-icon" style="color:var(--color-neon-purple);">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 8l3 2.5L5 13M10 13h5" stroke="currentColor" stroke-width="1.2"/></svg>
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 8l3 2.5L5 13M10 13h5" stroke="currentColor" stroke-width="1.2"/></svg>
           </div>
           <h3 class="integration-title">Your IDE, Your LLM</h3>
           <p class="integration-desc">Drop the pipeline into your editor. Your IDE's model does the optimization — Synthesis orchestrates the phases, scores the result, tracks the history.</p>
@@ -285,7 +285,7 @@
         <!-- Tier 3: Codebase-Aware -->
         <div class="integration-card" data-animate style="--delay:200ms;">
           <div class="integration-icon" style="color:var(--color-neon-green);">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="14" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="14" cy="10" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 8v4M8 6h4a2 2 0 0 1 2 2v0" stroke="currentColor" stroke-width="1.2"/></svg>
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="14" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="14" cy="10" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 8v4M8 6h4a2 2 0 0 1 2 2v0" stroke="currentColor" stroke-width="1.2"/></svg>
           </div>
           <h3 class="integration-title">Codebase-Aware Optimization</h3>
           <p class="integration-desc">Link a GitHub repo and the optimizer learns your conventions. Function signatures, error handling patterns, naming standards, architecture decisions — optimized prompts reference YOUR code, not generic examples.</p>
@@ -686,11 +686,14 @@
     grid-template-columns: 1fr 1fr;
     gap: 8px;
     margin-bottom: 16px;
+    align-items: stretch;
   }
 
   .example-panel {
     padding: 12px;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .example-panel--before {
@@ -716,6 +719,7 @@
     gap: 6px;
     padding: 8px;
     border: 1px solid var(--color-border-subtle);
+    flex: 1;
   }
 
   .example-badge {
@@ -871,7 +875,8 @@
   }
 
   .integration-icon {
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    line-height: 0;
   }
 
   .integration-title {
@@ -896,6 +901,8 @@
     border-top: 1px solid var(--color-border-subtle);
     border-bottom: 1px solid var(--color-border-subtle);
     padding: 12px 0;
+    mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 10%, black 90%, transparent 100%);
   }
 
   .logo-strip__inner {
