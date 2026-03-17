@@ -722,6 +722,13 @@
     transform: none;
   }
 
+  .row-badge {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--color-text-dim);
+    flex-shrink: 0;
+  }
+
   /* ---- History row ---- */
   .history-row {
     height: auto;
