@@ -68,14 +68,27 @@ class StrategyLoader:
         """Load a strategy file by name, stripping frontmatter.
 
         Returns the body content (without YAML frontmatter) for injection
-        into optimizer/refiner templates.
+        into optimizer/refiner templates. Returns a graceful fallback if
+        the file is missing (no crash — the optimizer works without strategy).
         """
         path = self.strategies_dir / f"{name}.md"
         if not path.exists():
             available = self.list_strategies()
-            raise FileNotFoundError(
-                "Strategy '%s' not found at %s. Available strategies: %s"
-                % (name, path, ", ".join(available) if available else "none")
+            if available:
+                logger.warning(
+                    "Strategy '%s' not found. Available: %s",
+                    name, ", ".join(available),
+                )
+            else:
+                logger.warning(
+                    "Strategy '%s' not found and no strategy files exist. "
+                    "The optimizer will proceed without strategy guidance.",
+                    name,
+                )
+            return (
+                "No specific strategy instructions available. "
+                "Use your best judgment to optimize the prompt — "
+                "focus on clarity, specificity, and structure."
             )
         content = path.read_text(encoding="utf-8")
         _, body = _parse_frontmatter(content)
@@ -133,13 +146,16 @@ class StrategyLoader:
         return "\n".join(results) if results else "No strategies available."
 
     def validate(self) -> None:
-        """Verify strategies directory is non-empty. Raises RuntimeError if empty."""
+        """Verify strategies directory. Warns if empty (does not crash)."""
         strategies = self.list_strategies()
         if not strategies:
-            raise RuntimeError(
-                f"No strategy files found in {self.strategies_dir}. "
-                f"At least one .md file is required."
+            logger.warning(
+                "No strategy files found in %s. "
+                "The pipeline will use generic optimization guidance.",
+                self.strategies_dir,
             )
-        logger.info(
-            "Strategy validation passed: %d strategies available", len(strategies),
-        )
+        else:
+            logger.info(
+                "Strategy validation passed: %d strategies available",
+                len(strategies),
+            )

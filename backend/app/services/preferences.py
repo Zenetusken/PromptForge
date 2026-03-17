@@ -21,13 +21,17 @@ logger = logging.getLogger(__name__)
 VALID_MODELS: set[str] = {"sonnet", "opus", "haiku"}
 
 
-def _discover_strategies() -> set[str]:
-    """Discover available strategies from disk (prompts/strategies/*.md)."""
+def _discover_strategies() -> set[str] | None:
+    """Discover available strategies from disk (prompts/strategies/*.md).
+
+    Returns None if no strategies directory or no files — meaning
+    validation should be skipped (accept any value).
+    """
     strategies_dir = PROMPTS_DIR / "strategies"
     if not strategies_dir.is_dir():
-        return {"auto"}
+        return None
     found = {p.stem for p in strategies_dir.glob("*.md")}
-    return found if found else {"auto"}
+    return found if found else None
 
 DEFAULTS: dict[str, Any] = {
     "schema_version": 1,
@@ -148,7 +152,8 @@ class PreferencesService:
 
         strategy = prefs.get("defaults", {}).get("strategy")
         valid_strategies = _discover_strategies()
-        if strategy not in valid_strategies:
+        # Only validate if strategies exist on disk; skip if directory is empty
+        if valid_strategies is not None and strategy not in valid_strategies:
             default_strategy = DEFAULTS["defaults"]["strategy"]
             logger.warning(
                 "Invalid strategy '%s' — falling back to '%s'", strategy, default_strategy
@@ -181,7 +186,8 @@ class PreferencesService:
         strategy = prefs.get("defaults", {}).get("strategy")
         if strategy is not None:
             valid_strategies = _discover_strategies()
-            if strategy not in valid_strategies:
+            # Only reject if strategies exist on disk and the value isn't among them
+            if valid_strategies is not None and strategy not in valid_strategies:
                 raise ValueError(
                     f"Invalid strategy '{strategy}'. Valid: {sorted(valid_strategies)}"
                 )

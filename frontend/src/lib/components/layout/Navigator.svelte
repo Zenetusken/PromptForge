@@ -215,6 +215,9 @@
         <span class="section-heading">Strategies</span>
       </header>
       <div class="panel-body">
+        {#if strategiesList.length === 0}
+          <p class="empty-note">No strategy files found. Add .md files to prompts/strategies/ to define optimization strategies.</p>
+        {/if}
         {#each strategiesList as strat (strat.name)}
           <!-- Single-line strategy row -->
           <div

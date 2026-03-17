@@ -425,13 +425,13 @@ async def synthesis_prepare_optimization(
     loader = PromptLoader(PROMPTS_DIR)
     strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
 
-    # Load strategy instructions
+    # Load strategy instructions — fall back to "auto" if requested strategy doesn't exist
     strategy_name = strategy or "auto"
-    try:
-        strategy_instructions = strategy_loader.load(strategy_name)
-    except FileNotFoundError:
-        strategy_instructions = strategy_loader.load("auto")
-        strategy_name = "auto"
+    available = strategy_loader.list_strategies()
+    if available and strategy_name not in available:
+        logger.info("Strategy '%s' not found, falling back to 'auto'", strategy_name)
+        strategy_name = "auto" if "auto" in available else (available[0] if available else strategy_name)
+    strategy_instructions = strategy_loader.load(strategy_name)
 
     # Load scoring rubric excerpt for passthrough
     scoring_rubric = loader.load("scoring.md")
