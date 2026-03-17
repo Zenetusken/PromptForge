@@ -34,7 +34,7 @@
 >
   <nav class="navbar__inner" aria-label="Main navigation">
     <a href="{base}/" class="navbar__logo text-gradient-forge" aria-label="Project Synthesis home">
-      SYNTHESIS
+      PROJECT SYNTHESIS
     </a>
 
     <div class="navbar__links">

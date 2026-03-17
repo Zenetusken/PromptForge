@@ -186,6 +186,26 @@
   </section>
 
   <!-- ============================================================ -->
+  <!-- CALLOUT: FREE & OPEN SOURCE                                  -->
+  <!-- ============================================================ -->
+  <section class="callout-bar" aria-label="Key benefits" data-animate>
+    <div class="callout-bar__inner">
+      <div class="callout-item">
+        <span class="callout-item__icon" style="color:var(--color-neon-green);">&#10003;</span>
+        <span class="callout-item__text"><strong>100% free.</strong> No paid tier. No usage limits. No feature gates.</span>
+      </div>
+      <div class="callout-item">
+        <span class="callout-item__icon" style="color:var(--color-neon-cyan);">&#10003;</span>
+        <span class="callout-item__text"><strong>No API key required.</strong> Works with Claude CLI on a Max subscription — zero marginal cost.</span>
+      </div>
+      <div class="callout-item">
+        <span class="callout-item__icon" style="color:var(--color-neon-purple);">&#10003;</span>
+        <span class="callout-item__text"><strong>Works in your IDE.</strong> Claude Code, Cursor, Windsurf, VS Code, Zed, JetBrains — via MCP.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
   <!-- SECTION 3: LIVE EXAMPLE                                      -->
   <!-- ============================================================ -->
   <section id="example" class="section" aria-labelledby="example-heading">
@@ -686,6 +706,51 @@
     margin-bottom: 24px;
   }
 
+  /* ================================================================
+     CALLOUT BAR
+     ================================================================ */
+  .callout-bar {
+    padding: 20px 16px;
+    border-top: 1px solid var(--color-border-subtle);
+    border-bottom: 1px solid var(--color-border-subtle);
+    background: var(--color-bg-secondary);
+  }
+
+  .callout-bar__inner {
+    max-width: 1120px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  .callout-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .callout-item__icon {
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .callout-item__text {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+  }
+
+  .callout-item__text strong {
+    color: var(--color-text-primary);
+    font-weight: 600;
+  }
+
+  /* ================================================================
+     SECTION 3: LIVE EXAMPLE (cont.)
+     ================================================================ */
   .example-container {
     max-width: 1120px;
     margin: 0 auto;
