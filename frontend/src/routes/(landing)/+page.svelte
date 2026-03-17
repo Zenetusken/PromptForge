@@ -1,8 +1,5 @@
 <script lang="ts">
   import Navbar from '$lib/components/landing/Navbar.svelte';
-  import FeatureCard from '$lib/components/landing/FeatureCard.svelte';
-  import TestimonialCard from '$lib/components/landing/TestimonialCard.svelte';
-  import StepCard from '$lib/components/landing/StepCard.svelte';
   import Footer from '$lib/components/landing/Footer.svelte';
 
   // ---- Scroll-triggered animation via IntersectionObserver ----
@@ -205,9 +202,13 @@
       </h2>
       <div class="features-grid">
         {#each features as feature, i}
-          <div data-animate style="--delay:{i * 100}ms;">
-            <FeatureCard {...feature} />
-          </div>
+          <article class="feature-card" data-animate style="--delay:{i * 100}ms;">
+            <div class="feature-card__icon" style="color:{feature.color};border-color:{feature.color};">
+              {@html feature.icon}
+            </div>
+            <h3 class="feature-card__title">{feature.title}</h3>
+            <p class="feature-card__desc">{feature.description}</p>
+          </article>
         {/each}
       </div>
     </div>
@@ -223,8 +224,17 @@
       </h2>
       <div class="steps">
         {#each steps as step, i}
-          <div data-animate style="--delay:{i * 150}ms;">
-            <StepCard number={i + 1} {...step} isLast={i === steps.length - 1} />
+          <div class="step" data-animate style="--delay:{i * 150}ms;">
+            <div class="step__indicator">
+              <div class="step__number">{i + 1}</div>
+              {#if i < steps.length - 1}
+                <div class="step__line" aria-hidden="true"></div>
+              {/if}
+            </div>
+            <div class="step__content">
+              <h3 class="step__title">{step.title}</h3>
+              <p class="step__desc">{step.description}</p>
+            </div>
           </div>
         {/each}
       </div>
@@ -241,9 +251,16 @@
       </h2>
       <div class="testimonials-grid">
         {#each testimonials as t, i}
-          <div data-animate style="--delay:{i * 100}ms;">
-            <TestimonialCard {...t} />
-          </div>
+          <blockquote class="testimonial" data-animate style="--delay:{i * 100}ms;">
+            <p class="testimonial__quote">&ldquo;{t.quote}&rdquo;</p>
+            <footer class="testimonial__attribution">
+              <div class="testimonial__avatar" aria-hidden="true">{t.initials}</div>
+              <div>
+                <cite class="testimonial__name">{t.name}</cite>
+                <span class="testimonial__role">{t.role} &middot; {t.company}</span>
+              </div>
+            </footer>
+          </blockquote>
         {/each}
       </div>
     </div>
@@ -509,7 +526,7 @@
   }
 
   /* ================================================================
-     FEATURES GRID
+     FEATURE CARDS (inlined from FeatureCard.svelte)
      ================================================================ */
   .features-grid {
     display: grid;
@@ -517,21 +534,171 @@
     gap: 8px;
   }
 
+  .feature-card {
+    padding: 12px;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    transition: all var(--duration-hover) var(--ease-spring);
+  }
+
+  .feature-card:hover {
+    background: var(--color-bg-hover);
+    border-color: var(--color-border-accent);
+  }
+
+  .feature-card__icon {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid;
+    margin-bottom: 8px;
+  }
+
+  .feature-card__icon :global(svg) {
+    width: 14px;
+    height: 14px;
+  }
+
+  .feature-card__title {
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    margin: 0 0 4px 0;
+  }
+
+  .feature-card__desc {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-text-secondary);
+    margin: 0;
+    line-height: 1.5;
+  }
+
   /* ================================================================
-     STEPS
+     STEPS (inlined from StepCard.svelte)
      ================================================================ */
   .steps {
     display: flex;
     flex-direction: column;
   }
 
+  .step {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .step__indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .step__number {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-neon-cyan);
+    border: 1px solid var(--color-neon-cyan);
+    flex-shrink: 0;
+  }
+
+  .step__line {
+    width: 1px;
+    flex: 1;
+    min-height: 12px;
+    background: var(--color-border-subtle);
+  }
+
+  .step__content {
+    padding-bottom: 20px;
+  }
+
+  .step__title {
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-primary);
+    margin: 2px 0 4px 0;
+  }
+
+  .step__desc {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-text-secondary);
+    margin: 0;
+    line-height: 1.5;
+  }
+
   /* ================================================================
-     TESTIMONIALS GRID
+     TESTIMONIALS (inlined from TestimonialCard.svelte)
      ================================================================ */
   .testimonials-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
+  }
+
+  .testimonial {
+    padding: 12px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-subtle);
+    margin: 0;
+  }
+
+  .testimonial__quote {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--color-text-primary);
+    line-height: 1.6;
+    margin: 0 0 10px 0;
+  }
+
+  .testimonial__attribution {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .testimonial__avatar {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--color-neon-cyan);
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    background: rgba(0, 229, 255, 0.04);
+    flex-shrink: 0;
+  }
+
+  .testimonial__name {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    font-style: normal;
+    color: var(--color-text-primary);
+  }
+
+  .testimonial__role {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-dim);
   }
 
   /* ================================================================

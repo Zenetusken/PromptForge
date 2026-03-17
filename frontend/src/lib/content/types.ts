@@ -21,19 +21,6 @@ export interface CardGridSection {
   }>;
 }
 
-export interface EndpointListSection {
-  type: 'endpoint-list';
-  groups: Array<{
-    name: string;
-    endpoints: Array<{
-      method: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT' | 'SSE' | 'TOOL';
-      path: string;
-      description: string;
-      details?: string;
-    }>;
-  }>;
-}
-
 export interface TimelineSection {
   type: 'timeline';
   versions: Array<{
@@ -45,33 +32,6 @@ export interface TimelineSection {
       items: string[];
     }>;
   }>;
-}
-
-export interface ArticleListSection {
-  type: 'article-list';
-  articles: Array<{
-    title: string;
-    excerpt: string;
-    date: string;
-    readTime: string;
-    slug?: string;
-  }>;
-}
-
-export interface RoleListSection {
-  type: 'role-list';
-  roles: Array<{
-    title: string;
-    description: string;
-    type: 'REMOTE' | 'HYBRID' | 'ON-SITE';
-    department: string;
-  }>;
-}
-
-export interface ContactFormSection {
-  type: 'contact-form';
-  categories: string[];
-  successMessage: string;
 }
 
 export interface StepFlowSection {
@@ -96,11 +56,7 @@ export type Section =
   | HeroSection
   | ProseSection
   | CardGridSection
-  | EndpointListSection
   | TimelineSection
-  | ArticleListSection
-  | RoleListSection
-  | ContactFormSection
   | StepFlowSection
   | CodeBlockSection
   | MetricBarSection;
