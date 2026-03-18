@@ -27,4 +27,4 @@ Rules:
 4. Be specific enough to be actionable, general enough to transfer across projects.
 5. If the optimization is trivial (minor wording changes only), return 1 pattern at most.
 
-Return a JSON array of pattern descriptions (strings).
+Return a JSON object with a `patterns` key containing an array of pattern descriptions (strings). Example: `{"patterns": ["pattern1", "pattern2"]}`

@@ -2,16 +2,7 @@
   import { listFamilies, getFamilyDetail, type PatternFamily, type FamilyDetail } from '$lib/api/patterns';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
-
-  const DOMAIN_COLORS: Record<string, string> = {
-    backend: '#a855f7',
-    frontend: '#f59e0b',
-    database: '#10b981',
-    security: '#ef4444',
-    devops: '#3b82f6',
-    fullstack: '#00e5ff',
-    general: '#6b7280',
-  };
+  import { domainColor } from '$lib/constants/patterns';
 
   let families = $state<PatternFamily[]>([]);
   let loaded = $state(false);
@@ -66,21 +57,20 @@
     if (expandedId === family.id) {
       expandedId = null;
       expandedDetail = null;
+      patternsStore.selectFamily(null);
       return;
     }
     expandedId = family.id;
     expandedDetail = null;
     expandedLoading = true;
+    // Also select in patterns store so Inspector shows detail
+    patternsStore.selectFamily(family.id);
     try {
       expandedDetail = await getFamilyDetail(family.id);
     } catch {
       expandedDetail = null;
     }
     expandedLoading = false;
-  }
-
-  function domainColor(domain: string): string {
-    return DOMAIN_COLORS[domain] || DOMAIN_COLORS.general;
   }
 
   function scoreColor(score: number | null): string {
@@ -92,13 +82,7 @@
 
   function openMindmap() {
     patternsStore.loadGraph();
-    // Open a mindmap tab — uses 'result' type as placeholder until dedicated type exists
-    editorStore.openTab({
-      id: 'mindmap',
-      title: 'Mindmap',
-      type: 'result',
-      pinned: false,
-    });
+    editorStore.openMindmap();
   }
 </script>
 

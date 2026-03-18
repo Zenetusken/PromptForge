@@ -112,8 +112,8 @@
 <div class="prompt-edit">
   <!-- Editor area (top — takes all available space) -->
   <div class="editor-area">
-    <PatternSuggestion onApply={(patterns) => {
-      forgeStore.appliedPatterns = patterns;
+    <PatternSuggestion onApply={(patternIds) => {
+      forgeStore.appliedPatternIds = patternIds;
     }} />
     <textarea
       class="prompt-textarea"

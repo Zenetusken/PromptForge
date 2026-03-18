@@ -16,6 +16,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import DATA_DIR, settings
@@ -272,7 +273,7 @@ class PipelineOrchestrator:
             applied_patterns_text: str | None = None
             if applied_pattern_ids:
                 try:
-                    from app.models import MetaPattern
+                    from app.models import MetaPattern, PatternFamily
 
                     result = await db.execute(
                         select(MetaPattern).where(MetaPattern.id.in_(applied_pattern_ids))
@@ -287,9 +288,20 @@ class PipelineOrchestrator:
                             "should be applied where relevant:\n"
                             + "\n".join(lines)
                         )
+
+                        # Increment usage_count on affected families
+                        family_ids = {p.family_id for p in patterns}
+                        for fid in family_ids:
+                            fam_result = await db.execute(
+                                select(PatternFamily).where(PatternFamily.id == fid)
+                            )
+                            fam = fam_result.scalar_one_or_none()
+                            if fam:
+                                fam.usage_count += 1
+
                         logger.info(
-                            "Injecting %d applied patterns into optimizer context. trace_id=%s",
-                            len(patterns), trace_id,
+                            "Injecting %d applied patterns from %d families into optimizer context. trace_id=%s",
+                            len(patterns), len(family_ids), trace_id,
                         )
                 except Exception as exc:
                     logger.warning("Failed to resolve applied patterns: %s", exc)
@@ -562,6 +574,28 @@ class PipelineOrchestrator:
                 tokens_by_phase=phase_durations,
             )
             db.add(db_opt)
+
+            # Track applied patterns in join table (relationship: "applied")
+            if applied_pattern_ids:
+                try:
+                    from app.models import OptimizationPattern
+
+                    for pid in applied_pattern_ids:
+                        # Resolve which family the meta-pattern belongs to
+                        mp_result = await db.execute(
+                            select(MetaPattern).where(MetaPattern.id == pid)
+                        )
+                        mp = mp_result.scalar_one_or_none()
+                        if mp:
+                            db.add(OptimizationPattern(
+                                optimization_id=opt_id,
+                                family_id=mp.family_id,
+                                meta_pattern_id=mp.id,
+                                relationship="applied",
+                            ))
+                except Exception as exc:
+                    logger.warning("Failed to track applied patterns: %s", exc)
+
             await db.commit()
 
             # Publish real-time event for cross-source notifications

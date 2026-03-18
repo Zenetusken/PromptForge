@@ -39,7 +39,11 @@ class PatternMatcherService:
             return None
 
         # Embed the input prompt
-        prompt_embedding = await self._embedding.aembed_single(prompt_text)
+        try:
+            prompt_embedding = await self._embedding.aembed_single(prompt_text)
+        except Exception as exc:
+            logger.warning("Embedding failed for pattern match (non-fatal): %s", exc)
+            return None
 
         # Cosine search against centroids
         centroids = [np.frombuffer(f.centroid_embedding, dtype=np.float32) for f in families]
@@ -66,6 +70,7 @@ class PatternMatcherService:
                 "domain": family.domain,
                 "task_type": family.task_type,
                 "usage_count": family.usage_count,
+                "member_count": family.member_count,
                 "avg_score": family.avg_score,
             },
             "meta_patterns": [

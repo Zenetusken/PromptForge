@@ -218,10 +218,15 @@ export function optimizeSSE(
   onEvent: (event: SSEEvent) => void,
   onError: (err: Error) => void,
   onComplete: () => void,
+  appliedPatternIds?: string[] | null,
 ): AbortController {
   return streamSSE(
     '/optimize',
-    JSON.stringify({ prompt, strategy: strategy || undefined }),
+    JSON.stringify({
+      prompt,
+      strategy: strategy || undefined,
+      applied_pattern_ids: appliedPatternIds?.length ? appliedPatternIds : undefined,
+    }),
     onEvent,
     onError,
     onComplete,

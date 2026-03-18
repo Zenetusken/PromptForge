@@ -3,6 +3,7 @@
   import { refinementStore } from '$lib/stores/refinement.svelte';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
+  import { domainColor } from '$lib/constants/patterns';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
 
@@ -12,23 +13,9 @@
     scoring: 'Scoring',
   };
 
-  const DOMAIN_COLORS: Record<string, string> = {
-    backend: '#a855f7',
-    frontend: '#f59e0b',
-    database: '#10b981',
-    security: '#ef4444',
-    devops: '#3b82f6',
-    fullstack: '#00e5ff',
-    general: '#6b7280',
-  };
-
   const isPassthrough = $derived(forgeStore.status === 'passthrough');
   const isHeuristicScored = $derived(forgeStore.result?.scoring_mode === 'heuristic');
   const showFamilyDetail = $derived(patternsStore.selectedFamilyId !== null);
-
-  function domainColor(domain: string): string {
-    return DOMAIN_COLORS[domain] ?? DOMAIN_COLORS.general;
-  }
 
   function truncatePrompt(text: string, maxLen = 80): string {
     if (text.length <= maxLen) return text;

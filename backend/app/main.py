@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app._version import __version__
 from app.config import DATA_DIR, PROMPTS_DIR, settings
+from app.services.event_bus import event_bus
 from app.services.file_watcher import watch_strategy_files
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,6 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.error("Pattern extraction listener crashed: %s", exc, exc_info=True)
 
-    from app.services.event_bus import event_bus
     extraction_task = asyncio.create_task(_pattern_extraction_listener())
     app.state.extraction_task = extraction_task
 

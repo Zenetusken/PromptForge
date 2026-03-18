@@ -61,13 +61,13 @@ class PatternStore {
   }
 
   /**
-   * User clicked [Apply] — returns the meta-pattern texts for pipeline injection.
+   * User clicked [Apply] — returns the meta-pattern IDs for pipeline injection.
    */
   applySuggestion(): string[] | null {
     if (!this.suggestion) return null;
-    const patterns = this.suggestion.meta_patterns.map(mp => mp.pattern_text);
+    const ids = this.suggestion.meta_patterns.map(mp => mp.id);
     this.dismissSuggestion();
-    return patterns;
+    return ids;
   }
 
   /**

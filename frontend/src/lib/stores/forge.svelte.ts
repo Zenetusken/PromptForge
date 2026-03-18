@@ -6,6 +6,7 @@ import {
 import type { OptimizationResult, DimensionScores, SSEEvent } from '$lib/api/client';
 import { editorStore } from '$lib/stores/editor.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
+import { patternsStore } from '$lib/stores/patterns.svelte';
 
 export type ForgeStatus = 'idle' | 'analyzing' | 'optimizing' | 'scoring' | 'complete' | 'error' | 'passthrough';
 
@@ -33,8 +34,8 @@ class ForgeStore {
   // Initial suggestions from the pipeline (before any refinement turns exist)
   initialSuggestions = $state<Array<Record<string, string>>>([]);
 
-  // Applied pattern texts from knowledge graph paste detection
-  appliedPatterns = $state<string[] | null>(null);
+  // Applied meta-pattern IDs from knowledge graph paste detection
+  appliedPatternIds = $state<string[] | null>(null);
 
   /** Set by +page.svelte after health check — true when health.provider is null. */
   noProvider = $state(false);
@@ -56,6 +57,9 @@ class ForgeStore {
       return;
     }
 
+    // Capture applied pattern IDs before clearing state
+    const patternIds = this.appliedPatternIds;
+
     // Clear shared state
     this.error = null;
     this.result = null;
@@ -69,7 +73,7 @@ class ForgeStore {
     this.passthroughTraceId = null;
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
-    this.appliedPatterns = null;
+    this.appliedPatternIds = null;
 
     // Passthrough mode — no provider, or force_passthrough preference enabled
     if (this.noProvider || preferencesStore.pipeline.force_passthrough) {
@@ -105,6 +109,7 @@ class ForgeStore {
           if (this.traceId) this.reconnect();
         }
       },
+      patternIds,
     );
   }
 
@@ -276,7 +281,8 @@ class ForgeStore {
     this.passthroughTraceId = null;
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
-    this.appliedPatterns = null;
+    this.appliedPatternIds = null;
+    patternsStore.resetTracking();
   }
 }
 

@@ -1,18 +1,8 @@
 <script lang="ts">
   import * as d3 from 'd3';
   import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { DOMAIN_COLORS, domainColor } from '$lib/constants/patterns';
   import type { GraphFamily, GraphEdge } from '$lib/api/patterns';
-
-  // Domain color palette
-  const DOMAIN_COLORS: Record<string, string> = {
-    backend: '#a855f7',
-    frontend: '#f59e0b',
-    database: '#10b981',
-    security: '#ef4444',
-    devops: '#3b82f6',
-    fullstack: '#00e5ff',
-    general: '#6b7280',
-  };
 
   const BG_COLOR = '#06060c';
   const NEON_CYAN = '#00e5ff';
@@ -35,10 +25,6 @@
     if (!graph || !svgEl || !containerEl) return;
     renderGraph(graph.families, graph.edges, graph.center);
   });
-
-  function domainColor(domain: string): string {
-    return DOMAIN_COLORS[domain] ?? DOMAIN_COLORS.general;
-  }
 
   function renderGraph(
     families: GraphFamily[],
@@ -169,6 +155,8 @@
             if (selectedFamilyId) {
               g.select(`circle[data-family-id="${selectedFamilyId}"]`).attr('stroke-width', 2);
             }
+            // Sync with patterns store so Inspector shows family detail
+            patternsStore.selectFamily(selectedFamilyId);
           });
 
         // Label (intent_label, truncated)
