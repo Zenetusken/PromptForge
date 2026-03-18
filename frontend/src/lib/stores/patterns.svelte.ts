@@ -4,7 +4,7 @@
  * Manages auto-suggestion on paste and pattern graph data for the mindmap.
  */
 
-import { matchPattern, getPatternGraph, type PatternMatch, type PatternGraph } from '$lib/api/patterns';
+import { matchPattern, getPatternGraph, getFamilyDetail, type PatternMatch, type PatternGraph, type FamilyDetail } from '$lib/api/patterns';
 
 const PASTE_CHAR_DELTA = 50;
 const PASTE_DEBOUNCE_MS = 300;
@@ -19,6 +19,12 @@ class PatternStore {
   graph = $state<PatternGraph | null>(null);
   graphLoaded = $state(false);
   graphError = $state<string | null>(null);
+
+  // Family detail (Inspector)
+  selectedFamilyId = $state<string | null>(null);
+  familyDetail = $state<FamilyDetail | null>(null);
+  familyDetailLoading = $state(false);
+  familyDetailError = $state<string | null>(null);
 
   // Internal
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,6 +101,32 @@ class PatternStore {
    */
   invalidateGraph(): void {
     this.graphLoaded = false;
+  }
+
+  /**
+   * Select a family for Inspector display. Pass null to deselect.
+   */
+  selectFamily(id: string | null): void {
+    this.selectedFamilyId = id;
+    if (!id) {
+      this.familyDetail = null;
+      this.familyDetailError = null;
+      return;
+    }
+    this._loadFamilyDetail(id);
+  }
+
+  private async _loadFamilyDetail(id: string): Promise<void> {
+    this.familyDetailLoading = true;
+    this.familyDetailError = null;
+    try {
+      this.familyDetail = await getFamilyDetail(id);
+    } catch (err) {
+      this.familyDetailError = err instanceof Error ? err.message : 'Failed to load family';
+      this.familyDetail = null;
+    } finally {
+      this.familyDetailLoading = false;
+    }
   }
 
   /**
