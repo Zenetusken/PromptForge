@@ -92,8 +92,9 @@
   let showSystem = $state(false);
 
   // ---- Derived disabled states for force toggles ----
+  // force_sampling requires positive evidence: samplingCapable must be exactly `true`
   let forceSamplingDisabled = $derived(
-    forgeStore.noProvider || forgeStore.samplingCapable === false || preferencesStore.pipeline.force_passthrough
+    forgeStore.noProvider || forgeStore.samplingCapable !== true || preferencesStore.pipeline.force_passthrough
   );
   let forcePassthroughDisabled = $derived(
     forgeStore.samplingCapable === true || preferencesStore.pipeline.force_sampling
@@ -457,11 +458,13 @@
                 title={
                   forgeStore.noProvider
                     ? 'No local provider to bypass — sampling is already the active path'
-                    : forgeStore.samplingCapable === false
-                      ? 'Your MCP client does not support sampling'
-                      : preferencesStore.pipeline.force_passthrough
-                        ? 'Disable Force passthrough first'
-                        : undefined
+                    : forgeStore.samplingCapable === null
+                      ? 'No sampling-capable MCP client detected'
+                      : forgeStore.samplingCapable === false
+                        ? 'Your MCP client does not support sampling'
+                        : preferencesStore.pipeline.force_passthrough
+                          ? 'Disable Force passthrough first'
+                          : undefined
                 }
                 style={forceSamplingDisabled ? 'opacity: 0.4; cursor: not-allowed;' : undefined}
               >
@@ -510,7 +513,7 @@
                 {/each}
               </select>
             </div>
-            {#if preferencesStore.pipeline.force_sampling && !forgeStore.noProvider && forgeStore.samplingCapable !== false}
+            {#if preferencesStore.pipeline.force_sampling && !forgeStore.noProvider && forgeStore.samplingCapable === true}
               <div class="info-row">
                 <span class="lean-badge" style="color: var(--color-accent, #00e5ff); border-color: var(--color-accent, #00e5ff);">SAMPLING</span>
               </div>
