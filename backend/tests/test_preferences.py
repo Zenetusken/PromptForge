@@ -240,3 +240,92 @@ class TestForceSampling:
     def test_get_dot_path(self, svc: PreferencesService) -> None:
         snap = svc.load()
         assert svc.get("pipeline.force_sampling", snapshot=snap) is False
+
+
+# ── TestForcePassthrough ──────────────────────────────────────────────
+
+
+class TestForcePassthrough:
+    def test_default_is_false(self, svc: PreferencesService) -> None:
+        prefs = svc.load()
+        assert prefs["pipeline"]["force_passthrough"] is False
+
+    def test_can_be_patched_true(self, svc: PreferencesService) -> None:
+        result = svc.patch({"pipeline": {"force_passthrough": True}})
+        assert result["pipeline"]["force_passthrough"] is True
+
+    def test_can_be_patched_false(self, svc: PreferencesService) -> None:
+        svc.patch({"pipeline": {"force_passthrough": True}})
+        result = svc.patch({"pipeline": {"force_passthrough": False}})
+        assert result["pipeline"]["force_passthrough"] is False
+
+    def test_non_boolean_rejected_by_validate(self, svc: PreferencesService) -> None:
+        prefs = svc.load()
+        prefs["pipeline"]["force_passthrough"] = "yes"
+        with pytest.raises(ValueError, match="force_passthrough"):
+            svc.save(prefs)
+
+    def test_non_boolean_sanitized_to_default(
+        self, svc: PreferencesService, prefs_file: Path
+    ) -> None:
+        import json as _json
+        prefs_file.write_text(_json.dumps({
+            "schema_version": 1,
+            "pipeline": {"force_passthrough": "yes"},
+        }))
+        prefs = svc.load()
+        assert prefs["pipeline"]["force_passthrough"] is False
+
+    def test_missing_key_merges_to_false(
+        self, svc: PreferencesService, prefs_file: Path
+    ) -> None:
+        """Older preferences.json without force_passthrough silently gets False."""
+        import json as _json
+        prefs_file.write_text(_json.dumps({
+            "schema_version": 1,
+            "pipeline": {
+                "enable_explore": True,
+                "enable_scoring": True,
+                "enable_adaptation": True,
+                "force_sampling": False,
+            },
+        }))
+        prefs = svc.load()
+        assert prefs["pipeline"]["force_passthrough"] is False
+
+    def test_get_dot_path(self, svc: PreferencesService) -> None:
+        snap = svc.load()
+        assert svc.get("pipeline.force_passthrough", snapshot=snap) is False
+
+
+# ── TestMutualExclusion ───────────────────────────────────────────────
+
+
+class TestMutualExclusion:
+    def test_both_true_raises_value_error(self, svc: PreferencesService) -> None:
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            svc.patch({"pipeline": {"force_sampling": True, "force_passthrough": True}})
+
+    def test_force_sampling_true_when_passthrough_already_true_raises(
+        self, svc: PreferencesService
+    ) -> None:
+        # Set passthrough first (no conflict yet)
+        svc.patch({"pipeline": {"force_passthrough": True}})
+        # Patch force_sampling=True — deep-merge produces both=True → raises
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            svc.patch({"pipeline": {"force_sampling": True}})
+
+    def test_both_false_is_valid(self, svc: PreferencesService) -> None:
+        result = svc.patch({"pipeline": {"force_sampling": False, "force_passthrough": False}})
+        assert result["pipeline"]["force_sampling"] is False
+        assert result["pipeline"]["force_passthrough"] is False
+
+    def test_only_force_sampling_true_valid(self, svc: PreferencesService) -> None:
+        result = svc.patch({"pipeline": {"force_sampling": True, "force_passthrough": False}})
+        assert result["pipeline"]["force_sampling"] is True
+        assert result["pipeline"]["force_passthrough"] is False
+
+    def test_only_force_passthrough_true_valid(self, svc: PreferencesService) -> None:
+        result = svc.patch({"pipeline": {"force_passthrough": True, "force_sampling": False}})
+        assert result["pipeline"]["force_passthrough"] is True
+        assert result["pipeline"]["force_sampling"] is False

@@ -45,6 +45,7 @@ DEFAULTS: dict[str, Any] = {
         "enable_scoring": True,
         "enable_adaptation": True,
         "force_sampling": False,
+        "force_passthrough": False,
     },
     "defaults": {
         "strategy": "auto",
@@ -163,7 +164,7 @@ class PreferencesService:
 
         # Pipeline toggles must be boolean
         pipeline = prefs.get("pipeline", {})
-        for toggle in ("enable_explore", "enable_scoring", "enable_adaptation", "force_sampling"):
+        for toggle in ("enable_explore", "enable_scoring", "enable_adaptation", "force_sampling", "force_passthrough"):
             val = pipeline.get(toggle)
             if not isinstance(val, bool):
                 default_val = DEFAULTS["pipeline"][toggle]
@@ -194,12 +195,15 @@ class PreferencesService:
                 )
 
         pipeline = prefs.get("pipeline", {})
-        for toggle in ("enable_explore", "enable_scoring", "enable_adaptation", "force_sampling"):
+        for toggle in ("enable_explore", "enable_scoring", "enable_adaptation", "force_sampling", "force_passthrough"):
             val = pipeline.get(toggle)
             if val is not None and not isinstance(val, bool):
                 raise ValueError(
                     f"Pipeline toggle '{toggle}' must be boolean, got {type(val).__name__}"
                 )
+
+        if pipeline.get("force_sampling") and pipeline.get("force_passthrough"):
+            raise ValueError("force_sampling and force_passthrough are mutually exclusive")
 
     def _write(self, prefs: dict[str, Any]) -> None:
         """Atomic write via tempfile + rename, mode 0o644."""
