@@ -26,19 +26,23 @@
   let domains = $derived(Object.keys(grouped).sort());
 
   // Load families on mount
-  let didLoad = false;
+  let _mountLoaded = $state(false);
   $effect(() => {
-    if (didLoad) return;
-    didLoad = true;
-    loadFamilies();
+    if (!_mountLoaded) {
+      _mountLoaded = true;
+      loadFamilies();
+    }
   });
 
-  // Reload when graph is invalidated
+  // Reload when graph is invalidated (pattern_updated event)
+  let _lastGraphLoaded = $state(true);
   $effect(() => {
-    if (!patternsStore.graphLoaded && loaded) {
-      loaded = false;
-      didLoad = false;
+    const gl = patternsStore.graphLoaded;
+    if (_lastGraphLoaded && !gl) {
+      // Graph was invalidated — refresh family list
+      loadFamilies();
     }
+    _lastGraphLoaded = gl;
   });
 
   async function loadFamilies() {

@@ -14,9 +14,13 @@
   let containerEl = $state<HTMLDivElement>(undefined!);
   let selectedFamilyId = $state<string | null>(null);
 
-  // Load graph on mount
+  // Load graph on mount and reload when invalidated
   $effect(() => {
-    patternsStore.loadGraph();
+    // Track graphLoaded — when it transitions to false (invalidation), reload
+    const gl = patternsStore.graphLoaded;
+    if (!gl) {
+      patternsStore.loadGraph();
+    }
   });
 
   // Render D3 visualization when graph data changes
@@ -24,6 +28,19 @@
     const graph = patternsStore.graph;
     if (!graph || !svgEl || !containerEl) return;
     renderGraph(graph.families, graph.edges, graph.center);
+  });
+
+  // Re-render on container resize
+  $effect(() => {
+    if (!containerEl) return;
+    const observer = new ResizeObserver(() => {
+      const graph = patternsStore.graph;
+      if (graph && svgEl) {
+        renderGraph(graph.families, graph.edges, graph.center);
+      }
+    });
+    observer.observe(containerEl);
+    return () => observer.disconnect();
   });
 
   function renderGraph(

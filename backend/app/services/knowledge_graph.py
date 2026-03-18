@@ -66,6 +66,7 @@ class KnowledgeGraphService:
                 "usage_count": f.usage_count,
                 "member_count": f.member_count,
                 "avg_score": f.avg_score,
+                "created_at": f.created_at.isoformat() if f.created_at else None,
                 "meta_patterns": [
                     {"id": mp.id, "pattern_text": mp.pattern_text, "source_count": mp.source_count}
                     for mp in sorted(meta_patterns, key=lambda m: m.source_count, reverse=True)
@@ -113,7 +114,11 @@ class KnowledgeGraphService:
         self, db: AsyncSession, query: str, top_k: int = 5
     ) -> list[dict]:
         """Semantic search across all families and meta-patterns."""
-        query_embedding = await self._embedding.aembed_single(query)
+        try:
+            query_embedding = await self._embedding.aembed_single(query)
+        except Exception as exc:
+            logger.warning("Embedding failed for pattern search: %s", exc)
+            return []
 
         # Search families
         result = await db.execute(select(PatternFamily))

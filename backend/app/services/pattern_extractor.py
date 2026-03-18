@@ -57,6 +57,20 @@ class PatternExtractorService:
                     )
                     return
 
+                # Idempotency: skip if already extracted
+                existing = await db.execute(
+                    select(OptimizationPattern).where(
+                        OptimizationPattern.optimization_id == optimization_id,
+                        OptimizationPattern.relationship == "source",
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    logger.debug(
+                        "Skipping pattern extraction for %s (already processed)",
+                        optimization_id,
+                    )
+                    return
+
                 # 1. Embed the raw prompt
                 embedding = await self._embedding.aembed_single(opt.raw_prompt)
                 opt.embedding = embedding.astype(np.float32).tobytes()
@@ -214,6 +228,9 @@ class PatternExtractorService:
                 patterns: list[str]
 
             provider = detect_provider()
+            if not provider:
+                logger.warning("No LLM provider available for meta-pattern extraction")
+                return []
             response = await provider.complete_parsed(
                 model=settings.MODEL_HAIKU,
                 system_prompt="You are a prompt engineering analyst. Extract reusable meta-patterns.",

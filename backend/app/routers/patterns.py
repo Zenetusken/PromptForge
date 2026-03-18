@@ -55,6 +55,8 @@ async def list_families(
     domain: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
+    offset = max(offset, 0)
+    limit = min(max(limit, 1), 500)
     """List all pattern families with pagination."""
     from sqlalchemy import func, select
 
