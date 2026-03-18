@@ -37,19 +37,25 @@
     return () => eventSource?.close();
   });
 
-  // Check backend health (one-time on mount)
-  let healthChecked = false;
+  // Health polling — initial check + periodic refresh for sampling capability detection.
+  // Re-polls every 60s so the force_sampling toggle unlocks within a minute of
+  // connecting a sampling-capable MCP client (mcp_session.json is written on tool calls).
+  function applyHealth(h: HealthResponse) {
+    health = h;
+    backendError = null;
+    forgeStore.noProvider = !h.provider;
+    forgeStore.samplingCapable = h.sampling_capable ?? null;
+  }
+
   $effect(() => {
-    if (healthChecked) return;
-    healthChecked = true;
-    getHealth()
-      .then((h) => {
-        health = h;
-        backendError = null;
-        forgeStore.noProvider = !h.provider;
-        forgeStore.samplingCapable = h.sampling_capable ?? null;
-      })
-      .catch(() => { backendError = 'Cannot connect to backend. Check that services are running.'; });
+    const poll = () => {
+      getHealth()
+        .then(applyHealth)
+        .catch(() => { backendError = 'Cannot connect to backend. Check that services are running.'; });
+    };
+    poll();
+    const interval = setInterval(poll, 60_000);
+    return () => clearInterval(interval);
 
     // GitHub auth checked lazily when user navigates to GitHub panel
     // (avoids 401 console noise on every page load when OAuth isn't configured)
