@@ -544,6 +544,7 @@ async def synthesis_optimize(
             "trace_id": trace_id,
             "assembled_prompt": assembled,
             "strategy_used": strategy_name,
+            "pipeline_mode": "passthrough",
             "instructions": (
                 "No local LLM provider detected. Process the assembled_prompt "
                 "with your LLM, then call synthesis_save_result with the trace_id "
