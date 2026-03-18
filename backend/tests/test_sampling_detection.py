@@ -754,8 +754,8 @@ class TestCapabilityDetectionMiddleware:
         data = json.loads((mw_data_dir / "mcp_session.json").read_text())
         assert data["sampling_capable"] is False
 
-    def test_overwrites_previous_session(self, mw_data_dir):
-        """Second initialize overwrites stale session from a different client."""
+    def test_optimistic_does_not_downgrade_fresh_true(self, mw_data_dir):
+        """A False initialize does NOT overwrite a fresh True (optimistic strategy)."""
         from app.mcp_server import _CapabilityDetectionMiddleware
 
         # First: sampling capable
@@ -764,11 +764,44 @@ class TestCapabilityDetectionMiddleware:
         )
         assert json.loads((mw_data_dir / "mcp_session.json").read_text())["sampling_capable"] is True
 
-        # Second: no sampling
+        # Second: no sampling — should be ignored because True is fresh
         _CapabilityDetectionMiddleware._inspect_initialize(
             self._make_initialize_body({"roots": {}})
         )
-        assert json.loads((mw_data_dir / "mcp_session.json").read_text())["sampling_capable"] is False
+        assert json.loads((mw_data_dir / "mcp_session.json").read_text())["sampling_capable"] is True
+
+    def test_overwrites_stale_true_with_false(self, mw_data_dir):
+        """A False initialize DOES overwrite a stale True (past staleness window)."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        # Write a stale True
+        path = mw_data_dir / "mcp_session.json"
+        path.write_text(json.dumps({
+            "sampling_capable": True,
+            "written_at": (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat(),
+        }))
+
+        # False should overwrite because True is stale
+        _CapabilityDetectionMiddleware._inspect_initialize(
+            self._make_initialize_body({"roots": {}})
+        )
+        assert json.loads(path.read_text())["sampling_capable"] is False
+
+    def test_false_overwrites_existing_false(self, mw_data_dir):
+        """A False initialize overwrites an existing False (refreshes timestamp)."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        # Write an existing False
+        path = mw_data_dir / "mcp_session.json"
+        old_time = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        path.write_text(json.dumps({"sampling_capable": False, "written_at": old_time}))
+
+        _CapabilityDetectionMiddleware._inspect_initialize(
+            self._make_initialize_body({"roots": {}})
+        )
+        data = json.loads(path.read_text())
+        assert data["sampling_capable"] is False
+        assert data["written_at"] != old_time  # timestamp refreshed
 
     def test_written_at_is_recent_utc(self, mw_data_dir):
         """written_at timestamp is parseable and within a few seconds of now."""

@@ -17,7 +17,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -92,7 +92,8 @@ def _write_mcp_session_caps(ctx: Context | None) -> None:
     """Detect sampling capability from MCP client and persist to mcp_session.json.
 
     Called at the start of every MCP tool invocation so the health endpoint
-    Silently skips if ctx is None or attribute lookup fails.
+    reflects the latest client state.  Uses the same optimistic strategy as the
+    ASGI middleware: never downgrades a fresh ``True`` to ``False``.
     """
     try:
         sampling_capable = (
@@ -103,6 +104,19 @@ def _write_mcp_session_caps(ctx: Context | None) -> None:
             and getattr(ctx.session.client_params.capabilities, "sampling", None) is not None
         )
         path = DATA_DIR / "mcp_session.json"
+
+        # Optimistic: never downgrade a fresh True to False
+        if not sampling_capable and path.exists():
+            try:
+                existing = _json.loads(path.read_text(encoding="utf-8"))
+                if existing.get("sampling_capable") is True:
+                    written = datetime.fromisoformat(existing["written_at"])
+                    if datetime.now(timezone.utc) - written <= timedelta(minutes=5):
+                        logger.debug("_write_mcp_session_caps: skipping False — fresh True on file")
+                        return
+            except Exception:
+                pass
+
         path.write_text(
             _json.dumps({
                 "sampling_capable": sampling_capable,
@@ -189,7 +203,14 @@ class _CapabilityDetectionMiddleware:
 
     @staticmethod
     def _inspect_initialize(body: bytes) -> None:
-        """If the body is a JSON-RPC ``initialize`` request, write session caps."""
+        """If the body is a JSON-RPC ``initialize`` request, write session caps.
+
+        Uses an **optimistic** strategy: a ``True`` detection is always written
+        immediately.  A ``False`` detection only writes if the file doesn't
+        already contain a fresh ``True`` value (within the staleness window).
+        This prevents multi-session clients like VS Code from downgrading the
+        detection when one of their internal sessions lacks sampling capability.
+        """
         try:
             data = _json.loads(body)
             if not isinstance(data, dict) or data.get("method") != "initialize":
@@ -197,6 +218,23 @@ class _CapabilityDetectionMiddleware:
             caps = data.get("params", {}).get("capabilities", {})
             sampling = caps.get("sampling") is not None
             path = DATA_DIR / "mcp_session.json"
+
+            # Optimistic: never downgrade a fresh True to False
+            if not sampling and path.exists():
+                try:
+                    existing = _json.loads(path.read_text(encoding="utf-8"))
+                    if existing.get("sampling_capable") is True:
+                        written = datetime.fromisoformat(existing["written_at"])
+                        if datetime.now(timezone.utc) - written <= timedelta(minutes=5):
+                            logger.debug(
+                                "Capability detection middleware: ignoring False — "
+                                "fresh True already on file (caps=%s)",
+                                caps,
+                            )
+                            return
+                except Exception:
+                    pass  # corrupt file — overwrite it
+
             path.write_text(
                 _json.dumps({
                     "sampling_capable": sampling,
@@ -205,8 +243,9 @@ class _CapabilityDetectionMiddleware:
                 encoding="utf-8",
             )
             logger.info(
-                "Capability detection middleware: sampling_capable=%s (from initialize handshake)",
+                "Capability detection middleware: sampling_capable=%s (from initialize handshake, caps=%s)",
                 sampling,
+                list(caps.keys()),
             )
         except Exception:
             logger.debug("Capability detection middleware: could not parse initialize", exc_info=True)
