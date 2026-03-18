@@ -214,26 +214,26 @@ class TestHealthSamplingCapable:
         resp = await app_client.get("/api/health")
         assert resp.json()["sampling_capable"] is False
 
-    async def test_null_when_stale_6_minutes(self, app_client, tmp_path, monkeypatch):
-        """File older than 5 minutes is stale → returns null."""
+    async def test_null_when_stale_31_minutes(self, app_client, tmp_path, monkeypatch):
+        """File older than 30 minutes is stale → returns null."""
         monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
-        self._write_session(tmp_path, sampling_capable=True, age_minutes=6)
+        self._write_session(tmp_path, sampling_capable=True, age_minutes=31)
 
         resp = await app_client.get("/api/health")
         assert resp.json()["sampling_capable"] is None
 
-    async def test_true_when_4_minutes_old(self, app_client, tmp_path, monkeypatch):
-        """File 4 minutes old is within the 5-minute window → returns value."""
+    async def test_true_when_20_minutes_old(self, app_client, tmp_path, monkeypatch):
+        """File 20 minutes old is within the 30-minute window → returns value."""
         monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
-        self._write_session(tmp_path, sampling_capable=True, age_minutes=4)
+        self._write_session(tmp_path, sampling_capable=True, age_minutes=20)
 
         resp = await app_client.get("/api/health")
         assert resp.json()["sampling_capable"] is True
 
-    async def test_null_when_10_minutes_old(self, app_client, tmp_path, monkeypatch):
-        """File 10 minutes old is well past staleness → returns null."""
+    async def test_null_when_60_minutes_old(self, app_client, tmp_path, monkeypatch):
+        """File 60 minutes old is well past staleness → returns null."""
         monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
-        self._write_session(tmp_path, sampling_capable=True, age_minutes=10)
+        self._write_session(tmp_path, sampling_capable=True, age_minutes=60)
 
         resp = await app_client.get("/api/health")
         assert resp.json()["sampling_capable"] is None
@@ -593,11 +593,11 @@ class TestSamplingDetectionIntegration:
 
         _write_mcp_session_caps(None)
 
-        # Manually backdate the written_at to 10 minutes ago
+        # Manually backdate the written_at to 31 minutes ago (past 30-min window)
         path = tmp_path / "mcp_session.json"
         data = json.loads(path.read_text())
         data["written_at"] = (
-            datetime.now(timezone.utc) - timedelta(minutes=10)
+            datetime.now(timezone.utc) - timedelta(minutes=31)
         ).isoformat()
         path.write_text(json.dumps(data))
 
@@ -627,7 +627,7 @@ class TestSamplingDetectionIntegration:
         path = tmp_path / "mcp_session.json"
         data = json.loads(path.read_text())
         data["written_at"] = (
-            datetime.now(timezone.utc) - timedelta(minutes=6)
+            datetime.now(timezone.utc) - timedelta(minutes=31)
         ).isoformat()
         path.write_text(json.dumps(data))
 
@@ -774,11 +774,11 @@ class TestCapabilityDetectionMiddleware:
         """A False initialize DOES overwrite a stale True (past staleness window)."""
         from app.mcp_server import _CapabilityDetectionMiddleware
 
-        # Write a stale True
+        # Write a stale True (past 30-min window)
         path = mw_data_dir / "mcp_session.json"
         path.write_text(json.dumps({
             "sampling_capable": True,
-            "written_at": (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat(),
+            "written_at": (datetime.now(timezone.utc) - timedelta(minutes=31)).isoformat(),
         }))
 
         # False should overwrite because True is stale

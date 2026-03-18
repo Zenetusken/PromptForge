@@ -111,7 +111,7 @@ def _write_mcp_session_caps(ctx: Context | None) -> None:
                 existing = _json.loads(path.read_text(encoding="utf-8"))
                 if existing.get("sampling_capable") is True:
                     written = datetime.fromisoformat(existing["written_at"])
-                    if datetime.now(timezone.utc) - written <= timedelta(minutes=5):
+                    if datetime.now(timezone.utc) - written <= timedelta(minutes=30):
                         logger.debug("_write_mcp_session_caps: skipping False — fresh True on file")
                         return
             except Exception:
@@ -225,7 +225,7 @@ class _CapabilityDetectionMiddleware:
                     existing = _json.loads(path.read_text(encoding="utf-8"))
                     if existing.get("sampling_capable") is True:
                         written = datetime.fromisoformat(existing["written_at"])
-                        if datetime.now(timezone.utc) - written <= timedelta(minutes=5):
+                        if datetime.now(timezone.utc) - written <= timedelta(minutes=30):
                             logger.debug(
                                 "Capability detection middleware: ignoring False — "
                                 "fresh True already on file (caps=%s)",
@@ -252,8 +252,7 @@ class _CapabilityDetectionMiddleware:
 
 
 # Patch streamable_http_app to inject the capability-detection middleware.
-# FastMCP.streamable_http_app() creates a new Starlette app on each call,
-# so we wrap the method to add our middleware before the app is returned.
+# FastMCP creates a new Starlette app on each call, so we wrap the method.
 _original_streamable_http_app = mcp.streamable_http_app
 
 

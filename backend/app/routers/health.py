@@ -58,14 +58,17 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)):
     except Exception:
         logger.debug("Health check metrics collection failed", exc_info=True)
 
-    # MCP session sampling capability (written by mcp_server.py on tool calls)
+    # MCP session sampling capability (written by mcp_server.py on tool calls
+    # and by the ASGI capability-detection middleware on initialize handshake).
+    # 30-minute staleness window — clients reconnect infrequently so a recent
+    # positive detection should persist for a reasonable period.
     sampling_capable: bool | None = None
     mcp_session_path = DATA_DIR / "mcp_session.json"
     try:
         if mcp_session_path.exists():
             raw = _json.loads(mcp_session_path.read_text(encoding="utf-8"))
             written_at = datetime.fromisoformat(raw["written_at"])
-            if datetime.now(timezone.utc) - written_at <= timedelta(minutes=5):
+            if datetime.now(timezone.utc) - written_at <= timedelta(minutes=30):
                 sampling_capable = bool(raw["sampling_capable"])
     except Exception:
         logger.debug("Could not read mcp_session.json", exc_info=True)
