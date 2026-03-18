@@ -11,6 +11,7 @@ export interface HealthResponse {
   score_health: { last_n_mean: number; last_n_stddev: number; count: number; clustering_warning: boolean } | null;
   avg_duration_ms: number | Record<string, number> | null;
   recent_errors: { last_hour: number; last_24h: number };
+  sampling_capable?: boolean | null;
 }
 
 export interface ApiKeyStatus {

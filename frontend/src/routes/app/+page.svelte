@@ -47,6 +47,7 @@
         health = h;
         backendError = null;
         forgeStore.noProvider = !h.provider;
+        forgeStore.samplingCapable = h.sampling_capable ?? null;
       })
       .catch(() => { backendError = 'Cannot connect to backend. Check that services are running.'; });
 

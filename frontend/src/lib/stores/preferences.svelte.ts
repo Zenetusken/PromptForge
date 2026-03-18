@@ -11,6 +11,7 @@ export interface PipelinePrefs {
   enable_scoring: boolean;
   enable_adaptation: boolean;
   force_sampling: boolean;
+  force_passthrough: boolean;
 }
 
 export interface Preferences {
@@ -23,7 +24,7 @@ export interface Preferences {
 const DEFAULTS: Preferences = {
   schema_version: 1,
   models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
-  pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: false },
+  pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: false, force_passthrough: false },
   defaults: { strategy: 'auto' },
 };
 
@@ -68,7 +69,13 @@ class PreferencesStore {
   }
 
   async setPipelineToggle(key: string, value: boolean): Promise<void> {
-    await this.update({ pipeline: { [key]: value } });
+    const patch: Record<string, boolean> = { [key]: value };
+    // Enforce mutual exclusion: enabling one clears the other
+    if (value) {
+      if (key === 'force_sampling') patch['force_passthrough'] = false;
+      if (key === 'force_passthrough') patch['force_sampling'] = false;
+    }
+    await this.update({ pipeline: patch });
   }
 
   async setDefaultStrategy(strategy: string): Promise<void> {

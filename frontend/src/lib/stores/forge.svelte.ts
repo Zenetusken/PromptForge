@@ -5,6 +5,7 @@ import {
 } from '$lib/api/client';
 import type { OptimizationResult, DimensionScores, SSEEvent } from '$lib/api/client';
 import { editorStore } from '$lib/stores/editor.svelte';
+import { preferencesStore } from '$lib/stores/preferences.svelte';
 
 export type ForgeStatus = 'idle' | 'analyzing' | 'optimizing' | 'scoring' | 'complete' | 'error' | 'passthrough';
 
@@ -34,6 +35,8 @@ class ForgeStore {
 
   /** Set by +page.svelte after health check — true when health.provider is null. */
   noProvider = $state(false);
+  /** Set by +page.svelte after health check — null until health is fetched. */
+  samplingCapable = $state<boolean | null>(null);
 
   private controller: AbortController | null = null;
 
@@ -64,8 +67,8 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
 
-    // Passthrough mode — no provider configured
-    if (this.noProvider) {
+    // Passthrough mode — no provider, or force_passthrough preference enabled
+    if (this.noProvider || preferencesStore.pipeline.force_passthrough) {
       this.status = 'passthrough';
       preparePassthrough(this.prompt, this.strategy)
         .then((res) => {

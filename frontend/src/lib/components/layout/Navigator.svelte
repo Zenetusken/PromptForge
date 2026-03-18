@@ -445,9 +445,48 @@
                 role="switch"
                 aria-checked={preferencesStore.pipeline.force_sampling}
                 aria-label="Toggle Force IDE sampling"
-                disabled={forgeStore.noProvider}
-                title={forgeStore.noProvider ? 'No local provider to bypass — sampling is already the active path' : undefined}
-                style={forgeStore.noProvider ? 'opacity: 0.4; cursor: not-allowed;' : undefined}
+                disabled={forgeStore.noProvider || forgeStore.samplingCapable === false || preferencesStore.pipeline.force_passthrough}
+                title={
+                  forgeStore.noProvider
+                    ? 'No local provider to bypass — sampling is already the active path'
+                    : forgeStore.samplingCapable === false
+                      ? 'Your MCP client does not support sampling'
+                      : preferencesStore.pipeline.force_passthrough
+                        ? 'Disable Force passthrough first'
+                        : undefined
+                }
+                style={
+                  (forgeStore.noProvider || forgeStore.samplingCapable === false || preferencesStore.pipeline.force_passthrough)
+                    ? 'opacity: 0.4; cursor: not-allowed;'
+                    : undefined
+                }
+              >
+                <span class="toggle-thumb"></span>
+              </button>
+            </div>
+            <!-- Force passthrough — manual override, always available except when sampling works -->
+            <div class="info-row">
+              <span class="info-key" title="Bypass all pipelines — returns assembled template for manual processing">Force passthrough</span>
+              <button
+                class="toggle-track"
+                class:toggle-track--on={preferencesStore.pipeline.force_passthrough}
+                onclick={() => preferencesStore.setPipelineToggle('force_passthrough', !preferencesStore.pipeline.force_passthrough)}
+                role="switch"
+                aria-checked={preferencesStore.pipeline.force_passthrough}
+                aria-label="Toggle Force passthrough"
+                disabled={forgeStore.samplingCapable === true || preferencesStore.pipeline.force_sampling}
+                title={
+                  forgeStore.samplingCapable === true
+                    ? 'Sampling is available — use Force IDE sampling instead'
+                    : preferencesStore.pipeline.force_sampling
+                      ? 'Disable Force IDE sampling first'
+                      : undefined
+                }
+                style={
+                  (forgeStore.samplingCapable === true || preferencesStore.pipeline.force_sampling)
+                    ? 'opacity: 0.4; cursor: not-allowed;'
+                    : undefined
+                }
               >
                 <span class="toggle-thumb"></span>
               </button>
@@ -474,6 +513,11 @@
             {#if preferencesStore.pipeline.force_sampling && !forgeStore.noProvider}
               <div class="info-row">
                 <span class="lean-badge" style="color: var(--color-accent, #00e5ff); border-color: var(--color-accent, #00e5ff);">SAMPLING</span>
+              </div>
+            {/if}
+            {#if preferencesStore.pipeline.force_passthrough}
+              <div class="info-row">
+                <span class="lean-badge" style="color: var(--color-warn, #f59e0b); border-color: var(--color-warn, #f59e0b);">PASSTHROUGH</span>
               </div>
             {/if}
           </div>
