@@ -92,12 +92,15 @@
   let showSystem = $state(false);
 
   // ---- Derived disabled states for force toggles ----
-  // force_sampling requires positive evidence: samplingCapable must be exactly `true`
+  // A toggle that is already ON must always be interactive so the user can turn it OFF.
+  // The disabled condition only prevents turning a toggle ON.
   let forceSamplingDisabled = $derived(
-    forgeStore.noProvider || forgeStore.samplingCapable !== true || preferencesStore.pipeline.force_passthrough
+    !preferencesStore.pipeline.force_sampling &&
+    (forgeStore.noProvider || forgeStore.samplingCapable !== true || preferencesStore.pipeline.force_passthrough)
   );
   let forcePassthroughDisabled = $derived(
-    forgeStore.samplingCapable === true || preferencesStore.pipeline.force_sampling
+    !preferencesStore.pipeline.force_passthrough &&
+    (forgeStore.samplingCapable === true || preferencesStore.pipeline.force_sampling)
   );
 
   // Pre-fetch for settings panel (one-time on mount, best effort)
@@ -456,15 +459,17 @@
                 aria-label="Toggle Force IDE sampling"
                 disabled={forceSamplingDisabled}
                 title={
-                  forgeStore.noProvider
-                    ? 'No local provider to bypass — sampling is already the active path'
-                    : forgeStore.samplingCapable === null
-                      ? 'No sampling-capable MCP client detected'
-                      : forgeStore.samplingCapable === false
-                        ? 'Your MCP client does not support sampling'
-                        : preferencesStore.pipeline.force_passthrough
-                          ? 'Disable Force passthrough first'
-                          : undefined
+                  forceSamplingDisabled
+                    ? forgeStore.noProvider
+                      ? 'No local provider to bypass — sampling is already the active path'
+                      : forgeStore.samplingCapable === null
+                        ? 'No sampling-capable MCP client detected'
+                        : forgeStore.samplingCapable === false
+                          ? 'Your MCP client does not support sampling'
+                          : preferencesStore.pipeline.force_passthrough
+                            ? 'Disable Force passthrough first'
+                            : undefined
+                    : undefined
                 }
                 style={forceSamplingDisabled ? 'opacity: 0.4; cursor: not-allowed;' : undefined}
               >
@@ -483,11 +488,13 @@
                 aria-label="Toggle Force passthrough"
                 disabled={forcePassthroughDisabled}
                 title={
-                  forgeStore.samplingCapable === true
-                    ? 'Sampling is available — use Force IDE sampling instead'
-                    : preferencesStore.pipeline.force_sampling
-                      ? 'Disable Force IDE sampling first'
-                      : undefined
+                  forcePassthroughDisabled
+                    ? forgeStore.samplingCapable === true
+                      ? 'Sampling is available — use Force IDE sampling instead'
+                      : preferencesStore.pipeline.force_sampling
+                        ? 'Disable Force IDE sampling first'
+                        : undefined
+                    : undefined
                 }
                 style={forcePassthroughDisabled ? 'opacity: 0.4; cursor: not-allowed;' : undefined}
               >
