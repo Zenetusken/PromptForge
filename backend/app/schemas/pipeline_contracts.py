@@ -132,6 +132,7 @@ class OptimizerInput(BaseModel):
     codebase_guidance: str | None = None
     codebase_context: str | None = None
     adaptation_state: str | None = None
+    applied_patterns: str | None = None
 
 
 class ScorerInput(BaseModel):

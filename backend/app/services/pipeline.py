@@ -140,6 +140,7 @@ class PipelineOrchestrator:
         context_sources: dict[str, bool] | None = None,
         repo_full_name: str | None = None,
         github_token: str | None = None,
+        applied_pattern_ids: list[str] | None = None,
     ) -> AsyncGenerator[PipelineEvent, None]:
         """Execute the full pipeline, yielding SSE events."""
         trace_id = str(uuid.uuid4())
@@ -267,6 +268,32 @@ class PipelineOrchestrator:
                 f"Rationale: {analysis.strategy_rationale}"
             )
 
+            # Resolve applied meta-patterns from knowledge graph
+            applied_patterns_text: str | None = None
+            if applied_pattern_ids:
+                try:
+                    from app.models import MetaPattern
+
+                    result = await db.execute(
+                        select(MetaPattern).where(MetaPattern.id.in_(applied_pattern_ids))
+                    )
+                    patterns = result.scalars().all()
+                    if patterns:
+                        lines = [
+                            f"- {p.pattern_text}" for p in patterns
+                        ]
+                        applied_patterns_text = (
+                            "The following proven patterns from past optimizations "
+                            "should be applied where relevant:\n"
+                            + "\n".join(lines)
+                        )
+                        logger.info(
+                            "Injecting %d applied patterns into optimizer context. trace_id=%s",
+                            len(patterns), trace_id,
+                        )
+                except Exception as exc:
+                    logger.warning("Failed to resolve applied patterns: %s", exc)
+
             optimize_msg = self.prompt_loader.render("optimize.md", {
                 "raw_prompt": raw_prompt,
                 "analysis_summary": analysis_summary,
@@ -274,6 +301,7 @@ class PipelineOrchestrator:
                 "codebase_guidance": codebase_guidance,
                 "codebase_context": codebase_context,
                 "adaptation_state": adaptation_state,
+                "applied_patterns": applied_patterns_text,
             })
 
             # Dynamic output budget: scale with input length, cap at 65536
