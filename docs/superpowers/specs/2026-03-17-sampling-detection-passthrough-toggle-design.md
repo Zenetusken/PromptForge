@@ -1,6 +1,6 @@
 # Design Spec: Sampling Capability Detection + Force Passthrough Toggle
 **Date:** 2026-03-17
-**Status:** Approved — pending implementation
+**Status:** Implemented
 
 ---
 
@@ -41,16 +41,26 @@ Because the flags are mutually exclusive (enforced at save time), paths 1 and 2 
 ### Data flow
 
 ```
-MCP tool call → check ctx.session.client_params.capabilities.sampling
-             → write data/mcp_session.json  (always, before routing branches)
-             → FastAPI /api/health reads file
-             → frontend reads health on mount
-             → Navigator.svelte disables force_sampling toggle
+MCP initialize handshake → ASGI middleware intercepts POST body
+                         → parses JSON-RPC initialize message
+                         → extracts params.capabilities.sampling
+                         → writes data/mcp_session.json (optimistic: False won't overwrite fresh True)
+
+MCP tool call (any of 4) → _write_mcp_session_caps(ctx)
+                         → check ctx.session.client_params.capabilities.sampling
+                         → writes data/mcp_session.json (optimistic: same strategy)
+
+FastAPI /api/health      → reads mcp_session.json (30-min staleness window)
+                         → returns sampling_capable: bool | null
+
+Frontend +page.svelte    → polls health (10s fast, then 60s steady-state)
+                         → sets forgeStore.samplingCapable
+                         → Navigator.svelte disables/enables toggles
 ```
 
 ### `data/mcp_session.json` schema
 
-Written by `mcp_server.py` on **every `synthesis_optimize` call**, **before** any routing branches (including before the `force_passthrough` early-return). This ensures the file stays fresh regardless of which execution path is taken.
+Written by `mcp_server.py` on **every tool call** (all 4 tools), **before** any routing branches. Also written by ASGI middleware on MCP `initialize` handshake — enabling instant detection when an MCP client connects (before any tool call).
 
 ```json
 {
@@ -61,11 +71,19 @@ Written by `mcp_server.py` on **every `synthesis_optimize` call**, **before** an
 
 Detection: `ctx.session.client_params.capabilities.sampling is not None` — presence of the key (even as `{}`) means supported. Entire detection + write is wrapped in `try/except` — if `ctx` is `None` or attribute lookup fails, the file is not written for that call.
 
+### ASGI middleware (`_CapabilityDetectionMiddleware`)
+
+Intercepts raw HTTP POST bodies on the MCP Streamable HTTP transport, parses JSON-RPC `initialize` messages, and extracts `params.capabilities.sampling`. This enables detection at connection time without requiring a tool call. Injected by patching `mcp.streamable_http_app()`.
+
+### Optimistic detection strategy
+
+VS Code sends multiple `initialize` messages per connection (internal sessions), some of which lack sampling capability. To prevent multi-session flicker, the write uses an **optimistic strategy**: a `False` detection never overwrites a fresh `True` within the 30-minute staleness window. This ensures that once sampling is confirmed, transient False signals from other sessions don't reset the state.
+
 ### FastAPI `/api/health` change
 
 Reads `data/mcp_session.json` and appends `sampling_capable: bool | null` to the health response:
-- `bool` — file exists and is ≤ 5 minutes old
-- `null` — file absent or older than 5 minutes (no active MCP session or stale)
+- `bool` — file exists and is ≤ 30 minutes old
+- `null` — file absent or older than 30 minutes (no active MCP session or stale)
 
 ### Frontend changes
 
@@ -190,7 +208,7 @@ New toggle in Pipeline section after `force_sampling`:
 
 *When `samplingCapable=null` (no active MCP session), both toggles are available — this is intentional. The user may be configuring preferences before connecting an MCP client.*
 
-*Edge case: when `force_passthrough=true` and `ctx` is `None` (no active MCP session), the `mcp_session.json` write is silently skipped. The health endpoint will return `sampling_capable: null` once the file goes stale (>5 min). This is correct behavior — no MCP session means no sampling capability can be determined, and `null` correctly leaves both toggles available.*
+*Edge case: when `force_passthrough=true` and `ctx` is `None` (no active MCP session), the `mcp_session.json` write is silently skipped. The health endpoint will return `sampling_capable: null` once the file goes stale (>30 min). This is correct behavior — no MCP session means no sampling capability can be determined, and `null` correctly leaves both toggles available.*
 
 ---
 

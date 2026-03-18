@@ -250,7 +250,7 @@ Then in the `health_check` function, before the `return` statement, add:
         if mcp_session_path.exists():
             raw = _json.loads(mcp_session_path.read_text(encoding="utf-8"))
             written_at = datetime.fromisoformat(raw["written_at"])
-            if datetime.now(timezone.utc) - written_at <= timedelta(minutes=5):
+            if datetime.now(timezone.utc) - written_at <= timedelta(minutes=30):
                 sampling_capable = bool(raw["sampling_capable"])
     except Exception:
         logger.debug("Could not read mcp_session.json", exc_info=True)

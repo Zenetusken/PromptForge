@@ -7,7 +7,7 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ### Added
 - Added `pipeline.force_passthrough` preference toggle — forces passthrough mode (assembled template for external LLM) in both MCP and frontend, mutually exclusive with `force_sampling`
 - Added ASGI middleware on MCP server that detects sampling capability at `initialize` handshake — writes `mcp_session.json` before any tool call, enabling instant detection when an MCP client connects
-- Added runtime MCP sampling capability detection via `data/mcp_session.json` — all 4 MCP tools refresh client capabilities on every call; health endpoint reads with 5-minute staleness window
+- Added runtime MCP sampling capability detection via `data/mcp_session.json` — all 4 MCP tools refresh client capabilities on every call; health endpoint reads with 30-minute staleness window; ASGI middleware detects capabilities at `initialize` handshake (before any tool call); optimistic strategy prevents multi-session flicker (False never overwrites fresh True)
 - Added `sampling_capable` field to `/api/health` response
 - Added PASSTHROUGH badge in Navigator Defaults section (amber warning color) when force_passthrough is active
 - Added `pipeline.force_sampling` preference toggle — forces `synthesis_optimize` through the MCP sampling pipeline (IDE's LLM) even when a local provider is detected; gracefully falls through to the local provider if sampling fails

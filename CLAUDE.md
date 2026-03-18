@@ -104,7 +104,7 @@ Provider is detected **once at startup** and stored in `app.state.provider`. Nev
 - `settings.py` — `GET /api/settings` (read-only server config)
 - `github_auth.py` — OAuth flow (login, callback, me, logout)
 - `github_repos.py` — repo management (list, link, linked, unlink)
-- `health.py` — `GET /api/health` (status, provider, score_health, recent_errors, avg_duration_ms)
+- `health.py` — `GET /api/health` (status, provider, score_health, recent_errors, avg_duration_ms, sampling_capable)
 - `events.py` — `GET /api/events` (SSE event stream), `POST /api/events/_publish` (internal cross-process)
 
 ### Sort column whitelist
@@ -166,10 +166,26 @@ Variable reference: `prompts/manifest.json`
 - `synthesis_prepare_optimization` — assemble prompt + context for external LLM (supports `workspace_path` for roots scanning)
 - `synthesis_save_result` — persist result with bias correction
 
+### Sampling capability detection
+
+The MCP server detects whether the connected client supports `sampling/createMessage` (IDE-driven LLM calls) and persists this to `data/mcp_session.json`. Two detection layers:
+
+1. **ASGI middleware** (`_CapabilityDetectionMiddleware`) — intercepts `initialize` JSON-RPC messages at the HTTP level, extracting `params.capabilities.sampling`. Detects capability instantly on connection, before any tool call.
+2. **Per-tool-call detection** — all 4 tools call `_write_mcp_session_caps(ctx)` to refresh the file from `ctx.session.client_params.capabilities.sampling`.
+
+**Optimistic strategy**: `False` never overwrites a fresh `True` within the 30-minute staleness window. This prevents VS Code multi-session flicker (VS Code sends multiple `initialize` messages, some without sampling capability).
+
+**Health endpoint**: reads `mcp_session.json` with a 30-minute staleness window. Returns `sampling_capable: bool | null` (`null` = no file or stale).
+
+**Frontend polling**: fast 10s interval for the first 2 minutes after page load, then 60s steady-state. Detects MCP client connections within seconds of handshake.
+
+**Toggle safety**: disabled conditions are prefixed with `!currentValue &&` so a toggle that's already ON is always interactive (user can turn it OFF even if preconditions change).
+
 ### Adding a tool
 1. Add a `@mcp.tool(name="synthesis_...", ...)` function in `mcp_server.py`
 2. Use the `synthesis_` prefix for all tool names
-3. Return a Pydantic model for structured output; raise `ValueError` for errors
+3. Call `_write_mcp_session_caps(ctx)` at the start of the tool handler
+4. Return a Pydantic model for structured output; raise `ValueError` for errors
 
 ## Common tasks
 
@@ -229,3 +245,5 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 - **Trace logging**: `trace_logger.py` writes per-phase JSONL traces. Daily rotation with configurable retention (`TRACE_RETENTION_DAYS`).
 - **Real-time event bus**: `event_bus.py` publishes events to all SSE subscribers. Event types: `optimization_created`, `optimization_analyzed`, `optimization_failed`, `feedback_submitted`, `refinement_turn`, `strategy_changed`. MCP server (separate process) notifies via HTTP POST to `/api/events/_publish`. Frontend auto-refreshes History on events, shows toast notifications, syncs Inspector feedback state, and updates StatusBar metrics.
 - **Workspace intelligence**: `workspace_intelligence.py` auto-detects project type from manifest files (package.json, requirements.txt, etc.) and injects workspace profile into MCP tool context via `roots/list`.
+- **MCP sampling detection**: two-layer detection (ASGI middleware on `initialize` + per-tool-call refresh) with optimistic write strategy (False never overwrites fresh True within 30-min window). Prevents VS Code multi-session flicker. Health endpoint surfaces `sampling_capable: bool | null`. Frontend fast-polls (10s) for 2 minutes then steady-state (60s). Toggle disabled logic uses `!currentValue &&` prefix so ON toggles are always interactive.
+- **MCP capability hierarchy**: sampling > internal pipeline > passthrough. `force_sampling` pins to sampling tier, `force_passthrough` pins to passthrough tier. Mutually exclusive — enforced server-side (422) and client-side (radio toggle). `synthesis_optimize` checks `force_passthrough` first (highest routing precedence), then `force_sampling`, then automatic detection (5 execution paths total).
