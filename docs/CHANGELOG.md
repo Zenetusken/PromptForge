@@ -5,6 +5,10 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Added
+- Added `pipeline.force_passthrough` preference toggle — forces passthrough mode (assembled template for external LLM) in both MCP and frontend, mutually exclusive with `force_sampling`
+- Added runtime MCP sampling capability detection via `data/mcp_session.json` — MCP server writes client capabilities on each `synthesis_optimize` call; health endpoint reads with 5-minute staleness window
+- Added `sampling_capable` field to `/api/health` response
+- Added PASSTHROUGH badge in Navigator Defaults section (amber warning color) when force_passthrough is active
 - Added `pipeline.force_sampling` preference toggle — forces `synthesis_optimize` through the MCP sampling pipeline (IDE's LLM) even when a local provider is detected; gracefully falls through to the local provider if sampling fails
 - 3-phase pipeline orchestrator (analyze → optimize → score) with independent subagent context windows
 - Hybrid scoring engine — blends LLM scores with model-independent heuristics via score_blender.py
@@ -57,6 +61,12 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Docker single-container deployment (backend + frontend + MCP + nginx)
 - init.sh service manager with PID tracking, process group kill, preflight checks, and log rotation
 - Version sync system (version.json → scripts/sync-version.sh propagates everywhere)
+
+### Changed
+- `synthesis_optimize` MCP tool now has 5 execution paths: force_passthrough → force_sampling → provider → sampling fallback → passthrough fallback
+- `force_sampling` and `force_passthrough` are mutually exclusive — enforced server-side (422) and client-side (radio toggle behavior)
+- Force IDE sampling toggle disabled when sampling is unavailable or passthrough is active
+- Force passthrough toggle disabled when sampling is available or force_sampling is active
 
 ### Fixed
 - Docker: healthcheck validates /api/health (was hitting nginx root, always 200)
