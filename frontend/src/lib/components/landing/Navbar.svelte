@@ -105,7 +105,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 16px;
+    padding: 6px 16px;
     height: 36px;
   }
 
@@ -141,7 +141,7 @@
     display: inline-flex;
     align-items: center;
     height: 20px;
-    padding: 0 8px;
+    padding: 0 6px;
     font-size: 10px;
     font-weight: 600;
     font-family: var(--font-sans);
@@ -215,7 +215,7 @@
     z-index: 100;
     width: auto;
     height: auto;
-    padding: 2px 8px;
+    padding: 2px 6px;
     margin: 0;
     overflow: visible;
     clip: auto;

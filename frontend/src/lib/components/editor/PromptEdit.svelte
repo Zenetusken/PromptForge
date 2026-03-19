@@ -164,7 +164,7 @@
     font-family: var(--font-sans);
     font-size: 12px;
     line-height: 1.6;
-    padding: 8px;
+    padding: 6px;
     outline: none;
     box-sizing: border-box;
   }
