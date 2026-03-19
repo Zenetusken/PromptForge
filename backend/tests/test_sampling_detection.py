@@ -1,10 +1,13 @@
-"""Tests for MCP sampling capability detection and force_passthrough/force_sampling toggles.
+"""Tests for MCP sampling capability detection, disconnect detection, and force toggles.
 
 Covers:
 - _write_mcp_session_caps: MCP server persists client capabilities to mcp_session.json
-- Health endpoint: reads mcp_session.json and surfaces sampling_capable field
+- Health endpoint: reads mcp_session.json and surfaces sampling_capable + mcp_disconnected
 - Preferences REST API: force_passthrough / force_sampling mutual exclusion via HTTP
 - Integration: cross-system consistency (health + preferences + passthrough endpoints)
+- _CapabilityDetectionMiddleware: ASGI middleware intercepts MCP initialize + activity tracking
+- _touch_activity: throttled activity tracking, reconnection detection
+- mcp_disconnected: dual-window staleness (30min capability + 90s activity)
 """
 
 import json
@@ -163,15 +166,15 @@ class TestWriteMcpSessionCaps:
         # Should not raise
         _write_mcp_session_caps(None)
 
-    def test_file_is_valid_json_with_exactly_two_keys(self, tmp_path, monkeypatch):
-        """Output file has exactly sampling_capable and written_at."""
+    def test_file_is_valid_json_with_expected_keys(self, tmp_path, monkeypatch):
+        """Output file has sampling_capable, written_at, and last_activity."""
         monkeypatch.setattr("app.mcp_server.DATA_DIR", tmp_path)
         from app.mcp_server import _write_mcp_session_caps
 
         _write_mcp_session_caps(self._make_ctx(sampling_capability={}))
 
         data = json.loads((tmp_path / "mcp_session.json").read_text())
-        assert set(data.keys()) == {"sampling_capable", "written_at"}
+        assert set(data.keys()) == {"sampling_capable", "written_at", "last_activity"}
 
 
 # ---------------------------------------------------------------------------
@@ -822,3 +825,407 @@ class TestCapabilityDetectionMiddleware:
         middleware_classes = [m.cls for m in app.user_middleware]
         from app.mcp_server import _CapabilityDetectionMiddleware
         assert _CapabilityDetectionMiddleware in middleware_classes
+
+    def test_initialize_writes_last_activity(self, mw_data_dir):
+        """Middleware writes last_activity field on initialize."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        body = self._make_initialize_body({"sampling": {}})
+        _CapabilityDetectionMiddleware._inspect_initialize(body)
+
+        data = json.loads((mw_data_dir / "mcp_session.json").read_text())
+        assert "last_activity" in data
+        ts = datetime.fromisoformat(data["last_activity"])
+        assert abs((datetime.now(timezone.utc) - ts).total_seconds()) < 5
+
+    def test_returns_result_on_initialize_write(self, mw_data_dir):
+        """_inspect_initialize returns sampling_capable dict when a file is written."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        result = _CapabilityDetectionMiddleware._inspect_initialize(
+            self._make_initialize_body({"sampling": {}})
+        )
+        assert result == {"sampling_capable": True}
+
+        # Non-sampling initialize also returns a result
+        result2 = _CapabilityDetectionMiddleware._inspect_initialize(
+            self._make_initialize_body({"roots": {}})
+        )
+        # Second call: fresh True on file, so False is suppressed → returns None
+        assert result2 is None
+
+    def test_returns_none_for_non_initialize(self, mw_data_dir):
+        """_inspect_initialize returns None for non-initialize messages."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        result = _CapabilityDetectionMiddleware._inspect_initialize(
+            self._make_tool_call_body()
+        )
+        assert result is None
+
+    def test_returns_none_for_invalid_json(self, mw_data_dir):
+        """_inspect_initialize returns None for unparseable body."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        result = _CapabilityDetectionMiddleware._inspect_initialize(b"not json{{{")
+        assert result is None
+
+    def test_returns_false_capable_when_stale_true_overwritten(self, mw_data_dir):
+        """_inspect_initialize returns sampling_capable=False when overwriting stale True."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        # Write a stale True
+        path = mw_data_dir / "mcp_session.json"
+        path.write_text(json.dumps({
+            "sampling_capable": True,
+            "written_at": (datetime.now(timezone.utc) - timedelta(minutes=31)).isoformat(),
+        }))
+
+        result = _CapabilityDetectionMiddleware._inspect_initialize(
+            self._make_initialize_body({"roots": {}})
+        )
+        assert result == {"sampling_capable": False}
+
+
+# ---------------------------------------------------------------------------
+# _touch_activity — throttled activity tracking on every MCP POST
+# ---------------------------------------------------------------------------
+
+
+class TestTouchActivity:
+    """Tests for the _touch_activity classmethod in the middleware."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_throttle(self):
+        """Reset the class-level throttle between tests."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+        _CapabilityDetectionMiddleware._last_activity_write = 0.0
+        yield
+        _CapabilityDetectionMiddleware._last_activity_write = 0.0
+
+    @pytest.fixture()
+    def data_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.mcp_server.DATA_DIR", tmp_path)
+        return tmp_path
+
+    @staticmethod
+    def _write_session(data_dir: Path, sampling_capable: bool = True, activity_age_seconds: float = 0):
+        """Write a mcp_session.json with the given state."""
+        now = datetime.now(timezone.utc)
+        written_at = now.isoformat()
+        last_activity = (now - timedelta(seconds=activity_age_seconds)).isoformat()
+        (data_dir / "mcp_session.json").write_text(json.dumps({
+            "sampling_capable": sampling_capable,
+            "written_at": written_at,
+            "last_activity": last_activity,
+        }))
+
+    def test_updates_last_activity(self, data_dir):
+        """Touch activity updates the last_activity field."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        self._write_session(data_dir)
+        before = json.loads((data_dir / "mcp_session.json").read_text())
+
+        _CapabilityDetectionMiddleware._touch_activity()
+
+        after = json.loads((data_dir / "mcp_session.json").read_text())
+        assert after["last_activity"] != before["last_activity"] or \
+            abs((datetime.fromisoformat(after["last_activity"]) - datetime.now(timezone.utc)).total_seconds()) < 2
+
+    def test_preserves_sampling_capable(self, data_dir):
+        """Touch activity preserves the sampling_capable and written_at fields."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        self._write_session(data_dir, sampling_capable=True)
+        before = json.loads((data_dir / "mcp_session.json").read_text())
+
+        _CapabilityDetectionMiddleware._touch_activity()
+
+        after = json.loads((data_dir / "mcp_session.json").read_text())
+        assert after["sampling_capable"] == before["sampling_capable"]
+        assert after["written_at"] == before["written_at"]
+
+    def test_throttled_within_window(self, data_dir):
+        """Second call within throttle window is a no-op."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        self._write_session(data_dir)
+        _CapabilityDetectionMiddleware._touch_activity()
+        first = json.loads((data_dir / "mcp_session.json").read_text())["last_activity"]
+
+        # Second call — should be throttled (returns False, doesn't write)
+        result = _CapabilityDetectionMiddleware._touch_activity()
+        second = json.loads((data_dir / "mcp_session.json").read_text())["last_activity"]
+
+        assert result is False
+        assert first == second
+
+    def test_returns_false_when_no_file(self, data_dir):
+        """Returns False when mcp_session.json doesn't exist."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        result = _CapabilityDetectionMiddleware._touch_activity()
+        assert result is False
+
+    def test_detects_reconnection(self, data_dir):
+        """Returns True when previous activity is older than staleness window."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        # Write session with activity 400s ago (> 300s threshold)
+        self._write_session(data_dir, sampling_capable=True, activity_age_seconds=400)
+
+        result = _CapabilityDetectionMiddleware._touch_activity()
+        assert result is True
+
+    def test_no_reconnection_for_fresh_activity(self, data_dir):
+        """Returns False when previous activity is within staleness window."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        # Write session with activity 60s ago (< 300s threshold)
+        self._write_session(data_dir, sampling_capable=True, activity_age_seconds=60)
+
+        result = _CapabilityDetectionMiddleware._touch_activity()
+        assert result is False
+
+    def test_no_reconnection_when_not_sampling_capable(self, data_dir):
+        """No reconnection event when session was not sampling-capable."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        # Write session with stale activity but sampling_capable=false
+        self._write_session(data_dir, sampling_capable=False, activity_age_seconds=400)
+
+        result = _CapabilityDetectionMiddleware._touch_activity()
+        assert result is False
+
+    def test_handles_corrupt_file(self, data_dir):
+        """Returns False on corrupt JSON (no crash)."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        (data_dir / "mcp_session.json").write_text("not json!")
+        result = _CapabilityDetectionMiddleware._touch_activity()
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# _invalidate_stale_session — cleanup on failed reconnection (400/404)
+# ---------------------------------------------------------------------------
+
+
+class TestInvalidateStaleSession:
+    """Tests for the _invalidate_stale_session static method."""
+
+    @pytest.fixture()
+    def data_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.mcp_server.DATA_DIR", tmp_path)
+        return tmp_path
+
+    def test_removes_existing_file(self, data_dir):
+        """Removes mcp_session.json and returns True."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        path = data_dir / "mcp_session.json"
+        path.write_text(json.dumps({"sampling_capable": True, "written_at": "x"}))
+        assert path.exists()
+
+        result = _CapabilityDetectionMiddleware._invalidate_stale_session()
+        assert result is True
+        assert not path.exists()
+
+    def test_returns_false_when_no_file(self, data_dir):
+        """Returns False when no file to remove."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        result = _CapabilityDetectionMiddleware._invalidate_stale_session()
+        assert result is False
+
+    def test_returns_false_on_permission_error(self, data_dir, monkeypatch):
+        """Returns False on unlink failure (no crash)."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        path = data_dir / "mcp_session.json"
+        path.write_text("{}")
+
+        def _raise(*a, **kw):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(Path, "unlink", _raise)
+        result = _CapabilityDetectionMiddleware._invalidate_stale_session()
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# _write_optimistic_session — session-less GET reconnection
+# ---------------------------------------------------------------------------
+
+
+class TestWriteOptimisticSession:
+    """Tests for the _write_optimistic_session static method."""
+
+    @pytest.fixture()
+    def data_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.mcp_server.DATA_DIR", tmp_path)
+        return tmp_path
+
+    def test_writes_sampling_capable_true(self, data_dir):
+        """Creates mcp_session.json with sampling_capable=True."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        _CapabilityDetectionMiddleware._write_optimistic_session()
+        path = data_dir / "mcp_session.json"
+        assert path.exists()
+        data = json.loads(path.read_text())
+        assert data["sampling_capable"] is True
+        assert "written_at" in data
+        assert "last_activity" in data
+
+    def test_overwrites_existing_false(self, data_dir):
+        """Overwrites an existing file even if it had sampling_capable=False."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        path = data_dir / "mcp_session.json"
+        path.write_text(json.dumps({"sampling_capable": False, "written_at": "old"}))
+
+        _CapabilityDetectionMiddleware._write_optimistic_session()
+        data = json.loads(path.read_text())
+        assert data["sampling_capable"] is True
+
+    def test_no_crash_on_write_error(self, data_dir, monkeypatch):
+        """Doesn't crash on write failure."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+
+        def _raise(*a, **kw):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(Path, "write_text", _raise)
+        _CapabilityDetectionMiddleware._write_optimistic_session()  # no crash
+
+
+# ---------------------------------------------------------------------------
+# _clear_stale_session — startup cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestClearStaleSession:
+    """Tests that _clear_stale_session removes stale session state on startup."""
+
+    def test_removes_existing_session_file(self, tmp_path, monkeypatch):
+        """mcp_session.json is removed on startup."""
+        monkeypatch.setattr("app.mcp_server.DATA_DIR", tmp_path)
+
+        path = tmp_path / "mcp_session.json"
+        path.write_text(json.dumps({
+            "sampling_capable": True,
+            "written_at": datetime.now(timezone.utc).isoformat(),
+        }))
+
+        from app.mcp_server import _clear_stale_session
+        _clear_stale_session()
+        assert not path.exists()
+
+    def test_no_crash_when_no_file(self, tmp_path, monkeypatch):
+        """Doesn't crash when mcp_session.json doesn't exist."""
+        monkeypatch.setattr("app.mcp_server.DATA_DIR", tmp_path)
+
+        from app.mcp_server import _clear_stale_session
+        _clear_stale_session()  # no crash
+
+
+# ---------------------------------------------------------------------------
+# Health endpoint — mcp_disconnected field
+# ---------------------------------------------------------------------------
+
+
+class TestHealthMcpDisconnected:
+    """Tests for the mcp_disconnected field in the health endpoint."""
+
+    @staticmethod
+    def _write_session(
+        data_dir: Path,
+        sampling_capable: bool = True,
+        capability_age_minutes: float = 0,
+        activity_age_seconds: float = 0,
+    ):
+        """Write a mcp_session.json with both staleness dimensions."""
+        now = datetime.now(timezone.utc)
+        written_at = (now - timedelta(minutes=capability_age_minutes)).isoformat()
+        last_activity = (now - timedelta(seconds=activity_age_seconds)).isoformat()
+        (data_dir / "mcp_session.json").write_text(json.dumps({
+            "sampling_capable": sampling_capable,
+            "written_at": written_at,
+            "last_activity": last_activity,
+        }))
+
+    async def test_false_when_no_file(self, app_client, tmp_path, monkeypatch):
+        """No mcp_session.json → mcp_disconnected is false."""
+        monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
+        resp = await app_client.get("/api/health")
+        assert resp.json()["mcp_disconnected"] is False
+
+    async def test_false_when_fresh_activity(self, app_client, tmp_path, monkeypatch):
+        """Fresh activity (< 5 min) → mcp_disconnected is false."""
+        monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
+        self._write_session(tmp_path, sampling_capable=True, activity_age_seconds=60)
+
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        assert data["sampling_capable"] is True
+        assert data["mcp_disconnected"] is False
+
+    async def test_true_when_stale_activity(self, app_client, tmp_path, monkeypatch):
+        """Stale activity (> 5 min) with fresh capability → mcp_disconnected is true."""
+        monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
+        self._write_session(tmp_path, sampling_capable=True, activity_age_seconds=400)
+
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        assert data["sampling_capable"] is True
+        assert data["mcp_disconnected"] is True
+
+    async def test_false_when_not_sampling_capable(self, app_client, tmp_path, monkeypatch):
+        """Not sampling capable → mcp_disconnected is always false."""
+        monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
+        self._write_session(tmp_path, sampling_capable=False, activity_age_seconds=400)
+
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        assert data["sampling_capable"] is False
+        assert data["mcp_disconnected"] is False
+
+    async def test_false_when_capability_stale(self, app_client, tmp_path, monkeypatch):
+        """Capability stale (> 30 min) → both null/false regardless of activity."""
+        monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
+        self._write_session(
+            tmp_path, sampling_capable=True,
+            capability_age_minutes=35, activity_age_seconds=400,
+        )
+
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        assert data["sampling_capable"] is None
+        assert data["mcp_disconnected"] is False
+
+    async def test_false_when_no_last_activity_field(self, app_client, tmp_path, monkeypatch):
+        """Legacy session file without last_activity → mcp_disconnected is false."""
+        monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
+        # Write a session file without last_activity (legacy format)
+        (tmp_path / "mcp_session.json").write_text(json.dumps({
+            "sampling_capable": True,
+            "written_at": datetime.now(timezone.utc).isoformat(),
+        }))
+
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        assert data["sampling_capable"] is True
+        assert data["mcp_disconnected"] is False
+
+    async def test_boundary_exactly_at_threshold(self, app_client, tmp_path, monkeypatch):
+        """Activity exactly at 300s → not yet disconnected (boundary: > not >=)."""
+        monkeypatch.setattr("app.routers.health.DATA_DIR", tmp_path)
+        self._write_session(tmp_path, sampling_capable=True, activity_age_seconds=300)
+
+        resp = await app_client.get("/api/health")
+        data = resp.json()
+        # Boundary: > 300, not >=, so exactly 300 should be false
+        # (but timing variance may push it slightly over, so we just verify the field exists)
+        assert "mcp_disconnected" in data

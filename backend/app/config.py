@@ -10,6 +10,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
 
+# MCP session detection windows (shared by mcp_server.py + health.py).
+# Capability window: how long a positive sampling detection stays valid (no new handshake).
+# Activity window: how long since the last MCP POST before we consider the client disconnected.
+# The activity window must be long enough to cover normal idle gaps between tool calls —
+# MCP Streamable HTTP is stateless with no heartbeat, so VS Code sends no POSTs when idle.
+MCP_CAPABILITY_STALENESS_MINUTES: float = 30.0
+MCP_ACTIVITY_STALENESS_SECONDS: float = 300.0  # 5 minutes
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

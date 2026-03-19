@@ -49,7 +49,7 @@
   }
 
   .card {
-    padding: 12px;
+    padding: 6px;
     background: var(--color-bg-card);
     border: 1px solid var(--color-border-subtle);
     transition: all var(--duration-hover) var(--ease-spring);

@@ -99,11 +99,11 @@
   // The disabled condition only prevents turning a toggle ON.
   let forceSamplingDisabled = $derived(
     !preferencesStore.pipeline.force_sampling &&
-    (forgeStore.noProvider || forgeStore.samplingCapable !== true || preferencesStore.pipeline.force_passthrough)
+    (forgeStore.noProvider || forgeStore.samplingCapable !== true || forgeStore.mcpDisconnected || preferencesStore.pipeline.force_passthrough)
   );
   let forcePassthroughDisabled = $derived(
     !preferencesStore.pipeline.force_passthrough &&
-    (forgeStore.samplingCapable === true || preferencesStore.pipeline.force_sampling)
+    ((forgeStore.samplingCapable === true && !forgeStore.mcpDisconnected) || preferencesStore.pipeline.force_sampling)
   );
 
   // Pre-fetch for settings panel (one-time on mount, best effort)
@@ -463,15 +463,17 @@
                 disabled={forceSamplingDisabled}
                 title={
                   forceSamplingDisabled
-                    ? forgeStore.noProvider
-                      ? 'No local provider to bypass — sampling is already the active path'
-                      : forgeStore.samplingCapable === null
-                        ? 'No sampling-capable MCP client detected'
-                        : forgeStore.samplingCapable === false
-                          ? 'Your MCP client does not support sampling'
-                          : preferencesStore.pipeline.force_passthrough
-                            ? 'Disable Force passthrough first'
-                            : undefined
+                    ? forgeStore.mcpDisconnected
+                      ? 'MCP client disconnected'
+                      : forgeStore.noProvider
+                        ? 'No local provider to bypass — sampling is already the active path'
+                        : forgeStore.samplingCapable === null
+                          ? 'No sampling-capable MCP client detected'
+                          : forgeStore.samplingCapable === false
+                            ? 'Your MCP client does not support sampling'
+                            : preferencesStore.pipeline.force_passthrough
+                              ? 'Disable Force passthrough first'
+                              : undefined
                     : undefined
                 }
                 style={forceSamplingDisabled ? 'opacity: 0.4; cursor: not-allowed;' : undefined}
@@ -492,10 +494,10 @@
                 disabled={forcePassthroughDisabled}
                 title={
                   forcePassthroughDisabled
-                    ? forgeStore.samplingCapable === true
-                      ? 'Sampling is available — use Force IDE sampling instead'
-                      : preferencesStore.pipeline.force_sampling
-                        ? 'Disable Force IDE sampling first'
+                    ? preferencesStore.pipeline.force_sampling
+                      ? 'Disable Force IDE sampling first'
+                      : forgeStore.samplingCapable === true && !forgeStore.mcpDisconnected
+                        ? 'Sampling is available — use Force IDE sampling instead'
                         : undefined
                     : undefined
                 }
@@ -525,7 +527,10 @@
             </div>
             {#if preferencesStore.pipeline.force_sampling && !forgeStore.noProvider && forgeStore.samplingCapable === true}
               <div class="data-row">
-                <span class="badge-neon" style="color: var(--color-accent, #00e5ff); border-color: var(--color-accent, #00e5ff);">SAMPLING</span>
+                <span
+                  class="badge-neon"
+                  style="color: {forgeStore.mcpDisconnected ? 'var(--color-text-dim)' : 'var(--color-accent, #00e5ff)'}; border-color: {forgeStore.mcpDisconnected ? 'var(--color-border-subtle)' : 'var(--color-accent, #00e5ff)'}; {forgeStore.mcpDisconnected ? 'opacity: 0.4;' : ''}"
+                >{forgeStore.mcpDisconnected ? 'SAMPLING (disconnected)' : 'SAMPLING'}</span>
               </div>
             {/if}
             {#if preferencesStore.pipeline.force_passthrough}

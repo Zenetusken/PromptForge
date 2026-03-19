@@ -44,6 +44,8 @@ class ForgeStore {
   noProvider = $state(false);
   /** Set by +page.svelte after health check — null until health is fetched. */
   samplingCapable = $state<boolean | null>(null);
+  /** Set by +page.svelte — true when health reports MCP activity gap (disconnected). */
+  mcpDisconnected = $state(false);
 
   private controller: AbortController | null = null;
 

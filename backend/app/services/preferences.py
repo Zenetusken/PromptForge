@@ -46,11 +46,17 @@ DEFAULTS: dict[str, Any] = {
         "enable_adaptation": True,
         "force_sampling": False,
         "force_passthrough": False,
+        "auto_passthrough": False,
     },
     "defaults": {
         "strategy": "auto",
     },
 }
+
+_PIPELINE_TOGGLES = (
+    "enable_explore", "enable_scoring", "enable_adaptation",
+    "force_sampling", "force_passthrough", "auto_passthrough",
+)
 
 _MODEL_MAP = {
     "sonnet": "MODEL_SONNET",
@@ -164,7 +170,7 @@ class PreferencesService:
 
         # Pipeline toggles must be boolean
         pipeline = prefs.get("pipeline", {})
-        for toggle in ("enable_explore", "enable_scoring", "enable_adaptation", "force_sampling", "force_passthrough"):
+        for toggle in _PIPELINE_TOGGLES:
             val = pipeline.get(toggle)
             if not isinstance(val, bool):
                 default_val = DEFAULTS["pipeline"][toggle]
@@ -195,7 +201,7 @@ class PreferencesService:
                 )
 
         pipeline = prefs.get("pipeline", {})
-        for toggle in ("enable_explore", "enable_scoring", "enable_adaptation", "force_sampling", "force_passthrough"):
+        for toggle in _PIPELINE_TOGGLES:
             val = pipeline.get(toggle)
             if val is not None and not isinstance(val, bool):
                 raise ValueError(

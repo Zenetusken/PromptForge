@@ -69,7 +69,7 @@
 
   .code-block__pre {
     margin: 0;
-    padding: 8px;
+    padding: 6px;
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--color-text-primary);

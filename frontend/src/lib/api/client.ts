@@ -13,6 +13,7 @@ export interface HealthResponse {
   phase_durations: Record<string, number>;
   recent_errors: { last_hour: number; last_24h: number };
   sampling_capable?: boolean | null;
+  mcp_disconnected?: boolean;
 }
 
 export interface ApiKeyStatus {

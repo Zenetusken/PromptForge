@@ -65,6 +65,9 @@
       <Logo size={14} variant="mark" />
     </div>
     <ProviderBadge {provider} />
+    {#if forgeStore.mcpDisconnected}
+      <span class="status-disconnected" title="MCP client disconnected">disconnected</span>
+    {/if}
     <span class="status-item">{version ? `v${version}` : ''}</span>
     {#if phaseDisplay}
       <span class="status-phase" class:status-phase-passthrough={phaseDisplay === 'passthrough'}>{phaseDisplay}...</span>
@@ -186,6 +189,13 @@
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--color-text-dim);
+    white-space: nowrap;
+  }
+
+  .status-disconnected {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-neon-yellow);
     white-space: nowrap;
   }
 </style>

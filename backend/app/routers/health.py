@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app._version import __version__
-from app.config import DATA_DIR
+from app.config import DATA_DIR, MCP_ACTIVITY_STALENESS_SECONDS, MCP_CAPABILITY_STALENESS_MINUTES
 from app.database import get_db
 from app.services.optimization_service import OptimizationService
 
@@ -52,6 +52,11 @@ class HealthResponse(BaseModel):
         default=None,
         description="Whether the MCP client supports sampling/createMessage. "
         "Null if no MCP session or stale (>30 min).",
+    )
+    mcp_disconnected: bool = Field(
+        default=False,
+        description="True when the MCP client appears to have disconnected "
+        "(no MCP POST activity within the 5-minute window, but capability was recently detected).",
     )
 
 
@@ -99,16 +104,36 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)) -> 
 
     # MCP session sampling capability (written by mcp_server.py on tool calls
     # and by the ASGI capability-detection middleware on initialize handshake).
-    # 30-minute staleness window — clients reconnect infrequently so a recent
-    # positive detection should persist for a reasonable period.
+    # Dual-window staleness:
+    #   - 30-minute capability window: was the client recently sampling-capable?
+    #   - 90-second activity window: has the client gone silent (disconnected)?
     sampling_capable: bool | None = None
+    mcp_disconnected: bool = False
     mcp_session_path = DATA_DIR / "mcp_session.json"
     try:
         if mcp_session_path.exists():
             raw = _json.loads(mcp_session_path.read_text(encoding="utf-8"))
             written_at = datetime.fromisoformat(raw["written_at"])
-            if datetime.now(timezone.utc) - written_at <= timedelta(minutes=30):
+            now = datetime.now(timezone.utc)
+
+            # Capability staleness
+            if now - written_at <= timedelta(minutes=MCP_CAPABILITY_STALENESS_MINUTES):
                 sampling_capable = bool(raw["sampling_capable"])
+
+            # Activity staleness — disconnect detection
+            last_activity_str = raw.get("last_activity")
+            if sampling_capable and last_activity_str:
+                last_activity = datetime.fromisoformat(last_activity_str)
+                activity_age = (now - last_activity).total_seconds()
+                if activity_age > MCP_ACTIVITY_STALENESS_SECONDS:
+                    mcp_disconnected = True
+                    logger.info(
+                        "MCP client appears disconnected: last_activity %ds ago "
+                        "(threshold %.0fs), sampling_capable=%s",
+                        int(activity_age),
+                        MCP_ACTIVITY_STALENESS_SECONDS,
+                        sampling_capable,
+                    )
     except Exception:
         logger.debug("Could not read mcp_session.json", exc_info=True)
 
@@ -121,4 +146,5 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)) -> 
         phase_durations=phase_durations,
         recent_errors=recent_errors,
         sampling_capable=sampling_capable,
+        mcp_disconnected=mcp_disconnected,
     )

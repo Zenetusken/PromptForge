@@ -95,7 +95,7 @@
 
   .navbar--scrolled {
     background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
-    backdrop-filter: blur(4px);
+    
     border-bottom-color: var(--color-border-subtle);
   }
 
