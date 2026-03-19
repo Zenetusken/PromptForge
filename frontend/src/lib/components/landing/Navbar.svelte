@@ -33,6 +33,7 @@
 <header
   class="navbar"
   class:navbar--scrolled={scrolled}
+  class:navbar--animate={true}
 >
   <nav class="navbar__inner" aria-label="Main navigation">
     <a href="{base}/" class="navbar__logo" aria-label="Project Synthesis home">
@@ -91,6 +92,21 @@
     z-index: 50;
     transition: all var(--duration-hover) var(--ease-spring);
     border-bottom: 1px solid transparent;
+  }
+
+  .navbar--animate {
+    animation: fade-in-down 0.8s var(--ease-spring) forwards;
+  }
+
+  @keyframes fade-in-down {
+    0% {
+      opacity: 0;
+      transform: translateY(-16px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .navbar--scrolled {

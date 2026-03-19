@@ -35,7 +35,8 @@
 
   :global(html:has(.landing-root)),
   :global(body:has(.landing-root)) {
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     height: auto;
   }
 </style>
