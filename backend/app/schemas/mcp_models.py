@@ -36,7 +36,7 @@ class OptimizeOutput(BaseModel):
 
     status: str = Field(
         default="completed",
-        description="Pipeline status: 'completed' or 'pending_external'.",
+        description="Pipeline status: 'completed', 'pending_external', or 'error'.",
     )
     pipeline_mode: str = Field(
         default="internal",

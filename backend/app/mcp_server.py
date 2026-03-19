@@ -389,9 +389,16 @@ async def synthesis_optimize(
                 )
                 return _sampling_result_to_output(result)
             except Exception as exc:
-                logger.info(
-                    "force_sampling requested but sampling failed, falling through: %s",
-                    type(exc).__name__,
+                logger.error(
+                    "force_sampling requested but sampling failed: %s",
+                    exc, exc_info=True,
+                )
+                error_msg = await _persist_sampling_failure(prompt, effective_strategy, exc)
+                return OptimizeOutput(
+                    status="error",
+                    pipeline_mode="sampling",
+                    strategy_used=effective_strategy,
+                    warnings=[error_msg],
                 )
         else:
             logger.info(
@@ -413,10 +420,11 @@ async def synthesis_optimize(
                 )
                 return _sampling_result_to_output(result)
             except Exception as exc:
-                logger.info(
-                    "Sampling not supported by client, falling back to passthrough: %s",
-                    type(exc).__name__,
+                logger.error(
+                    "Sampling failed, falling back to passthrough: %s",
+                    exc, exc_info=True,
                 )
+                await _persist_sampling_failure(prompt, effective_strategy, exc)
 
         # Fallback: single-shot passthrough template
         logger.info("synthesis_optimize: no provider — using passthrough template")
@@ -525,6 +533,37 @@ async def synthesis_optimize(
             domain=result.get("domain"),
             trace_id=result.get("trace_id"),
         )
+
+
+async def _persist_sampling_failure(
+    prompt: str, strategy: str, exc: Exception,
+) -> str:
+    """Persist a failed sampling Optimization record and notify event bus.
+
+    Returns the formatted error message.  Non-fatal: swallows DB errors so
+    the caller can still return a response.
+    """
+    error_msg = f"Sampling pipeline failed: {type(exc).__name__}: {exc}"
+    try:
+        async with async_session_factory() as db:
+            db.add(Optimization(
+                id=str(uuid.uuid4()),
+                raw_prompt=prompt,
+                status="failed",
+                provider="mcp_sampling",
+                strategy_used=strategy,
+                task_type="general",
+                changes_summary=error_msg,
+            ))
+            await db.commit()
+    except Exception:
+        logger.debug("Failed to persist sampling failure record", exc_info=True)
+    await notify_event_bus("optimization_failed", {
+        "error": error_msg,
+        "provider": "mcp_sampling",
+        "pipeline_mode": "sampling",
+    })
+    return error_msg
 
 
 def _sampling_result_to_output(result: dict) -> OptimizeOutput:

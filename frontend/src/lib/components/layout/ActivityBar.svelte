@@ -19,15 +19,16 @@
 >
   <!-- Brand mark at top of activity bar -->
   <div class="brand-mark" title="Project Synthesis">
-    <svg width="12" height="12" viewBox="0 0 32 32" aria-hidden="true">
-      <defs>
-        <linearGradient id="ab" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
-        <clipPath id="abt"><rect x="0" y="0" width="32" height="15"/></clipPath>
-        <clipPath id="abb"><rect x="0" y="17" width="32" height="15"/></clipPath>
-      </defs>
-      <g clip-path="url(#abt)" transform="translate(-1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#ab)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
-      <g clip-path="url(#abb)" transform="translate(1.5,0)"><g transform="translate(16,16) skewX(-10) translate(-16,-16)"><polyline fill="none" stroke="url(#ab)" stroke-width="4" stroke-linecap="square" stroke-linejoin="bevel" points="23,6 9,6 9,10 12,14 20,18 23,22 23,26 9,26"/></g></g>
-      <rect x="0" y="15" width="32" height="2" fill="var(--color-bg-secondary)"/>
+    <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" fill="var(--color-neon-cyan)">
+      <!-- Top forward-slashing blade with right outer needle point -->
+      <polygon points="32,0 10,0 2,14 26,14 28,10 12,10 16,4 30,4" />
+      
+      <!-- Bottom backward-slashing blade with left outer needle point -->
+      <polygon points="0,32 22,32 30,18 6,18 4,22 20,22 16,28 2,28" />
+      
+      <!-- Micro high-speed glitch shrapnel -->
+      <polygon points="8,0 4,0 1,6" opacity="0.6" />
+      <polygon points="24,32 28,32 31,26" opacity="0.6" />
     </svg>
   </div>
 

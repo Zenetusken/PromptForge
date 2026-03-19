@@ -19,6 +19,7 @@ Copyright 2025-2026 Project Synthesis contributors.
 
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
 import random
@@ -65,6 +66,12 @@ from app.services.strategy_loader import StrategyLoader
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+# ---------------------------------------------------------------------------
+# Timeout ceiling for individual sampling requests (seconds)
+# ---------------------------------------------------------------------------
+
+_SAMPLING_TIMEOUT_SECONDS: float = 120.0
 
 # ---------------------------------------------------------------------------
 # Model preference presets per pipeline phase
@@ -161,7 +168,15 @@ async def _sampling_request_plain(
     if model_preferences is not None:
         kwargs["model_preferences"] = model_preferences
 
-    result: CreateMessageResult = await ctx.session.create_message(**kwargs)
+    try:
+        result: CreateMessageResult = await asyncio.wait_for(
+            ctx.session.create_message(**kwargs),
+            timeout=_SAMPLING_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise TimeoutError(
+            f"Sampling request timed out after {_SAMPLING_TIMEOUT_SECONDS}s"
+        ) from None
 
     # Extract text — handle both single-content and list responses
     text = _extract_text(result)
@@ -249,7 +264,15 @@ async def _sampling_request_structured(
         if model_preferences is not None:
             kwargs["model_preferences"] = model_preferences
 
-        result: CreateMessageResult = await ctx.session.create_message(**kwargs)
+        try:
+            result: CreateMessageResult = await asyncio.wait_for(
+                ctx.session.create_message(**kwargs),
+                timeout=_SAMPLING_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            raise TimeoutError(
+                f"Structured sampling request timed out after {_SAMPLING_TIMEOUT_SECONDS}s"
+            ) from None
         model_id = getattr(result, "model", "unknown") or "unknown"
 
         # Try to extract tool_use content from response
@@ -381,6 +404,21 @@ async def run_sampling_pipeline(
 
     model_ids: dict[str, str] = {}
     warnings: list[str] = []
+    phase_durations: dict[str, int] = {}
+    trace_id = str(uuid.uuid4())
+
+    context_sources: dict[str, bool] = {
+        "explore": False,
+        "patterns": False,
+        "adaptation": False,
+        "workspace": codebase_guidance is not None,
+    }
+
+    # Notify: pipeline start
+    await notify_event_bus("optimization_start", {
+        "trace_id": trace_id,
+        "provider": "mcp_sampling",
+    })
 
     # ------------------------------------------------------------------
     # Phase 0: Explore (optional — codebase context injection)
@@ -389,22 +427,40 @@ async def run_sampling_pipeline(
     explore_enabled = prefs.get("pipeline.enable_explore", prefs_snapshot)
 
     if explore_enabled and repo_full_name:
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "explore", "state": "running",
+        })
+        phase_t0 = time.monotonic()
         try:
             logger.info("Sampling pipeline Phase 0: Explore")
             codebase_context = await _run_explore_phase(
                 ctx, loader, prompt, repo_full_name,
             )
             if codebase_context:
+                context_sources["explore"] = True
                 logger.info(
                     "Sampling explore context injected (%d chars)",
                     len(codebase_context),
                 )
         except Exception as exc:
             logger.warning("Sampling explore failed (non-fatal): %s", exc)
+        phase_durations["explore_ms"] = int((time.monotonic() - phase_t0) * 1000)
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "explore",
+            "state": "complete" if codebase_context else "skipped",
+        })
+    else:
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "explore", "state": "skipped",
+        })
 
     # ------------------------------------------------------------------
     # Phase 1: Analyze
     # ------------------------------------------------------------------
+    await notify_event_bus("optimization_status", {
+        "trace_id": trace_id, "phase": "analyzing", "state": "running",
+    })
+    phase_t0 = time.monotonic()
     logger.info("Sampling pipeline Phase 1: Analyze")
     available_strategies = strategy_loader.format_available()
     analyze_msg = loader.render("analyze.md", {
@@ -436,6 +492,10 @@ async def run_sampling_pipeline(
                 confidence=0.5,
             )
     model_ids["analyze"] = analyze_model
+    phase_durations["analyze_ms"] = int((time.monotonic() - phase_t0) * 1000)
+    await notify_event_bus("optimization_status", {
+        "trace_id": trace_id, "phase": "analyzing", "state": "complete",
+    })
 
     # Semantic check + confidence gate (mirrors pipeline.py)
     confidence = analysis.confidence
@@ -461,6 +521,10 @@ async def run_sampling_pipeline(
     # ------------------------------------------------------------------
     # Phase 2: Optimize
     # ------------------------------------------------------------------
+    await notify_event_bus("optimization_status", {
+        "trace_id": trace_id, "phase": "optimizing", "state": "running",
+    })
+    phase_t0 = time.monotonic()
     logger.info("Sampling pipeline Phase 2: Optimize (strategy=%s)", effective_strategy)
     strategy_instructions = strategy_loader.load(effective_strategy)
     analysis_summary = (
@@ -475,12 +539,16 @@ async def run_sampling_pipeline(
     applied_patterns_text: str | None = None
     if applied_pattern_ids:
         applied_patterns_text = await _resolve_applied_patterns(applied_pattern_ids)
+    if applied_patterns_text is not None:
+        context_sources["patterns"] = True
 
     # 4c: Adaptation state
     adaptation_state: str | None = None
     adaptation_enabled = prefs.get("pipeline.enable_adaptation", prefs_snapshot)
     if adaptation_enabled:
         adaptation_state = await _resolve_adaptation_state(analysis.task_type)
+    if adaptation_state is not None:
+        context_sources["adaptation"] = True
 
     optimize_msg = loader.render("optimize.md", {
         "raw_prompt": prompt,
@@ -512,6 +580,10 @@ async def run_sampling_pipeline(
                 strategy_used=effective_strategy,
             )
     model_ids["optimize"] = optimize_model
+    phase_durations["optimize_ms"] = int((time.monotonic() - phase_t0) * 1000)
+    await notify_event_bus("optimization_status", {
+        "trace_id": trace_id, "phase": "optimizing", "state": "complete",
+    })
 
     # ------------------------------------------------------------------
     # Phase 3: Score
@@ -519,7 +591,7 @@ async def run_sampling_pipeline(
     optimized_scores: DimensionScores | None = None
     original_scores: DimensionScores | None = None
     deltas: dict[str, float] | None = None
-    scoring_mode = "heuristic"
+    scoring_mode = "skipped"
 
     scoring_enabled = prefs.get("pipeline.enable_scoring", prefs_snapshot)
     if scoring_enabled is None:
@@ -531,6 +603,10 @@ async def run_sampling_pipeline(
     )
 
     if scoring_enabled:
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "scoring", "state": "running",
+        })
+        phase_t0 = time.monotonic()
         logger.info("Sampling pipeline Phase 3: Score")
         scoring_system = loader.load("scoring.md")
 
@@ -554,6 +630,7 @@ async def run_sampling_pipeline(
             )
             model_ids["score"] = score_model
         except Exception:
+            scoring_mode = "heuristic"
             logger.warning("Score parsing failed, falling back to heuristic-only")
 
         if scores:
@@ -581,6 +658,16 @@ async def run_sampling_pipeline(
                     + ", ".join(blended_optimized.divergence_flags)
                 )
 
+        phase_durations["score_ms"] = int((time.monotonic() - phase_t0) * 1000)
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "scoring",
+            "state": "complete" if scores else "skipped",
+        })
+    else:
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "scoring", "state": "skipped",
+        })
+
     # ------------------------------------------------------------------
     # 4e: Intent drift detection (non-fatal)
     # ------------------------------------------------------------------
@@ -596,6 +683,10 @@ async def run_sampling_pipeline(
     # ------------------------------------------------------------------
     suggestions: list[dict[str, str]] = []
     if optimized_scores and analysis.weaknesses:
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "suggesting", "state": "running",
+        })
+        phase_t0 = time.monotonic()
         try:
             logger.info("Sampling pipeline Phase 4: Suggest")
             suggest_msg = loader.render("suggest.md", {
@@ -615,13 +706,21 @@ async def run_sampling_pipeline(
             logger.info("Sampling suggestions generated: %d items", len(suggestions))
         except Exception as exc:
             logger.warning("Sampling suggestion generation failed (non-fatal): %s", exc)
+        phase_durations["suggest_ms"] = int((time.monotonic() - phase_t0) * 1000)
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "suggesting",
+            "state": "complete" if suggestions else "skipped",
+        })
+    else:
+        await notify_event_bus("optimization_status", {
+            "trace_id": trace_id, "phase": "suggesting", "state": "skipped",
+        })
 
     # ------------------------------------------------------------------
     # Persist
     # ------------------------------------------------------------------
     elapsed_ms = int((time.monotonic() - start) * 1000)
     opt_id = str(uuid.uuid4())
-    trace_id = str(uuid.uuid4())
 
     async with async_session_factory() as db:
         db_opt = Optimization(
@@ -633,29 +732,18 @@ async def run_sampling_pipeline(
             domain=getattr(analysis, "domain", None) or "general",
             strategy_used=effective_strategy,
             changes_summary=optimization.changes_summary,
-            score_clarity=(
-                optimized_scores.clarity if optimized_scores else heur_optimized.get("clarity")
-            ),
-            score_specificity=(
-                optimized_scores.specificity if optimized_scores else heur_optimized.get("specificity")
-            ),
-            score_structure=(
-                optimized_scores.structure if optimized_scores else heur_optimized.get("structure")
-            ),
-            score_faithfulness=(
-                optimized_scores.faithfulness if optimized_scores else heur_optimized.get("faithfulness")
-            ),
-            score_conciseness=(
-                optimized_scores.conciseness if optimized_scores else heur_optimized.get("conciseness")
-            ),
-            overall_score=(
-                optimized_scores.overall if optimized_scores
-                else round(sum(heur_optimized.values()) / max(len(heur_optimized), 1), 2)
-            ),
+            score_clarity=optimized_scores.clarity if optimized_scores else None,
+            score_specificity=optimized_scores.specificity if optimized_scores else None,
+            score_structure=optimized_scores.structure if optimized_scores else None,
+            score_faithfulness=optimized_scores.faithfulness if optimized_scores else None,
+            score_conciseness=optimized_scores.conciseness if optimized_scores else None,
+            overall_score=optimized_scores.overall if optimized_scores else None,
             provider="mcp_sampling",
             model_used=model_ids.get("optimize", "unknown"),
             scoring_mode=scoring_mode,
             duration_ms=elapsed_ms,
+            tokens_by_phase=phase_durations,
+            context_sources=context_sources,
             status="completed",
             trace_id=trace_id,
             original_scores=original_scores.model_dump() if original_scores else None,
@@ -683,10 +771,10 @@ async def run_sampling_pipeline(
     })
 
     logger.info(
-        "Sampling pipeline completed in %dms: id=%s strategy=%s overall=%s scoring=%s models=%s",
+        "Sampling pipeline completed in %dms: id=%s strategy=%s overall=%s scoring=%s models=%s phases=%s",
         elapsed_ms, opt_id, effective_strategy,
-        optimized_scores.overall if optimized_scores else "heuristic",
-        scoring_mode, model_ids,
+        optimized_scores.overall if optimized_scores else scoring_mode,
+        scoring_mode, model_ids, phase_durations,
     )
 
     return {
@@ -727,7 +815,16 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
     prefs = PreferencesService(DATA_DIR)
     prefs_snapshot = prefs.load()
 
+    phase_durations: dict[str, int] = {}
+    context_sources: dict[str, bool] = {
+        "explore": False,
+        "patterns": False,
+        "adaptation": False,
+        "workspace": False,
+    }
+
     # --- Phase 1: Analyze ---
+    phase_t0 = time.monotonic()
     system_prompt = loader.load("agent-guidance.md")
     analyze_msg = loader.render("analyze.md", {
         "raw_prompt": prompt,
@@ -740,13 +837,15 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
         model_preferences=analyze_prefs,
     )
 
-    analyze_ms = int((time.monotonic() - start) * 1000)
+    analyze_ms = int((time.monotonic() - phase_t0) * 1000)
+    phase_durations["analyze_ms"] = analyze_ms
     logger.info(
         "Sampling analyze Phase 1 complete in %dms: task_type=%s strategy=%s",
         analyze_ms, analysis.task_type, analysis.selected_strategy,
     )
 
     # --- Phase 2: Baseline score ---
+    phase_t0 = time.monotonic()
     scoring_system = loader.load("scoring.md")
     scorer_msg = (
         f"<prompt-a>\n{prompt}\n</prompt-a>\n\n"
@@ -775,6 +874,7 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
             faithfulness=heur_scores.get("faithfulness", 5.0),
             conciseness=heur_scores.get("conciseness", 5.0),
         )
+    phase_durations["score_ms"] = int((time.monotonic() - phase_t0) * 1000)
 
     overall = baseline.overall
     total_ms = int((time.monotonic() - start) * 1000)
@@ -805,6 +905,8 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
             status="analyzed",
             trace_id=trace_id,
             duration_ms=total_ms,
+            tokens_by_phase=phase_durations,
+            context_sources=context_sources,
         )
         db.add(opt)
         await db.commit()
