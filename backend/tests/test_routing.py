@@ -427,3 +427,57 @@ class TestManagerAvailableTiers:
         manager.set_provider(mock_provider)
         manager.on_mcp_initialize(sampling_capable=True)
         assert manager.available_tiers == ["internal", "sampling", "passthrough"]
+
+
+# ---------------------------------------------------------------------------
+# E2E smoke test — optimize endpoint emits routing SSE event
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_optimize_emits_routing_event(tmp_path: Path, db_session) -> None:
+    """POST /api/optimize should emit a 'routing' SSE event as its first event.
+
+    Uses passthrough tier (no provider) to get a clean, self-contained SSE stream.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    from app.database import get_db
+    from app.main import app
+
+    # Create a routing manager with NO provider → passthrough tier
+    no_provider_routing = RoutingManager(event_bus=EventBus(), data_dir=tmp_path)
+    app.state.routing = no_provider_routing
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/optimize",
+            json={"prompt": "Explain how to build a REST API with FastAPI and SQLAlchemy"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers.get("content-type", "")
+
+    # Parse SSE events — format_sse() embeds event name in JSON: data: {"event": "...", ...}
+    import json as _json
+
+    body = response.text
+    events: list[dict] = []
+    for line in body.strip().split("\n"):
+        if line.startswith("data: "):
+            events.append(_json.loads(line[6:]))
+
+    assert len(events) >= 2, f"Expected at least 2 SSE events, got {len(events)}"
+    assert events[0]["event"] == "routing"
+    assert events[0]["tier"] == "passthrough"
+    assert events[0]["reason"]  # non-empty reason string
+    assert events[1]["event"] == "passthrough"
+    assert "assembled_prompt" in events[1]
