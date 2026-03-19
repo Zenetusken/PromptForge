@@ -296,44 +296,40 @@
         <div class="example-panel example-panel--before" data-animate style="--delay:100ms; align-items: center; justify-content: center;">
           <!-- Mini Knowledge Graph SVG Base -->
           <svg width="100%" height="100%" viewBox="0 0 300 260" style="max-height: 240px; overflow: visible;">
-            <!-- Domain arcs (Inner ring) -->
+            <!-- Edges (Straight, Exact Connections) -->
+            <path d="M150,130 L206.5,73.5" fill="none" stroke="#00e5ff" stroke-width="0.5" opacity="0.3" />
+            <path d="M150,130 L206.5,186.5" fill="none" stroke="#00e5ff" stroke-width="0.5" opacity="0.3" />
+            <path d="M150,130 L81,90" fill="none" stroke="#00e5ff" stroke-width="0.5" opacity="0.3" />
+            <path d="M150,130 L81,170" fill="none" stroke="#00e5ff" stroke-width="1.5" opacity="0.7" />
+
+            <!-- Domain arcs (Perfect Mathematical Circle R=80) -->
             <!-- Frontend (Amber) -->
-            <path d="M150,50 A80,80 0 0 1 220,90" fill="none" stroke="#f59e0b" stroke-width="1" opacity="0.3" />
+            <path d="M150,50 A80,80 0 0 1 230,130" fill="none" stroke="#f59e0b" stroke-width="1.5" opacity="0.3" />
             <!-- Database (Green) -->
-            <path d="M220,90 A80,80 0 0 1 190,212" fill="none" stroke="#10b981" stroke-width="1" opacity="0.3" />
-            <!-- Backend (Purple, Active) -->
-            <path d="M190,212 A80,80 0 0 1 80,90" fill="none" stroke="#a855f7" stroke-width="2" opacity="0.8" />
-            <!-- Other (Gray) -->
-            <path d="M80,90 A80,80 0 0 1 150,50" fill="none" stroke="#6b7280" stroke-width="1" opacity="0.3" />
+            <path d="M230,130 A80,80 0 0 1 150,210" fill="none" stroke="#10b981" stroke-width="1.5" opacity="0.3" />
+            <!-- Backend (Purple, Active) - Left Half -->
+            <path d="M150,210 A80,80 0 0 1 70,130 A80,80 0 0 1 150,50" fill="none" stroke="#a855f7" stroke-width="2" opacity="0.8" />
 
             <!-- Labels -->
-            <text x="50" y="160" fill="#a855f7" font-size="8" font-family="var(--font-mono)" font-weight="600" opacity="0.9">BACKEND</text>
-            <text x="240" y="100" fill="#f59e0b" font-size="8" font-family="var(--font-mono)" opacity="0.5">FRONTEND</text>
-            <text x="210" y="225" fill="#10b981" font-size="8" font-family="var(--font-mono)" opacity="0.5">DATABASE</text>
+            <text x="50" y="133" fill="#a855f7" font-size="8" font-family="var(--font-mono)" font-weight="600" opacity="0.9" text-anchor="end">BACKEND</text>
+            <text x="240" y="70" fill="#f59e0b" font-size="8" font-family="var(--font-mono)" opacity="0.5">FRONTEND</text>
+            <text x="240" y="200" fill="#10b981" font-size="8" font-family="var(--font-mono)" opacity="0.5">DATABASE</text>
 
-            <!-- Center Origin -->
+            <!-- Center Origin Node -->
             <circle cx="150" cy="130" r="16" fill="none" stroke="#00e5ff" stroke-width="1" stroke-dasharray="2 2" opacity="0.6" />
             <circle cx="150" cy="130" r="10" fill="#06060c" stroke="#00e5ff" stroke-width="1" />
             <text x="150" y="133" text-anchor="middle" fill="#00e5ff" font-size="8" font-family="var(--font-mono)">KG</text>
 
-            <!-- Edges -->
-            <!-- Curved path to active node -->
-            <path d="M150,130 Q120,180 85,200" fill="none" stroke="#00e5ff" stroke-width="1.5" opacity="0.6" />
-            <!-- Secondary paths -->
-            <path d="M150,130 Q160,160 195,190" fill="none" stroke="#00e5ff" stroke-width="0.5" opacity="0.2" />
-            <path d="M150,130 Q190,140 230,140" fill="none" stroke="#00e5ff" stroke-width="0.5" opacity="0.2" />
-            <path d="M150,130 Q130,90 100,70" fill="none" stroke="#00e5ff" stroke-width="0.5" opacity="0.2" />
-            
-            <!-- Targeted Active Node (Focus without glow) -->
-            <circle cx="85" cy="200" r="16" fill="none" stroke="#a855f7" stroke-width="1" stroke-dasharray="2 2" opacity="0.6" />
-            <circle cx="85" cy="200" r="12" fill="#06060c" stroke="#a855f7" stroke-width="2" />
-            <circle cx="85" cy="200" r="4" fill="#a855f7" />
-            <text x="85" y="226" text-anchor="middle" fill="#e4e4f0" font-size="9" font-family="var(--font-mono)">REST API Todo</text>
+            <!-- Active Backend Node -->
+            <circle cx="81" cy="170" r="16" fill="none" stroke="#a855f7" stroke-width="1" stroke-dasharray="2 2" opacity="0.6" />
+            <circle cx="81" cy="170" r="10" fill="#06060c" stroke="#a855f7" stroke-width="2" />
+            <circle cx="81" cy="170" r="4" fill="#a855f7" />
+            <text x="81" y="196" text-anchor="middle" fill="#e4e4f0" font-size="9" font-family="var(--font-mono)">REST API Todo</text>
 
-            <!-- Neighbor Nodes -->
-            <circle cx="195" cy="190" r="6" fill="#06060c" stroke="#a855f7" stroke-width="1" />
-            <circle cx="230" cy="140" r="8" fill="#06060c" stroke="#10b981" stroke-width="1" />
-            <circle cx="100" cy="70" r="5" fill="#06060c" stroke="#f59e0b" stroke-width="1" />
+            <!-- Neighbor Nodes (Placed exactly on R=80) -->
+            <circle cx="81" cy="90" r="5" fill="#06060c" stroke="#a855f7" stroke-width="1.5" />
+            <circle cx="206.5" cy="73.5" r="5" fill="#06060c" stroke="#f59e0b" stroke-width="1.5" opacity="0.5" />
+            <circle cx="206.5" cy="186.5" r="5" fill="#06060c" stroke="#10b981" stroke-width="1.5" opacity="0.5" />
           </svg>
         </div>
 
