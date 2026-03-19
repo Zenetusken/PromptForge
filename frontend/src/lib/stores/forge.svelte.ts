@@ -60,6 +60,9 @@ class ForgeStore {
     // Capture applied pattern IDs before clearing state
     const patternIds = this.appliedPatternIds;
 
+    // Deselect pattern family so Inspector shows forge progress
+    patternsStore.selectFamily(null);
+
     // Clear shared state
     this.error = null;
     this.result = null;

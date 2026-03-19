@@ -1,12 +1,25 @@
 <script lang="ts">
-  import { listFamilies, getFamilyDetail, type PatternFamily, type FamilyDetail } from '$lib/api/patterns';
+  import { listFamilies, getFamilyDetail, searchPatterns, type PatternFamily, type FamilyDetail, type SearchResult } from '$lib/api/patterns';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
-  import { domainColor } from '$lib/constants/patterns';
+  import { domainColor, scoreColor } from '$lib/constants/patterns';
+
+  const PAGE_SIZE = 50;
 
   let families = $state<PatternFamily[]>([]);
   let loaded = $state(false);
   let error = $state<string | null>(null);
+  let hasMore = $state(false);
+  let nextOffset = $state<number | null>(null);
+  let loadingMore = $state(false);
+  let totalFamilies = $state(0);
+
+  // Search state
+  let searchQuery = $state('');
+  let searchResults = $state<SearchResult[]>([]);
+  let searching = $state(false);
+  let searchActive = $derived(searchQuery.trim().length > 0);
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Expanded family — inline detail
   let expandedId = $state<string | null>(null);
@@ -48,13 +61,75 @@
   async function loadFamilies() {
     try {
       error = null;
-      const resp = await listFamilies({ limit: 200 });
+      const resp = await listFamilies({ limit: PAGE_SIZE });
       families = resp.items;
+      hasMore = resp.has_more;
+      nextOffset = resp.next_offset;
+      totalFamilies = resp.total;
       loaded = true;
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load patterns';
       loaded = true;
     }
+  }
+
+  async function loadMore() {
+    if (!hasMore || nextOffset === null || loadingMore) return;
+    loadingMore = true;
+    try {
+      const resp = await listFamilies({ offset: nextOffset, limit: PAGE_SIZE });
+      families = [...families, ...resp.items];
+      hasMore = resp.has_more;
+      nextOffset = resp.next_offset;
+    } catch {
+      // Silently fail — user can retry
+    }
+    loadingMore = false;
+  }
+
+  function handleSearchInput(e: Event) {
+    const q = (e.target as HTMLInputElement).value;
+    searchQuery = q;
+
+    if (searchTimer) clearTimeout(searchTimer);
+
+    if (!q.trim()) {
+      searchResults = [];
+      searching = false;
+      return;
+    }
+
+    searching = true;
+    searchTimer = setTimeout(async () => {
+      try {
+        searchResults = await searchPatterns(q.trim(), 10);
+      } catch {
+        searchResults = [];
+      }
+      searching = false;
+    }, 300);
+  }
+
+  function clearSearch() {
+    searchQuery = '';
+    searchResults = [];
+    searching = false;
+    if (searchTimer) clearTimeout(searchTimer);
+  }
+
+  function selectSearchResult(result: SearchResult) {
+    const familyId = result.type === 'family' ? result.id : result.family_id;
+    if (familyId) {
+      patternsStore.selectFamily(familyId);
+      expandedId = familyId;
+      expandedDetail = null;
+      expandedLoading = true;
+      getFamilyDetail(familyId)
+        .then((d) => { expandedDetail = d; })
+        .catch(() => { expandedDetail = null; })
+        .finally(() => { expandedLoading = false; });
+    }
+    clearSearch();
   }
 
   async function toggleExpand(family: PatternFamily) {
@@ -77,13 +152,6 @@
     expandedLoading = false;
   }
 
-  function scoreColor(score: number | null): string {
-    if (score == null || score <= 0) return 'var(--color-text-dim)';
-    if (score >= 7.5) return 'var(--color-neon-green)';
-    if (score >= 5.0) return 'var(--color-neon-yellow)';
-    return 'var(--color-neon-red)';
-  }
-
   function openMindmap() {
     patternsStore.loadGraph();
     editorStore.openMindmap();
@@ -93,6 +161,7 @@
 <div class="panel">
   <header class="panel-header">
     <span class="section-heading">Patterns</span>
+    <span class="total-badge font-mono" title="Total pattern families">{totalFamilies}</span>
     <button
       class="mindmap-btn"
       onclick={openMindmap}
@@ -107,8 +176,42 @@
       </svg>
     </button>
   </header>
+
+  <!-- Search bar -->
+  <div class="search-bar">
+    <input
+      class="search-input"
+      type="text"
+      placeholder="Search patterns..."
+      value={searchQuery}
+      oninput={handleSearchInput}
+      aria-label="Search patterns"
+    />
+    {#if searchActive}
+      <button class="search-clear" onclick={clearSearch} aria-label="Clear search">×</button>
+    {/if}
+  </div>
+
   <div class="panel-body">
-    {#if error}
+    {#if searchActive}
+      <!-- Search results -->
+      {#if searching}
+        <p class="empty-note">Searching...</p>
+      {:else if searchResults.length === 0}
+        <p class="empty-note">No matches for "{searchQuery}"</p>
+      {:else}
+        {#each searchResults as result (result.id)}
+          <button
+            class="search-result"
+            onclick={() => selectSearchResult(result)}
+          >
+            <span class="search-type font-mono">{result.type === 'family' ? 'FAM' : 'PAT'}</span>
+            <span class="search-label">{result.label}</span>
+            <span class="search-score font-mono">{(result.score * 100).toFixed(0)}%</span>
+          </button>
+        {/each}
+      {/if}
+    {:else if error}
       <p class="empty-note" style="color: var(--color-neon-red);">{error}</p>
     {:else if !loaded}
       <p class="empty-note">Loading...</p>
@@ -165,6 +268,15 @@
           {/each}
         </div>
       {/each}
+      {#if hasMore}
+        <button
+          class="load-more-btn"
+          onclick={loadMore}
+          disabled={loadingMore}
+        >
+          {loadingMore ? 'Loading...' : 'Load more'}
+        </button>
+      {/if}
     {/if}
   </div>
 </div>
@@ -185,7 +297,16 @@
     padding: 0 6px;
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
-    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .panel-header .section-heading {
+    flex: 1;
+  }
+
+  .total-badge {
+    font-size: 9px;
+    color: var(--color-text-dim);
   }
 
   .panel-body {
@@ -196,6 +317,106 @@
     gap: 2px;
     flex: 1;
     min-height: 0;
+  }
+
+  /* ---- Search ---- */
+  .search-bar {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 6px;
+    border-bottom: 1px solid var(--color-border-subtle);
+    flex-shrink: 0;
+    gap: 2px;
+  }
+
+  .search-input {
+    flex: 1;
+    height: 18px;
+    padding: 0 4px;
+    background: var(--color-bg-input);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-primary);
+    font-size: 10px;
+    font-family: var(--font-sans);
+    outline: none;
+    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .search-input:focus {
+    border-color: rgba(0, 229, 255, 0.3);
+  }
+
+  .search-input::placeholder {
+    color: var(--color-text-dim);
+  }
+
+  .search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-dim);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .search-clear:hover {
+    color: var(--color-text-primary);
+  }
+
+  .search-result {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .search-result:hover {
+    background: var(--color-bg-hover);
+    border-color: var(--color-border-accent);
+  }
+
+  .search-result:active {
+    transform: none;
+  }
+
+  .search-type {
+    font-size: 8px;
+    color: var(--color-text-dim);
+    text-transform: uppercase;
+    width: 24px;
+    flex-shrink: 0;
+  }
+
+  .search-label {
+    font-size: 10px;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-score {
+    font-size: 9px;
+    color: var(--color-neon-cyan);
+    flex-shrink: 0;
   }
 
   .mindmap-btn {
@@ -209,6 +430,7 @@
     color: var(--color-text-dim);
     cursor: pointer;
     padding: 0;
+    flex-shrink: 0;
     transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
@@ -362,5 +584,38 @@
     font-size: 8px;
     color: var(--color-text-dim);
     flex-shrink: 0;
+  }
+
+  /* ---- Load more ---- */
+  .load-more-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    margin-top: 4px;
+    border: 1px solid var(--color-border-subtle);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 10px;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .load-more-btn:hover {
+    border-color: var(--color-border-accent);
+    color: var(--color-text-primary);
+    background: var(--color-bg-hover);
+  }
+
+  .load-more-btn:active {
+    transform: none;
+  }
+
+  .load-more-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 </style>

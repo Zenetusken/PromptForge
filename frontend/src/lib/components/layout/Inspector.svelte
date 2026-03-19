@@ -4,6 +4,8 @@
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { domainColor } from '$lib/constants/patterns';
+  import { getOptimization } from '$lib/api/client';
+  import { renameFamily } from '$lib/api/patterns';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
 
@@ -15,7 +17,15 @@
 
   const isPassthrough = $derived(forgeStore.status === 'passthrough');
   const isHeuristicScored = $derived(forgeStore.result?.scoring_mode === 'heuristic');
-  const showFamilyDetail = $derived(patternsStore.selectedFamilyId !== null);
+  // Family detail is shown only when selected AND forge is not actively running
+  const forgeActive = $derived(
+    forgeStore.status === 'analyzing' ||
+    forgeStore.status === 'optimizing' ||
+    forgeStore.status === 'scoring'
+  );
+  const showFamilyDetail = $derived(
+    patternsStore.selectedFamilyId !== null && !forgeActive
+  );
 
   function truncatePrompt(text: string, maxLen = 80): string {
     if (text.length <= maxLen) return text;
@@ -27,8 +37,52 @@
     return score.toFixed(1);
   }
 
-  function openOptimization(id: string): void {
-    editorStore.openResult(id);
+  async function openOptimization(id: string): Promise<void> {
+    try {
+      const opt = await getOptimization(id);
+      forgeStore.loadFromRecord(opt);
+      editorStore.openResult(id, opt);
+    } catch {
+      // Fallback: open tab without data — ForgeArtifact will handle gracefully
+      editorStore.openResult(id);
+    }
+  }
+
+  function dismissFamily(): void {
+    patternsStore.selectFamily(null);
+  }
+
+  // Rename state
+  let renaming = $state(false);
+  let renameValue = $state('');
+  let renameSaving = $state(false);
+
+  function startRename(): void {
+    if (!patternsStore.familyDetail) return;
+    renameValue = patternsStore.familyDetail.intent_label;
+    renaming = true;
+  }
+
+  function cancelRename(): void {
+    renaming = false;
+    renameValue = '';
+  }
+
+  async function submitRename(): Promise<void> {
+    const id = patternsStore.selectedFamilyId;
+    const trimmed = renameValue.trim();
+    if (!id || !trimmed || renameSaving) return;
+    renameSaving = true;
+    try {
+      await renameFamily(id, trimmed);
+      // Refresh the detail to reflect the new name
+      patternsStore.selectFamily(id);
+      patternsStore.invalidateGraph();
+      renaming = false;
+    } catch {
+      // keep rename input open on error
+    }
+    renameSaving = false;
   }
 
   // Sync feedback state from real-time events (e.g. MCP or cross-tab submissions)
@@ -77,11 +131,48 @@
 
           <!-- Family header -->
           <div class="family-header">
-            <span class="family-intent">{family.intent_label}</span>
+            {#if renaming}
+              <form
+                class="rename-form"
+                onsubmit={(e) => { e.preventDefault(); submitRename(); }}
+              >
+                <input
+                  class="rename-input"
+                  type="text"
+                  bind:value={renameValue}
+                  onkeydown={(e) => { if (e.key === 'Escape') cancelRename(); }}
+                  aria-label="Family name"
+                />
+                <button
+                  class="rename-save"
+                  type="submit"
+                  disabled={renameSaving || !renameValue.trim()}
+                  title="Save"
+                >&#x2713;</button>
+                <button
+                  class="rename-cancel"
+                  type="button"
+                  onclick={cancelRename}
+                  title="Cancel"
+                >×</button>
+              </form>
+            {:else}
+              <button
+                class="family-intent"
+                onclick={startRename}
+                title="Click to rename"
+              >{family.intent_label}</button>
+            {/if}
             <span
               class="domain-badge"
               style="background: {domainColor(family.domain)};"
             >{family.domain}</span>
+            <button
+              class="dismiss-btn"
+              onclick={dismissFamily}
+              title="Close family detail"
+              aria-label="Close family detail"
+            >×</button>
           </div>
 
           <!-- Stats row -->
@@ -463,6 +554,73 @@
     color: var(--color-text-primary);
     letter-spacing: 0.02em;
     line-height: 1.3;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .family-intent:hover {
+    color: var(--color-neon-cyan);
+  }
+
+  .rename-form {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .rename-input {
+    flex: 1;
+    min-width: 0;
+    height: 20px;
+    padding: 0 4px;
+    font-size: 11px;
+    font-family: var(--font-display);
+    color: var(--color-text-primary);
+    background: var(--color-bg-input);
+    border: 1px solid rgba(0, 229, 255, 0.3);
+    outline: none;
+  }
+
+  .rename-save,
+  .rename-cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .rename-save {
+    color: var(--color-neon-green);
+  }
+
+  .rename-save:hover {
+    color: var(--color-neon-cyan);
+  }
+
+  .rename-save:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .rename-cancel {
+    color: var(--color-text-dim);
+  }
+
+  .rename-cancel:hover {
+    color: var(--color-text-primary);
   }
 
   .domain-badge {
@@ -474,6 +632,26 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     flex-shrink: 0;
+  }
+
+  .dismiss-btn {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-dim);
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dismiss-btn:hover {
+    color: var(--color-text-primary);
   }
 
   /* Family sub-sections */
@@ -539,11 +717,17 @@
     width: 100%;
     font: inherit;
     color: inherit;
-    transition: border-color 100ms;
+    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .opt-item:hover {
-    border-color: var(--color-neon-cyan);
+    border-color: var(--color-border-accent);
+    background: var(--color-bg-hover);
+  }
+
+  .opt-item:active {
+    transform: none;
   }
 
   .opt-prompt {

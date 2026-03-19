@@ -80,8 +80,17 @@ export const renameFamily = (familyId: string, intent_label: string) =>
     body: JSON.stringify({ intent_label }),
   });
 
+export interface SearchResult {
+  type: string;
+  id: string;
+  label: string;
+  score: number;
+  domain?: string;
+  family_id?: string;
+}
+
 export const searchPatterns = (q: string, topK = 5) =>
-  apiFetch<{ type: string; id: string; label: string; score: number }[]>(
+  apiFetch<SearchResult[]>(
     `/patterns/search?q=${encodeURIComponent(q)}&top_k=${topK}`
   );
 
