@@ -66,7 +66,8 @@
     svg.selectAll('circle[data-family-id]').attr('stroke-width', 1);
     
     if (selectedId) {
-      svg.select(`circle[data-family-id="${selectedId}"]`).attr('stroke-width', 2);
+      // Harden CSS selector against invalid characters that would cause D3 exceptions
+      svg.select(`circle[data-family-id="${CSS.escape(selectedId)}"]`).attr('stroke-width', 2);
     }
   });
 
@@ -79,8 +80,8 @@
     svg.selectAll('*').remove();
 
     const rect = containerEl.getBoundingClientRect();
-    const width = rect.width || 800;
-    const height = rect.height || 600;
+    const width = Math.max(100, rect.width || 800);
+    const height = Math.max(100, rect.height || 600);
     const cx = width / 2;
     const cy = height / 2;
 
@@ -89,16 +90,21 @@
     // Zoom group
     const g = svg.append('g');
     svgGroup = g;
+    // Harden pan and zoom limits so users cannot drag the visualization arbitrarily off-screen perpetually
     const zoomBehavior = zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.3, 4])
+      .scaleExtent([0.2, 5])
+      .translateExtent([
+        [-width * 0.5, -height * 0.5],
+        [width * 1.5, height * 1.5]
+      ])
       .on('zoom', (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
         g.attr('transform', event.transform.toString());
       });
     svg.call(zoomBehavior);
 
-    // Radii
-    const ringRadius1 = Math.min(width, height) * 0.2; // domain ring
-    const ringRadius2 = Math.min(width, height) * 0.35; // family ring
+    // Radii bounds protection: Math.max ensures we do not map negative geometries when resizing UI below 40px offsets
+    const ringRadius1 = Math.max(20, Math.min(width, height) * 0.2); // domain ring
+    const ringRadius2 = Math.max(40, Math.min(width, height) * 0.35); // family ring
     
     // Core Business Logic separation: Calculate geometric distributions
     const { domainMap, domains, domainAngles } = calculateDomainAngles(families);
@@ -135,7 +141,9 @@
     }
 
     // --- Ring 2: Family nodes ---
-    const maxUsage = Math.max(1, ...families.map((f) => f.usage_count));
+    // Prevent Maximum Call Stack Size Exceeded errors for excessively large data payloads
+    // by using a safe aggregation pipeline instead of `...Math.max(...arrays)` destructors
+    const maxUsage = families.reduce((max, f) => Math.max(max, f.usage_count || 1), 1);
 
     for (const domain of domains) {
       const fams = domainMap.get(domain)!;
@@ -196,12 +204,18 @@
       const to = familyPositions.get(edge.to);
       if (!from || !to) continue;
 
+      const pathData = calculateEdgePathDistortion(from, to, cx, cy, 0.3);
+      if (!pathData) continue; // Skip rendering if vector math failed (NaN or missing coords)
+
+      // Clamp weight metrics into safe CSS render bounds
+      const safeWeight = Math.max(0, edge.weight || 0);
+
       g.append('path')
-        .attr('d', calculateEdgePathDistortion(from, to, cx, cy, 0.3))
+        .attr('d', pathData)
         .attr('fill', 'none')
         .attr('stroke', NEON_CYAN)
-        .attr('stroke-width', 0.5 + edge.weight * 1.5)
-        .attr('opacity', 0.15 + edge.weight * 0.4)
+        .attr('stroke-width', 0.5 + safeWeight * 1.5)
+        .attr('opacity', Math.min(1, 0.15 + safeWeight * 0.4))
         .attr('pointer-events', 'none');
     }
 
@@ -260,9 +274,9 @@
         .attr('y', ttY + 28)
         .text(`${f.domain} | ${f.usage_count} uses | score: ${formatScore(f.avg_score)}`);
 
-      const patternTexts = f.meta_patterns
+      const patternTexts = (f.meta_patterns || [])
         .slice(0, 2)
-        .map((mp) => mp.pattern_text.slice(0, 30))
+        .map((mp) => (mp.pattern_text || '').slice(0, 30))
         .join(', ');
       tooltip
         .select('.tt-patterns')
