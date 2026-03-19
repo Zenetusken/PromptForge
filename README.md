@@ -69,6 +69,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 | Backend | Python 3.12, FastAPI, SQLAlchemy (async), aiosqlite |
 | Frontend | SvelteKit 2 (Svelte 5 runes), Tailwind CSS 4 |
 | Database | SQLite (WAL mode) |
+| Visualization | D3.js v7 (selection, zoom, shape — tree-shakeable imports) |
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2, 384-dim, CPU) |
 | LLM | Configurable per phase — Opus, Sonnet, Haiku (via Settings) |
 | Scoring | Hybrid: LLM scores blended with model-independent heuristics + z-score normalization |

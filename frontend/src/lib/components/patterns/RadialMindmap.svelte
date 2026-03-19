@@ -1,5 +1,6 @@
 <script lang="ts">
-  import * as d3 from 'd3';
+  import { select, zoom, arc, type D3ZoomEvent } from 'd3';
+  import { browser } from '$app/environment';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { DOMAIN_COLORS, domainColor } from '$lib/constants/patterns';
   import type { GraphFamily, GraphEdge } from '$lib/api/patterns';
@@ -27,6 +28,7 @@
 
   // Render D3 visualization when graph data changes
   $effect(() => {
+    if (!browser) return;
     const graph = patternsStore.graph;
     if (!graph || !svgEl || !containerEl) return;
     renderGraph(graph.families, graph.edges, graph.center);
@@ -34,7 +36,7 @@
 
   // Re-render on container resize
   $effect(() => {
-    if (!containerEl) return;
+    if (!browser || !containerEl) return;
     const observer = new ResizeObserver(() => {
       const graph = patternsStore.graph;
       if (graph && svgEl) {
@@ -50,7 +52,7 @@
     edges: GraphEdge[],
     center: { total_families: number; total_patterns: number; total_optimizations: number },
   ) {
-    const svg = d3.select(svgEl);
+    const svg = select(svgEl);
     svg.selectAll('*').remove();
 
     const rect = containerEl.getBoundingClientRect();
@@ -63,13 +65,12 @@
 
     // Zoom group
     const g = svg.append('g');
-    const zoom = d3
-      .zoom<SVGSVGElement, unknown>()
+    const zoomBehavior = zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.3, 4])
-      .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+      .on('zoom', (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
         g.attr('transform', event.transform.toString());
       });
-    svg.call(zoom);
+    svg.call(zoomBehavior);
 
     // Group families by domain
     const domainMap = new Map<string, GraphFamily[]>();
@@ -85,8 +86,7 @@
     const ringRadius2 = Math.min(width, height) * 0.35; // family ring
 
     // --- Ring 1: Domain arcs ---
-    const domainArc = d3
-      .arc<{ startAngle: number; endAngle: number }>()
+    const domainArc = arc<{ startAngle: number; endAngle: number }>()
       .innerRadius(ringRadius1 - 18)
       .outerRadius(ringRadius1 + 2);
 
@@ -158,12 +158,12 @@
         // Hover / click
         node
           .on('mouseenter', function (this: SVGCircleElement) {
-            d3.select(this).attr('stroke-width', 2);
+            select(this).attr('stroke-width', 2);
             showTooltip(f, x, y);
           })
           .on('mouseleave', function (this: SVGCircleElement) {
             if (selectedFamilyId !== f.id) {
-              d3.select(this).attr('stroke-width', 1);
+              select(this).attr('stroke-width', 1);
             }
             hideTooltip();
           })
