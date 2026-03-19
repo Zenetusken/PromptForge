@@ -4,6 +4,7 @@
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import ProviderBadge from '$lib/components/shared/ProviderBadge.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
+  import { domainColor } from '$lib/constants/patterns';
 
   let provider = $state<string | null>(null);
   let version = $state<string | null>(null);
@@ -50,6 +51,10 @@
   );
 
   const lastStrategy = $derived(forgeStore.result?.strategy_used ?? null);
+
+  // Breadcrumb: [domain] > intent_label (VS Code file-path pattern)
+  const breadcrumbDomain = $derived(forgeStore.result?.domain ?? null);
+  const breadcrumbLabel = $derived(forgeStore.result?.intent_label ?? null);
 </script>
 
 <div
@@ -75,6 +80,15 @@
     {#if phaseDisplay}
       <span class="status-phase" class:status-phase-passthrough={phaseDisplay === 'passthrough'}>{phaseDisplay}...</span>
     {:else if lastScore}
+      {#if breadcrumbLabel}
+        <span class="status-breadcrumb">
+          {#if breadcrumbDomain}
+            <span class="status-breadcrumb-domain" style="color: {domainColor(breadcrumbDomain)};">{breadcrumbDomain}</span>
+            <span class="status-breadcrumb-sep">&rsaquo;</span>
+          {/if}
+          <span class="status-breadcrumb-label">{breadcrumbLabel}</span>
+        </span>
+      {/if}
       <span class="status-metric">{lastScore}</span>
       {#if lastStrategy}
         <span class="status-strategy">{lastStrategy}</span>
@@ -147,6 +161,36 @@
     font-size: 10px;
     color: var(--color-text-dim);
     white-space: nowrap;
+  }
+
+  .status-breadcrumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 300px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .status-breadcrumb-domain {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 400;
+    flex-shrink: 0;
+  }
+
+  .status-breadcrumb-sep {
+    font-size: 10px;
+    color: var(--color-text-dim);
+    flex-shrink: 0;
+  }
+
+  .status-breadcrumb-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .status-patterns {

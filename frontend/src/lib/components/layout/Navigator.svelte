@@ -5,7 +5,7 @@
   import { editorStore } from '$lib/stores/editor.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
-  import { scoreColor } from '$lib/constants/patterns';
+  import { scoreColor, domainColor } from '$lib/constants/patterns';
   import { getSettings, getProviders, getHistory, getOptimization, getApiKey, setApiKey, deleteApiKey, getStrategies, getStrategy, updateStrategy } from '$lib/api/client';
   import type { SettingsResponse, ProvidersResponse, HistoryItem, ApiKeyStatus, StrategyInfo } from '$lib/api/client';
 
@@ -311,8 +311,11 @@
         {:else}
           {#each historyItems.filter(i => i.status === 'completed') as item (item.id)}
             <button class="row-item history-row" onclick={() => loadHistoryItem(item)}>
-              <span class="row-prompt">{item.raw_prompt || 'Untitled'}</span>
+              <span class="row-prompt">{item.intent_label || (item.raw_prompt ? item.raw_prompt.slice(0, 60) + (item.raw_prompt.length > 60 ? '..' : '') : 'Untitled')}</span>
               <div class="history-meta">
+                {#if item.domain}
+                  <span class="row-domain font-mono" style="color: {domainColor(item.domain)};">{item.domain}</span>
+                {/if}
                 <span class="row-badge font-mono">{item.strategy_used || 'auto'}</span>
                 <span
                   class="row-score font-mono"
@@ -849,6 +852,11 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
+  }
+
+  .row-domain {
+    font-size: 9px;
+    flex-shrink: 0;
   }
 
   .row-score {

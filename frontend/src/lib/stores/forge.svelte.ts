@@ -37,6 +37,9 @@ class ForgeStore {
   // Applied meta-pattern IDs from knowledge graph paste detection
   appliedPatternIds = $state<string[] | null>(null);
 
+  // Family link from knowledge graph (set when optimization is linked to a pattern family)
+  familyId = $state<string | null>(null);
+
   /** Set by +page.svelte after health check — true when health.provider is null. */
   noProvider = $state(false);
   /** Set by +page.svelte after health check — null until health is fetched. */
@@ -77,6 +80,7 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
     this.appliedPatternIds = null;
+    this.familyId = null;
 
     // Passthrough mode — no provider, or force_passthrough preference enabled
     if (this.noProvider || preferencesStore.pipeline.force_passthrough) {
@@ -216,6 +220,12 @@ class ForgeStore {
     this.originalScores = opt.original_scores ?? null;
     this.scoreDeltas = opt.score_deltas ?? null;
 
+    // Bidirectional family link — auto-select in patterns store so Inspector shows family detail
+    this.familyId = opt.family_id ?? null;
+    if (this.familyId) {
+      patternsStore.selectFamily(this.familyId);
+    }
+
     // Cache the result in the editor store so each result tab has its own data
     if (opt.id) {
       editorStore.cacheResult(opt.id, opt);
@@ -231,6 +241,7 @@ class ForgeStore {
     this.assembledPrompt = null;
     this.passthroughTraceId = null;
     this.passthroughStrategy = null;
+    this.familyId = null;
     this.status = 'idle';
   }
 
@@ -285,6 +296,7 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
     this.appliedPatternIds = null;
+    this.familyId = null;
     patternsStore.resetTracking();
   }
 }

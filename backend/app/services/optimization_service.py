@@ -26,6 +26,8 @@ _VALID_SORT_COLUMNS: frozenset[str] = frozenset(
         "status",
         "duration_ms",
         "strategy_used",
+        "intent_label",
+        "domain",
     }
 )
 

@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -116,6 +117,9 @@ class MetaPattern(Base):
 
 class OptimizationPattern(Base):
     __tablename__ = "optimization_patterns"
+    __table_args__ = (
+        Index("ix_optpat_optid_rel", "optimization_id", "relationship"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     optimization_id = Column(String, ForeignKey("optimizations.id"), nullable=False)

@@ -200,6 +200,8 @@ class PipelineResult(BaseModel):
     repo_full_name: str | None = None
     codebase_context_snapshot: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    intent_label: str | None = None
+    domain: str | None = None
 
     model_config = {"extra": "allow"}
 

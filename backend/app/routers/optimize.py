@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import DATA_DIR, PROMPTS_DIR, settings
 from app.database import get_db
 from app.dependencies.rate_limit import RateLimit
-from app.models import Optimization
+from app.models import Optimization, OptimizationPattern
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.passthrough import assemble_passthrough_prompt
 from app.services.pipeline import PipelineOrchestrator
@@ -92,10 +92,25 @@ async def get_optimization(
             detail="Optimization with trace_id '%s' not found." % trace_id,
         )
 
-    return _serialize_optimization(opt)
+    family_id = await _get_family_id(db, opt.id)
+    return _serialize_optimization(opt, family_id=family_id)
 
 
-def _serialize_optimization(opt: Optimization) -> dict:
+async def _get_family_id(db: AsyncSession, optimization_id: str) -> str | None:
+    """Look up the 'source' family for an optimization (at most one)."""
+    result = await db.execute(
+        select(OptimizationPattern.family_id)
+        .where(
+            OptimizationPattern.optimization_id == optimization_id,
+            OptimizationPattern.relationship == "source",
+        )
+        .limit(1)
+    )
+    row = result.scalar_one_or_none()
+    return row
+
+
+def _serialize_optimization(opt: Optimization, *, family_id: str | None = None) -> dict:
     """Serialize an Optimization record to the standard API shape."""
     return {
         "id": opt.id,
@@ -122,6 +137,9 @@ def _serialize_optimization(opt: Optimization) -> dict:
         "status": opt.status,
         "context_sources": opt.context_sources,
         "created_at": opt.created_at.isoformat() if opt.created_at else None,
+        "intent_label": opt.intent_label,
+        "domain": opt.domain,
+        "family_id": family_id,
     }
 
 
@@ -262,4 +280,5 @@ async def passthrough_save(
         body.trace_id, overall,
     )
 
-    return _serialize_optimization(opt)
+    # Passthrough optimizations have no family yet (extraction is async)
+    return _serialize_optimization(opt, family_id=None)

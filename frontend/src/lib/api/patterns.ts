@@ -45,7 +45,7 @@ export interface PatternGraph {
 export interface FamilyDetail extends PatternFamily {
   updated_at: string | null;
   meta_patterns: MetaPatternItem[];
-  optimizations: { id: string; raw_prompt: string; overall_score: number | null; strategy_used: string | null; created_at: string | null }[];
+  optimizations: { id: string; trace_id: string; raw_prompt: string; intent_label: string | null; overall_score: number | null; strategy_used: string | null; created_at: string | null }[];
 }
 
 export const matchPattern = (prompt_text: string) =>

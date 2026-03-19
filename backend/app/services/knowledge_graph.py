@@ -269,7 +269,9 @@ class KnowledgeGraphService:
             "optimizations": [
                 {
                     "id": o.id,
+                    "trace_id": o.trace_id,
                     "raw_prompt": (o.raw_prompt or "")[:100],
+                    "intent_label": o.intent_label,
                     "overall_score": o.overall_score,
                     "strategy_used": o.strategy_used,
                     "created_at": o.created_at.isoformat() if o.created_at else None,

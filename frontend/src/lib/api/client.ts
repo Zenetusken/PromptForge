@@ -46,6 +46,9 @@ export interface OptimizationResult {
   created_at: string;
   model_used: string;
   context_sources: Record<string, boolean> | null;
+  intent_label: string | null;
+  domain: string | null;
+  family_id: string | null;
 }
 
 export interface SSEEvent {
@@ -67,6 +70,9 @@ export interface HistoryItem {
   optimized_prompt: string | null;
   model_used?: string;
   scoring_mode?: string;
+  intent_label: string | null;
+  domain: string | null;
+  family_id: string | null;
 }
 
 export interface HistoryResponse {
@@ -429,6 +435,7 @@ export function connectEventStream(onEvent: EventHandler): EventSource {
         'optimization_created', 'optimization_analyzed',
         'feedback_submitted', 'refinement_turn',
         'optimization_failed', 'strategy_changed',
+        'pattern_updated',
     ];
     for (const type of eventTypes) {
         es.addEventListener(type, (e: MessageEvent) => {

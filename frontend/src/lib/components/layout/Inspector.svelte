@@ -37,14 +37,14 @@
     return score.toFixed(1);
   }
 
-  async function openOptimization(id: string): Promise<void> {
+  async function openOptimization(traceId: string, optimizationId: string): Promise<void> {
     try {
-      const opt = await getOptimization(id);
+      const opt = await getOptimization(traceId);
       forgeStore.loadFromRecord(opt);
-      editorStore.openResult(id, opt);
+      editorStore.openResult(optimizationId, opt);
     } catch {
       // Fallback: open tab without data — ForgeArtifact will handle gracefully
-      editorStore.openResult(id);
+      editorStore.openResult(optimizationId);
     }
   }
 
@@ -214,10 +214,10 @@
                 {#each family.optimizations.slice(0, 10) as opt (opt.id)}
                   <button
                     class="opt-item"
-                    onclick={() => openOptimization(opt.id)}
+                    onclick={() => openOptimization(opt.trace_id, opt.id)}
                     title={opt.raw_prompt}
                   >
-                    <span class="opt-prompt">{truncatePrompt(opt.raw_prompt)}</span>
+                    <span class="opt-prompt">{opt.intent_label || truncatePrompt(opt.raw_prompt)}</span>
                     <span class="opt-score" class:opt-score--null={opt.overall_score === null}>
                       {formatScore(opt.overall_score)}
                     </span>

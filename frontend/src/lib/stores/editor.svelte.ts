@@ -46,11 +46,13 @@ class EditorStore {
   cacheResult(optimizationId: string, data: OptimizationResult) {
     this._resultCache = { ...this._resultCache, [optimizationId]: data };
 
-    // Update tab titles for any tabs that reference this optimization
+    // Update tab titles: prefer intent_label from knowledge graph, fall back to raw_prompt derivation
     const updated = this.tabs.map((t) => {
       if (t.optimizationId !== optimizationId) return t;
       const prefix = t.type === 'diff' ? '~' : '';
-      return { ...t, title: this._tabTitle(data.raw_prompt, prefix) };
+      const label = data.intent_label ?? this._tabTitle(data.raw_prompt, '');
+      const title = prefix ? `${prefix} ${label}` : label;
+      return { ...t, title };
     });
     // Only reassign if something changed
     if (updated.some((t, i) => t !== this.tabs[i])) {
@@ -114,9 +116,10 @@ class EditorStore {
       this.cacheResult(optimizationId, data);
     }
     const cached = this._resultCache[optimizationId];
+    const title = cached?.intent_label ?? this._tabTitle(cached?.raw_prompt, '');
     this.openTab({
       id: `result-${optimizationId}`,
-      title: this._tabTitle(cached?.raw_prompt, ''),
+      title,
       type: 'result',
       optimizationId,
     });
@@ -124,9 +127,10 @@ class EditorStore {
 
   openDiff(optimizationId: string) {
     const cached = this._resultCache[optimizationId];
+    const label = cached?.intent_label ?? this._tabTitle(cached?.raw_prompt, '');
     this.openTab({
       id: `diff-${optimizationId}`,
-      title: this._tabTitle(cached?.raw_prompt, '~'),
+      title: `~ ${label}`,
       type: 'diff',
       optimizationId,
     });

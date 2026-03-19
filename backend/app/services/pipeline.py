@@ -638,6 +638,8 @@ class PipelineOrchestrator:
                 suggestions=suggestions,
                 context_sources=context_sources or {},
                 warnings=warnings if warnings else [],
+                intent_label=analysis.intent_label,
+                domain=analysis.domain,
             )
 
             if optimized_scores:

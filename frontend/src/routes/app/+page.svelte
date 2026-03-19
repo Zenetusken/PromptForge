@@ -3,7 +3,7 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
-  import { getHealth, connectEventStream } from '$lib/api/client';
+  import { getHealth, getOptimization, connectEventStream } from '$lib/api/client';
   import type { HealthResponse } from '$lib/api/client';
 
   let health = $state<HealthResponse | null>(null);
@@ -37,6 +37,19 @@
       if (type === 'pattern_updated') {
         patternsStore.invalidateGraph();
         addToast('created', `Pattern family updated: ${(data.intent_label as string) || 'new family'}`);
+
+        // Live family link: if the extractor just linked the current result to a family,
+        // refresh to pick up the family_id so Inspector auto-shows the family detail.
+        const eventOptId = data.optimization_id as string | undefined;
+        if (
+          eventOptId &&
+          forgeStore.status === 'complete' &&
+          forgeStore.result?.id === eventOptId
+        ) {
+          getOptimization(forgeStore.result.trace_id)
+            .then((updated) => forgeStore.loadFromRecord(updated))
+            .catch(() => { /* best-effort refresh */ });
+        }
       }
     });
     return () => eventSource?.close();
