@@ -39,10 +39,17 @@ async def mock_provider():
 
 
 @pytest_asyncio.fixture
-async def app_client(mock_provider, db_session):
+async def app_client(mock_provider, db_session, tmp_path):
     from app.database import get_db
     from app.main import app
+    from app.services.event_bus import EventBus
+    from app.services.routing import RoutingManager
 
+    # Create a test RoutingManager with mock provider
+    test_routing = RoutingManager(event_bus=EventBus(), data_dir=tmp_path)
+    test_routing.set_provider(mock_provider)
+    app.state.routing = test_routing
+    # Keep backward compat for any tests not yet migrated
     app.state.provider = mock_provider
 
     async def override_get_db():
