@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { RefinementTurn } from '$lib/api/client';
+  import { DIMENSION_LABELS } from '$lib/utils/dimensions';
+  import { formatScore, formatDelta } from '$lib/utils/formatting';
 
   interface Props {
     turn: RefinementTurn;
@@ -10,14 +12,6 @@
   }
 
   let { turn, isExpanded, isSelected, onToggle, onSelect }: Props = $props();
-
-  const DIMENSION_LABELS: Record<string, string> = {
-    clarity: 'Clarity',
-    specificity: 'Specificity',
-    structure: 'Structure',
-    faithfulness: 'Faithfulness',
-    conciseness: 'Conciseness',
-  };
 
   const overallScore = $derived.by(() => {
     if (!turn.scores) return null;
@@ -53,14 +47,14 @@
     </span>
     <span class="turn-spacer"></span>
     {#if overallScore !== null}
-      <span class="overall-score">{overallScore.toFixed(1)}</span>
+      <span class="overall-score">{formatScore(overallScore)}</span>
     {/if}
     {#each topDeltas as [dim, delta]}
       <span
         class="delta-badge"
         class:positive={delta > 0}
         class:negative={delta < 0}
-      >{delta > 0 ? '+' : ''}{delta.toFixed(1)} {(DIMENSION_LABELS[dim] ?? dim).slice(0, 4)}</span>
+      >{formatDelta(delta)} {(DIMENSION_LABELS[dim] ?? dim).slice(0, 4)}</span>
     {/each}
   </div>
 
@@ -73,13 +67,13 @@
             {@const delta = turn.deltas?.[dim] ?? null}
             <li class="score-item">
               <span class="dim-name">{DIMENSION_LABELS[dim] ?? dim}</span>
-              <span class="dim-score">{typeof value === 'number' ? value.toFixed(1) : value}</span>
+              <span class="dim-score">{formatScore(value)}</span>
               {#if delta !== null && delta !== 0}
                 <span
                   class="dim-delta"
                   class:positive={delta > 0}
                   class:negative={delta < 0}
-                >{delta > 0 ? '+' : ''}{delta.toFixed(1)}</span>
+                >{formatDelta(delta)}</span>
               {/if}
             </li>
           {/each}

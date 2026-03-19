@@ -29,8 +29,8 @@ class GitHubStore {
     try {
       const { url } = await githubLogin();
       window.location.href = url;
-    } catch (err: any) {
-      this.error = err.message;
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Operation failed';
     }
   }
 
@@ -40,8 +40,8 @@ class GitHubStore {
       this.user = null;
       this.linkedRepo = null;
       this.repos = [];
-    } catch (err: any) {
-      this.error = err.message;
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Operation failed';
     }
   }
 
@@ -50,8 +50,8 @@ class GitHubStore {
     try {
       const response = await githubRepos();
       this.repos = response.repos;
-    } catch (err: any) {
-      this.error = err.message;
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Operation failed';
     } finally {
       this.loading = false;
     }
@@ -60,8 +60,8 @@ class GitHubStore {
   async linkRepo(fullName: string) {
     try {
       this.linkedRepo = await githubLink(fullName);
-    } catch (err: any) {
-      this.error = err.message;
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Operation failed';
     }
   }
 
@@ -77,8 +77,8 @@ class GitHubStore {
     try {
       await githubUnlink();
       this.linkedRepo = null;
-    } catch (err: any) {
-      this.error = err.message;
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Operation failed';
     }
   }
 }

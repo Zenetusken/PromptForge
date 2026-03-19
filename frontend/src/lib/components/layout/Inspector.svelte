@@ -8,12 +8,8 @@
   import { renameFamily } from '$lib/api/patterns';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
-
-  const PHASE_LABELS: Record<string, string> = {
-    analyzing: 'Analyzing',
-    optimizing: 'Optimizing',
-    scoring: 'Scoring',
-  };
+  import { PHASE_LABELS } from '$lib/utils/dimensions';
+  import { formatScore, truncateText } from '$lib/utils/formatting';
 
   const isPassthrough = $derived(forgeStore.status === 'passthrough');
   const isHeuristicScored = $derived(forgeStore.result?.scoring_mode === 'heuristic');
@@ -26,16 +22,6 @@
   const showFamilyDetail = $derived(
     patternsStore.selectedFamilyId !== null && !forgeActive
   );
-
-  function truncatePrompt(text: string, maxLen = 80): string {
-    if (text.length <= maxLen) return text;
-    return text.slice(0, maxLen).trimEnd() + '...';
-  }
-
-  function formatScore(score: number | null): string {
-    if (score === null) return '--';
-    return score.toFixed(1);
-  }
 
   async function openOptimization(traceId: string, optimizationId: string): Promise<void> {
     try {
@@ -217,7 +203,7 @@
                     onclick={() => openOptimization(opt.trace_id, opt.id)}
                     title={opt.raw_prompt}
                   >
-                    <span class="opt-prompt">{opt.intent_label || truncatePrompt(opt.raw_prompt)}</span>
+                    <span class="opt-prompt">{opt.intent_label || truncateText(opt.raw_prompt)}</span>
                     <span class="opt-score" class:opt-score--null={opt.overall_score === null}>
                       {formatScore(opt.overall_score)}
                     </span>

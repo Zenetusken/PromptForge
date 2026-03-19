@@ -111,8 +111,8 @@ class RefinementStore {
       this.turns = data.versions;
       this.activeBranchId = branch.id;
       this.suggestions = [];
-    } catch (err: any) {
-      this.error = err.message;
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Refinement failed';
     }
   }
 

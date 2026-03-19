@@ -6,6 +6,7 @@
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
   import { scoreColor, domainColor } from '$lib/constants/patterns';
+  import { formatScore } from '$lib/utils/formatting';
   import { getSettings, getProviders, getHistory, getOptimization, getApiKey, setApiKey, deleteApiKey, getStrategies, getStrategy, updateStrategy } from '$lib/api/client';
   import type { SettingsResponse, ProvidersResponse, HistoryItem, ApiKeyStatus, StrategyInfo } from '$lib/api/client';
 
@@ -27,7 +28,7 @@
     if (strategiesLoaded) return;
     strategiesLoaded = true;
     getStrategies()
-      .then((list: any[]) => { strategiesList = list; })
+      .then((list) => { strategiesList = list; })
       .catch(() => {});
   });
 
@@ -136,7 +137,7 @@
 
       // Re-fetch strategies list
       getStrategies()
-        .then((list: any[]) => { strategiesList = list; })
+        .then((list) => { strategiesList = list; })
         .catch(() => {});
     };
     window.addEventListener('strategy-changed', handler);
@@ -150,8 +151,8 @@
     try {
       apiKeyStatus = await setApiKey(apiKeyInput.trim());
       apiKeyInput = '';
-    } catch (err: any) {
-      apiKeyError = err?.message || 'Failed to set API key';
+    } catch (err: unknown) {
+      apiKeyError = err instanceof Error ? err.message : 'Failed to set API key';
     } finally {
       apiKeySaving = false;
     }
@@ -161,8 +162,8 @@
     apiKeyError = null;
     try {
       apiKeyStatus = await deleteApiKey();
-    } catch (err: any) {
-      apiKeyError = err?.message || 'Failed to remove API key';
+    } catch (err: unknown) {
+      apiKeyError = err instanceof Error ? err.message : 'Failed to remove API key';
     }
   }
 
@@ -175,8 +176,8 @@
           historyError = null;
           historyLoaded = true;
         })
-        .catch((err: any) => {
-          historyError = err?.message || 'Failed to load history';
+        .catch((err: unknown) => {
+          historyError = err instanceof Error ? err.message : 'Failed to load history';
           historyLoaded = true;
         });
     }
@@ -321,7 +322,7 @@
                   class="row-score font-mono"
                   style="color: {scoreColor(item.overall_score)};"
                 >
-                  {item.overall_score != null ? item.overall_score.toFixed(1) : '—'}
+                  {item.overall_score != null ? formatScore(item.overall_score) : '—'}
                 </span>
               </div>
             </button>

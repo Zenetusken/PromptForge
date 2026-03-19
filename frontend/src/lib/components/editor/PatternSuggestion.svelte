@@ -1,5 +1,6 @@
 <script lang="ts">
   import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { formatScore } from '$lib/utils/formatting';
 
   interface Props {
     onApply: (patterns: string[]) => void;
@@ -30,7 +31,7 @@
       <div class="suggestion-meta">
         {match.meta_patterns.length} meta-pattern{match.meta_patterns.length !== 1 ? 's' : ''} available
         {#if match.family.avg_score != null}
-          &middot; avg score {match.family.avg_score.toFixed(1)}
+          &middot; avg score {formatScore(match.family.avg_score)}
         {/if}
       </div>
     </div>

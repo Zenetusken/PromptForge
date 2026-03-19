@@ -3,6 +3,7 @@
   import { browser } from '$app/environment';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { DOMAIN_COLORS, domainColor } from '$lib/constants/patterns';
+  import { formatScore } from '$lib/utils/formatting';
   import type { GraphFamily, GraphEdge } from '$lib/api/patterns';
 
   // Design system tokens — must match :root in app.css.
@@ -264,7 +265,7 @@
         .select('.tt-meta')
         .attr('x', ttX + 8)
         .attr('y', ttY + 28)
-        .text(`${f.domain} | ${f.usage_count} uses | score: ${f.avg_score?.toFixed(1) ?? 'N/A'}`);
+        .text(`${f.domain} | ${f.usage_count} uses | score: ${formatScore(f.avg_score)}`);
 
       const patternTexts = f.meta_patterns
         .slice(0, 2)

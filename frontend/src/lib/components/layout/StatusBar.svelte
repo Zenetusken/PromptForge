@@ -5,6 +5,8 @@
   import ProviderBadge from '$lib/components/shared/ProviderBadge.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { domainColor } from '$lib/constants/patterns';
+  import { getPhaseLabel } from '$lib/utils/dimensions';
+  import { formatScore } from '$lib/utils/formatting';
 
   let provider = $state<string | null>(null);
   let version = $state<string | null>(null);
@@ -34,19 +36,11 @@
     _lastGraphLoaded = gl;
   });
 
-  const phaseDisplay = $derived.by(() => {
-    switch (forgeStore.status) {
-      case 'analyzing': return 'analyzing';
-      case 'optimizing': return 'optimizing';
-      case 'scoring': return 'scoring';
-      case 'passthrough': return 'passthrough';
-      default: return null;
-    }
-  });
+  const phaseDisplay = $derived(getPhaseLabel(forgeStore.status)?.toLowerCase() ?? null);
 
   const lastScore = $derived(
     forgeStore.result?.overall_score
-      ? forgeStore.result.overall_score.toFixed(1)
+      ? formatScore(forgeStore.result.overall_score)
       : null
   );
 

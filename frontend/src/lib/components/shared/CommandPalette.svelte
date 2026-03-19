@@ -1,6 +1,7 @@
 <script lang="ts">
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
+  import { copyToClipboard } from '$lib/utils/formatting';
 
   // Actions available in the palette
   interface PaletteAction {
@@ -74,7 +75,7 @@
       label: 'Copy Result',
       run: () => {
         const text = forgeStore.result?.optimized_prompt;
-        if (text) navigator.clipboard.writeText(text).catch(() => {});
+        if (text) copyToClipboard(text);
         close();
       },
     },

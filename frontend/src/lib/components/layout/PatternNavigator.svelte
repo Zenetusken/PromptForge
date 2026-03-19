@@ -3,6 +3,7 @@
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { domainColor, scoreColor } from '$lib/constants/patterns';
+  import { formatScore } from '$lib/utils/formatting';
 
   const PAGE_SIZE = 50;
 
@@ -239,7 +240,7 @@
                   style="color: {scoreColor(family.avg_score)};"
                   title="Average score"
                 >
-                  {family.avg_score != null ? family.avg_score.toFixed(1) : '--'}
+                  {formatScore(family.avg_score)}
                 </span>
               </span>
             </button>

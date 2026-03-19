@@ -59,8 +59,8 @@ class PreferencesStore {
     try {
       const updated = await patchPreferences(patch);
       this.prefs = updated as Preferences;
-    } catch (err: any) {
-      this.error = err.message || 'Failed to save';
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Failed to save';
     }
   }
 

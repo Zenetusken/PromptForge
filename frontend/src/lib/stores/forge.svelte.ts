@@ -127,8 +127,8 @@ class ForgeStore {
         this.passthroughTraceId, optimizedPrompt, changesSummary,
       );
       this.loadFromRecord(result);
-    } catch (err: any) {
-      this.error = err.message;
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Passthrough save failed';
       this.status = 'error';
     }
   }

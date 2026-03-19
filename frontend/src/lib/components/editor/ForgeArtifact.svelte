@@ -3,6 +3,7 @@
   import { editorStore } from '$lib/stores/editor.svelte';
   import { refinementStore } from '$lib/stores/refinement.svelte';
   import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
+  import { copyToClipboard } from '$lib/utils/formatting';
 
   let copied = $state(false);
   let showOriginal = $state(false);
@@ -27,23 +28,11 @@
     return 'OPTIMIZED PROMPT';
   });
 
-  async function copyToClipboard() {
+  async function handleCopy() {
     if (!result?.optimized_prompt) return;
-    try {
-      await navigator.clipboard.writeText(displayPrompt);
-      copied = true;
-      setTimeout(() => { copied = false; }, 2000);
-    } catch {
-      // fallback: create a temporary textarea
-      const el = document.createElement('textarea');
-      el.value = displayPrompt;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
-      copied = true;
-      setTimeout(() => { copied = false; }, 2000);
-    }
+    await copyToClipboard(displayPrompt);
+    copied = true;
+    setTimeout(() => { copied = false; }, 2000);
   }
 
   function viewDiff() {
@@ -107,7 +96,7 @@
         <span class="header-divider"></span>
         <button
           class="action-btn action-btn--primary"
-          onclick={copyToClipboard}
+          onclick={handleCopy}
           title="Copy to clipboard"
         >
           {copied ? 'COPIED' : 'COPY'}

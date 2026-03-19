@@ -2,6 +2,7 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
+  import { formatScore, copyToClipboard } from '$lib/utils/formatting';
 
   let optimizedPrompt = $state('');
   let changesSummary = $state('');
@@ -21,12 +22,12 @@
 
   async function copyAssembled() {
     if (!forgeStore.assembledPrompt) return;
-    try {
-      await navigator.clipboard.writeText(forgeStore.assembledPrompt);
+    const ok = await copyToClipboard(forgeStore.assembledPrompt);
+    if (ok) {
       copying = true;
       addToast('created', 'Copied to clipboard');
       setTimeout(() => { copying = false; }, 1200);
-    } catch {
+    } else {
       addToast('deleted', 'Copy failed — select and copy manually');
     }
   }
@@ -39,7 +40,7 @@
 
     // Toast + open result tab on success
     if (forgeStore.status === 'complete' && forgeStore.result) {
-      const score = forgeStore.result.overall_score?.toFixed(1) ?? '—';
+      const score = forgeStore.result.overall_score != null ? formatScore(forgeStore.result.overall_score) : '—';
       addToast('created', `Passthrough saved — ${score}`);
       editorStore.openResult(forgeStore.result.id);
     }

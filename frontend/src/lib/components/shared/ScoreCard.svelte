@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { DimensionScores } from '$lib/api/client';
+  import { DIMENSION_LABELS } from '$lib/utils/dimensions';
+  import { formatScore, formatDelta } from '$lib/utils/formatting';
 
   interface Props {
     scores: DimensionScores;
@@ -10,14 +12,6 @@
 
   let { scores, originalScores = null, deltas = null, overallScore = null }: Props = $props();
 
-  const DIMENSION_LABELS: Record<string, string> = {
-    clarity: 'Clarity',
-    specificity: 'Specificity',
-    structure: 'Structure',
-    faithfulness: 'Faithfulness',
-    conciseness: 'Conciseness',
-  };
-
   const dimensionEntries = $derived(Object.entries(scores) as [string, number][]);
 </script>
 
@@ -25,7 +19,7 @@
   {#if overallScore !== null && overallScore !== undefined}
     <div class="overall-row">
       <span class="overall-label">Overall</span>
-      <span class="overall-value">{overallScore.toFixed(1)}</span>
+      <span class="overall-value">{formatScore(overallScore)}</span>
     </div>
   {/if}
 
@@ -35,16 +29,16 @@
       {@const orig = (originalScores as Record<string, number> | null)?.[dim] ?? null}
       <li class="dimension-row">
         <span class="dim-label">{DIMENSION_LABELS[dim] ?? dim}</span>
-        <span class="dim-value">{typeof value === 'number' ? value.toFixed(1) : value}</span>
+        <span class="dim-value">{formatScore(value)}</span>
         {#if delta !== null}
           <span
             class="dim-delta"
             class:positive={delta > 0}
             class:negative={delta < 0}
-          >{delta > 0 ? '+' : ''}{delta.toFixed(1)}</span>
+          >{formatDelta(delta)}</span>
         {/if}
         {#if orig !== null}
-          <span class="dim-orig">{typeof orig === 'number' ? orig.toFixed(1) : orig}</span>
+          <span class="dim-orig">{formatScore(orig)}</span>
         {/if}
       </li>
     {/each}

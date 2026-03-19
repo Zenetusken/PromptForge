@@ -3,40 +3,27 @@
   import { editorStore } from '$lib/stores/editor.svelte';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { getStrategies, getHealth } from '$lib/api/client';
-  import type { StrategyInfo } from '$lib/api/client';
   import PatternSuggestion from './PatternSuggestion.svelte';
+  import { getPhaseLabel } from '$lib/utils/dimensions';
+  import { strategyListToOptions, type StrategyOption } from '$lib/utils/strategies';
 
   // Dynamic strategy list — fetched from disk via API
-  let strategyOptions = $state<{ value: string; label: string }[]>([{ value: '', label: 'Auto' }]);
+  let strategyOptions = $state<StrategyOption[]>([{ value: '', label: 'auto' }]);
 
   let strategiesLoaded = false;
   $effect(() => {
     if (strategiesLoaded) return;
     strategiesLoaded = true;
-    getStrategies().then((list: StrategyInfo[]) => {
-      const rest = list.filter(s => s.name !== 'auto');
-      strategyOptions = [
-        { value: '', label: 'auto' },
-        ...rest.map(s => ({
-          value: s.name,
-          label: s.tagline ? `${s.name} — ${s.tagline}` : s.name,
-        })),
-      ];
-    }).catch(() => {});
+    getStrategies()
+      .then((list) => { strategyOptions = strategyListToOptions(list); })
+      .catch(() => {});
   });
 
   // React to strategy file changes (sync dropdown with disk state)
   $effect(() => {
     const handler = () => {
-      getStrategies().then((list: StrategyInfo[]) => {
-        const rest = list.filter(s => s.name !== 'auto');
-        strategyOptions = [
-          { value: '', label: 'auto' },
-          ...rest.map(s => ({
-            value: s.name,
-            label: s.tagline ? `${s.name} — ${s.tagline}` : s.name,
-          })),
-        ];
+      getStrategies().then((list) => {
+        strategyOptions = strategyListToOptions(list);
 
         // Reset if active strategy was deleted
         if (forgeStore.strategy && !list.some(s => s.name === forgeStore.strategy)) {
@@ -60,12 +47,8 @@
   const buttonLabel = $derived(isPassthroughMode ? 'PREPARE' : 'SYNTHESIZE');
 
   const phaseLabel = $derived.by(() => {
-    switch (forgeStore.status) {
-      case 'analyzing': return 'Analyzing...';
-      case 'optimizing': return 'Optimizing...';
-      case 'scoring': return 'Scoring...';
-      default: return null;
-    }
+    const label = getPhaseLabel(forgeStore.status);
+    return label ? `${label}...` : null;
   });
 
   // Derived select value: null = auto = ''
