@@ -36,8 +36,8 @@
       </div>
     </div>
     <div class="suggestion-actions">
-      <button class="btn-apply" onclick={handleApply}>Apply</button>
-      <button class="btn-skip" onclick={handleSkip}>Skip</button>
+      <button class="action-btn action-btn--primary" onclick={handleApply}>Apply</button>
+      <button class="action-btn" onclick={handleSkip}>Skip</button>
     </div>
   </div>
 {/if}
@@ -96,54 +96,9 @@
     flex-shrink: 0;
   }
 
-  .btn-apply {
-    background: transparent;
-    border: 1px solid var(--color-neon-cyan);
-    color: var(--color-neon-cyan);
-    padding: 0 8px;
-    height: 20px;
-    line-height: 18px;
-    font-size: 10px;
-    font-family: var(--font-display);
-    font-weight: 700;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
 
-  .btn-apply:hover {
-    background: rgba(0, 229, 255, 0.06);
-    transform: translateY(-1px);
-  }
 
-  .btn-apply:active {
-    transform: translateY(0);
-  }
 
-  .btn-skip {
-    background: transparent;
-    border: 1px solid var(--color-border-subtle);
-    color: var(--color-text-dim);
-    padding: 0 8px;
-    height: 20px;
-    line-height: 18px;
-    font-size: 10px;
-    font-family: var(--font-display);
-    font-weight: 700;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
 
-  .btn-skip:hover {
-    border-color: var(--color-border-accent);
-    color: var(--color-text-secondary);
-    background: var(--color-bg-hover);
-  }
 
-  .btn-skip:active {
-    transform: translateY(0);
-  }
 </style>

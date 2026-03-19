@@ -11,7 +11,7 @@
 </script>
 
 <div class="hero" data-reveal>
-  <h1 class="hero__heading text-gradient-forge font-display" style="view-transition-name: page-title">
+  <h1 class="hero__heading  font-display" style="view-transition-name: page-title">
     {heading}
   </h1>
   <p class="hero__sub">{subheading}</p>

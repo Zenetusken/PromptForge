@@ -1,6 +1,8 @@
 <script lang="ts">
   import { base } from '$app/paths';
   import { page } from '$app/stores';
+  import Logo from '$lib/components/shared/Logo.svelte';
+
 
   let scrolled = $state(false);
   let mobileMenuOpen = $state(false);
@@ -33,8 +35,8 @@
   class:navbar--scrolled={scrolled}
 >
   <nav class="navbar__inner" aria-label="Main navigation">
-    <a href="{base}/" class="navbar__logo text-gradient-forge" aria-label="Project Synthesis home">
-      PROJECT SYNTHESIS
+    <a href="{base}/" class="navbar__logo" aria-label="Project Synthesis home">
+      <Logo size={24} variant="full" />
     </a>
 
     <div class="navbar__links">

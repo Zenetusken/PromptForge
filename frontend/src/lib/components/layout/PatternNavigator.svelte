@@ -162,7 +162,7 @@
 <div class="panel">
   <header class="panel-header">
     <span class="section-heading">Patterns</span>
-    <span class="total-badge font-mono" title="Total pattern families">{totalFamilies}</span>
+    <span class="badge-solid" title="Total pattern families">{totalFamilies}</span>
     <button
       class="mindmap-btn"
       onclick={openMindmap}
@@ -206,7 +206,7 @@
             class="search-result"
             onclick={() => selectSearchResult(result)}
           >
-            <span class="search-type font-mono">{result.type === 'family' ? 'FAM' : 'PAT'}</span>
+            <span class="badge-neon">{result.type === 'family' ? 'FAM' : 'PAT'}</span>
             <span class="search-label">{result.label}</span>
             <span class="search-score font-mono">{(result.score * 100).toFixed(0)}%</span>
           </button>
@@ -234,7 +234,7 @@
             >
               <span class="family-label">{family.intent_label}</span>
               <span class="family-badges">
-                <span class="badge-count font-mono" title="Usage count">{family.usage_count}</span>
+                <span class="badge-neon" title="Usage count">{family.usage_count}</span>
                 <span
                   class="badge-score font-mono"
                   style="color: {scoreColor(family.avg_score)};"
@@ -271,7 +271,7 @@
       {/each}
       {#if hasMore}
         <button
-          class="load-more-btn"
+          class="action-btn" style="margin-top: 4px; width: 100%;"
           onclick={loadMore}
           disabled={loadingMore}
         >
@@ -283,42 +283,10 @@
 </div>
 
 <style>
-  .panel {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
 
-  .panel-header {
-    display: flex;
-    align-items: center;
-    height: 24px;
-    padding: 0 6px;
-    border-bottom: 1px solid var(--color-border-subtle);
-    flex-shrink: 0;
-    gap: 4px;
-  }
 
-  .panel-header .section-heading {
-    flex: 1;
-  }
 
-  .total-badge {
-    font-size: 9px;
-    color: var(--color-text-dim);
-  }
 
-  .panel-body {
-    padding: 6px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    flex: 1;
-    min-height: 0;
-  }
 
   /* ---- Search ---- */
   .search-bar {
@@ -396,13 +364,6 @@
     transform: none;
   }
 
-  .search-type {
-    font-size: 8px;
-    color: var(--color-text-dim);
-    text-transform: uppercase;
-    width: 24px;
-    flex-shrink: 0;
-  }
 
   .search-label {
     font-size: 10px;
@@ -437,14 +398,6 @@
 
   .mindmap-btn:hover {
     color: var(--color-neon-cyan);
-  }
-
-  .empty-note {
-    font-size: 10px;
-    color: var(--color-text-dim);
-    padding: 4px 6px;
-    line-height: 1.5;
-    margin: 0 0 6px;
   }
 
   /* ---- Domain groups ---- */
@@ -533,10 +486,6 @@
     flex-shrink: 0;
   }
 
-  .badge-count {
-    font-size: 9px;
-    color: var(--color-text-dim);
-  }
 
   .badge-score {
     font-size: 9px;
@@ -588,35 +537,7 @@
   }
 
   /* ---- Load more ---- */
-  .load-more-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 20px;
-    margin-top: 4px;
-    border: 1px solid var(--color-border-subtle);
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 10px;
-    font-family: var(--font-sans);
-    cursor: pointer;
-    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                background 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
 
-  .load-more-btn:hover {
-    border-color: var(--color-border-accent);
-    color: var(--color-text-primary);
-    background: var(--color-bg-hover);
-  }
 
-  .load-more-btn:active {
-    transform: none;
-  }
 
-  .load-more-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
 </style>

@@ -47,7 +47,7 @@
     font-family: var(--font-mono);
     padding: 1px 6px;
     border: 1px solid var(--color-border-subtle);
-    border-radius: 2px; /* rounded-sm */
+    border-radius: 0;
     color: var(--color-text-dim);
     white-space: nowrap;
     transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1),

@@ -346,21 +346,21 @@
       </header>
       <div class="panel-body">
         {#if githubStore.linkedRepo}
-          <div class="info-block">
-            <div class="info-row">
-              <span class="info-key">Repo</span>
-              <span class="info-val font-mono">{githubStore.linkedRepo.full_name}</span>
+          <div class="card-terminal">
+            <div class="data-row">
+              <span class="data-label">Repo</span>
+              <span class="data-value font-mono">{githubStore.linkedRepo.full_name}</span>
             </div>
-            <div class="info-row">
-              <span class="info-key">Branch</span>
-              <span class="info-val font-mono">
+            <div class="data-row">
+              <span class="data-label">Branch</span>
+              <span class="data-value font-mono">
                 {githubStore.linkedRepo.branch ?? githubStore.linkedRepo.default_branch}
               </span>
             </div>
             {#if githubStore.linkedRepo.language}
-              <div class="info-row">
-                <span class="info-key">Lang</span>
-                <span class="info-val">{githubStore.linkedRepo.language}</span>
+              <div class="data-row">
+                <span class="data-label">Lang</span>
+                <span class="data-value">{githubStore.linkedRepo.language}</span>
               </div>
             {/if}
           </div>
@@ -371,10 +371,10 @@
             Unlink repo
           </button>
         {:else if githubStore.user}
-          <div class="info-block">
-            <div class="info-row">
-              <span class="info-key">User</span>
-              <span class="info-val font-mono">{githubStore.user.login}</span>
+          <div class="card-terminal">
+            <div class="data-row">
+              <span class="data-label">User</span>
+              <span class="data-value font-mono">{githubStore.user.login}</span>
             </div>
           </div>
           <p class="empty-note">No repo linked. Use Repo Picker in the editor to link one.</p>
@@ -400,14 +400,14 @@
         <!-- Models (always visible — primary control) -->
         <div class="sub-section">
           <span class="sub-heading">Models</span>
-          <div class="info-block">
+          <div class="card-terminal">
             {#each [
               { label: 'Analyzer', phase: 'analyzer' },
               { label: 'Optimizer', phase: 'optimizer' },
               { label: 'Scorer', phase: 'scorer' },
             ] as { label, phase }}
-              <div class="info-row">
-                <span class="info-key">{label}</span>
+              <div class="data-row">
+                <span class="data-label">{label}</span>
                 <select
                   class="pref-select"
                   value={preferencesStore.models[phase as keyof typeof preferencesStore.models]}
@@ -425,14 +425,14 @@
         <!-- Pipeline (always visible — primary control) -->
         <div class="sub-section">
           <span class="sub-heading">Pipeline</span>
-          <div class="info-block">
+          <div class="card-terminal">
             {#each [
               { label: 'Explore', key: 'enable_explore' },
               { label: 'Scoring', key: 'enable_scoring' },
               { label: 'Adaptation', key: 'enable_adaptation' },
             ] as { label, key }}
-              <div class="info-row">
-                <span class="info-key">{label}</span>
+              <div class="data-row">
+                <span class="data-label">{label}</span>
                 <button
                   class="toggle-track"
                   class:toggle-track--on={preferencesStore.pipeline[key as keyof typeof preferencesStore.pipeline]}
@@ -446,13 +446,13 @@
               </div>
             {/each}
             {#if preferencesStore.isLeanMode}
-              <div class="info-row">
-                <span class="lean-badge">LEAN MODE</span>
+              <div class="data-row">
+                <span class="badge-neon">LEAN MODE</span>
               </div>
             {/if}
             <!-- Force sampling — rendered separately for disabled-state support -->
-            <div class="info-row">
-              <span class="info-key" title="Use IDE's LLM for the 3-phase pipeline via MCP sampling">Force IDE sampling</span>
+            <div class="data-row">
+              <span class="data-label" title="Use IDE's LLM for the 3-phase pipeline via MCP sampling">Force IDE sampling</span>
               <button
                 class="toggle-track"
                 class:toggle-track--on={preferencesStore.pipeline.force_sampling}
@@ -480,8 +480,8 @@
               </button>
             </div>
             <!-- Force passthrough — manual override, always available except when sampling works -->
-            <div class="info-row">
-              <span class="info-key" title="Bypass all pipelines — returns assembled template for manual processing">Force passthrough</span>
+            <div class="data-row">
+              <span class="data-label" title="Bypass all pipelines — returns assembled template for manual processing">Force passthrough</span>
               <button
                 class="toggle-track"
                 class:toggle-track--on={preferencesStore.pipeline.force_passthrough}
@@ -510,9 +510,9 @@
         <!-- Defaults (always visible — primary control) -->
         <div class="sub-section">
           <span class="sub-heading">Defaults</span>
-          <div class="info-block">
-            <div class="info-row">
-              <span class="info-key">Strategy</span>
+          <div class="card-terminal">
+            <div class="data-row">
+              <span class="data-label">Strategy</span>
               <select
                 class="pref-select"
                 value={preferencesStore.defaultStrategy}
@@ -524,13 +524,13 @@
               </select>
             </div>
             {#if preferencesStore.pipeline.force_sampling && !forgeStore.noProvider && forgeStore.samplingCapable === true}
-              <div class="info-row">
-                <span class="lean-badge" style="color: var(--color-accent, #00e5ff); border-color: var(--color-accent, #00e5ff);">SAMPLING</span>
+              <div class="data-row">
+                <span class="badge-neon" style="color: var(--color-accent, #00e5ff); border-color: var(--color-accent, #00e5ff);">SAMPLING</span>
               </div>
             {/if}
             {#if preferencesStore.pipeline.force_passthrough}
-              <div class="info-row">
-                <span class="lean-badge" style="color: var(--color-neon-yellow); border-color: var(--color-neon-yellow);">PASSTHROUGH</span>
+              <div class="data-row">
+                <span class="badge-neon" style="color: var(--color-neon-yellow); border-color: var(--color-neon-yellow);">PASSTHROUGH</span>
               </div>
             {/if}
           </div>
@@ -553,22 +553,22 @@
             </span>
           </button>
           {#if showProvider}
-            <div class="info-block">
-              <div class="info-row">
-                <span class="info-key">Active</span>
-                <span class="info-val font-mono" style="color: var(--color-neon-cyan);">
+            <div class="card-terminal">
+              <div class="data-row">
+                <span class="data-label">Active</span>
+                <span class="data-value font-mono" style="color: var(--color-neon-cyan);">
                   {providers?.active_provider ?? '—'}
                 </span>
               </div>
               {#if providers?.available?.length}
-                <div class="info-row">
-                  <span class="info-key">Available</span>
-                  <span class="info-val">{providers.available.join(', ')}</span>
+                <div class="data-row">
+                  <span class="data-label">Available</span>
+                  <span class="data-value">{providers.available.join(', ')}</span>
                 </div>
               {/if}
-              <div class="info-row">
-                <span class="info-key">API key</span>
-                <span class="info-val font-mono" style="color: {apiKeyStatus?.configured ? 'var(--color-neon-green)' : 'var(--color-text-dim)'};">
+              <div class="data-row">
+                <span class="data-label">API key</span>
+                <span class="data-value font-mono" style="color: {apiKeyStatus?.configured ? 'var(--color-neon-green)' : 'var(--color-text-dim)'};">
                   {apiKeyStatus?.configured ? apiKeyStatus.masked_key || 'configured' : 'not set'}
                 </span>
               </div>
@@ -616,26 +616,26 @@
               <span class="sub-heading">System</span>
             </button>
             {#if showSystem}
-              <div class="info-block">
-                <div class="info-row">
-                  <span class="info-key">Max chars</span>
-                  <span class="info-val font-mono">{settings.max_raw_prompt_chars.toLocaleString()}</span>
+              <div class="card-terminal">
+                <div class="data-row">
+                  <span class="data-label">Max chars</span>
+                  <span class="data-value font-mono">{settings.max_raw_prompt_chars.toLocaleString()}</span>
                 </div>
-                <div class="info-row">
-                  <span class="info-key">Embedding</span>
-                  <span class="info-val font-mono">{settings.embedding_model}</span>
+                <div class="data-row">
+                  <span class="data-label">Embedding</span>
+                  <span class="data-value font-mono">{settings.embedding_model}</span>
                 </div>
-                <div class="info-row">
-                  <span class="info-key">Rate limit</span>
-                  <span class="info-val font-mono">{settings.optimize_rate_limit}</span>
+                <div class="data-row">
+                  <span class="data-label">Rate limit</span>
+                  <span class="data-value font-mono">{settings.optimize_rate_limit}</span>
                 </div>
-                <div class="info-row">
-                  <span class="info-key">Retention</span>
-                  <span class="info-val font-mono">{settings.trace_retention_days}d</span>
+                <div class="data-row">
+                  <span class="data-label">Retention</span>
+                  <span class="data-value font-mono">{settings.trace_retention_days}d</span>
                 </div>
-                <div class="info-row">
-                  <span class="info-key">Scoring</span>
-                  <span class="info-val font-mono">hybrid</span>
+                <div class="data-row">
+                  <span class="data-label">Scoring</span>
+                  <span class="data-value font-mono">hybrid</span>
                 </div>
               </div>
             {/if}
@@ -654,32 +654,8 @@
     flex-direction: column;
   }
 
-  .panel {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
 
-  .panel-header {
-    display: flex;
-    align-items: center;
-    height: 24px;
-    padding: 0 6px;
-    border-bottom: 1px solid var(--color-border-subtle);
-    flex-shrink: 0;
-  }
 
-  .panel-body {
-    padding: 6px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    flex: 1;
-    min-height: 0;
-  }
 
   /* ---- Strategy rows (single-line, compact) ---- */
   .strat-row {
@@ -866,39 +842,6 @@
   }
 
   /* ---- Info blocks ---- */
-  .info-block {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-bottom: 6px;
-  }
-
-  .info-row {
-    display: flex;
-    align-items: center;
-    height: 20px;
-    gap: 6px;
-    padding: 0 6px;
-  }
-
-  .info-key {
-    font-size: 10px;
-    color: var(--color-text-dim);
-    width: 64px;
-    flex-shrink: 0;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  .info-val {
-    font-size: 10px;
-    color: var(--color-text-primary);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   /* ---- Sub-sections ---- */
   .sub-section {
@@ -912,64 +855,10 @@
   }
 
   /* ---- Action buttons ---- */
-  .action-btn {
-    width: calc(100% - 12px);
-    margin: 4px 6px 0;
-    height: 20px;
-    font-size: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--color-border-subtle);
-    background: transparent;
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    transition:
-      color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-      background 200ms cubic-bezier(0.16, 1, 0.3, 1),
-      border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
 
-  .action-btn:hover {
-    color: var(--color-text-primary);
-    background: var(--color-bg-hover);
-    border-color: var(--color-border-accent);
-  }
 
-  .action-btn:active {
-    transform: none;
-  }
 
-  .action-btn--primary {
-    color: var(--color-neon-cyan);
-    border: 1px solid rgba(0, 229, 255, 0.2);
-    background: rgba(0, 229, 255, 0.05);
-    font-family: var(--font-display);
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    padding: 0 8px;
-    height: 20px;
-    line-height: 18px;
-    width: calc(100% - 12px);
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
 
-  .action-btn--primary:hover {
-    color: var(--color-neon-cyan);
-    background: rgba(0, 229, 255, 0.1);
-    border-color: var(--color-neon-cyan);
-  }
-
-  /* ---- Empty state ---- */
-  .empty-note {
-    font-size: 10px;
-    color: var(--color-text-dim);
-    padding: 4px 6px;
-    line-height: 1.5;
-    margin: 0 0 6px;
-  }
 
   /* ---- API Key form ---- */
   .api-key-form {
@@ -1064,16 +953,6 @@
     background: var(--color-neon-cyan);
   }
 
-  /* ---- Lean mode badge ---- */
-  .lean-badge {
-    font-family: var(--font-mono);
-    font-size: 9px;
-    color: var(--color-neon-yellow);
-    border: 1px solid var(--color-neon-yellow);
-    padding: 0 4px;
-    line-height: 16px;
-    letter-spacing: 0.08em;
-  }
 
   /* ---- Accordion headings (progressive disclosure) ---- */
   .accordion-heading {

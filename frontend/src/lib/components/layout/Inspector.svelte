@@ -85,17 +85,17 @@
 </script>
 
 <aside
-  class="inspector"
+  class="panel"
   aria-label="Inspector panel"
   style="background: var(--color-bg-secondary); border-left: 1px solid var(--color-border-subtle);"
 >
   <!-- Header -->
-  <div class="inspector-header">
+  <div class="panel-header">
     <span class="section-heading">Inspector</span>
   </div>
 
   <!-- Body -->
-  <div class="inspector-body">
+  <div class="panel-body">
 
     {#if showFamilyDetail}
       <!-- Pattern family detail -->
@@ -217,8 +217,8 @@
 
     {:else if forgeStore.status === 'idle'}
       <!-- Empty state -->
-      <div class="empty-state">
-        <span class="empty-text">Enter a prompt and synthesize</span>
+      <div class="empty-note">
+        Enter a prompt and synthesize
       </div>
 
     {:else if forgeStore.status === 'analyzing' || forgeStore.status === 'optimizing' || forgeStore.status === 'scoring'}
@@ -279,7 +279,7 @@
           {#if isHeuristicScored}
             <div class="meta-row">
               <span class="meta-label">Scoring</span>
-              <span class="meta-value meta-value--yellow">heuristic</span>
+              <span class="data-value neon-yellow">heuristic</span>
             </div>
           {/if}
           {#if forgeStore.result?.provider}
@@ -311,42 +311,10 @@
 </aside>
 
 <style>
-  .inspector {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    overflow: hidden;
-  }
 
-  .inspector-header {
-    display: flex;
-    align-items: center;
-    height: 24px;
-    padding: 0 6px;
-    border-bottom: 1px solid var(--color-border-subtle);
-    flex-shrink: 0;
-  }
 
-  .inspector-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 6px;
-  }
 
-  /* Empty state */
-  .empty-state {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 80px;
-  }
 
-  .empty-text {
-    font-size: 11px;
-    color: var(--color-text-dim);
-    font-family: var(--font-sans);
-    text-align: center;
-  }
 
   /* Phase / spinner state */
   .phase-state {
@@ -457,9 +425,6 @@
     color: var(--color-neon-cyan);
   }
 
-  .meta-value--yellow {
-    color: var(--color-neon-yellow);
-  }
 
   /* Error state */
   .error-state {

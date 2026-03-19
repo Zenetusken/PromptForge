@@ -178,46 +178,10 @@
     gap: 4px;
   }
 
-  .action-btn {
-    height: 18px;
-    padding: 0 6px;
-    background: transparent;
-    border: 1px solid var(--color-border-subtle);
-    color: var(--color-text-dim);
-    font-family: var(--font-display);
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    line-height: 16px;
-    cursor: pointer;
-    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                color 200ms cubic-bezier(0.16, 1, 0.3, 1);
-    white-space: nowrap;
-  }
 
-  .action-btn:hover {
-    background: var(--color-bg-hover);
-    border-color: var(--color-border-accent);
-    color: var(--color-text-primary);
-  }
 
-  .action-btn--active {
-    border-color: var(--color-border-accent);
-    color: var(--color-text-primary);
-    background: var(--color-bg-hover);
-  }
 
-  .action-btn--primary {
-    border-color: var(--color-neon-cyan);
-    color: var(--color-neon-cyan);
-  }
 
-  .action-btn--primary:hover {
-    background: rgba(0, 229, 255, 0.08);
-    border-color: var(--color-neon-cyan);
-    color: var(--color-neon-cyan);
-  }
 
   .prompt-output-wrap {
     flex: 1;

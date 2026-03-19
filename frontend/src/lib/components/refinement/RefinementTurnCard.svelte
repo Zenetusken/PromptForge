@@ -129,7 +129,7 @@
     padding: 0 4px;
     line-height: 16px;
     flex-shrink: 0;
-    border-radius: 2px;
+    border-radius: 0;
   }
 
   .turn-request {

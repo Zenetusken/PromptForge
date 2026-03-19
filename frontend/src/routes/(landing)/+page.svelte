@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Logo from '$lib/components/shared/Logo.svelte';
   import Navbar from '$lib/components/landing/Navbar.svelte';
   import Footer from '$lib/components/landing/Footer.svelte';
   import { base } from '$app/paths';
@@ -70,9 +71,12 @@
   <section id="hero" class="hero" aria-labelledby="hero-heading">
     <div class="hero__container">
       <div class="hero__content" data-animate style="--delay:200ms;">
+        <div style="margin-bottom: 32px; display: flex; justify-content: center;">
+          <Logo size={80} variant="mark" />
+        </div>
         <h1 id="hero-heading" class="hero__headline">
           Prompts In.<br/>
-          <span class="text-gradient-forge">Better Prompts Out.</span>
+          <span style="color: var(--color-neon-cyan);">Better Prompts Out.</span>
         </h1>
         <p class="hero__subheading">
           AI-powered prompt optimization pipeline. Analyze, rewrite, and score — completely free. No API key. No subscription. Your IDE's model does the work.
@@ -370,7 +374,7 @@
 
     <div class="trust-cta" data-animate>
       <h2 id="cta-heading" class="trust-cta__headline">
-        <span class="text-gradient-forge">STOP GUESSING. START MEASURING.</span>
+        <span class="">STOP GUESSING. START MEASURING.</span>
       </h2>
       <p class="trust-cta__sub">
         Every prompt scored. Every improvement tracked. Every iteration versioned.
@@ -514,7 +518,7 @@
   .mockup__dot {
     width: 6px;
     height: 6px;
-    border-radius: 9999px;
+    border-radius: 0;
     opacity: 0.7;
   }
 
@@ -957,8 +961,6 @@
     border-top: 1px solid var(--color-border-subtle);
     border-bottom: 1px solid var(--color-border-subtle);
     padding: 12px 0;
-    mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
   }
 
   .logo-strip__track {
@@ -1016,8 +1018,7 @@
   .trust-section {
     padding: 40px 16px;
     background: var(--color-bg-secondary);
-    border-top: 1px solid;
-    border-image: linear-gradient(135deg, #00e5ff 0%, #7c3aed 50%, #a855f7 100%) 1;
+    border-top: 1px solid; border-color: var(--color-neon-cyan);
   }
 
   .trust-mission {

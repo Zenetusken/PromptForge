@@ -78,6 +78,7 @@ archive/
 
 # Scratch / experiment files
 test_svg*.html
+fix_*.py
 
 # Separate projects / experiments
 VSGithub/
