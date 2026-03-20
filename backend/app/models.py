@@ -64,6 +64,8 @@ class Optimization(Base):
     intent_label = Column(String, nullable=True)
     domain = Column(String, nullable=True)
     embedding = Column(LargeBinary, nullable=True)
+    taxonomy_node_id = Column(String, ForeignKey("taxonomy_nodes.id"), nullable=True)
+    domain_raw = Column(String, nullable=True)
 
 
 class Feedback(Base):
@@ -99,6 +101,8 @@ class PatternFamily(Base):
     usage_count = Column(Integer, default=0, nullable=False)
     member_count = Column(Integer, default=1, nullable=False)
     avg_score = Column(Float, nullable=True)
+    taxonomy_node_id = Column(String, ForeignKey("taxonomy_nodes.id"), nullable=True)
+    domain_raw = Column(String, nullable=True)
     created_at = Column(DateTime, default=_utcnow, nullable=False)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
 
@@ -127,6 +131,77 @@ class OptimizationPattern(Base):
     meta_pattern_id = Column(String, ForeignKey("meta_patterns.id"), nullable=True)
     relationship = Column(String, nullable=False)  # "source" or "applied"
     created_at = Column(DateTime, default=_utcnow, nullable=False)
+
+
+# --- Taxonomy tables (Evolutionary Taxonomy Engine) ---
+
+class TaxonomyNode(Base):
+    __tablename__ = "taxonomy_nodes"
+    __table_args__ = (
+        Index("ix_taxonomy_parent", "parent_id"),
+        Index("ix_taxonomy_state", "state"),
+        Index("ix_taxonomy_persistence", "persistence"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    parent_id = Column(String, ForeignKey("taxonomy_nodes.id"), nullable=True)
+
+    # Cluster identity
+    label = Column(String, nullable=False)
+    label_generated_at = Column(DateTime, default=_utcnow, nullable=False)
+
+    # Embedding state
+    centroid_embedding = Column(LargeBinary, nullable=False)
+    member_count = Column(Integer, default=0, nullable=False)
+
+    # Quality metrics (updated each warm-path cycle)
+    coherence = Column(Float, default=0.0, nullable=False)
+    separation = Column(Float, default=1.0, nullable=False)
+    stability = Column(Float, default=1.0, nullable=False)
+    persistence = Column(Float, default=0.0, nullable=False)
+
+    # Lifecycle
+    state = Column(String, default="candidate", nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    confirmed_at = Column(DateTime, nullable=True)
+    retired_at = Column(DateTime, nullable=True)
+    observations = Column(Integer, default=0, nullable=False)
+
+    # Usage (propagated up tree — spec Section 7.8)
+    usage_count = Column(Integer, default=0, nullable=False)
+
+    # UMAP projection (cached)
+    umap_x = Column(Float, nullable=True)
+    umap_y = Column(Float, nullable=True)
+    umap_z = Column(Float, nullable=True)
+
+    # Generated color
+    color_hex = Column(String, default="#7a7a9e", nullable=False)
+
+
+class TaxonomySnapshot(Base):
+    __tablename__ = "taxonomy_snapshots"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    trigger = Column(String, nullable=False)  # 'warm_path' | 'cold_path' | 'manual'
+
+    # System-wide metrics
+    q_system = Column(Float, nullable=False)
+    q_coherence = Column(Float, nullable=False)
+    q_separation = Column(Float, nullable=False)
+    q_coverage = Column(Float, nullable=False)
+    q_dbcv = Column(Float, default=0.0, nullable=False)
+
+    # What changed
+    operations = Column(Text, default="[]", nullable=False)  # JSON list
+    nodes_created = Column(Integer, default=0, nullable=False)
+    nodes_retired = Column(Integer, default=0, nullable=False)
+    nodes_merged = Column(Integer, default=0, nullable=False)
+    nodes_split = Column(Integer, default=0, nullable=False)
+
+    # Recovery
+    tree_state = Column(Text, nullable=True)  # JSON: node IDs + parent edges
 
 
 # --- Ported tables (GitHub/Embedding) ---
