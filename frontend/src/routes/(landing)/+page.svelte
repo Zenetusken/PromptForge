@@ -1264,7 +1264,6 @@
     padding: 140px 16px;
     background: var(--color-bg-secondary);
     border-top: 1px solid var(--color-neon-cyan);
-    min-height: 85vh;
     display: flex;
     flex-direction: column;
     justify-content: center;
