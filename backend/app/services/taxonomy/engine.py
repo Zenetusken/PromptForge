@@ -1820,3 +1820,93 @@ class TaxonomyEngine:
         # Reverse so list goes root → leaf
         labels.reverse()
         return labels
+
+    # ------------------------------------------------------------------
+    # Read API (Spec Section 6.3)
+    # ------------------------------------------------------------------
+
+    async def get_tree(
+        self,
+        db: AsyncSession,
+        min_persistence: float = 0.0,
+    ) -> list[dict]:
+        query = select(TaxonomyNode).where(
+            TaxonomyNode.state.in_(["confirmed", "candidate"])
+        )
+        if min_persistence > 0:
+            query = query.where(TaxonomyNode.persistence >= min_persistence)
+        result = await db.execute(query)
+        nodes = result.scalars().all()
+        return [self._node_to_dict(n) for n in nodes]
+
+    async def get_node(
+        self,
+        node_id: str,
+        db: AsyncSession,
+    ) -> dict | None:
+        result = await db.execute(
+            select(TaxonomyNode).where(TaxonomyNode.id == node_id)
+        )
+        node = result.scalar_one_or_none()
+        if not node:
+            return None
+        node_dict = self._node_to_dict(node)
+        # Add children
+        children_result = await db.execute(
+            select(TaxonomyNode).where(TaxonomyNode.parent_id == node_id)
+        )
+        children = children_result.scalars().all()
+        node_dict["children"] = [self._node_to_dict(c) for c in children]
+        # Add breadcrumb
+        node_dict["breadcrumb"] = await self._build_breadcrumb(db, node)
+        # Add family count
+        fam_result = await db.execute(
+            select(PatternFamily).where(PatternFamily.taxonomy_node_id == node_id)
+        )
+        node_dict["family_count"] = len(fam_result.scalars().all())
+        return node_dict
+
+    async def get_stats(self, db: AsyncSession) -> dict:
+        all_result = await db.execute(select(TaxonomyNode))
+        all_nodes = all_result.scalars().all()
+        confirmed = sum(1 for n in all_nodes if n.state == "confirmed")
+        candidate = sum(1 for n in all_nodes if n.state == "candidate")
+        retired = sum(1 for n in all_nodes if n.state == "retired")
+        # Family count
+        fam_result = await db.execute(select(PatternFamily))
+        total_families = len(fam_result.scalars().all())
+        # Latest snapshot
+        try:
+            from app.services.taxonomy.snapshot import get_latest_snapshot
+
+            latest = await get_latest_snapshot(db)
+        except ImportError:
+            latest = None
+        q_system = latest.q_system if latest else None
+        return {
+            "confirmed_nodes": confirmed,
+            "candidate_nodes": candidate,
+            "retired_nodes": retired,
+            "total_families": total_families,
+            "q_system": q_system,
+            "warm_path_age": self._warm_path_age,
+        }
+
+    @staticmethod
+    def _node_to_dict(node: TaxonomyNode) -> dict:
+        return {
+            "id": node.id,
+            "label": node.label,
+            "parent_id": node.parent_id,
+            "state": node.state,
+            "member_count": node.member_count or 0,
+            "coherence": node.coherence,
+            "separation": node.separation,
+            "persistence": node.persistence,
+            "color_hex": node.color_hex,
+            "umap_x": node.umap_x,
+            "umap_y": node.umap_y,
+            "umap_z": node.umap_z,
+            "usage_count": node.usage_count or 0,
+            "created_at": node.created_at.isoformat() if node.created_at else None,
+        }
