@@ -58,6 +58,15 @@ describe('EditorStore', () => {
     });
   });
 
+  describe('focusPrompt', () => {
+    it('sets activeTabId to PROMPT_TAB_ID', () => {
+      editorStore.openTab({ id: 'result-1', title: 'Result', type: 'result' });
+      expect(editorStore.activeTabId).toBe('result-1');
+      editorStore.focusPrompt();
+      expect(editorStore.activeTabId).toBe(PROMPT_TAB_ID);
+    });
+  });
+
   describe('result cache', () => {
     it('caches and retrieves results', () => {
       const result = mockOptimizationResult();

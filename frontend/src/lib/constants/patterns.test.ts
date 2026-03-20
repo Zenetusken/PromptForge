@@ -19,22 +19,26 @@ describe('domainColor', () => {
 });
 
 describe('scoreColor', () => {
-  it('returns correct token for high score', () => {
-    const color = scoreColor(9.0);
-    expect(typeof color).toBe('string');
-    expect(color.length).toBeGreaterThan(0);
+  it('returns neon-green for high score (>= 7.5)', () => {
+    expect(scoreColor(9.0)).toBe('var(--color-neon-green)');
+    expect(scoreColor(7.5)).toBe('var(--color-neon-green)');
+    expect(scoreColor(10)).toBe('var(--color-neon-green)');
   });
-  it('returns correct token for low score', () => {
-    const color = scoreColor(3.0);
-    expect(typeof color).toBe('string');
+  it('returns neon-yellow for mid score (>= 5.0, < 7.5)', () => {
+    expect(scoreColor(5.0)).toBe('var(--color-neon-yellow)');
+    expect(scoreColor(7.0)).toBe('var(--color-neon-yellow)');
+    expect(scoreColor(7.49)).toBe('var(--color-neon-yellow)');
   });
-  it('handles null score', () => {
-    const color = scoreColor(null);
-    expect(typeof color).toBe('string');
+  it('returns neon-red for low score (> 0, < 5.0)', () => {
+    expect(scoreColor(3.0)).toBe('var(--color-neon-red)');
+    expect(scoreColor(4.99)).toBe('var(--color-neon-red)');
+    expect(scoreColor(0.1)).toBe('var(--color-neon-red)');
   });
-  it('handles boundary values (0, 5, 7, 10)', () => {
-    for (const s of [0, 5, 7, 10]) {
-      expect(typeof scoreColor(s)).toBe('string');
-    }
+  it('returns text-dim for null score', () => {
+    expect(scoreColor(null)).toBe('var(--color-text-dim)');
+  });
+  it('returns text-dim for zero or negative score', () => {
+    expect(scoreColor(0)).toBe('var(--color-text-dim)');
+    expect(scoreColor(-1)).toBe('var(--color-text-dim)');
   });
 });

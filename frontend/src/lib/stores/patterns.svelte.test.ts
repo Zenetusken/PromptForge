@@ -234,6 +234,43 @@ describe('PatternStore', () => {
     });
   });
 
+  describe('resetTracking', () => {
+    it('resets _lastLength to 0 so next small input does not trigger', async () => {
+      // Simulate a paste that sets _lastLength to 60
+      const fetchMock = mockFetch([
+        { match: '/patterns/match', response: { match: null } },
+      ]);
+      patternsStore.checkForPatterns('A'.repeat(60));
+      await flushAll();
+      expect(fetchMock).toHaveBeenCalledOnce();
+
+      fetchMock.mockClear();
+
+      // After resetTracking, _lastLength should be 0 again
+      patternsStore.resetTracking();
+
+      // A 10-char input from 0 = delta 10, which is < 50, so should NOT trigger
+      patternsStore.checkForPatterns('A'.repeat(10));
+      await flushAll();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('allows re-triggering paste detection after reset', async () => {
+      // Set _lastLength to 60 via a paste
+      mockFetch([{ match: '/patterns/match', response: { match: null } }]);
+      patternsStore.checkForPatterns('A'.repeat(60));
+      await flushAll();
+
+      patternsStore.resetTracking();
+
+      // Now a 60-char input from 0 = delta 60, should trigger
+      const fetchMock2 = mockFetch([{ match: '/patterns/match', response: { match: null } }]);
+      patternsStore.checkForPatterns('B'.repeat(60));
+      await flushAll();
+      expect(fetchMock2).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('selectFamily', () => {
     it('sets selectedFamilyId and loads family detail', async () => {
       const detail = {

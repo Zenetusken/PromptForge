@@ -24,14 +24,13 @@ describe('formatScore', () => {
 
 describe('formatDelta', () => {
   it('formats positive delta with + prefix', () => {
-    expect(formatDelta(2.5)).toMatch(/^\+/);
+    expect(formatDelta(2.5)).toBe('+2.5');
   });
   it('formats negative delta with - prefix', () => {
-    expect(formatDelta(-1.3)).toMatch(/^-/);
+    expect(formatDelta(-1.3)).toBe('-1.3');
   });
-  it('formats zero delta', () => {
-    const result = formatDelta(0);
-    expect(result).toContain('0');
+  it('formats zero delta without + prefix', () => {
+    expect(formatDelta(0)).toBe('0.0');
   });
   it('respects custom decimals', () => {
     expect(formatDelta(2.567, 2)).toContain('2.57');

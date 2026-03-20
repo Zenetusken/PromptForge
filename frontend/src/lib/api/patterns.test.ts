@@ -6,58 +6,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('Pattern API', () => {
-  beforeEach(() => {
-    mockFetch([
-      { match: '/api/patterns/match', response: { match: { family: mockPatternFamily(), meta_patterns: [mockMetaPattern()], similarity: 0.85 } } },
-      { match: '/api/patterns/graph', response: { center: { total_families: 1, total_patterns: 1, total_optimizations: 1 }, families: [], edges: [] } },
-      { match: '/api/patterns/families/', response: mockPatternFamily() },
-      { match: '/api/patterns/families', response: { total: 1, count: 1, offset: 0, has_more: false, next_offset: null, items: [mockPatternFamily()] } },
-      { match: '/api/patterns/search', response: [] },
-      { match: '/api/patterns/stats', response: { total_families: 5, total_patterns: 12, total_optimizations: 30, domain_distribution: {} } },
-    ]);
-  });
-
-  it('matchPattern sends POST with prompt_text', async () => {
-    const result = await matchPattern('test prompt');
-    expect(result.match).toBeTruthy();
-    expect(result.match!.similarity).toBe(0.85);
-  });
-
-  it('getPatternGraph returns graph data', async () => {
-    const graph = await getPatternGraph();
-    expect(graph.center.total_families).toBe(1);
-  });
-
-  it('listFamilies returns paginated result', async () => {
-    const result = await listFamilies();
-    expect(result.items).toHaveLength(1);
-  });
-
-  it('getFamilyDetail returns family with meta-patterns', async () => {
-    const detail = await getFamilyDetail('fam-1');
-    expect(detail).toBeTruthy();
-  });
-
-  it('searchPatterns returns array', async () => {
-    const results = await searchPatterns('test');
-    expect(Array.isArray(results)).toBe(true);
-  });
-
-  it('getPatternStats returns stats', async () => {
-    const stats = await getPatternStats();
-    expect(stats.total_families).toBe(5);
-  });
-
-  it('renameFamily sends PATCH', async () => {
-    mockFetch([{ match: '/api/patterns/families/', response: { id: 'fam-1', intent_label: 'New Name' } }]);
-    const result = await renameFamily('fam-1', 'New Name');
-    expect(result.intent_label).toBe('New Name');
-  });
-});
-
-// ── Additional coverage tests ────────────────────────────────────
-
 describe('matchPattern - URL and method', () => {
   it('sends POST to /patterns/match with prompt_text in body', async () => {
     const mock = mockFetch([{
@@ -143,10 +91,10 @@ describe('listFamilies - params', () => {
 
 describe('getFamilyDetail - URL construction', () => {
   it('calls GET /patterns/families/:id', async () => {
-    const detail = { ...mockPatternFamily(), updated_at: null, meta_patterns: [], optimizations: [] };
+    const detail = { ...mockPatternFamily({ id: 'fam-42' }), updated_at: null, meta_patterns: [], optimizations: [] };
     const mock = mockFetch([{ match: '/patterns/families/fam-42', response: detail }]);
     const result = await getFamilyDetail('fam-42');
-    expect(result.id).toBe('fam-1'); // mockPatternFamily returns id: fam-1
+    expect(result.id).toBe('fam-42');
     const [url] = mock.mock.calls[0];
     expect(url).toContain('/patterns/families/fam-42');
   });

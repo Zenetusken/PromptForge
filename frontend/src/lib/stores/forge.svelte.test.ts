@@ -338,6 +338,46 @@ describe('ForgeStore', () => {
       expect(forgeStore.error).toBeNull();
       expect(forgeStore.scores).toBeNull();
     });
+
+    it('calls patternsStore.resetTracking()', () => {
+      const resetTracking = vi.spyOn(patternsStore, 'resetTracking');
+      forgeStore.reset();
+      expect(resetTracking).toHaveBeenCalledOnce();
+    });
+
+    it('clears passthrough and routing state', () => {
+      forgeStore.assembledPrompt = 'Assembled';
+      forgeStore.passthroughTraceId = 'pt-1';
+      forgeStore.passthroughStrategy = 'chain-of-thought';
+      forgeStore.routingDecision = { tier: 'internal', provider: 'cli', reason: 'test', degraded_from: null };
+      forgeStore.appliedPatternIds = ['mp-1'];
+      forgeStore.familyId = 'fam-1';
+      forgeStore.reset();
+      expect(forgeStore.assembledPrompt).toBeNull();
+      expect(forgeStore.passthroughTraceId).toBeNull();
+      expect(forgeStore.passthroughStrategy).toBeNull();
+      expect(forgeStore.routingDecision).toBeNull();
+      expect(forgeStore.appliedPatternIds).toBeNull();
+      expect(forgeStore.familyId).toBeNull();
+    });
+  });
+
+  describe('_saveSession', () => {
+    it('writes traceId to localStorage', () => {
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+      const result = mockOptimizationResult({ trace_id: 'trace-save-1' });
+      forgeStore.loadFromRecord(result as any);
+      expect(setItem).toHaveBeenCalledWith('synthesis:last_trace_id', 'trace-save-1');
+    });
+
+    it('does not throw when localStorage is unavailable', () => {
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
+      const result = mockOptimizationResult({ trace_id: 'trace-full' });
+      // Should not throw
+      expect(() => forgeStore.loadFromRecord(result as any)).not.toThrow();
+    });
   });
 
   describe('forge input validation', () => {

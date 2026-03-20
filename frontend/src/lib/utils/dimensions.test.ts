@@ -2,24 +2,25 @@ import { describe, it, expect } from 'vitest';
 import { DIMENSION_LABELS, PHASE_LABELS, getPhaseLabel } from './dimensions';
 
 describe('DIMENSION_LABELS', () => {
-  it('has all 5 dimensions', () => {
-    expect(Object.keys(DIMENSION_LABELS)).toEqual(
-      expect.arrayContaining(['clarity', 'specificity', 'structure', 'faithfulness', 'conciseness'])
-    );
-  });
-  it('values are non-empty strings', () => {
-    Object.values(DIMENSION_LABELS).forEach((v) => {
-      expect(typeof v).toBe('string');
-      expect(v.length).toBeGreaterThan(0);
+  it('has all 5 dimensions with correct labels', () => {
+    expect(DIMENSION_LABELS).toEqual({
+      clarity: 'Clarity',
+      specificity: 'Specificity',
+      structure: 'Structure',
+      faithfulness: 'Faithfulness',
+      conciseness: 'Conciseness',
     });
   });
 });
 
 describe('PHASE_LABELS', () => {
-  it('has labels for known phases', () => {
-    expect(PHASE_LABELS).toHaveProperty('analyzing');
-    expect(PHASE_LABELS).toHaveProperty('optimizing');
-    expect(PHASE_LABELS).toHaveProperty('scoring');
+  it('has correct labels for all phases', () => {
+    expect(PHASE_LABELS).toEqual({
+      analyzing: 'Analyzing',
+      optimizing: 'Optimizing',
+      scoring: 'Scoring',
+      passthrough: 'Passthrough',
+    });
   });
 });
 
