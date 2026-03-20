@@ -603,6 +603,7 @@
 
   .hero__container {
     max-width: 1120px;
+    width: 100%;
     margin: 0 auto;
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -750,6 +751,10 @@
      ================================================================ */
   .pipeline-section {
     padding: 140px 16px;
+    min-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     position: relative;
   }
 
@@ -760,14 +765,16 @@
 
   .pipeline-sticky {
     max-width: 1120px;
+    width: 100%;
     margin: 0 auto;
   }
 
   .pipeline-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
+    gap: 24px;
     align-items: stretch;
+    min-width: 0;
   }
 
   .pipeline-phase {
@@ -776,6 +783,7 @@
     border: 1px solid var(--color-border-subtle);
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
 
   .pipeline-phase__header {
@@ -855,6 +863,10 @@
      ================================================================ */
   .section {
     padding: 140px 16px;
+    min-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     position: relative;
   }
 
@@ -875,6 +887,7 @@
 
   .callout-bar__inner {
     max-width: 1120px;
+    width: 100%;
     margin: 0 auto;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -910,22 +923,25 @@
      ================================================================ */
   .example-container {
     max-width: 1120px;
+    width: 100%;
     margin: 0 auto;
   }
 
   .example-panels {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 24px;
+    margin-bottom: 24px;
     align-items: stretch;
+    min-width: 0;
   }
 
   .example-panel {
-    padding: 12px;
+    padding: 16px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
 
   .example-panel--before {
@@ -958,6 +974,8 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    overflow-x: auto;
+    padding-bottom: 8px;
   }
 
   .example-h2 {
@@ -977,6 +995,10 @@
     color: var(--color-text-secondary);
     margin: 0;
     line-height: 1.5;
+  }
+
+  .example-optimized .example-line {
+    white-space: nowrap;
   }
 
   /* ---- Score Comparison ---- */
@@ -1129,15 +1151,17 @@
 
   .integrations-container {
     max-width: 1120px;
+    width: 100%;
     margin: 0 auto;
   }
 
   .integrations-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 24px;
+    margin-bottom: 24px;
     align-items: stretch;
+    min-width: 0;
   }
 
   .integration-card {
@@ -1147,6 +1171,7 @@
     transition: all var(--duration-hover) var(--ease-spring);
     display: flex;
     flex-direction: column;
+    min-width: 0;
   }
 
   .integration-card:hover {
@@ -1239,6 +1264,10 @@
     padding: 140px 16px;
     background: var(--color-bg-secondary);
     border-top: 1px solid var(--color-neon-cyan);
+    min-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     position: relative;
     text-align: center;
   }
