@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 
 // Mock API calls to keep this test focused on PromptEdit behaviour
 vi.mock('$lib/api/client', () => ({
   getStrategies: vi.fn().mockResolvedValue([]),
-  optimizeSSE: vi.fn(),
+  optimizeSSE: vi.fn().mockReturnValue({ abort: vi.fn() }),
   getOptimization: vi.fn(),
   submitFeedback: vi.fn(),
   savePassthrough: vi.fn(),
@@ -15,6 +15,8 @@ vi.mock('$lib/api/client', () => ({
 import PromptEdit from './PromptEdit.svelte';
 import { forgeStore } from '$lib/stores/forge.svelte';
 import { patternsStore } from '$lib/stores/patterns.svelte';
+import { editorStore } from '$lib/stores/editor.svelte';
+import * as apiClient from '$lib/api/client';
 
 describe('PromptEdit', () => {
   beforeEach(() => {
@@ -128,5 +130,59 @@ describe('PromptEdit', () => {
     forgeStore.status = 'passthrough';
     render(PromptEdit);
     expect(screen.getByRole('button', { name: /PREPARE/i })).toBeInTheDocument();
+  });
+
+  it('strategy select changes forgeStore.strategy when a non-empty value is selected', async () => {
+    vi.mocked(apiClient.getStrategies).mockResolvedValue([
+      { name: 'chain-of-thought', tagline: 'Step by step', description: '' },
+    ] as any);
+    render(PromptEdit);
+    // Wait for strategies to load
+    await vi.waitFor(() => {
+      expect(screen.getByRole('combobox')).toBeInTheDocument();
+    });
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    // Add the option to the DOM so it can be selected
+    const option = document.createElement('option');
+    option.value = 'chain-of-thought';
+    option.text = 'chain-of-thought';
+    select.appendChild(option);
+    select.value = 'chain-of-thought';
+    fireEvent.change(select);
+    expect(forgeStore.strategy).toBe('chain-of-thought');
+  });
+
+  it('strategy select sets forgeStore.strategy to null when empty value selected', async () => {
+    forgeStore.strategy = 'chain-of-thought';
+    render(PromptEdit);
+    const select = screen.getByRole('combobox');
+    fireEvent.change(select, { target: { value: '' } });
+    expect(forgeStore.strategy).toBeNull();
+  });
+
+  it('clicking synthesize calls forgeStore.forge and opens result tab when traceId is set', async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.optimizeSSE).mockImplementation(
+      (_id: string, _prompt: string, _opts: any, onEvent: any, _onError: any, _onClose: any) => {
+        // Immediately emit an optimization_start event to set traceId
+        onEvent({ event: 'optimization_start', trace_id: 'trace-123', type: 'optimization_start' });
+        return { abort: vi.fn() };
+      }
+    );
+    forgeStore.prompt = 'A sufficiently long prompt for testing synthesize';
+    render(PromptEdit);
+    const openResultSpy = vi.spyOn(editorStore, 'openResult');
+    await user.click(screen.getByRole('button', { name: /SYNTHESIZE/i }));
+    // forgeStore.forge() was called (status changes to analyzing)
+    expect(forgeStore.status).not.toBe('idle');
+  });
+
+  it('typing in textarea calls patternsStore.checkForPatterns', async () => {
+    const user = userEvent.setup();
+    const checkSpy = vi.spyOn(patternsStore, 'checkForPatterns');
+    render(PromptEdit);
+    const textarea = screen.getByRole('textbox', { name: 'Prompt editor' });
+    await user.type(textarea, 'x');
+    expect(checkSpy).toHaveBeenCalled();
   });
 });

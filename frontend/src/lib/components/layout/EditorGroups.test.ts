@@ -138,4 +138,89 @@ describe('EditorGroups', () => {
     expect(screen.getAllByRole('tab').length).toBe(1);
     expect(screen.getByRole('tab', { name: 'Prompt' })).toBeInTheDocument();
   });
+
+  it('shows PassthroughView when forgeStore.status is passthrough', async () => {
+    forgeStore.status = 'passthrough';
+    render(EditorGroups);
+    // PassthroughView is rendered in the prompt tab when status = passthrough
+    // The mock renders nothing, so just confirm no crash
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+  });
+
+  it('renders diff tab when diff tab is open', async () => {
+    editorStore.openDiff('opt-diff-1');
+    render(EditorGroups);
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.length).toBe(2);
+    // diff tab should be present
+    const diffTab = tabs.find(t => t.textContent?.includes('~') || t.getAttribute('aria-selected') === 'true');
+    expect(diffTab).toBeDefined();
+  });
+
+  it('renders placeholder when diff tab has no diff data', async () => {
+    // Open diff tab without any result cached
+    editorStore.openDiff('opt-no-data');
+    render(EditorGroups);
+    expect(screen.getByText(/No diff available/)).toBeInTheDocument();
+  });
+
+  it('renders mindmap tab when mindmap is open', async () => {
+    editorStore.openMindmap();
+    render(EditorGroups);
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.some(t => t.textContent?.includes('Pattern Graph'))).toBe(true);
+  });
+
+  it('shows result tab with ForgeArtifact when forge is complete', async () => {
+    const { mockOptimizationResult } = await import('$lib/test-utils');
+    const result = mockOptimizationResult({ id: 'opt-result-1' });
+    forgeStore.result = result as any;
+    forgeStore.status = 'complete';
+    editorStore.openResult('opt-result-1');
+    render(EditorGroups);
+    // ForgeArtifact is mocked but the result tab should be active
+    expect(editorStore.activeTab?.type).toBe('result');
+  });
+
+  it('shows result split with RefinementTimeline when forge is complete and result tab active', async () => {
+    const { mockOptimizationResult, mockRefinementTurn } = await import('$lib/test-utils');
+    const result = mockOptimizationResult({ id: 'opt-split-1' });
+    forgeStore.result = result as any;
+    forgeStore.status = 'complete';
+    refinementStore.turns = [mockRefinementTurn() as any];
+    editorStore.openResult('opt-split-1');
+    render(EditorGroups);
+    expect(editorStore.activeTab?.type).toBe('result');
+  });
+
+  it('tab close button triggers keydown (Enter) to close', async () => {
+    const user = userEvent.setup();
+    editorStore.openResult('opt-keydown-1');
+    render(EditorGroups);
+
+    const closeBtn = screen.getAllByRole('button').find(b =>
+      (b.getAttribute('aria-label') ?? '').startsWith('Close ')
+    );
+    expect(closeBtn).toBeDefined();
+
+    // Tab count before
+    expect(screen.getAllByRole('tab').length).toBe(2);
+
+    // Simulate keyboard Enter on close button
+    await user.type(closeBtn!, '{Enter}');
+
+    expect(screen.getAllByRole('tab').length).toBe(1);
+  });
+
+  it('tab bar scroll is handled by wheel event', async () => {
+    render(EditorGroups);
+    const tabBar = screen.getByRole('tablist', { name: 'Editor tabs' });
+
+    // Simulate wheel event — should not throw
+    const wheelEvent = new WheelEvent('wheel', { deltaY: 100, bubbles: true });
+    Object.defineProperty(wheelEvent, 'currentTarget', { value: tabBar });
+    tabBar.dispatchEvent(wheelEvent);
+
+    expect(tabBar).toBeInTheDocument();
+  });
 });

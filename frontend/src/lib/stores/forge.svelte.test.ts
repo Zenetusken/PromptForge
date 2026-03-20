@@ -1,9 +1,23 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+
+// Mock $lib/api/client before any imports that use it
+vi.mock('$lib/api/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/api/client')>();
+  return {
+    ...actual,
+    optimizeSSE: vi.fn(() => ({ abort: vi.fn() })),
+    getOptimization: vi.fn().mockResolvedValue(null),
+    submitFeedback: vi.fn().mockResolvedValue({}),
+    savePassthrough: vi.fn().mockResolvedValue({}),
+  };
+});
+
 import { forgeStore } from './forge.svelte';
 import { editorStore } from './editor.svelte';
 import { patternsStore } from './patterns.svelte';
 import { mockFetch, mockOptimizationResult, mockDimensionScores } from '../test-utils';
 import type { SSEEvent } from '$lib/api/client';
+import * as apiClient from '$lib/api/client';
 
 describe('ForgeStore', () => {
   beforeEach(() => {
@@ -338,6 +352,199 @@ describe('ForgeStore', () => {
       forgeStore.prompt = '';
       forgeStore.forge();
       expect(forgeStore.status).toBe('idle');
+    });
+  });
+
+  describe('forge() — SSE call', () => {
+    it('calls optimizeSSE and sets status to analyzing when prompt is valid', () => {
+      const mockController = { abort: vi.fn() };
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue(mockController);
+
+      forgeStore.prompt = 'This is a valid prompt with more than 20 characters for testing';
+      forgeStore.forge();
+
+      expect(forgeStore.status).toBe('analyzing');
+      expect(apiClient.optimizeSSE).toHaveBeenCalled();
+    });
+
+    it('aborts in-flight request when forge is called again', () => {
+      const mockController = { abort: vi.fn() };
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue(mockController);
+
+      forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
+      forgeStore.forge();
+      forgeStore.forge();
+
+      expect(mockController.abort).toHaveBeenCalled();
+    });
+
+    it('deselects pattern family before forging', () => {
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue({ abort: vi.fn() });
+
+      patternsStore.selectedFamilyId = 'fam-existing';
+      forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
+      forgeStore.forge();
+
+      expect(patternsStore.selectedFamilyId).toBeNull();
+    });
+
+    it('clears all state before forging', () => {
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue({ abort: vi.fn() });
+
+      forgeStore.error = 'Previous error';
+      forgeStore.result = mockOptimizationResult() as any;
+      forgeStore.traceId = 'old-trace';
+      forgeStore.routingDecision = { tier: 'internal', provider: 'claude-cli', reason: 'test', degraded_from: null };
+
+      forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
+      forgeStore.forge();
+
+      expect(forgeStore.error).toBeNull();
+      expect(forgeStore.result).toBeNull();
+      expect(forgeStore.traceId).toBeNull();
+      expect(forgeStore.routingDecision).toBeNull();
+    });
+
+    it('passes appliedPatternIds to optimizeSSE (captured before clearing)', () => {
+      vi.mocked(apiClient.optimizeSSE).mockClear();
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue({ abort: vi.fn() });
+
+      forgeStore.appliedPatternIds = ['mp-1', 'mp-2'];
+      forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
+      forgeStore.forge();
+
+      // optimizeSSE was called — the 6th arg is the patternIds array captured before clearing
+      expect(apiClient.optimizeSSE).toHaveBeenCalledOnce();
+      const callArgs = vi.mocked(apiClient.optimizeSSE).mock.calls[0];
+      expect(callArgs[5]).toEqual(['mp-1', 'mp-2']);
+    });
+
+    it('SSE error callback sets error status', () => {
+      vi.mocked(apiClient.getOptimization).mockRejectedValue(new Error('Not found'));
+
+      let errorCallback: (err: Error) => void = () => {};
+      vi.mocked(apiClient.optimizeSSE).mockImplementation(
+        (_p: string, _s: any, _onEvent: any, onError: any) => {
+          errorCallback = onError;
+          return { abort: vi.fn() };
+        }
+      );
+
+      forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
+      forgeStore.forge();
+
+      errorCallback(new Error('Connection dropped'));
+
+      expect(forgeStore.error).toBe('Connection dropped');
+      expect(forgeStore.status).toBe('error');
+    });
+
+    it('SSE close callback without complete event leaves status until reconnect', () => {
+      vi.mocked(apiClient.getOptimization).mockResolvedValue({ status: 'completed', ...mockOptimizationResult() } as any);
+
+      let closeCallback: () => void = () => {};
+      vi.mocked(apiClient.optimizeSSE).mockImplementation(
+        (_p: string, _s: any, _onEvent: any, _onError: any, onClose: any) => {
+          closeCallback = onClose;
+          return { abort: vi.fn() };
+        }
+      );
+
+      forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
+      forgeStore.forge();
+      forgeStore.traceId = 'trace-close-1';
+      forgeStore.status = 'analyzing';
+
+      // Close without complete event — reconnect should be triggered
+      closeCallback();
+
+      expect(forgeStore.traceId).toBe('trace-close-1');
+    });
+  });
+
+  describe('submitPassthrough', () => {
+    it('does nothing when passthroughTraceId is null', async () => {
+      forgeStore.passthroughTraceId = null;
+      // Should not throw
+      await forgeStore.submitPassthrough('some optimized prompt');
+      expect(forgeStore.status).toBe('idle');
+    });
+
+    it('calls savePassthrough and loads result on success', async () => {
+      const result = mockOptimizationResult({ id: 'opt-pt-1' });
+      vi.mocked(apiClient.savePassthrough).mockResolvedValue(result as any);
+
+      forgeStore.passthroughTraceId = 'pt-trace-1';
+      await forgeStore.submitPassthrough('Optimized content', 'Summary here');
+
+      expect(forgeStore.result).not.toBeNull();
+      expect(forgeStore.status).toBe('complete');
+    });
+
+    it('sets error on savePassthrough failure', async () => {
+      vi.mocked(apiClient.savePassthrough).mockRejectedValue(new Error('Passthrough save failed'));
+
+      forgeStore.passthroughTraceId = 'pt-trace-fail';
+      await forgeStore.submitPassthrough('Some content');
+
+      expect(forgeStore.status).toBe('error');
+      expect(forgeStore.error).toBeTruthy();
+    });
+  });
+
+  describe('restoreSession', () => {
+    it('restores session from localStorage trace_id', async () => {
+      const result = mockOptimizationResult({ id: 'opt-restore-1', trace_id: 'trace-restore-1' });
+      vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('trace-restore-1');
+      vi.mocked(apiClient.getOptimization).mockResolvedValue(result as any);
+
+      await forgeStore.restoreSession();
+
+      expect(forgeStore.result).not.toBeNull();
+    });
+
+    it('does nothing when no trace_id in localStorage', async () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+      vi.mocked(apiClient.getOptimization).mockClear();
+
+      await forgeStore.restoreSession();
+
+      expect(apiClient.getOptimization).not.toHaveBeenCalled();
+    });
+
+    it('removes invalid trace_id from localStorage on error', async () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('bad-trace');
+      const removeItem = vi.spyOn(Storage.prototype, 'removeItem');
+      vi.mocked(apiClient.getOptimization).mockRejectedValue(new Error('Not found'));
+
+      await forgeStore.restoreSession();
+
+      expect(removeItem).toHaveBeenCalledWith('synthesis:last_trace_id');
+    });
+  });
+
+  describe('cancel', () => {
+    it('sets status to idle and clears state', () => {
+      forgeStore.traceId = 'trace-1';
+      forgeStore.assembledPrompt = 'Assembled';
+      forgeStore.passthroughTraceId = 'pt-trace-1';
+      forgeStore.routingDecision = { tier: 'internal', provider: 'claude-cli', reason: 'test', degraded_from: null };
+      forgeStore.cancel();
+      expect(forgeStore.status).toBe('idle');
+      expect(forgeStore.traceId).toBeNull();
+      expect(forgeStore.assembledPrompt).toBeNull();
+      expect(forgeStore.passthroughTraceId).toBeNull();
+      expect(forgeStore.routingDecision).toBeNull();
+    });
+  });
+
+  describe('handleEvent — optimization_start event', () => {
+    it('sets traceId from optimization_start event', () => {
+      (forgeStore as any).handleEvent({
+        event: 'optimization_start',
+        trace_id: 'trace-start-1',
+      } as SSEEvent);
+      expect(forgeStore.traceId).toBe('trace-start-1');
     });
   });
 });

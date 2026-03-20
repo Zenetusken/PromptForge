@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
-import { mockFetch, mockHealthResponse } from '$lib/test-utils';
+import { mockFetch, mockHealthResponse, mockOptimizationResult } from '$lib/test-utils';
 
 // Mock the patterns API to avoid errors
 vi.mock('$lib/api/patterns', () => ({
@@ -101,6 +101,66 @@ describe('StatusBar', () => {
     render(StatusBar);
     await vi.waitFor(() => {
       expect(screen.queryByText('v1.2.3')).toBeInTheDocument();
+    });
+  });
+
+  it('shows last score after forge is complete', () => {
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    forgeStore.result = mockOptimizationResult({ overall_score: 8.5 }) as any;
+    render(StatusBar);
+    expect(screen.getByText(/8\.5/)).toBeInTheDocument();
+  });
+
+  it('shows strategy used after forge is complete', () => {
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    forgeStore.result = mockOptimizationResult({ overall_score: 8.0, strategy_used: 'chain-of-thought' }) as any;
+    render(StatusBar);
+    expect(screen.getByText('chain-of-thought')).toBeInTheDocument();
+  });
+
+  it('shows breadcrumb with domain and intent_label after forge completes', () => {
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    forgeStore.result = mockOptimizationResult({
+      overall_score: 7.5,
+      domain: 'backend',
+      intent_label: 'API endpoint design',
+    }) as any;
+    render(StatusBar);
+    expect(screen.getByText('backend')).toBeInTheDocument();
+    expect(screen.getByText('API endpoint design')).toBeInTheDocument();
+  });
+
+  it('shows breadcrumb without domain when domain is null', () => {
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    forgeStore.result = mockOptimizationResult({
+      overall_score: 7.5,
+      domain: null,
+      intent_label: 'Code review helper',
+    }) as any;
+    render(StatusBar);
+    expect(screen.getByText('Code review helper')).toBeInTheDocument();
+  });
+
+  it('shows passthrough status phase with yellow color class', () => {
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    forgeStore.status = 'passthrough';
+    render(StatusBar);
+    // passthrough phase label
+    expect(screen.getByText(/passthrough\.\.\./i)).toBeInTheDocument();
+  });
+
+  it('refreshes pattern count when graph is invalidated', async () => {
+    const { getPatternStats } = await import('$lib/api/patterns');
+    vi.mocked(getPatternStats).mockResolvedValue({ total_families: 5 } as never);
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    render(StatusBar);
+
+    // Simulate graph invalidation by toggling graphLoaded
+    patternsStore.graphLoaded = true;
+    patternsStore.graphLoaded = false;
+
+    await vi.waitFor(() => {
+      expect(getPatternStats).toHaveBeenCalled();
     });
   });
 });

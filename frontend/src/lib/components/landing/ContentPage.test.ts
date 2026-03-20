@@ -36,4 +36,71 @@ describe('ContentPage', () => {
     render(ContentPage, { props: { sections } });
     expect(screen.getByText('npm install')).toBeInTheDocument();
   });
+
+  it('renders a card-grid section', () => {
+    const sections: Section[] = [
+      {
+        type: 'card-grid',
+        columns: 2,
+        cards: [
+          { title: 'Card One', body: 'First card body' },
+          { title: 'Card Two', body: 'Second card body' },
+        ],
+      },
+    ];
+    render(ContentPage, { props: { sections } });
+    expect(screen.getByText('Card One')).toBeInTheDocument();
+  });
+
+  it('renders a timeline section', () => {
+    const sections: Section[] = [
+      {
+        type: 'timeline',
+        versions: [
+          { version: 'v1.0.0', date: '2026-01-01', items: ['Initial release'] },
+        ],
+      },
+    ];
+    render(ContentPage, { props: { sections } });
+    expect(screen.getByText('v1.0.0')).toBeInTheDocument();
+  });
+
+  it('renders a step-flow section', () => {
+    const sections: Section[] = [
+      {
+        type: 'step-flow',
+        steps: [
+          { title: 'First Step', description: 'First step description' },
+          { title: 'Second Step', description: 'Second step description' },
+        ],
+      },
+    ];
+    render(ContentPage, { props: { sections } });
+    expect(screen.getByText('First Step')).toBeInTheDocument();
+  });
+
+  it('renders a metric-bar section', () => {
+    const sections: Section[] = [
+      {
+        type: 'metric-bar',
+        label: 'Performance',
+        dimensions: [
+          { label: 'Clarity', value: 8.5 },
+          { label: 'Structure', value: 7.0 },
+        ],
+      },
+    ];
+    render(ContentPage, { props: { sections } });
+    expect(screen.getByText('Performance')).toBeInTheDocument();
+  });
+
+  it('renders multiple mixed sections', () => {
+    const sections: Section[] = [
+      { type: 'hero', heading: 'Hero Section', subheading: 'Subtitle text' },
+      { type: 'code-block', language: 'js', code: 'const x = 1;' },
+    ];
+    render(ContentPage, { props: { sections } });
+    expect(screen.getByText('Hero Section')).toBeInTheDocument();
+    expect(screen.getByText('const x = 1;')).toBeInTheDocument();
+  });
 });

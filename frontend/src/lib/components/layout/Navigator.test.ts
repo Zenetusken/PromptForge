@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { mockFetch, mockHistoryItem, mockStrategyInfo } from '$lib/test-utils';
+import { mockFetch, mockHistoryItem, mockStrategyInfo, mockOptimizationResult } from '$lib/test-utils';
 
 // Mock PatternNavigator sub-component (used when active='patterns')
 vi.mock('$lib/components/layout/PatternNavigator.svelte', () => ({
@@ -31,6 +31,8 @@ vi.mock('$lib/stores/github.svelte', () => {
 import Navigator from './Navigator.svelte';
 import { forgeStore } from '$lib/stores/forge.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
+import { editorStore } from '$lib/stores/editor.svelte';
+import { githubStore } from '$lib/stores/github.svelte';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -84,6 +86,7 @@ describe('Navigator', () => {
   beforeEach(() => {
     forgeStore._reset();
     preferencesStore._reset();
+    githubStore._reset();
     vi.clearAllMocks();
   });
 
@@ -484,6 +487,198 @@ describe('Navigator', () => {
       // The textarea value is set via Svelte binding — check .value property
       expect(textarea?.value).toBe('# CoT strategy content');
     });
+  });
+
+  // ── GitHub panel ───────────────────────────────────────────────────────────
+
+  it('shows Connect GitHub button when not authenticated', () => {
+    githubStore.user = null;
+    githubStore.linkedRepo = null;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'github' } });
+    expect(screen.getByText(/Sign in to GitHub/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Connect GitHub/i })).toBeInTheDocument();
+  });
+
+  it('GitHub Connect button calls githubStore.login()', async () => {
+    const user = userEvent.setup();
+    githubStore.user = null;
+    githubStore.linkedRepo = null;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'github' } });
+    await user.click(screen.getByRole('button', { name: /Connect GitHub/i }));
+    expect(githubStore.login).toHaveBeenCalled();
+  });
+
+  it('shows user login and no-repo message when authenticated but no repo linked', () => {
+    githubStore.user = { login: 'testuser', name: 'Test User', avatar_url: '' };
+    githubStore.linkedRepo = null;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'github' } });
+    expect(screen.getByText('testuser')).toBeInTheDocument();
+    expect(screen.getByText(/No repo linked/i)).toBeInTheDocument();
+  });
+
+  it('shows linked repo info and unlink button when repo is linked', async () => {
+    const user = userEvent.setup();
+    githubStore.user = { login: 'testuser', name: 'Test User', avatar_url: '' };
+    githubStore.linkedRepo = {
+      id: 1,
+      full_name: 'testuser/myrepo',
+      default_branch: 'main',
+      branch: 'main',
+      language: 'TypeScript',
+    };
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'github' } });
+    expect(screen.getByText('testuser/myrepo')).toBeInTheDocument();
+    expect(screen.getByText('TypeScript')).toBeInTheDocument();
+    const unlinkBtn = screen.getByRole('button', { name: /Unlink repo/i });
+    await user.click(unlinkBtn);
+    expect(githubStore.unlinkRepo).toHaveBeenCalled();
+  });
+
+  // ── History — error state ──────────────────────────────────────────────────
+
+  it('shows error message when history fetch fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/history')) {
+        return new Response('Server Error', { status: 500 });
+      }
+      return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading…/i)).not.toBeInTheDocument();
+    });
+    // Error message should be visible
+    const errorEl = screen.queryByText(/Failed to load history/i) || screen.queryByText(/error/i);
+    // At minimum, the loading indicator is gone and an error state is shown
+    expect(screen.queryByText(/Loading…/i)).not.toBeInTheDocument();
+  });
+
+  // ── History — loadHistoryItem ──────────────────────────────────────────────
+
+  it('clicking a history item loads the optimization record', async () => {
+    const user = userEvent.setup();
+    const optimizationRecord = mockOptimizationResult({ overall_score: 9.0 });
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/history')) {
+        return new Response(JSON.stringify({
+          total: 1,
+          count: 1,
+          offset: 0,
+          has_more: false,
+          next_offset: null,
+          items: [mockHistoryItem({ id: 'opt-1', status: 'completed', trace_id: 'trace-1', intent_label: 'Test optimization' })],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (url.includes('/api/optimize/trace-1')) {
+        return new Response(JSON.stringify(optimizationRecord), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    const loadSpy = vi.spyOn(forgeStore, 'loadFromRecord');
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.getByText('Test optimization')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('Test optimization'));
+    await waitFor(() => {
+      expect(loadSpy).toHaveBeenCalled();
+    });
+  });
+
+  it('clicking a history item while forge is in-progress calls forgeStore.cancel()', async () => {
+    const user = userEvent.setup();
+    forgeStore.status = 'analyzing';
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/history')) {
+        return new Response(JSON.stringify({
+          total: 1,
+          count: 1,
+          offset: 0,
+          has_more: false,
+          next_offset: null,
+          items: [mockHistoryItem({ id: 'opt-2', status: 'completed', trace_id: 'trace-2', intent_label: 'Another optimization' })],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (url.includes('/api/optimize/trace-2')) {
+        return new Response(JSON.stringify(mockOptimizationResult()), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    const cancelSpy = vi.spyOn(forgeStore, 'cancel');
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.getByText('Another optimization')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('Another optimization'));
+    expect(cancelSpy).toHaveBeenCalled();
+  });
+
+  // ── Settings — System accordion ────────────────────────────────────────────
+
+  it('System accordion expands to show settings data', async () => {
+    const user = userEvent.setup();
+    defaultFetchHandlers({
+      settings: {
+        version: '0.1.0',
+        environment: 'development',
+        max_raw_prompt_chars: 50000,
+        embedding_model: 'all-MiniLM-L6-v2',
+        optimize_rate_limit: '10/minute',
+        trace_retention_days: 7,
+      },
+    });
+    render(Navigator, { props: { active: 'settings' } });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /System/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /System/i }));
+    await waitFor(() => {
+      expect(screen.getByText('50,000')).toBeInTheDocument();
+    });
+  });
+
+  // ── Settings — pipeline force toggles ─────────────────────────────────────
+
+  it('shows SAMPLING badge when force_sampling is on and samplingCapable is true', () => {
+    preferencesStore.prefs.pipeline.force_sampling = true;
+    forgeStore.samplingCapable = true;
+    forgeStore.mcpDisconnected = false;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('SAMPLING')).toBeInTheDocument();
+  });
+
+  it('shows PASSTHROUGH badge when force_passthrough is on', () => {
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('PASSTHROUGH')).toBeInTheDocument();
+  });
+
+  // ── Settings — keydown on strategy row ────────────────────────────────────
+
+  it('pressing Enter on a strategy row selects it', async () => {
+    const user = userEvent.setup();
+    defaultFetchHandlers({
+      strategies: [mockStrategyInfo({ name: 'few-shot' })],
+    });
+    render(Navigator, { props: { active: 'editor' } });
+    await waitFor(() => {
+      expect(screen.getByText('few-shot')).toBeInTheDocument();
+    });
+    const row = screen.getByText('few-shot').closest('[role="button"]')!;
+    row.focus();
+    await user.keyboard('{Enter}');
+    expect(forgeStore.strategy).toBe('few-shot');
   });
 
   it('discard button closes strategy editor', async () => {

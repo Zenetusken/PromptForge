@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import CommandPalette from './CommandPalette.svelte';
 
@@ -171,5 +171,145 @@ describe('CommandPalette', () => {
     render(CommandPalette);
     await user.keyboard('{Control>}k{/Control}');
     expect(screen.getByRole('listbox', { name: 'Commands' })).toBeInTheDocument();
+  });
+
+  it('executes action on Enter key when an action is selected', async () => {
+    const user = userEvent.setup();
+    const { forgeStore } = await import('$lib/stores/forge.svelte');
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    // First item is 'New Prompt' — press Enter to execute
+    await user.keyboard('{Enter}');
+
+    expect(forgeStore.reset).toHaveBeenCalled();
+  });
+
+  it('executes action on click', async () => {
+    const user = userEvent.setup();
+    const { forgeStore } = await import('$lib/stores/forge.svelte');
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    // Click on 'New Prompt'
+    await user.click(screen.getByText('New Prompt'));
+
+    expect(forgeStore.reset).toHaveBeenCalled();
+  });
+
+  it('mouseenter selects item on hover', async () => {
+    const user = userEvent.setup();
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    const items = screen.getAllByRole('option');
+    // Hover over the second item
+    await user.hover(items[1]);
+
+    expect(items[1]).toHaveAttribute('aria-selected', 'true');
+    expect(items[0]).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('executes Forge action', async () => {
+    const user = userEvent.setup();
+    const { forgeStore } = await import('$lib/stores/forge.svelte');
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    // Navigate to Forge (second item)
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{Enter}');
+
+    expect(forgeStore.forge).toHaveBeenCalled();
+  });
+
+  it('executes View History action', async () => {
+    const user = userEvent.setup();
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    // Click View History
+    await user.click(screen.getByText('View History'));
+
+    expect(dispatchSpy).toHaveBeenCalled();
+  });
+
+  it('executes Link Repo action', async () => {
+    const user = userEvent.setup();
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    await user.click(screen.getByText('Link Repo'));
+
+    expect(dispatchSpy).toHaveBeenCalled();
+  });
+
+  it('executes Toggle Diff action', async () => {
+    const user = userEvent.setup();
+    const { editorStore } = await import('$lib/stores/editor.svelte');
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    await user.click(screen.getByText('Toggle Diff'));
+
+    expect(editorStore.openDiff).toHaveBeenCalled();
+  });
+
+  it('executes Copy Result action with existing result', async () => {
+    const user = userEvent.setup();
+    const { forgeStore } = await import('$lib/stores/forge.svelte');
+    vi.mocked(forgeStore).result = { optimized_prompt: 'Optimized text' } as any;
+
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    await user.click(screen.getByText('Copy Result'));
+
+    // Palette should close
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('closes palette on overlay click', async () => {
+    const user = userEvent.setup();
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    // Click the overlay (the dialog element itself)
+    const overlay = screen.getByRole('dialog');
+    // Simulate click on the overlay background
+    await user.click(overlay);
+
+    // Palette should close (depending on click target matching currentTarget)
+    // In jsdom, currentTarget === target when clicking the element directly
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('does not close palette when Escape key handler fires on overlay', async () => {
+    // Test the overlay's own keydown handler
+    const user = userEvent.setup();
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    const overlay = screen.getByRole('dialog');
+    fireEvent.keyDown(overlay, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('handles item keydown Enter to execute action', async () => {
+    const user = userEvent.setup();
+    const { forgeStore } = await import('$lib/stores/forge.svelte');
+    render(CommandPalette);
+    await user.keyboard('{Control>}k{/Control}');
+
+    const items = screen.getAllByRole('option');
+    // Trigger keydown Enter on first item
+    fireEvent.keyDown(items[0], { key: 'Enter' });
+
+    expect(forgeStore.reset).toHaveBeenCalled();
   });
 });
