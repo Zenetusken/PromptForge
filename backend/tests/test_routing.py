@@ -6,12 +6,16 @@ Covers all 5 tiers of the priority chain:
 
 from __future__ import annotations
 
+import asyncio
+import json
+from pathlib import Path
 from typing import Literal
 from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.routing import RoutingContext, RoutingState, resolve_route
+from app.services.event_bus import EventBus
+from app.services.routing import RoutingContext, RoutingManager, RoutingState, resolve_route
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -255,14 +259,6 @@ class TestEdgeCases:
 # ---------------------------------------------------------------------------
 # RoutingManager integration tests
 # ---------------------------------------------------------------------------
-
-import asyncio
-import json
-from datetime import timedelta
-from pathlib import Path
-
-from app.services.event_bus import EventBus
-from app.services.routing import RoutingManager
 
 
 @pytest.fixture

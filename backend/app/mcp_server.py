@@ -48,11 +48,11 @@ from app.schemas.pipeline_contracts import (
 from app.services.event_notification import notify_event_bus
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.mcp_session_file import MCPSessionFile
-from app.services.routing import RoutingContext, RoutingManager
 from app.services.passthrough import assemble_passthrough_prompt
 from app.services.pipeline import PipelineOrchestrator
 from app.services.preferences import PreferencesService
 from app.services.prompt_loader import PromptLoader
+from app.services.routing import RoutingContext, RoutingManager
 from app.services.sampling_pipeline import run_sampling_analyze, run_sampling_pipeline
 from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
@@ -280,10 +280,18 @@ class _CapabilityDetectionMiddleware:
         # Fire SSE events *after* the request completes so we don't block it.
         # Two triggers: reconnection (activity gap) or fresh initialize handshake.
         if reconnected:
-            payload = _routing_payload("mcp_reconnect") if _routing else {"sampling_capable": True, "reconnected": True}
+            payload = (
+                _routing_payload("mcp_reconnect")
+                if _routing
+                else {"sampling_capable": True, "reconnected": True}
+            )
             await notify_event_bus("routing_state_changed", payload)
         elif initialize_result is not None:
-            payload = _routing_payload("mcp_initialize") if _routing else {"sampling_capable": initialize_result["sampling_capable"]}
+            payload = (
+                _routing_payload("mcp_initialize")
+                if _routing
+                else {"sampling_capable": initialize_result["sampling_capable"]}
+            )
             await notify_event_bus("routing_state_changed", payload)
 
     async def _handle_get(self, scope, receive, send):
@@ -330,7 +338,11 @@ class _CapabilityDetectionMiddleware:
                         # sampling-capable (the client was previously
                         # connected and is re-establishing its SSE stream).
                         cls._write_optimistic_session()
-                        payload = _routing_payload("mcp_reconnect") if _routing else {"sampling_capable": True, "reconnected": True}
+                        payload = (
+                            _routing_payload("mcp_reconnect")
+                            if _routing
+                            else {"sampling_capable": True, "reconnected": True}
+                        )
                         await notify_event_bus("routing_state_changed", payload)
             elif message["type"] == "http.response.body" and get_is_sse:
                 # SSE stream is alive — keep last_activity fresh so the
@@ -354,7 +366,11 @@ class _CapabilityDetectionMiddleware:
                     # (uvicorn cancels the handler when the client
                     # disconnects, CancelledError is BaseException).
                     try:
-                        payload = _routing_payload("mcp_sse_closed") if _routing else {"sampling_capable": True, "disconnected": True}
+                        payload = (
+                            _routing_payload("mcp_sse_closed")
+                            if _routing
+                            else {"sampling_capable": True, "disconnected": True}
+                        )
                         await asyncio.shield(
                             notify_event_bus("routing_state_changed", payload),
                         )

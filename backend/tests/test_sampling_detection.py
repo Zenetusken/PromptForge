@@ -852,6 +852,7 @@ class TestTouchActivityWithRouting:
     def test_touch_detects_reconnection_via_routing(self, routing):
         """_touch_activity returns True when routing transitions from disconnected."""
         from dataclasses import replace as _replace
+
         from app.mcp_server import _CapabilityDetectionMiddleware
 
         routing.on_mcp_initialize(sampling_capable=True)
