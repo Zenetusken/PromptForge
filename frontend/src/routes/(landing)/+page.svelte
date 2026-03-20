@@ -750,8 +750,8 @@
      SECTION 2: PIPELINE DEEP-DIVE
      ================================================================ */
   .pipeline-section {
-    padding: 140px 16px;
-    min-height: 85vh;
+    padding: 60px 16px;
+    margin: 140px 0;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -862,8 +862,8 @@
      SECTION 3: LIVE EXAMPLE
      ================================================================ */
   .section {
-    padding: 140px 16px;
-    min-height: 85vh;
+    padding: 60px 16px;
+    margin: 140px 0;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -1261,9 +1261,12 @@
      SECTION 5: GET STARTED + TRUST
      ================================================================ */
   .trust-section {
+    margin-top: 140px;
+    margin-bottom: 0;
     padding: 60px 16px;
     background: var(--color-bg-secondary);
     border-top: 1px solid var(--color-neon-cyan);
+    border-bottom: 1px solid var(--color-border-subtle);
     display: flex;
     flex-direction: column;
     justify-content: center;
