@@ -469,7 +469,7 @@ Single Alembic revision. Clean slate — database is empty. Drop old `domain` co
 |---|---|
 | `services/pattern_extractor.py` | **Deleted.** All logic moves to taxonomy engine. |
 | `services/knowledge_graph.py` | **Trimmed.** Domain grouping moves out. Becomes thin read/serialization layer over taxonomy tree. |
-| `services/pattern_matcher.py` | **Trimmed.** Domain references replaced by `taxonomy_node_id`. |
+| `services/pattern_matcher.py` | **Deleted.** Matching logic absorbed into `TaxonomyEngine.match_prompt()` with hierarchical cascade search (Section 7.2). |
 | `schemas/pipeline_contracts.py` | **Modified.** `DomainType` deleted. `domain` becomes `str`. |
 | `services/sampling_pipeline.py` | **Modified.** Low-confidence fallback writes `domain_raw`. Domain mapping step added. |
 | `services/pipeline.py` | **Modified.** New domain-mapping step between analysis and optimization. |
@@ -508,7 +508,12 @@ class TaxonomyEngine:
 
     # --- Hot path (per-optimization) ---
     async def process_optimization(self, optimization_id: str) -> None
-    async def map_domain(self, domain_raw: str) -> TaxonomyMapping
+    async def map_domain(
+        self, domain_raw: str, applied_pattern_ids: list[str] | None = None,
+    ) -> TaxonomyMapping
+
+    # --- Pattern matching (on-paste, per-keystroke batch) ---
+    async def match_prompt(self, prompt_text: str) -> PatternMatch | None
 
     # --- Warm path (periodic) ---
     async def run_warm_path(self) -> WarmPathResult
@@ -637,7 +642,403 @@ frontend/src/lib/utils/colors.ts
 
 ---
 
-## 7. 3D Visualization Engine
+## 7. Prompt-to-Pattern Feedback Loop
+
+This section traces the complete prompt lifecycle through the taxonomy engine — from the moment a user types to the moment their optimization enriches future suggestions. Every handoff point between the existing system and the new taxonomy is specified.
+
+### 7.1 The Full Loop
+
+```
+USER TYPES          PATTERN MATCH          SUGGESTION            OPTIMIZATION
+    |                    |                     |                      |
+    v                    v                     v                      v
+[PromptEdit]  --->  [Taxonomy       --->  [PatternSugg.  --->  [Pipeline:
+ 50-char delta       Engine                onApply()            analyze ->
+ 300ms debounce      .match_prompt()]       applied IDs]         domain_map ->
+                                                                 optimize ->
+                                                                 score]
+                                                                     |
+    FUTURE MATCHES  <---  FAMILY ENRICHED  <---  EXTRACTION  <-------+
+         ^                      ^                     ^
+         |                      |                     |
+    [match_prompt()       [centroid updated     [process_optimization()
+     finds richer          meta-patterns          embed, cluster,
+     family next time]     enriched]              extract, merge]
+```
+
+### 7.2 Hierarchical Pattern Matching (Gap 1)
+
+**Current:** `PatternMatcherService` does a flat cosine search across all `PatternFamily` centroids. Returns the single best match above 0.72.
+
+**New: Cascade search through the taxonomy tree.**
+
+The `TaxonomyEngine` exposes a new method for the pattern matching hot path:
+
+```python
+async def match_prompt(
+    self, prompt_text: str, db: AsyncSession
+) -> PatternMatch | None:
+    """Hierarchical pattern matching for on-paste suggestion.
+
+    Search strategy (top-down cascade):
+    1. Embed prompt text
+    2. Search confirmed leaf-level families (same as today)
+       - If best match >= family_threshold -> return family match
+    3. If no leaf match, search parent cluster centroids
+       - If best match >= cluster_threshold -> return cluster match
+         with aggregated meta-patterns from top-N child families
+    4. If no match at any level -> return None
+    """
+```
+
+**Three match result types:**
+
+| Match level | When | What's returned | Suggestion UX |
+|---|---|---|---|
+| **Family** (leaf) | Cosine >= `family_threshold` against a leaf family centroid | Exact family + its meta-patterns | "Matches **REST API patterns** (87%)" with specific meta-patterns |
+| **Cluster** (parent) | No leaf match, but cosine >= `cluster_threshold` against a parent cluster | Parent cluster + aggregated top-K meta-patterns from child families | "Related to **API Architecture** (74%)" with broader patterns |
+| **None** | Below threshold at all levels | null | No suggestion shown |
+
+**Threshold values:**
+
+```python
+FAMILY_MATCH_THRESHOLD = 0.72    # Same as current SUGGESTION_THRESHOLD
+CLUSTER_MATCH_THRESHOLD = 0.60   # Lower bar for parent clusters (broader match)
+```
+
+**Why cascade matters:** In the flat system, a prompt about "GraphQL subscriptions" might not match any specific family at 0.72 but would easily match a parent "API Architecture" cluster at 0.60+. The hierarchy enables *partial matches* that give useful suggestions even when no exact family exists yet. This is especially valuable during the crystallizing phase (10-29 optimizations) when families are sparse but parent clusters are forming.
+
+**Aggregated meta-patterns for cluster matches:** When matching at the parent level, collect meta-patterns from the top-3 child families by relevance (cosine to the prompt embedding), deduplicated by pattern merge threshold (0.82). This gives the user patterns that are thematically relevant even if they come from sibling families.
+
+### 7.3 Embedding-Based Merge Guard (Gap 2 — Replaces Cross-Domain Prevention)
+
+**Current:** `pattern_extractor.py:219-225` prevents merging families with different hardcoded domains, even if embeddings are similar. This catches cases where embeddings coincidentally align across unrelated domains.
+
+**New:** With free-text domains, this exact guard disappears. But the underlying concern remains — embedding models can produce spurious similarity between unrelated content (e.g., "React component styling" and "database migration" might embed closer than expected due to shared structural vocabulary).
+
+**Replacement: HDBSCAN handles this naturally at scale, but the hot-path needs a guard for singleton families.**
+
+During `process_optimization()` step 2 (assign to nearest family), the nearest-centroid assignment checks:
+
+```python
+# In hot-path family assignment
+best_family, similarity = find_nearest_family(embedding, cached_centroids)
+
+if similarity >= FAMILY_MERGE_THRESHOLD:
+    # Additional guard: compare the domain_raw strings
+    # If the incoming domain_raw embeds far from the family's cluster label,
+    # this is a spurious embedding match.
+    domain_embedding = await self._embedding.aembed_single(domain_raw)
+    label_embedding = await self._embedding.aembed_single(best_family.taxonomy_label)
+    domain_alignment = cosine_similarity(domain_embedding, label_embedding)
+
+    if domain_alignment < DOMAIN_ALIGNMENT_FLOOR:  # default 0.35
+        # Spurious match — embeddings similar but domains diverge
+        logger.info(
+            "Spurious merge prevented: prompt embeds near '%s' "
+            "but domain '%s' misaligns (cosine=%.3f)",
+            best_family.intent_label, domain_raw, domain_alignment,
+        )
+        # Create new singleton instead
+        create_candidate_family(embedding, domain_raw, ...)
+    else:
+        merge_into_family(best_family, embedding, ...)
+```
+
+**Why 0.35?** This is deliberately low — it only catches gross misalignment ("React styling" vs "SQL optimization" = ~0.15 cosine). Closely related domains ("REST API" vs "API Architecture" = ~0.65) pass easily. The threshold is a safety net, not a filter.
+
+**At warm-path scale:** HDBSCAN's density-based clustering naturally separates spurious neighbors. The domain alignment guard is only needed during hot-path singleton assignment where we don't have enough context for statistical clustering. Once the warm path runs, HDBSCAN reorganizes families based on true density structure.
+
+### 7.4 Cold-Start Pattern Matching Behavior (Gap 3)
+
+The spec describes cold-start visualization (Section 4.3) but not pattern matching behavior. Here's the explicit specification:
+
+| Phase | Pattern matching behavior | Suggestion UX |
+|---|---|---|
+| **0: Empty** (0 opts) | `match_prompt()` returns `None` immediately (no centroids to search). O(1). | No suggestion bar rendered. |
+| **1: Accumulating** (1-9 opts) | Singleton families exist but are `candidate` state. `match_prompt()` searches candidates too (not just confirmed) but applies a **stricter threshold** of 0.80 (vs 0.72 for confirmed). This prevents low-confidence matches against noisy early data. | Suggestions rare but possible. Shown with "Early match" visual indicator (dashed border). |
+| **2: Crystallizing** (10-29 opts) | First confirmed families appear. `match_prompt()` uses normal thresholds for confirmed families, strict threshold for candidates. Cascade search begins (cluster-level matching becomes possible). | Normal suggestion UX. Cluster-level matches shown as "Related to..." |
+| **3+: Stabilizing/Mature** | Full hierarchical matching. All thresholds at normal values. | Full suggestion UX with taxonomy breadcrumb. |
+
+**Key principle:** Pattern matching degrades gracefully, never incorrectly. A suggestion during cold-start must meet a higher bar than in steady state. No suggestion is better than a bad suggestion.
+
+### 7.5 Applied Patterns as Domain Signal (Gap 4)
+
+**Current flow:** User applies patterns from family X → pipeline analyzes prompt → analyzer outputs `domain` → optimizer receives applied patterns.
+
+**Interaction:** Applied patterns and domain mapping are independent — they don't conflict because they serve different purposes:
+- **Domain mapping** classifies *what the prompt is about* (taxonomy placement)
+- **Applied patterns** inject *how to optimize it* (technique selection)
+
+However, applied patterns carry a **weak domain signal** that the domain mapping step can use:
+
+```python
+async def map_domain(
+    self,
+    domain_raw: str,
+    applied_pattern_ids: list[str] | None = None,
+) -> TaxonomyMapping:
+    """Map free-text domain to taxonomy, with optional pattern context.
+
+    If applied_pattern_ids are provided, their source family's taxonomy
+    position is used as a Bayesian prior — the mapping is biased toward
+    the region of the taxonomy where the applied patterns live.
+
+    This prevents the jarring case where a user applies "API Architecture"
+    patterns but the analyzer classifies the domain as something unrelated.
+    """
+    domain_embedding = await self._embedding.aembed_single(domain_raw)
+
+    # Base mapping: nearest confirmed cluster
+    base_match = self._nearest_cluster(domain_embedding)
+
+    if not applied_pattern_ids:
+        return base_match
+
+    # Retrieve source family for applied patterns
+    pattern_families = await self._get_pattern_families(applied_pattern_ids)
+    if not pattern_families:
+        return base_match
+
+    # Compute pattern-weighted centroid
+    pattern_centroid = mean([f.centroid for f in pattern_families])
+
+    # Blend: 70% analyzer domain signal, 30% applied pattern signal
+    blended = 0.7 * domain_embedding + 0.3 * pattern_centroid
+    blended /= np.linalg.norm(blended)  # re-normalize
+
+    return self._nearest_cluster(blended)
+```
+
+**Why 70/30?** The analyzer's classification is the primary signal (it sees the full prompt). Applied patterns are a user-intent signal (they chose to apply these patterns for a reason). The blend prevents hard disagreements while respecting the analyzer's judgment. The 30% weight is enough to tip a close decision toward the pattern region but not enough to override a confident classification.
+
+**Edge case:** If the user applies patterns from multiple families in different taxonomy regions, the pattern centroid averages them, producing a weak/diluted signal. This is correct — ambiguous user intent should not strongly bias the mapping.
+
+### 7.6 Template Updates for Free-Text Domains (Gap 5)
+
+Two prompt templates reference domain values:
+
+**`prompts/analyze.md` — Already specified in Section 4.1.** Changes from fixed 7-domain menu to free-text instructions.
+
+**`prompts/extract_patterns.md` — Needs update.**
+
+Current template variables include `{{domain}}` (receives "backend", "frontend", etc.). With the new system:
+
+```markdown
+# Current
+Domain: {{domain}}
+
+# New
+Domain: {{domain_raw}}
+Taxonomy context: {{taxonomy_label}} ({{taxonomy_breadcrumb}})
+```
+
+The extraction prompt receives both:
+- `domain_raw`: the analyzer's free-text classification (e.g., "REST API design")
+- `taxonomy_label`: the taxonomy cluster's generated label (e.g., "API Architecture")
+- `taxonomy_breadcrumb`: the full hierarchy path (e.g., "Infrastructure > API Architecture")
+
+This gives Haiku richer context for meta-pattern extraction. Instead of just "backend", it knows the prompt belongs to "API Architecture" within the "Infrastructure" branch of the taxonomy. This produces more specific, relevant meta-patterns.
+
+**Cold-start behavior:** During Phase 0-1 (no taxonomy clusters), `taxonomy_label` and `taxonomy_breadcrumb` are empty strings. The template must handle this gracefully — the extraction prompt includes a conditional:
+
+```markdown
+{{#if taxonomy_label}}
+This prompt belongs to the "{{taxonomy_label}}" pattern cluster
+({{taxonomy_breadcrumb}}).
+{{/if}}
+Domain described by analyzer: {{domain_raw}}
+```
+
+(Note: `PromptLoader.render()` currently uses `{{variable}}` substitution. If conditional blocks are needed, either extend the loader or use the Python-side rendering to pass a pre-formatted `taxonomy_context` string that's empty during cold-start.)
+
+**Pragmatic approach:** Build the context string in Python before template injection:
+
+```python
+taxonomy_context = ""
+if taxonomy_label:
+    taxonomy_context = (
+        f'This prompt belongs to the "{taxonomy_label}" pattern cluster '
+        f"({' > '.join(taxonomy_breadcrumb)}).\n"
+    )
+template_vars = {
+    "domain_raw": domain_raw,
+    "taxonomy_context": taxonomy_context,
+    ...
+}
+```
+
+Template receives `{{taxonomy_context}}` as a single variable — empty string during cold-start, rich context during mature operation. No template engine changes needed.
+
+### 7.7 Parent-Level Pattern Suggestions (Gap 6)
+
+The cascade search in Section 7.2 enables a new capability: suggesting patterns from a parent cluster when no specific family matches. This section specifies the aggregation algorithm.
+
+**When a cluster-level match fires:**
+
+```python
+async def _aggregate_cluster_patterns(
+    self,
+    cluster_node_id: str,
+    prompt_embedding: np.ndarray,
+    db: AsyncSession,
+    max_patterns: int = 5,
+) -> list[MetaPattern]:
+    """Aggregate meta-patterns from a parent cluster's children.
+
+    Strategy:
+    1. Get all child families of the matched cluster
+    2. Rank children by cosine similarity to the prompt embedding
+    3. Take top-3 most relevant children
+    4. Collect their meta-patterns, ranked by source_count
+    5. Deduplicate: if two patterns from different children
+       have cosine >= 0.82, keep the one with higher source_count
+    6. Return top-K after deduplication
+    """
+```
+
+**Suggestion UX for cluster matches:**
+
+The `PatternSuggestion` component adapts its display based on match level:
+
+```
+Family match:                    Cluster match:
+┌──────────────────────────┐    ┌──────────────────────────┐
+│ ● REST API patterns  87% │    │ ○ API Architecture   74% │
+│   3 proven patterns      │    │   from 3 related areas   │
+│   [Apply]    [Skip]      │    │   [Apply]    [Skip]      │
+└──────────────────────────┘    └──────────────────────────┘
+  ● = solid dot (exact)           ○ = hollow dot (broad)
+  taxonomy_color from family      taxonomy_color from cluster
+```
+
+The visual distinction (solid vs hollow indicator, "proven patterns" vs "related areas") communicates confidence level without requiring the user to understand the hierarchy.
+
+### 7.8 Usage Count Propagation (Gap 7)
+
+**Current:** `PatternFamily.usage_count` increments when a user applies that family's patterns. No upward propagation.
+
+**New: Usage propagates up the taxonomy tree.**
+
+When patterns from a leaf family are applied:
+
+```python
+async def _increment_usage(self, family_id: str, db: AsyncSession) -> None:
+    """Increment usage on the family and propagate up the tree."""
+    family = await db.get(PatternFamily, family_id)
+    if not family or not family.taxonomy_node_id:
+        return
+
+    family.usage_count += 1
+
+    # Walk up the taxonomy tree, incrementing each ancestor
+    node_id = family.taxonomy_node_id
+    while node_id:
+        node = await db.get(TaxonomyNode, node_id)
+        if not node:
+            break
+        node.usage_count += 1
+        node_id = node.parent_id
+```
+
+**Why this matters for the taxonomy lifecycle:**
+
+- **Retire operation:** A cluster with high `usage_count` should be harder to retire, even if it has few members. It's actively useful. The retire trigger's "zero new members" condition should check *both* member additions AND usage:
+
+  ```python
+  # Updated retire trigger
+  is_idle = (
+      new_members_in_window == 0
+      AND new_usage_in_window == 0  # <-- new condition
+  )
+  ```
+
+  A cluster that's still being matched and applied isn't idle — it's a stable, valuable part of the taxonomy.
+
+- **3D visualization:** Node size can encode `usage_count` instead of (or blended with) `member_count`. This shows users which parts of the taxonomy are actively used, not just which are densely populated.
+
+- **Cluster-level suggestions:** When aggregating patterns from a parent cluster (Section 7.7), child families are ranked by a blend of prompt similarity and usage count. A frequently-applied family's patterns are more likely to be suggested.
+
+### 7.9 Adaptive Suggestion Threshold (Gap 8)
+
+**Current:** Static `SUGGESTION_THRESHOLD = 0.72` for all families.
+
+**New: Threshold adapts per-cluster based on coherence.**
+
+The intuition: a tight, high-coherence cluster (e.g., coherence 0.92, all members are very similar SQL optimization prompts) produces centroid embeddings that are highly representative. A match at 0.72 against this centroid is meaningful. But a loose, low-coherence cluster (e.g., coherence 0.55, diverse "backend" prompts) has a centroid that's a blurred average. A match at 0.72 against this centroid is less meaningful — the prompt might match the centroid without actually being similar to any individual family member.
+
+**Adaptive formula:**
+
+```python
+def suggestion_threshold(
+    base: float = 0.72,
+    coherence: float = 0.0,
+    alpha: float = 0.15,
+) -> float:
+    """Adjust suggestion threshold based on cluster coherence.
+
+    High coherence (0.9+): threshold stays near base (0.72)
+      → centroid is representative, base threshold is sufficient
+    Low coherence (0.5):  threshold rises to ~0.79
+      → centroid is blurred, require stronger match
+    Very low coherence (0.3): threshold rises to ~0.83
+      → centroid is very noisy, only very strong matches
+
+    Formula: base + alpha * (1 - coherence)
+    At coherence=1.0: threshold = base (centroid is perfect)
+    At coherence=0.0: threshold = base + alpha (maximum strictness)
+    """
+    return base + alpha * (1.0 - coherence)
+```
+
+**Concrete values:**
+
+| Cluster coherence | Suggestion threshold | Meaning |
+|---|---|---|
+| 0.95 | 0.727 | Tight cluster — almost same as base |
+| 0.80 | 0.750 | Moderate — slightly stricter |
+| 0.60 | 0.780 | Loose — noticeably stricter |
+| 0.40 | 0.810 | Very loose — only strong matches |
+
+**Cluster-level threshold uses the same formula** with `base = 0.60` (the cluster match threshold from Section 7.2):
+
+```python
+cluster_threshold = 0.60 + 0.15 * (1.0 - parent_coherence)
+```
+
+This means parent clusters with high coherence are more permissive for broad matches, while loose parent clusters require stronger evidence.
+
+### 7.10 Complete Handoff Map (Updated)
+
+The full lifecycle with all gaps bridged:
+
+| Step | From | To | Data | Change from current |
+|---|---|---|---|---|
+| 1 | User types | patterns store | 50-char delta, 300ms debounce | **No change** |
+| 2 | patterns store | `POST /api/patterns/match` | `{ prompt_text }` | **No change** |
+| 3 | patterns router | `TaxonomyEngine.match_prompt()` | prompt embedding | **New:** replaces flat `PatternMatcherService` |
+| 4 | match_prompt | cascade search | embedding vs tree | **New:** hierarchical search (leaf → parent cascade) |
+| 5 | cascade search | adaptive threshold | coherence-adjusted threshold | **New:** per-cluster threshold adaptation |
+| 6 | match result | frontend | family/cluster match + breadcrumb | **New:** taxonomy_label, taxonomy_color, breadcrumb |
+| 7 | PatternSuggestion | forge store | `appliedPatternIds` | **No change** |
+| 8 | forge store | `POST /api/optimize` | `applied_pattern_ids` in body | **No change** |
+| 9 | pipeline: analyze | LLM | free-text domain prompt | **Changed:** no fixed menu |
+| 10 | pipeline: domain_map | `TaxonomyEngine.map_domain()` | `domain_raw` + `applied_pattern_ids` | **New:** blended mapping with pattern signal |
+| 11 | pipeline: optimize | LLM | applied patterns injected | **No change** |
+| 12 | pipeline: score | LLM | A/B scoring | **No change** |
+| 13 | pipeline: persist | DB | optimization + `taxonomy_node_id` + `domain_raw` | **Changed:** taxonomy node FK |
+| 14 | event bus | `TaxonomyEngine.process_optimization()` | `optimization_id` | **Changed:** replaces PatternExtractorService |
+| 15 | process_optimization | embed guard | domain alignment check (0.35 floor) | **New:** replaces cross-domain prevention |
+| 16 | process_optimization | Haiku | `extract_patterns.md` with `taxonomy_context` | **Changed:** richer domain context |
+| 17 | process_optimization | DB | family enriched, meta-patterns merged | **Preserved** |
+| 18 | process_optimization | usage propagation | walk up tree incrementing usage_count | **New:** hierarchical usage tracking |
+| 19 | process_optimization | event bus | `taxonomy_changed` | **Changed:** replaces `pattern_updated` |
+| 20 | SSE → frontend | 3D topology + navigator | incremental scene update | **Changed:** 3D instead of radial mindmap |
+| 21 | Future paste | `match_prompt()` | richer centroids, more meta-patterns | **The loop closes** |
+
+---
+
+## 8. 3D Visualization Engine
 
 ### 7.1 Component Architecture
 
@@ -765,9 +1166,9 @@ Ease-out cubic timing. Concurrent operations staggered with 200ms gaps.
 
 ---
 
-## 8. Testing Strategy
+## 9. Testing Strategy
 
-### 8.1 Four Testing Layers
+### 9.1 Four Testing Layers
 
 **Layer 1: Unit Tests — Deterministic Algorithms**
 
@@ -817,7 +1218,7 @@ tests/taxonomy/
 
 Key verification: hot path < 500ms, warm path < 5s at 1000 nodes, incremental UMAP > 10x faster than refit.
 
-### 8.2 Test Data Generators
+### 9.2 Test Data Generators
 
 Embedding-space cluster generators for realistic distributions:
 
@@ -827,7 +1228,7 @@ def make_cluster_distribution(center_text: str, n_samples: int, spread: float = 
     Real embedding model + Gaussian noise + L2 normalization."""
 ```
 
-### 8.3 Frontend Tests
+### 9.3 Frontend Tests
 
 - `TopologyData.ts`: unit tests for API -> scene graph transforms, LOD assignment, edge generation.
 - `TopologyInteraction.ts`: mock scene raycasting, zoom-to-persistence mapping.
@@ -836,9 +1237,9 @@ def make_cluster_distribution(center_text: str, n_samples: int, spread: float = 
 
 ---
 
-## 9. Quality Metrics Dashboard
+## 10. Quality Metrics Dashboard
 
-### 9.1 Q_system Sparkline — Hardened Mathematics
+### 10.1 Q_system Sparkline — Hardened Mathematics
 
 The sparkline displays `Q_system` over the last N snapshots. The computation must be robust against all edge cases.
 
@@ -1028,7 +1429,7 @@ def _compute_trend(values: list[float]) -> float:
     return max(-1.0, min(1.0, trend))
 ```
 
-### 9.2 StatusBar Indicator
+### 10.2 StatusBar Indicator
 
 Single `Q_system` badge with color derived from score:
 
@@ -1041,7 +1442,7 @@ Single `Q_system` badge with color derived from score:
 
 Tooltip: last snapshot timestamp + operation summary. Pulses on warm-path completion.
 
-### 9.3 Inspector Health Panel
+### 10.3 Inspector Health Panel
 
 Displayed when no family is selected:
 
@@ -1063,7 +1464,7 @@ Last cycle: 12s ago (2 emerges)
 [Run Full Recomputation]
 ```
 
-### 9.4 API Endpoint
+### 10.4 API Endpoint
 
 ```
 GET /api/taxonomy/stats
@@ -1089,7 +1490,7 @@ GET /api/taxonomy/stats
 }
 ```
 
-### 9.5 Monitoring & Alerting
+### 10.5 Monitoring & Alerting
 
 Structured log entries:
 
@@ -1110,10 +1511,11 @@ Auto-trigger cold-path when `Q_system < 0.4`.
 
 ---
 
-## 10. Files Affected (Complete List)
+## 11. Files Affected (Complete List)
 
 ### Backend — Deleted
 - `backend/app/services/pattern_extractor.py`
+- `backend/app/services/pattern_matcher.py`
 
 ### Backend — New
 - `backend/app/services/taxonomy/__init__.py`
@@ -1137,6 +1539,7 @@ Auto-trigger cold-path when `Q_system < 0.4`.
 - `backend/app/models.py` (new TaxonomyNode/TaxonomySnapshot models, modify PatternFamily/Optimization)
 - `backend/app/main.py` (TaxonomyEngine startup, event subscriptions)
 - `prompts/analyze.md` (free-text domain instructions)
+- `prompts/extract_patterns.md` (taxonomy_context variable, richer domain context)
 
 ### Backend — Tests (New)
 - `backend/tests/taxonomy/test_clustering.py`
@@ -1199,7 +1602,7 @@ Auto-trigger cold-path when `Q_system < 0.4`.
 
 ---
 
-## 11. Dependencies
+## 12. Dependencies
 
 ### Backend (new pip packages)
 - `hdbscan` >= 0.8.38 (or `scikit-learn` >= 1.3 which includes HDBSCAN)
@@ -1212,14 +1615,14 @@ Auto-trigger cold-path when `Q_system < 0.4`.
 
 ---
 
-## 12. Open Questions
+## 13. Open Questions
 
 1. **Warm-path interval tuning:** Default 10 optimizations. Should this adapt based on system maturity (longer intervals for mature taxonomies)?
 2. ~~**UMAP stability across cold-path refits:**~~ **Resolved:** Procrustes alignment applied after every cold-path refit (see Section 7.5).
 3. **Label regeneration frequency:** Haiku calls on every label change vs. batched regeneration on warm-path cycles.
 4. **Memory footprint:** HDBSCAN on 10K+ embeddings may need chunked processing. Monitor and add streaming support if needed.
 
-## 13. Review Findings — Addressed
+## 14. Review Findings — Addressed
 
 Issues identified by spec review and resolved in this document:
 
