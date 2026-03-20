@@ -123,6 +123,10 @@ async def optimize(
         )
         db.add(pending)
         await db.commit()
+        logger.info(
+            "Passthrough prepared: trace_id=%s strategy=%s prompt_len=%d assembled_len=%d",
+            trace_id, strategy_name, len(body.prompt), len(assembled),
+        )
 
         async def passthrough_stream():
             yield format_sse("routing", {
@@ -148,13 +152,17 @@ async def optimize(
             "tier": decision.tier, "provider": decision.provider_name,
             "reason": decision.reason, "degraded_from": decision.degraded_from,
         })
-        async for event in orchestrator.run(
-            raw_prompt=body.prompt, provider=decision.provider, db=db,
-            strategy_override=effective_strategy if effective_strategy != "auto" else None,
-            codebase_guidance=guidance,
-            applied_pattern_ids=body.applied_pattern_ids,
-        ):
-            yield format_sse(event.event, event.data)
+        try:
+            async for event in orchestrator.run(
+                raw_prompt=body.prompt, provider=decision.provider, db=db,
+                strategy_override=effective_strategy if effective_strategy != "auto" else None,
+                codebase_guidance=guidance,
+                applied_pattern_ids=body.applied_pattern_ids,
+            ):
+                yield format_sse(event.event, event.data)
+        except Exception as exc:
+            logger.error("Pipeline SSE stream error: %s", exc, exc_info=True)
+            yield format_sse("error", {"error": str(exc)})
 
     return StreamingResponse(
         event_stream(),

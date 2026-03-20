@@ -76,7 +76,7 @@ async def set_api_key(body: ApiKeyRequest, request: Request) -> ApiKeyStatus:
         request.app.state.provider = new_provider  # backward compat
         logger.info("Provider hot-reloaded: anthropic_api")
     except Exception:
-        logger.warning("Could not hot-reload provider after API key set")
+        logger.warning("Could not hot-reload provider after API key set", exc_info=True)
 
     return ApiKeyStatus(configured=True, masked_key=f"sk-...{key[-4:]}")
 
@@ -93,6 +93,8 @@ async def delete_api_key(request: Request) -> ApiKeyStatus:
     routing = getattr(request.app.state, "routing", None)
     if routing:
         routing.set_provider(None)
+    else:
+        logger.warning("API key deleted but routing service not available — provider state may be stale")
     request.app.state.provider = None  # backward compat
 
     return ApiKeyStatus(configured=False, masked_key=None)

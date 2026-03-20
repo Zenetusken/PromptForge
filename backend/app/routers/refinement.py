@@ -65,11 +65,19 @@ async def refine(
 
     # Refinement still requires a provider (passthrough refinement UX not designed yet)
     if decision.tier == "passthrough":
+        logger.warning(
+            "POST /api/refine rejected: tier=passthrough optimization_id=%s",
+            body.optimization_id,
+        )
         raise HTTPException(
             status_code=503,
             detail="Refinement requires a local provider. Configure an API key or install the Claude CLI.",
         )
     provider = decision.provider
+    logger.info(
+        "POST /api/refine: tier=%s provider=%s optimization_id=%s",
+        decision.tier, decision.provider_name, body.optimization_id,
+    )
 
     from app.services.optimization_service import OptimizationService
     from app.services.refinement_service import RefinementService

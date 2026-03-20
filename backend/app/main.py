@@ -35,7 +35,8 @@ async def lifespan(app: FastAPI):
     routing = RoutingManager(event_bus=event_bus, data_dir=DATA_DIR)
     try:
         provider = detect_provider()
-    except ImportError:
+    except Exception as exc:
+        logger.warning("Provider detection failed: %s — starting without provider", exc)
         provider = None
     routing.set_provider(provider)
     app.state.routing = routing

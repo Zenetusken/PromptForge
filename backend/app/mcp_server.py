@@ -782,19 +782,24 @@ async def synthesis_analyze(
     provider = decision.provider
 
     if decision.tier == "sampling":
+        logger.info("synthesis_analyze: tier=sampling prompt_len=%d reason=%r", len(prompt), decision.reason)
         if ctx and hasattr(ctx, "session") and ctx.session:
             try:
                 result = await run_sampling_analyze(ctx, prompt)
                 return AnalyzeOutput(**result)
             except Exception as exc:
-                logger.info("Sampling analyze failed: %s", type(exc).__name__)
+                logger.warning("Sampling analyze failed: %s: %s", type(exc).__name__, exc)
         raise ValueError("No LLM provider available. Set ANTHROPIC_API_KEY or install the Claude CLI.")
 
     if decision.tier == "passthrough":
+        logger.info("synthesis_analyze: tier=passthrough — rejecting (analysis requires provider)")
         raise ValueError("Analysis requires a local provider or MCP sampling capability.")
 
     start = time.monotonic()
-    logger.info("synthesis_analyze called: prompt_len=%d", len(prompt))
+    logger.info(
+        "synthesis_analyze: tier=internal provider=%s prompt_len=%d",
+        decision.provider_name, len(prompt),
+    )
 
     loader = PromptLoader(PROMPTS_DIR)
     strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")

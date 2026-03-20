@@ -225,11 +225,16 @@ class RoutingManager:
             provider_name=new_name,
         )
         if old_name != new_name:
+            logger.info(
+                "routing.provider_changed old=%s new=%s available_tiers=%s",
+                old_name, new_name, ",".join(self.available_tiers),
+            )
             self._broadcast_state_change("provider_changed")
 
     def on_mcp_initialize(self, sampling_capable: bool) -> None:
         """Called by ASGI middleware when MCP ``initialize`` is intercepted."""
         now = datetime.now(timezone.utc)
+        old_sampling = self._state.sampling_capable
 
         # Optimistic strategy: False never overwrites a fresh True
         if not sampling_capable and self._state.sampling_capable is True:
@@ -243,7 +248,6 @@ class RoutingManager:
                     return
 
         was_connected = self._state.mcp_connected
-        old_sampling = self._state.sampling_capable
         self._update_state(
             sampling_capable=sampling_capable,
             mcp_connected=True,
@@ -252,6 +256,10 @@ class RoutingManager:
         )
         self._persist()
         if old_sampling != sampling_capable or not was_connected:
+            logger.info(
+                "routing.mcp_initialize sampling_capable=%s→%s mcp_connected=%s→%s",
+                old_sampling, sampling_capable, was_connected, True,
+            )
             self._broadcast_state_change("mcp_initialize")
 
     def on_mcp_activity(self) -> None:
@@ -301,15 +309,23 @@ class RoutingManager:
         from app.config import MCP_ACTIVITY_STALENESS_SECONDS
 
         while True:
-            await asyncio.sleep(60)
-            if self._state.mcp_connected and self._state.last_activity:
-                elapsed = (
-                    datetime.now(timezone.utc) - self._state.last_activity
-                ).total_seconds()
-                if elapsed > MCP_ACTIVITY_STALENESS_SECONDS:
-                    logger.info("MCP activity stale (%.0fs) — marking disconnected", elapsed)
-                    self._update_state(mcp_connected=False)
-                    self._broadcast_state_change("disconnect")
+            try:
+                await asyncio.sleep(60)
+                if self._state.mcp_connected and self._state.last_activity:
+                    elapsed = (
+                        datetime.now(timezone.utc) - self._state.last_activity
+                    ).total_seconds()
+                    if elapsed > MCP_ACTIVITY_STALENESS_SECONDS:
+                        logger.info(
+                            "routing.disconnect activity_stale=%.0fs threshold=%ds",
+                            elapsed, MCP_ACTIVITY_STALENESS_SECONDS,
+                        )
+                        self._update_state(mcp_connected=False)
+                        self._broadcast_state_change("disconnect")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.error("Disconnect checker iteration failed", exc_info=True)
 
     # ── Internal helpers ──────────────────────────────────────────────
 
@@ -328,7 +344,7 @@ class RoutingManager:
                     sampling_capable=self._state.sampling_capable is True,
                 )
             except Exception:
-                logger.debug("Failed to persist routing state", exc_info=True)
+                logger.warning("Failed to persist routing state to mcp_session.json", exc_info=True)
 
     def _broadcast_state_change(self, event: str) -> None:
         """Push routing_state_changed to all SSE subscribers."""
@@ -372,6 +388,7 @@ class RoutingManager:
             return _defaults
 
         if data is None:
+            logger.info("routing.recovery no session file — starting with defaults")
             return _defaults
 
         # Apply staleness checks
@@ -388,6 +405,10 @@ class RoutingManager:
             except (ValueError, TypeError):
                 pass
 
+        logger.info(
+            "routing.recovery sampling_capable=%s mcp_connected=%s last_activity=%s",
+            sampling, connected, last_activity,
+        )
         return RoutingState(
             provider=None,  # Provider set separately via set_provider()
             provider_name=None,
