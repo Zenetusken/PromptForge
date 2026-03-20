@@ -1,0 +1,525 @@
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
+import { mockFetch, mockHistoryItem, mockStrategyInfo } from '$lib/test-utils';
+
+// Mock PatternNavigator sub-component (used when active='patterns')
+vi.mock('$lib/components/layout/PatternNavigator.svelte', () => ({
+  default: () => ({ destroy: () => {} }),
+}));
+
+// Mock the githubStore.checkAuth to prevent network calls
+vi.mock('$lib/stores/github.svelte', () => {
+  const store = {
+    user: null,
+    linkedRepo: null,
+    loading: false,
+    error: null,
+    checkAuth: vi.fn().mockResolvedValue(undefined),
+    login: vi.fn(),
+    unlinkRepo: vi.fn(),
+    _reset() {
+      this.user = null;
+      this.linkedRepo = null;
+      this.loading = false;
+      this.error = null;
+    },
+  };
+  return { githubStore: store };
+});
+
+import Navigator from './Navigator.svelte';
+import { forgeStore } from '$lib/stores/forge.svelte';
+import { preferencesStore } from '$lib/stores/preferences.svelte';
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function defaultFetchHandlers(overrides: Record<string, unknown> = {}) {
+  return mockFetch([
+    {
+      match: '/api/history',
+      response: {
+        total: 0,
+        count: 0,
+        offset: 0,
+        has_more: false,
+        next_offset: null,
+        items: [],
+        ...((overrides.history as Record<string, unknown>) ?? {}),
+      },
+    },
+    {
+      match: '/api/strategies',
+      response: ((overrides.strategies as unknown[]) ?? []),
+    },
+    {
+      match: '/api/providers',
+      response: (overrides.providers ?? { active_provider: 'claude-cli', available: ['claude-cli'] }),
+    },
+    {
+      match: '/api/settings',
+      response: (overrides.settings ?? {
+        version: '0.1.0',
+        environment: 'development',
+        max_raw_prompt_chars: 50000,
+        embedding_model: 'all-MiniLM-L6-v2',
+        optimize_rate_limit: '10/minute',
+        trace_retention_days: 7,
+      }),
+    },
+    {
+      match: '/api/provider/api-key',
+      response: (overrides.apiKey ?? { configured: false, masked_key: null }),
+    },
+    {
+      match: '/api/preferences',
+      response: (overrides.preferences ?? preferencesStore.prefs),
+    },
+  ]);
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+describe('Navigator', () => {
+  beforeEach(() => {
+    forgeStore._reset();
+    preferencesStore._reset();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  // ── Rendering ──────────────────────────────────────────────────────────────
+
+  it('renders the navigator aside element', () => {
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'editor' } });
+    expect(screen.getByRole('complementary', { name: 'Navigator' })).toBeInTheDocument();
+  });
+
+  // ── Editor panel (strategies) ──────────────────────────────────────────────
+
+  it('shows empty strategies message when no strategies are loaded', async () => {
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'editor' } });
+    await waitFor(() => {
+      expect(screen.getByText(/No strategy files found/i)).toBeInTheDocument();
+    });
+  });
+
+  it('renders strategy list after fetch', async () => {
+    defaultFetchHandlers({
+      strategies: [
+        mockStrategyInfo({ name: 'chain-of-thought', tagline: 'Step-by-step reasoning' }),
+        mockStrategyInfo({ name: 'few-shot', tagline: 'Learn from examples' }),
+      ],
+    });
+    render(Navigator, { props: { active: 'editor' } });
+    await waitFor(() => {
+      expect(screen.getByText('chain-of-thought')).toBeInTheDocument();
+      expect(screen.getByText('few-shot')).toBeInTheDocument();
+    });
+  });
+
+  it('renders strategy taglines', async () => {
+    defaultFetchHandlers({
+      strategies: [mockStrategyInfo({ name: 'chain-of-thought', tagline: 'Step-by-step reasoning' })],
+    });
+    render(Navigator, { props: { active: 'editor' } });
+    await waitFor(() => {
+      expect(screen.getByText('Step-by-step reasoning')).toBeInTheDocument();
+    });
+  });
+
+  it('clicking a strategy row selects it in forgeStore', async () => {
+    const user = userEvent.setup();
+    defaultFetchHandlers({
+      strategies: [mockStrategyInfo({ name: 'chain-of-thought' })],
+    });
+    render(Navigator, { props: { active: 'editor' } });
+    await waitFor(() => {
+      expect(screen.getByText('chain-of-thought')).toBeInTheDocument();
+    });
+    const row = screen.getByText('chain-of-thought').closest('[role="button"]')!;
+    await user.click(row);
+    expect(forgeStore.strategy).toBe('chain-of-thought');
+  });
+
+  it('clicking a selected strategy deselects it (back to null)', async () => {
+    const user = userEvent.setup();
+    forgeStore.strategy = 'chain-of-thought';
+    defaultFetchHandlers({
+      strategies: [mockStrategyInfo({ name: 'chain-of-thought' })],
+    });
+    render(Navigator, { props: { active: 'editor' } });
+    await waitFor(() => {
+      expect(screen.getByText('chain-of-thought')).toBeInTheDocument();
+    });
+    const row = screen.getByText('chain-of-thought').closest('[role="button"]')!;
+    await user.click(row);
+    expect(forgeStore.strategy).toBeNull();
+  });
+
+  // ── History panel ──────────────────────────────────────────────────────────
+
+  it('shows "Loading..." while history is being fetched', () => {
+    // Don't resolve fetch immediately — just check initial state
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {}))); // never resolves
+    render(Navigator, { props: { active: 'history' } });
+    expect(screen.getByText(/Loading…/i)).toBeInTheDocument();
+  });
+
+  it('shows empty state when history is empty', async () => {
+    defaultFetchHandlers({ history: { total: 0, count: 0, offset: 0, has_more: false, next_offset: null, items: [] } });
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.getByText(/No optimizations yet/i)).toBeInTheDocument();
+    });
+  });
+
+  it('renders history items with strategy and score', async () => {
+    defaultFetchHandlers({
+      history: {
+        total: 1,
+        count: 1,
+        offset: 0,
+        has_more: false,
+        next_offset: null,
+        items: [
+          mockHistoryItem({
+            id: 'opt-1',
+            status: 'completed',
+            strategy_used: 'chain-of-thought',
+            overall_score: 8.5,
+            intent_label: 'Hello world program',
+            domain: 'backend',
+          }),
+        ],
+      },
+    });
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.getByText('Hello world program')).toBeInTheDocument();
+    });
+    expect(screen.getByText('chain-of-thought')).toBeInTheDocument();
+    // Score displayed (formatScore of 8.5)
+    expect(screen.getByText(/8\.5/)).toBeInTheDocument();
+  });
+
+  it('shows domain label for history items that have a domain', async () => {
+    defaultFetchHandlers({
+      history: {
+        total: 1,
+        count: 1,
+        offset: 0,
+        has_more: false,
+        next_offset: null,
+        items: [
+          mockHistoryItem({
+            id: 'opt-2',
+            status: 'completed',
+            domain: 'frontend',
+            intent_label: 'React component',
+          }),
+        ],
+      },
+    });
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.getByText('frontend')).toBeInTheDocument();
+    });
+  });
+
+  it('does not render items with non-completed status', async () => {
+    defaultFetchHandlers({
+      history: {
+        total: 1,
+        count: 1,
+        offset: 0,
+        has_more: false,
+        next_offset: null,
+        items: [
+          mockHistoryItem({ id: 'opt-3', status: 'error', intent_label: 'Should not appear' }),
+        ],
+      },
+    });
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      // historyLoaded becomes true, so "Loading…" should be gone
+      expect(screen.queryByText(/Loading…/i)).not.toBeInTheDocument();
+    });
+    // The item with status 'error' should not appear
+    expect(screen.queryByText('Should not appear')).not.toBeInTheDocument();
+  });
+
+  it('shows "No completed optimizations yet" when all items are non-completed', async () => {
+    defaultFetchHandlers({
+      history: {
+        total: 1,
+        count: 1,
+        offset: 0,
+        has_more: false,
+        next_offset: null,
+        items: [mockHistoryItem({ id: 'opt-4', status: 'error' })],
+      },
+    });
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.getByText(/No completed optimizations yet/i)).toBeInTheDocument();
+    });
+  });
+
+  it('uses raw_prompt prefix when intent_label is null', async () => {
+    defaultFetchHandlers({
+      history: {
+        total: 1,
+        count: 1,
+        offset: 0,
+        has_more: false,
+        next_offset: null,
+        items: [
+          mockHistoryItem({
+            id: 'opt-5',
+            status: 'completed',
+            intent_label: null,
+            raw_prompt: 'Write a function to sort an array',
+          }),
+        ],
+      },
+    });
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.getByText(/Write a function to sort an array/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Real-time events ───────────────────────────────────────────────────────
+
+  it('re-fetches history when optimization-event is dispatched', async () => {
+    const fetchMock = defaultFetchHandlers({
+      history: {
+        total: 0,
+        count: 0,
+        offset: 0,
+        has_more: false,
+        next_offset: null,
+        items: [],
+      },
+    });
+    render(Navigator, { props: { active: 'history' } });
+    await waitFor(() => {
+      expect(screen.getByText(/No optimizations yet/i)).toBeInTheDocument();
+    });
+
+    const callsBefore = fetchMock.mock.calls.length;
+
+    // Update the mock to return a new item
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/history')) {
+        return new Response(JSON.stringify({
+          total: 1,
+          count: 1,
+          offset: 0,
+          has_more: false,
+          next_offset: null,
+          items: [mockHistoryItem({ id: 'opt-new', status: 'completed', intent_label: 'New optimization' })],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response('Not Found', { status: 404 });
+    }));
+
+    // Dispatch optimization-event
+    window.dispatchEvent(new Event('optimization-event'));
+
+    await waitFor(() => {
+      expect(screen.getByText('New optimization')).toBeInTheDocument();
+    });
+  });
+
+  // ── Settings panel — Model preferences ────────────────────────────────────
+
+  it('renders model dropdowns in settings panel', () => {
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('Analyzer')).toBeInTheDocument();
+    expect(screen.getByText('Optimizer')).toBeInTheDocument();
+    expect(screen.getByText('Scorer')).toBeInTheDocument();
+  });
+
+  it('model selects show current preferences values', () => {
+    preferencesStore.prefs.models.analyzer = 'opus';
+    preferencesStore.prefs.models.optimizer = 'haiku';
+    preferencesStore.prefs.models.scorer = 'sonnet';
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    const analyzerSelect = selects.find(s => s.value === 'opus');
+    const haikuSelect = selects.find(s => s.value === 'haiku');
+    expect(analyzerSelect).toBeDefined();
+    expect(haikuSelect).toBeDefined();
+  });
+
+  it('renders pipeline toggle switches in settings panel', () => {
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByRole('switch', { name: 'Toggle Explore' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Toggle Scoring' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Toggle Adaptation' })).toBeInTheDocument();
+  });
+
+  it('pipeline toggles reflect current preferences state (Explore ON by default)', () => {
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    const exploreToggle = screen.getByRole('switch', { name: 'Toggle Explore' });
+    expect(exploreToggle).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('shows LEAN MODE badge when explore and scoring are both off', () => {
+    preferencesStore.prefs.pipeline.enable_explore = false;
+    preferencesStore.prefs.pipeline.enable_scoring = false;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('LEAN MODE')).toBeInTheDocument();
+  });
+
+  it('does not show LEAN MODE badge when explore or scoring is on', () => {
+    preferencesStore.prefs.pipeline.enable_explore = true;
+    preferencesStore.prefs.pipeline.enable_scoring = false;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.queryByText('LEAN MODE')).not.toBeInTheDocument();
+  });
+
+  // ── Settings panel — API key ───────────────────────────────────────────────
+
+  it('shows "not set" in provider accordion when no API key configured', async () => {
+    defaultFetchHandlers({ apiKey: { configured: false, masked_key: null } });
+    render(Navigator, { props: { active: 'settings' } });
+    // Expand the Provider accordion
+    const accordionBtn = screen.getByRole('button', { name: /Provider/i });
+    await userEvent.click(accordionBtn);
+    await waitFor(() => {
+      expect(screen.getByText('not set')).toBeInTheDocument();
+    });
+  });
+
+  it('shows masked key when API key is configured', async () => {
+    defaultFetchHandlers({
+      apiKey: { configured: true, masked_key: 'sk-...abcd' },
+    });
+    render(Navigator, { props: { active: 'settings' } });
+    const accordionBtn = screen.getByRole('button', { name: /Provider/i });
+    await userEvent.click(accordionBtn);
+    await waitFor(() => {
+      expect(screen.getByText('sk-...abcd')).toBeInTheDocument();
+    });
+  });
+
+  it('shows SET KEY and REMOVE buttons when provider section is expanded and key configured', async () => {
+    defaultFetchHandlers({
+      apiKey: { configured: true, masked_key: 'sk-...xyz' },
+    });
+    render(Navigator, { props: { active: 'settings' } });
+    const accordionBtn = screen.getByRole('button', { name: /Provider/i });
+    await userEvent.click(accordionBtn);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /SET KEY/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /REMOVE/i })).toBeInTheDocument();
+    });
+  });
+
+  it('does not show REMOVE button when no API key configured', async () => {
+    defaultFetchHandlers({ apiKey: { configured: false, masked_key: null } });
+    render(Navigator, { props: { active: 'settings' } });
+    const accordionBtn = screen.getByRole('button', { name: /Provider/i });
+    await userEvent.click(accordionBtn);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /SET KEY/i })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /REMOVE/i })).not.toBeInTheDocument();
+  });
+
+  // ── Strategy editor ────────────────────────────────────────────────────────
+
+  it('edit button opens strategy editor inline', async () => {
+    const user = userEvent.setup();
+    // Mock getStrategy
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/strategies/chain-of-thought') && (!init?.method || init.method === 'GET')) {
+        return new Response(JSON.stringify({ name: 'chain-of-thought', content: '# CoT strategy content' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/api/strategies')) {
+        return new Response(JSON.stringify([mockStrategyInfo({ name: 'chain-of-thought' })]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      // Other handlers
+      if (url.includes('/api/provider/api-key')) return new Response(JSON.stringify({ configured: false, masked_key: null }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/providers')) return new Response(JSON.stringify({ active_provider: 'claude-cli' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/settings')) return new Response(JSON.stringify({ version: '0.1.0', max_raw_prompt_chars: 50000 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/preferences')) return new Response(JSON.stringify(preferencesStore.prefs), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response('Not Found', { status: 404 });
+    }));
+
+    render(Navigator, { props: { active: 'editor' } });
+    await waitFor(() => {
+      expect(screen.getByText('chain-of-thought')).toBeInTheDocument();
+    });
+
+    // Find and click the edit button (the ⋮ button)
+    const editBtn = screen.getByTitle('Edit template');
+    await user.click(editBtn);
+
+    await waitFor(() => {
+      const textarea = screen.queryByRole('textbox') as HTMLTextAreaElement | null;
+      expect(textarea).not.toBeNull();
+      // The textarea value is set via Svelte binding — check .value property
+      expect(textarea?.value).toBe('# CoT strategy content');
+    });
+  });
+
+  it('discard button closes strategy editor', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/strategies/chain-of-thought') && (!init?.method || init.method === 'GET')) {
+        return new Response(JSON.stringify({ name: 'chain-of-thought', content: '# Content' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (url.includes('/api/strategies')) {
+        return new Response(JSON.stringify([mockStrategyInfo({ name: 'chain-of-thought' })]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    render(Navigator, { props: { active: 'editor' } });
+    await waitFor(() => {
+      expect(screen.getByText('chain-of-thought')).toBeInTheDocument();
+    });
+
+    const editBtn = screen.getByTitle('Edit template');
+    await user.click(editBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /DISCARD/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /DISCARD/i }));
+
+    // Editor should be closed — textarea gone
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+});
