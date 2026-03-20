@@ -16,13 +16,13 @@ Bring the SvelteKit frontend from near-zero test coverage (~1 test file, 84 line
 ### Dependencies
 
 Add to `devDependencies`:
-- `@testing-library/svelte` — component rendering + user-centric queries (`getByRole`, `getByText`)
+- `@testing-library/svelte@^5` — component rendering + user-centric queries (`getByRole`, `getByText`). **Must be v5+** for Svelte 5 runes compatibility.
 - `@testing-library/jest-dom` — DOM matchers (`toBeInTheDocument`, `toHaveTextContent`)
 - `@testing-library/user-event` — realistic user interaction simulation
 
 ### Vitest Configuration
 
-Update `vite.config.ts` test block:
+Add `test` block to `vite.config.ts` (no test block currently exists):
 - `environment: 'jsdom'`
 - `setupFiles: ['./src/lib/test-setup.ts']`
 - `include: ['src/**/*.test.ts']`
@@ -31,25 +31,28 @@ Update `vite.config.ts` test block:
 - `coverage.exclude: ['**/*.test.ts', '**/test-*.ts', 'src/lib/content/**']`
 - `coverage.thresholds.lines: 90`
 
+The existing `@sveltejs/vite-plugin-svelte` in the Vite config handles `.svelte.ts` file compilation in the test pipeline — this is required for runes (`$state`, `$derived`) to work in tests.
+
 ### Shared Test Utilities
 
 `src/lib/test-setup.ts`:
 - Import `@testing-library/jest-dom`
 - Mock `EventSource` (jsdom doesn't provide it)
 - Mock `navigator.clipboard.writeText`
+- Mock `SVGElement.getBBox` and `getComputedTextLength` (for D3-based components in jsdom)
 
 `src/lib/test-utils.ts`:
 - Re-export `@testing-library/svelte` render/screen/cleanup
 - Mock response factories: `mockHealthResponse()`, `mockOptimizationResult()`, `mockHistoryItem()`, `mockPatternFamily()`, `mockRefinementTurn()`, etc.
 - `mockFetch(responses)` — configurable fetch mock that returns canned responses by URL pattern
-- `createFreshStore()` helpers for stores that are exported as singletons
+- Store reset helpers: each store class gets a `_reset()` method (test-only, restores initial state) to avoid singleton leakage between tests. This is preferred over `vi.mock` module replacement because it preserves cross-store coordination and runes reactivity.
 
 ### Mocking Strategy
 
 - **Mock at the boundary**: `fetch`, `EventSource`, `clipboard` — test everything above with real implementations
-- **Stores**: test real instances with mocked API underneath. Fresh instance per test to avoid state leakage
+- **Stores**: test real singleton instances with mocked API underneath. Call `store._reset()` in `beforeEach` to restore initial state between tests. For cross-store coordination (forge ↔ editor ↔ patterns), import both stores and test the integration.
+- **Store-dependent utilities**: `mcp-tooltips.ts` imports store singletons directly. Set store state before calling tooltip functions — these are not pure functions.
 - **Components**: render with real stores (pre-set state) + mocked fetch. Assert on DOM, not implementation
-- **Cross-store coordination**: test with real stores imported together (forge ↔ editor ↔ patterns)
 - **SSE streams**: mock `fetch` to return `ReadableStream` for `streamSSE` tests; mock `EventSource` class for `connectEventStream` tests
 
 ### File Organization
@@ -67,21 +70,21 @@ src/lib/
 
 ## Test Tiers
 
-### Tier 1 — Pure Utility Functions (~130 lines, ~98% target)
+### Tier 1 — Pure Utility Functions (~150 lines, ~98% target)
 
 Trivial pure functions — full branch coverage.
 
 | File | Key test cases |
 |------|---------------|
 | `utils/formatting.ts` | `formatScore` edge cases (null, 0, boundaries), `formatDelta` (+/-/zero), `truncateText` (under/at/over limit), `copyToClipboard` (clipboard API + fallback) |
-| `utils/patterns.ts` | `domainColor` for each domain + unknown, `scoreColor` threshold boundaries |
+| `constants/patterns.ts` | `domainColor` for each domain + unknown, `scoreColor` threshold boundaries |
 | `utils/strategies.ts` | `strategyListToOptions` transforms correctly, prepends 'auto', handles empty list |
 | `utils/dimensions.ts` | `DIMENSION_LABELS` completeness, `getPhaseLabel` for each phase + unknown |
-| `utils/mcp-tooltips.ts` | Both tooltip functions with all disabled-state permutations |
+| `components/patterns/utils/layout.ts` | Already tested. Extend if coverage gaps found. |
 
-### Tier 2 — Stores (~1,048 lines, ~92% target)
+### Tier 2 — Stores + Store-Dependent Utils (~1,010 lines, ~92% target)
 
-Reactive class-based stores with Svelte 5 runes. Test state transitions and side effects.
+Reactive class-based stores with Svelte 5 runes. Test state transitions and side effects. Each store class gets a `_reset()` method for test isolation.
 
 | Store | Key test cases |
 |-------|---------------|
@@ -92,6 +95,7 @@ Reactive class-based stores with Svelte 5 runes. Test state transitions and side
 | `patterns.svelte.ts` (147 lines) | Paste detection (50-char delta threshold, debounce), suggestion auto-dismiss (10s), `applySuggestion`/`dismissSuggestion`, `loadGraph`/`selectFamily`/`invalidateGraph` |
 | `refinement.svelte.ts` (137 lines) | `init` loads versions, `refine` SSE flow, `rollback` branch fork, `reset` clears, score progression getter computation |
 | `forge.svelte.ts` (310 lines) | Status machine (idle→analyzing→optimizing→scoring→complete), `handleEvent` for each SSE event type, `reconnect` from localStorage, `submitFeedback` API call + state update, `submitPassthrough` flow, error state handling, cross-store coordination with editor/patterns |
+| `utils/mcp-tooltips.ts` (35 lines) | Both tooltip functions with all disabled-state permutations. **Not pure** — requires store state setup before each test (imports `forgeStore` and `preferencesStore` singletons). |
 
 ### Tier 3 — API Client (~576 lines, ~90% target)
 
@@ -124,9 +128,9 @@ Behavioral tests using `@testing-library/svelte`. Focus on user-visible behavior
 | `EditorGroups.svelte` | Renders tab bar, active tab content, close tab button, tab switching |
 | `PromptEdit.svelte` | Textarea input, character count updates, submit button triggers forge, paste detection |
 
-### Tier 4b — Navigator & Inspector (1,689 lines combined, proper behavioral tests)
+### Tier 4b — Navigator, Inspector, PatternNavigator (2,232 lines combined, proper behavioral tests)
 
-These are the two largest components with significant branching logic. They get deeper testing beyond smoke tests.
+The three largest components with significant branching logic. They get deeper behavioral testing.
 
 **Navigator.svelte (984 lines):**
 - History list rendering with optimization items
@@ -146,36 +150,64 @@ These are the two largest components with significant branching logic. They get 
 - Tab switching between graph view and family detail
 - Empty state when no family selected
 
-### Tier 4c — Smoke Tests for Remaining Components (~17 components)
+**PatternNavigator.svelte (543 lines):**
+- Paginated family list rendering
+- Domain filter selection and filtering
+- Search input with results
+- Family selection dispatches to Inspector
+- Empty state and loading state
+- Pattern stats display
+
+### Tier 4c — Smoke Tests for Remaining Components (~16 components)
 
 Minimal "renders without crashing" + key element assertions (~5-10 lines each). Targets ~40-60% coverage per file.
 
-Landing components: `Navbar`, `Footer`, `ContentPage`, `HeroSection`, `CardGrid`, `Timeline`, `MetricBar`, `CodeBlock`, `StepFlow`, `ProseSection`
+Landing components: `Footer`, `ContentPage`, `HeroSection`, `CardGrid`, `Timeline`, `MetricBar`, `CodeBlock`, `StepFlow`, `ProseSection`
+
+Landing components with more logic: `Navbar` (250 lines — includes navigation links, mobile menu toggle; smoke test covers render + key elements, may need behavioral tests if 90% gap remains)
 
 Editor components: `ForgeArtifact`, `PassthroughView`
 
 Refinement components: `RefinementTimeline`, `RefinementTurnCard`
 
-Pattern components: `RadialMindmap`
+Pattern components: `RadialMindmap` (D3-based — requires SVG DOM mocks in test-setup.ts; `vi.mock('d3')` fallback if jsdom SVG rendering is insufficient)
 
 Shared components: `Logo`
 
 ## Excluded from Coverage
 
-- `src/lib/content/**` — static string exports (changelog, privacy, terms, security). Zero logic to test.
-- `src/routes/**` — thin composition layers. The logic they delegate to is tested via stores and components.
+- `src/lib/content/**` — static string exports (changelog, privacy, terms, security) and type definitions. `content/pages.ts` has a page registry map but is trivial.
+- `src/routes/**` — thin composition layers. `routes/app/+page.svelte` (196 lines) contains health polling and SSE event handling, but this logic is tested indirectly: health polling exercises `api/client.ts` (Tier 3), SSE dispatch exercises `connectEventStream` (Tier 3), and toast/store updates are covered in Tier 2. If coverage falls short, add targeted tests for the route's `$effect` blocks.
+- `src/lib/version.ts`, `src/lib/index.ts` — trivial re-exports.
+- `src/routes/(landing)/[slug]/+page.ts` — minimal SvelteKit loader (9 lines).
+
+## Known Risks
+
+### Svelte 5 Runes in Test Environment
+
+`$state`, `$derived`, and `$effect` are compiler transforms that require the Svelte Vite plugin in the test pipeline. The existing `@sveltejs/vite-plugin-svelte` handles this, but known edge cases:
+
+- **`$effect` blocks** may not execute in jsdom without a proper Svelte lifecycle mount. Component tests using `render()` from `@testing-library/svelte` will trigger effects; direct store tests may need `flushSync` or `tick()` to observe effect-driven state changes.
+- **`$derived` getters** work synchronously in tests — no special handling needed.
+- **Store `.svelte.ts` files** are compiled by the Svelte Vite plugin automatically. If tests fail with "unexpected token $state", verify the plugin is loaded in the test config.
+
+Mitigation: if runes cause issues in store-only tests, extract pure logic into `.ts` helper files and test those instead.
+
+### D3.js in jsdom
+
+`RadialMindmap.svelte` uses D3 force-directed layout which calls SVG APIs (`getBBox`, `getComputedTextLength`) that jsdom doesn't implement. The test-setup.ts mocks these globally. If the smoke test still fails, fall back to `vi.mock('d3')` to stub the entire library.
 
 ## Estimated Test Count
 
 | Tier | Est. Tests |
 |------|-----------|
 | Tier 1 — Utilities | ~50 |
-| Tier 2 — Stores | ~120 |
+| Tier 2 — Stores + mcp-tooltips | ~130 |
 | Tier 3 — API Client | ~60 |
 | Tier 4a — Complex Components | ~80 |
-| Tier 4b — Navigator + Inspector | ~40 |
+| Tier 4b — Navigator + Inspector + PatternNavigator | ~55 |
 | Tier 4c — Smoke Tests | ~20 |
-| **Total** | **~370** |
+| **Total** | **~395** |
 
 ## Success Criteria
 
@@ -183,4 +215,4 @@ Shared components: `Logo`
 - `npx vitest run --coverage` reports ≥90% line coverage on `src/lib/**`
 - No test depends on implementation details (internal state, CSS classes for logic)
 - All tests run in <30s on CI
-- Mocking is confined to boundaries (fetch, EventSource, clipboard)
+- Mocking is confined to boundaries (fetch, EventSource, clipboard, SVG APIs)
