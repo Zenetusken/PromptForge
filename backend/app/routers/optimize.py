@@ -103,7 +103,7 @@ async def optimize(
         scanner = RootsScanner()
         guidance = scanner.scan(_Path(body.workspace_path))
 
-    effective_strategy = body.strategy or _prefs.get("defaults.strategy") or "auto"
+    effective_strategy = body.strategy or _prefs.get("defaults.strategy", prefs_snapshot) or "auto"
 
     if decision.tier == "passthrough":
         # Inline passthrough — stream assembled template via SSE

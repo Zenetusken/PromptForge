@@ -548,13 +548,14 @@ async def synthesis_optimize(
             "Prompt too long (%d chars). Maximum is 200,000 characters." % len(prompt)
         )
 
-    # ---- Hoist: single PreferencesService + workspace resolution for all paths ----
+    # ---- Hoist: single PreferencesService + snapshot for all paths ----
     prefs = PreferencesService(DATA_DIR)
-    effective_strategy = strategy or prefs.get("defaults.strategy") or "auto"
+    prefs_snapshot = prefs.load()
+    effective_strategy = strategy or prefs.get("defaults.strategy", prefs_snapshot) or "auto"
     guidance = await _resolve_workspace_guidance(ctx, workspace_path)
 
     # ---- Routing decision ----
-    ctx_routing = RoutingContext(preferences=prefs.load(), caller="mcp")
+    ctx_routing = RoutingContext(preferences=prefs_snapshot, caller="mcp")
     decision = _routing.resolve(ctx_routing) if _routing else None
 
     if decision is None:
@@ -771,7 +772,8 @@ async def synthesis_analyze(
         )
 
     _prefs = PreferencesService(DATA_DIR)
-    ctx_routing = RoutingContext(preferences=_prefs.load(), caller="mcp")
+    prefs_snapshot = _prefs.load()
+    ctx_routing = RoutingContext(preferences=prefs_snapshot, caller="mcp")
     decision = _routing.resolve(ctx_routing) if _routing else None
 
     if decision is None:
@@ -793,8 +795,6 @@ async def synthesis_analyze(
 
     start = time.monotonic()
     logger.info("synthesis_analyze called: prompt_len=%d", len(prompt))
-
-    prefs_snapshot = _prefs.load()
 
     loader = PromptLoader(PROMPTS_DIR)
     strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")

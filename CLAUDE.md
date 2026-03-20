@@ -96,7 +96,7 @@ Model IDs are centralized in `config.py` as `MODEL_SONNET`, `MODEL_OPUS`, `MODEL
 - `anthropic_api.py` — direct API via `anthropic` SDK with prompt caching (`cache_control: ephemeral`)
 - `base.py` — `LLMProvider` abstract base with `complete_parsed()` and `thinking_config()`
 
-Provider is detected **once at startup** and stored in `app.state.provider`. Never call `detect_provider()` inside a request handler.
+Provider is detected **once at startup** and stored on `app.state.routing` (a `RoutingManager` instance that wraps the provider and MCP state). Never call `detect_provider()` inside a request handler.
 
 ### Routers (`backend/app/routers/`)
 - `optimize.py` — `POST /api/optimize` (SSE), `GET /api/optimize/{trace_id}`
@@ -109,7 +109,7 @@ Provider is detected **once at startup** and stored in `app.state.provider`. Nev
 - `settings.py` — `GET /api/settings` (read-only server config)
 - `github_auth.py` — OAuth flow (login, callback, me, logout)
 - `github_repos.py` — repo management (list, link, linked, unlink)
-- `health.py` — `GET /api/health` (status, provider, score_health, recent_errors, avg_duration_ms, sampling_capable)
+- `health.py` — `GET /api/health` (status, provider, score_health, recent_errors, avg_duration_ms, sampling_capable, mcp_disconnected, available_tiers)
 - `events.py` — `GET /api/events` (SSE event stream), `POST /api/events/_publish` (internal cross-process)
 - `patterns.py` — `GET /api/patterns/graph`, `POST /api/patterns/match`, `GET /api/patterns/families`, `GET /api/patterns/families/{id}`, `PATCH /api/patterns/families/{id}`, `GET /api/patterns/search`, `GET /api/patterns/stats`
 
@@ -256,7 +256,7 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 ## Key architectural decisions
 
 - **Pipeline**: 3 subagent phases (analyze → optimize → score) orchestrated by `pipeline.py`. Each phase is an independent LLM call with a fresh context window. Explore phase runs when a GitHub repo is linked AND `enable_explore` preference is true. Scoring phase skippable via `enable_scoring` preference (lean mode = 2 LLM calls only).
-- **Provider injection**: detected once at startup, injected via `app.state.provider` and MCP lifespan context.
+- **Provider injection**: detected once at startup, injected via `app.state.routing` (RoutingManager) and MCP lifespan context. All routers call `routing.resolve()` to get the active provider.
 - **Prompt templates**: all prompts live in `prompts/` with `{{variable}}` substitution. Validated at startup. Hot-reloaded on every call. Never hardcode prompts in application code.
 - **Scorer bias mitigation**: A/B randomized presentation order + **hybrid scoring** (LLM scores blended with model-independent heuristics via `score_blender.py`). Dimension-specific weights: structure 50% heuristic, conciseness/specificity 40%, clarity 30%, faithfulness 20%. Z-score normalization applied when ≥10 historical samples exist. Divergence flags when LLM and heuristic disagree by >2.5 points.
 - **User preferences**: file-based JSON (`data/preferences.json`), loaded as frozen snapshot per pipeline run. Model selection per phase (analyzer/optimizer/scorer), pipeline toggles (explore/scoring/adaptation), default strategy. Non-configurable: explore synthesis and suggestions always use Haiku. Lean mode = explore+scoring off = 2 LLM calls only.
