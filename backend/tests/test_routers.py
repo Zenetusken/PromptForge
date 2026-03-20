@@ -18,7 +18,6 @@ class TestHealthRouter:
         assert "provider" in data
 
     async def test_health_no_provider(self, app_client):
-        app_client._transport.app.state.provider = None
         app_client._transport.app.state.routing.set_provider(None)
         resp = await app_client.get("/api/health")
         data = resp.json()
@@ -90,7 +89,6 @@ class TestOptimizeRouter:
         assert resp.status_code == 404
 
     async def test_no_provider_returns_passthrough(self, app_client):
-        app_client._transport.app.state.provider = None
         app_client._transport.app.state.routing.set_provider(None)
         resp = await app_client.post(
             "/api/optimize",

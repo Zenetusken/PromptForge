@@ -189,9 +189,12 @@ class RoutingManager:
         self,
         event_bus: EventBus,
         data_dir: Path,
+        *,
+        is_mcp_process: bool = False,
     ) -> None:
         self._event_bus = event_bus
         self._data_dir = data_dir
+        self._is_mcp_process = is_mcp_process
         self._session_file: MCPSessionFile | None = None
         self._disconnect_task: asyncio.Task[None] | None = None
 
@@ -330,15 +333,23 @@ class RoutingManager:
     # ── Internal helpers ──────────────────────────────────────────────
 
     def _update_state(self, **fields: Any) -> None:
-        """Replace specific fields in the current state."""
+        """Replace specific fields in the current state.
+
+        Thread-safety note: all callers (``set_provider``, ``on_mcp_initialize``,
+        ``on_mcp_activity``, ``_disconnect_loop``) are synchronous between
+        their read of ``self._state`` and this write — no ``await`` between
+        read and replace.  This is safe under asyncio's cooperative scheduling.
+        Do not add ``await`` calls between state reads and this method.
+        """
         self._state = replace(self._state, **fields)
 
     def _persist(self) -> None:
         """Write-through to ``mcp_session.json`` for restart recovery.
 
-        Only called from the MCP server process (sole writer per spec).
+        Structurally gated: only executes when ``is_mcp_process=True``
+        (the MCP server is the sole writer per spec).
         """
-        if self._session_file:
+        if self._is_mcp_process and self._session_file:
             try:
                 self._session_file.write_session(
                     sampling_capable=self._state.sampling_capable is True,

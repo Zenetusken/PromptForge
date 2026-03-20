@@ -406,6 +406,101 @@ class TestManagerRecovery:
         assert mgr.state.mcp_connected is False      # activity stale
 
 
+class TestManagerDisconnectLoop:
+    """Test the background disconnect checker."""
+
+    @pytest.mark.asyncio
+    async def test_disconnect_after_staleness(self, tmp_path: Path) -> None:
+        """Activity going stale triggers disconnect and SSE event."""
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import patch
+
+        eb = EventBus()
+        mgr = RoutingManager(event_bus=eb, data_dir=tmp_path, is_mcp_process=True)
+        mgr.on_mcp_initialize(sampling_capable=True)
+        assert mgr.state.mcp_connected is True
+
+        # Set last_activity to far in the past (beyond staleness threshold)
+        stale_time = datetime.now(timezone.utc) - timedelta(seconds=600)
+        mgr._update_state(last_activity=stale_time)
+
+        # Subscribe to events
+        queue: asyncio.Queue = asyncio.Queue(maxsize=10)
+        eb._subscribers.add(queue)
+
+        # Patch sleep to return immediately, then cancel after one iteration
+        call_count = 0
+
+        async def _fast_sleep(seconds):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise asyncio.CancelledError()
+
+        with patch("asyncio.sleep", side_effect=_fast_sleep):
+            try:
+                await mgr._disconnect_loop()
+            except asyncio.CancelledError:
+                pass
+
+        assert mgr.state.mcp_connected is False
+        assert not queue.empty()
+        event = queue.get_nowait()
+        assert event["event"] == "routing_state_changed"
+        assert event["data"]["trigger"] == "disconnect"
+
+    @pytest.mark.asyncio
+    async def test_no_disconnect_when_activity_fresh(self, tmp_path: Path) -> None:
+        """Fresh activity does not trigger disconnect."""
+        from unittest.mock import patch
+
+        eb = EventBus()
+        mgr = RoutingManager(event_bus=eb, data_dir=tmp_path, is_mcp_process=True)
+        mgr.on_mcp_initialize(sampling_capable=True)
+
+        # Activity is fresh (just set by on_mcp_initialize)
+        queue: asyncio.Queue = asyncio.Queue(maxsize=10)
+        eb._subscribers.add(queue)
+
+        call_count = 0
+
+        async def _fast_sleep(seconds):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                raise asyncio.CancelledError()
+
+        with patch("asyncio.sleep", side_effect=_fast_sleep):
+            try:
+                await mgr._disconnect_loop()
+            except asyncio.CancelledError:
+                pass
+
+        assert mgr.state.mcp_connected is True
+        # No disconnect event should have been published
+        # (only the on_mcp_initialize event from setup, before subscription)
+        assert queue.empty()
+
+
+class TestManagerPersistGating:
+    """Verify _persist() only writes when is_mcp_process=True."""
+
+    def test_non_mcp_does_not_persist(self, tmp_path: Path, event_bus: EventBus) -> None:
+        """FastAPI process (is_mcp_process=False) should not write to session file."""
+        mgr = RoutingManager(event_bus=event_bus, data_dir=tmp_path, is_mcp_process=False)
+        mgr.on_mcp_initialize(sampling_capable=True)
+        session_file = tmp_path / "mcp_session.json"
+        # File should not have been written by _persist()
+        assert not session_file.exists()
+
+    def test_mcp_process_persists(self, tmp_path: Path, event_bus: EventBus) -> None:
+        """MCP process (is_mcp_process=True) should write to session file."""
+        mgr = RoutingManager(event_bus=event_bus, data_dir=tmp_path, is_mcp_process=True)
+        mgr.on_mcp_initialize(sampling_capable=True)
+        session_file = tmp_path / "mcp_session.json"
+        assert session_file.exists()
+
+
 class TestManagerAvailableTiers:
     def test_only_passthrough_when_nothing(self, manager: RoutingManager) -> None:
         assert manager.available_tiers == ["passthrough"]

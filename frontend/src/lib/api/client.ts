@@ -14,6 +14,7 @@ export interface HealthResponse {
   recent_errors: { last_hour: number; last_24h: number };
   sampling_capable?: boolean | null;
   mcp_disconnected?: boolean;
+  available_tiers?: string[];
 }
 
 export interface ApiKeyStatus {

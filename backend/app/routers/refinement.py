@@ -63,7 +63,9 @@ async def refine(
     ctx = RoutingContext(preferences=prefs_snapshot, caller="rest")
     decision = routing.resolve(ctx)
 
-    # Refinement still requires a provider (passthrough refinement UX not designed yet)
+    # Refinement still requires a provider (passthrough refinement UX not designed yet).
+    # TODO: when passthrough refinement is added, emit a `routing` SSE event as
+    # the first event in the stream (matching the optimize endpoint pattern).
     if decision.tier == "passthrough":
         logger.warning(
             "POST /api/refine rejected: tier=passthrough optimization_id=%s",

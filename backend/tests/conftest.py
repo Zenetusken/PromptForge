@@ -49,8 +49,6 @@ async def app_client(mock_provider, db_session, tmp_path):
     test_routing = RoutingManager(event_bus=EventBus(), data_dir=tmp_path)
     test_routing.set_provider(mock_provider)
     app.state.routing = test_routing
-    # Keep backward compat for any tests not yet migrated
-    app.state.provider = mock_provider
 
     async def override_get_db():
         yield db_session

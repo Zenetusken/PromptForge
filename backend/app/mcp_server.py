@@ -99,9 +99,6 @@ try:
 except Exception:
     logger.warning("Could not patch StreamableHTTPServerTransport — SSE reconnection may not work", exc_info=True)
 
-# Module-level provider cache — set once by the lifespan, read by tools.
-_provider = None
-
 # Module-level routing manager — set once by the lifespan, read by tools and middleware.
 _routing: RoutingManager | None = None
 
@@ -146,7 +143,7 @@ async def _resolve_workspace_guidance(
 @asynccontextmanager
 async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Detect the LLM provider and initialize routing at startup."""
-    global _provider, _routing
+    global _routing
     # Clear stale session from previous run (belt-and-suspenders with __main__ call)
     _clear_stale_session()
 
@@ -162,22 +159,21 @@ async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     from app.services.event_bus import EventBus as _EventBus
 
     _mcp_event_bus = _EventBus()
-    _routing = RoutingManager(event_bus=_mcp_event_bus, data_dir=DATA_DIR)
+    _routing = RoutingManager(event_bus=_mcp_event_bus, data_dir=DATA_DIR, is_mcp_process=True)
 
-    _provider = detect_provider()
-    if _provider:
-        _routing.set_provider(_provider)
-        logger.info("MCP routing: provider=%s tiers=%s", _provider.name, _routing.available_tiers)
+    _detected_provider = detect_provider()
+    if _detected_provider:
+        _routing.set_provider(_detected_provider)
+        logger.info("MCP routing: provider=%s tiers=%s", _detected_provider.name, _routing.available_tiers)
     else:
         logger.warning("MCP routing: no provider, tiers=%s", _routing.available_tiers)
 
     await _routing.start_disconnect_checker()
 
-    yield {"provider": _provider}
+    yield {}
 
     await _routing.stop()
     _routing = None
-    _provider = None
 
 
 mcp = FastMCP(
@@ -386,6 +382,9 @@ class _CapabilityDetectionMiddleware:
         sees the updated count.  When the last stream closes (count → 0),
         we do NOT update ``last_activity`` — letting it go stale so the
         health endpoint detects the disconnect via the normal staleness check.
+
+        When ``_routing`` is available, also refreshes its in-memory activity
+        timestamp to keep the on-disk file and RoutingManager in sync.
         """
         try:
             fields: dict = {"sse_streams": cls._active_sse_streams}
@@ -393,6 +392,9 @@ class _CapabilityDetectionMiddleware:
             # let staleness detection handle the disconnect.
             if cls._active_sse_streams > 0:
                 fields["last_activity"] = datetime.now(timezone.utc).isoformat()
+                # Keep RoutingManager in sync with file activity
+                if _routing:
+                    _routing.on_mcp_activity()
             _session_file.update(**fields)
         except Exception:
             logger.debug("_flush_sse_streams: could not update mcp_session.json", exc_info=True)
@@ -407,6 +409,8 @@ class _CapabilityDetectionMiddleware:
         POST ``initialize`` the middleware will overwrite with the actual value.
         """
         try:
+            if _routing:
+                _routing.on_mcp_initialize(sampling_capable=True)
             _session_file.write_session(True, sse_streams=cls._active_sse_streams)
             logger.info(
                 "Optimistic session write: sampling_capable=True "
@@ -428,6 +432,11 @@ class _CapabilityDetectionMiddleware:
         """
         removed = _session_file.delete()
         if removed:
+            if _routing:
+                _routing._update_state(
+                    sampling_capable=None, mcp_connected=False,
+                )
+                _routing._broadcast_state_change("session_invalidated")
             logger.info(
                 "Stale session cleanup: removed mcp_session.json after failed "
                 "client reconnection (400/404)",

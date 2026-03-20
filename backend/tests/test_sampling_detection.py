@@ -51,11 +51,11 @@ class TestRoutingMcpInitialize:
     """
 
     @staticmethod
-    def _make_routing(tmp_path):
-        """Create a RoutingManager for testing."""
+    def _make_routing(tmp_path, *, is_mcp_process: bool = True):
+        """Create a RoutingManager for testing (defaults to MCP process)."""
         from app.services.event_bus import EventBus
         from app.services.routing import RoutingManager
-        return RoutingManager(event_bus=EventBus(), data_dir=tmp_path)
+        return RoutingManager(event_bus=EventBus(), data_dir=tmp_path, is_mcp_process=is_mcp_process)
 
     def test_sampling_true_updates_state(self, tmp_path):
         """on_mcp_initialize(True) sets sampling_capable=True and mcp_connected=True."""
@@ -199,7 +199,6 @@ class TestHealthSamplingCapable:
     async def test_available_tiers_without_provider(self, app_client):
         """Without provider, available_tiers is passthrough only."""
         app_client._transport.app.state.routing.set_provider(None)
-        app_client._transport.app.state.provider = None
 
         data = (await app_client.get("/api/health")).json()
         assert data["available_tiers"] == ["passthrough"]
@@ -427,7 +426,6 @@ class TestSamplingDetectionIntegration:
             "/api/preferences",
             json={"pipeline": {"force_passthrough": True}},
         )
-        app_client._transport.app.state.provider = None
         app_client._transport.app.state.routing.set_provider(None)
 
         resp = await app_client.post(

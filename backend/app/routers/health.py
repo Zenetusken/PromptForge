@@ -73,8 +73,8 @@ async def health_check(request: Request, db: AsyncSession = Depends(get_db)) -> 
         mcp_disconnected = not routing.state.mcp_connected if routing.state.sampling_capable is True else False
         available_tiers = routing.available_tiers
     else:
-        provider = getattr(request.app.state, "provider", None)  # fallback
-        provider_name = provider.name if provider else None
+        provider = None
+        provider_name = None
         sampling_capable = None
         mcp_disconnected = False
         available_tiers = ["passthrough"]

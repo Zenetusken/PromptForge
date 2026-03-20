@@ -175,7 +175,6 @@ async def test_optimize_validates_prompt_too_long() -> None:
 async def test_optimize_returns_model(db_session) -> None:
     """synthesis_optimize returns an OptimizeOutput model (passthrough path)."""
     with (
-        patch("app.mcp_server._provider", None),
         patch("app.mcp_server._routing", _mock_routing("passthrough")),
         patch("app.mcp_server.async_session_factory") as mock_factory,
     ):
@@ -240,7 +239,6 @@ async def test_save_result_stores_codebase_context(db_session) -> None:
 async def test_optimize_passthrough_includes_strategy(db_session) -> None:
     """Passthrough mode includes the requested strategy in the assembled prompt."""
     with (
-        patch("app.mcp_server._provider", None),
         patch("app.mcp_server._routing", _mock_routing("passthrough")),
         patch("app.mcp_server.async_session_factory") as mock_factory,
     ):
@@ -259,7 +257,6 @@ async def test_optimize_passthrough_includes_strategy(db_session) -> None:
 async def test_optimize_passthrough_then_save_full_flow(db_session) -> None:
     """Full passthrough flow: optimize (pending) → save_result (completed)."""
     with (
-        patch("app.mcp_server._provider", None),
         patch("app.mcp_server._routing", _mock_routing("passthrough")),
         patch("app.mcp_server.async_session_factory") as mock_factory,
     ):
@@ -307,7 +304,6 @@ async def test_optimize_passthrough_then_save_full_flow(db_session) -> None:
 async def test_optimize_passthrough_save_without_scores(db_session) -> None:
     """Passthrough save without IDE scores falls back to heuristic."""
     with (
-        patch("app.mcp_server._provider", None),
         patch("app.mcp_server._routing", _mock_routing("passthrough")),
         patch("app.mcp_server.async_session_factory") as mock_factory,
     ):
@@ -389,7 +385,6 @@ async def test_analyze_sampling_fallback(db_session) -> None:
     ctx.session.client_params = None
 
     with (
-        patch("app.mcp_server._provider", None),
         patch("app.mcp_server._routing", _mock_routing("sampling")),
         patch("app.services.sampling_pipeline.async_session_factory") as mock_factory,
     ):

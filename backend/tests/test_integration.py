@@ -233,7 +233,6 @@ class TestPassthroughEndToEnd:
         self, app_client, db_session,
     ):
         # ── Zero-provider baseline ──────────────────────────────────────
-        app_client._transport.app.state.provider = None
         app_client._transport.app.state.routing.set_provider(None)
 
         resp = await app_client.get("/api/health")
@@ -432,7 +431,6 @@ class TestPassthroughEndToEnd:
         self, app_client, db_session,
     ):
         """Multiple independent passthrough cycles produce distinct records."""
-        app_client._transport.app.state.provider = None
         app_client._transport.app.state.routing.set_provider(None)
 
         prompts = [
@@ -494,7 +492,6 @@ class TestPassthroughEndToEnd:
     ):
         """Passthrough and normal optimizations coexist cleanly in the system."""
         # ── Passthrough (no provider) ───────────────────────────────────
-        app_client._transport.app.state.provider = None
         app_client._transport.app.state.routing.set_provider(None)
 
         resp = await app_client.post(
@@ -515,7 +512,6 @@ class TestPassthroughEndToEnd:
         assert resp.json()["status"] == "completed"
 
         # ── Normal optimize (with provider) ─────────────────────────────
-        app_client._transport.app.state.provider = mock_provider
         app_client._transport.app.state.routing.set_provider(mock_provider)
         mock_provider.complete_parsed.side_effect = [
             AnalysisResult(
@@ -596,7 +592,6 @@ class TestPassthroughEndToEnd:
         self, app_client, db_session,
     ):
         """Event bus correctly emits and receives passthrough events."""
-        app_client._transport.app.state.provider = None
         app_client._transport.app.state.routing.set_provider(None)
 
         from app.services.event_bus import event_bus
@@ -659,7 +654,6 @@ class TestPassthroughEndToEnd:
         self, app_client, db_session,
     ):
         """Re-saving a passthrough with a better prompt updates scores."""
-        app_client._transport.app.state.provider = None
         app_client._transport.app.state.routing.set_provider(None)
 
         resp = await app_client.post(
