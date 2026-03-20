@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 FAMILY_MERGE_THRESHOLD = 0.78
 PATTERN_MERGE_THRESHOLD = 0.82
 
+# Valid domain values — must match DomainType in pipeline_contracts.py
+VALID_DOMAINS = {"backend", "frontend", "database", "devops", "security", "fullstack", "general"}
+
+
+def _sanitize_domain(domain: str) -> str:
+    """Normalize domain to a known value. Falls back to 'general' for legacy/corrupt data."""
+    return domain if domain in VALID_DOMAINS else "general"
+
 
 class PatternExtractorService:
     """Extracts and clusters prompt patterns from completed optimizations."""
@@ -97,7 +105,7 @@ class PatternExtractorService:
                     db,
                     embedding=embedding,
                     intent_label=opt.intent_label or "general",
-                    domain=opt.domain or "general",
+                    domain=_sanitize_domain(opt.domain or "general"),
                     task_type=opt.task_type or "general",
                     overall_score=opt.overall_score,
                 )
@@ -205,36 +213,47 @@ class PatternExtractorService:
                 if matches and matches[0][1] >= FAMILY_MERGE_THRESHOLD:
                     idx, score = matches[0]
                     family = valid_families[idx]
-                    logger.info(
-                        "Merging into family '%s' (cosine=%.3f, members=%d→%d)",
-                        family.intent_label,
-                        score,
-                        family.member_count,
-                        family.member_count + 1,
-                    )
 
-                    # Update centroid as running mean
-                    old_centroid = np.frombuffer(
-                        family.centroid_embedding, dtype=np.float32
-                    )
-                    new_centroid = self._update_centroid(
-                        old_centroid, embedding, family.member_count
-                    )
-                    family.centroid_embedding = new_centroid.astype(
-                        np.float32
-                    ).tobytes()
-                    family.member_count += 1
-
-                    # Update avg_score
-                    if overall_score is not None and family.avg_score is not None:
-                        total = (
-                            family.avg_score * (family.member_count - 1) + overall_score
+                    # Cross-domain merge prevention: embedding similarity is high
+                    # but the domains differ — create a new family instead.
+                    if family.domain != domain:
+                        logger.info(
+                            "Cross-domain merge prevented: family '%s' domain=%s != incoming domain=%s "
+                            "(cosine=%.3f). Creating new family instead.",
+                            family.intent_label, family.domain, domain, score,
                         )
-                        family.avg_score = round(total / family.member_count, 2)
-                    elif overall_score is not None:
-                        family.avg_score = overall_score
+                        # Fall through to create a new family below
+                    else:
+                        logger.info(
+                            "Merging into family '%s' (cosine=%.3f, members=%d→%d)",
+                            family.intent_label,
+                            score,
+                            family.member_count,
+                            family.member_count + 1,
+                        )
 
-                    return family
+                        # Update centroid as running mean
+                        old_centroid = np.frombuffer(
+                            family.centroid_embedding, dtype=np.float32
+                        )
+                        new_centroid = self._update_centroid(
+                            old_centroid, embedding, family.member_count
+                        )
+                        family.centroid_embedding = new_centroid.astype(
+                            np.float32
+                        ).tobytes()
+                        family.member_count += 1
+
+                        # Update avg_score
+                        if overall_score is not None and family.avg_score is not None:
+                            total = (
+                                family.avg_score * (family.member_count - 1) + overall_score
+                            )
+                            family.avg_score = round(total / family.member_count, 2)
+                        elif overall_score is not None:
+                            family.avg_score = overall_score
+
+                        return family
                 else:
                     best_score = matches[0][1] if matches else 0.0
                     logger.debug(
@@ -276,7 +295,8 @@ class PatternExtractorService:
                     "raw_prompt": opt.raw_prompt[:2000],  # cap input size
                     "optimized_prompt": (opt.optimized_prompt or "")[:2000],
                     "intent_label": opt.intent_label or "general",
-                    "domain": opt.domain or "general",
+                    "domain_raw": opt.domain or "general",
+                    "taxonomy_context": "",  # legacy service has no taxonomy context
                     "strategy_used": opt.strategy_used or "auto",
                 },
             )

@@ -50,17 +50,6 @@ FAMILY_MATCH_THRESHOLD = 0.72
 CLUSTER_MATCH_THRESHOLD = 0.60
 CANDIDATE_THRESHOLD = 0.80
 
-# Valid domain values — must match DomainType in pipeline_contracts.py
-_VALID_DOMAINS = frozenset(
-    {"backend", "frontend", "database", "devops", "security", "fullstack", "general"}
-)
-
-
-def _sanitize_domain(domain: str) -> str:
-    """Normalize domain to a known value. Falls back to 'general' for unknown."""
-    return domain if domain in _VALID_DOMAINS else "general"
-
-
 # ---------------------------------------------------------------------------
 # Public data-transfer objects
 # ---------------------------------------------------------------------------
@@ -215,21 +204,21 @@ class TaxonomyEngine:
             opt.embedding = embedding.astype(np.float32).tobytes()
 
             # 2. Find or create PatternFamily
-            # Use the structured `domain` field (already validated by the pipeline)
-            # as the canonical domain for family assignment.  `domain_raw` is freeform
-            # text that may not map to a valid domain value.
+            # Use domain_raw (free-text from analyzer) as the canonical domain.
+            # The taxonomy engine does NOT constrain domains to a hardcoded list —
+            # domains are emergent properties discovered through clustering.
             async with self._lock:
                 family = await self._assign_family(
                     db=db,
                     embedding=embedding,
                     intent_label=opt.intent_label or "general",
-                    domain=_sanitize_domain(opt.domain or "general"),
+                    domain=opt.domain_raw or opt.domain or "general",
                     task_type=opt.task_type or "general",
                     overall_score=opt.overall_score,
                 )
 
             # 3. Extract meta-patterns
-            meta_texts = await self._extract_meta_patterns(opt)
+            meta_texts = await self._extract_meta_patterns(opt, db)
 
             # 4. Merge meta-patterns
             for text in meta_texts:
@@ -400,14 +389,12 @@ class TaxonomyEngine:
 
                     if score >= threshold:
                         # Aggregate meta-patterns from top-3 child families
-                        # by member_count (Spec 7.7)
+                        # ranked by cosine similarity to query (Spec 7.7)
                         child_fam_result = await db.execute(
                             select(PatternFamily)
                             .where(PatternFamily.taxonomy_node_id == node.id)
-                            .order_by(PatternFamily.member_count.desc())
-                            .limit(3)
                         )
-                        top_families = list(child_fam_result.scalars().all())
+                        candidate_families = list(child_fam_result.scalars().all())
 
                         # Also include families from child nodes
                         child_node_result = await db.execute(
@@ -424,18 +411,33 @@ class TaxonomyEngine:
                                 .where(
                                     PatternFamily.taxonomy_node_id.in_(child_node_ids)
                                 )
-                                .order_by(PatternFamily.member_count.desc())
-                                .limit(3)
                             )
-                            child_child_families = list(
+                            candidate_families.extend(
                                 child_child_fam_result.scalars().all()
                             )
-                            # Combine and take top-3 by member_count
-                            all_candidate_families = top_families + child_child_families
-                            all_candidate_families.sort(
-                                key=lambda f: f.member_count or 0, reverse=True
-                            )
-                            top_families = all_candidate_families[:3]
+
+                        # Rank all candidate families by cosine similarity
+                        # to the query embedding and take top-3
+                        scored_families: list[tuple[PatternFamily, float]] = []
+                        for fam in candidate_families:
+                            try:
+                                fc = np.frombuffer(
+                                    fam.centroid_embedding, dtype=np.float32
+                                )
+                                if fc.shape[0] != query_emb.shape[0]:
+                                    continue
+                                norm_fc = np.linalg.norm(fc)
+                                norm_q = np.linalg.norm(query_emb)
+                                if norm_fc > 0 and norm_q > 0:
+                                    sim = float(
+                                        np.dot(query_emb, fc) / (norm_q * norm_fc)
+                                    )
+                                    scored_families.append((fam, sim))
+                            except (ValueError, TypeError):
+                                continue
+
+                        scored_families.sort(key=lambda x: x[1], reverse=True)
+                        top_families = [f for f, _ in scored_families[:3]]
 
                         # Gather meta-patterns from these families
                         family_ids = [f.id for f in top_families]
@@ -755,11 +757,12 @@ class TaxonomyEngine:
                     ops_accepted += 1
                     operations_log.append({"type": "retire", "node_id": node.id})
 
-        # 4. Compute Q_after and check non-regression
+        # 4. Update per-node separation and compute Q_after
         result = await db.execute(
             select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
         )
         confirmed_after = list(result.scalars().all())
+        self._update_per_node_separation(confirmed_after)
         q_after = self._compute_q_from_nodes(confirmed_after)
 
         if ops_accepted > 0 and not is_non_regressive(
@@ -1118,20 +1121,24 @@ class TaxonomyEngine:
 
         if color_pairs:
             enforced = enforce_minimum_delta_e(color_pairs)
+            node_by_id = {n.id: n for n in all_nodes}
             for node_id, color_hex in enforced:
-                for node in all_nodes:
-                    if node.id == node_id:
-                        node.color_hex = color_hex
-                        break
+                if node_id in node_by_id:
+                    node_by_id[node_id].color_hex = color_hex
 
-        # 6. Compute final Q_system
+        # 6. Compute per-node separation and update on each node
+        #    Each node's separation = min cosine distance to any other node.
         result = await db.execute(
             select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
         )
         confirmed_after = list(result.scalars().all())
+
+        self._update_per_node_separation(confirmed_after)
+
+        # 7. Compute final Q_system (reads node.separation set above)
         q_system = self._compute_q_from_nodes(confirmed_after)
 
-        # 7. Compute separation for snapshot
+        # 8. Aggregate metrics for snapshot
         node_centroids = []
         for n in confirmed_after:
             try:
@@ -1140,13 +1147,13 @@ class TaxonomyEngine:
             except (ValueError, TypeError):
                 continue
 
-        separation = compute_separation(node_centroids) if len(node_centroids) >= 2 else 0.0
+        separation = compute_separation(node_centroids) if len(node_centroids) >= 2 else 1.0
         coherences = [n.coherence for n in confirmed_after if n.coherence is not None]
         mean_coherence = float(np.mean(coherences)) if coherences else 0.0
 
         await db.commit()
 
-        # 8. Create snapshot
+        # 9. Create snapshot
         snap = await create_snapshot(
             db,
             trigger="cold_path",
@@ -1157,7 +1164,7 @@ class TaxonomyEngine:
             nodes_created=nodes_created,
         )
 
-        # 9. Refresh centroid cache
+        # 10. Refresh centroid cache
         self._refresh_centroid_cache(confirmed_after)
 
         return ColdPathResult(
@@ -1193,9 +1200,13 @@ class TaxonomyEngine:
                 )
             )
 
-        # DBCV ramp: 0 if < 5 confirmed nodes
+        # DBCV ramp: gate = ≥5 confirmed nodes, then ramp linearly over
+        # warm_path_age / 20 observations (Spec Section 2.5).
         confirmed_count = sum(1 for m in metrics if m.state == "confirmed")
-        ramp = min(1.0, max(0.0, (confirmed_count - 5) / 20.0)) if confirmed_count >= 5 else 0.0
+        if confirmed_count >= 5:
+            ramp = min(1.0, max(0.0, self._warm_path_age / 20.0))
+        else:
+            ramp = 0.0
         weights = QWeights.from_ramp(ramp)
 
         return compute_q_system(metrics, weights)
@@ -1209,6 +1220,47 @@ class TaxonomyEngine:
                 self._centroid_cache[n.id] = c
             except (ValueError, TypeError):
                 continue
+
+    @staticmethod
+    def _update_per_node_separation(nodes: list[TaxonomyNode]) -> None:
+        """Set each node's ``separation`` to the minimum cosine distance to any sibling.
+
+        For a single node, separation is 1.0 (no siblings to conflict with).
+        Modifies nodes in-place.
+        """
+        if len(nodes) <= 1:
+            for n in nodes:
+                n.separation = 1.0
+            return
+
+        # Build centroid matrix
+        valid: list[tuple[int, np.ndarray]] = []
+        for i, n in enumerate(nodes):
+            try:
+                c = np.frombuffer(n.centroid_embedding, dtype=np.float32).copy()
+                valid.append((i, c))
+            except (ValueError, TypeError):
+                n.separation = 1.0  # default for corrupt centroid
+
+        if len(valid) < 2:
+            for n in nodes:
+                n.separation = 1.0
+            return
+
+        mat = np.stack([c for _, c in valid], axis=0).astype(np.float32)
+        norms = np.linalg.norm(mat, axis=1, keepdims=True)
+        norms = np.where(norms == 0, 1.0, norms)
+        mat_norm = mat / norms
+        sim_matrix = mat_norm @ mat_norm.T  # cosine similarity
+        dist_matrix = 1.0 - sim_matrix       # cosine distance
+
+        # Fill diagonal with inf so self-distance is ignored
+        np.fill_diagonal(dist_matrix, np.inf)
+
+        for j, (orig_idx, _) in enumerate(valid):
+            min_dist = float(dist_matrix[j].min())
+            # Clamp to [0, 1] for safety
+            nodes[orig_idx].separation = max(0.0, min(1.0, min_dist))
 
     async def _create_warm_snapshot(
         self,
@@ -1241,7 +1293,7 @@ class TaxonomyEngine:
             except (ValueError, TypeError):
                 continue
 
-        separation = compute_separation(centroids) if len(centroids) >= 2 else 0.0
+        separation = compute_separation(centroids) if len(centroids) >= 2 else 1.0
 
         nodes_created = sum(1 for op in operations if op.get("type") == "emerge")
         nodes_merged = sum(1 for op in operations if op.get("type") == "merge")
@@ -1399,7 +1451,7 @@ class TaxonomyEngine:
             db: Async SQLAlchemy session.
             embedding: Unit-norm embedding of the raw prompt.
             intent_label: Analyzer intent label.
-            domain: Sanitized domain string (one of the known domain values).
+            domain: Free-text domain string from the analyzer (via domain_raw).
             task_type: Analyzer task type.
             overall_score: Pipeline overall score (may be None).
 
@@ -1509,7 +1561,9 @@ class TaxonomyEngine:
         )
         return family
 
-    async def _extract_meta_patterns(self, opt: Optimization) -> list[str]:
+    async def _extract_meta_patterns(
+        self, opt: Optimization, db: AsyncSession
+    ) -> list[str]:
         """Call Haiku to extract meta-patterns from a completed optimization.
 
         Renders extract_patterns.md template, calls provider.complete_parsed()
@@ -1518,6 +1572,7 @@ class TaxonomyEngine:
 
         Args:
             opt: Completed Optimization row with prompt text and metadata.
+            db: Async SQLAlchemy session (used for taxonomy node lookup).
 
         Returns:
             List of meta-pattern strings (at most 5).
@@ -1527,14 +1582,32 @@ class TaxonomyEngine:
             return []
 
         try:
+            # Build taxonomy context string (Spec 7.6)
+            taxonomy_context = ""
+            if opt.taxonomy_node_id:
+                try:
+                    node_result = await db.execute(
+                        select(TaxonomyNode).where(TaxonomyNode.id == opt.taxonomy_node_id)
+                    )
+                    tax_node = node_result.scalar_one_or_none()
+                    if tax_node:
+                        breadcrumb = await self._build_breadcrumb(db, tax_node)
+                        taxonomy_context = (
+                            f'This prompt belongs to the "{tax_node.label}" pattern cluster '
+                            f"({' > '.join(breadcrumb)}).\n"
+                        )
+                except Exception:
+                    pass  # Non-fatal — empty context is fine
+
             template = self._prompt_loader.render(
                 "extract_patterns.md",
                 {
                     "raw_prompt": opt.raw_prompt[:2000],
                     "optimized_prompt": (opt.optimized_prompt or "")[:2000],
                     "intent_label": opt.intent_label or "general",
-                    "domain": opt.domain or "general",
+                    "domain_raw": opt.domain_raw or opt.domain or "general",
                     "strategy_used": opt.strategy_used or "auto",
+                    "taxonomy_context": taxonomy_context,
                 },
             )
 

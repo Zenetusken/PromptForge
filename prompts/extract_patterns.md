@@ -6,7 +6,8 @@
 {{optimized_prompt}}
 </optimized-prompt>
 <intent-label>{{intent_label}}</intent-label>
-<domain>{{domain}}</domain>
+<domain>{{domain_raw}}</domain>
+{{taxonomy_context}}
 <strategy-used>{{strategy_used}}</strategy-used>
 </optimization-record>
 
