@@ -115,15 +115,39 @@ Base thresholds calibrated from the current system's empirical values (0.78 fami
 
 ### 2.5 Non-Regression Invariant
 
-**Cardinal rule: system-wide quality must be monotonically non-decreasing.**
+**Cardinal rule: system-wide quality must be monotonically non-decreasing, with epsilon tolerance and compound operation support to prevent deadlock.**
 
 ```
 Q_system = w_c * mean(coherence_i) + w_s * mean(separation_ij) + w_v * coverage + w_d * DBCV
 ```
 
-Default weights: `w_c=0.4, w_s=0.35, w_v=0.25, w_d=0.0` (DBCV weighted at 0.0 initially — activated once the tree has >= 5 confirmed nodes, then ramped to 0.15 over 20 observations).
+**Weight management — constant-sum normalization:**
 
-Every operation computes `Q_before` and `Q_after`. If `Q_after < Q_before`, the operation is rejected and logged. No exceptions.
+Weights always sum to 1.0. When DBCV activates (tree >= 5 confirmed nodes), other weights scale down proportionally to make room:
+
+```
+w_d_target = 0.15
+ramp_progress = min(1.0, observations_since_activation / 20)
+w_d = w_d_target * ramp_progress
+
+# Scale remaining weights to fill 1.0 - w_d
+remaining = 1.0 - w_d
+w_c = 0.4 * remaining    # 0.4 at w_d=0, 0.34 at w_d=0.15
+w_s = 0.35 * remaining   # 0.35 at w_d=0, 0.2975 at w_d=0.15
+w_v = 0.25 * remaining   # 0.25 at w_d=0, 0.2125 at w_d=0.15
+```
+
+This ensures `total_weight == 1.0` always. DBCV ramp-in is mathematically smooth — no discontinuity in Q_system when DBCV activates.
+
+**Epsilon tolerance and compound operations:**
+
+Strict `Q_after >= Q_before` can deadlock the system when embedding distributions drift naturally. Two escape hatches:
+
+1. **Epsilon tolerance:** `Q_after >= Q_before - epsilon`, where `epsilon = max(0.001, 0.01 * exp(-age / 50))`. Young taxonomies (age < 20 warm-path cycles) get epsilon ~= 0.007, mature taxonomies (~100 cycles) get epsilon ~= 0.001. This allows minor temporary dips that correct themselves.
+
+2. **Compound operation batching:** Within a single warm-path cycle, all operations of the same priority level are evaluated as a batch: `Q_before` is measured once before the first operation, `Q_after` once after the last. A split that temporarily dips Q (by creating small fragments) followed by an emerge (consolidating fragments) can pass as a unit even if neither would pass individually.
+
+3. **Deadlock breaker:** If 5 consecutive warm-path cycles reject ALL attempted operations (system is stuck), force the highest-confidence single operation through regardless of Q_system impact, log a warning, and schedule a cold-path recomputation. This prevents permanent stagnation.
 
 **Edge case hardening for Q_system computation:**
 
@@ -157,14 +181,34 @@ def compute_q_system(nodes: list[TaxonomyNode], weights: QWeights) -> float:
     coverage = max(0.0, min(1.0, coverage))
     dbcv = max(0.0, min(1.0, dbcv))
 
+    # Weights always sum to 1.0 (constant-sum normalization)
     raw = weights.w_c * mean_c + weights.w_s * mean_s + weights.w_v * coverage + weights.w_d * dbcv
+
+    # Sanity check — should not happen with constant-sum weights, but defensive
     total_weight = weights.w_c + weights.w_s + weights.w_v + weights.w_d
-
-    if total_weight == 0:
+    if total_weight < 1e-9:
         return 0.0
+    if abs(total_weight - 1.0) > 1e-6:
+        raw /= total_weight  # Self-heal if weights drift
 
-    return raw / total_weight  # Normalized to [0.0, 1.0]
+    return max(0.0, min(1.0, raw))
 ```
+
+### 2.6 Concurrency Model
+
+The hot path (per-optimization) and warm path (periodic) can run concurrently. This requires explicit coordination:
+
+```python
+class TaxonomyEngine:
+    _warm_path_lock: asyncio.Lock   # Serializes warm-path execution
+    _warm_path_running: bool        # Deduplication flag
+```
+
+**Hot path:** Lock-free. Does nearest-centroid assignment using a read-consistent snapshot of cluster centroids (cached in memory, refreshed after each warm-path cycle). If the hot path assigns an optimization to a cluster that the concurrent warm-path retires mid-flight, the optimization's `taxonomy_node_id` becomes stale. On the next warm-path cycle, stale assignments are detected (node is retired) and re-assigned.
+
+**Warm path:** Acquires `_warm_path_lock` before starting. If the lock is held (another warm-path is running), the invocation is skipped and logged. This prevents both the timer trigger and the optimization-count trigger from running concurrently.
+
+**Cold path:** Acquires `_warm_path_lock` (same lock — cold path is a superset of warm path). Blocks warm-path invocations for the duration. Hot-path continues with stale cached centroids; refreshed when cold-path completes.
 
 ---
 
@@ -185,7 +229,7 @@ A new cluster crystallizes from uncategorized or singleton nodes.
 
 1. HDBSCAN identifies candidate cluster `C_new`.
 2. Compute `coherence(C_new)` and `separation(C_new)`.
-3. Speculative gate: compute `Q_system` before and after assigning members to `C_new`. Commit only if `Q_after >= Q_before`.
+3. Speculative gate: compute `Q_system` before and after assigning members to `C_new`. Commit only if `Q_after >= Q_before - epsilon` (see Section 2.5 for epsilon formula).
 4. On commit: state = `candidate`. Generate label via Haiku. Generate color from UMAP position in OKLab. Insert parent edge. Publish `taxonomy_changed` event.
 5. Promotion: `candidate` -> `confirmed` when stability sustains below drift threshold for 5 consecutive warm-path cycles.
 
@@ -203,7 +247,7 @@ Two clusters converge semantically.
 2. For each pair:
    a. Compute merged cluster `M = A U B`.
    b. Verify: `coherence(M) >= min(coherence(A), coherence(B))` — merged cluster not less coherent than the weaker parent.
-   c. Speculative gate: `Q_system` must be non-regressive.
+   c. Speculative gate: `Q_system` must be non-regressive (epsilon-tolerant, see Section 2.5).
    d. Meta-pattern preservation: all meta-patterns from both A and B retained. Duplicates (cosine >= 0.82) enriched, never dropped.
    e. If all gates pass, commit.
 3. On commit: M inherits label of higher-persistence parent. Centroid = weighted mean by member count. Color regenerated. A and B transition to `retired` (soft delete, preserved for audit). Publish `taxonomy_changed`.
@@ -222,7 +266,7 @@ A cluster has accumulated enough internal sub-structure to warrant separation.
 2. Extract candidate children `C_1, ..., C_k`.
 3. Verify: `coherence(C_i) > coherence(P)` for ALL children — every child more coherent than parent.
 4. Verify: no orphans — every member of P assigned to some `C_i` or reassigned to nearest sibling. Orphan count < 10%.
-5. Speculative gate: `Q_system` must be non-regressive.
+5. Speculative gate: `Q_system` must be non-regressive (epsilon-tolerant, see Section 2.5).
 6. Meta-pattern redistribution: each pattern assigned to child whose centroid is most similar. No patterns dropped.
 7. On commit: generate labels and colors for each child. P transitions to `retired`. Children inherit P's parent edge. Publish `taxonomy_changed`.
 
@@ -232,7 +276,7 @@ A cluster has accumulated enough internal sub-structure to warrant separation.
 
 A cluster loses relevance.
 
-**Trigger (warm path):** Member count < 2 for >= 3 consecutive warm-path cycles, OR zero new members for >= 20 observations.
+**Trigger (warm path):** Member count < 2 for >= 3 consecutive warm-path cycles, OR zero new members for an adaptive observation count. The idle threshold adapts with age: `retire_after_idle = max(20, 3 * age_in_days)`. A confirmed cluster less than 7 days old is never eligible for retirement (minimum age gate). This prevents premature retirement of seasonal or periodic-use clusters.
 
 **Algorithm:**
 
@@ -384,6 +428,12 @@ class TaxonomySnapshot(Base):
     tree_state: str                  # JSON: node IDs + parent edges
 ```
 
+**Snapshot retention policy:** Snapshots accumulate rapidly (one per warm-path cycle, ~every 5 minutes). Pruning runs after each snapshot write:
+- Last 24 hours: keep all snapshots
+- 1-30 days: keep one per day (highest Q_system that day)
+- 30+ days: keep one per week
+- `tree_state` JSON is stored only on daily/weekly retained snapshots; warm-path snapshots within the 24-hour window store operations-only diffs to minimize storage.
+
 ### 5.3 Modified: `PatternFamily`
 
 ```python
@@ -489,7 +539,20 @@ analyze --> domain_mapping --> optimize --> score
         (synchronous)                  (background task)
 ```
 
-Warm-path triggered every `warm_path_interval` (default 10) optimizations, plus a 5-minute background timer.
+Warm-path triggered every `warm_path_interval` (default 10) optimizations, plus a 5-minute background timer. Both triggers are deduplicated via `_warm_path_running` flag (see Section 2.6).
+
+**`process_optimization()` responsibilities (replaces `PatternExtractorService.process()`):**
+
+The taxonomy engine's hot-path method must handle all work previously done by `pattern_extractor.py`:
+
+1. Embed the raw prompt and store on `Optimization.embedding`
+2. Assign to nearest family (or create candidate) — taxonomy-aware clustering
+3. Extract meta-patterns via Haiku LLM call
+4. Merge meta-patterns into the family (cosine >= 0.82 enrichment)
+5. Write `OptimizationPattern` join record (relationship="source")
+6. Publish `taxonomy_changed` event (replaces `pattern_updated`)
+
+All existing functionality is preserved; the only change is that family assignment uses the taxonomy tree instead of hardcoded domain strings.
 
 ### 6.5 Event Bus
 
@@ -512,7 +575,35 @@ POST /api/taxonomy/recluster  # Manual cold-path trigger
 
 Existing pattern endpoints modified to query taxonomy tree for domain filtering.
 
-### 6.7 Frontend File Changes
+### 6.7 MCP Server Integration
+
+The MCP server (`mcp_server.py`) runs as a separate process. It needs taxonomy capabilities for:
+- `synthesis_optimize`: domain mapping during sampling pipeline
+- `synthesis_analyze`: domain_raw on analysis results
+
+The MCP server instantiates its own `TaxonomyEngine` (same pattern as its own `RoutingManager`). The engine reads/writes the same SQLite database. Warm-path and cold-path timers run only in the FastAPI process (the MCP server's engine operates in hot-path-only mode to avoid conflicting warm-path cycles). The MCP server publishes `taxonomy_changed` events via HTTP POST to `/api/events/_publish` (same cross-process notification pattern used for other events).
+
+### 6.8 PatternMatcher Response Schema
+
+The `/api/patterns/match` endpoint currently returns `family.domain` as a string. After migration:
+
+```python
+# Response includes both taxonomy node reference and resolved label
+{
+    "family_id": "...",
+    "family_label": "REST API patterns",
+    "taxonomy_node_id": "...",           # FK into taxonomy tree
+    "taxonomy_label": "API Architecture", # Resolved cluster label
+    "taxonomy_color": "#a855f7",          # Generated color from node
+    "taxonomy_breadcrumb": ["Infrastructure", "API Architecture"],
+    "similarity": 0.85,
+    "meta_patterns": [...]
+}
+```
+
+The frontend `PatternSuggestion` component displays `taxonomy_label` with `taxonomy_color` where it previously showed the hardcoded domain name with `DOMAIN_COLORS`.
+
+### 6.9 Frontend File Changes
 
 ```
 # Deleted
@@ -595,6 +686,8 @@ Zooming is hierarchy navigation, not magnification:
 
 Backend: `umap.UMAP(n_components=3, metric="cosine", low_memory=True, random_state=42)`. Runs in thread pool executor. Incremental `transform()` for new points (O(k), not O(n) refit). Positions cached on `TaxonomyNode.umap_x/y/z`.
 
+**Cold-path projection stability (Procrustes alignment):** A full UMAP refit on a changed dataset produces a completely different projection, destroying the user's spatial mental model. After every cold-path refit, apply Procrustes analysis (scipy.spatial.procrustes) between old and new projections of confirmed nodes. This finds the optimal rotation + scaling + translation that minimizes displacement of stable nodes. The aligned positions preserve the user's spatial memory ("security stuff is upper-left") while allowing the global structure to evolve. Implementation: `scipy.spatial.procrustes(old_positions[confirmed], new_positions[confirmed])` -> apply the same transform to all new positions including candidates.
+
 Frontend: Web Worker applies 50-iteration force settling for local collision resolution. Scene renders immediately with UMAP positions, then animates to settled positions (~50-100ms for 500 nodes).
 
 ### 7.6 Generative Color System
@@ -603,26 +696,46 @@ Colors derived from 3D UMAP position in OKLab perceptual space:
 
 ```python
 def generate_color(umap_x: float, umap_y: float, umap_z: float) -> str:
+    """Generate perceptually distinct color from 3D UMAP position.
+
+    Uses OKLab with extended gamut (a/b +/-0.20) to support 50+ clusters
+    with discriminable colors. Z-axis modulates chroma.
+    """
     # Normalize UMAP coordinates to [-1, 1]
-    a = normalize(umap_x, -1.0, 1.0) * 0.15   # green-red axis
-    b = normalize(umap_y, -1.0, 1.0) * 0.15   # blue-yellow axis
+    a = normalize(umap_x, -1.0, 1.0) * 0.20   # green-red axis (extended)
+    b = normalize(umap_y, -1.0, 1.0) * 0.20   # blue-yellow axis (extended)
     chroma_scale = 0.7 + 0.3 * normalize(umap_z, 0.0, 1.0)
     a *= chroma_scale
     b *= chroma_scale
     L = 0.72  # Fixed lightness for dark-background readability
     return oklab_to_hex(L, a, b)
+
+
+def enforce_minimum_delta_e(
+    colors: list[tuple[str, str]],  # [(node_id, hex_color), ...]
+    min_delta_e: float = 0.04,
+) -> list[tuple[str, str]]:
+    """Post-processing pass: ensure sibling clusters are visually distinct.
+
+    For any pair where deltaE(OKLab) < min_delta_e, apply incremental
+    hue rotation to one of them until the minimum distance is met.
+    Only applied to sibling clusters (same parent in the tree).
+    """
+    # Convert to OKLab, check pairwise, rotate as needed
+    ...
 ```
 
 Properties:
 - Semantically close = visually similar (UMAP proximity -> OKLab proximity)
-- Automatically distinct for well-separated clusters
-- Deterministic (same position = same color)
+- **Minimum perceptual distance:** Post-processing guarantees deltaE >= 0.04 between siblings
+- **Extended gamut:** a/b ranges +/-0.20 support 50+ discriminable clusters (vs. prior +/-0.15)
+- Deterministic (same position = same color, modulo sibling-delta enforcement)
 - Dark-background optimized (L=0.72 guarantees WCAG AA contrast against `#06060c`)
-- Neon register alignment (a/b ranges +-0.15 favor cyan/magenta/amber)
+- Neon register alignment (a/b ranges favor cyan/magenta/amber)
 
 ### 7.7 Performance Budget
 
-Target: 60fps on integrated graphics with up to 2000 nodes.
+Target: 60fps on integrated graphics with up to 2000 nodes in the taxonomy tree, with up to 500 visible at any given zoom level (semantic zoom culls by persistence).
 
 | Component | Budget | Strategy |
 |---|---|---|
@@ -833,6 +946,9 @@ def lttb_downsample(values: list[float], target: int) -> list[float]:
             next_slice = values[next_start:next_end]
             next_avg = sum(next_slice) / len(next_slice) if next_slice else values[-1]
 
+        # Next bucket average x-coordinate (midpoint of next bucket)
+        next_x = (next_start + min(next_end, n) - 1) / 2.0
+
         # Find point in bucket that maximizes triangle area
         best_area = -1.0
         best_idx = bucket_start
@@ -840,10 +956,11 @@ def lttb_downsample(values: list[float], target: int) -> list[float]:
 
         for j in range(bucket_start, bucket_end):
             # Triangle area = 0.5 * |x1(y2-y3) + x2(y3-y1) + x3(y1-y2)|
-            # Simplified since x-spacing is uniform
+            # Three points: (prev_idx, prev_val), (j, values[j]), (next_x, next_avg)
             area = abs(
-                (prev_idx - next_end) * (values[j] - prev_val)
-                - (prev_idx - j) * (next_avg - prev_val)
+                prev_idx * (values[j] - next_avg)
+                + j * (next_avg - prev_val)
+                + next_x * (prev_val - values[j])
             )
             if area > best_area:
                 best_area = area
@@ -896,10 +1013,18 @@ def _compute_trend(values: list[float]) -> float:
 
     slope = (n * sum_xy - sum_x * sum_y) / denominator
 
-    # Normalize: slope is in units of Q_system per data point.
-    # Scale by n to get total change over the window, then clamp.
+    # Normalize as percentage of mean — makes trend meaningful regardless
+    # of absolute Q_system level or window size.
+    # A slope that changes Q by 10% of its mean over the window = trend +/-0.5
+    mean_y = sum_y / n
+    if abs(mean_y) < 1e-9:
+        return 0.0
+
     total_change = slope * (n - 1)
-    return max(-1.0, min(1.0, total_change))
+    # Normalize: total_change / mean_y gives fractional change over window.
+    # Scale by 2.0 so that a 50% change = trend 1.0 (full scale).
+    trend = (total_change / mean_y) * 2.0
+    return max(-1.0, min(1.0, trend))
 ```
 
 ### 9.2 StatusBar Indicator
@@ -1089,6 +1214,27 @@ Auto-trigger cold-path when `Q_system < 0.4`.
 ## 12. Open Questions
 
 1. **Warm-path interval tuning:** Default 10 optimizations. Should this adapt based on system maturity (longer intervals for mature taxonomies)?
-2. **UMAP stability across cold-path refits:** Full UMAP refit can change the global projection. How much visual disruption is acceptable? May need alignment transforms between old and new projections.
+2. ~~**UMAP stability across cold-path refits:**~~ **Resolved:** Procrustes alignment applied after every cold-path refit (see Section 7.5).
 3. **Label regeneration frequency:** Haiku calls on every label change vs. batched regeneration on warm-path cycles.
 4. **Memory footprint:** HDBSCAN on 10K+ embeddings may need chunked processing. Monitor and add streaming support if needed.
+
+## 13. Review Findings — Addressed
+
+Issues identified by spec review and resolved in this document:
+
+| ID | Severity | Issue | Resolution |
+|---|---|---|---|
+| C1 | Critical | Non-regression invariant can deadlock | Epsilon tolerance + compound ops + deadlock breaker (Section 2.5) |
+| C2 | Critical | Warm/hot path race condition | asyncio.Lock + centroid snapshot + stale reassignment (Section 2.6) |
+| C3 | Critical | DBCV weight ramp creates Q_system discontinuity | Constant-sum weight normalization (Section 2.5) |
+| I1 | Important | LTTB triangle area uses wrong x-coordinate | Fixed to use next-bucket midpoint (Section 9.1) |
+| I2 | Important | OKLab gamut insufficient for 30+ clusters | Extended to +/-0.20, added deltaE enforcement (Section 7.6) |
+| I3 | Important | Missing warm-path deduplication | _warm_path_running flag (Section 2.6) |
+| I4 | Important | Retire threshold too aggressive for low-activity | Adaptive: max(20, 3*age_days), 7-day minimum age (Section 3.4) |
+| I5 | Important | Cold-path UMAP refit destroys spatial model | Procrustes alignment (Section 7.5) |
+| I6 | Important | PatternMatcher response schema unspecified | Explicit schema with breadcrumb (Section 6.8) |
+| S1 | Suggestion | Performance "2000 nodes" misleading | Clarified: 2000 in data, 500 visible (Section 7.7) |
+| S2 | Suggestion | Unbounded snapshot growth | Retention policy: 24h/daily/weekly pruning (Section 5.2) |
+| S4 | Suggestion | MCP server integration unspecified | Hot-path-only engine instance (Section 6.7) |
+| S5 | Suggestion | process_optimization() responsibilities unclear | Explicit 6-step list (Section 6.4) |
+| S6 | Suggestion | Trend normalization clusters near 0 | Percentage-of-mean normalization (Section 9.1) |
