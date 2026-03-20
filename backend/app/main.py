@@ -67,35 +67,43 @@ async def lifespan(app: FastAPI):
     )
     app.state.watcher_task = watcher_task
 
-    # Start pattern extraction subscriber
-    async def _pattern_extraction_listener():
-        """Subscribe to optimization_created events and extract patterns."""
+    # Start taxonomy engine subscriber (replaces PatternExtractorService)
+    async def _taxonomy_extraction_listener():
+        """Subscribe to optimization_created events and run taxonomy hot path."""
         try:
-            from app.services.pattern_extractor import PatternExtractorService
-            extractor = PatternExtractorService(provider=app.state.routing.state.provider)
-            logger.info("Pattern extraction listener started — subscribing to event bus")
+            from app.database import async_session_factory
+            from app.services.embedding_service import EmbeddingService
+            from app.services.taxonomy import TaxonomyEngine
+
+            engine = TaxonomyEngine(
+                embedding_service=EmbeddingService(),
+                provider=app.state.routing.state.provider,
+            )
+            app.state.taxonomy_engine = engine
+            logger.info("Taxonomy extraction listener started — subscribing to event bus")
+
             async for event in event_bus.subscribe():
                 if event.get("event") == "optimization_created":
                     opt_id = event.get("data", {}).get("id")
                     if opt_id:
                         logger.info(
-                            "Dispatching pattern extraction for optimization %s",
+                            "Dispatching taxonomy extraction for optimization %s",
                             opt_id,
                         )
 
                         async def _run_extraction(oid: str) -> None:
-                            """Wrapper to catch and log fire-and-forget task errors."""
                             try:
-                                await extractor.process(oid)
+                                async with async_session_factory() as db:
+                                    await engine.process_optimization(oid, db)
                             except Exception as task_exc:
                                 logger.error(
-                                    "Background pattern extraction task failed for %s: %s",
+                                    "Background taxonomy extraction failed for %s: %s",
                                     oid, task_exc, exc_info=True,
                                 )
 
                         asyncio.create_task(
                             _run_extraction(opt_id),
-                            name=f"pattern-extract-{opt_id}",
+                            name=f"taxonomy-extract-{opt_id}",
                         )
                     else:
                         logger.warning(
@@ -103,12 +111,41 @@ async def lifespan(app: FastAPI):
                             event.get("data"),
                         )
         except asyncio.CancelledError:
-            logger.info("Pattern extraction listener shutting down")
+            logger.info("Taxonomy extraction listener shutting down")
         except Exception as exc:
-            logger.error("Pattern extraction listener crashed: %s", exc, exc_info=True)
+            logger.error("Taxonomy extraction listener crashed: %s", exc, exc_info=True)
 
-    extraction_task = asyncio.create_task(_pattern_extraction_listener())
+    extraction_task = asyncio.create_task(_taxonomy_extraction_listener())
     app.state.extraction_task = extraction_task
+
+    # Start warm-path periodic timer (Spec Section 6.4 — every 5 minutes)
+    async def _warm_path_timer():
+        """Periodically trigger warm-path re-clustering."""
+        try:
+            await asyncio.sleep(60)  # Initial delay — let system stabilize
+            while True:
+                await asyncio.sleep(300)  # 5-minute interval
+                try:
+                    engine = getattr(app.state, "taxonomy_engine", None)
+                    if engine:
+                        from app.database import async_session_factory
+                        async with async_session_factory() as db:
+                            result = await engine.run_warm_path(db)
+                            if result:
+                                logger.info(
+                                    "Warm path completed: q=%.4f ops=%d/%d snapshot=%s",
+                                    result.q_system or 0.0,
+                                    result.operations_accepted,
+                                    result.operations_attempted,
+                                    result.snapshot_id,
+                                )
+                except Exception as exc:
+                    logger.error("Warm path timer failed: %s", exc, exc_info=True)
+        except asyncio.CancelledError:
+            logger.info("Warm path timer shutting down")
+
+    warm_path_task = asyncio.create_task(_warm_path_timer())
+    app.state.warm_path_task = warm_path_task
 
     yield
 
@@ -121,6 +158,14 @@ async def lifespan(app: FastAPI):
         app.state.extraction_task.cancel()
         try:
             await app.state.extraction_task
+        except asyncio.CancelledError:
+            pass
+
+    # Stop warm path timer
+    if hasattr(app.state, "warm_path_task"):
+        app.state.warm_path_task.cancel()
+        try:
+            await app.state.warm_path_task
         except asyncio.CancelledError:
             pass
 

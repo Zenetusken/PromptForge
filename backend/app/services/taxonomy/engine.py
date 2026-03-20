@@ -240,6 +240,18 @@ class TaxonomyEngine:
                 len(meta_texts),
             )
 
+            # 6. Publish taxonomy_changed event (Spec Section 6.5)
+            try:
+                from app.services.event_bus import event_bus
+                event_bus.publish("taxonomy_changed", {
+                    "optimization_id": optimization_id,
+                    "family_id": family.id,
+                    "family_label": family.intent_label,
+                    "meta_patterns_added": len(meta_texts),
+                })
+            except Exception as evt_exc:
+                logger.warning("Failed to publish taxonomy_changed: %s", evt_exc)
+
         except Exception as exc:
             logger.error(
                 "Taxonomy process_optimization failed for %s: %s",
@@ -876,13 +888,25 @@ class TaxonomyEngine:
         # 7. Refresh centroid cache
         self._refresh_centroid_cache(confirmed_after)
 
-        return WarmPathResult(
+        result = WarmPathResult(
             snapshot_id=snap.id,
             q_system=q_after,
             operations_attempted=ops_attempted,
             operations_accepted=ops_accepted,
             deadlock_breaker_used=deadlock_breaker_used,
         )
+
+        try:
+            from app.services.event_bus import event_bus
+            event_bus.publish("taxonomy_changed", {
+                "trigger": "warm_path",
+                "operations_accepted": result.operations_accepted,
+                "q_system": result.q_system,
+            })
+        except Exception as evt_exc:
+            logger.warning("Failed to publish taxonomy_changed (warm): %s", evt_exc)
+
+        return result
 
     # ------------------------------------------------------------------
     # Cold path (Spec Section 2.3, 8.5)
