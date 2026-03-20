@@ -147,6 +147,8 @@ class TaxonomyEngine:
         self._consecutive_rejected_cycles: int = 0
         # Warm-path age counter for adaptive epsilon tolerance.
         self._warm_path_age: int = 0
+        # Set by deadlock breaker — caller should schedule cold path.
+        self._cold_path_needed: bool = False
         # In-memory centroid cache: node_id → ndarray.  Invalidated on writes.
         self._centroid_cache: dict[str, np.ndarray] = {}
 
@@ -323,6 +325,78 @@ class TaxonomyEngine:
         operations_log: list[dict] = []
         deadlock_breaker_used = False
 
+        # --- Priority 1: Split (Spec Section 3.5) ---
+        # Detect split candidates: confirmed nodes with low coherence and enough
+        # members to produce viable child clusters.
+        for node in confirmed_nodes:
+            coherence = node.coherence if node.coherence is not None else 1.0
+            if coherence < 0.5 and (node.member_count or 0) >= 6:
+                ops_attempted += 1
+                # Gather families assigned to this node
+                fam_q = await db.execute(
+                    select(PatternFamily).where(
+                        PatternFamily.taxonomy_node_id == node.id
+                    )
+                )
+                node_families = list(fam_q.scalars().all())
+                if len(node_families) >= 6:
+                    child_embs = []
+                    child_fam_ids = []
+                    for f in node_families:
+                        try:
+                            emb = np.frombuffer(
+                                f.centroid_embedding, dtype=np.float32
+                            )
+                            child_embs.append(emb)
+                            child_fam_ids.append(f.id)
+                        except (ValueError, TypeError):
+                            continue
+
+                    if len(child_embs) >= 6:
+                        split_clusters = batch_cluster(
+                            child_embs, min_cluster_size=3
+                        )
+                        if split_clusters.n_clusters >= 2:
+                            from app.services.taxonomy.lifecycle import (
+                                attempt_split,
+                            )
+
+                            child_groups = []
+                            for cid in range(split_clusters.n_clusters):
+                                mask = split_clusters.labels == cid
+                                group_ids = [
+                                    child_fam_ids[i]
+                                    for i in range(len(child_fam_ids))
+                                    if mask[i]
+                                ]
+                                group_embs = [
+                                    child_embs[i]
+                                    for i in range(len(child_embs))
+                                    if mask[i]
+                                ]
+                                if group_ids:
+                                    child_groups.append((group_ids, group_embs))
+
+                            if len(child_groups) >= 2:
+                                children = await attempt_split(
+                                    db=db,
+                                    parent_node=node,
+                                    child_clusters=child_groups,
+                                    warm_path_age=self._warm_path_age,
+                                    provider=self._provider,
+                                    model=settings.MODEL_HAIKU,
+                                )
+                                if children:
+                                    ops_accepted += len(children)
+                                    for child in children:
+                                        operations_log.append(
+                                            {
+                                                "type": "split",
+                                                "node_id": child.id,
+                                            }
+                                        )
+
+        # --- Priority 2: Emerge ---
         # Load unassigned families (no taxonomy_node_id) for emerge candidates
         fam_result = await db.execute(
             select(PatternFamily).where(PatternFamily.taxonomy_node_id.is_(None))
@@ -445,6 +519,11 @@ class TaxonomyEngine:
             q_after = q_before
             ops_accepted = 0
             operations_log = []
+            # Re-query confirmed nodes after rollback so cache isn't stale
+            result = await db.execute(
+                select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
+            )
+            confirmed_after = list(result.scalars().all())
 
         # 5. Deadlock breaker (Spec Section 2.5)
         if ops_attempted > 0 and ops_accepted == 0:
@@ -454,13 +533,76 @@ class TaxonomyEngine:
 
         if self._consecutive_rejected_cycles >= 5:
             logger.warning(
-                "Deadlock breaker triggered after %d consecutive rejected cycles",
+                "Deadlock breaker triggered after %d consecutive rejected cycles "
+                "— forcing best single-dimension operation and scheduling cold path",
                 self._consecutive_rejected_cycles,
             )
             deadlock_breaker_used = True
             self._consecutive_rejected_cycles = 0
-            # Schedule cold path as background task
-            asyncio.create_task(self.run_cold_path(db))
+
+            # Force the best single-dimension operation through regardless of
+            # composite Q_system impact (Spec Section 2.5).
+            # Re-run emerge on unassigned families (cheapest constructive op).
+            if len(unassigned_families) >= 3:
+                from app.services.taxonomy.lifecycle import attempt_emerge
+
+                force_embs = []
+                force_ids = []
+                for f in unassigned_families:
+                    try:
+                        emb = np.frombuffer(
+                            f.centroid_embedding, dtype=np.float32
+                        )
+                        force_embs.append(emb)
+                        force_ids.append(f.id)
+                    except (ValueError, TypeError):
+                        continue
+
+                if len(force_embs) >= 3:
+                    cluster_result = batch_cluster(
+                        force_embs, min_cluster_size=3
+                    )
+                    if cluster_result.n_clusters > 0:
+                        mask = cluster_result.labels == 0
+                        forced_fam_ids = [
+                            force_ids[i]
+                            for i in range(len(force_ids))
+                            if mask[i]
+                        ]
+                        forced_embs = [
+                            force_embs[i]
+                            for i in range(len(force_embs))
+                            if mask[i]
+                        ]
+                        if forced_fam_ids:
+                            node = await attempt_emerge(
+                                db=db,
+                                member_family_ids=forced_fam_ids,
+                                embeddings=forced_embs,
+                                warm_path_age=self._warm_path_age,
+                                provider=self._provider,
+                                model=settings.MODEL_HAIKU,
+                            )
+                            if node:
+                                ops_accepted += 1
+                                operations_log.append(
+                                    {"type": "emerge", "node_id": node.id}
+                                )
+                                logger.info(
+                                    "Deadlock breaker forced emerge: node=%s",
+                                    node.id,
+                                )
+
+            # Signal that a cold-path rebuild is needed (Spec Section 2.5).
+            # We do NOT use asyncio.create_task(self.run_cold_path(db)) here
+            # because the cold path would receive the same AsyncSession, which
+            # is not safe for concurrent use across tasks.  The caller should
+            # schedule a cold path with a fresh session.
+            self._cold_path_needed = True
+            logger.warning(
+                "Cold path rebuild needed — caller should invoke "
+                "run_cold_path() with a fresh session"
+            )
 
         # 6. Create snapshot
         self._warm_path_age += 1
@@ -549,11 +691,13 @@ class TaxonomyEngine:
 
         embeddings: list[np.ndarray] = []
         valid_families: list[PatternFamily] = []
+        family_by_id: dict[str, PatternFamily] = {}
         for f in families:
             try:
                 emb = np.frombuffer(f.centroid_embedding, dtype=np.float32)
                 embeddings.append(emb)
                 valid_families.append(f)
+                family_by_id[f.id] = f
             except (ValueError, TypeError):
                 logger.warning(
                     "Skipping family '%s' — corrupt centroid", f.intent_label
@@ -675,12 +819,11 @@ class TaxonomyEngine:
                 await db.flush()
                 nodes_created += 1
 
-            # Link families to this node
+            # Link families to this node (O(k) via dict lookup)
             for fid in cluster_fam_ids:
-                for f in valid_families:
-                    if f.id == fid:
-                        f.taxonomy_node_id = node.id
-                        break
+                fam = family_by_id.get(fid)
+                if fam:
+                    fam.taxonomy_node_id = node.id
 
             node_embeddings.append(centroid)
             all_nodes.append(node)
