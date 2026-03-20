@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 import '@testing-library/jest-dom/vitest';
 
 // ── EventSource mock (jsdom doesn't provide it) ──────────────────
@@ -57,6 +58,6 @@ Object.defineProperty(navigator, 'clipboard', {
 
 // ── SVG API mocks (for D3 components in jsdom) ──────────────────
 if (typeof SVGElement !== 'undefined') {
-  SVGElement.prototype.getBBox = () => ({ x: 0, y: 0, width: 100, height: 20 }) as DOMRect;
-  SVGElement.prototype.getComputedTextLength = () => 50;
+  (SVGElement.prototype as any).getBBox = () => ({ x: 0, y: 0, width: 100, height: 20 }) as DOMRect;
+  (SVGElement.prototype as any).getComputedTextLength = () => 50;
 }

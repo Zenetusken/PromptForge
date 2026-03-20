@@ -374,7 +374,7 @@ describe('Inspector', () => {
 
     await waitFor(() => {
       // PATCH should have been called
-      const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls;
+      const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
       const patchCall = calls.find((c: unknown[]) => {
         const [, init] = c as [RequestInfo | URL, RequestInit?];
         return init?.method === 'PATCH';

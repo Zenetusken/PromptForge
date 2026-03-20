@@ -61,6 +61,7 @@ function makeFamily(overrides: Partial<GraphFamily> = {}): GraphFamily {
     usage_count: 5,
     member_count: 3,
     avg_score: 8.0,
+    created_at: null,
     meta_patterns: [],
     ...overrides,
   };
@@ -96,7 +97,7 @@ describe('RadialMindmap', () => {
   });
 
   it('calls loadGraph when not loaded', () => {
-    const loadGraph = vi.spyOn(patternsStore, 'loadGraph').mockImplementation(() => {});
+    const loadGraph = vi.spyOn(patternsStore, 'loadGraph').mockImplementation(async () => {});
     patternsStore.graphLoaded = false;
     render(RadialMindmap);
     expect(loadGraph).toHaveBeenCalled();
@@ -162,8 +163,8 @@ describe('RadialMindmap', () => {
     patternsStore.graph = {
       families: [makeFamily({
         meta_patterns: [
-          { id: 'mp-1', pattern_text: 'Use step-by-step instructions', source_count: 3, family_id: 'fam-1' },
-          { id: 'mp-2', pattern_text: 'Add examples for clarity', source_count: 2, family_id: 'fam-1' },
+          { id: 'mp-1', pattern_text: 'Use step-by-step instructions', source_count: 3 },
+          { id: 'mp-2', pattern_text: 'Add examples for clarity', source_count: 2 },
         ],
       })],
       edges: [],
@@ -175,7 +176,7 @@ describe('RadialMindmap', () => {
   });
 
   it('does not call loadGraph when already loaded', () => {
-    const loadGraph = vi.spyOn(patternsStore, 'loadGraph').mockImplementation(() => {});
+    const loadGraph = vi.spyOn(patternsStore, 'loadGraph').mockImplementation(async () => {});
     patternsStore.graphLoaded = true;
     patternsStore.graph = { families: [], edges: [], center: { total_families: 0, total_patterns: 0, total_optimizations: 0 } };
     render(RadialMindmap);

@@ -1,11 +1,18 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
+/** Create a mock AbortController with spied abort method */
+function mockCtrl(): AbortController {
+  const ctrl = new AbortController();
+  ctrl.abort = vi.fn();
+  return ctrl;
+}
+
 // Mock $lib/api/client before any imports that use it
 vi.mock('$lib/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/client')>();
   return {
     ...actual,
-    optimizeSSE: vi.fn(() => ({ abort: vi.fn() })),
+    optimizeSSE: vi.fn(() => mockCtrl()),
     getOptimization: vi.fn().mockResolvedValue(null),
     submitFeedback: vi.fn().mockResolvedValue({}),
     savePassthrough: vi.fn().mockResolvedValue({}),
@@ -397,8 +404,8 @@ describe('ForgeStore', () => {
 
   describe('forge() — SSE call', () => {
     it('calls optimizeSSE and sets status to analyzing when prompt is valid', () => {
-      const mockController = { abort: vi.fn() };
-      vi.mocked(apiClient.optimizeSSE).mockReturnValue(mockController);
+      const ctrl = mockCtrl();
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue(ctrl);
 
       forgeStore.prompt = 'This is a valid prompt with more than 20 characters for testing';
       forgeStore.forge();
@@ -408,18 +415,18 @@ describe('ForgeStore', () => {
     });
 
     it('aborts in-flight request when forge is called again', () => {
-      const mockController = { abort: vi.fn() };
-      vi.mocked(apiClient.optimizeSSE).mockReturnValue(mockController);
+      const ctrl = mockCtrl();
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue(ctrl);
 
       forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
       forgeStore.forge();
       forgeStore.forge();
 
-      expect(mockController.abort).toHaveBeenCalled();
+      expect(ctrl.abort).toHaveBeenCalled();
     });
 
     it('deselects pattern family before forging', () => {
-      vi.mocked(apiClient.optimizeSSE).mockReturnValue({ abort: vi.fn() });
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue(mockCtrl());
 
       patternsStore.selectedFamilyId = 'fam-existing';
       forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
@@ -429,7 +436,7 @@ describe('ForgeStore', () => {
     });
 
     it('clears all state before forging', () => {
-      vi.mocked(apiClient.optimizeSSE).mockReturnValue({ abort: vi.fn() });
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue(mockCtrl());
 
       forgeStore.error = 'Previous error';
       forgeStore.result = mockOptimizationResult() as any;
@@ -447,7 +454,7 @@ describe('ForgeStore', () => {
 
     it('passes appliedPatternIds to optimizeSSE (captured before clearing)', () => {
       vi.mocked(apiClient.optimizeSSE).mockClear();
-      vi.mocked(apiClient.optimizeSSE).mockReturnValue({ abort: vi.fn() });
+      vi.mocked(apiClient.optimizeSSE).mockReturnValue(mockCtrl());
 
       forgeStore.appliedPatternIds = ['mp-1', 'mp-2'];
       forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
@@ -466,7 +473,7 @@ describe('ForgeStore', () => {
       vi.mocked(apiClient.optimizeSSE).mockImplementation(
         (_p: string, _s: any, _onEvent: any, onError: any) => {
           errorCallback = onError;
-          return { abort: vi.fn() };
+          return mockCtrl();
         }
       );
 
@@ -480,13 +487,13 @@ describe('ForgeStore', () => {
     });
 
     it('SSE close callback without complete event leaves status until reconnect', () => {
-      vi.mocked(apiClient.getOptimization).mockResolvedValue({ status: 'completed', ...mockOptimizationResult() } as any);
+      vi.mocked(apiClient.getOptimization).mockResolvedValue(mockOptimizationResult({ status: 'completed' }) as any);
 
       let closeCallback: () => void = () => {};
       vi.mocked(apiClient.optimizeSSE).mockImplementation(
         (_p: string, _s: any, _onEvent: any, _onError: any, onClose: any) => {
           closeCallback = onClose;
-          return { abort: vi.fn() };
+          return mockCtrl();
         }
       );
 

@@ -43,8 +43,8 @@ describe('ContentPage', () => {
         type: 'card-grid',
         columns: 2,
         cards: [
-          { title: 'Card One', body: 'First card body' },
-          { title: 'Card Two', body: 'Second card body' },
+          { title: 'Card One', description: 'First card body', color: '#00e5ff' },
+          { title: 'Card Two', description: 'Second card body', color: '#a855f7' },
         ],
       },
     ];
@@ -57,7 +57,7 @@ describe('ContentPage', () => {
       {
         type: 'timeline',
         versions: [
-          { version: 'v1.0.0', date: '2026-01-01', items: ['Initial release'] },
+          { version: 'v1.0.0', date: '2026-01-01', categories: [{ label: 'ADDED' as const, color: '#22c55e', items: ['Initial release'] }] },
         ],
       },
     ];
@@ -85,8 +85,8 @@ describe('ContentPage', () => {
         type: 'metric-bar',
         label: 'Performance',
         dimensions: [
-          { label: 'Clarity', value: 8.5 },
-          { label: 'Structure', value: 7.0 },
+          { name: 'Clarity', value: 8.5, color: '#00e5ff' },
+          { name: 'Structure', value: 7.0, color: '#a855f7' },
         ],
       },
     ];

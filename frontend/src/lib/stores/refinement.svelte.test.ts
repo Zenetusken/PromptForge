@@ -1,11 +1,18 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
+/** Create a mock AbortController with spied abort method */
+function mockCtrl(): AbortController {
+  const ctrl = new AbortController();
+  ctrl.abort = vi.fn();
+  return ctrl;
+}
+
 // Mock the API client before imports so refineSSE can be intercepted
 vi.mock('$lib/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/client')>();
   return {
     ...actual,
-    refineSSE: vi.fn(() => ({ abort: vi.fn() })),
+    refineSSE: vi.fn(() => mockCtrl()),
     getRefinementVersions: vi.fn().mockResolvedValue({ optimization_id: null, versions: [] }),
     rollbackRefinement: vi.fn().mockResolvedValue({ id: 'branch-1', optimization_id: 'opt-1' }),
   };
@@ -82,7 +89,7 @@ describe('RefinementStore', () => {
 
     it('sets status to refining and calls refineSSE', () => {
       refinementStore.optimizationId = 'opt-1';
-      vi.mocked(apiClient.refineSSE).mockReturnValue({ abort: vi.fn() } as any);
+      vi.mocked(apiClient.refineSSE).mockReturnValue(mockCtrl());
 
       refinementStore.refine('Make it more concise');
 
@@ -93,7 +100,7 @@ describe('RefinementStore', () => {
     it('clears suggestions before refining', () => {
       refinementStore.optimizationId = 'opt-1';
       refinementStore.suggestions = [{ text: 'Old suggestion', source: 'model' }];
-      vi.mocked(apiClient.refineSSE).mockReturnValue({ abort: vi.fn() } as any);
+      vi.mocked(apiClient.refineSSE).mockReturnValue(mockCtrl());
 
       refinementStore.refine('Make it better');
 
@@ -102,13 +109,13 @@ describe('RefinementStore', () => {
 
     it('aborts in-flight request before starting new one', () => {
       refinementStore.optimizationId = 'opt-1';
-      const mockController = { abort: vi.fn() };
-      vi.mocked(apiClient.refineSSE).mockReturnValue(mockController as any);
+      const ctrl = mockCtrl();
+      vi.mocked(apiClient.refineSSE).mockReturnValue(ctrl);
 
       refinementStore.refine('First request');
       refinementStore.refine('Second request');
 
-      expect(mockController.abort).toHaveBeenCalled();
+      expect(ctrl.abort).toHaveBeenCalled();
     });
 
     it('SSE error callback sets error and error status', () => {
@@ -117,7 +124,7 @@ describe('RefinementStore', () => {
       vi.mocked(apiClient.refineSSE).mockImplementation(
         (_id: string, _req: string, _branch: any, _onEvent: any, onError: any) => {
           errorCallback = onError;
-          return { abort: vi.fn() };
+          return mockCtrl();
         }
       );
 
@@ -140,7 +147,7 @@ describe('RefinementStore', () => {
       vi.mocked(apiClient.refineSSE).mockImplementation(
         (_id: string, _req: string, _branch: any, _onEvent: any, _onError: any, onClose: any) => {
           closeCallback = onClose;
-          return { abort: vi.fn() };
+          return mockCtrl();
         }
       );
 

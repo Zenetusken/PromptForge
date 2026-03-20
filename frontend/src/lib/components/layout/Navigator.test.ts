@@ -511,7 +511,7 @@ describe('Navigator', () => {
   });
 
   it('shows user login and no-repo message when authenticated but no repo linked', () => {
-    githubStore.user = { login: 'testuser', name: 'Test User', avatar_url: '' };
+    githubStore.user = { login: 'testuser', avatar_url: '' };
     githubStore.linkedRepo = null;
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'github' } });
@@ -521,9 +521,9 @@ describe('Navigator', () => {
 
   it('shows linked repo info and unlink button when repo is linked', async () => {
     const user = userEvent.setup();
-    githubStore.user = { login: 'testuser', name: 'Test User', avatar_url: '' };
+    githubStore.user = { login: 'testuser', avatar_url: '' };
     githubStore.linkedRepo = {
-      id: 1,
+      id: '1',
       full_name: 'testuser/myrepo',
       default_branch: 'main',
       branch: 'main',
@@ -675,7 +675,7 @@ describe('Navigator', () => {
     await waitFor(() => {
       expect(screen.getByText('few-shot')).toBeInTheDocument();
     });
-    const row = screen.getByText('few-shot').closest('[role="button"]')!;
+    const row = screen.getByText('few-shot').closest('[role="button"]')! as HTMLElement;
     row.focus();
     await user.keyboard('{Enter}');
     expect(forgeStore.strategy).toBe('few-shot');

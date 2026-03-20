@@ -163,10 +163,12 @@ describe('PromptEdit', () => {
   it('clicking synthesize calls forgeStore.forge and opens result tab when traceId is set', async () => {
     const user = userEvent.setup();
     vi.mocked(apiClient.optimizeSSE).mockImplementation(
-      (_id: string, _prompt: string, _opts: any, onEvent: any, _onError: any, _onClose: any) => {
+      (_prompt: string, _strategy: any, onEvent: any) => {
         // Immediately emit an optimization_start event to set traceId
         onEvent({ event: 'optimization_start', trace_id: 'trace-123', type: 'optimization_start' });
-        return { abort: vi.fn() };
+        const ctrl = new AbortController();
+        ctrl.abort = vi.fn();
+        return ctrl;
       }
     );
     forgeStore.prompt = 'A sufficiently long prompt for testing synthesize';

@@ -1,3 +1,4 @@
+/// <reference types="vitest/globals" />
 import { render, screen, cleanup, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 
