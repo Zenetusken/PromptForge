@@ -210,17 +210,17 @@
   <!-- ============================================================ -->
   <!-- CALLOUT: FREE & OPEN SOURCE                                  -->
   <!-- ============================================================ -->
-  <section class="callout-bar" aria-label="Key benefits" data-animate>
+  <section class="callout-bar" aria-label="Key benefits">
     <div class="callout-bar__inner">
-      <div class="callout-item">
+      <div class="callout-item" data-animate style="--delay:100ms;">
         <span class="callout-item__icon" style="color:var(--color-neon-green);">&#10003;</span>
         <div class="callout-item__text"><strong>Completely free.</strong><br/>No subscription. No API key. No paid tier.</div>
       </div>
-      <div class="callout-item">
+      <div class="callout-item" data-animate style="--delay:200ms;">
         <span class="callout-item__icon" style="color:var(--color-neon-cyan);">&#10003;</span>
         <div class="callout-item__text"><strong>Your IDE's model does the work.</strong><br/>Cursor, Windsurf, Zed, JetBrains, Neovim — any MCP editor.</div>
       </div>
-      <div class="callout-item">
+      <div class="callout-item" data-animate style="--delay:300ms;">
         <span class="callout-item__icon" style="color:var(--color-neon-purple);">&#10003;</span>
         <div class="callout-item__text"><strong>Open source. Self-hosted.</strong><br/>Passthrough runs on your editor's existing model.</div>
       </div>
@@ -880,6 +880,7 @@
      ================================================================ */
   .callout-bar {
     padding: 20px 16px;
+    margin: 140px 0;
     border-top: 1px solid var(--color-border-subtle);
     border-bottom: 1px solid var(--color-border-subtle);
     background: var(--color-bg-secondary);
