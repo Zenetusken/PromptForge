@@ -158,6 +158,7 @@ async def optimize(
                 strategy_override=effective_strategy if effective_strategy != "auto" else None,
                 codebase_guidance=guidance,
                 applied_pattern_ids=body.applied_pattern_ids,
+                taxonomy_engine=getattr(request.app.state, "taxonomy_engine", None),
             ):
                 yield format_sse(event.event, event.data)
         except Exception as exc:

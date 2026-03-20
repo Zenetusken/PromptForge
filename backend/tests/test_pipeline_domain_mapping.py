@@ -1,6 +1,7 @@
 """Tests for domain mapping integration in the pipeline."""
 
 import pytest
+
 from app.schemas.pipeline_contracts import AnalysisResult
 
 
@@ -31,3 +32,35 @@ def test_analysis_result_still_accepts_legacy_domains():
         domain="backend",
     )
     assert result.domain == "backend"
+
+
+@pytest.mark.asyncio
+async def test_taxonomy_mapping_returns_node_id():
+    """TaxonomyEngine.map_domain() should return a TaxonomyMapping with node info."""
+    from app.services.taxonomy import TaxonomyMapping
+
+    mapping = TaxonomyMapping(
+        taxonomy_node_id="node-123",
+        taxonomy_label="API Architecture",
+        taxonomy_breadcrumb=["Infrastructure", "API Architecture"],
+        domain_raw="REST API design",
+    )
+    assert mapping.taxonomy_node_id == "node-123"
+    assert mapping.taxonomy_label == "API Architecture"
+    assert mapping.domain_raw == "REST API design"
+    assert mapping.taxonomy_breadcrumb == ["Infrastructure", "API Architecture"]
+
+
+@pytest.mark.asyncio
+async def test_taxonomy_mapping_unmapped():
+    """TaxonomyMapping with no match should have None taxonomy_node_id."""
+    from app.services.taxonomy import TaxonomyMapping
+
+    mapping = TaxonomyMapping(
+        taxonomy_node_id=None,
+        taxonomy_label=None,
+        taxonomy_breadcrumb=[],
+        domain_raw="quantum computing",
+    )
+    assert mapping.taxonomy_node_id is None
+    assert mapping.domain_raw == "quantum computing"

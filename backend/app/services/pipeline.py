@@ -131,6 +131,7 @@ class PipelineOrchestrator:
         repo_full_name: str | None = None,
         github_token: str | None = None,
         applied_pattern_ids: list[str] | None = None,
+        taxonomy_engine: Any | None = None,
     ) -> AsyncGenerator[PipelineEvent, None]:
         """Execute the full pipeline, yielding SSE events."""
         trace_id = str(uuid.uuid4())
@@ -227,6 +228,56 @@ class PipelineOrchestrator:
 
             # Semantic check
             confidence = self._semantic_check(analysis.task_type, raw_prompt, analysis.confidence)
+
+            # Domain confidence gate — lower threshold than strategy (0.6 vs 0.7)
+            # because wrong domain only affects pattern clustering, not optimization quality.
+            effective_domain = analysis.domain or "general"
+            if confidence < 0.6:
+                logger.info(
+                    "Low confidence (%.2f) — overriding domain to 'general'",
+                    confidence,
+                )
+                effective_domain = "general"
+
+            # ---------------------------------------------------------------
+            # Phase 1.5: Domain Mapping (Spec Section 4.2)
+            # ---------------------------------------------------------------
+            domain_raw = effective_domain  # free-text from analyzer
+            taxonomy_node_id = None
+            taxonomy_label = None
+            taxonomy_breadcrumb: list[str] = []
+
+            try:
+                from app.services.taxonomy import TaxonomyMapping
+
+                if taxonomy_engine is not None:
+                    mapping: TaxonomyMapping = await taxonomy_engine.map_domain(
+                        domain_raw=domain_raw,
+                        db=db,
+                        applied_pattern_ids=applied_pattern_ids,
+                    )
+                    taxonomy_node_id = mapping.taxonomy_node_id
+                    taxonomy_label = mapping.taxonomy_label
+                    taxonomy_breadcrumb = mapping.taxonomy_breadcrumb
+
+                    if taxonomy_node_id:
+                        logger.info(
+                            "Domain mapped: '%s' -> node '%s' (%s) trace_id=%s",
+                            domain_raw, taxonomy_label,
+                            " > ".join(taxonomy_breadcrumb), trace_id,
+                        )
+                    else:
+                        logger.info(
+                            "Domain unmapped: '%s' (below alignment floor) trace_id=%s",
+                            domain_raw, trace_id,
+                        )
+                else:
+                    logger.debug("Taxonomy engine not available — skipping domain mapping")
+            except Exception as exc:
+                logger.warning(
+                    "Domain mapping failed (non-fatal): %s trace_id=%s",
+                    exc, trace_id,
+                )
 
             # Confidence gate
             effective_strategy = analysis.selected_strategy
@@ -542,7 +593,9 @@ class PipelineOrchestrator:
                 optimized_prompt=optimization.optimized_prompt,
                 task_type=analysis.task_type,
                 intent_label=analysis.intent_label or "general",
-                domain=analysis.domain or "general",
+                domain=effective_domain,
+                domain_raw=domain_raw,              # NEW
+                taxonomy_node_id=taxonomy_node_id,  # NEW
                 strategy_used=effective_strategy,
                 changes_summary=optimization.changes_summary,
                 score_clarity=optimized_scores.clarity if optimized_scores else None,
@@ -595,7 +648,8 @@ class PipelineOrchestrator:
                     "trace_id": trace_id,
                     "task_type": analysis.task_type,
                     "intent_label": analysis.intent_label or "general",
-                    "domain": analysis.domain or "general",
+                    "domain": effective_domain,
+                    "domain_raw": domain_raw,  # NEW
                     "strategy_used": effective_strategy,
                     "overall_score": optimized_scores.overall if optimized_scores else None,
                     "provider": provider.name,
@@ -628,7 +682,7 @@ class PipelineOrchestrator:
                 context_sources=context_sources or {},
                 warnings=warnings if warnings else [],
                 intent_label=analysis.intent_label,
-                domain=analysis.domain,
+                domain=effective_domain,
             )
 
             if optimized_scores:
