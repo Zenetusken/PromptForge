@@ -507,6 +507,41 @@ async def run_sampling_pipeline(
             )
             confidence = max(0.0, confidence - 0.2)
 
+    # Domain confidence gate (mirrors pipeline.py — 0.6 threshold)
+    effective_domain = getattr(analysis, "domain", None) or "general"
+    if confidence < 0.6:
+        logger.info("Low confidence (%.2f) — overriding domain to 'general'", confidence)
+        effective_domain = "general"
+
+    # Domain mapping (Spec Section 4.2, 4.4)
+    domain_raw = effective_domain
+    taxonomy_node_id = None
+
+    try:
+        from app.services.taxonomy import TaxonomyMapping  # noqa: F401
+        from app.services.embedding_service import EmbeddingService
+        from app.services.taxonomy import TaxonomyEngine
+
+        _sampling_engine = TaxonomyEngine(
+            embedding_service=EmbeddingService(),
+            provider=None,  # sampling pipeline has no local provider
+        )
+        async with async_session_factory() as _db:
+            mapping = await _sampling_engine.map_domain(
+                domain_raw=domain_raw,
+                db=_db,
+                applied_pattern_ids=applied_pattern_ids,
+            )
+        taxonomy_node_id = mapping.taxonomy_node_id
+
+        if taxonomy_node_id:
+            logger.info(
+                "Domain mapped (sampling): '%s' -> '%s'",
+                domain_raw, mapping.taxonomy_label,
+            )
+    except Exception as exc:
+        logger.warning("Domain mapping failed (sampling, non-fatal): %s", exc)
+
     effective_strategy = analysis.selected_strategy
     if confidence < CONFIDENCE_GATE and not strategy_override:
         logger.info(
@@ -729,7 +764,9 @@ async def run_sampling_pipeline(
             optimized_prompt=optimization.optimized_prompt,
             task_type=analysis.task_type,
             intent_label=getattr(analysis, "intent_label", None) or "general",
-            domain=getattr(analysis, "domain", None) or "general",
+            domain=effective_domain,
+            domain_raw=domain_raw,
+            taxonomy_node_id=taxonomy_node_id,
             strategy_used=effective_strategy,
             changes_summary=optimization.changes_summary,
             score_clarity=optimized_scores.clarity if optimized_scores else None,
@@ -763,7 +800,7 @@ async def run_sampling_pipeline(
         "trace_id": trace_id,
         "task_type": analysis.task_type,
         "intent_label": getattr(analysis, "intent_label", None) or "general",
-        "domain": getattr(analysis, "domain", None) or "general",
+        "domain": effective_domain,
         "strategy_used": effective_strategy,
         "overall_score": optimized_scores.overall if optimized_scores else None,
         "provider": "mcp_sampling",
@@ -793,7 +830,7 @@ async def run_sampling_pipeline(
         "suggestions": suggestions,
         "warnings": warnings,
         "intent_label": getattr(analysis, "intent_label", None) or "general",
-        "domain": getattr(analysis, "domain", None) or "general",
+        "domain": effective_domain,
     }
 
 
@@ -844,6 +881,41 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
         analyze_ms, analysis.task_type, analysis.selected_strategy,
     )
 
+    # Domain confidence gate (mirrors pipeline.py)
+    effective_domain = getattr(analysis, "domain", None) or "general"
+    if analysis.confidence < 0.6:
+        logger.info("Low confidence (%.2f) — overriding domain to 'general'", analysis.confidence)
+        effective_domain = "general"
+
+    # Domain mapping (Spec Section 4.2, 4.4)
+    domain_raw = effective_domain
+    taxonomy_node_id: str | None = None
+
+    try:
+        from app.services.taxonomy import TaxonomyMapping  # noqa: F401
+        from app.services.embedding_service import EmbeddingService
+        from app.services.taxonomy import TaxonomyEngine
+
+        _sampling_engine = TaxonomyEngine(
+            embedding_service=EmbeddingService(),
+            provider=None,  # sampling pipeline has no local provider
+        )
+        async with async_session_factory() as _db:
+            mapping = await _sampling_engine.map_domain(
+                domain_raw=domain_raw,
+                db=_db,
+                applied_pattern_ids=None,
+            )
+        taxonomy_node_id = mapping.taxonomy_node_id
+
+        if taxonomy_node_id:
+            logger.info(
+                "Domain mapped (sampling/analyze): '%s' -> '%s'",
+                domain_raw, mapping.taxonomy_label,
+            )
+    except Exception as exc:
+        logger.warning("Domain mapping failed (sampling/analyze, non-fatal): %s", exc)
+
     # --- Phase 2: Baseline score ---
     phase_t0 = time.monotonic()
     scoring_system = loader.load("scoring.md")
@@ -890,7 +962,9 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
             optimized_prompt="",
             task_type=analysis.task_type,
             intent_label=getattr(analysis, "intent_label", None) or "general",
-            domain=getattr(analysis, "domain", None) or "general",
+            domain=effective_domain,
+            domain_raw=domain_raw,
+            taxonomy_node_id=taxonomy_node_id,
             strategy_used=analysis.selected_strategy,
             changes_summary="",
             score_clarity=baseline.clarity,
@@ -962,7 +1036,7 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
             "strategy": analysis.selected_strategy,
         },
         "intent_label": getattr(analysis, "intent_label", None) or "general",
-        "domain": getattr(analysis, "domain", None) or "general",
+        "domain": effective_domain,
     }
 
 
