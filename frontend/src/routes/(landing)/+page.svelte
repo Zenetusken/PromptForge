@@ -750,10 +750,6 @@
      ================================================================ */
   .pipeline-section {
     padding: 140px 16px;
-    min-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
     position: relative;
   }
 
@@ -859,10 +855,6 @@
      ================================================================ */
   .section {
     padding: 140px 16px;
-    min-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
     position: relative;
   }
 
@@ -1247,12 +1239,8 @@
     padding: 140px 16px;
     background: var(--color-bg-secondary);
     border-top: 1px solid var(--color-neon-cyan);
-    min-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
     position: relative;
+    text-align: center;
   }
 
   .trust-mission {

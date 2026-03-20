@@ -138,7 +138,7 @@ input:focus, textarea:focus, select:focus {
 .font-display { font-family: var(--font-display); }
 .font-mono { font-family: var(--font-mono); }
 
-. {
+.text-gradient {
   background: var(--color-bg-secondary);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
