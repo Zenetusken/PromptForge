@@ -44,7 +44,7 @@ describe('ForgeStore', () => {
 
   describe('handleEvent — routing event', () => {
     it('sets routingDecision from routing event', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'routing',
         tier: 'internal',
         provider: 'claude-cli',
@@ -58,7 +58,7 @@ describe('ForgeStore', () => {
     });
 
     it('sets degraded_from from routing event', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'routing',
         tier: 'passthrough',
         provider: null,
@@ -71,7 +71,7 @@ describe('ForgeStore', () => {
 
   describe('handleEvent — passthrough event', () => {
     it('sets assembledPrompt, passthroughTraceId, strategy, and passthrough status', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'passthrough',
         assembled_prompt: 'Assembled content here',
         trace_id: 'pt-trace-1',
@@ -86,7 +86,7 @@ describe('ForgeStore', () => {
 
   describe('handleEvent — phase/status events', () => {
     it('sets status to analyzing on analyze phase', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'status',
         phase: 'analyze',
         status: 'running',
@@ -95,7 +95,7 @@ describe('ForgeStore', () => {
     });
 
     it('sets status to optimizing on optimize phase', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'status',
         phase: 'optimize',
         status: 'running',
@@ -104,7 +104,7 @@ describe('ForgeStore', () => {
     });
 
     it('sets status to scoring on score phase', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'status',
         phase: 'score',
         status: 'running',
@@ -113,7 +113,7 @@ describe('ForgeStore', () => {
     });
 
     it('handles stage key alias for phase', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'status',
         stage: 'analyzing',
         state: 'running',
@@ -124,7 +124,7 @@ describe('ForgeStore', () => {
 
   describe('handleEvent — preview event', () => {
     it('sets previewPrompt from optimized_prompt', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'prompt_preview',
         optimized_prompt: 'Preview of optimized output',
       } as SSEEvent);
@@ -132,7 +132,7 @@ describe('ForgeStore', () => {
     });
 
     it('sets previewPrompt from prompt key alias', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'prompt_preview',
         prompt: 'Preview from prompt key',
       } as SSEEvent);
@@ -145,7 +145,7 @@ describe('ForgeStore', () => {
       const scores = mockDimensionScores();
       const originalScores = mockDimensionScores({ clarity: 5.0 });
       const deltas = { clarity: 2.5, specificity: 0, structure: 0, faithfulness: 0, conciseness: 0 };
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'score_card',
         optimized_scores: scores,
         original_scores: originalScores,
@@ -158,7 +158,7 @@ describe('ForgeStore', () => {
 
     it('also accepts scores key (not optimized_scores)', () => {
       const scores = mockDimensionScores();
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'score_card',
         scores,
         original_scores: null,
@@ -171,7 +171,7 @@ describe('ForgeStore', () => {
   describe('handleEvent — suggestions event', () => {
     it('sets initialSuggestions from suggestions event', () => {
       const suggestions = [{ text: 'Add examples', type: 'clarity' }];
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'suggestions',
         suggestions,
       } as SSEEvent);
@@ -182,7 +182,7 @@ describe('ForgeStore', () => {
   describe('handleEvent — result (optimization_complete) event', () => {
     it('sets result, status to complete, and caches in editorStore', () => {
       const result = mockOptimizationResult({ id: 'opt-complete-1' });
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'optimization_complete',
         ...result,
         optimized_scores: result.scores,
@@ -195,7 +195,7 @@ describe('ForgeStore', () => {
     it('normalizes optimized_scores to scores', () => {
       const scores = mockDimensionScores({ clarity: 9.0 });
       const result = mockOptimizationResult({ id: 'opt-normalize-1', scores });
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'optimization_complete',
         ...result,
         optimized_scores: scores,
@@ -207,7 +207,7 @@ describe('ForgeStore', () => {
     it('captures suggestions from complete event if not already set', () => {
       const suggestions = [{ text: 'From complete event', type: 'strategy' }];
       const result = mockOptimizationResult({ id: 'opt-2' });
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'optimization_complete',
         ...result,
         suggestions,
@@ -218,7 +218,7 @@ describe('ForgeStore', () => {
     it('does not override suggestions already set via SSE', () => {
       forgeStore.initialSuggestions = [{ text: 'Already set', type: 'clarity' }];
       const result = mockOptimizationResult({ id: 'opt-3' });
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'optimization_complete',
         ...result,
         suggestions: [{ text: 'From complete event', type: 'strategy' }],
@@ -229,7 +229,7 @@ describe('ForgeStore', () => {
 
   describe('handleEvent — error event', () => {
     it('sets error and status to error from error key', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'error',
         error: 'Pipeline failed',
       } as SSEEvent);
@@ -238,7 +238,7 @@ describe('ForgeStore', () => {
     });
 
     it('sets error from message key', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'error',
         message: 'Something went wrong',
       } as SSEEvent);
@@ -580,7 +580,7 @@ describe('ForgeStore', () => {
 
   describe('handleEvent — optimization_start event', () => {
     it('sets traceId from optimization_start event', () => {
-      (forgeStore as any).handleEvent({
+      forgeStore._handleEvent({
         event: 'optimization_start',
         trace_id: 'trace-start-1',
       } as SSEEvent);

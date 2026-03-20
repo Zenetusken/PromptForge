@@ -281,6 +281,11 @@ class ForgeStore {
     }
   }
 
+  /** @internal Test-only: invoke handleEvent for SSE event simulation */
+  _handleEvent(event: SSEEvent) {
+    this.handleEvent(event);
+  }
+
   /** @internal Test-only: restore initial state */
   _reset() {
     this.cancel();

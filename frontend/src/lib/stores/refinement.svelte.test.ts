@@ -156,36 +156,36 @@ describe('RefinementStore', () => {
   describe('handleEvent (SSE events)', () => {
     it('sets status to complete on refinement_complete event', async () => {
       // Don't set optimizationId so init() is not triggered (which would reset status to idle)
-      (refinementStore as any).handleEvent({ event: 'refinement_complete', type: 'refinement_complete' });
+      refinementStore._handleEvent({ event: 'refinement_complete', type: 'refinement_complete' });
       expect(refinementStore.status).toBe('complete');
     });
 
     it('sets status to complete on optimization_complete event', () => {
       // Don't set optimizationId to avoid init() resetting status
-      (refinementStore as any).handleEvent({ event: 'optimization_complete', type: 'optimization_complete' });
+      refinementStore._handleEvent({ event: 'optimization_complete', type: 'optimization_complete' });
       expect(refinementStore.status).toBe('complete');
     });
 
     it('updates suggestions on suggestions event', () => {
       const suggestions = [{ text: 'Try adding examples', source: 'model' }];
-      (refinementStore as any).handleEvent({ event: 'suggestions', suggestions, type: 'suggestions' });
+      refinementStore._handleEvent({ event: 'suggestions', suggestions, type: 'suggestions' });
       expect(refinementStore.suggestions).toEqual(suggestions);
     });
 
     it('updates suggestions from items key', () => {
       const items = [{ text: 'Be more specific', source: 'heuristic' }];
-      (refinementStore as any).handleEvent({ event: 'suggestions', items, type: 'suggestions' });
+      refinementStore._handleEvent({ event: 'suggestions', items, type: 'suggestions' });
       expect(refinementStore.suggestions).toEqual(items);
     });
 
     it('sets error and status on error event', () => {
-      (refinementStore as any).handleEvent({ event: 'error', error: 'Something went wrong', type: 'error' });
+      refinementStore._handleEvent({ event: 'error', error: 'Something went wrong', type: 'error' });
       expect(refinementStore.error).toBe('Something went wrong');
       expect(refinementStore.status).toBe('error');
     });
 
     it('sets error from message key on error event', () => {
-      (refinementStore as any).handleEvent({ event: 'error', message: 'Pipeline failed', type: 'error' });
+      refinementStore._handleEvent({ event: 'error', message: 'Pipeline failed', type: 'error' });
       expect(refinementStore.error).toBe('Pipeline failed');
     });
   });
