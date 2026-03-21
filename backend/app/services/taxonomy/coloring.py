@@ -10,8 +10,11 @@ Spec Section 8.6.
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Sequence
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Core OKLab ↔ sRGB conversion
@@ -201,7 +204,9 @@ def enforce_minimum_delta_e(
             hue += step
         else:
             # Fallback: use last attempted hue anyway
-            pass
+            logger.debug(
+                "Hue rotation exhausted for node %s after 24 attempts", node_id,
+            )
 
         new_hex = oklab_to_hex(L, chroma * math.cos(hue), chroma * math.sin(hue))
         result.append((node_id, new_hex))

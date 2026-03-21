@@ -8,9 +8,12 @@ Reference: Spec Section 2.4, 2.5
 
 from __future__ import annotations
 
+import logging
 import math
 import statistics
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 # Default weight targets (when DBCV is fully active)
 _W_D_TARGET = 0.15
@@ -114,6 +117,7 @@ def compute_q_system(
     if total_weight < 1e-9:
         return 0.0
     if abs(total_weight - 1.0) > 1e-6:
+        logger.warning("Q_system weight drift (sum=%.6f, expected=1.0) — normalizing", total_weight)
         raw /= total_weight
 
     return max(0.0, min(1.0, raw))

@@ -6,8 +6,11 @@ OLS trend computation normalized to [-1, 1].
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,6 +36,12 @@ def compute_sparkline_data(
     """
     # 1. Filter invalid
     valid = [v for v in q_values if isinstance(v, (int, float)) and math.isfinite(v)]
+    dropped = len(q_values) - len(valid)
+    if dropped > 0:
+        logger.warning(
+            "Sparkline dropped %d/%d invalid Q values (NaN/Inf/non-numeric)",
+            dropped, len(q_values),
+        )
     if not valid:
         return SparklineData()
 

@@ -10,6 +10,7 @@ Reference: Spec Section 5.2
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -18,6 +19,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import TaxonomySnapshot
+
+logger = logging.getLogger(__name__)
 
 
 async def create_snapshot(
@@ -118,49 +121,54 @@ async def prune_snapshots(db: AsyncSession) -> int:
     Returns:
         Number of snapshots deleted.
     """
-    now = datetime.now(timezone.utc)
-    cutoff_24h = now - timedelta(hours=24)
-    cutoff_30d = now - timedelta(days=30)
+    try:
+        now = datetime.now(timezone.utc)
+        cutoff_24h = now - timedelta(hours=24)
+        cutoff_30d = now - timedelta(days=30)
 
-    # Fetch all snapshots outside the 24h keep-all window.
-    result = await db.execute(
-        select(TaxonomySnapshot).where(TaxonomySnapshot.created_at < cutoff_24h)
-    )
-    old_snapshots = list(result.scalars().all())
+        # Fetch all snapshots outside the 24h keep-all window.
+        result = await db.execute(
+            select(TaxonomySnapshot).where(TaxonomySnapshot.created_at < cutoff_24h)
+        )
+        old_snapshots = list(result.scalars().all())
 
-    if not old_snapshots:
+        if not old_snapshots:
+            return 0
+
+        # Partition into 1–30d and 30+ buckets.
+        mid_range: list[TaxonomySnapshot] = []
+        long_range: list[TaxonomySnapshot] = []
+
+        for snap in old_snapshots:
+            snap_dt = snap.created_at
+            # Ensure timezone-aware for comparison.
+            if snap_dt.tzinfo is None:
+                snap_dt = snap_dt.replace(tzinfo=timezone.utc)
+            if snap_dt >= cutoff_30d:
+                mid_range.append(snap)
+            else:
+                long_range.append(snap)
+
+        ids_to_delete: set[str] = set()
+
+        # 1–30d: keep best per calendar day (UTC date string "YYYY-MM-DD").
+        ids_to_delete.update(_keep_best_per_group(mid_range, _day_key))
+
+        # 30+ days: keep best per ISO week ("YYYY-WNN").
+        ids_to_delete.update(_keep_best_per_group(long_range, _week_key))
+
+        if not ids_to_delete:
+            return 0
+
+        await db.execute(
+            delete(TaxonomySnapshot).where(TaxonomySnapshot.id.in_(list(ids_to_delete)))
+        )
+        await db.commit()
+        logger.info("Pruned %d snapshots", len(ids_to_delete))
+        return len(ids_to_delete)
+    except Exception as exc:
+        logger.error("Snapshot pruning failed: %s", exc, exc_info=True)
         return 0
-
-    # Partition into 1–30d and 30+ buckets.
-    mid_range: list[TaxonomySnapshot] = []
-    long_range: list[TaxonomySnapshot] = []
-
-    for snap in old_snapshots:
-        snap_dt = snap.created_at
-        # Ensure timezone-aware for comparison.
-        if snap_dt.tzinfo is None:
-            snap_dt = snap_dt.replace(tzinfo=timezone.utc)
-        if snap_dt >= cutoff_30d:
-            mid_range.append(snap)
-        else:
-            long_range.append(snap)
-
-    ids_to_delete: set[str] = set()
-
-    # 1–30d: keep best per calendar day (UTC date string "YYYY-MM-DD").
-    ids_to_delete.update(_keep_best_per_group(mid_range, _day_key))
-
-    # 30+ days: keep best per ISO week ("YYYY-WNN").
-    ids_to_delete.update(_keep_best_per_group(long_range, _week_key))
-
-    if not ids_to_delete:
-        return 0
-
-    await db.execute(
-        delete(TaxonomySnapshot).where(TaxonomySnapshot.id.in_(list(ids_to_delete)))
-    )
-    await db.commit()
-    return len(ids_to_delete)
 
 
 # ---------------------------------------------------------------------------

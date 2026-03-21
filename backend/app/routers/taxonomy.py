@@ -36,9 +36,13 @@ async def get_tree(
     db: AsyncSession = Depends(get_db),
 ) -> TaxonomyTreeResponse:
     """Full taxonomy tree for 3D visualization."""
-    engine = _get_engine(request)
-    nodes = await engine.get_tree(db, min_persistence=min_persistence)
-    return TaxonomyTreeResponse(nodes=[TaxonomyNodeResponse(**n) for n in nodes])
+    try:
+        engine = _get_engine(request)
+        nodes = await engine.get_tree(db, min_persistence=min_persistence)
+        return TaxonomyTreeResponse(nodes=[TaxonomyNodeResponse(**n) for n in nodes])
+    except Exception as exc:
+        logger.error("GET /api/taxonomy/tree failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to load taxonomy tree") from exc
 
 
 @router.get("/node/{node_id}")
@@ -48,17 +52,23 @@ async def get_node(
     db: AsyncSession = Depends(get_db),
 ) -> TaxonomyNodeResponse:
     """Single taxonomy node with children, breadcrumb, and metrics."""
-    engine = _get_engine(request)
-    node = await engine.get_node(node_id, db)
-    if node is None:
-        raise HTTPException(status_code=404, detail="Taxonomy node not found")
-    # Children are nested dicts — extract without mutating the engine dict
-    children_raw = node.get("children")
-    node_data = {k: v for k, v in node.items() if k != "children"}
-    resp = TaxonomyNodeResponse(**node_data)
-    if children_raw is not None:
-        resp.children = [TaxonomyNodeResponse(**c) for c in children_raw]
-    return resp
+    try:
+        engine = _get_engine(request)
+        node = await engine.get_node(node_id, db)
+        if node is None:
+            raise HTTPException(status_code=404, detail="Taxonomy node not found")
+        # Children are nested dicts — extract without mutating the engine dict
+        children_raw = node.get("children")
+        node_data = {k: v for k, v in node.items() if k != "children"}
+        resp = TaxonomyNodeResponse(**node_data)
+        if children_raw is not None:
+            resp.children = [TaxonomyNodeResponse(**c) for c in children_raw]
+        return resp
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("GET /api/taxonomy/node/%s failed: %s", node_id, exc, exc_info=True)
+        raise HTTPException(500, "Failed to load taxonomy node") from exc
 
 
 @router.get("/stats")
@@ -67,13 +77,17 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),
 ) -> TaxonomyStatsResponse:
     """System quality metrics and snapshot history."""
-    engine = _get_engine(request)
-    data = await engine.get_stats(db)
-    # Engine returns SparklineData object for q_sparkline — extract .normalized
-    sparkline = data.get("q_sparkline")
-    if isinstance(sparkline, SparklineData):
-        data["q_sparkline"] = sparkline.normalized
-    return TaxonomyStatsResponse(**data)
+    try:
+        engine = _get_engine(request)
+        data = await engine.get_stats(db)
+        # Engine returns SparklineData object for q_sparkline — extract .normalized
+        sparkline = data.get("q_sparkline")
+        if isinstance(sparkline, SparklineData):
+            data["q_sparkline"] = sparkline.normalized
+        return TaxonomyStatsResponse(**data)
+    except Exception as exc:
+        logger.error("GET /api/taxonomy/stats failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to load taxonomy stats") from exc
 
 
 @router.post("/recluster")

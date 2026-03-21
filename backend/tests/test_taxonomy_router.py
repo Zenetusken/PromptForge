@@ -123,3 +123,36 @@ class TestTaxonomyEndpoints:
             resp = await app_client.post("/api/taxonomy/recluster")
 
         assert resp.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_get_tree_db_error_returns_500(self, app_client, db_session):
+        """GET /api/taxonomy/tree returns 500 when engine raises."""
+        mock_engine = AsyncMock()
+        mock_engine.get_tree.side_effect = RuntimeError("DB connection lost")
+
+        with patch("app.routers.taxonomy._get_engine", return_value=mock_engine):
+            resp = await app_client.get("/api/taxonomy/tree")
+
+        assert resp.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_get_node_db_error_returns_500(self, app_client, db_session):
+        """GET /api/taxonomy/node/{id} returns 500 when engine raises."""
+        mock_engine = AsyncMock()
+        mock_engine.get_node.side_effect = RuntimeError("DB connection lost")
+
+        with patch("app.routers.taxonomy._get_engine", return_value=mock_engine):
+            resp = await app_client.get("/api/taxonomy/node/test-id")
+
+        assert resp.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_get_stats_db_error_returns_500(self, app_client, db_session):
+        """GET /api/taxonomy/stats returns 500 when engine raises."""
+        mock_engine = AsyncMock()
+        mock_engine.get_stats.side_effect = RuntimeError("DB connection lost")
+
+        with patch("app.routers.taxonomy._get_engine", return_value=mock_engine):
+            resp = await app_client.get("/api/taxonomy/stats")
+
+        assert resp.status_code == 500

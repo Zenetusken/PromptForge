@@ -6,10 +6,13 @@ coherence/separation metrics.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
 from sklearn.cluster import HDBSCAN
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -120,7 +123,8 @@ def _extract_persistences(hdb: HDBSCAN, n_clusters: int) -> list[float]:
             else:
                 persistences.append(0.0)
         return persistences
-    except Exception:
+    except Exception as exc:
+        logger.warning("Persistence extraction failed (n_clusters=%d): %s", n_clusters, exc)
         return [0.0] * n_clusters
 
 

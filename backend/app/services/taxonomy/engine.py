@@ -322,6 +322,13 @@ class TaxonomyEngine:
                 except (ValueError, TypeError):
                     continue
 
+            skipped = len(families) - len(valid_families)
+            if skipped > 0:
+                logger.warning(
+                    "match_prompt: skipped %d/%d families (dimension mismatch or corrupt centroid)",
+                    skipped, len(families),
+                )
+
             # Pre-load all referenced taxonomy nodes
             node_map: dict[str, TaxonomyNode] = {}
             if node_ids:
@@ -395,6 +402,13 @@ class TaxonomyEngine:
                     valid_nodes.append(n)
                 except (ValueError, TypeError):
                     continue
+
+            skipped_nodes = len(all_nodes) - len(valid_nodes)
+            if skipped_nodes > 0:
+                logger.warning(
+                    "match_prompt: skipped %d/%d taxonomy nodes (dimension mismatch or corrupt centroid)",
+                    skipped_nodes, len(all_nodes),
+                )
 
             if node_centroids:
                 matches = EmbeddingService.cosine_search(
@@ -577,11 +591,19 @@ class TaxonomyEngine:
             except Exception as exc:
                 logger.error("Warm path failed: %s", exc, exc_info=True)
                 # Return a minimal result so callers don't break
-                snap = await self._create_warm_snapshot(
-                    db, q_system=0.0, operations=[], ops_attempted=0, ops_accepted=0,
-                )
+                try:
+                    snap = await self._create_warm_snapshot(
+                        db, q_system=0.0, operations=[], ops_attempted=0, ops_accepted=0,
+                    )
+                    snapshot_id = snap.id
+                except Exception as snap_exc:
+                    logger.error(
+                        "Warm path error-recovery snapshot also failed: %s",
+                        snap_exc, exc_info=True,
+                    )
+                    snapshot_id = "error-no-snapshot"
                 return WarmPathResult(
-                    snapshot_id=snap.id,
+                    snapshot_id=snapshot_id,
                     q_system=0.0,
                     operations_attempted=0,
                     operations_accepted=0,
@@ -942,18 +964,25 @@ class TaxonomyEngine:
                 return await self._run_cold_path_inner(db)
             except Exception as exc:
                 logger.error("Cold path failed: %s", exc, exc_info=True)
-                from app.services.taxonomy.snapshot import create_snapshot
-
-                snap = await create_snapshot(
-                    db,
-                    trigger="cold_path",
-                    q_system=0.0,
-                    q_coherence=0.0,
-                    q_separation=0.0,
-                    q_coverage=0.0,
-                )
+                try:
+                    from app.services.taxonomy.snapshot import create_snapshot
+                    snap = await create_snapshot(
+                        db,
+                        trigger="cold_path",
+                        q_system=0.0,
+                        q_coherence=0.0,
+                        q_separation=0.0,
+                        q_coverage=0.0,
+                    )
+                    snapshot_id = snap.id
+                except Exception as snap_exc:
+                    logger.error(
+                        "Cold path error-recovery snapshot also failed: %s",
+                        snap_exc, exc_info=True,
+                    )
+                    snapshot_id = "error-no-snapshot"
                 return ColdPathResult(
-                    snapshot_id=snap.id,
+                    snapshot_id=snapshot_id,
                     q_system=0.0,
                     nodes_created=0,
                     nodes_updated=0,
@@ -1631,7 +1660,7 @@ class TaxonomyEngine:
                             f"({' > '.join(breadcrumb)}).\n"
                         )
                 except Exception as ctx_exc:
-                    logger.debug("Taxonomy context build failed (non-fatal): %s", ctx_exc)
+                    logger.warning("Taxonomy context build failed (non-fatal): %s", ctx_exc)
 
             template = self._prompt_loader.render(
                 "extract_patterns.md",
@@ -1742,11 +1771,10 @@ class TaxonomyEngine:
             return False
 
         except Exception as exc:
-            logger.error(
+            logger.warning(
                 "Failed to merge meta-pattern into family=%s: %s",
                 family_id,
                 exc,
-                exc_info=True,
             )
             return False
 

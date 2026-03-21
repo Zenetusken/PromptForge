@@ -7,8 +7,12 @@ Spec Section 8.5.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 from scipy.linalg import orthogonal_procrustes
+
+logger = logging.getLogger(__name__)
 
 
 class UMAPProjector:
