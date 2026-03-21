@@ -4,6 +4,28 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Added (Unified Prompt Lifecycle)
+- Added unified `PromptCluster` model replacing `PatternFamily` + `TaxonomyNode` — single entity with lifecycle states (candidate → active → mature → template → archived)
+- Added in-memory numpy `EmbeddingIndex` for O(1) cosine search across cluster centroids
+- Added `PromptLifecycleService` — auto-curation (stale archival, quality pruning), state promotion (active→mature→template), temporal usage decay (0.9× after 30d inactivity), strategy affinity tracking, orphan backfill
+- Added unified `/api/clusters/*` router consolidating former `/api/patterns/*` and `/api/taxonomy/*` endpoints with 301 legacy redirects
+- Added `ClusterNavigator` with state filter tabs and Proven Templates section (replaces `PatternNavigator`)
+- Added state-based chromatic encoding in `SemanticTopology` (opacity, size multiplier, color override per lifecycle state)
+- Added template spawning — mature clusters promote to templates, "Use" button pre-fills editor
+- Added auto-injection of cluster meta-patterns into optimizer pipeline (pre-phase context injection via `EmbeddingIndex` search)
+
+### Changed (Unified Prompt Lifecycle)
+- Decomposed taxonomy engine: `engine.py` (~2100 LOC) → `engine.py` (~500) + `family_ops.py` + `matching.py` + `embedding_index.py`
+- Consolidated `/api/taxonomy/*` and `/api/patterns/*` into `/api/clusters/*`
+- Renamed frontend store: `patterns.svelte.ts` → `clusters.svelte.ts`
+- Renamed frontend component: `PatternNavigator` → `ClusterNavigator`
+
+### Fixed (Unified Prompt Lifecycle)
+- Fixed identity mismatch: topology nodeId assumed to equal familyId (now unified entity)
+- Fixed `SemanticTopology` tooltip using non-existent CSS tokens (`--color-surface`, `--color-contour`)
+- Fixed circular import between `forge.svelte.ts` and `clusters.svelte.ts` — `spawnTemplate()` returns data instead of writing to other stores
+- Fixed dead `context_injected` SSE handler in `+page.svelte` — moved to `forge.svelte.ts` where optimization stream events are processed
+
 ### Added (Taxonomy Engine)
 - Added evolutionary taxonomy engine (`services/taxonomy/`, 3,848 lines, 10 modules) — self-organizing hierarchical clustering that replaces the flat pattern knowledge graph with a 3-path execution model: hot path (per-optimization embedding + nearest-node search), warm path (periodic HDBSCAN clustering with speculative lifecycle mutations), cold path (full refit + UMAP 3D projection + OKLab coloring + Haiku labeling)
 - Added quality metrics system (Q_system) with 5 dimensions: coherence, separation, coverage, DBCV, stability. Adaptive threshold weights scale based on confirmed node count; DBCV linear ramp over 20 samples
