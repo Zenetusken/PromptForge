@@ -1,5 +1,5 @@
 <script lang="ts">
-  import PatternNavigator from './PatternNavigator.svelte';
+  import ClusterNavigator from './ClusterNavigator.svelte';
   import { githubStore } from '$lib/stores/github.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
@@ -339,7 +339,7 @@
 
   <!-- ============ PATTERNS PANEL ============ -->
   {:else if active === 'patterns'}
-    <PatternNavigator />
+    <ClusterNavigator />
 
   <!-- ============ GITHUB PANEL ============ -->
   {:else if active === 'github'}

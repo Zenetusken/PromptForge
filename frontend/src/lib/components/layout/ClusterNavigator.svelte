@@ -15,6 +15,12 @@
   let loadingMore = $state(false);
   let totalFamilies = $state(0);
 
+  // State filter — null = All
+  // Candidate state intentionally excluded — candidates are transient internal nodes
+  // not yet promoted to user-visible states by the lifecycle service.
+  type StateFilter = null | 'active' | 'mature' | 'template' | 'archived';
+  let stateFilter = $state<StateFilter>(null);
+
   // Search state — local filtering from taxonomy tree
   let searchQuery = $state('');
   let searchActive = $derived(searchQuery.trim().length > 0);
@@ -36,9 +42,29 @@
   // Expanded family — uses store's familyDetail state
   let expandedId = $state<string | null>(null);
 
-  // Group families by domain
+  // Proven Templates section — shown when no filter or template filter active
+  let showTemplates = $derived(stateFilter === null || stateFilter === 'template');
+  let templateClusters = $derived(
+    showTemplates
+      ? families
+          .filter(f => f.state === 'template')
+          .sort((a, b) => (b.avg_score ?? 0) - (a.avg_score ?? 0))
+      : []
+  );
+
+  // Filter families by active state tab.
+  // Templates have their own dedicated section — exclude them from the main
+  // domain-grouped list whenever that section is visible to prevent duplicates.
+  let filteredFamilies = $derived(
+    families.filter(f => {
+      if (showTemplates && f.state === 'template') return false;
+      return !stateFilter || f.state === stateFilter;
+    })
+  );
+
+  // Group filtered families by domain
   let grouped = $derived(
-    families.reduce<Record<string, ClusterNode[]>>((acc, f) => {
+    filteredFamilies.reduce<Record<string, ClusterNode[]>>((acc, f) => {
       const d = f.domain || 'general';
       if (!acc[d]) acc[d] = [];
       acc[d].push(f);
@@ -129,12 +155,16 @@
     clustersStore.loadTree();
     editorStore.openMindmap();
   }
+
+  function setStateFilter(f: StateFilter) {
+    stateFilter = f;
+  }
 </script>
 
 <div class="panel">
   <header class="panel-header">
-    <span class="section-heading">Patterns</span>
-    <span class="badge-solid" title="Total pattern families">{totalFamilies}</span>
+    <span class="section-heading">Clusters</span>
+    <span class="badge-solid" title="Total clusters">{totalFamilies}</span>
     <button
       class="mindmap-btn"
       onclick={openMindmap}
@@ -149,6 +179,19 @@
       </svg>
     </button>
   </header>
+
+  <!-- State filter tabs -->
+  <div class="state-tabs" role="tablist" aria-label="Filter by cluster state">
+    {#each ([null, 'active', 'mature', 'template', 'archived'] as StateFilter[]) as tab (tab ?? 'all')}
+      <button
+        class="state-tab"
+        class:state-tab--active={stateFilter === tab}
+        onclick={() => setStateFilter(tab)}
+        role="tab"
+        aria-selected={stateFilter === tab}
+      >{tab ?? 'All'}</button>
+    {/each}
+  </div>
 
   <!-- Search bar -->
   <div class="search-bar">
@@ -189,6 +232,37 @@
     {:else if families.length === 0}
       <p class="empty-note">Optimize your first prompt to start building your pattern library.</p>
     {:else}
+      <!-- Proven Templates section -->
+      {#if templateClusters.length > 0}
+        <div class="templates-section">
+          <div class="templates-heading">PROVEN TEMPLATES</div>
+          {#each templateClusters as cluster (cluster.id)}
+            <div class="template-row">
+              <div class="template-info">
+                <span class="template-label">{cluster.label}</span>
+                <span class="template-meta">
+                  <span class="domain-dot" style="background: {taxonomyColor(cluster.domain)};"></span>
+                  <span class="template-domain">{cluster.domain}</span>
+                  {#if cluster.avg_score != null}
+                    <span class="badge-score font-mono" style="color: {scoreColor(cluster.avg_score)};">{formatScore(cluster.avg_score)}</span>
+                  {/if}
+                  <span class="badge-neon" title="Members">{cluster.member_count}</span>
+                  {#if cluster.preferred_strategy}
+                    <span class="template-strategy">{cluster.preferred_strategy}</span>
+                  {/if}
+                </span>
+              </div>
+              <button
+                class="use-template-btn"
+                onclick={() => clustersStore.spawnTemplate(cluster.id)}
+                title="Use this template"
+              >Use</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <!-- Domain groups (filtered) -->
       {#each domains as domain (domain)}
         <div class="domain-group">
           <div class="domain-header">
@@ -255,10 +329,47 @@
 </div>
 
 <style>
+  /* ---- State filter tabs ---- */
+  .state-tabs {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 6px;
+    border-bottom: 1px solid var(--color-border-subtle);
+    flex-shrink: 0;
+    gap: 2px;
+  }
 
+  .state-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--color-text-dim);
+    font-size: 10px;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    text-transform: lowercase;
+    border-radius: 0;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 
+  .state-tab:hover {
+    color: var(--color-text-primary);
+    background: var(--color-bg-hover);
+  }
 
-
+  .state-tab--active {
+    color: var(--color-neon-cyan);
+    border-color: var(--color-neon-cyan);
+    background: color-mix(in srgb, var(--color-neon-cyan) 8%, transparent);
+  }
 
   /* ---- Search ---- */
   .search-bar {
@@ -370,6 +481,103 @@
 
   .mindmap-btn:hover {
     color: var(--color-neon-cyan);
+  }
+
+  /* ---- Proven Templates ---- */
+  .templates-section {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+    margin-bottom: 4px;
+  }
+
+  .templates-heading {
+    font-size: 11px;
+    font-family: var(--font-display, var(--font-sans));
+    font-weight: 700;
+    color: var(--color-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 2px 6px 4px;
+  }
+
+  .template-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    min-height: 28px;
+    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .template-row:hover {
+    background: var(--color-bg-hover);
+  }
+
+  .template-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .template-label {
+    font-size: 10px;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .template-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .template-domain {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--color-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .template-strategy {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--color-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 80px;
+  }
+
+  .use-template-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    padding: 0 6px;
+    border: 1px solid var(--color-border-subtle);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 10px;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 0;
+    flex-shrink: 0;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .use-template-btn:hover {
+    color: var(--color-neon-cyan);
+    border-color: var(--color-neon-cyan);
+    background: color-mix(in srgb, var(--color-neon-cyan) 8%, transparent);
   }
 
   /* ---- Domain groups ---- */

@@ -3,7 +3,7 @@ import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/sv
 import userEvent from '@testing-library/user-event';
 import { mockFetch, mockPatternFamily, mockMetaPattern } from '$lib/test-utils';
 
-import PatternNavigator from './PatternNavigator.svelte';
+import ClusterNavigator from './ClusterNavigator.svelte';
 import { clustersStore as patternsStore } from '$lib/stores/clusters.svelte';
 import { editorStore } from '$lib/stores/editor.svelte';
 
@@ -109,7 +109,7 @@ function defaultHandlers(
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe('PatternNavigator', () => {
+describe('ClusterNavigator', () => {
   beforeEach(() => {
     patternsStore._reset();
     editorStore._reset();
@@ -127,7 +127,7 @@ describe('PatternNavigator', () => {
       mockPatternFamily({ id: 'fam-1', domain: 'backend', intent_label: 'API patterns' }),
       mockPatternFamily({ id: 'fam-2', domain: 'frontend', intent_label: 'UI patterns' }),
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('backend')).toBeInTheDocument();
@@ -140,7 +140,7 @@ describe('PatternNavigator', () => {
       mockPatternFamily({ id: 'fam-1', domain: 'backend', intent_label: 'API patterns' }),
       mockPatternFamily({ id: 'fam-2', domain: 'frontend', intent_label: 'UI patterns' }),
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
@@ -152,7 +152,7 @@ describe('PatternNavigator', () => {
     defaultHandlers([
       mockPatternFamily({ id: 'fam-1', domain: 'backend', intent_label: 'API patterns', usage_count: 7 }),
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('7')).toBeInTheDocument();
@@ -163,7 +163,7 @@ describe('PatternNavigator', () => {
     defaultHandlers([
       mockPatternFamily({ id: 'fam-1', domain: 'backend', intent_label: 'API patterns', avg_score: 8.3 }),
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       // formatScore(8.3) = '8.3'
@@ -176,7 +176,7 @@ describe('PatternNavigator', () => {
       mockPatternFamily({ id: 'fam-1', domain: 'backend', intent_label: 'API patterns' }),
       mockPatternFamily({ id: 'fam-2', domain: 'backend', intent_label: 'Auth patterns' }),
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('backend')).toBeInTheDocument();
@@ -190,7 +190,7 @@ describe('PatternNavigator', () => {
       mockPatternFamily({ id: 'fam-1', domain: 'backend', intent_label: 'API patterns' }),
       mockPatternFamily({ id: 'fam-2', domain: 'frontend', intent_label: 'UI patterns' }),
     ], { total: 2 });
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       // totalFamilies = 2, shown in header badge
@@ -209,7 +209,7 @@ describe('PatternNavigator', () => {
       { match: '/api/clusters/tree', response: { nodes: manyNodes } },
       { match: '/api/clusters/', response: clusterDetail() },
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('Load more')).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe('PatternNavigator', () => {
       [mockPatternFamily({ id: 'fam-1', domain: 'backend', intent_label: 'API patterns' })],
       { has_more: false }
     );
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
@@ -241,7 +241,7 @@ describe('PatternNavigator', () => {
       { match: '/api/clusters/', response: clusterDetail() },
     ]);
 
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('Load more')).toBeInTheDocument();
@@ -272,7 +272,7 @@ describe('PatternNavigator', () => {
       mockPatternFamily({ id: 'fam-2', domain: 'backend', intent_label: 'Auth patterns' }),
       mockPatternFamily({ id: 'fam-3', domain: 'frontend', intent_label: 'UI patterns' }),
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
@@ -287,7 +287,7 @@ describe('PatternNavigator', () => {
 
   it('shows search input with placeholder', () => {
     defaultHandlers([]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
     expect(screen.getByPlaceholderText('Search patterns...')).toBeInTheDocument();
   });
 
@@ -300,7 +300,7 @@ describe('PatternNavigator', () => {
     ] as any;
 
     defaultHandlers([]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     const input = screen.getByPlaceholderText('Search patterns...');
     await user.type(input, 'API');
@@ -317,7 +317,7 @@ describe('PatternNavigator', () => {
     patternsStore.taxonomyTree = [];
 
     defaultHandlers([]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     const input = screen.getByPlaceholderText('Search patterns...');
     await user.type(input, 'xyz');
@@ -330,7 +330,7 @@ describe('PatternNavigator', () => {
   it('shows a clear button when search query is non-empty', async () => {
     const user = userEvent.setup();
     defaultHandlers([]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     const input = screen.getByPlaceholderText('Search patterns...');
     await user.type(input, 'API');
@@ -348,7 +348,7 @@ describe('PatternNavigator', () => {
     defaultHandlers([
       mockPatternFamily({ id: 'fam-1', domain: 'backend', intent_label: 'API patterns' }),
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     // Wait for initial load
     await waitFor(() => {
@@ -388,7 +388,7 @@ describe('PatternNavigator', () => {
       return new Response('Not Found', { status: 404 });
     }));
 
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
@@ -418,7 +418,7 @@ describe('PatternNavigator', () => {
       return new Response('Not Found', { status: 404 });
     }));
 
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
@@ -451,7 +451,7 @@ describe('PatternNavigator', () => {
       return new Response('Not Found', { status: 404 });
     }));
 
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
@@ -483,7 +483,7 @@ describe('PatternNavigator', () => {
       return new Response('Not Found', { status: 404 });
     }));
 
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
@@ -501,7 +501,7 @@ describe('PatternNavigator', () => {
 
   it('shows empty-state placeholder when no families exist', async () => {
     defaultHandlers([]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText(/Optimize your first prompt/i)).toBeInTheDocument();
@@ -513,7 +513,7 @@ describe('PatternNavigator', () => {
   it('shows "Loading..." while initial families fetch is pending', () => {
     // Fetch never resolves
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
-    render(PatternNavigator);
+    render(ClusterNavigator);
     expect(screen.getByText('Loading...')).toBeInTheDocument();
   });
 
@@ -525,7 +525,7 @@ describe('PatternNavigator', () => {
     const loadTreeSpy = vi.spyOn(patternsStore, 'loadTree').mockResolvedValue();
 
     defaultHandlers([]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     const mindmapBtn = screen.getByTitle('Open pattern mindmap');
     await user.click(mindmapBtn);
@@ -540,7 +540,7 @@ describe('PatternNavigator', () => {
     vi.stubGlobal('fetch', vi.fn(async () => {
       throw new Error('Network failure');
     }));
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('Network failure')).toBeInTheDocument();
@@ -573,7 +573,7 @@ describe('PatternNavigator', () => {
       return new Response('Not Found', { status: 404 });
     }));
 
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     const input = screen.getByPlaceholderText('Search patterns...');
     await user.type(input, 'API');
@@ -613,7 +613,7 @@ describe('PatternNavigator', () => {
       return new Response('Not Found', { status: 404 });
     }));
 
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
@@ -634,7 +634,7 @@ describe('PatternNavigator', () => {
       mockPatternFamily({ id: 'fam-2', domain: 'backend', intent_label: 'API patterns' }),
       mockPatternFamily({ id: 'fam-3', domain: 'frontend', intent_label: 'UI patterns' }),
     ]);
-    render(PatternNavigator);
+    render(ClusterNavigator);
 
     await waitFor(() => {
       expect(screen.getByText('backend')).toBeInTheDocument();
@@ -644,5 +644,183 @@ describe('PatternNavigator', () => {
     const labels = domainHeaders.map(el => el.textContent);
     const sorted = [...labels].sort();
     expect(labels).toEqual(sorted);
+  });
+
+  // ── 13. State filter tabs ─────────────────────────────────────────────────
+
+  it('renders all state filter tabs (All, active, mature, template, archived)', async () => {
+    defaultHandlers([]);
+    render(ClusterNavigator);
+
+    // All tabs should be visible immediately (they're always rendered)
+    expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'active' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'mature' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'template' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'archived' })).toBeInTheDocument();
+  });
+
+  it('"All" tab is selected by default (aria-selected=true)', async () => {
+    defaultHandlers([]);
+    render(ClusterNavigator);
+
+    const allTab = screen.getByRole('tab', { name: 'All' });
+    expect(allTab).toHaveAttribute('aria-selected', 'true');
+    // Other tabs should not be selected
+    expect(screen.getByRole('tab', { name: 'active' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('clicking a state tab filters families to that state only', async () => {
+    const user = userEvent.setup();
+
+    const nodes = [
+      mockClusterNode({ id: 'fam-active', label: 'Active cluster', state: 'active', domain: 'backend' }),
+      mockClusterNode({ id: 'fam-mature', label: 'Mature cluster', state: 'mature', domain: 'frontend' }),
+      mockClusterNode({ id: 'fam-archived', label: 'Archived cluster', state: 'archived', domain: 'backend' }),
+    ];
+    mockFetch([
+      { match: '/api/clusters/tree', response: { nodes } },
+      { match: '/api/clusters/', response: clusterDetail() },
+    ]);
+    render(ClusterNavigator);
+
+    await waitFor(() => {
+      expect(screen.getByText('Active cluster')).toBeInTheDocument();
+    });
+
+    // Click the "active" tab
+    await user.click(screen.getByRole('tab', { name: 'active' }));
+
+    // Only active-state family should be visible
+    expect(screen.getByText('Active cluster')).toBeInTheDocument();
+    expect(screen.queryByText('Mature cluster')).not.toBeInTheDocument();
+    expect(screen.queryByText('Archived cluster')).not.toBeInTheDocument();
+
+    // The "active" tab should now be selected
+    expect(screen.getByRole('tab', { name: 'active' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('clicking "All" tab after filtering shows all non-template families', async () => {
+    const user = userEvent.setup();
+
+    const nodes = [
+      mockClusterNode({ id: 'fam-active', label: 'Active cluster', state: 'active', domain: 'backend' }),
+      mockClusterNode({ id: 'fam-mature', label: 'Mature cluster', state: 'mature', domain: 'frontend' }),
+    ];
+    mockFetch([
+      { match: '/api/clusters/tree', response: { nodes } },
+      { match: '/api/clusters/', response: clusterDetail() },
+    ]);
+    render(ClusterNavigator);
+
+    await waitFor(() => {
+      expect(screen.getByText('Active cluster')).toBeInTheDocument();
+    });
+
+    // Filter down to active only
+    await user.click(screen.getByRole('tab', { name: 'active' }));
+    expect(screen.queryByText('Mature cluster')).not.toBeInTheDocument();
+
+    // Reset to All
+    await user.click(screen.getByRole('tab', { name: 'All' }));
+    expect(screen.getByText('Active cluster')).toBeInTheDocument();
+    expect(screen.getByText('Mature cluster')).toBeInTheDocument();
+  });
+
+  // ── 14. Proven Templates section ─────────────────────────────────────────
+
+  it('renders PROVEN TEMPLATES section when template-state clusters exist', async () => {
+    const nodes = [
+      mockClusterNode({ id: 'tmpl-1', label: 'Chain-of-thought template', state: 'template', domain: 'general', avg_score: 8.5 }),
+    ];
+    mockFetch([
+      { match: '/api/clusters/tree', response: { nodes } },
+      { match: '/api/clusters/', response: clusterDetail() },
+    ]);
+    render(ClusterNavigator);
+
+    await waitFor(() => {
+      expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Chain-of-thought template')).toBeInTheDocument();
+  });
+
+  it('does not render PROVEN TEMPLATES section when no template clusters exist', async () => {
+    const nodes = [
+      mockClusterNode({ id: 'fam-1', label: 'Regular cluster', state: 'active', domain: 'backend' }),
+    ];
+    mockFetch([
+      { match: '/api/clusters/tree', response: { nodes } },
+      { match: '/api/clusters/', response: clusterDetail() },
+    ]);
+    render(ClusterNavigator);
+
+    await waitFor(() => {
+      expect(screen.getByText('Regular cluster')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('PROVEN TEMPLATES')).not.toBeInTheDocument();
+  });
+
+  it('template clusters do not appear in the domain-grouped list in "All" view', async () => {
+    const nodes = [
+      mockClusterNode({ id: 'tmpl-1', label: 'Template cluster', state: 'template', domain: 'general' }),
+      mockClusterNode({ id: 'fam-1', label: 'Regular cluster', state: 'active', domain: 'backend' }),
+    ];
+    mockFetch([
+      { match: '/api/clusters/tree', response: { nodes } },
+      { match: '/api/clusters/', response: clusterDetail() },
+    ]);
+    render(ClusterNavigator);
+
+    await waitFor(() => {
+      // Template appears in the Proven Templates section
+      expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
+      expect(screen.getByText('Template cluster')).toBeInTheDocument();
+    });
+
+    // "Template cluster" should appear exactly once (in the templates section, not again in domain groups)
+    expect(screen.getAllByText('Template cluster').length).toBe(1);
+  });
+
+  it('renders "Use" button for each template cluster', async () => {
+    const nodes = [
+      mockClusterNode({ id: 'tmpl-1', label: 'Template A', state: 'template', domain: 'general' }),
+      mockClusterNode({ id: 'tmpl-2', label: 'Template B', state: 'template', domain: 'backend' }),
+    ];
+    mockFetch([
+      { match: '/api/clusters/tree', response: { nodes } },
+      { match: '/api/clusters/', response: clusterDetail() },
+    ]);
+    render(ClusterNavigator);
+
+    await waitFor(() => {
+      expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
+    });
+
+    const useButtons = screen.getAllByTitle('Use this template');
+    expect(useButtons.length).toBe(2);
+  });
+
+  it('clicking "Use" button calls clustersStore.spawnTemplate with cluster id', async () => {
+    const user = userEvent.setup();
+    const spawnSpy = vi.spyOn(patternsStore, 'spawnTemplate').mockImplementation(() => {});
+
+    const nodes = [
+      mockClusterNode({ id: 'tmpl-42', label: 'My template', state: 'template', domain: 'general' }),
+    ];
+    mockFetch([
+      { match: '/api/clusters/tree', response: { nodes } },
+      { match: '/api/clusters/', response: clusterDetail() },
+    ]);
+    render(ClusterNavigator);
+
+    await waitFor(() => {
+      expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTitle('Use this template'));
+
+    expect(spawnSpy).toHaveBeenCalledWith('tmpl-42');
   });
 });
