@@ -78,9 +78,9 @@ async def test_get_stats_empty(db, mock_embedding, mock_provider):
     """get_stats on empty DB returns zero counts."""
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
     stats = await engine.get_stats(db)
-    assert stats["confirmed_nodes"] == 0
-    assert stats["candidate_nodes"] == 0
-    assert stats["total_families"] == 0
+    assert stats["nodes"]["confirmed"] == 0
+    assert stats["nodes"]["candidate"] == 0
+    assert stats["q_system"] is None
 
 
 @pytest.mark.asyncio
@@ -101,5 +101,5 @@ async def test_get_stats_counts(db, mock_embedding, mock_provider):
     await db.commit()
 
     stats = await engine.get_stats(db)
-    assert stats["confirmed_nodes"] == 2
-    assert stats["candidate_nodes"] == 1
+    assert stats["nodes"]["confirmed"] == 2
+    assert stats["nodes"]["candidate"] == 1

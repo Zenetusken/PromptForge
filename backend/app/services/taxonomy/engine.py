@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PROMPTS_DIR, settings
@@ -30,10 +30,12 @@ from app.models import (
     OptimizationPattern,
     PatternFamily,
     TaxonomyNode,
+    TaxonomySnapshot,
 )
 from app.providers.base import LLMProvider
 from app.services.embedding_service import EmbeddingService
 from app.services.prompt_loader import PromptLoader
+from app.services.taxonomy.sparkline import compute_sparkline_data
 
 logger = logging.getLogger(__name__)
 
@@ -1891,28 +1893,95 @@ class TaxonomyEngine:
         return node_dict
 
     async def get_stats(self, db: AsyncSession) -> dict:
+        import json
+
         all_result = await db.execute(select(TaxonomyNode))
         all_nodes = all_result.scalars().all()
+
+        # Node state counts
         confirmed = sum(1 for n in all_nodes if n.state == "confirmed")
         candidate = sum(1 for n in all_nodes if n.state == "candidate")
         retired = sum(1 for n in all_nodes if n.state == "retired")
-        # Family count
-        fam_result = await db.execute(select(PatternFamily))
-        total_families = len(fam_result.scalars().all())
-        # Latest snapshot
-        try:
-            from app.services.taxonomy.snapshot import get_latest_snapshot
 
-            latest = await get_latest_snapshot(db)
-        except ImportError:
-            latest = None
+        # max_depth: walk parent_id chains
+        id_to_node = {n.id: n for n in all_nodes}
+        max_depth = 0
+        for node in all_nodes:
+            depth = 0
+            current = node
+            while current.parent_id and current.parent_id in id_to_node:
+                depth += 1
+                current = id_to_node[current.parent_id]
+            if depth > max_depth:
+                max_depth = depth
+
+        # leaf_count: active nodes with no children
+        active_ids = {n.id for n in all_nodes if n.state != "retired"}
+        parent_ids = {n.parent_id for n in all_nodes if n.parent_id}
+        leaf_count = sum(1 for nid in active_ids if nid not in parent_ids)
+
+        # Recent snapshots (last 30, ascending chronological)
+        snap_result = await db.execute(
+            select(TaxonomySnapshot)
+            .order_by(desc(TaxonomySnapshot.created_at))
+            .limit(30)
+        )
+        snapshots = list(reversed(snap_result.scalars().all()))
+
+        # Latest snapshot metrics
+        latest = snapshots[-1] if snapshots else None
         q_system = latest.q_system if latest else None
+        q_coherence = latest.q_coherence if latest else None
+        q_separation = latest.q_separation if latest else None
+        q_coverage = latest.q_coverage if latest else None
+        q_dbcv = latest.q_dbcv if latest else None
+
+        # Sparkline history
+        q_values = [s.q_system for s in snapshots]
+        sparkline = compute_sparkline_data(q_values)
+
+        q_history = []
+        for snap in snapshots:
+            try:
+                ops = json.loads(snap.operations) if snap.operations else []
+            except (ValueError, TypeError):
+                ops = []
+            q_history.append(
+                {
+                    "timestamp": snap.created_at.isoformat() if snap.created_at else None,
+                    "q_system": snap.q_system,
+                    "operations": len(ops),
+                }
+            )
+
+        # last_warm_path and last_cold_path timestamps
+        last_warm_path: str | None = None
+        last_cold_path: str | None = None
+        for snap in reversed(snapshots):
+            if last_warm_path is None and snap.trigger == "warm_path":
+                last_warm_path = snap.created_at.isoformat() if snap.created_at else None
+            if last_cold_path is None and snap.trigger == "cold_path":
+                last_cold_path = snap.created_at.isoformat() if snap.created_at else None
+            if last_warm_path is not None and last_cold_path is not None:
+                break
+
         return {
-            "confirmed_nodes": confirmed,
-            "candidate_nodes": candidate,
-            "retired_nodes": retired,
-            "total_families": total_families,
             "q_system": q_system,
+            "q_coherence": q_coherence,
+            "q_separation": q_separation,
+            "q_coverage": q_coverage,
+            "q_dbcv": q_dbcv,
+            "nodes": {
+                "confirmed": confirmed,
+                "candidate": candidate,
+                "retired": retired,
+                "max_depth": max_depth,
+                "leaf_count": leaf_count,
+            },
+            "q_history": q_history,
+            "q_sparkline": sparkline,
+            "last_warm_path": last_warm_path,
+            "last_cold_path": last_cold_path,
             "warm_path_age": self._warm_path_age,
         }
 
@@ -1959,6 +2028,7 @@ class TaxonomyEngine:
             "member_count": node.member_count or 0,
             "coherence": node.coherence,
             "separation": node.separation,
+            "stability": node.stability,
             "persistence": node.persistence,
             "color_hex": node.color_hex,
             "umap_x": node.umap_x,
