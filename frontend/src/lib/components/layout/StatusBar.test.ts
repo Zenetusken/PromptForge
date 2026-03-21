@@ -46,9 +46,12 @@ describe('StatusBar', () => {
       q_coverage: 0.5,
       q_dbcv: 0.4,
       nodes: { confirmed: 7, candidate: 2, retired: 0, max_depth: 3, leaf_count: 5 },
+      total_families: 0,
       last_warm_path: null,
       last_cold_path: null,
+      warm_path_age: null,
       q_history: [],
+      q_sparkline: [],
     };
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     render(StatusBar);
@@ -165,9 +168,12 @@ describe('StatusBar', () => {
       q_coverage: 0.5,
       q_dbcv: 0.4,
       nodes: { confirmed: 5, candidate: 1, retired: 0, max_depth: 2, leaf_count: 4 },
+      total_families: 0,
       last_warm_path: null,
       last_cold_path: null,
+      warm_path_age: null,
       q_history: [],
+      q_sparkline: [],
     };
 
     await vi.waitFor(() => {

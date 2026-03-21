@@ -608,12 +608,12 @@ class PipelineOrchestrator:
             db.add(db_opt)
 
             # Track applied patterns in join table (relationship: "applied")
+            applied_family_ids: set[str] = set()
             if applied_pattern_ids:
                 try:
                     from app.models import OptimizationPattern
 
                     # Collect unique family_ids from applied patterns
-                    applied_family_ids: set[str] = set()
                     for pid in applied_pattern_ids:
                         mp_result = await db.execute(
                             select(MetaPattern).where(MetaPattern.id == pid)
@@ -634,7 +634,7 @@ class PipelineOrchestrator:
             await db.commit()
 
             # Propagate usage counts AFTER successful commit (Spec 7.8)
-            if applied_pattern_ids and taxonomy_engine:
+            if applied_family_ids and taxonomy_engine:
                 try:
                     for fid in applied_family_ids:
                         try:

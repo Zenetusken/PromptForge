@@ -23,12 +23,12 @@
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
     return patternsStore.taxonomyTree
-      .filter(node => node.label.toLowerCase().includes(q))
+      .filter(node => (node.label ?? '').toLowerCase().includes(q))
       .slice(0, 10)
       .map(node => ({
         type: 'family' as const,
         id: node.id,
-        label: node.label,
+        label: node.label ?? '',
         score: node.coherence ?? 0,
       }));
   });
