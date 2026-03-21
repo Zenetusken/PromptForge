@@ -80,6 +80,7 @@ async def test_get_stats_empty(db, mock_embedding, mock_provider):
     stats = await engine.get_stats(db)
     assert stats["nodes"]["confirmed"] == 0
     assert stats["nodes"]["candidate"] == 0
+    assert stats["total_families"] == 0
     assert stats["q_system"] is None
 
 
@@ -103,3 +104,4 @@ async def test_get_stats_counts(db, mock_embedding, mock_provider):
     stats = await engine.get_stats(db)
     assert stats["nodes"]["confirmed"] == 2
     assert stats["nodes"]["candidate"] == 1
+    assert stats["total_families"] == 0  # no families created in this test

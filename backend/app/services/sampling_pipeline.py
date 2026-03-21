@@ -803,6 +803,7 @@ async def run_sampling_pipeline(
         "task_type": analysis.task_type,
         "intent_label": getattr(analysis, "intent_label", None) or "general",
         "domain": effective_domain,
+        "domain_raw": domain_raw,
         "strategy_used": effective_strategy,
         "overall_score": optimized_scores.overall if optimized_scores else None,
         "provider": "mcp_sampling",

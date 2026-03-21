@@ -29,7 +29,7 @@ async def test_lifespan_startup_and_shutdown():
              patch("app.services.trace_logger.TraceLogger") as mock_trace_logger, \
              patch("app.main.DATA_DIR") as mock_data_dir, \
              patch("app.main.event_bus") as mock_event_bus, \
-             patch("app.services.taxonomy.TaxonomyEngine") as mock_pattern_extractor, \
+             patch("app.services.taxonomy.TaxonomyEngine") as mock_taxonomy_engine, \
              patch("app.services.routing.RoutingManager", mock_routing_cls):
 
             # Setup mocks
@@ -64,7 +64,7 @@ async def test_lifespan_startup_and_shutdown():
 
             # Make sure extractor processes correctly
             mock_extractor_instance = AsyncMock()
-            mock_pattern_extractor.return_value = mock_extractor_instance
+            mock_taxonomy_engine.return_value = mock_extractor_instance
 
             # Since we want to test the inner listener, let's capture the tasks.
             # DummyTask only runs the extraction listener (named "taxonomy-extract-*")

@@ -1924,6 +1924,10 @@ class TaxonomyEngine:
         parent_ids = {n.parent_id for n in all_nodes if n.parent_id}
         leaf_count = sum(1 for nid in active_ids if nid not in parent_ids)
 
+        # Total pattern families
+        fam_result = await db.execute(select(PatternFamily))
+        total_families = len(fam_result.scalars().all())
+
         # Recent snapshots (last 30, ascending chronological)
         from app.services.taxonomy.snapshot import get_snapshot_history
 
@@ -1973,6 +1977,7 @@ class TaxonomyEngine:
             "q_separation": q_separation,
             "q_coverage": q_coverage,
             "q_dbcv": q_dbcv,
+            "total_families": total_families,
             "nodes": {
                 "confirmed": confirmed,
                 "candidate": candidate,
