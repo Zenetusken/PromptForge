@@ -8,7 +8,7 @@ import { apiFetch } from './client';
 export interface TaxonomyNode {
   id: string;
   parent_id: string | null;
-  label: string;
+  label: string | null;
   state: 'confirmed' | 'candidate' | 'retired';
   persistence: number | null;
   coherence: number | null;
@@ -20,18 +20,11 @@ export interface TaxonomyNode {
   umap_x: number | null;
   umap_y: number | null;
   umap_z: number | null;
+  created_at: string | null;
   // Only populated by get_node — get_tree returns a flat list
   children?: TaxonomyNode[];
-  families?: TaxonomyNodeFamily[];
-}
-
-export interface TaxonomyNodeFamily {
-  id: string;
-  intent_label: string;
-  domain: string;
-  member_count: number;
-  usage_count: number;
-  avg_score: number | null;
+  breadcrumb?: string[];
+  family_count?: number;
 }
 
 export interface TaxonomyStats {
@@ -40,6 +33,7 @@ export interface TaxonomyStats {
   q_separation: number | null;
   q_coverage: number | null;
   q_dbcv: number | null;
+  total_families: number;
   nodes: {
     confirmed: number;
     candidate: number;
@@ -49,17 +43,23 @@ export interface TaxonomyStats {
   };
   last_warm_path: string | null;
   last_cold_path: string | null;
+  warm_path_age: number | null;
   q_history: Array<{
     timestamp: string;
     q_system: number;
     operations: number;
   }>;
+  q_sparkline: number[];
 }
 
 export interface ReclusterResult {
   status: 'completed' | 'skipped';
-  message: string;
-  q_system?: number;
+  reason?: string;
+  snapshot_id?: string;
+  q_system?: number | null;
+  nodes_created?: number | null;
+  nodes_updated?: number | null;
+  umap_fitted?: boolean | null;
 }
 
 // -- API functions --

@@ -18,8 +18,8 @@ function makeNode(overrides: Partial<TaxonomyNode> = {}): TaxonomyNode {
     umap_x: 1.0,
     umap_y: 2.0,
     umap_z: 3.0,
+    created_at: null,
     children: [],
-    families: [],
     ...overrides,
   };
 }

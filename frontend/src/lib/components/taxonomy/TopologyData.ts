@@ -63,7 +63,7 @@ export function buildSceneData(flatNodes: TaxonomyNode[]): SceneData {
       size,
       persistence: node.persistence ?? 0,
       state: node.state,
-      label: node.label,
+      label: node.label ?? '',
       visible: true,
       parentId: node.parent_id ?? undefined,
     });
