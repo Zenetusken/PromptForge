@@ -217,7 +217,7 @@ async def get_cluster_detail(
                 for o in optimizations
             ],
             children=[ClusterNode(**c) for c in children_raw] if children_raw else None,
-            breadcrumb=[ClusterNode(**b) for b in breadcrumb_raw] if isinstance(breadcrumb_raw, list) and breadcrumb_raw and isinstance(breadcrumb_raw[0], dict) else None,
+            breadcrumb=breadcrumb_raw if isinstance(breadcrumb_raw, list) else None,
         )
     except HTTPException:
         raise
@@ -362,7 +362,7 @@ async def legacy_taxonomy_recluster(request: Request):
 @router.get("/api/patterns/families")
 async def legacy_patterns_families(request: Request):
     qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters{qs}", status_code=301)
+    return RedirectResponse(url=f"/api/clusters/tree{qs}", status_code=301)
 
 
 @router.get("/api/patterns/families/{family_id}")

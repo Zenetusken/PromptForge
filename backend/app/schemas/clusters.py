@@ -65,7 +65,7 @@ class ClusterDetail(BaseModel):
     meta_patterns: list[MetaPatternItem]
     optimizations: list[LinkedOptimization]
     children: list[ClusterNode] | None = None
-    breadcrumb: list[ClusterNode] | None = None
+    breadcrumb: list[str] | None = None
 
 
 class ClusterStats(BaseModel):
@@ -89,6 +89,7 @@ class ClusterMatchResponse(BaseModel):
 
 class ReclusterResponse(BaseModel):
     status: str
+    reason: str | None = None
     snapshot_id: str | None = None
     q_system: float | None = None
     nodes_created: int = 0
