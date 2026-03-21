@@ -725,7 +725,7 @@ describe('connectEventStream', () => {
       'optimization_created', 'optimization_analyzed',
       'feedback_submitted', 'refinement_turn',
       'optimization_failed', 'strategy_changed',
-      'pattern_updated', 'routing_state_changed',
+      'taxonomy_changed', 'routing_state_changed',
     ];
     for (const type of eventTypes) {
       es.__simulateEvent(type, JSON.stringify({ type }));

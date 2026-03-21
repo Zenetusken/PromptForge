@@ -34,22 +34,9 @@
       if (type === 'strategy_changed') {
         window.dispatchEvent(new CustomEvent('strategy-changed', { detail: data }));
       }
-      if (type === 'pattern_updated') {
-        patternsStore.invalidateGraph();
-        addToast('created', `Pattern family updated: ${(data.intent_label as string) || 'new family'}`);
-
-        // Live family link: if the extractor just linked the current result to a family,
-        // refresh to pick up the family_id so Inspector auto-shows the family detail.
-        const eventOptId = data.optimization_id as string | undefined;
-        if (
-          eventOptId &&
-          forgeStore.status === 'complete' &&
-          forgeStore.result?.id === eventOptId
-        ) {
-          getOptimization(forgeStore.result.trace_id)
-            .then((updated) => forgeStore.loadFromRecord(updated))
-            .catch(() => { /* best-effort refresh */ });
-        }
+      if (type === 'taxonomy_changed') {
+        patternsStore.invalidateTaxonomy();
+        addToast('created', 'Taxonomy updated');
       }
       if (type === 'routing_state_changed') {
         const d = data as { provider: string | null; sampling_capable: boolean | null; mcp_connected: boolean; available_tiers: string[] };

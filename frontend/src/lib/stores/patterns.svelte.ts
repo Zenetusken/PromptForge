@@ -5,6 +5,7 @@
  */
 
 import { matchPattern, getPatternGraph, getFamilyDetail, type PatternMatch, type PatternGraph, type FamilyDetail } from '$lib/api/patterns';
+import { getTaxonomyTree, getTaxonomyStats, type TaxonomyNode, type TaxonomyStats } from '$lib/api/taxonomy';
 
 const PASTE_CHAR_DELTA = 50;
 const PASTE_DEBOUNCE_MS = 300;
@@ -25,6 +26,12 @@ class PatternStore {
   familyDetail = $state<FamilyDetail | null>(null);
   familyDetailLoading = $state(false);
   familyDetailError = $state<string | null>(null);
+
+  // Taxonomy tree and stats
+  taxonomyTree = $state<TaxonomyNode[]>([]);
+  taxonomyStats = $state<TaxonomyStats | null>(null);
+  taxonomyLoading = $state(false);
+  taxonomyError = $state<string | null>(null);
 
   // Internal
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -101,6 +108,26 @@ class PatternStore {
    */
   invalidateGraph(): void {
     this.graphLoaded = false;
+  }
+
+  async loadTree(): Promise<void> {
+    this.taxonomyLoading = true;
+    this.taxonomyError = null;
+    try {
+      this.taxonomyTree = await getTaxonomyTree();
+      this.taxonomyStats = await getTaxonomyStats();
+    } catch (err) {
+      this.taxonomyError = err instanceof Error ? err.message : 'Failed to load taxonomy';
+      console.warn('Taxonomy load failed:', err);
+    } finally {
+      this.taxonomyLoading = false;
+    }
+  }
+
+  /** Called by SSE handler when taxonomy_changed fires. */
+  invalidateTaxonomy(): void {
+    this.graphLoaded = false; // Existing graph invalidation
+    this.loadTree(); // Reload tree data
   }
 
   /**
