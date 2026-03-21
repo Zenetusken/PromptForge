@@ -4,7 +4,7 @@
  * Pure functions — no Three.js dependency (just typed arrays and interfaces).
  * The renderer consumes SceneData to build Three.js objects.
  */
-import type { TaxonomyNode } from '$lib/api/taxonomy';
+import type { ClusterNode } from '$lib/api/clusters';
 import type { LODTier } from './TopologyRenderer';
 import { taxonomyColor } from '$lib/utils/colors';
 
@@ -42,7 +42,7 @@ const LOD_THRESHOLDS: Record<LODTier, number> = {
  * Convert flat taxonomy node list into scene-ready nodes and edges.
  * Backend `get_tree` returns a flat list — we build edges from `parent_id`.
  */
-export function buildSceneData(flatNodes: TaxonomyNode[]): SceneData {
+export function buildSceneData(flatNodes: ClusterNode[]): SceneData {
   const nodes: SceneNode[] = [];
   const edges: SceneEdge[] = [];
 

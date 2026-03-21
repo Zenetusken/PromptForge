@@ -5,7 +5,7 @@ import {
 } from '$lib/api/client';
 import type { OptimizationResult, DimensionScores, SSEEvent } from '$lib/api/client';
 import { editorStore } from '$lib/stores/editor.svelte';
-import { patternsStore } from '$lib/stores/patterns.svelte';
+import { clustersStore } from '$lib/stores/clusters.svelte';
 import { addToast } from '$lib/stores/toast.svelte';
 
 export type ForgeStatus = 'idle' | 'analyzing' | 'optimizing' | 'scoring' | 'complete' | 'error' | 'passthrough';
@@ -83,7 +83,7 @@ class ForgeStore {
     const patternIds = this.appliedPatternIds;
 
     // Deselect pattern family so Inspector shows forge progress
-    patternsStore.selectFamily(null);
+    clustersStore.selectCluster(null);
 
     // Clear shared state
     this.error = null;
@@ -244,7 +244,7 @@ class ForgeStore {
     // Bidirectional family link — auto-select in patterns store so Inspector shows family detail
     this.familyId = opt.family_id ?? null;
     if (this.familyId) {
-      patternsStore.selectFamily(this.familyId);
+      clustersStore.selectCluster(this.familyId);
     }
 
     // Cache the result in the editor store so each result tab has its own data
@@ -352,7 +352,7 @@ class ForgeStore {
     this.appliedPatternIds = null;
     this.familyId = null;
     this.routingDecision = null;
-    patternsStore.resetTracking();
+    clustersStore.resetTracking();
   }
 }
 

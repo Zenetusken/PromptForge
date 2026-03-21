@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { qHealthColor } from '$lib/utils/colors';
   import type { LODTier } from './TopologyRenderer';
 
@@ -15,7 +15,7 @@
   let searchOpen = $state(false);
   let reclustering = $state(false);
 
-  const stats = $derived(patternsStore.taxonomyStats);
+  const stats = $derived(clustersStore.taxonomyStats);
   const qSystem = $derived(stats?.q_system ?? null);
   const qColor = $derived(qHealthColor(qSystem));
 

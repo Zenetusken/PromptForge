@@ -52,10 +52,13 @@ vi.mock('./TopologyControls.svelte', () => ({
   default: vi.fn(),
 }));
 
-vi.mock('$lib/api/taxonomy', () => ({
-  getTaxonomyTree: vi.fn().mockResolvedValue([]),
-  getTaxonomyStats: vi.fn().mockResolvedValue(null),
+vi.mock('$lib/api/clusters', () => ({
+  getClusterTree: vi.fn().mockResolvedValue([]),
+  getClusterStats: vi.fn().mockResolvedValue(null),
   triggerRecluster: vi.fn().mockResolvedValue({ status: 'completed', message: 'ok' }),
+  matchPattern: vi.fn().mockResolvedValue({ match: null }),
+  getClusterDetail: vi.fn().mockResolvedValue(null),
+  getClusterTemplates: vi.fn().mockResolvedValue({ total: 0, count: 0, offset: 0, has_more: false, next_offset: null, items: [] }),
 }));
 
 vi.mock('three', () => {
@@ -95,7 +98,7 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
 describe('SemanticTopology', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    const { patternsStore } = await import('$lib/stores/patterns.svelte');
+    const { clustersStore: patternsStore } = await import('$lib/stores/clusters.svelte');
     patternsStore._reset();
   });
 
@@ -117,8 +120,8 @@ describe('SemanticTopology', () => {
   });
 
   it('displays error when taxonomy load fails', async () => {
-    const taxonomy = await import('$lib/api/taxonomy');
-    vi.mocked(taxonomy.getTaxonomyTree).mockRejectedValueOnce(new Error('Connection failed'));
+    const clusters = await import('$lib/api/clusters');
+    vi.mocked(clusters.getClusterTree).mockRejectedValueOnce(new Error('Connection failed'));
     const { container } = render(SemanticTopology);
     // Wait for the async loadTree() to settle
     await vi.waitFor(() => {

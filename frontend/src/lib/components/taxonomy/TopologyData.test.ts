@@ -1,23 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import { buildSceneData, assignLodVisibility, type SceneNode } from './TopologyData';
-import type { TaxonomyNode } from '$lib/api/taxonomy';
+import type { ClusterNode } from '$lib/api/clusters';
 
-function makeNode(overrides: Partial<TaxonomyNode> = {}): TaxonomyNode {
+function makeNode(overrides: Partial<ClusterNode> = {}): ClusterNode {
   return {
     id: 'node-1',
     parent_id: null,
     label: 'Test',
     state: 'confirmed',
+    domain: 'backend',
+    task_type: 'coding',
     persistence: 0.8,
     coherence: 0.9,
     separation: 0.85,
     stability: 0.7,
     member_count: 10,
     usage_count: 5,
+    avg_score: null,
     color_hex: '#a855f7',
     umap_x: 1.0,
     umap_y: 2.0,
     umap_z: 3.0,
+    preferred_strategy: null,
     created_at: null,
     children: [],
     ...overrides,

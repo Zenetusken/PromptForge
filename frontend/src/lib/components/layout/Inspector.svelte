@@ -1,14 +1,14 @@
 <script lang="ts">
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { refinementStore } from '$lib/stores/refinement.svelte';
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { taxonomyColor, scoreColor, qHealthColor } from '$lib/utils/colors';
 
   /** Known domains for the domain picker (legacy compat). */
   const KNOWN_DOMAINS = ['backend', 'frontend', 'database', 'security', 'devops', 'fullstack', 'general'];
   import { getOptimization } from '$lib/api/client';
-  import { updateFamily } from '$lib/api/patterns';
+  import { updateCluster } from '$lib/api/clusters';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
   import { PHASE_LABELS } from '$lib/utils/dimensions';
@@ -22,8 +22,8 @@
     forgeStore.status === 'optimizing' ||
     forgeStore.status === 'scoring'
   );
-  const showFamilyDetail = $derived(
-    patternsStore.selectedFamilyId !== null && !forgeActive
+  const showClusterDetail = $derived(
+    clustersStore.selectedClusterId !== null && !forgeActive
   );
 
   async function openOptimization(traceId: string, optimizationId: string): Promise<void> {
@@ -38,7 +38,7 @@
   }
 
   function dismissFamily(): void {
-    patternsStore.selectFamily(null);
+    clustersStore.selectCluster(null);
   }
 
   // Rename state
@@ -47,8 +47,8 @@
   let renameSaving = $state(false);
 
   function startRename(): void {
-    if (!patternsStore.familyDetail) return;
-    renameValue = patternsStore.familyDetail.intent_label;
+    if (!clustersStore.clusterDetail) return;
+    renameValue = clustersStore.clusterDetail.label;
     renaming = true;
   }
 
@@ -58,15 +58,15 @@
   }
 
   async function submitRename(): Promise<void> {
-    const id = patternsStore.selectedFamilyId;
+    const id = clustersStore.selectedClusterId;
     const trimmed = renameValue.trim();
     if (!id || !trimmed || renameSaving) return;
     renameSaving = true;
     try {
-      await updateFamily(id, { intent_label: trimmed });
+      await updateCluster(id, { intent_label: trimmed });
       // Refresh the detail to reflect the new name
-      patternsStore.selectFamily(id);
-      patternsStore.invalidateTaxonomy();
+      clustersStore.selectCluster(id);
+      clustersStore.invalidateClusters();
       renaming = false;
     } catch {
       // keep rename input open on error
@@ -83,13 +83,13 @@
   }
 
   async function selectDomain(newDomain: string): Promise<void> {
-    const id = patternsStore.selectedFamilyId;
+    const id = clustersStore.selectedClusterId;
     if (!id || domainSaving) return;
     domainSaving = true;
     try {
-      await updateFamily(id, { domain: newDomain });
-      patternsStore.selectFamily(id);
-      patternsStore.invalidateTaxonomy();
+      await updateCluster(id, { domain: newDomain });
+      clustersStore.selectCluster(id);
+      clustersStore.invalidateClusters();
       domainPickerOpen = false;
     } catch {
       // keep picker open on error
@@ -123,23 +123,23 @@
   <!-- Body -->
   <div class="panel-body">
 
-    {#if showFamilyDetail}
+    {#if showClusterDetail}
       <!-- Pattern family detail -->
       <div class="family-detail">
-        {#if patternsStore.familyDetailLoading}
+        {#if clustersStore.clusterDetailLoading}
           <div class="phase-state">
             <div class="spinner" aria-label="Loading family" role="status"></div>
             <span class="phase-label">Loading family...</span>
           </div>
 
-        {:else if patternsStore.familyDetailError}
+        {:else if clustersStore.clusterDetailError}
           <div class="error-state">
             <span class="error-icon" aria-hidden="true">!</span>
-            <span class="error-text">{patternsStore.familyDetailError}</span>
+            <span class="error-text">{clustersStore.clusterDetailError}</span>
           </div>
 
-        {:else if patternsStore.familyDetail}
-          {@const family = patternsStore.familyDetail}
+        {:else if clustersStore.clusterDetail}
+          {@const family = clustersStore.clusterDetail}
 
           <!-- Family header -->
           <div class="family-header">
@@ -173,7 +173,7 @@
                 class="family-intent"
                 onclick={startRename}
                 title="Click to rename"
-              >{family.intent_label}</button>
+              >{family.label}</button>
             {/if}
             <button
               class="domain-badge"
@@ -260,8 +260,8 @@
       </div>
 
     {:else if forgeStore.status === 'idle'}
-      {#if patternsStore.taxonomyStats}
-        {@const stats = patternsStore.taxonomyStats}
+      {#if clustersStore.taxonomyStats}
+        {@const stats = clustersStore.taxonomyStats}
         <div class="health-panel">
           <div class="health-title">TAXONOMY HEALTH</div>
           <div class="health-metric">

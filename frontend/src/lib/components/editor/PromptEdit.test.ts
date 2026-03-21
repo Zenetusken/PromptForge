@@ -14,7 +14,7 @@ vi.mock('$lib/api/client', () => ({
 
 import PromptEdit from './PromptEdit.svelte';
 import { forgeStore } from '$lib/stores/forge.svelte';
-import { patternsStore } from '$lib/stores/patterns.svelte';
+import { clustersStore as patternsStore } from '$lib/stores/clusters.svelte';
 import { editorStore } from '$lib/stores/editor.svelte';
 import * as apiClient from '$lib/api/client';
 

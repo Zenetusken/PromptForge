@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getHealth } from '$lib/api/client';
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import ProviderBadge from '$lib/components/shared/ProviderBadge.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { taxonomyColor, qHealthColor } from '$lib/utils/colors';
@@ -12,8 +12,8 @@
   let provider = $state<string | null>(null);
   let version = $state<string | null>(null);
 
-  // Pattern count derived from taxonomy stats (loaded by patternsStore.loadTree)
-  const patternCount = $derived(patternsStore.taxonomyStats?.nodes?.confirmed ?? null);
+  // Pattern count derived from taxonomy stats (loaded by clustersStore.loadTree)
+  const patternCount = $derived(clustersStore.taxonomyStats?.nodes?.confirmed ?? null);
 
   let loaded = false;
   $effect(() => {
@@ -79,9 +79,9 @@
     {#if patternCount !== null && patternCount > 0}
       <span class="status-patterns" title="{patternCount} pattern families">{patternCount} patterns</span>
     {/if}
-    {#if patternsStore.taxonomyStats?.q_system != null}
+    {#if clustersStore.taxonomyStats?.q_system != null}
       <span class="statusbar-item" title="Taxonomy health (Q_system)">
-        Q: <span style="color: {qHealthColor(patternsStore.taxonomyStats.q_system)}">{patternsStore.taxonomyStats.q_system.toFixed(2)}</span>
+        Q: <span style="color: {qHealthColor(clustersStore.taxonomyStats.q_system)}">{clustersStore.taxonomyStats.q_system.toFixed(2)}</span>
       </span>
     {/if}
     <span class="status-kbd" aria-label="Open command palette with Ctrl+K">Ctrl+K</span>

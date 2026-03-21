@@ -4,7 +4,7 @@ import { mockFetch, mockHealthResponse, mockOptimizationResult } from '$lib/test
 
 import StatusBar from './StatusBar.svelte';
 import { forgeStore } from '$lib/stores/forge.svelte';
-import { patternsStore } from '$lib/stores/patterns.svelte';
+import { clustersStore as patternsStore } from '$lib/stores/clusters.svelte';
 
 describe('StatusBar', () => {
   beforeEach(() => {
@@ -45,7 +45,7 @@ describe('StatusBar', () => {
       q_separation: 0.6,
       q_coverage: 0.5,
       q_dbcv: 0.4,
-      total_families: 7,
+      total_clusters: 7,
       nodes: { confirmed: 7, candidate: 2, retired: 0, max_depth: 3, leaf_count: 5 },
       last_warm_path: null,
       last_cold_path: null,
@@ -167,7 +167,7 @@ describe('StatusBar', () => {
       q_separation: 0.6,
       q_coverage: 0.5,
       q_dbcv: 0.4,
-      total_families: 5,
+      total_clusters: 5,
       nodes: { confirmed: 5, candidate: 1, retired: 0, max_depth: 2, leaf_count: 4 },
       last_warm_path: null,
       last_cold_path: null,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { formatScore } from '$lib/utils/formatting';
 
   interface Props {
@@ -9,30 +9,27 @@
   let { onApply }: Props = $props();
 
   function handleApply() {
-    const patterns = patternsStore.applySuggestion();
+    const patterns = clustersStore.applySuggestion();
     if (patterns) onApply(patterns);
   }
 
   function handleSkip() {
-    patternsStore.dismissSuggestion();
+    clustersStore.dismissSuggestion();
   }
 </script>
 
-{#if patternsStore.suggestionVisible && patternsStore.suggestion}
-  {@const match = patternsStore.suggestion}
+{#if clustersStore.suggestionVisible && clustersStore.suggestion}
+  {@const match = clustersStore.suggestion}
   <div class="suggestion-banner" role="alert">
     <div class="suggestion-content">
       <div class="suggestion-header">
         <span class="suggestion-icon">&#x27E1;</span>
         <span class="suggestion-label">
-          Matches "<strong>{match.family.intent_label}</strong>" pattern ({Math.round(match.similarity * 100)}%)
+          Matches "<strong>{match.cluster.label}</strong>" pattern ({Math.round(match.similarity * 100)}%)
         </span>
       </div>
       <div class="suggestion-meta">
         {match.meta_patterns.length} meta-pattern{match.meta_patterns.length !== 1 ? 's' : ''} available
-        {#if match.family.avg_score != null}
-          &middot; avg score {formatScore(match.family.avg_score)}
-        {/if}
       </div>
     </div>
     <div class="suggestion-actions">

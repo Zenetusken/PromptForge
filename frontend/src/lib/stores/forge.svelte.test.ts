@@ -21,7 +21,7 @@ vi.mock('$lib/api/client', async (importOriginal) => {
 
 import { forgeStore } from './forge.svelte';
 import { editorStore } from './editor.svelte';
-import { patternsStore } from './patterns.svelte';
+import { clustersStore as patternsStore } from './clusters.svelte';
 import { mockFetch, mockOptimizationResult, mockDimensionScores } from '../test-utils';
 import type { SSEEvent } from '$lib/api/client';
 import * as apiClient from '$lib/api/client';

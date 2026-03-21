@@ -105,19 +105,22 @@ export function mockMetaPattern(overrides: Record<string, unknown> = {}) {
   };
 }
 
-export function mockPatternMatch(overrides: Record<string, unknown> = {}) {
+export function mockClusterMatch(overrides: Record<string, unknown> = {}) {
   return {
-    family: mockPatternFamily(),
+    cluster: {
+      id: 'fam-1',
+      label: 'API endpoint patterns',
+      domain: 'backend',
+      member_count: 3,
+    },
     meta_patterns: [mockMetaPattern()],
     similarity: 0.85,
-    match_level: 'family' as const,
-    taxonomy_node_id: 'node-1',
-    taxonomy_label: 'Test Node',
-    taxonomy_color: '#00e5ff',
-    taxonomy_breadcrumb: ['Root', 'Test Node'],
     ...overrides,
   };
 }
+
+/** @deprecated Use mockClusterMatch */
+export const mockPatternMatch = mockClusterMatch;
 
 export function mockRefinementTurn(overrides: Record<string, unknown> = {}) {
   return {

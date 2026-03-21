@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { listFamilies, type PatternFamily } from '$lib/api/patterns';
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { listFamilies, type ClusterNode } from '$lib/api/clusters';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { scoreColor, taxonomyColor } from '$lib/utils/colors';
   import { formatScore } from '$lib/utils/formatting';
 
   const PAGE_SIZE = 50;
 
-  let families = $state<PatternFamily[]>([]);
+  let families = $state<ClusterNode[]>([]);
   let loaded = $state(false);
   let error = $state<string | null>(null);
   let hasMore = $state(false);
@@ -22,7 +22,7 @@
   let searchResults = $derived.by<LocalSearchResult[]>(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
-    return patternsStore.taxonomyTree
+    return clustersStore.taxonomyTree
       .filter(node => (node.label ?? '').toLowerCase().includes(q))
       .slice(0, 10)
       .map(node => ({
@@ -38,7 +38,7 @@
 
   // Group families by domain
   let grouped = $derived(
-    families.reduce<Record<string, PatternFamily[]>>((acc, f) => {
+    families.reduce<Record<string, ClusterNode[]>>((acc, f) => {
       const d = f.domain || 'general';
       if (!acc[d]) acc[d] = [];
       acc[d].push(f);
@@ -60,7 +60,7 @@
   // Reload when taxonomy tree is refreshed (taxonomy_changed event)
   let _lastTreeLen = $state(0);
   $effect(() => {
-    const tl = patternsStore.taxonomyTree.length;
+    const tl = clustersStore.taxonomyTree.length;
     if (tl > 0 && tl !== _lastTreeLen) {
       loadFamilies();
     }
@@ -109,24 +109,24 @@
     if (familyId) {
       expandedId = familyId;
       // selectFamily triggers _loadFamilyDetail — use store's state for detail
-      patternsStore.selectFamily(familyId);
+      clustersStore.selectCluster(familyId);
     }
     clearSearch();
   }
 
-  async function toggleExpand(family: PatternFamily) {
+  async function toggleExpand(family: ClusterNode) {
     if (expandedId === family.id) {
       expandedId = null;
-      patternsStore.selectFamily(null);
+      clustersStore.selectCluster(null);
       return;
     }
     expandedId = family.id;
     // selectFamily triggers _loadFamilyDetail — use store's state for detail
-    patternsStore.selectFamily(family.id);
+    clustersStore.selectCluster(family.id);
   }
 
   function openMindmap() {
-    patternsStore.loadTree();
+    clustersStore.loadTree();
     editorStore.openMindmap();
   }
 </script>
@@ -202,7 +202,7 @@
               class:family-row--expanded={expandedId === family.id}
               onclick={() => toggleExpand(family)}
             >
-              <span class="family-label">{family.intent_label}</span>
+              <span class="family-label">{family.label}</span>
               <span class="family-badges">
                 <span class="badge-neon" title="Usage count">{family.usage_count}</span>
                 <span
@@ -216,12 +216,12 @@
             </button>
             {#if expandedId === family.id}
               <div class="family-detail">
-                {#if patternsStore.familyDetailLoading}
+                {#if clustersStore.clusterDetailLoading}
                   <p class="detail-note">Loading...</p>
-                {:else if patternsStore.familyDetail}
-                  {#if patternsStore.familyDetail.meta_patterns.length > 0}
+                {:else if clustersStore.clusterDetail}
+                  {#if clustersStore.clusterDetail.meta_patterns.length > 0}
                     <div class="meta-list">
-                      {#each patternsStore.familyDetail.meta_patterns as mp (mp.id)}
+                      {#each clustersStore.clusterDetail.meta_patterns as mp (mp.id)}
                         <div class="meta-row">
                           <span class="meta-text">{mp.pattern_text}</span>
                           <span class="meta-count font-mono">{mp.source_count}x</span>
@@ -231,7 +231,7 @@
                   {:else}
                     <p class="detail-note">No meta-patterns extracted yet.</p>
                   {/if}
-                {:else if patternsStore.familyDetailError}
+                {:else if clustersStore.clusterDetailError}
                   <p class="detail-note">Failed to load detail.</p>
                 {:else}
                   <p class="detail-note">Loading...</p>

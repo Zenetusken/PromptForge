@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { TopologyRenderer, type LODTier } from './TopologyRenderer';
   import { buildSceneData, assignLodVisibility, type SceneData } from './TopologyData';
   import { TopologyInteraction } from './TopologyInteraction';
@@ -8,7 +8,7 @@
   import { settleForces } from './TopologyWorker';
   import TopologyControls from './TopologyControls.svelte';
   import * as THREE from 'three';
-  import { triggerRecluster } from '$lib/api/taxonomy';
+  import { triggerRecluster } from '$lib/api/clusters';
   import { addToast } from '$lib/stores/toast.svelte';
 
   let canvas: HTMLCanvasElement;
@@ -117,7 +117,7 @@
       renderer?.focusOn(new THREE.Vector3(...node.position));
     }
     // Select family in store for Inspector
-    patternsStore.selectFamily(nodeId);
+    clustersStore.selectCluster(nodeId);
   }
 
   function handleAscend(): void {
@@ -142,14 +142,14 @@
     if (match) {
       interaction?.highlightNode(match.id);
       focusedNodeId = match.id;
-      patternsStore.selectFamily(match.id);
+      clustersStore.selectCluster(match.id);
     }
   }
 
   async function handleRecluster(): Promise<void> {
     try {
       await triggerRecluster();
-      await patternsStore.loadTree();
+      await clustersStore.loadTree();
     } catch (err) {
       // Recluster failed — tree stays as-is
       console.error('Recluster failed:', err);
@@ -159,7 +159,7 @@
 
   // Watch for taxonomy tree changes
   $effect(() => {
-    const tree = patternsStore.taxonomyTree;
+    const tree = clustersStore.taxonomyTree;
     if (tree.length > 0 && renderer) {
       sceneData = buildSceneData(tree);
       assignLodVisibility(sceneData.nodes, lodTier);
@@ -195,7 +195,7 @@
     renderer.start();
 
     // Load taxonomy data
-    patternsStore.loadTree();
+    clustersStore.loadTree();
 
     // Resize observer
     const ro = new ResizeObserver(entries => {
@@ -230,11 +230,11 @@
       {sceneData?.nodes.find(n => n.id === hoveredNodeId)?.label ?? ''}
     </div>
   {/if}
-  {#if patternsStore.taxonomyLoading}
+  {#if clustersStore.taxonomyLoading}
     <div class="topology-loading">Loading taxonomy...</div>
   {/if}
-  {#if patternsStore.taxonomyError}
-    <div class="topology-error" role="alert" aria-live="polite">{patternsStore.taxonomyError}</div>
+  {#if clustersStore.taxonomyError}
+    <div class="topology-error" role="alert" aria-live="polite">{clustersStore.taxonomyError}</div>
   {/if}
 </div>
 
