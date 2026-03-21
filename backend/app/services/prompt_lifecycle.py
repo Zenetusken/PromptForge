@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Optimization, OptimizationPattern, PromptCluster
@@ -107,6 +107,38 @@ class PromptLifecycleService:
             )
 
         return new_state
+
+    # ------------------------------------------------------------------
+    # Strategy affinity
+    # ------------------------------------------------------------------
+
+    async def update_strategy_affinity(self, db: AsyncSession, cluster_id: str) -> None:
+        """Set preferred_strategy to the most successful strategy for this cluster.
+
+        Finds strategies used in 3+ optimizations linked to this cluster that scored >= 7.0,
+        picks the one with the highest average score.
+        """
+        result = await db.execute(
+            select(Optimization.strategy_used, func.count(), func.avg(Optimization.overall_score))
+            .join(OptimizationPattern, OptimizationPattern.optimization_id == Optimization.id)
+            .where(OptimizationPattern.cluster_id == cluster_id)
+            .where(Optimization.overall_score >= 7.0)
+            .group_by(Optimization.strategy_used)
+            .having(func.count() >= 3)
+            .order_by(func.avg(Optimization.overall_score).desc())
+            .limit(1)
+        )
+        row = result.first()
+        if row:
+            await db.execute(
+                update(PromptCluster).where(PromptCluster.id == cluster_id)
+                .values(preferred_strategy=row[0])
+            )
+            await db.flush()
+            logger.info(
+                "Cluster %s preferred_strategy set to %s (avg_score=%.1f, count=%d)",
+                cluster_id, row[0], row[2], row[1],
+            )
 
     # ------------------------------------------------------------------
     # Curation

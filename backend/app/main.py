@@ -171,6 +171,9 @@ async def lifespan(app: FastAPI):
                                         await lifecycle.check_promotion(
                                             db, _row.cluster_id
                                         )
+                                        await lifecycle.update_strategy_affinity(
+                                            db, _row.cluster_id
+                                        )
                                         await db.commit()
                             except Exception as task_exc:
                                 logger.error(

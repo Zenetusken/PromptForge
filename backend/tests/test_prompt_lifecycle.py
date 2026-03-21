@@ -584,3 +584,144 @@ class TestDecayUsage:
         await db.refresh(c2)
         assert c1.usage_count == 90
         assert c2.usage_count == 45
+
+
+# =========================================================================
+# strategy affinity tests
+# =========================================================================
+
+class TestStrategyAffinity:
+    """Tests for update_strategy_affinity."""
+
+    async def test_strategy_affinity_set(self, db: AsyncSession, svc: PromptLifecycleService):
+        """Cluster preferred_strategy set after 3+ high-score optimizations with same strategy."""
+        cluster = _make_cluster(state="active")
+        db.add(cluster)
+        await db.flush()
+
+        # Create 3 optimizations with same strategy, high score, linked via OptimizationPattern
+        for _ in range(3):
+            opt = Optimization(
+                raw_prompt="test prompt",
+                status="completed",
+                strategy_used="chain-of-thought",
+                overall_score=8.5,
+                cluster_id=cluster.id,
+            )
+            db.add(opt)
+            await db.flush()
+            db.add(OptimizationPattern(
+                optimization_id=opt.id,
+                cluster_id=cluster.id,
+                relationship="source",
+                similarity=0.9,
+            ))
+        await db.flush()
+
+        await svc.update_strategy_affinity(db, cluster.id)
+        await db.refresh(cluster)
+        assert cluster.preferred_strategy == "chain-of-thought"
+
+    async def test_strategy_affinity_not_set_below_count(self, db: AsyncSession, svc: PromptLifecycleService):
+        """Preferred strategy NOT set with fewer than 3 matching optimizations."""
+        cluster = _make_cluster(state="active")
+        db.add(cluster)
+        await db.flush()
+
+        # Only 2 optimizations
+        for _ in range(2):
+            opt = Optimization(
+                raw_prompt="test prompt",
+                status="completed",
+                strategy_used="chain-of-thought",
+                overall_score=8.5,
+                cluster_id=cluster.id,
+            )
+            db.add(opt)
+            await db.flush()
+            db.add(OptimizationPattern(
+                optimization_id=opt.id,
+                cluster_id=cluster.id,
+                relationship="source",
+                similarity=0.9,
+            ))
+        await db.flush()
+
+        await svc.update_strategy_affinity(db, cluster.id)
+        await db.refresh(cluster)
+        assert cluster.preferred_strategy is None
+
+    async def test_strategy_affinity_not_set_low_scores(self, db: AsyncSession, svc: PromptLifecycleService):
+        """Preferred strategy NOT set when scores are below 7.0."""
+        cluster = _make_cluster(state="active")
+        db.add(cluster)
+        await db.flush()
+
+        for _ in range(3):
+            opt = Optimization(
+                raw_prompt="test prompt",
+                status="completed",
+                strategy_used="chain-of-thought",
+                overall_score=5.0,
+                cluster_id=cluster.id,
+            )
+            db.add(opt)
+            await db.flush()
+            db.add(OptimizationPattern(
+                optimization_id=opt.id,
+                cluster_id=cluster.id,
+                relationship="source",
+                similarity=0.9,
+            ))
+        await db.flush()
+
+        await svc.update_strategy_affinity(db, cluster.id)
+        await db.refresh(cluster)
+        assert cluster.preferred_strategy is None
+
+    async def test_strategy_affinity_picks_highest_avg(self, db: AsyncSession, svc: PromptLifecycleService):
+        """When multiple strategies qualify, picks the one with highest avg score."""
+        cluster = _make_cluster(state="active")
+        db.add(cluster)
+        await db.flush()
+
+        # 3 chain-of-thought at 7.5 avg
+        for _ in range(3):
+            opt = Optimization(
+                raw_prompt="test prompt",
+                status="completed",
+                strategy_used="chain-of-thought",
+                overall_score=7.5,
+                cluster_id=cluster.id,
+            )
+            db.add(opt)
+            await db.flush()
+            db.add(OptimizationPattern(
+                optimization_id=opt.id,
+                cluster_id=cluster.id,
+                relationship="source",
+                similarity=0.9,
+            ))
+
+        # 3 meta-prompting at 9.0 avg (higher)
+        for _ in range(3):
+            opt = Optimization(
+                raw_prompt="test prompt",
+                status="completed",
+                strategy_used="meta-prompting",
+                overall_score=9.0,
+                cluster_id=cluster.id,
+            )
+            db.add(opt)
+            await db.flush()
+            db.add(OptimizationPattern(
+                optimization_id=opt.id,
+                cluster_id=cluster.id,
+                relationship="source",
+                similarity=0.9,
+            ))
+        await db.flush()
+
+        await svc.update_strategy_affinity(db, cluster.id)
+        await db.refresh(cluster)
+        assert cluster.preferred_strategy == "meta-prompting"
