@@ -114,6 +114,53 @@ class PipelineOrchestrator:
         return confidence
 
     # ------------------------------------------------------------------
+    # Auto-injection helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _auto_inject_patterns(
+        raw_prompt: str,
+        taxonomy_engine: Any,
+        db: AsyncSession,
+        trace_id: str,
+    ) -> tuple[list[str], list[str]]:
+        """Auto-inject cluster meta-patterns based on prompt embedding similarity.
+
+        Returns (pattern_texts, cluster_ids). Both empty if no match or error.
+        """
+        from app.models import MetaPattern
+        from app.services.embedding_service import EmbeddingService
+
+        embedding_svc = EmbeddingService()
+        embedding_index = taxonomy_engine.embedding_index
+        if embedding_index.size == 0:
+            return [], []
+
+        prompt_embedding = await embedding_svc.aembed_single(raw_prompt)
+        matches = embedding_index.search(prompt_embedding, k=3, threshold=0.72)
+        if not matches:
+            return [], []
+
+        auto_injected_cluster_ids = [m[0] for m in matches]
+        result = await db.execute(
+            select(MetaPattern).where(
+                MetaPattern.cluster_id.in_(auto_injected_cluster_ids)
+            )
+        )
+        patterns = result.scalars().all()
+        if not patterns:
+            return [], auto_injected_cluster_ids
+
+        pattern_texts = [p.pattern_text for p in patterns]
+        logger.info(
+            "Auto-injected %d patterns from %d clusters. trace_id=%s",
+            len(pattern_texts),
+            len(auto_injected_cluster_ids),
+            trace_id,
+        )
+        return pattern_texts, auto_injected_cluster_ids
+
+    # ------------------------------------------------------------------
     # Main pipeline
     # ------------------------------------------------------------------
 
@@ -292,6 +339,35 @@ class PipelineOrchestrator:
                 effective_strategy = strategy_override
 
             # ---------------------------------------------------------------
+            # Pre-Phase: Auto-inject cluster meta-patterns
+            # ---------------------------------------------------------------
+            auto_injected_patterns: list[str] = []
+            auto_injected_cluster_ids: list[str] = []
+            if taxonomy_engine is not None and not applied_pattern_ids:
+                try:
+                    auto_injected_patterns, auto_injected_cluster_ids = (
+                        await self._auto_inject_patterns(
+                            raw_prompt=raw_prompt,
+                            taxonomy_engine=taxonomy_engine,
+                            db=db,
+                            trace_id=trace_id,
+                        )
+                    )
+                    if auto_injected_patterns:
+                        yield PipelineEvent(
+                            event="context_injected",
+                            data={
+                                "clusters": auto_injected_cluster_ids,
+                                "patterns": len(auto_injected_patterns),
+                            },
+                        )
+                        if context_sources is None:
+                            context_sources = {}
+                        context_sources["cluster_injection"] = True
+                except Exception as exc:
+                    logger.warning("Auto-injection failed: %s", exc)
+
+            # ---------------------------------------------------------------
             # Phase 2: Optimize
             # ---------------------------------------------------------------
             yield PipelineEvent(event="status", data={"stage": "optimize", "state": "running"})
@@ -335,6 +411,18 @@ class PipelineOrchestrator:
                         )
                 except Exception as exc:
                     logger.warning("Failed to resolve applied patterns: %s", exc)
+
+            # Combine explicit applied_patterns_text with auto-injected patterns
+            if auto_injected_patterns and not applied_patterns_text:
+                lines = [f"- {p}" for p in auto_injected_patterns]
+                applied_patterns_text = (
+                    "The following proven patterns from past optimizations "
+                    "should be applied where relevant:\n"
+                    + "\n".join(lines)
+                )
+            elif auto_injected_patterns and applied_patterns_text:
+                lines = [f"- {p}" for p in auto_injected_patterns]
+                applied_patterns_text += "\n" + "\n".join(lines)
 
             optimize_msg = self.prompt_loader.render("optimize.md", {
                 "raw_prompt": raw_prompt,
