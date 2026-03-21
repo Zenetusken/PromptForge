@@ -102,6 +102,10 @@ except Exception:
 # Module-level routing manager — set once by the lifespan, read by tools and middleware.
 _routing: RoutingManager | None = None
 
+# Module-level taxonomy engine — hot-path-only domain mapping (Spec 6.7).
+# No warm/cold path timers in the MCP process; those run only in the FastAPI process.
+_taxonomy_engine = None
+
 # Shared workspace intelligence instance — caches profiles by root set.
 _workspace_intel = WorkspaceIntelligence()
 
@@ -143,7 +147,7 @@ async def _resolve_workspace_guidance(
 @asynccontextmanager
 async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Detect the LLM provider and initialize routing at startup."""
-    global _routing
+    global _routing, _taxonomy_engine
     # Clear stale session from previous run (belt-and-suspenders with __main__ call)
     _clear_stale_session()
 
@@ -184,9 +188,24 @@ async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
 
     await _routing.start_disconnect_checker()
 
+    # Hot-path-only taxonomy engine for domain mapping (Spec 6.7)
+    _taxonomy_engine = None
+    try:
+        from app.services.embedding_service import EmbeddingService
+        from app.services.taxonomy import TaxonomyEngine
+
+        _taxonomy_engine = TaxonomyEngine(
+            embedding_service=EmbeddingService(),
+            provider=_detected_provider,
+        )
+        logger.info("MCP server: TaxonomyEngine initialized (hot-path only)")
+    except Exception as exc:
+        logger.warning("MCP server: TaxonomyEngine init failed (non-fatal): %s", exc)
+
     yield {}
 
     await _routing.stop()
+    _taxonomy_engine = None
     _routing = None
 
 
@@ -634,6 +653,10 @@ async def synthesis_optimize(
             "provider": decision.provider_name,
             "status": "completed",
         })
+        await notify_event_bus("taxonomy_changed", {
+            "optimization_id": result.get("id", ""),
+            "source": "mcp_server",
+        })
 
         return OptimizeOutput(
             status="completed",
@@ -826,6 +849,21 @@ async def synthesis_analyze(
         overall, total_ms,
     )
 
+    # --- Phase 2.5: Domain Mapping (Spec 6.7, hot-path only) ---
+    domain_raw = getattr(analysis, "domain", None) or "general"
+    taxonomy_node_id = None
+    if _taxonomy_engine is not None:
+        try:
+            async with async_session_factory() as db_map:
+                mapping = await _taxonomy_engine.map_domain(
+                    domain_raw=domain_raw,
+                    db=db_map,
+                    applied_pattern_ids=None,
+                )
+                taxonomy_node_id = mapping.taxonomy_node_id
+        except Exception as exc:
+            logger.warning("MCP domain mapping failed (non-fatal): %s", exc)
+
     # --- Persist to DB ---
     opt_id = str(uuid.uuid4())
     trace_id = str(uuid.uuid4())
@@ -857,8 +895,8 @@ async def synthesis_analyze(
         await db.commit()
 
     logger.info(
-        "synthesis_analyze persisted: optimization_id=%s trace_id=%s",
-        opt_id, trace_id,
+        "synthesis_analyze persisted: optimization_id=%s trace_id=%s taxonomy_node_id=%s",
+        opt_id, trace_id, taxonomy_node_id,
     )
 
     # --- Notify event bus ---
