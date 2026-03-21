@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.models import PatternFamily, TaxonomyNode
+from app.models import PromptCluster, PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine, TaxonomyMapping
 
 
@@ -23,10 +23,10 @@ async def test_map_domain_finds_match(db, mock_embedding, mock_provider):
 
     # Create a confirmed node with known embedding
     emb = mock_embedding.embed_single("REST API design")
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="API Architecture",
         centroid_embedding=emb.astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=5,
         coherence=0.85,
         color_hex="#a855f7",
@@ -64,10 +64,10 @@ async def test_map_domain_bayesian_blend(db, mock_embedding, mock_provider):
     query_vec[1] = 0.98
     query_vec /= np.linalg.norm(query_vec)
 
-    node_api = TaxonomyNode(
+    node_api = PromptCluster(
         label="API Architecture",
         centroid_embedding=api_vec.tobytes(),
-        state="confirmed",
+        state="active",
         member_count=5,
         coherence=0.85,
         color_hex="#a855f7",
@@ -75,12 +75,13 @@ async def test_map_domain_bayesian_blend(db, mock_embedding, mock_provider):
     db.add(node_api)
     await db.flush()
 
-    # Family linked to API node
-    family = PatternFamily(
-        intent_label="API patterns",
+    # Family linked to API node (candidate state — not queried by map_domain)
+    family = PromptCluster(
+        label="API patterns",
         domain="backend",
         centroid_embedding=api_vec.tobytes(),
         parent_id=node_api.id,
+        state="candidate",
     )
     db.add(family)
     await db.flush()
@@ -130,10 +131,10 @@ async def test_map_domain_below_floor_returns_unmapped(db, mock_embedding, mock_
     if norm > 0:
         perp = perp / norm
 
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="Perpendicular Domain",
         centroid_embedding=perp.tobytes(),
-        state="confirmed",
+        state="active",
         member_count=1,
         coherence=0.5,
         color_hex="#ff0000",
@@ -154,7 +155,7 @@ async def test_map_domain_only_considers_confirmed_nodes(db, mock_embedding, moc
     emb = mock_embedding.embed_single("machine learning pipeline")
 
     # Add a candidate and a retired node — neither should match
-    candidate = TaxonomyNode(
+    candidate = PromptCluster(
         label="Candidate ML",
         centroid_embedding=emb.astype(np.float32).tobytes(),
         state="candidate",
@@ -162,10 +163,10 @@ async def test_map_domain_only_considers_confirmed_nodes(db, mock_embedding, moc
         coherence=0.5,
         color_hex="#aaaaaa",
     )
-    retired = TaxonomyNode(
+    retired = PromptCluster(
         label="Retired ML",
         centroid_embedding=emb.astype(np.float32).tobytes(),
-        state="retired",
+        state="archived",
         member_count=3,
         coherence=0.7,
         color_hex="#bbbbbb",
@@ -187,10 +188,10 @@ async def test_map_domain_returns_breadcrumb(db, mock_embedding, mock_provider):
     emb_parent = mock_embedding.embed_single("general software engineering concepts")
 
     # Parent node — distinct embedding so it won't be the top match
-    parent = TaxonomyNode(
+    parent = PromptCluster(
         label="Software Engineering",
         centroid_embedding=emb_parent.astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=10,
         coherence=0.9,
         color_hex="#fbbf24",
@@ -199,10 +200,10 @@ async def test_map_domain_returns_breadcrumb(db, mock_embedding, mock_provider):
     await db.flush()
 
     # Child node — same text as query for guaranteed top match
-    child = TaxonomyNode(
+    child = PromptCluster(
         label="Frontend Development",
         centroid_embedding=emb_child.astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=5,
         coherence=0.85,
         color_hex="#fbbf24",
@@ -225,10 +226,10 @@ async def test_map_domain_no_applied_patterns_no_blend(db, mock_embedding, mock_
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
 
     emb = mock_embedding.embed_single("database indexing")
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="Database Optimization",
         centroid_embedding=emb.astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=3,
         coherence=0.8,
         color_hex="#00d4aa",
@@ -247,10 +248,10 @@ async def test_map_domain_empty_applied_pattern_ids(db, mock_embedding, mock_pro
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
 
     emb = mock_embedding.embed_single("CI/CD automation")
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="DevOps Automation",
         centroid_embedding=emb.astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=4,
         coherence=0.75,
         color_hex="#4d8eff",

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.models import MetaPattern, PatternFamily, TaxonomyNode
+from app.models import MetaPattern, PromptCluster, PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 
 
@@ -22,10 +22,10 @@ async def test_match_prompt_family_level(db, mock_embedding, mock_provider):
 
     # Create a confirmed node + family with known embedding
     emb = mock_embedding.embed_single("REST API endpoint design")
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="API Architecture",
         centroid_embedding=emb.astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=10,
         coherence=0.85,
         color_hex="#a855f7",
@@ -33,8 +33,8 @@ async def test_match_prompt_family_level(db, mock_embedding, mock_provider):
     db.add(node)
     await db.flush()
 
-    family = PatternFamily(
-        intent_label="REST API patterns",
+    family = PromptCluster(
+        label="REST API patterns",
         domain="backend",
         centroid_embedding=emb.astype(np.float32).tobytes(),
         parent_id=node.id,
@@ -61,7 +61,7 @@ async def test_match_prompt_candidate_strict_threshold(db, mock_embedding, mock_
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
 
     emb = mock_embedding.embed_single("test prompt")
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="Test",
         centroid_embedding=emb.astype(np.float32).tobytes(),
         state="candidate",  # not confirmed yet
@@ -71,8 +71,8 @@ async def test_match_prompt_candidate_strict_threshold(db, mock_embedding, mock_
     )
     db.add(node)
 
-    family = PatternFamily(
-        intent_label="Test patterns",
+    family = PromptCluster(
+        label="Test patterns",
         domain="general",
         centroid_embedding=emb.astype(np.float32).tobytes(),
         parent_id=node.id,
@@ -93,10 +93,10 @@ async def test_match_prompt_cluster_level_fallback(db, mock_embedding, mock_prov
 
     # Create parent cluster with child families
     parent_emb = mock_embedding.embed_single("API related topics")
-    parent = TaxonomyNode(
+    parent = PromptCluster(
         label="API Architecture",
         centroid_embedding=parent_emb.astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=20,
         coherence=0.70,
         color_hex="#a855f7",
@@ -106,19 +106,19 @@ async def test_match_prompt_cluster_level_fallback(db, mock_embedding, mock_prov
 
     # Create child families with DIFFERENT embeddings
     child_emb = mock_embedding.embed_single("GraphQL subscriptions")
-    child = TaxonomyNode(
+    child = PromptCluster(
         label="GraphQL patterns",
         parent_id=parent.id,
         centroid_embedding=child_emb.astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=5,
         coherence=0.90,
         color_hex="#fbbf24",
     )
     db.add(child)
 
-    family = PatternFamily(
-        intent_label="GraphQL subs",
+    family = PromptCluster(
+        label="GraphQL subs",
         domain="backend",
         centroid_embedding=child_emb.astype(np.float32).tobytes(),
         parent_id=child.id,
@@ -132,4 +132,4 @@ async def test_match_prompt_cluster_level_fallback(db, mock_embedding, mock_prov
     assert result is not None
     assert result.match_level in ("family", "cluster")
     if result.match_level == "cluster":
-        assert result.taxonomy_node is not None
+        assert result.cluster is not None

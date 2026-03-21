@@ -1,7 +1,7 @@
 
 import pytest
 
-from app.models import PatternFamily
+from app.models import PromptCluster
 
 
 class TestPatternsEndpoints:
@@ -16,13 +16,13 @@ class TestPatternsEndpoints:
 
         mock_family = MagicMock()
         mock_family.id = "fam1"
-        mock_family.intent_label = "REST API patterns"
+        mock_family.label = "REST API patterns"
         mock_family.domain = "backend"
         mock_family.member_count = 5
+        mock_family.color_hex = "#a855f7"
 
         mock_result = PatternMatch(
-            family=mock_family,
-            taxonomy_node=None,
+            cluster=mock_family,
             meta_patterns=[],
             similarity=0.85,
             match_level="family",
@@ -41,7 +41,7 @@ class TestPatternsEndpoints:
         data = resp.json()
         assert data["match_level"] == "family"
         assert data["similarity"] == 0.85
-        assert data["match"]["family"]["id"] == "fam1"
+        assert data["match"]["cluster"]["id"] == "fam1"
 
     @pytest.mark.asyncio
     async def test_match_endpoint_no_match(self, app_client):
@@ -68,8 +68,8 @@ class TestPatternsEndpoints:
     @pytest.mark.asyncio
     async def test_families_endpoint(self, app_client, db_session):
         # Insert a family to db
-        family = PatternFamily(
-            id="fam1", intent_label="test", domain="backend", task_type="coding",
+        family = PromptCluster(
+            id="fam1", label="test", domain="backend", task_type="coding",
             usage_count=5, member_count=2, avg_score=8.0, centroid_embedding=b'\x00' * 384
         )
         db_session.add(family)
@@ -83,8 +83,8 @@ class TestPatternsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_family(self, app_client, db_session):
-        family = PatternFamily(
-            id="fam1", intent_label="test", domain="backend", task_type="coding",
+        family = PromptCluster(
+            id="fam1", label="test", domain="backend", task_type="coding",
             usage_count=5, member_count=2, avg_score=8.0, centroid_embedding=b'\x00' * 384
         )
         db_session.add(family)
@@ -101,8 +101,8 @@ class TestPatternsEndpoints:
     @pytest.mark.asyncio
     async def test_rename_family(self, app_client, db_session):
         # Insert a family to db
-        family = PatternFamily(
-            id="fam2", intent_label="old", domain="backend", task_type="coding",
+        family = PromptCluster(
+            id="fam2", label="old", domain="backend", task_type="coding",
             usage_count=5, member_count=2, avg_score=8.0, centroid_embedding=b'\x00' * 384
         )
         db_session.add(family)
@@ -114,13 +114,13 @@ class TestPatternsEndpoints:
 
         # Validate db is updated
         await db_session.refresh(family)
-        assert family.intent_label == "new_label"
+        assert family.label == "new_label"
 
     @pytest.mark.asyncio
     async def test_update_family_domain(self, app_client, db_session):
         """PATCH with domain only updates the domain."""
-        family = PatternFamily(
-            id="fam3", intent_label="test", domain="backend", task_type="coding",
+        family = PromptCluster(
+            id="fam3", label="test", domain="backend", task_type="coding",
             usage_count=5, member_count=2, avg_score=8.0, centroid_embedding=b'\x00' * 384
         )
         db_session.add(family)
@@ -138,8 +138,8 @@ class TestPatternsEndpoints:
     @pytest.mark.asyncio
     async def test_update_family_both_fields(self, app_client, db_session):
         """PATCH with both intent_label and domain updates both."""
-        family = PatternFamily(
-            id="fam4", intent_label="old", domain="backend", task_type="coding",
+        family = PromptCluster(
+            id="fam4", label="old", domain="backend", task_type="coding",
             usage_count=5, member_count=2, avg_score=8.0, centroid_embedding=b'\x00' * 384
         )
         db_session.add(family)
@@ -154,8 +154,8 @@ class TestPatternsEndpoints:
     @pytest.mark.asyncio
     async def test_update_family_freetext_domain(self, app_client, db_session):
         """PATCH with any string domain succeeds (free-text domains)."""
-        family = PatternFamily(
-            id="fam5", intent_label="test", domain="backend", task_type="coding",
+        family = PromptCluster(
+            id="fam5", label="test", domain="backend", task_type="coding",
             usage_count=5, member_count=2, avg_score=8.0, centroid_embedding=b'\x00' * 384
         )
         db_session.add(family)
@@ -168,8 +168,8 @@ class TestPatternsEndpoints:
     @pytest.mark.asyncio
     async def test_update_family_empty_body_422(self, app_client, db_session):
         """PATCH with empty body (no fields) returns 422."""
-        family = PatternFamily(
-            id="fam6", intent_label="test", domain="backend", task_type="coding",
+        family = PromptCluster(
+            id="fam6", label="test", domain="backend", task_type="coding",
             usage_count=5, member_count=2, avg_score=8.0, centroid_embedding=b'\x00' * 384
         )
         db_session.add(family)

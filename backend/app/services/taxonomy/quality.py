@@ -29,12 +29,12 @@ _ALPHA = 0.15
 class NodeMetrics:
     """Lightweight metrics container for Q_system computation.
 
-    Not a DB model — populated from TaxonomyNode fields for quality calculations.
+    Not a DB model — populated from PromptCluster fields for quality calculations.
     """
 
     coherence: float
     separation: float
-    state: str  # 'candidate' | 'confirmed' | 'retired'
+    state: str  # 'candidate' | 'active' | 'archived'
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class QWeights:
     """Constant-sum weights for Q_system (always sum to 1.0).
 
     Spec Section 2.5 — DBCV ramps in linearly over 20 observations
-    after >=5 confirmed nodes exist. Other weights scale proportionally.
+    after >=5 active nodes exist. Other weights scale proportionally.
     """
 
     w_c: float  # coherence
@@ -80,20 +80,20 @@ def compute_q_system(
     Reference: Spec Section 2.5
 
     Edge cases:
-    - Empty or all-retired: returns 0.0
+    - Empty or all-archived: returns 0.0
     - Single node: coherence=perfect, separation=perfect (no siblings)
     - NaN/Inf: replaced with 0.0
     """
-    confirmed = [n for n in nodes if n.state == "confirmed"]
-    if not confirmed:
+    active = [n for n in nodes if n.state == "active"]
+    if not active:
         return 0.0
 
     # Gather finite coherence values
     coherences = [
-        n.coherence for n in confirmed if math.isfinite(n.coherence)
+        n.coherence for n in active if math.isfinite(n.coherence)
     ]
     separations = [
-        n.separation for n in confirmed if math.isfinite(n.separation)
+        n.separation for n in active if math.isfinite(n.separation)
     ]
 
     mean_c = statistics.mean(coherences) if coherences else 0.0

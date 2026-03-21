@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.models import PatternFamily, TaxonomyNode
+from app.models import PromptCluster, PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 from tests.taxonomy.conftest import EMBEDDING_DIM
 
@@ -15,10 +15,10 @@ async def test_cold_path_recomputes_umap(db, mock_embedding, mock_provider):
 
     # Create some confirmed nodes
     for label in ["Node A", "Node B", "Node C"]:
-        node = TaxonomyNode(
+        node = PromptCluster(
             label=label,
             centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
-            state="confirmed",
+            state="active",
             member_count=5,
             color_hex="#a855f7",
         )
@@ -30,7 +30,7 @@ async def test_cold_path_recomputes_umap(db, mock_embedding, mock_provider):
 
     # Verify UMAP positions are set (may be None for < 5 nodes — fallback)
     from sqlalchemy import select
-    nodes = (await db.execute(select(TaxonomyNode))).scalars().all()
+    nodes = (await db.execute(select(PromptCluster))).scalars().all()
     for node in nodes:
         # At minimum, positions should be set (even if PCA fallback)
         assert node.umap_x is not None or len(nodes) < 5
@@ -64,8 +64,8 @@ async def test_cold_path_returns_correct_counts(db, mock_embedding, mock_provide
     # Create families so cold path has data to cluster
     rng = np.random.RandomState(42)
     for i in range(6):
-        f = PatternFamily(
-            intent_label=f"Family {i}",
+        f = PromptCluster(
+            label=f"Family {i}",
             domain="backend",
             centroid_embedding=rng.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
         )
@@ -86,10 +86,10 @@ async def test_cold_path_regenerates_colors(db, mock_embedding, mock_provider):
 
     # Create confirmed nodes with UMAP positions
     for i, label in enumerate(["Alpha", "Beta", "Gamma"]):
-        node = TaxonomyNode(
+        node = PromptCluster(
             label=label,
             centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
-            state="confirmed",
+            state="active",
             member_count=3,
             umap_x=float(i),
             umap_y=float(i * 0.5),
@@ -103,8 +103,8 @@ async def test_cold_path_regenerates_colors(db, mock_embedding, mock_provider):
     assert result is not None
 
     from sqlalchemy import select
-    nodes = (await db.execute(select(TaxonomyNode))).scalars().all()
-    confirmed = [n for n in nodes if n.state == "confirmed"]
+    nodes = (await db.execute(select(PromptCluster))).scalars().all()
+    confirmed = [n for n in nodes if n.state == "active"]
     for node in confirmed:
         if node.umap_x is not None:
             # Color should have been regenerated from UMAP position
@@ -118,8 +118,8 @@ async def test_cold_path_lock_released_on_error(db, mock_embedding, mock_provide
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
 
     # Create a family with corrupt embedding to potentially trigger error
-    f = PatternFamily(
-        intent_label="Corrupt",
+    f = PromptCluster(
+        label="Corrupt",
         domain="backend",
         centroid_embedding=b"bad_data",
     )

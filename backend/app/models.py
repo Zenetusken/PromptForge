@@ -16,7 +16,7 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.orm import DeclarativeBase, backref, relationship, synonym
+from sqlalchemy.orm import DeclarativeBase, backref, relationship
 
 
 def _utcnow() -> datetime:
@@ -136,16 +136,6 @@ class PromptCluster(Base):
         Index("ix_prompt_cluster_created_at", created_at.desc()),
     )
 
-    # Backward-compat aliases — old PatternFamily/TaxonomyNode code uses these.
-    intent_label = synonym("label")
-    retired_at = synonym("archived_at")
-    confirmed_at = synonym("promoted_at")
-
-
-# Backward compatibility aliases — existing code may import these names.
-# They resolve to PromptCluster so no table duplication occurs.
-PatternFamily = PromptCluster
-TaxonomyNode = PromptCluster
 
 
 class MetaPattern(Base):

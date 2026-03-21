@@ -29,7 +29,7 @@ class TestTaxonomyEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert "nodes" in data
-        assert "confirmed" in data["nodes"]
+        assert "active" in data["nodes"]
         assert "candidate" in data["nodes"]
         assert "q_system" in data
         assert "q_sparkline" in data
@@ -47,13 +47,13 @@ class TestTaxonomyEndpoints:
         """GET /api/taxonomy/node/{id} returns node data when it exists."""
         import numpy as np
 
-        from app.models import TaxonomyNode
+        from app.models import PromptCluster
 
         embedding = np.zeros(384, dtype=np.float32).tobytes()
-        node = TaxonomyNode(
+        node = PromptCluster(
             id="node-1",
             label="Test Node",
-            state="confirmed",
+            state="active",
             centroid_embedding=embedding,
             member_count=5,
             coherence=0.8,

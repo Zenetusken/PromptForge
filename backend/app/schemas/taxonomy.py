@@ -15,7 +15,7 @@ class TaxonomyNodeResponse(BaseModel):
     id: str
     label: str | None = None
     parent_id: str | None = None
-    state: str  # confirmed | candidate | retired
+    state: str  # active | candidate | mature | template | archived
     member_count: int = 0
     coherence: float | None = None
     separation: float | None = None
@@ -43,9 +43,9 @@ class TaxonomyTreeResponse(BaseModel):
 class TaxonomyNodeCounts(BaseModel):
     """Node state counts embedded in stats response."""
 
-    confirmed: int = 0
+    active: int = 0
     candidate: int = 0
-    retired: int = 0
+    archived: int = 0
     max_depth: int = 0
     leaf_count: int = 0
 

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.models import PatternFamily, TaxonomyNode
+from app.models import PromptCluster, PromptCluster
 from app.services.taxonomy.lifecycle import (
     attempt_emerge,
     attempt_merge,
@@ -23,8 +23,8 @@ async def test_emerge_creates_candidate_node(db, mock_embedding):
     # Create families with embeddings
     families = []
     for i, emb in enumerate(cluster):
-        f = PatternFamily(
-            intent_label=f"api-pattern-{i}",
+        f = PromptCluster(
+            label=f"api-pattern-{i}",
             domain="backend",
             centroid_embedding=emb.astype(np.float32).tobytes(),
         )
@@ -52,31 +52,31 @@ async def test_merge_combines_two_nodes(db, mock_embedding):
     emb_a = np.random.randn(EMBEDDING_DIM).astype(np.float32)
     emb_b = emb_a + np.random.randn(EMBEDDING_DIM).astype(np.float32) * 0.05
 
-    parent = TaxonomyNode(
+    parent = PromptCluster(
         label="Parent",
         centroid_embedding=np.zeros(EMBEDDING_DIM, dtype=np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         color_hex="#00e5ff",
     )
     db.add(parent)
     await db.flush()
 
-    node_a = TaxonomyNode(
+    node_a = PromptCluster(
         label="Node A",
         parent_id=parent.id,
         centroid_embedding=emb_a.tobytes(),
         member_count=5,
         coherence=0.85,
-        state="confirmed",
+        state="active",
         color_hex="#a855f7",
     )
-    node_b = TaxonomyNode(
+    node_b = PromptCluster(
         label="Node B",
         parent_id=parent.id,
         centroid_embedding=emb_b.tobytes(),
         member_count=3,
         coherence=0.80,
-        state="confirmed",
+        state="active",
         color_hex="#fbbf24",
     )
     db.add_all([node_a, node_b])
@@ -91,35 +91,35 @@ async def test_merge_combines_two_nodes(db, mock_embedding):
 
     assert result is not None
     assert result.member_count == 8  # combined
-    assert node_a.state == "retired" or node_b.state == "retired"
+    assert node_a.state == "archived" or node_b.state == "archived"
 
 
 @pytest.mark.asyncio
 async def test_retire_redistributes_members(db, mock_embedding):
     """Retire should move members to nearest sibling."""
-    parent = TaxonomyNode(
+    parent = PromptCluster(
         label="Parent",
         centroid_embedding=np.zeros(EMBEDDING_DIM, dtype=np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         color_hex="#00e5ff",
     )
     db.add(parent)
     await db.flush()
 
-    sibling = TaxonomyNode(
+    sibling = PromptCluster(
         label="Active sibling",
         parent_id=parent.id,
         centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
         member_count=10,
-        state="confirmed",
+        state="active",
         color_hex="#a855f7",
     )
-    target = TaxonomyNode(
+    target = PromptCluster(
         label="Idle node",
         parent_id=parent.id,
         centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
         member_count=1,
-        state="confirmed",
+        state="active",
         color_hex="#7a7a9e",
     )
     db.add_all([sibling, target])
@@ -132,8 +132,8 @@ async def test_retire_redistributes_members(db, mock_embedding):
     )
 
     assert result is True
-    assert target.state == "retired"
-    assert target.retired_at is not None
+    assert target.state == "archived"
+    assert target.archived_at is not None
 
 
 @pytest.mark.asyncio
@@ -141,12 +141,12 @@ async def test_merge_self_merge_rejected(db, mock_embedding):
     """Merging a node with itself should return None (guard against self-merge)."""
     emb = np.random.randn(EMBEDDING_DIM).astype(np.float32)
 
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="Solo Node",
         centroid_embedding=emb.tobytes(),
         member_count=3,
         coherence=0.85,
-        state="confirmed",
+        state="active",
         color_hex="#a855f7",
     )
     db.add(node)
@@ -162,18 +162,18 @@ async def test_merge_self_merge_rejected(db, mock_embedding):
     assert result is None
     # Member count must NOT have been doubled
     assert node.member_count == 3
-    assert node.state == "confirmed"
+    assert node.state == "active"
 
 
 @pytest.mark.asyncio
 async def test_retire_root_node_rejected(db, mock_embedding):
     """Root nodes (parent_id=None) must never be retired."""
-    root = TaxonomyNode(
+    root = PromptCluster(
         label="Root",
         parent_id=None,
         centroid_embedding=np.zeros(EMBEDDING_DIM, dtype=np.float32).tobytes(),
         member_count=10,
-        state="confirmed",
+        state="active",
         color_hex="#00e5ff",
     )
     db.add(root)
@@ -186,8 +186,8 @@ async def test_retire_root_node_rejected(db, mock_embedding):
     )
 
     assert result is False
-    assert root.state == "confirmed"
-    assert root.retired_at is None
+    assert root.state == "active"
+    assert root.archived_at is None
 
 
 @pytest.mark.asyncio
@@ -209,12 +209,12 @@ async def test_split_creates_child_nodes(db, mock_embedding):
     """Split should create child candidate nodes under the parent."""
     rng = np.random.RandomState(42)
 
-    parent = TaxonomyNode(
+    parent = PromptCluster(
         label="Mixed Cluster",
         centroid_embedding=np.zeros(EMBEDDING_DIM, dtype=np.float32).tobytes(),
         member_count=10,
         coherence=0.4,
-        state="confirmed",
+        state="active",
         color_hex="#a855f7",
     )
     db.add(parent)
@@ -226,16 +226,16 @@ async def test_split_creates_child_nodes(db, mock_embedding):
 
     families_a, families_b = [], []
     for i, emb in enumerate(cluster_a):
-        f = PatternFamily(
-            intent_label=f"api-{i}", domain="backend",
+        f = PromptCluster(
+            label=f"api-{i}", domain="backend",
             centroid_embedding=emb.astype(np.float32).tobytes(),
             parent_id=parent.id,
         )
         db.add(f)
         families_a.append(f)
     for i, emb in enumerate(cluster_b):
-        f = PatternFamily(
-            intent_label=f"sql-{i}", domain="database",
+        f = PromptCluster(
+            label=f"sql-{i}", domain="database",
             centroid_embedding=emb.astype(np.float32).tobytes(),
             parent_id=parent.id,
         )
@@ -267,11 +267,11 @@ async def test_split_creates_child_nodes(db, mock_embedding):
 @pytest.mark.asyncio
 async def test_split_empty_clusters_returns_empty(db, mock_embedding):
     """Split with no child_clusters should return empty list."""
-    parent = TaxonomyNode(
+    parent = PromptCluster(
         label="Parent",
         centroid_embedding=np.zeros(EMBEDDING_DIM, dtype=np.float32).tobytes(),
         member_count=5,
-        state="confirmed",
+        state="active",
         color_hex="#00e5ff",
     )
     db.add(parent)

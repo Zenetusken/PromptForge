@@ -1139,7 +1139,7 @@ async def _increment_pattern_usage(cluster_ids: set[str]) -> None:
     if not cluster_ids:
         return
     try:
-        from app.models import PatternFamily
+        from app.models import PromptCluster
         from app.services.taxonomy import get_engine
 
         engine = get_engine()
@@ -1151,7 +1151,7 @@ async def _increment_pattern_usage(cluster_ids: set[str]) -> None:
                     logger.warning("Usage propagation failed for %s: %s", fid, usage_exc)
                     # Fallback: at least increment the family directly
                     fam_result = await db.execute(
-                        select(PatternFamily).where(PatternFamily.id == fid)
+                        select(PromptCluster).where(PromptCluster.id == fid)
                     )
                     fam = fam_result.scalar_one_or_none()
                     if fam:

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import MetaPattern, Optimization, OptimizationPattern, PatternFamily
+from app.models import MetaPattern, Optimization, OptimizationPattern, PromptCluster
 
 logger = logging.getLogger(__name__)
 
@@ -108,12 +108,13 @@ async def match_pattern(
 
         # Build match dict for backward compatibility
         match_dict: dict = {}
-        if result.family:
-            match_dict["family"] = {
-                "id": result.family.id,
-                "intent_label": result.family.intent_label,
-                "domain": result.family.domain,
-                "member_count": result.family.member_count,
+        cluster = result.cluster
+        if cluster:
+            match_dict["cluster"] = {
+                "id": cluster.id,
+                "label": cluster.label,
+                "domain": cluster.domain,
+                "member_count": cluster.member_count,
             }
         match_dict["meta_patterns"] = [
             {"id": mp.id, "pattern_text": mp.pattern_text, "source_count": mp.source_count}
@@ -121,14 +122,12 @@ async def match_pattern(
         ]
         match_dict["similarity"] = result.similarity
 
-        taxonomy_node = result.taxonomy_node
-
         return PatternMatchResponse(
             match=match_dict,
             match_level=result.match_level,
-            cluster_id=taxonomy_node.id if taxonomy_node else None,
-            taxonomy_label=taxonomy_node.label if taxonomy_node else None,
-            taxonomy_color=taxonomy_node.color_hex if taxonomy_node else None,
+            cluster_id=cluster.id if cluster else None,
+            taxonomy_label=cluster.label if cluster else None,
+            taxonomy_color=cluster.color_hex if cluster else None,
             taxonomy_breadcrumb=result.taxonomy_breadcrumb or [],
             similarity=result.similarity,
         )
@@ -150,12 +149,12 @@ async def list_families(
 
     from sqlalchemy import func
 
-    query = select(PatternFamily).order_by(PatternFamily.usage_count.desc())
-    count_query = select(func.count(PatternFamily.id))
+    query = select(PromptCluster).order_by(PromptCluster.usage_count.desc())
+    count_query = select(func.count(PromptCluster.id))
 
     if domain:
-        query = query.where(PatternFamily.domain == domain)
-        count_query = count_query.where(PatternFamily.domain == domain)
+        query = query.where(PromptCluster.domain == domain)
+        count_query = count_query.where(PromptCluster.domain == domain)
 
     total = (await db.execute(count_query)).scalar() or 0
     result = await db.execute(query.offset(offset).limit(limit))
@@ -169,7 +168,7 @@ async def list_families(
     items = [
         FamilyItem(
             id=f.id,
-            intent_label=f.intent_label,
+            intent_label=f.label,
             domain=f.domain,
             task_type=f.task_type,
             usage_count=f.usage_count,
@@ -197,7 +196,7 @@ async def get_family(
 ) -> dict:
     """Family detail with meta-patterns and linked optimizations."""
     result = await db.execute(
-        select(PatternFamily).where(PatternFamily.id == family_id)
+        select(PromptCluster).where(PromptCluster.id == family_id)
     )
     family = result.scalar_one_or_none()
     if not family:
@@ -223,7 +222,7 @@ async def get_family(
 
     return {
         "id": family.id,
-        "intent_label": family.intent_label,
+        "intent_label": family.label,
         "domain": family.domain,
         "task_type": family.task_type,
         "usage_count": family.usage_count,
@@ -261,17 +260,17 @@ async def update_family(
         raise HTTPException(422, "At least one of 'intent_label' or 'domain' must be provided")
 
     result = await db.execute(
-        select(PatternFamily).where(PatternFamily.id == family_id)
+        select(PromptCluster).where(PromptCluster.id == family_id)
     )
     family = result.scalar_one_or_none()
     if not family:
         raise HTTPException(404, "Pattern family not found")
 
     if body.intent_label is not None:
-        old_label = family.intent_label
-        family.intent_label = body.intent_label
+        old_label = family.label
+        family.label = body.intent_label
         logger.info(
-            "Family renamed: id=%s '%s' → '%s'",
+            "Cluster renamed: id=%s '%s' → '%s'",
             family_id, old_label, body.intent_label,
         )
 
@@ -285,6 +284,6 @@ async def update_family(
 
     await db.commit()
 
-    return UpdateFamilyResponse(id=family.id, intent_label=family.intent_label, domain=family.domain)
+    return UpdateFamilyResponse(id=family.id, intent_label=family.label, domain=family.domain)
 
 
