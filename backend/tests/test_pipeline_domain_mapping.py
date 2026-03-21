@@ -6,7 +6,7 @@ from app.schemas.pipeline_contracts import AnalysisResult
 
 
 def test_analysis_result_accepts_freetext_domain():
-    """AnalysisResult.domain should accept any string, not just DomainType values."""
+    """AnalysisResult.domain should accept any free-text string."""
     result = AnalysisResult(
         task_type="coding",
         weaknesses=["none"],

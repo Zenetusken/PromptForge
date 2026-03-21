@@ -514,15 +514,12 @@ async def run_sampling_pipeline(
         effective_domain = "general"
 
     # Domain mapping (Spec Section 4.2, 4.4)
-    domain_raw = effective_domain
+    domain_raw = getattr(analysis, "domain", None) or "general"  # pre-gate
     taxonomy_node_id = None
 
     try:
         from app.services.embedding_service import EmbeddingService
-        from app.services.taxonomy import (
-            TaxonomyEngine,
-            TaxonomyMapping,  # noqa: F401
-        )
+        from app.services.taxonomy import TaxonomyEngine
 
         _sampling_engine = TaxonomyEngine(
             embedding_service=EmbeddingService(),
@@ -891,15 +888,12 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
         effective_domain = "general"
 
     # Domain mapping (Spec Section 4.2, 4.4)
-    domain_raw = effective_domain
+    domain_raw = getattr(analysis, "domain", None) or "general"  # pre-gate
     taxonomy_node_id: str | None = None
 
     try:
         from app.services.embedding_service import EmbeddingService
-        from app.services.taxonomy import (
-            TaxonomyEngine,
-            TaxonomyMapping,  # noqa: F401
-        )
+        from app.services.taxonomy import TaxonomyEngine
 
         _sampling_engine = TaxonomyEngine(
             embedding_service=EmbeddingService(),

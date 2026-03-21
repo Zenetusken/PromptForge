@@ -653,10 +653,9 @@ async def synthesis_optimize(
             "provider": decision.provider_name,
             "status": "completed",
         })
-        await notify_event_bus("taxonomy_changed", {
-            "optimization_id": result.get("id", ""),
-            "source": "mcp_server",
-        })
+        # Note: taxonomy_changed event is emitted by engine.process_optimization()
+        # after the extraction listener processes this optimization_created event.
+        # No premature event here — the taxonomy hasn't changed yet.
 
         return OptimizeOutput(
             status="completed",
@@ -884,6 +883,8 @@ async def synthesis_analyze(
             score_faithfulness=baseline.faithfulness,
             score_conciseness=baseline.conciseness,
             overall_score=overall,
+            domain_raw=domain_raw,
+            taxonomy_node_id=taxonomy_node_id,
             provider=provider.name,
             model_used=_prefs.resolve_model("analyzer", prefs_snapshot),
             scoring_mode="baseline",

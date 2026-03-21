@@ -242,7 +242,7 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------------
             # Phase 1.5: Domain Mapping (Spec Section 4.2)
             # ---------------------------------------------------------------
-            domain_raw = effective_domain  # free-text from analyzer
+            domain_raw = analysis.domain or "general"  # original analyzer output (pre-gate)
             taxonomy_node_id = None
             taxonomy_label = None
             taxonomy_breadcrumb: list[str] = []

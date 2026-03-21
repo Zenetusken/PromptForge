@@ -62,8 +62,8 @@ async def test_synthesis_optimize_with_provider():
         )
 
         assert getattr(result, "optimized_prompt", None) == "Hello"
-        # optimization_created + taxonomy_changed
-        assert mock_notify.call_count == 2
+        # optimization_created only (taxonomy_changed emitted by engine after extraction)
+        assert mock_notify.call_count == 1
         mock_notify.assert_any_call("optimization_created", {
             "id": "opt_123",
             "task_type": "",
@@ -72,10 +72,9 @@ async def test_synthesis_optimize_with_provider():
             "provider": "mock_provider",
             "status": "completed",
         })
-        mock_notify.assert_any_call("taxonomy_changed", {
-            "optimization_id": "opt_123",
-            "source": "mcp_server",
-        })
+        # taxonomy_changed is now emitted by engine.process_optimization()
+        # after the extraction listener processes the optimization_created event,
+        # not prematurely by the MCP server.
 
 
 async def test_synthesis_optimize_force_passthrough():

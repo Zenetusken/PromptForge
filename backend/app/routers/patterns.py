@@ -125,11 +125,7 @@ async def match_pattern(
         ]
         match_dict["similarity"] = result.similarity
 
-        # Taxonomy context — reuse the same engine instance
         taxonomy_node = result.taxonomy_node
-        breadcrumb: list[str] = []
-        if taxonomy_node:
-            breadcrumb = await engine._build_breadcrumb(db, taxonomy_node)
 
         return PatternMatchResponse(
             match=match_dict,
@@ -137,7 +133,7 @@ async def match_pattern(
             taxonomy_node_id=taxonomy_node.id if taxonomy_node else None,
             taxonomy_label=taxonomy_node.label if taxonomy_node else None,
             taxonomy_color=taxonomy_node.color_hex if taxonomy_node else None,
-            taxonomy_breadcrumb=breadcrumb,
+            taxonomy_breadcrumb=result.taxonomy_breadcrumb or [],
             similarity=result.similarity,
         )
     except Exception as exc:

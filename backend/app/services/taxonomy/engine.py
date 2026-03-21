@@ -14,13 +14,14 @@ Responsibilities:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass
 
 import numpy as np
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PROMPTS_DIR, settings
@@ -83,6 +84,7 @@ class PatternMatch:
     meta_patterns: list[MetaPattern]
     similarity: float
     match_level: str  # "family" | "cluster" | "none"
+    taxonomy_breadcrumb: list[str] | None = None
 
 
 @dataclass
@@ -359,12 +361,15 @@ class TaxonomyEngine:
                         )
                         meta_patterns = list(mp_result.scalars().all())
 
+                        breadcrumb = await self._build_breadcrumb(db, node) if node else []
+
                         return PatternMatch(
                             family=family,
                             taxonomy_node=node,
                             meta_patterns=meta_patterns,
                             similarity=score,
                             match_level="family",
+                            taxonomy_breadcrumb=breadcrumb,
                         )
 
         # ------------------------------------------------------------------
@@ -473,12 +478,15 @@ class TaxonomyEngine:
                         # Deduplicate at cosine 0.82
                         deduped = self._deduplicate_meta_patterns(all_meta_patterns)
 
+                        breadcrumb = await self._build_breadcrumb(db, node)
+
                         return PatternMatch(
                             family=None,
                             taxonomy_node=node,
                             meta_patterns=deduped,
                             similarity=score,
                             match_level="cluster",
+                            taxonomy_breadcrumb=breadcrumb,
                         )
 
         # ------------------------------------------------------------------
@@ -1622,8 +1630,8 @@ class TaxonomyEngine:
                             f'This prompt belongs to the "{tax_node.label}" pattern cluster '
                             f"({' > '.join(breadcrumb)}).\n"
                         )
-                except Exception:
-                    pass  # Non-fatal — empty context is fine
+                except Exception as ctx_exc:
+                    logger.debug("Taxonomy context build failed (non-fatal): %s", ctx_exc)
 
             template = self._prompt_loader.render(
                 "extract_patterns.md",
@@ -1886,56 +1894,67 @@ class TaxonomyEngine:
         # Add breadcrumb
         node_dict["breadcrumb"] = await self._build_breadcrumb(db, node)
         # Add family count
-        fam_result = await db.execute(
-            select(PatternFamily).where(PatternFamily.taxonomy_node_id == node_id)
+        fam_count = await db.execute(
+            select(func.count(PatternFamily.id)).where(
+                PatternFamily.taxonomy_node_id == node_id
+            )
         )
-        node_dict["family_count"] = len(fam_result.scalars().all())
+        node_dict["family_count"] = fam_count.scalar() or 0
         return node_dict
 
     async def get_stats(self, db: AsyncSession) -> dict:
-        import json
+        # Node state counts via GROUP BY (avoids loading full ORM objects + blobs)
+        state_result = await db.execute(
+            select(TaxonomyNode.state, func.count(TaxonomyNode.id)).group_by(
+                TaxonomyNode.state
+            )
+        )
+        state_counts = dict(state_result.all())
+        confirmed = state_counts.get("confirmed", 0)
+        candidate = state_counts.get("candidate", 0)
+        retired = state_counts.get("retired", 0)
 
-        all_result = await db.execute(select(TaxonomyNode))
-        all_nodes = all_result.scalars().all()
+        # max_depth + leaf_count: lightweight projection (id + parent_id + state only)
+        tree_result = await db.execute(
+            select(TaxonomyNode.id, TaxonomyNode.parent_id, TaxonomyNode.state)
+        )
+        tree_rows = tree_result.all()
+        id_to_parent: dict[str, str | None] = {r.id: r.parent_id for r in tree_rows}
 
-        # Node state counts
-        confirmed = sum(1 for n in all_nodes if n.state == "confirmed")
-        candidate = sum(1 for n in all_nodes if n.state == "candidate")
-        retired = sum(1 for n in all_nodes if n.state == "retired")
-
-        # max_depth: walk parent_id chains (with cycle guard)
-        id_to_node = {n.id: n for n in all_nodes}
         max_depth = 0
-        for node in all_nodes:
+        for node_id in id_to_parent:
             depth = 0
-            current = node
+            current_id = node_id
             visited: set[str] = set()
-            while current.parent_id and current.parent_id in id_to_node:
-                if current.parent_id in visited:
-                    break  # cycle detected — stop walking
-                visited.add(current.parent_id)
+            while True:
+                pid = id_to_parent.get(current_id)
+                if not pid or pid in visited:
+                    break
+                visited.add(pid)
                 depth += 1
-                current = id_to_node[current.parent_id]
+                current_id = pid
             if depth > max_depth:
                 max_depth = depth
 
-        # leaf_count: active nodes with no children
-        active_ids = {n.id for n in all_nodes if n.state != "retired"}
-        parent_ids = {n.parent_id for n in all_nodes if n.parent_id}
+        active_ids = {r.id for r in tree_rows if r.state != "retired"}
+        parent_ids = {r.parent_id for r in tree_rows if r.parent_id}
         leaf_count = sum(1 for nid in active_ids if nid not in parent_ids)
 
-        # Total pattern families
-        fam_result = await db.execute(select(PatternFamily))
-        total_families = len(fam_result.scalars().all())
+        # Total pattern families via scalar COUNT (avoids materializing rows)
+        fam_count_result = await db.execute(
+            select(func.count(PatternFamily.id))
+        )
+        total_families = fam_count_result.scalar() or 0
 
         # Recent snapshots (last 30, ascending chronological)
         from app.services.taxonomy.snapshot import get_snapshot_history
 
         recent = await get_snapshot_history(db, limit=30)
-        snapshots = list(reversed(recent))  # newest-first → oldest-first
+        # recent is newest-first; reverse for chronological sparkline
+        snapshots = list(reversed(recent))
 
-        # Latest snapshot metrics
-        latest = snapshots[-1] if snapshots else None
+        # Latest snapshot metrics (newest = recent[0])
+        latest = recent[0] if recent else None
         q_system = latest.q_system if latest else None
         q_coherence = latest.q_coherence if latest else None
         q_separation = latest.q_separation if latest else None
@@ -1960,10 +1979,10 @@ class TaxonomyEngine:
                 }
             )
 
-        # last_warm_path and last_cold_path timestamps
+        # last_warm_path and last_cold_path timestamps (scan newest-first)
         last_warm_path: str | None = None
         last_cold_path: str | None = None
-        for snap in reversed(snapshots):
+        for snap in recent:  # already newest-first from get_snapshot_history
             if last_warm_path is None and snap.trigger == "warm_path":
                 last_warm_path = snap.created_at.isoformat() if snap.created_at else None
             if last_cold_path is None and snap.trigger == "cold_path":
@@ -2009,9 +2028,14 @@ class TaxonomyEngine:
 
         family.usage_count = (family.usage_count or 0) + 1
 
-        # Walk up the taxonomy tree
+        # Walk up the taxonomy tree (with cycle guard)
         node_id = family.taxonomy_node_id
+        visited: set[str] = set()
         while node_id:
+            if node_id in visited:
+                logger.warning("increment_usage: cycle detected at node %s", node_id)
+                break
+            visited.add(node_id)
             node = await db.get(TaxonomyNode, node_id)
             if not node:
                 break

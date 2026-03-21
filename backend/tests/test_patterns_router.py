@@ -184,7 +184,7 @@ class TestPatternsEndpoints:
         assert resp.status_code == 404
 
 
-class TestDomainTypeValidation:
+class TestDomainFieldValidation:
     def test_valid_domain_accepted(self):
         from app.schemas.pipeline_contracts import AnalysisResult
         result = AnalysisResult(
