@@ -256,10 +256,10 @@
     position: absolute;
     top: 8px;
     left: 8px;
-    padding: 4px 8px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-contour);
-    color: var(--color-text);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-secondary);
+    padding: 4px 6px;
     font-size: 11px;
     font-family: var(--font-mono);
     pointer-events: none;

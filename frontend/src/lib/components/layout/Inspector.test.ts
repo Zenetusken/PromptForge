@@ -716,4 +716,224 @@ describe('Inspector', () => {
     // Spinner shown instead
     expect(screen.getByRole('status', { name: 'Processing' })).toBeInTheDocument();
   });
+
+  // ── 15. State badge ──────────────────────────────────────────────────────────
+
+  it('renders state badge with correct text for confirmed state', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'confirmed' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('confirmed')).toBeInTheDocument();
+    });
+  });
+
+  it('renders state badge with correct text for archived state', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'archived' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('archived')).toBeInTheDocument();
+    });
+  });
+
+  // ── 16. Promote to template button ──────────────────────────────────────────
+
+  it('renders "Promote to template" button when state is active', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'active' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('Promote to template')).toBeInTheDocument();
+    });
+  });
+
+  it('renders "Promote to template" button when state is mature', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'mature' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('Promote to template')).toBeInTheDocument();
+    });
+  });
+
+  // ── 17. Unarchive button ─────────────────────────────────────────────────────
+
+  it('renders "Unarchive" button when state is archived', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'archived' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('Unarchive')).toBeInTheDocument();
+    });
+  });
+
+  // ── 18. Buttons NOT shown for other states ───────────────────────────────────
+
+  it('does not render action buttons when state is template', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'template' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('API patterns')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Promote to template')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unarchive')).not.toBeInTheDocument();
+  });
+
+  it('does not render action buttons when state is confirmed', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'confirmed' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('API patterns')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Promote to template')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unarchive')).not.toBeInTheDocument();
+  });
+
+  // ── 19. preferred_strategy display ──────────────────────────────────────────
+
+  it('shows preferred_strategy row when non-null', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ preferred_strategy: 'chain-of-thought' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('Strategy')).toBeInTheDocument();
+      expect(screen.getByText('chain-of-thought')).toBeInTheDocument();
+    });
+  });
+
+  it('does not show Strategy row when preferred_strategy is null', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ preferred_strategy: null }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('API patterns')).toBeInTheDocument();
+    });
+    // "Strategy" label only appears in the meta-section when preferred_strategy is set
+    expect(screen.queryByText('Strategy')).not.toBeInTheDocument();
+  });
+
+  // ── 20. Promote / Unarchive click calls updateCluster ───────────────────────
+
+  it('clicking "Promote to template" calls updateCluster with state: template', async () => {
+    const user = userEvent.setup();
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/clusters/fam-1') && init?.method === 'PATCH') {
+        return new Response(JSON.stringify({ id: 'fam-1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify(makeFamilyDetail({ state: 'template' })), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'active' }) as any;
+    patternsStore.clusterDetailLoading = false;
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('Promote to template')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText('Promote to template'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+      const patchCall = calls.find((c: unknown[]) => {
+        const [, init] = c as [RequestInfo | URL, RequestInit?];
+        return init?.method === 'PATCH';
+      });
+      expect(patchCall).toBeDefined();
+      const [, patchInit] = patchCall as [RequestInfo | URL, RequestInit];
+      const body = JSON.parse(patchInit.body as string);
+      expect(body.state).toBe('template');
+    });
+  });
+
+  it('clicking "Unarchive" calls updateCluster with state: active', async () => {
+    const user = userEvent.setup();
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/clusters/fam-1') && init?.method === 'PATCH') {
+        return new Response(JSON.stringify({ id: 'fam-1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify(makeFamilyDetail({ state: 'active' })), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'archived' }) as any;
+    patternsStore.clusterDetailLoading = false;
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('Unarchive')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText('Unarchive'));
+
+    await waitFor(() => {
+      const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+      const patchCall = calls.find((c: unknown[]) => {
+        const [, init] = c as [RequestInfo | URL, RequestInit?];
+        return init?.method === 'PATCH';
+      });
+      expect(patchCall).toBeDefined();
+      const [, patchInit] = patchCall as [RequestInfo | URL, RequestInit];
+      const body = JSON.parse(patchInit.body as string);
+      expect(body.state).toBe('active');
+    });
+  });
 });
