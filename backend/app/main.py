@@ -84,6 +84,43 @@ async def lifespan(app: FastAPI):
             )
             app.state.taxonomy_engine = engine
             set_engine(engine)
+
+            # Warm-load embedding index from active cluster centroids
+            try:
+                import numpy as _np
+                from sqlalchemy import select as _select
+
+                from app.models import PromptCluster
+
+                async with async_session_factory() as _db:
+                    _clusters = (
+                        await _db.execute(
+                            _select(PromptCluster).where(
+                                PromptCluster.state != "archived"
+                            )
+                        )
+                    ).scalars().all()
+                    _centroids: dict[str, _np.ndarray] = {}
+                    for _c in _clusters:
+                        if _c.centroid_embedding:
+                            try:
+                                _emb = _np.frombuffer(
+                                    _c.centroid_embedding, dtype=_np.float32
+                                )
+                                if _emb.shape[0] == 384:
+                                    _centroids[_c.id] = _emb
+                            except (ValueError, TypeError):
+                                continue
+                    await engine.embedding_index.rebuild(_centroids)
+                    logger.info(
+                        "EmbeddingIndex warm-loaded: %d centroids",
+                        len(_centroids),
+                    )
+            except Exception as idx_exc:
+                logger.warning(
+                    "EmbeddingIndex warm-load failed (non-fatal): %s", idx_exc
+                )
+
             logger.info("Taxonomy extraction listener started — subscribing to event bus")
 
             async for event in event_bus.subscribe():

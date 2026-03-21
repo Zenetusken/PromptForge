@@ -12,6 +12,10 @@ engine state.  The TaxonomyEngine delegates to these functions from
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.taxonomy.embedding_index import EmbeddingIndex
 
 import numpy as np
 from pydantic import BaseModel
@@ -114,6 +118,7 @@ async def assign_cluster(
     domain: str,
     task_type: str,
     overall_score: float | None,
+    embedding_index: EmbeddingIndex | None = None,
 ) -> PromptCluster:
     """Find nearest PromptCluster or create a new one.
 
@@ -213,6 +218,12 @@ async def assign_cluster(
                     elif overall_score is not None:
                         matched.avg_score = overall_score
 
+                    # Update embedding index with new centroid
+                    if embedding_index is not None:
+                        await embedding_index.upsert(
+                            matched.id, new_centroid
+                        )
+
                     logger.debug(
                         "Merged into cluster '%s' (cosine=%.3f, members=%d)",
                         matched.label,
@@ -233,6 +244,11 @@ async def assign_cluster(
     )
     db.add(new_cluster)
     await db.flush()  # populate ID
+
+    # Update embedding index with new centroid
+    if embedding_index is not None:
+        await embedding_index.upsert(new_cluster.id, embedding)
+
     logger.debug(
         "Created new PromptCluster: id=%s label='%s' domain=%s",
         new_cluster.id,

@@ -31,6 +31,7 @@ from app.models import (
 from app.providers.base import LLMProvider
 from app.services.embedding_service import EmbeddingService
 from app.services.prompt_loader import PromptLoader
+from app.services.taxonomy.embedding_index import EmbeddingIndex
 from app.services.taxonomy.family_ops import (
     FAMILY_MERGE_THRESHOLD,
     assign_cluster,
@@ -106,6 +107,7 @@ class TaxonomyEngine:
         self._embedding = embedding_service or EmbeddingService()
         self._provider = provider
         self._prompt_loader = PromptLoader(PROMPTS_DIR)
+        self._embedding_index = EmbeddingIndex(dim=384)
         # Lock gates concurrent hot-path writes to shared centroid state.
         self._lock: asyncio.Lock = asyncio.Lock()
         # Separate lock for warm/cold path deduplication (Spec Section 2.6).
@@ -116,6 +118,11 @@ class TaxonomyEngine:
         self._warm_path_age: int = 0
         # Set by deadlock breaker — caller should schedule cold path.
         self._cold_path_needed: bool = False
+
+    @property
+    def embedding_index(self) -> EmbeddingIndex:
+        """In-memory embedding search index for PromptCluster centroids."""
+        return self._embedding_index
 
     # ------------------------------------------------------------------
     # Public hot-path entry point
@@ -185,6 +192,7 @@ class TaxonomyEngine:
                     domain=opt.domain_raw or opt.domain or "general",
                     task_type=opt.task_type or "general",
                     overall_score=opt.overall_score,
+                    embedding_index=self._embedding_index,
                 )
 
             # 3. Extract meta-patterns
@@ -468,10 +476,12 @@ class TaxonomyEngine:
                     ops_attempted += 1
                     from app.services.taxonomy.lifecycle import attempt_merge
 
+                    merge_node_a = valid_nodes[int(best_i)]
+                    merge_node_b = valid_nodes[int(best_j)]
                     merged = await attempt_merge(
                         db=db,
-                        node_a=valid_nodes[int(best_i)],
-                        node_b=valid_nodes[int(best_j)],
+                        node_a=merge_node_a,
+                        node_b=merge_node_b,
                         warm_path_age=self._warm_path_age,
                     )
                     if merged:
@@ -479,6 +489,19 @@ class TaxonomyEngine:
                         operations_log.append(
                             {"type": "merge", "node_id": merged.id}
                         )
+                        # Update embedding index: upsert winner, remove loser
+                        winner_centroid = np.frombuffer(
+                            merged.centroid_embedding, dtype=np.float32
+                        )
+                        await self._embedding_index.upsert(
+                            merged.id, winner_centroid
+                        )
+                        loser = (
+                            merge_node_b
+                            if merged.id == merge_node_a.id
+                            else merge_node_a
+                        )
+                        await self._embedding_index.remove(loser.id)
 
         # Try retire on idle nodes (member_count == 0 and confirmed)
         for node in confirmed_nodes:
@@ -494,6 +517,7 @@ class TaxonomyEngine:
                 if retired:
                     ops_accepted += 1
                     operations_log.append({"type": "retire", "node_id": node.id})
+                    await self._embedding_index.remove(node.id)
 
         # 4. Update per-node separation and compute Q_after
         result = await db.execute(
@@ -906,6 +930,17 @@ class TaxonomyEngine:
         mean_coherence = float(np.mean(coherences)) if coherences else 0.0
 
         await db.commit()
+
+        # 8b. Rebuild embedding index from confirmed centroids
+        index_centroids: dict[str, np.ndarray] = {}
+        for n in confirmed_after:
+            try:
+                emb = np.frombuffer(n.centroid_embedding, dtype=np.float32)
+                if emb.shape[0] == 384:
+                    index_centroids[n.id] = emb
+            except (ValueError, TypeError):
+                continue
+        await self._embedding_index.rebuild(index_centroids)
 
         # 9. Create snapshot
         snap = await create_snapshot(

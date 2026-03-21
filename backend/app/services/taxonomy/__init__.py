@@ -16,6 +16,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from app.services.taxonomy.embedding_index import EmbeddingIndex
 from app.services.taxonomy.engine import TaxonomyEngine
 from app.services.taxonomy.matching import (
     PatternMatch,
@@ -25,6 +26,7 @@ from app.services.taxonomy.quality import QWeights
 from app.services.taxonomy.sparkline import SparklineData, compute_sparkline_data
 
 __all__ = [
+    "EmbeddingIndex",
     "PatternMatch",
     "QWeights",
     "SparklineData",
