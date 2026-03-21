@@ -32,6 +32,8 @@ class PatternStore {
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private _dismissTimer: ReturnType<typeof setTimeout> | null = null;
   private _lastLength = 0;
+  private _loadGeneration = 0;
+  private _familyGeneration = 0;
 
   /**
    * Called on paste/input — checks if content delta exceeds threshold,
@@ -85,16 +87,22 @@ class PatternStore {
   }
 
   async loadTree(): Promise<void> {
+    const gen = ++this._loadGeneration;
     this.taxonomyLoading = true;
     this.taxonomyError = null;
     try {
-      this.taxonomyTree = await getTaxonomyTree();
-      this.taxonomyStats = await getTaxonomyStats();
+      const [tree, stats] = await Promise.all([getTaxonomyTree(), getTaxonomyStats()]);
+      if (gen !== this._loadGeneration) return; // stale response
+      this.taxonomyTree = tree;
+      this.taxonomyStats = stats;
     } catch (err) {
+      if (gen !== this._loadGeneration) return;
       this.taxonomyError = err instanceof Error ? err.message : 'Failed to load taxonomy';
       console.warn('Taxonomy load failed:', err);
     } finally {
-      this.taxonomyLoading = false;
+      if (gen === this._loadGeneration) {
+        this.taxonomyLoading = false;
+      }
     }
   }
 
@@ -117,15 +125,21 @@ class PatternStore {
   }
 
   private async _loadFamilyDetail(id: string): Promise<void> {
+    const gen = ++this._familyGeneration;
     this.familyDetailLoading = true;
     this.familyDetailError = null;
     try {
-      this.familyDetail = await getFamilyDetail(id);
+      const detail = await getFamilyDetail(id);
+      if (gen !== this._familyGeneration) return; // stale response
+      this.familyDetail = detail;
     } catch (err) {
+      if (gen !== this._familyGeneration) return;
       this.familyDetailError = err instanceof Error ? err.message : 'Failed to load family';
       this.familyDetail = null;
     } finally {
-      this.familyDetailLoading = false;
+      if (gen === this._familyGeneration) {
+        this.familyDetailLoading = false;
+      }
     }
   }
 
@@ -144,11 +158,17 @@ class PatternStore {
     this.familyDetail = null;
     this.familyDetailLoading = false;
     this.familyDetailError = null;
+    this.taxonomyTree = [];
+    this.taxonomyStats = null;
+    this.taxonomyLoading = false;
+    this.taxonomyError = null;
     if (this._debounceTimer) clearTimeout(this._debounceTimer);
     if (this._dismissTimer) clearTimeout(this._dismissTimer);
     this._debounceTimer = null;
     this._dismissTimer = null;
     this._lastLength = 0;
+    this._loadGeneration = 0;
+    this._familyGeneration = 0;
   }
 
   private _startDismissTimer(): void {

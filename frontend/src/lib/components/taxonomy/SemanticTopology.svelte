@@ -2,12 +2,13 @@
   import { onMount } from 'svelte';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { TopologyRenderer, type LODTier } from './TopologyRenderer';
-  import { buildSceneData, assignLodVisibility, type SceneNode, type SceneData } from './TopologyData';
+  import { buildSceneData, assignLodVisibility, type SceneData } from './TopologyData';
   import { TopologyInteraction } from './TopologyInteraction';
   import { TopologyLabels } from './TopologyLabels';
   import { settleForces } from './TopologyWorker';
+  import TopologyControls from './TopologyControls.svelte';
   import * as THREE from 'three';
-  import { taxonomyColor } from '$lib/utils/colors';
+  import { triggerRecluster } from '$lib/api/taxonomy';
 
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
@@ -31,7 +32,22 @@
     labels?.clear();
     nodeMeshes.clear();
 
-    // Remove old scene children (keep camera/controls)
+    // Dispose GPU resources before clearing scene
+    renderer.scene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m) => m.dispose());
+        } else {
+          obj.material.dispose();
+        }
+      } else if (obj instanceof THREE.LineSegments) {
+        obj.geometry.dispose();
+        (obj.material as THREE.Material).dispose();
+      }
+    });
+
+    // Remove old scene children
     while (renderer.scene.children.length > 0) {
       renderer.scene.remove(renderer.scene.children[0]);
     }
@@ -116,6 +132,29 @@
     }
   }
 
+  function handleSearch(query: string): void {
+    if (!sceneData) return;
+    const lowerQuery = query.toLowerCase();
+    const match = sceneData.nodes.find(n =>
+      n.label.toLowerCase().includes(lowerQuery),
+    );
+    if (match) {
+      interaction?.highlightNode(match.id);
+      focusedNodeId = match.id;
+      patternsStore.selectFamily(match.id);
+    }
+  }
+
+  async function handleRecluster(): Promise<void> {
+    try {
+      await triggerRecluster();
+      await patternsStore.loadTree();
+    } catch (err) {
+      // Recluster failed — tree stays as-is
+      console.error('Recluster failed:', err);
+    }
+  }
+
   // Watch for taxonomy tree changes
   $effect(() => {
     const tree = patternsStore.taxonomyTree;
@@ -173,9 +212,19 @@
 </script>
 
 <div class="topology-container" bind:this={container}>
-  <canvas bind:this={canvas}></canvas>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <canvas
+    bind:this={canvas}
+    aria-label="Taxonomy topology visualization"
+    tabindex="0"
+  ></canvas>
+  <TopologyControls
+    {lodTier}
+    onSearch={handleSearch}
+    onRecluster={handleRecluster}
+  />
   {#if hoveredNodeId}
-    <div class="topology-tooltip">
+    <div class="topology-tooltip" role="tooltip">
       {sceneData?.nodes.find(n => n.id === hoveredNodeId)?.label ?? ''}
     </div>
   {/if}
@@ -183,7 +232,7 @@
     <div class="topology-loading">Loading taxonomy...</div>
   {/if}
   {#if patternsStore.taxonomyError}
-    <div class="topology-error">{patternsStore.taxonomyError}</div>
+    <div class="topology-error" role="alert" aria-live="polite">{patternsStore.taxonomyError}</div>
   {/if}
 </div>
 

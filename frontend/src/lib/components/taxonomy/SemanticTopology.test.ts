@@ -48,6 +48,16 @@ vi.mock('./TopologyData', () => ({
   assignLodVisibility: () => {},
 }));
 
+vi.mock('./TopologyControls.svelte', () => ({
+  default: vi.fn(),
+}));
+
+vi.mock('$lib/api/taxonomy', () => ({
+  getTaxonomyTree: vi.fn().mockResolvedValue([]),
+  getTaxonomyStats: vi.fn().mockResolvedValue(null),
+  triggerRecluster: vi.fn().mockResolvedValue({ status: 'completed', message: 'ok' }),
+}));
+
 vi.mock('three', () => {
   class Vector3 {
     x = 0; y = 0; z = 0;
@@ -83,8 +93,10 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
 });
 
 describe('SemanticTopology', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    const { patternsStore } = await import('$lib/stores/patterns.svelte');
+    patternsStore._reset();
   });
 
   it('renders a canvas element', () => {
@@ -95,5 +107,25 @@ describe('SemanticTopology', () => {
   it('shows loading state initially', () => {
     const { container } = render(SemanticTopology);
     expect(container.querySelector('.topology-container')).toBeTruthy();
+  });
+
+  it('canvas has accessibility attributes', () => {
+    const { container } = render(SemanticTopology);
+    const canvas = container.querySelector('canvas');
+    expect(canvas?.getAttribute('aria-label')).toBe('Taxonomy topology visualization');
+    expect(canvas?.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('displays error when taxonomy load fails', async () => {
+    const taxonomy = await import('$lib/api/taxonomy');
+    vi.mocked(taxonomy.getTaxonomyTree).mockRejectedValueOnce(new Error('Connection failed'));
+    const { container } = render(SemanticTopology);
+    // Wait for the async loadTree() to settle
+    await vi.waitFor(() => {
+      const errorEl = container.querySelector('.topology-error');
+      expect(errorEl).toBeTruthy();
+      expect(errorEl?.textContent).toBe('Connection failed');
+      expect(errorEl?.getAttribute('role')).toBe('alert');
+    });
   });
 });

@@ -25,6 +25,7 @@ export class TopologyRenderer {
   readonly controls: OrbitControls;
 
   private _animationId: number | null = null;
+  private _focusAnimId: number | null = null;
   private _disposed = false;
   private _onLodChange: ((tier: LODTier) => void) | null = null;
   private _currentLod: LODTier = 'far';
@@ -89,6 +90,13 @@ export class TopologyRenderer {
 
   /** Animate camera to look at a target position. */
   focusOn(target: THREE.Vector3, distance = 20, duration = 600): void {
+    // Cancel any in-flight focus animation
+    if (this._focusAnimId != null) {
+      cancelAnimationFrame(this._focusAnimId);
+      this._focusAnimId = null;
+    }
+    if (this._disposed) return;
+
     const startPos = this.camera.position.clone();
     const startTarget = this.controls.target.clone();
     const endTarget = target.clone();
@@ -100,6 +108,7 @@ export class TopologyRenderer {
 
     const startTime = performance.now();
     const animate = () => {
+      if (this._disposed) return;
       const elapsed = performance.now() - startTime;
       const t = Math.min(elapsed / duration, 1);
       const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
@@ -108,7 +117,11 @@ export class TopologyRenderer {
       this.controls.target.lerpVectors(startTarget, endTarget, ease);
       this.controls.update();
 
-      if (t < 1) requestAnimationFrame(animate);
+      if (t < 1) {
+        this._focusAnimId = requestAnimationFrame(animate);
+      } else {
+        this._focusAnimId = null;
+      }
     };
     animate();
   }
@@ -118,6 +131,9 @@ export class TopologyRenderer {
     this._disposed = true;
     if (this._animationId != null) {
       cancelAnimationFrame(this._animationId);
+    }
+    if (this._focusAnimId != null) {
+      cancelAnimationFrame(this._focusAnimId);
     }
     this.controls.dispose();
     this.renderer.dispose();

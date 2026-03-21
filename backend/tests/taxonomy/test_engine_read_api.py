@@ -82,6 +82,9 @@ async def test_get_stats_empty(db, mock_embedding, mock_provider):
     assert stats["nodes"]["candidate"] == 0
     assert stats["total_families"] == 0
     assert stats["q_system"] is None
+    # q_sparkline must be a flat list of floats, not a SparklineData object
+    assert isinstance(stats["q_sparkline"], list)
+    assert all(isinstance(v, (int, float)) for v in stats["q_sparkline"])
 
 
 @pytest.mark.asyncio

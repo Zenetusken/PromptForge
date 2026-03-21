@@ -30,6 +30,11 @@ class TestLTTB:
         result = lttb_downsample(values, 2)
         assert result == [0.1, 0.7]
 
+    def test_target_zero_returns_empty(self):
+        values = [0.1, 0.5, 0.9]
+        result = lttb_downsample(values, 0)
+        assert result == []
+
     def test_exact_boundary_no_downsampling(self):
         values = [0.1, 0.2, 0.3]
         result = lttb_downsample(values, 3)

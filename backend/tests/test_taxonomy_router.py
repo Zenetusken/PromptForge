@@ -32,6 +32,9 @@ class TestTaxonomyEndpoints:
         assert "confirmed" in data["nodes"]
         assert "candidate" in data["nodes"]
         assert "q_system" in data
+        assert "q_sparkline" in data
+        assert isinstance(data["q_sparkline"], list)
+        assert all(isinstance(v, (int, float)) for v in data["q_sparkline"])
 
     @pytest.mark.asyncio
     async def test_get_node_not_found(self, app_client, db_session):

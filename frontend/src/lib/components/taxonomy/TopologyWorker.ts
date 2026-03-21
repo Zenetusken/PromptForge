@@ -25,16 +25,22 @@ const DAMPING = 0.95;
  */
 export function settleForces(input: WorkerInput): WorkerOutput {
   const { positions, sizes, iterations } = input;
+  if (positions.length !== sizes.length * 3) {
+    throw new Error(
+      `settleForces: positions.length (${positions.length}) must equal sizes.length * 3 (${sizes.length * 3})`
+    );
+  }
   const n = sizes.length;
   const start = performance.now();
 
   // Copy positions (don't mutate input)
   const pos = new Float32Array(positions);
   const vel = new Float32Array(n * 3);
+  const force = new Float32Array(n * 3);
 
   for (let iter = 0; iter < iterations; iter++) {
     // Reset forces
-    const force = new Float32Array(n * 3);
+    force.fill(0);
 
     // Pairwise repulsion (O(n^2) — acceptable for n<=2000)
     for (let i = 0; i < n; i++) {

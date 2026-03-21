@@ -52,11 +52,35 @@ describe('buildSceneData', () => {
     expect(result.edges[0]).toEqual({ from: 'parent', to: 'child', type: 'hierarchical' });
   });
 
+  it('defaults persistence to 0.5 when node has null persistence', () => {
+    const tree = [makeNode({ persistence: null as unknown as number })];
+    const result = buildSceneData(tree);
+    expect(result.nodes[0].persistence).toBe(0.5);
+  });
+
   it('uses fallback position when UMAP coords are null', () => {
     const tree = [makeNode({ umap_x: null, umap_y: null, umap_z: null })];
     const result = buildSceneData(tree);
     // Should have deterministic fallback, not NaN
     expect(Number.isFinite(result.nodes[0].position[0])).toBe(true);
+  });
+
+  it('converts null label to empty string', () => {
+    const tree = [makeNode({ label: null as unknown as string })];
+    const result = buildSceneData(tree);
+    expect(result.nodes[0].label).toBe('');
+  });
+
+  it('uses fallback color for null color_hex', () => {
+    const tree = [makeNode({ color_hex: null })];
+    const result = buildSceneData(tree);
+    expect(result.nodes[0].color).toBe('#7a7a9e'); // FALLBACK_COLOR
+  });
+
+  it('handles empty input array', () => {
+    const result = buildSceneData([]);
+    expect(result.nodes).toHaveLength(0);
+    expect(result.edges).toHaveLength(0);
   });
 });
 
@@ -77,5 +101,15 @@ describe('assignLodVisibility', () => {
     ];
     assignLodVisibility(nodes, 'near');
     expect(nodes[0].visible).toBe(true);
+  });
+
+  it('shows nodes with threshold-level persistence at mid LOD', () => {
+    const nodes: SceneNode[] = [
+      { id: 'a', position: [0,0,0], color: '#fff', size: 1, persistence: 0.3, state: 'confirmed', label: 'A', visible: false },
+      { id: 'b', position: [1,1,1], color: '#fff', size: 1, persistence: 0.2, state: 'confirmed', label: 'B', visible: false },
+    ];
+    assignLodVisibility(nodes, 'mid');
+    expect(nodes[0].visible).toBe(true);   // 0.3 >= 0.3
+    expect(nodes[1].visible).toBe(false);  // 0.2 < 0.3
   });
 });

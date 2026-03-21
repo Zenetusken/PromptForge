@@ -188,7 +188,7 @@
                   <button
                     class="domain-option"
                     class:domain-option--active={d === family.domain}
-                    style="background: {taxonomyColor(null)};"
+                    style="background: {taxonomyColor(d)};"
                     onclick={() => selectDomain(d)}
                     disabled={domainSaving}
                     role="option"

@@ -21,6 +21,7 @@ export class TopologyInteraction {
   private _callbacks: InteractionCallbacks;
   private _nodeMap: Map<string, THREE.Object3D> = new Map();
   private _sceneNodes: Map<string, SceneNode> = new Map();
+  private _nodeObjects: THREE.Object3D[] = [];  // cached for raycast
   private _hoveredId: string | null = null;
   private _canvas: HTMLCanvasElement;
 
@@ -51,6 +52,7 @@ export class TopologyInteraction {
   registerNode(nodeId: string, object: THREE.Object3D, sceneNode: SceneNode): void {
     this._nodeMap.set(nodeId, object);
     this._sceneNodes.set(nodeId, sceneNode);
+    this._nodeObjects = Array.from(this._nodeMap.values());
     object.userData.nodeId = nodeId;
   }
 
@@ -58,6 +60,7 @@ export class TopologyInteraction {
   clear(): void {
     this._nodeMap.clear();
     this._sceneNodes.clear();
+    this._nodeObjects = [];
   }
 
   /** Highlight a node by ID (for search). */
@@ -84,8 +87,7 @@ export class TopologyInteraction {
 
   private _raycast(): THREE.Intersection[] {
     this._raycaster.setFromCamera(this._mouse, this._renderer.camera);
-    const objects = Array.from(this._nodeMap.values());
-    return this._raycaster.intersectObjects(objects, false);
+    return this._raycaster.intersectObjects(this._nodeObjects, false);
   }
 
   private _handlePointerMove(event: PointerEvent): void {

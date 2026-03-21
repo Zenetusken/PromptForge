@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { listFamilies, getFamilyDetail, type PatternFamily, type FamilyDetail } from '$lib/api/patterns';
+  import { listFamilies, type PatternFamily } from '$lib/api/patterns';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { scoreColor, taxonomyColor } from '$lib/utils/colors';
@@ -33,10 +33,8 @@
       }));
   });
 
-  // Expanded family — inline detail
+  // Expanded family — uses store's familyDetail state
   let expandedId = $state<string | null>(null);
-  let expandedDetail = $state<FamilyDetail | null>(null);
-  let expandedLoading = $state(false);
 
   // Group families by domain
   let grouped = $derived(
@@ -109,14 +107,9 @@
   function selectSearchResult(result: LocalSearchResult) {
     const familyId = result.type === 'family' ? result.id : result.family_id;
     if (familyId) {
-      patternsStore.selectFamily(familyId);
       expandedId = familyId;
-      expandedDetail = null;
-      expandedLoading = true;
-      getFamilyDetail(familyId)
-        .then((d) => { expandedDetail = d; })
-        .catch(() => { expandedDetail = null; })
-        .finally(() => { expandedLoading = false; });
+      // selectFamily triggers _loadFamilyDetail — use store's state for detail
+      patternsStore.selectFamily(familyId);
     }
     clearSearch();
   }
@@ -124,21 +117,12 @@
   async function toggleExpand(family: PatternFamily) {
     if (expandedId === family.id) {
       expandedId = null;
-      expandedDetail = null;
       patternsStore.selectFamily(null);
       return;
     }
     expandedId = family.id;
-    expandedDetail = null;
-    expandedLoading = true;
-    // Also select in patterns store so Inspector shows detail
+    // selectFamily triggers _loadFamilyDetail — use store's state for detail
     patternsStore.selectFamily(family.id);
-    try {
-      expandedDetail = await getFamilyDetail(family.id);
-    } catch {
-      expandedDetail = null;
-    }
-    expandedLoading = false;
   }
 
   function openMindmap() {
@@ -208,7 +192,7 @@
       {#each domains as domain (domain)}
         <div class="domain-group">
           <div class="domain-header">
-            <span class="domain-dot" style="background: {taxonomyColor(null)};"></span>
+            <span class="domain-dot" style="background: {taxonomyColor(domain)};"></span>
             <span class="domain-label">{domain}</span>
             <span class="domain-count">{grouped[domain].length}</span>
           </div>
@@ -232,12 +216,12 @@
             </button>
             {#if expandedId === family.id}
               <div class="family-detail">
-                {#if expandedLoading}
+                {#if patternsStore.familyDetailLoading}
                   <p class="detail-note">Loading...</p>
-                {:else if expandedDetail}
-                  {#if expandedDetail.meta_patterns.length > 0}
+                {:else if patternsStore.familyDetail}
+                  {#if patternsStore.familyDetail.meta_patterns.length > 0}
                     <div class="meta-list">
-                      {#each expandedDetail.meta_patterns as mp (mp.id)}
+                      {#each patternsStore.familyDetail.meta_patterns as mp (mp.id)}
                         <div class="meta-row">
                           <span class="meta-text">{mp.pattern_text}</span>
                           <span class="meta-count font-mono">{mp.source_count}x</span>
@@ -247,8 +231,10 @@
                   {:else}
                     <p class="detail-note">No meta-patterns extracted yet.</p>
                   {/if}
-                {:else}
+                {:else if patternsStore.familyDetailError}
                   <p class="detail-note">Failed to load detail.</p>
+                {:else}
+                  <p class="detail-note">Loading...</p>
                 {/if}
               </div>
             {/if}

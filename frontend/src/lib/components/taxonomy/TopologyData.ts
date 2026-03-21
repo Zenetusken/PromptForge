@@ -61,7 +61,7 @@ export function buildSceneData(flatNodes: TaxonomyNode[]): SceneData {
       position: [x, y, z],
       color: taxonomyColor(node.color_hex),
       size,
-      persistence: node.persistence ?? 0,
+      persistence: node.persistence ?? 0.5,
       state: node.state,
       label: node.label ?? '',
       visible: true,

@@ -40,13 +40,31 @@ describe('scoreColor', () => {
 });
 
 describe('taxonomyColor', () => {
-  it('returns provided color when present', () => {
+  it('returns hex color as-is', () => {
     expect(taxonomyColor('#a855f7')).toBe('#a855f7');
   });
 
   it('returns fallback for null/undefined', () => {
     expect(taxonomyColor(null)).toBe('#7a7a9e');
     expect(taxonomyColor(undefined)).toBe('#7a7a9e');
+  });
+
+  it('resolves known domain names to hex colors', () => {
+    expect(taxonomyColor('backend')).toBe('#a855f7');
+    expect(taxonomyColor('frontend')).toBe('#fbbf24');
+    expect(taxonomyColor('database')).toBe('#00d4aa');
+    expect(taxonomyColor('security')).toBe('#ff3366');
+    expect(taxonomyColor('devops')).toBe('#4d8eff');
+    expect(taxonomyColor('fullstack')).toBe('#00e5ff');
+    expect(taxonomyColor('general')).toBe('#7a7a9e');
+  });
+
+  it('returns fallback for unknown domain name', () => {
+    expect(taxonomyColor('unknown-domain')).toBe('#7a7a9e');
+  });
+
+  it('returns fallback for empty string', () => {
+    expect(taxonomyColor('')).toBe('#7a7a9e');
   });
 });
 

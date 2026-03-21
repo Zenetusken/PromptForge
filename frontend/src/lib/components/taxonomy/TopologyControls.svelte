@@ -6,7 +6,7 @@
   interface Props {
     lodTier: LODTier;
     onSearch: (query: string) => void;
-    onRecluster: () => void;
+    onRecluster: () => Promise<void>;
   }
 
   let { lodTier, onSearch, onRecluster }: Props = $props();
@@ -36,7 +36,7 @@
   async function handleRecluster(): Promise<void> {
     reclustering = true;
     try {
-      onRecluster();
+      await onRecluster();
     } finally {
       reclustering = false;
     }

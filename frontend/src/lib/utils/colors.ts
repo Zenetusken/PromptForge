@@ -9,6 +9,21 @@
 /** Default color for nodes/families without an API-assigned color. */
 const FALLBACK_COLOR = '#7a7a9e';
 
+/**
+ * Domain-to-hex color map — used when the API returns a domain string
+ * instead of a hex color (e.g. PatternFamily.domain for Navigator dots
+ * and Inspector badges). Must stay in sync with backend OKLab palette.
+ */
+const DOMAIN_COLORS: Record<string, string> = {
+  backend: '#a855f7',
+  frontend: '#fbbf24',
+  database: '#00d4aa',
+  security: '#ff3366',
+  devops: '#4d8eff',
+  fullstack: '#00e5ff',
+  general: '#7a7a9e',
+};
+
 /** Score-to-color mapping using design system tokens. */
 export function scoreColor(score: number | null): string {
   if (score == null || score <= 0) return 'var(--color-text-dim)';
@@ -18,9 +33,18 @@ export function scoreColor(score: number | null): string {
   return 'var(--color-neon-red)';
 }
 
-/** Resolve a taxonomy color, falling back to neutral gray. */
+/**
+ * Resolve a taxonomy color. Accepts either:
+ * - a hex color string (returned as-is)
+ * - a domain name ("backend", "frontend", etc.) — resolved via DOMAIN_COLORS
+ * - null/undefined — returns FALLBACK_COLOR
+ */
 export function taxonomyColor(color: string | null | undefined): string {
-  return color ?? FALLBACK_COLOR;
+  if (!color) return FALLBACK_COLOR;
+  // If it's a hex color, return directly
+  if (color.startsWith('#')) return color;
+  // Otherwise treat as domain name
+  return DOMAIN_COLORS[color] ?? FALLBACK_COLOR;
 }
 
 /** Q_system health color for StatusBar badge. */

@@ -1925,7 +1925,7 @@ class TaxonomyEngine:
         for node_id in id_to_parent:
             depth = 0
             current_id = node_id
-            visited: set[str] = set()
+            visited: set[str] = {node_id}
             while True:
                 pid = id_to_parent.get(current_id)
                 if not pid or pid in visited:
@@ -2005,7 +2005,7 @@ class TaxonomyEngine:
                 "leaf_count": leaf_count,
             },
             "q_history": q_history,
-            "q_sparkline": sparkline,
+            "q_sparkline": sparkline.normalized,
             "last_warm_path": last_warm_path,
             "last_cold_path": last_cold_path,
             "warm_path_age": self._warm_path_age,
