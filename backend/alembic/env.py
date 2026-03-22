@@ -16,15 +16,34 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def _include_object(object, name, type_, reflected, compare_to):
+    """Exclude FK constraints from autogenerate — SQLite does not reliably
+    preserve FK metadata through ALTER TABLE RENAME operations."""
+    if type_ == "foreign_key_constraint":
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        render_as_batch=True,
+        include_object=_include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        render_as_batch=True,
+        include_object=_include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
