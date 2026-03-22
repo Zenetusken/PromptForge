@@ -1,6 +1,9 @@
 // frontend/src/lib/api/client.ts
 
-const BASE_URL = 'http://localhost:8000/api';
+// In dev, Vite proxies aren't configured so we hit the backend directly on :8000.
+// In production (Docker/nginx), the frontend is served from the same origin so
+// a relative /api path is correct. The env var allows overriding for any setup.
+const BASE_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8000/api' : '/api');
 
 // ---- Types ----
 
