@@ -59,13 +59,14 @@ async def handle_history(
         feedback_map: dict[str, str] = {}
         if opt_ids:
             fb_result = await db.execute(
-                select(Feedback.optimization_id, Feedback.rating).where(
-                    Feedback.optimization_id.in_(opt_ids)
-                )
+                select(Feedback.optimization_id, Feedback.rating)
+                .where(Feedback.optimization_id.in_(opt_ids))
+                .order_by(Feedback.created_at.desc())
             )
             for row in fb_result.all():
-                # Keep latest feedback per optimization
-                feedback_map[row[0]] = row[1]
+                # First seen per optimization_id wins (latest due to ORDER BY desc)
+                if row[0] not in feedback_map:
+                    feedback_map[row[0]] = row[1]
 
         items = []
         for opt in optimizations:
@@ -80,8 +81,8 @@ async def handle_history(
                 strategy_used=opt.strategy_used,
                 overall_score=opt.overall_score,
                 status=opt.status or "unknown",
-                intent_label=getattr(opt, "intent_label", None),
-                domain=getattr(opt, "domain", None),
+                intent_label=opt.intent_label,
+                domain=opt.domain,
                 raw_prompt_preview=raw_preview,
                 optimized_prompt_preview=optimized_preview,
                 feedback_rating=feedback_map.get(opt.id),

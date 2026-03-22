@@ -19,6 +19,17 @@ from app.config import DATA_DIR, PROMPTS_DIR
 from app.database import async_session_factory
 from app.services.workspace_intelligence import WorkspaceIntelligence
 
+__all__ = [
+    "DATA_DIR",
+    "PROMPTS_DIR",
+    "async_session_factory",
+    "get_routing",
+    "get_taxonomy_engine",
+    "resolve_workspace_guidance",
+    "set_routing",
+    "set_taxonomy_engine",
+]
+
 if TYPE_CHECKING:
     from app.services.routing import RoutingManager
 

@@ -43,9 +43,11 @@ async def handle_optimize(
         raise ValueError(
             "Prompt too short (%d chars). Minimum is 20 characters." % len(prompt)
         )
-    if len(prompt) > 200000:
+    from app.config import settings
+    if len(prompt) > settings.MAX_RAW_PROMPT_CHARS:
         raise ValueError(
-            "Prompt too long (%d chars). Maximum is 200,000 characters." % len(prompt)
+            "Prompt too long (%d chars). Maximum is %d characters."
+            % (len(prompt), settings.MAX_RAW_PROMPT_CHARS)
         )
 
     # ---- Hoist: single PreferencesService + snapshot for all paths ----

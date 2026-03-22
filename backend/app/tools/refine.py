@@ -60,7 +60,7 @@ async def handle_refine(
         if not opt.optimized_prompt:
             raise ValueError(
                 f"Optimization {optimization_id} has no optimized prompt to refine "
-                "(status: {opt.status})."
+                f"(status: {opt.status})."
             )
 
         svc = RefinementService(db, provider, PROMPTS_DIR)
@@ -141,7 +141,6 @@ async def handle_refine(
         async for event in svc.create_refinement_turn(
             optimization_id=optimization_id,
             branch_id=branch.id,
-            from_version=latest_turn.version,
             refinement_request=refinement_request,
             codebase_guidance=guidance,
         ):

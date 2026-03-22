@@ -10,9 +10,8 @@ import logging
 from app.config import PROMPTS_DIR
 from app.database import async_session_factory
 from app.schemas.mcp_models import HealthOutput
-from app.services.routing import RoutingContext
 from app.services.strategy_loader import StrategyLoader
-from app.tools._shared import DATA_DIR, get_routing
+from app.tools._shared import get_routing
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,8 @@ async def handle_health() -> HealthOutput:
     try:
         strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
         strategies = strategy_loader.list_strategies()
-    except Exception:
+    except Exception as exc:
+        logger.warning("Could not load strategies for health check: %s", exc)
         strategies = []
 
     # Get optimization stats from DB

@@ -45,7 +45,7 @@ async def handle_match(prompt_text: str) -> MatchOutput:
 
     # Convert PatternMatch to MatchOutput
     meta_patterns = []
-    for mp in result.meta_patterns:
+    for mp in (result.meta_patterns or []):
         meta_patterns.append(MetaPatternSummary(
             id=mp.id,
             pattern_text=mp.pattern_text or "",

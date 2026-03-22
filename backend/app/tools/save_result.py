@@ -129,8 +129,8 @@ async def handle_save_result(
                         historical_stats = await opt_svc.get_score_distribution(
                             exclude_scoring_modes=["heuristic"],
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Could not fetch score distribution: %s", exc)
 
                     blended = blend_scores(
                         ide_scores_corrected, heuristic_scores, historical_stats,

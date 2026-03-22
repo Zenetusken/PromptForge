@@ -39,8 +39,8 @@ async def handle_analyze(
             "Prompt too short (%d chars). Minimum is 20 characters." % len(prompt)
         )
 
-    _prefs = PreferencesService(DATA_DIR)
-    prefs_snapshot = _prefs.load()
+    prefs = PreferencesService(DATA_DIR)
+    prefs_snapshot = prefs.load()
     ctx_routing = RoutingContext(preferences=prefs_snapshot, caller="mcp")
     routing = get_routing()
     decision = routing.resolve(ctx_routing)
@@ -79,7 +79,7 @@ async def handle_analyze(
 
     try:
         analysis: AnalysisResult = await provider.complete_parsed(
-            model=_prefs.resolve_model("analyzer", prefs_snapshot),
+            model=prefs.resolve_model("analyzer", prefs_snapshot),
             system_prompt=system_prompt,
             user_message=analyze_msg,
             output_format=AnalysisResult,
@@ -105,7 +105,7 @@ async def handle_analyze(
 
     try:
         score_result: ScoreResult = await provider.complete_parsed(
-            model=_prefs.resolve_model("scorer", prefs_snapshot),
+            model=prefs.resolve_model("scorer", prefs_snapshot),
             system_prompt=scoring_system,
             user_message=scorer_msg,
             output_format=ScoreResult,
@@ -167,7 +167,7 @@ async def handle_analyze(
             domain_raw=domain_raw,
             cluster_id=cluster_id,
             provider=provider.name,
-            model_used=_prefs.resolve_model("analyzer", prefs_snapshot),
+            model_used=prefs.resolve_model("analyzer", prefs_snapshot),
             scoring_mode="baseline",
             status="analyzed",
             trace_id=trace_id,
