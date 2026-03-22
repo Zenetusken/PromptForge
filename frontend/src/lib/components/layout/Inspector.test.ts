@@ -237,7 +237,8 @@ describe('Inspector', () => {
     await user.click(screen.getByText('Write API'));
 
     await waitFor(() => {
-      expect(openResultSpy).toHaveBeenCalledWith('opt-1', expect.anything());
+      // openResult called with ID only — data already cached by loadFromRecord
+      expect(openResultSpy).toHaveBeenCalledWith('opt-1');
     });
   });
 
@@ -529,7 +530,7 @@ describe('Inspector', () => {
 
   it('shows scoring disabled state when forge result has no scores', async () => {
     forgeStore.status = 'complete';
-    forgeStore.result = mockOptimizationResult() as any;
+    forgeStore.result = mockOptimizationResult({ scores: null, original_scores: null, score_deltas: null }) as any;
     forgeStore.scores = null;
     mockFetch([]);
 

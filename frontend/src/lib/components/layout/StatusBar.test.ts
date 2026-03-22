@@ -97,14 +97,10 @@ describe('StatusBar', () => {
   });
 
   it('shows version from health API after load', async () => {
-    mockFetch([{
-      match: '/api/health',
-      response: mockHealthResponse({ version: '1.2.3' }),
-    }]);
+    mockFetch([]);
+    forgeStore.version = '1.2.3';
     render(StatusBar);
-    await vi.waitFor(() => {
-      expect(screen.queryByText('v1.2.3')).toBeInTheDocument();
-    });
+    expect(screen.getByText('v1.2.3')).toBeInTheDocument();
   });
 
   it('shows last score after forge is complete', () => {

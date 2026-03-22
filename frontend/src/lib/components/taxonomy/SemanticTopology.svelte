@@ -25,6 +25,42 @@
   // Node meshes for raycasting
   let nodeMeshes: Map<string, THREE.Mesh> = new Map();
 
+  // External highlight tracking (for family selection sync)
+  let _highlightedId: string | null = null;
+  let _highlightedColor: number | null = null;
+
+  /** Restore previous highlight color and apply neon cyan to a new node. */
+  function applyHighlight(nodeId: string): void {
+    // Restore previous
+    if (_highlightedId && _highlightedId !== nodeId) {
+      const prev = nodeMeshes.get(_highlightedId);
+      if (prev && _highlightedColor !== null) {
+        (prev.material as THREE.MeshBasicMaterial).color.setHex(_highlightedColor);
+      }
+    }
+    const mesh = nodeMeshes.get(nodeId);
+    if (!mesh) {
+      _highlightedId = null;
+      _highlightedColor = null;
+      return;
+    }
+    _highlightedColor = (mesh.material as THREE.MeshBasicMaterial).color.getHex();
+    _highlightedId = nodeId;
+    (mesh.material as THREE.MeshBasicMaterial).color.setHex(0x00e5ff); // neon cyan
+  }
+
+  /** Clear any active highlight, restoring the original color. */
+  function clearHighlight(): void {
+    if (_highlightedId) {
+      const prev = nodeMeshes.get(_highlightedId);
+      if (prev && _highlightedColor !== null) {
+        (prev.material as THREE.MeshBasicMaterial).color.setHex(_highlightedColor);
+      }
+    }
+    _highlightedId = null;
+    _highlightedColor = null;
+  }
+
   function rebuildScene(data: SceneData): void {
     if (!renderer) return;
 
@@ -32,6 +68,7 @@
     interaction?.clear();
     labels?.clear();
     nodeMeshes.clear();
+    clearHighlight();
 
     // Dispose GPU resources before clearing scene
     renderer.scene.traverse((obj) => {
@@ -141,6 +178,7 @@
     );
     if (match) {
       interaction?.highlightNode(match.id);
+      applyHighlight(match.id);
       focusedNodeId = match.id;
       patternsStore.selectFamily(match.id);
     }
@@ -181,6 +219,27 @@
 
       rebuildScene(sceneData);
     }
+  });
+
+  // Sync external family selection → highlight node
+  $effect(() => {
+    const externalId = patternsStore.selectedFamilyId;
+
+    // Deselected — restore previous highlight
+    if (!externalId) {
+      clearHighlight();
+      return;
+    }
+
+    if (!renderer || !sceneData) return;
+    if (externalId === focusedNodeId) return; // already focused via click or search
+
+    const node = sceneData.nodes.find(n => n.id === externalId);
+    if (!node) return;
+
+    applyHighlight(externalId);
+    focusedNodeId = externalId;
+    renderer.focusOn(new THREE.Vector3(...node.position));
   });
 
   onMount(() => {

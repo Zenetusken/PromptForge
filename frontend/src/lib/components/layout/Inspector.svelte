@@ -14,8 +14,13 @@
   import { PHASE_LABELS } from '$lib/utils/dimensions';
   import { formatScore, truncateText } from '$lib/utils/formatting';
 
+  // Tab-aware result: use per-tab cached data when available, fall back to global forge state
+  const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
+  // True when viewing a per-tab cached result (not the current forge session)
+  const viewingCachedTab = $derived(editorStore.activeResult !== null);
+
   const isPassthrough = $derived(forgeStore.status === 'passthrough');
-  const isHeuristicScored = $derived(forgeStore.result?.scoring_mode === 'heuristic');
+  const isHeuristicScored = $derived(activeResult?.scoring_mode === 'heuristic');
   // Family detail is shown only when selected AND forge is not actively running
   const forgeActive = $derived(
     forgeStore.status === 'analyzing' ||
@@ -29,8 +34,8 @@
   async function openOptimization(traceId: string, optimizationId: string): Promise<void> {
     try {
       const opt = await getOptimization(traceId);
-      forgeStore.loadFromRecord(opt);
-      editorStore.openResult(optimizationId, opt);
+      forgeStore.loadFromRecord(opt); // caches result via editorStore.cacheResult internally
+      editorStore.openResult(opt.id); // open tab — data already cached by loadFromRecord
     } catch {
       // Fallback: open tab without data — ForgeArtifact will handle gracefully
       editorStore.openResult(optimizationId);
@@ -101,7 +106,7 @@
   $effect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.optimization_id && detail.optimization_id === forgeStore.result?.id) {
+      if (detail?.optimization_id && detail.optimization_id === activeResult?.id) {
         forgeStore.feedback = detail.rating;
       }
     };
@@ -259,7 +264,7 @@
         {/if}
       </div>
 
-    {:else if forgeStore.status === 'idle'}
+    {:else if !viewingCachedTab && forgeStore.status === 'idle'}
       {#if patternsStore.taxonomyStats}
         {@const stats = patternsStore.taxonomyStats}
         <div class="health-panel">
@@ -289,7 +294,7 @@
         </div>
       {/if}
 
-    {:else if forgeStore.status === 'analyzing' || forgeStore.status === 'optimizing' || forgeStore.status === 'scoring'}
+    {:else if !viewingCachedTab && forgeActive}
       <!-- Active phase -->
       <div class="phase-state">
         <div class="spinner" aria-label="Processing" role="status"></div>
@@ -301,7 +306,7 @@
         {/if}
       </div>
 
-    {:else if isPassthrough}
+    {:else if !viewingCachedTab && isPassthrough}
       <!-- Passthrough — awaiting external LLM result -->
       <div class="passthrough-state">
         <span class="passthrough-icon" aria-hidden="true">&#8644;</span>
@@ -318,16 +323,16 @@
         {/if}
       </div>
 
-    {:else if forgeStore.status === 'complete'}
+    {:else if forgeStore.status === 'complete' || viewingCachedTab}
       <!-- Complete — scores + strategy -->
       <div class="complete-state">
 
-        {#if forgeStore.scores}
+        {#if activeResult?.scores || (!viewingCachedTab && forgeStore.scores)}
           <ScoreCard
-            scores={forgeStore.scores}
-            originalScores={forgeStore.originalScores}
-            deltas={forgeStore.scoreDeltas}
-            overallScore={forgeStore.result?.overall_score ?? null}
+            scores={(activeResult?.scores ?? (viewingCachedTab ? null : forgeStore.scores))!}
+            originalScores={activeResult?.original_scores ?? (viewingCachedTab ? null : forgeStore.originalScores)}
+            deltas={activeResult?.score_deltas ?? (viewingCachedTab ? null : forgeStore.scoreDeltas)}
+            overallScore={activeResult?.overall_score ?? null}
           />
         {:else}
           <div class="scoring-disabled">
@@ -338,10 +343,10 @@
 
         <!-- Strategy + scoring mode metadata -->
         <div class="meta-section">
-          {#if forgeStore.result?.strategy_used}
+          {#if activeResult?.strategy_used}
             <div class="meta-row">
               <span class="meta-label">Strategy</span>
-              <span class="meta-value meta-value--cyan">{forgeStore.result.strategy_used}</span>
+              <span class="meta-value meta-value--cyan">{activeResult.strategy_used}</span>
             </div>
           {/if}
           {#if isHeuristicScored}
@@ -350,10 +355,10 @@
               <span class="data-value neon-yellow">heuristic</span>
             </div>
           {/if}
-          {#if forgeStore.result?.provider}
+          {#if activeResult?.provider}
             <div class="meta-row">
               <span class="meta-label">Provider</span>
-              <span class="meta-value">{forgeStore.result.provider}</span>
+              <span class="meta-value">{activeResult.provider}</span>
             </div>
           {/if}
         </div>

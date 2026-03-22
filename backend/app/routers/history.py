@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import OptimizationPattern
+from app.models import Feedback, OptimizationPattern
 from app.services.optimization_service import OptimizationService
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class HistoryItem(BaseModel):
     intent_label: str | None = Field(default=None, description="Short intent classification label.")
     domain: str | None = Field(default=None, description="Domain category.")
     family_id: str | None = Field(default=None, description="Pattern family ID.")
+    feedback_rating: str | None = Field(default=None, description="Latest feedback rating.")
 
 
 class HistoryResponse(BaseModel):
@@ -81,6 +82,20 @@ async def get_history(
         ).all()
         family_map = {row.optimization_id: row.family_id for row in family_rows}
 
+    # Batch-fetch latest feedback rating per optimization (not N+1).
+    feedback_map: dict[str, str] = {}
+    if items:
+        fb_rows = (
+            await db.execute(
+                select(Feedback.optimization_id, Feedback.rating)
+                .where(Feedback.optimization_id.in_(opt_ids))
+                .order_by(Feedback.created_at.desc())
+            )
+        ).all()
+        for row in fb_rows:
+            if row.optimization_id not in feedback_map:
+                feedback_map[row.optimization_id] = row.rating
+
     return HistoryResponse(
         total=result["total"],
         count=result["count"],
@@ -103,6 +118,7 @@ async def get_history(
                 intent_label=opt.intent_label,
                 domain=opt.domain,
                 family_id=family_map.get(opt.id),
+                feedback_rating=feedback_map.get(opt.id),
             )
             for opt in items
         ],

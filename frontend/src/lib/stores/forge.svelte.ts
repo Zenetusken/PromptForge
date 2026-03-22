@@ -48,15 +48,24 @@ class ForgeStore {
   /** Set by +page.svelte — true when health reports MCP activity gap (disconnected). */
   mcpDisconnected = $state(false);
 
+  /** Provider name from health polling / routing SSE events. */
+  provider = $state<string | null>(null);
+  /** Backend version from health polling. */
+  version = $state<string | null>(null);
+
   /** Canonical routing state updater — both SSE and health poll MUST use this. */
   updateRoutingState(input: {
     sampling_capable: boolean | null;
     mcp_disconnected: boolean;
+    provider?: string | null;
+    version?: string | null;
   }): { samplingChanged: boolean; reconnected: boolean; disconnected: boolean } {
     const prev = this.samplingCapable;
     const wasDc = this.mcpDisconnected;
     this.samplingCapable = input.sampling_capable;
     this.mcpDisconnected = input.mcp_disconnected;
+    if (input.provider !== undefined) this.provider = input.provider;
+    if (input.version !== undefined) this.version = input.version;
     return {
       samplingChanged: prev !== true && input.sampling_capable === true,
       reconnected: wasDc && !input.mcp_disconnected,
@@ -293,6 +302,7 @@ class ForgeStore {
       const { getOptimization } = await import('$lib/api/client');
       const opt = await getOptimization(traceId);
       this.loadFromRecord(opt);
+      editorStore.openResult(opt.id);
     } catch {
       // No valid session to restore — start fresh
       localStorage.removeItem('synthesis:last_trace_id');
@@ -304,30 +314,14 @@ class ForgeStore {
     this.handleEvent(event);
   }
 
-  /** @internal Test-only: restore initial state */
+  /** @internal Test-only: restore initial state (delegates to reset() + clears ambient routing state) */
   _reset() {
-    this.cancel();
-    this.prompt = '';
-    this.strategy = null;
-    this.status = 'idle';
-    this.result = null;
-    this.traceId = null;
-    this.error = null;
-    this.feedback = null;
-    this.currentPhase = null;
-    this.previewPrompt = null;
-    this.scores = null;
-    this.originalScores = null;
-    this.scoreDeltas = null;
-    this.assembledPrompt = null;
-    this.passthroughTraceId = null;
-    this.passthroughStrategy = null;
-    this.initialSuggestions = [];
-    this.appliedPatternIds = null;
-    this.familyId = null;
-    this.routingDecision = null;
+    this.reset();
+    // Clear ambient routing state (not cleared by user-facing reset)
     this.samplingCapable = null;
     this.mcpDisconnected = false;
+    this.provider = null;
+    this.version = null;
   }
 
   reset() {

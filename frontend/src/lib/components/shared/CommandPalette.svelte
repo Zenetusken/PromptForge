@@ -41,12 +41,13 @@
       label: 'Forge',
       run: () => {
         forgeStore.forge();
-        // Watch for traceId to open result tab (lifecycle-safe via $state)
+        // Watch for result.id (not traceId) to open result tab — ensures cache key
+        // matches the key used by loadFromRecord → cacheResult(opt.id).
         forgeCheckInterval = setInterval(() => {
-          if (forgeStore.traceId) {
+          if (forgeStore.result?.id) {
             clearInterval(forgeCheckInterval!);
             forgeCheckInterval = null;
-            editorStore.openResult(forgeStore.traceId);
+            editorStore.openResult(forgeStore.result.id);
           }
           if (forgeStore.status === 'error' || forgeStore.status === 'idle') {
             clearInterval(forgeCheckInterval!);
@@ -77,7 +78,8 @@
       id: 'toggle-diff',
       label: 'Toggle Diff',
       run: () => {
-        const id = forgeStore.result?.id ?? 'current';
+        const id = (editorStore.activeResult ?? forgeStore.result)?.id;
+        if (!id) return;
         editorStore.openDiff(id);
         close();
       },
@@ -86,7 +88,7 @@
       id: 'copy-result',
       label: 'Copy Result',
       run: () => {
-        const text = forgeStore.result?.optimized_prompt;
+        const text = (editorStore.activeResult ?? forgeStore.result)?.optimized_prompt;
         if (text) copyToClipboard(text);
         close();
       },

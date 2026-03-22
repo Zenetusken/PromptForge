@@ -208,8 +208,8 @@
     }
     try {
       const opt = await getOptimization(item.trace_id);
-      forgeStore.loadFromRecord(opt);
-      editorStore.openResult(item.id, opt);
+      forgeStore.loadFromRecord(opt); // caches result via editorStore.cacheResult internally
+      editorStore.openResult(opt.id); // open tab — data already cached by loadFromRecord
       // Stay on the current sidebar panel — don't switch away from history
     } catch {
       forgeStore.prompt = item.raw_prompt;
@@ -327,6 +327,13 @@
                 >
                   {item.overall_score != null ? formatScore(item.overall_score) : '—'}
                 </span>
+                {#if item.feedback_rating}
+                  <span
+                    class="row-feedback font-mono"
+                    style="color: {item.feedback_rating === 'thumbs_up' ? 'var(--color-neon-cyan)' : 'var(--color-neon-red)'};"
+                    title={item.feedback_rating === 'thumbs_up' ? 'Positive' : 'Negative'}
+                  >{item.feedback_rating === 'thumbs_up' ? '\u2191' : '\u2193'}</span>
+                {/if}
               </div>
             </button>
           {/each}
@@ -823,6 +830,11 @@
   }
 
   .row-score {
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  .row-feedback {
     font-size: 10px;
     flex-shrink: 0;
   }

@@ -3,7 +3,7 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { patternsStore } from '$lib/stores/patterns.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
-  import { getHealth, getOptimization, connectEventStream } from '$lib/api/client';
+  import { getHealth, connectEventStream } from '$lib/api/client';
   import type { HealthResponse } from '$lib/api/client';
 
   let health = $state<HealthResponse | null>(null);
@@ -43,6 +43,7 @@
         const delta = forgeStore.updateRoutingState({
           sampling_capable: d.sampling_capable,
           mcp_disconnected: !d.mcp_connected && d.sampling_capable !== null,
+          provider: d.provider,
         });
         if (delta.reconnected) addToast('created', 'MCP client reconnected');
         if (delta.samplingChanged) addToast('created', 'MCP client connected with sampling capability');
@@ -68,6 +69,8 @@
     const delta = forgeStore.updateRoutingState({
       sampling_capable: h.sampling_capable ?? null,
       mcp_disconnected: h.mcp_disconnected ?? false,
+      provider: h.provider ?? null,
+      version: h.version ?? null,
     });
     if (delta.samplingChanged) addToast('created', 'MCP client connected with sampling capability');
   }

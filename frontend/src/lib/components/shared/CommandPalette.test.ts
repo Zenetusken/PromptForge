@@ -248,19 +248,22 @@ describe('CommandPalette', () => {
 
   it('executes Toggle Diff action', async () => {
     const user = userEvent.setup();
+    const { forgeStore } = await import('$lib/stores/forge.svelte');
     const { editorStore } = await import('$lib/stores/editor.svelte');
+    // Toggle Diff guards on result.id — set it so the action fires
+    vi.mocked(forgeStore).result = { id: 'diff-1' } as any;
     render(CommandPalette);
     await user.keyboard('{Control>}k{/Control}');
 
     await user.click(screen.getByText('Toggle Diff'));
 
-    expect(editorStore.openDiff).toHaveBeenCalled();
+    expect(editorStore.openDiff).toHaveBeenCalledWith('diff-1');
   });
 
   it('executes Copy Result action with existing result', async () => {
     const user = userEvent.setup();
     const { forgeStore } = await import('$lib/stores/forge.svelte');
-    vi.mocked(forgeStore).result = { optimized_prompt: 'Optimized text' } as any;
+    vi.mocked(forgeStore).result = { id: 'copy-1', optimized_prompt: 'Optimized text' } as any;
 
     render(CommandPalette);
     await user.keyboard('{Control>}k{/Control}');

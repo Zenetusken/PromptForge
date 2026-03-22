@@ -64,25 +64,34 @@
     patternsStore.checkForPatterns(target.value);
   }
 
+  // Track detached effect so we can clean up on re-invocation or unmount
+  let pendingResultEffect: (() => void) | null = null;
+
+  // Ensure cleanup on component unmount (e.g. if forge is still in-flight)
+  $effect(() => () => { pendingResultEffect?.(); pendingResultEffect = null; });
+
   async function handleSynthesize() {
+    // Clean up any orphaned detached effect from a previous call
+    pendingResultEffect?.();
+    pendingResultEffect = null;
+
     forgeStore.forge();
 
     // Passthrough mode stays on the prompt tab (which renders PassthroughView)
     if (forgeStore.status === 'passthrough') return;
 
-    if (forgeStore.traceId) {
-      editorStore.openResult(forgeStore.traceId);
-    } else {
-      // Watch for traceId to be set after SSE stream starts
-      const unsub = $effect.root(() => {
-        $effect(() => {
-          if (forgeStore.traceId) {
-            editorStore.openResult(forgeStore.traceId);
-            unsub();
-          }
-        });
+    // Wait for result.id (set on optimization_complete) instead of traceId
+    // (set on optimization_start). This ensures the tab's optimizationId
+    // matches the cache key from loadFromRecord → cacheResult(opt.id).
+    pendingResultEffect = $effect.root(() => {
+      $effect(() => {
+        if (forgeStore.result?.id) {
+          editorStore.openResult(forgeStore.result.id); // data already cached by loadFromRecord
+          pendingResultEffect?.();
+          pendingResultEffect = null;
+        }
       });
-    }
+    });
   }
 </script>
 

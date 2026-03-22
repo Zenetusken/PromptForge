@@ -76,6 +76,7 @@ export interface HistoryItem {
   intent_label: string | null;
   domain: string | null;
   family_id: string | null;
+  feedback_rating: string | null;
 }
 
 export interface HistoryResponse {

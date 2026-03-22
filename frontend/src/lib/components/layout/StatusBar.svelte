@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { getHealth } from '$lib/api/client';
   import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { editorStore } from '$lib/stores/editor.svelte';
   import ProviderBadge from '$lib/components/shared/ProviderBadge.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { taxonomyColor, qHealthColor } from '$lib/utils/colors';
@@ -8,35 +8,29 @@
   import { formatScore } from '$lib/utils/formatting';
   import Logo from '$lib/components/shared/Logo.svelte';
 
+  // Tab-aware result: use per-tab cached data when available, fall back to global forge state
+  const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
 
-  let provider = $state<string | null>(null);
-  let version = $state<string | null>(null);
+  // Provider and version are fed reactively from forgeStore (via health polls + SSE events)
+  const provider = $derived(forgeStore.provider);
+  const version = $derived(forgeStore.version);
 
   // Pattern count derived from taxonomy stats (loaded by patternsStore.loadTree)
   const patternCount = $derived(patternsStore.taxonomyStats?.nodes?.confirmed ?? null);
 
-  let loaded = false;
-  $effect(() => {
-    if (loaded) return;
-    loaded = true;
-    getHealth()
-      .then((h) => { provider = h.provider; version = h.version; })
-      .catch(() => {});
-  });
-
   const phaseDisplay = $derived(getPhaseLabel(forgeStore.status)?.toLowerCase() ?? null);
 
   const lastScore = $derived(
-    forgeStore.result?.overall_score
-      ? formatScore(forgeStore.result.overall_score)
+    activeResult?.overall_score
+      ? formatScore(activeResult.overall_score)
       : null
   );
 
-  const lastStrategy = $derived(forgeStore.result?.strategy_used ?? null);
+  const lastStrategy = $derived(activeResult?.strategy_used ?? null);
 
   // Breadcrumb: [domain] > intent_label (VS Code file-path pattern)
-  const breadcrumbDomain = $derived(forgeStore.result?.domain ?? null);
-  const breadcrumbLabel = $derived(forgeStore.result?.intent_label ?? null);
+  const breadcrumbDomain = $derived(activeResult?.domain ?? null);
+  const breadcrumbLabel = $derived(activeResult?.intent_label ?? null);
 </script>
 
 <div
