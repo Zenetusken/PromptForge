@@ -1,3 +1,22 @@
+# Runtime data — nothing in this directory should be committed.
+# The root .gitignore already has `data/*` but this file serves
+# as defense-in-depth and documents the directory's contents.
+
+# Database
 *.db
-traces/
+*.sqlite3
+
+# Secrets
 .app_secrets
+.api_credentials
+
+# User state
+preferences.json
+mcp_session.json
+
+# Traces and logs
+traces/
+*.log
+
+# Process management
+pids/

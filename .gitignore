@@ -21,11 +21,19 @@ backend/data/
 logs/
 e2e_test.db*
 
-# Environment
-.env
-.env.docker
+# Environment / Secrets
+.env*
 !.env.example
 !.env.docker.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Database (safety net outside data/)
+*.db
+*.sqlite3
 
 # Tool caches
 .mypy_cache/

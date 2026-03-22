@@ -2,10 +2,14 @@ services:
   synthesis:
     build: .
     ports:
-      - "80:8080"
+      - "127.0.0.1:80:8080"
       - "127.0.0.1:8001:8001"
     volumes:
       - db-data:/app/data
+    tmpfs:
+      - /tmp:size=100M
+      - /run:size=10M
+    read_only: true
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GITHUB_OAUTH_CLIENT_ID=${GITHUB_OAUTH_CLIENT_ID:-}
@@ -16,6 +20,11 @@ services:
       - no-new-privileges
     cap_drop:
       - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/api/health"]

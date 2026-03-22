@@ -40,6 +40,11 @@ archive/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
 
 # OS
 .DS_Store

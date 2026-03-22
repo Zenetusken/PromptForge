@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # ============================================================
 # Project Synthesis — Container entrypoint
@@ -45,7 +45,7 @@ echo "[entrypoint] Migrations complete."
 # Start backend (uvicorn)
 echo "[entrypoint] Starting backend on :8000..."
 python -m uvicorn app.main:asgi_app \
-    --host 0.0.0.0 \
+    --host 127.0.0.1 \
     --port 8000 \
     --log-level info \
     --no-access-log &
