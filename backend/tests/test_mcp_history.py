@@ -35,7 +35,7 @@ async def test_history_returns_paginated():
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.optimization_service.OptimizationService") as mock_svc_cls:
+        with patch("app.tools.history.OptimizationService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={
                 "total": 25,
@@ -67,7 +67,7 @@ async def test_history_empty():
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.optimization_service.OptimizationService") as mock_svc_cls:
+        with patch("app.tools.history.OptimizationService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={
                 "total": 0,
@@ -90,7 +90,7 @@ async def test_history_clamps_limit():
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.optimization_service.OptimizationService") as mock_svc_cls:
+        with patch("app.tools.history.OptimizationService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={
                 "total": 0,
@@ -111,7 +111,7 @@ async def test_history_invalid_sort_column_falls_back():
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.optimization_service.OptimizationService") as mock_svc_cls:
+        with patch("app.tools.history.OptimizationService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={
                 "total": 0,
@@ -131,7 +131,7 @@ async def test_history_with_feedback_rating():
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.optimization_service.OptimizationService") as mock_svc_cls:
+        with patch("app.tools.history.OptimizationService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={
                 "total": 1,

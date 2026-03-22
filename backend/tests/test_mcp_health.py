@@ -40,7 +40,7 @@ async def test_health_with_provider():
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
         # Mock OptimizationService
-        with patch("app.services.optimization_service.OptimizationService") as mock_opt_svc_cls:
+        with patch("app.tools.health.OptimizationService") as mock_opt_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={"total": 42, "items": []})
             mock_svc.get_recent_error_counts = AsyncMock(return_value={"last_hour": 2, "last_24h": 5})
@@ -83,7 +83,7 @@ async def test_health_degraded_no_provider():
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.optimization_service.OptimizationService") as mock_opt_svc_cls:
+        with patch("app.tools.health.OptimizationService") as mock_opt_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={"total": 0, "items": []})
             mock_svc.get_recent_error_counts = AsyncMock(return_value={"last_hour": 0, "last_24h": 0})
@@ -111,7 +111,7 @@ async def test_health_strategies_fallback():
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_db)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.optimization_service.OptimizationService") as mock_opt_svc_cls:
+        with patch("app.tools.health.OptimizationService") as mock_opt_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={"total": 0, "items": []})
             mock_svc.get_recent_error_counts = AsyncMock(return_value={"last_hour": 0, "last_24h": 0})
