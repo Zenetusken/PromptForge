@@ -2,135 +2,29 @@
 
 All notable changes to Project Synthesis. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## Unreleased
-
-### Added (Unified Prompt Lifecycle)
-- Added unified `PromptCluster` model replacing `PatternFamily` + `TaxonomyNode` — single entity with lifecycle states (candidate → active → mature → template → archived)
-- Added in-memory numpy `EmbeddingIndex` for O(1) cosine search across cluster centroids
-- Added `PromptLifecycleService` — auto-curation (stale archival, quality pruning), state promotion (active→mature→template), temporal usage decay (0.9× after 30d inactivity), strategy affinity tracking, orphan backfill
-- Added unified `/api/clusters/*` router consolidating former `/api/patterns/*` and `/api/taxonomy/*` endpoints with 301 legacy redirects
-- Added `ClusterNavigator` with state filter tabs and Proven Templates section (replaces `PatternNavigator`)
-- Added state-based chromatic encoding in `SemanticTopology` (opacity, size multiplier, color override per lifecycle state)
-- Added template spawning — mature clusters promote to templates, "Use" button pre-fills editor
-- Added auto-injection of cluster meta-patterns into optimizer pipeline (pre-phase context injection via `EmbeddingIndex` search)
-
-### Changed (Unified Prompt Lifecycle)
-- Decomposed taxonomy engine: `engine.py` (~2100 LOC) → `engine.py` (~500) + `family_ops.py` + `matching.py` + `embedding_index.py`
-- Consolidated `/api/taxonomy/*` and `/api/patterns/*` into `/api/clusters/*`
-- Renamed frontend store: `patterns.svelte.ts` → `clusters.svelte.ts`
-- Renamed frontend component: `PatternNavigator` → `ClusterNavigator`
-
-### Fixed (Unified Prompt Lifecycle)
-- Fixed identity mismatch: topology nodeId assumed to equal familyId (now unified entity)
-- Fixed `SemanticTopology` tooltip using non-existent CSS tokens (`--color-surface`, `--color-contour`)
-- Fixed circular import between `forge.svelte.ts` and `clusters.svelte.ts` — `spawnTemplate()` returns data instead of writing to other stores
-- Fixed dead `context_injected` SSE handler in `+page.svelte` — moved to `forge.svelte.ts` where optimization stream events are processed
-
-### Added (Taxonomy Engine)
-- Added evolutionary taxonomy engine (`services/taxonomy/`, 3,848 lines, 10 modules) — self-organizing hierarchical clustering that replaces the flat pattern knowledge graph with a 3-path execution model: hot path (per-optimization embedding + nearest-node search), warm path (periodic HDBSCAN clustering with speculative lifecycle mutations), cold path (full refit + UMAP 3D projection + OKLab coloring + Haiku labeling)
-- Added quality metrics system (Q_system) with 5 dimensions: coherence, separation, coverage, DBCV, stability. Adaptive threshold weights scale based on confirmed node count; DBCV linear ramp over 20 samples
-- Added 4 lifecycle operations: emerge (new cluster detection), merge (cosine ≥0.78 similarity), split (coherence < 0.5), retire (idle nodes). Non-regressive gate ensures Q_system never degrades
-- Added process-wide singleton factory (`get_engine()`/`set_engine()`) with thread-safe double-checked locking for concurrent hot-path writes
-- Added snapshot audit trail — every warm/cold path writes operation log + full tree state (JSON) for recovery. Configurable retention policy
-- Added UMAP 3D projection with Procrustes alignment for incremental updates and PCA fallback for < 5 points
-- Added OKLab color generation from UMAP position — perceptually uniform on dark backgrounds with enforced minimum sibling distance
-- Added LTTB downsampling for Q_system sparklines (preserves shape in ≤30 points) with OLS trend normalization
-- Added Haiku-based 2–4 word cluster label generation from member text samples
-- Added taxonomy REST API: `GET /api/taxonomy/tree` (flat list for 3D viz, optional `min_persistence` filter), `GET /api/taxonomy/node/{id}` (detail with children, breadcrumb, family_count), `GET /api/taxonomy/stats` (Q metrics + history + sparkline), `POST /api/taxonomy/recluster` (manual cold-path trigger)
-- Added Pydantic response models: `TaxonomyTreeResponse`, `TaxonomyNodeResponse`, `TaxonomyStatsResponse`, `ReclusterResponse`, `TaxonomyNodeCounts`, `QHistoryEntry`
-- Added `TaxonomyNode` and `TaxonomySnapshot` SQLAlchemy models with indices on parent_id, state, persistence
-- Added Three.js 3D topology visualization (`SemanticTopology.svelte`) with LOD tiers (far/mid/near) based on persistence thresholds, raycasting click-to-focus, billboard labels, and force-directed collision resolution
-- Added `TopologyControls` overlay — Q_system badge, LOD tier indicator, Ctrl+F search, node counts
-- Added taxonomy API client (`taxonomy.ts`) with typed wrappers for tree, node, stats, and recluster endpoints
-- Added taxonomy state to patterns store — tree/stats loading, SSE `taxonomy_changed` handler, `loadTree()` with stale-response guard
-- Added canvas accessibility — `aria-label`, `tabindex`, `role="tooltip"` on hover, `role="alert" aria-live="polite"` on error
-- Added `taxonomyColor()` and `qHealthColor()` to `colors.ts` — resolves hex, domain names, or null to fallback color
-- Added `umap-learn` and `scipy` backend dependencies
-
-### Changed (Taxonomy Engine)
-- Replaced flat `PatternExtractorService` and `PatternMatcherService` with hierarchical `TaxonomyEngine` for pattern clustering and matching
-- Replaced `RadialMindmap` (D3.js 2D SVG) with `SemanticTopology` (Three.js 3D canvas) for pattern visualization
-- Replaced `DOMAIN_COLORS` constant and `domainColor()` with API-driven `taxonomyColor()` that resolves hex colors from backend OKLab system
-- Changed `domain` from `Literal` type to free-text `str` — analyzer writes unconstrained domain, taxonomy engine maps to canonical node
-- Changed pattern matching to hierarchical cascade: nearest confirmed node → walk parent chain → breadcrumb path
-- Changed usage count propagation to walk up the taxonomy tree on each optimization
-
-### Fixed (Taxonomy Engine — Audit)
-- Fixed process-wide singleton with thread-safe double-checked locking (was creating multiple engine instances)
-- Fixed task lifecycle — extraction tasks tracked in `set[Task]` with `add_done_callback` cleanup and 5s shutdown timeout
-- Fixed usage propagation timing — split `_resolve_applied_patterns()` into read-only resolution + post-commit increment (avoids expired session)
-- Fixed null label guard in `buildSceneData` — runtime `null` labels coerced to empty string
-- Fixed duplicate `total_families` property in StatusBar test (cherry-pick merge artifact)
-
-### Added (Intelligent Routing)
-- Added centralized intelligent routing service (`routing.py`) with pure 5-tier priority chain: force_passthrough > force_sampling > internal provider > auto sampling > passthrough fallback
-- Added `routing` SSE event as first event in every optimize stream (tier, provider, reason, degraded_from)
-- Added `routing_state_changed` ambient SSE event for real-time tier availability changes
-- Added `available_tiers` field to `/api/health` response
-- Added `RoutingManager` with in-memory live state, disconnect detection, MCP session file write-through for restart recovery, and SSE event broadcasting
-
-### Changed (Intelligent Routing)
-- Changed `POST /api/optimize` to handle passthrough inline via SSE (no more 503 dead end when no provider)
-- Changed frontend to be purely reactive for routing — backend owns all routing decisions via SSE events
-- Changed health endpoint to read live routing state from `RoutingManager` instead of `mcp_session.json` file reads
-- Changed provider set/delete endpoints to update `RoutingManager` state
-- Changed refinement endpoint to use routing service (rejects passthrough tier with 503)
-- Changed MCP server to use `RoutingManager` for all routing decisions (replaced 200-line if/elif chain)
-- Changed `mcp_session_changed` SSE event to `routing_state_changed`
-- Changed frontend health polling from adaptive (10s/60s) to fixed 60s interval (display only)
-
-### Removed (Intelligent Routing)
-- Removed `auto_passthrough` preference toggle and frontend auto-passthrough logic (backend owns degradation)
-- Removed `_write_mcp_session_caps()` function from MCP server (replaced by `RoutingManager.on_mcp_initialize()`)
-- Removed `noProvider` state from forge store (replaced by routing SSE events)
-- Removed `preparePassthrough()` method from forge store (passthrough now handled by backend)
-- Removed `handleMcpDisconnect()` and `handleMcpReconnect()` from frontend (backend owns via SSE)
+## v0.3.0-dev (Unreleased)
 
 ### Added
-- Added prompt knowledge graph — auto-extracts reusable meta-patterns from optimizations into pattern families clustered by semantic similarity
-- Added auto-suggestion banner on paste — detects similar pattern families with 1-click apply/skip (50-char delta threshold, 300ms debounce, 10s auto-dismiss)
-- Added radial mindmap visualization — interactive D3.js graph of pattern portfolio with domain-coded arcs, family nodes, edges, zoom/pan
-- Added pattern navigator compact view in ActivityBar sidebar — families grouped by domain with inline meta-pattern expansion
-- Added pattern family detail in Inspector — meta-patterns, linked optimizations, domain badge, usage stats
-- Added pattern knowledge graph API — `GET /api/patterns/graph`, `POST /api/patterns/match`, `GET /api/patterns/families`, `GET /api/patterns/search`, `GET /api/patterns/stats`, `PATCH /api/patterns/families/{id}`
-- Added `intent_label` and `domain` fields to optimization analysis (extracted by analyzer, persisted to DB)
-- Added `extract_patterns.md` Haiku prompt template for meta-pattern extraction
-- Added `applied_patterns` parameter to optimization pipeline — injects user-selected meta-patterns into optimizer context
-- Added background pattern extraction listener on event bus (`optimization_created` → async extraction)
-- Added bidirectional forge–patterns store binding — loading an optimization auto-selects its pattern family in Inspector; clicking a linked optimization in a family loads it in the editor
-- Added `intent_label`, `domain`, and `family_id` fields to history API and single-optimization API responses
-- Added intent_label + domain badge display in History Navigator rows (falls back to truncated `raw_prompt` for pre-knowledge-graph optimizations)
-- Added intent_label as editor tab title for result and diff tabs (falls back to existing word-based derivation from raw_prompt)
-- Added StatusBar breadcrumb segment showing `[domain] › intent_label` for the active optimization with domain color coding
-- Added live family link — `pattern_updated` SSE auto-refreshes current result to pick up async family assignment when background extractor finishes
-- Added composite database index on `optimization_patterns(optimization_id, relationship)` for family lookup performance
-- Added `intent_label` and `domain` to SSE `optimization_complete` event data for immediate breadcrumb display without page refresh
-- Added `pipeline.force_passthrough` preference toggle — forces passthrough mode (assembled template for external LLM) in both MCP and frontend, mutually exclusive with `force_sampling`
-- Added ASGI middleware on MCP server that detects sampling capability at `initialize` handshake — writes `mcp_session.json` before any tool call, enabling instant detection when an MCP client connects
-- Added runtime MCP sampling capability detection via `data/mcp_session.json` — all 4 MCP tools refresh client capabilities on every call; health endpoint reads with 30-minute staleness window; ASGI middleware detects capabilities at `initialize` handshake (before any tool call); optimistic strategy prevents multi-session flicker (False never overwrites fresh True)
-- Added `sampling_capable` field to `/api/health` response
-- Added PASSTHROUGH badge in Navigator Defaults section (amber warning color) when force_passthrough is active
-- Added `pipeline.force_sampling` preference toggle — forces `synthesis_optimize` through the MCP sampling pipeline (IDE's LLM) even when a local provider is detected; gracefully falls through to the local provider if sampling fails
 - Added 3-phase pipeline orchestrator (analyze → optimize → score) with independent subagent context windows
-- Added hybrid scoring engine — blends LLM scores with model-independent heuristics via score_blender.py
+- Added hybrid scoring engine — blended LLM scores with model-independent heuristics via `score_blender.py`
 - Added Z-score normalization against historical distribution to prevent score clustering
 - Added scorer A/B randomization to prevent position and verbosity bias
 - Added provider error hierarchy with typed exceptions (RateLimitError, AuthError, BadRequestError, OverloadedError)
-- Added shared retry utility (call_provider_with_retry) with smart retryable/non-retryable classification
+- Added shared retry utility (`call_provider_with_retry`) with smart retryable/non-retryable classification
 - Added token usage tracking with prompt cache hit/miss stats
 - Added 3-tier provider layer (Claude CLI, Anthropic API, MCP passthrough) with auto-detection
-- Added Claude CLI provider — native --json-schema structured output, --effort flag, subprocess timeout with zombie reaping
+- Added Claude CLI provider — native `--json-schema` structured output, `--effort` flag, subprocess timeout with zombie reaping
 - Added Anthropic API provider — typed SDK exception mapping, prompt cache logging
-- Added prompt template system with {{variable}} substitution, manifest validation, and hot-reload
+- Added prompt template system with `{{variable}}` substitution, manifest validation, and hot-reload
 - Added 6 optimization strategies with YAML frontmatter (tagline, description) for adaptive discovery
 - Added context resolver with per-source character caps and `<untrusted-context>` injection hardening
 - Added workspace roots scanning for agent guidance files (CLAUDE.md, AGENTS.md, .cursorrules, etc.)
 - Added SHA-based explore caching with TTL and LRU eviction
-- Added startup template validation against manifest.json
-- Added MCP server with 4 tools (synthesis_optimize, synthesis_analyze, synthesis_prepare_optimization, synthesis_save_result)
+- Added startup template validation against `manifest.json`
+- Added MCP server with 4 tools (`synthesis_optimize`, `synthesis_analyze`, `synthesis_prepare_optimization`, `synthesis_save_result`) — all return Pydantic models with `structured_output=True` and expose `outputSchema` to MCP clients
 - Added GitHub OAuth integration with Fernet-encrypted token storage
 - Added codebase explorer with semantic retrieval + single-shot Haiku synthesis
-- Added sentence-transformers embedding service (all-MiniLM-L6-v2, 384-dim) with async wrappers
+- Added sentence-transformers embedding service (`all-MiniLM-L6-v2`, 384-dim) with async wrappers
 - Added heuristic scorer with 5-dimension analysis (clarity, specificity, structure, faithfulness, conciseness)
 - Added passthrough bias correction (default 15% discount) for MCP self-rated scores
 - Added optimization CRUD with sort/filter, pagination envelope, and score distribution tracking
@@ -138,11 +32,60 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Added strategy affinity tracking with degenerate pattern detection
 - Added conversational refinement with version history, branching/rollback, and 3 suggestions per turn
 - Added API key management (GET/PATCH/DELETE) with Fernet encryption at rest
-- Added health endpoint with score clustering detection, recent error counts, and per-phase duration metrics
-- Added trace logger writing per-phase JSONL to data/traces/ with daily rotation
+- Added health endpoint with score clustering detection, recent error counts, per-phase duration metrics, `sampling_capable`, `mcp_disconnected`, and `available_tiers` fields
+- Added trace logger writing per-phase JSONL to `data/traces/` with daily rotation
 - Added in-memory rate limiting (optimize 10/min, refine 10/min, feedback 30/min, default 60/min)
-- Added real-time event bus — SSE stream with optimization, feedback, refinement, and strategy events
+- Added real-time event bus — SSE stream with optimization, feedback, refinement, strategy, taxonomy, and routing events
 - Added persistent user preferences (model selection, pipeline toggles, default strategy)
+- Added `intent_label` (3-6 word phrase) and `domain` fields to optimization analysis — extracted by analyzer, persisted to DB, included in history and single-optimization API responses
+- Added `extract_patterns.md` Haiku prompt template for meta-pattern extraction
+- Added `applied_patterns` parameter to optimization pipeline — injects user-selected meta-patterns into optimizer context
+- Added background pattern extraction listener on event bus (`optimization_created` → async extraction)
+- Added `pipeline.force_passthrough` preference toggle — forces passthrough mode in both MCP and frontend, mutually exclusive with `force_sampling`
+- Added `pipeline.force_sampling` preference toggle — forces sampling pipeline (IDE's LLM) even when a local provider is detected; gracefully falls through to local provider if sampling fails
+- Added ASGI middleware on MCP server that detects sampling capability at `initialize` handshake — writes `mcp_session.json` before any tool call
+- Added runtime MCP sampling capability detection via `data/mcp_session.json` — optimistic strategy prevents multi-session flicker (False never overwrites fresh True within 30-minute staleness window)
+- Added evolutionary taxonomy engine (`services/taxonomy/`, 10 submodules: `engine.py`, `family_ops.py`, `matching.py`, `embedding_index.py`, `clustering.py`, `lifecycle.py`, `quality.py`, `projection.py`, `coloring.py`, `labeling.py`, `snapshot.py`, `sparkline.py`) — self-organizing hierarchical clustering with 3-path execution model: hot path (per-optimization embedding + nearest-node cosine search), warm path (periodic HDBSCAN clustering with speculative lifecycle mutations), cold path (full refit + UMAP 3D projection + OKLab coloring + Haiku labeling)
+- Added quality metrics system (Q_system) with 5 dimensions: coherence, separation, coverage, DBCV, stability — adaptive threshold weights scale by active node count; DBCV linear ramp over 20 samples
+- Added 4 lifecycle operations: emerge (new cluster detection), merge (cosine ≥0.78 similarity), split (coherence < 0.5), retire (idle nodes) — non-regressive gate ensures Q_system never degrades
+- Added process-wide taxonomy engine singleton (`get_engine()`/`set_engine()`) with thread-safe double-checked locking
+- Added `TaxonomySnapshot` model — audit trail for every warm/cold path with operation log + full tree state (JSON) and configurable retention
+- Added UMAP 3D projection with Procrustes alignment for incremental updates and PCA fallback for < 5 points
+- Added OKLab color generation from UMAP position — perceptually uniform on dark backgrounds with enforced minimum sibling distance
+- Added LTTB downsampling for Q_system sparklines (preserves shape in ≤30 points) with OLS trend normalization
+- Added Haiku-based 2–4 word cluster label generation from member text samples
+- Added unified `PromptCluster` model — single entity with lifecycle states (candidate → active → mature → template → archived), self-join `parent_id`, L2-normalized centroid embedding, per-node metrics, intent/domain/task_type, usage counts, avg_score, preferred_strategy
+- Added `MetaPattern` model — reusable technique extracted from cluster members with `cluster_id` FK, enriched on duplicate (cosine ≥0.82 pattern merge)
+- Added `OptimizationPattern` join model linking `Optimization` → `PromptCluster` with similarity score and relationship type
+- Added in-memory numpy `EmbeddingIndex` for O(1) cosine search across cluster centroids
+- Added `PromptLifecycleService` — auto-curation (stale archival, quality pruning), state promotion (active → mature → template), temporal usage decay (0.9× after 30d inactivity), strategy affinity tracking, orphan backfill
+- Added unified `/api/clusters/*` router — paginated list with state/domain filter, detail with children/breadcrumb/optimizations, paste-time similarity match, tree for 3D viz, stats with Q metrics + sparkline, proven templates, recluster trigger, rename/state override — with 301 legacy redirects for `/api/patterns/*` and `/api/taxonomy/*`
+- Added `ClusterNavigator` with state filter tabs, domain filter, and Proven Templates section
+- Added state-based chromatic encoding in `SemanticTopology` (opacity, size multiplier, color override per lifecycle state)
+- Added template spawning — mature clusters promote to templates, "Use" button pre-fills editor
+- Added auto-injection of cluster meta-patterns into optimizer pipeline (pre-phase context injection via `EmbeddingIndex` search)
+- Added auto-suggestion banner on paste — detects similar clusters with 1-click apply/skip (50-char delta threshold, 300ms debounce, 10s auto-dismiss)
+- Added Three.js 3D topology visualization (`SemanticTopology.svelte`) with LOD tiers (far/mid/near persistence thresholds), raycasting click-to-focus, billboard labels, and force-directed collision resolution
+- Added `TopologyControls` overlay — Q_system badge, LOD tier indicator, Ctrl+F search, node counts
+- Added canvas accessibility — `aria-label`, `tabindex`, `role="tooltip"` on hover, `role="alert" aria-live="polite"` on error
+- Added `taxonomyColor()` and `qHealthColor()` to `colors.ts` — resolves hex, domain names, or null to fallback color
+- Added cluster detail in Inspector — meta-patterns, linked optimizations, domain badge, usage stats, rename
+- Added StatusBar breadcrumb segment showing `[domain] > intent_label` for the active optimization with domain color coding
+- Added intent_label + domain badge display in History Navigator rows (falls back to truncated `raw_prompt` for pre-knowledge-graph optimizations)
+- Added intent_label as editor tab title for result and diff tabs (falls back to existing word-based derivation from `raw_prompt`)
+- Added live cluster link — `pattern_updated` SSE auto-refreshes current result to pick up async cluster assignment
+- Added composite database index on `optimization_patterns(optimization_id, relationship)` for cluster lookup performance
+- Added `intent_label` and `domain` to SSE `optimization_complete` event data for immediate breadcrumb display
+- Added centralized intelligent routing service (`routing.py`) with pure 5-tier priority chain: force_passthrough > force_sampling > internal provider > auto sampling > passthrough fallback
+- Added `routing` SSE event as first event in every optimize stream (tier, provider, reason, degraded_from)
+- Added `routing_state_changed` ambient SSE event for real-time tier availability changes
+- Added `RoutingManager` with in-memory live state, disconnect detection, MCP session file write-through for restart recovery, and SSE event broadcasting
+- Added structured output via tool calling in MCP sampling pipeline — sends Pydantic-derived `Tool` schemas via `tools` + `tool_choice` on `create_message()`, falls back to text parsing when client doesn't support tools
+- Added model preferences per sampling phase (analyze=Sonnet, optimize=Opus, score=Sonnet, suggest=Haiku) via `ModelPreferences` + `ModelHint`
+- Added sampling fallback to `synthesis_analyze` — no longer requires a local LLM provider
+- Added full feature parity in sampling pipeline: explore (via `SamplingLLMAdapter`), applied patterns, adaptation state, suggest phase, intent drift detection, z-score normalization
+- Added `applied_pattern_ids` parameter to `synthesis_optimize` MCP tool — injects selected meta-patterns into optimizer context (mirrors REST API)
+- Added PASSTHROUGH badge in Navigator Defaults section (amber warning color) when `force_passthrough` is active
 - Added SvelteKit 2 frontend with VS Code workbench layout and industrial cyberpunk design system
 - Added prompt editor with strategy picker, forge button, and SSE progress streaming
 - Added result viewer with copy, diff toggle, and feedback (thumbs up/down)
@@ -156,55 +99,65 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Added session persistence via localStorage — page refresh restores last optimization from DB
 - Added toast notification system with chromatic action encoding
 - Added landing page with hero, features grid, testimonials, CTA, and 15 content subpages
-- Added CSS scroll-driven animations (animation-timeline: view()) with progressive enhancement fallback
+- Added CSS scroll-driven animations (`animation-timeline: view()`) with progressive enhancement fallback
 - Added View Transitions API for cross-page navigation morphing
-- Added GitHub Pages deployment via Actions artifacts (zero-footprint, no gh-pages branch)
+- Added GitHub Pages deployment via Actions artifacts (zero-footprint, no `gh-pages` branch)
 - Added Docker single-container deployment (backend + frontend + MCP + nginx)
 - Added init.sh service manager with PID tracking, process group kill, preflight checks, and log rotation
-- Added version sync system (version.json → scripts/sync-version.sh propagates everywhere)
-
-### Added (Sampling Pipeline Parity)
-- Added structured output via tool calling in MCP sampling pipeline — sends Pydantic-derived `Tool` schemas via `tools` + `tool_choice` on `create_message()`, falls back to text parsing when client doesn't support tools
-- Added model preferences per sampling phase (analyze=Sonnet, optimize=Opus, score=Sonnet, suggest=Haiku) via `ModelPreferences` + `ModelHint`
-- Added sampling fallback to `synthesis_analyze` — no longer requires a local LLM provider
-- Added explore, suggest, applied patterns, adaptation state, intent drift detection, and z-score normalization to the sampling pipeline (full feature parity with internal CLI/API pipeline)
-- Added `structured_output=True` to all 4 MCP tool definitions — tools return Pydantic models and expose `outputSchema` to MCP clients
-- Added `applied_pattern_ids` parameter to `synthesis_optimize` MCP tool — injects selected meta-patterns into optimizer context (mirrors REST API)
-- Added `SamplingLLMAdapter` — minimal `LLMProvider` wrapper for `CodebaseExplorer` to use MCP sampling as its LLM backend
-- Extracted `sampling_pipeline.py` service module from `mcp_server.py` (was 1305 lines, over 800-line guideline)
+- Added version sync system (`version.json` → `scripts/sync-version.sh` propagates everywhere)
+- Added `umap-learn` and `scipy` backend dependencies
 
 ### Changed
+- Changed `domain` from `Literal` type to free-text `str` — analyzer writes unconstrained domain, taxonomy engine maps to canonical node
+- Changed pattern matching to hierarchical cascade: nearest active node → walk parent chain → breadcrumb path
+- Changed usage count propagation to walk up the taxonomy tree on each optimization
 - Changed `model_used` in sampling pipeline from hardcoded `"ide_llm"` to actual model ID captured from `result.model` on each sampling response
-- Changed all 4 MCP tool return types from `dict` to typed Pydantic models (`OptimizeOutput`, `AnalyzeOutput`, `PrepareOutput`, `SaveResultOutput`)
-- Changed `synthesis_optimize` internal pipeline path to pass `applied_pattern_ids` through to `orchestrator.run()` (was previously omitted)
 - Changed `synthesis_optimize` MCP tool to 5 execution paths: force_passthrough → force_sampling → provider → sampling fallback → passthrough fallback
 - Enforced `force_sampling` and `force_passthrough` as mutually exclusive — server-side (422) and client-side (radio toggle behavior)
 - Disabled Force IDE sampling toggle when sampling is unavailable or passthrough is active
-- Disabled Force passthrough toggle when sampling is available or force_sampling is active
-- Changed frontend health polling to fast 10s interval for first 2 minutes, then 60s steady-state — detects MCP client connections within seconds of handshake
-- Changed all 4 MCP tools (`synthesis_optimize`, `synthesis_analyze`, `synthesis_prepare_optimization`, `synthesis_save_result`) to write session capabilities on every invocation
-- Enriched history API and single-optimization API with `intent_label`, `domain`, and `family_id` fields (batch family lookup via IN query, not N+1)
+- Disabled Force passthrough toggle when sampling is available or `force_sampling` is active
+- Changed `POST /api/optimize` to handle passthrough inline via SSE (no more 503 dead end when no provider)
+- Changed frontend to be purely reactive for routing — backend owns all routing decisions via SSE events
+- Changed health endpoint to read live routing state from `RoutingManager` instead of `mcp_session.json` file reads
+- Changed provider set/delete endpoints to update `RoutingManager` state
+- Changed refinement endpoint to use routing service (rejects passthrough tier with 503)
+- Changed MCP server to use `RoutingManager` for all routing decisions
+- Changed frontend health polling to fixed 60s interval (display only, no routing decisions)
+- Enriched history API and single-optimization API with `intent_label`, `domain`, and `cluster_id` fields (batch lookup via IN query, not N+1)
 - Added `intent_label` and `domain` to `_VALID_SORT_COLUMNS` in optimization service
+- Extracted `sampling_pipeline.py` service module from `mcp_server.py` for maintainability
 
 ### Fixed
-- Fixed sampling pipeline missing confidence gate and semantic check — low-confidence strategy selections were applied without the safety override to "auto" (parity with internal pipeline)
-- Fixed sampling pipeline model hint presets using short names (`claude-sonnet`) instead of full model IDs from `settings` — could cause model resolution mismatches
-- Fixed sampling pipeline `run_sampling_pipeline()` not returning `trace_id` in result dict — downstream `OptimizeOutput` had null `trace_id` for sampling path
-- Fixed sampling pipeline `run_sampling_analyze()` computing `heur_scores` twice (once in try, once in except) — now computed once before the try/except
-- Fixed internal pipeline path in `synthesis_optimize` not including `trace_id` in `OptimizeOutput` for completed results
-- Fixed `pattern_updated` SSE event type missing from `connectEventStream` event types array — handler in +page.svelte was dead code
+- Fixed process-wide taxonomy engine singleton with thread-safe double-checked locking (was creating multiple engine instances)
+- Fixed task lifecycle — extraction tasks tracked in `set[Task]` with `add_done_callback` cleanup and 5s shutdown timeout
+- Fixed usage propagation timing — split `_resolve_applied_patterns()` into read-only resolution + post-commit increment (avoids expired session)
+- Fixed null label guard in `buildSceneData` — runtime `null` labels coerced to empty string
+- Fixed `SemanticTopology` tooltip using non-existent CSS tokens (`--color-surface`, `--color-contour`)
+- Fixed circular import between `forge.svelte.ts` and `clusters.svelte.ts` — `spawnTemplate()` returns data instead of writing to other stores
+- Fixed dead `context_injected` SSE handler in `+page.svelte` — moved to `forge.svelte.ts` where optimization stream events are processed
+- Fixed `pattern_updated` SSE event type missing from `connectEventStream` event types array — handler was dead code
 - Fixed Inspector linked optimizations using `id` instead of `trace_id` for API fetch — would always 404
 - Fixed `PipelineResult` schema missing `intent_label` and `domain` — SSE `optimization_complete` events now include analyzer output
 - Fixed Inspector linked optimization display to use `intent_label` with fallback to truncated `raw_prompt`
-- Fixed Docker healthcheck to validate /api/health (was hitting nginx root, always 200)
+- Fixed sampling pipeline missing confidence gate and semantic check — low-confidence strategy selections were applied without the safety override to "auto"
+- Fixed sampling pipeline model hint presets using short names (`claude-sonnet`) instead of full model IDs from settings
+- Fixed sampling pipeline `run_sampling_pipeline()` not returning `trace_id` in result dict
+- Fixed sampling pipeline `run_sampling_analyze()` computing `heur_scores` twice
+- Fixed internal pipeline path in `synthesis_optimize` not including `trace_id` in `OptimizeOutput`
+- Fixed Docker healthcheck to validate `/api/health` (was hitting nginx root, always 200)
 - Fixed Docker to add security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy)
-- Fixed Docker text/event-stream added to nginx gzip types
-- Fixed Docker .dockerignore to correctly include prompt templates via !prompts/**/*.md
+- Fixed Docker `text/event-stream` added to nginx gzip types
+- Fixed Docker `.dockerignore` to correctly include prompt templates via `!prompts/**/*.md`
 - Fixed Docker Alembic migration errors to fail hard instead of being silently ignored
 - Fixed Docker entrypoint cleanup to propagate actual exit code
-- Fixed CLI provider to remove invalid --max-tokens flag, uses native --json-schema instead
-- Fixed pipeline scorer to use XML delimiters (<prompt-a>/<prompt-b>) preventing boundary corruption
+- Fixed CLI provider to remove invalid `--max-tokens` flag, uses native `--json-schema` instead
+- Fixed pipeline scorer to use XML delimiters (`<prompt-a>`/`<prompt-b>`) preventing boundary corruption
 - Fixed pipeline Phase 4 event keys to use consistent stage/state format
 - Fixed pipeline refinement score events to only emit when scoring is enabled
-- Fixed pipeline dynamic max_tokens to cap at 65536 to prevent timeout
-- Fixed landing page route structure — landing at /, app at /app (fixes GitHub Pages routing)
+- Fixed pipeline dynamic `max_tokens` to cap at 65536 to prevent timeout
+- Fixed landing page route structure — landing at `/`, app at `/app` (fixes GitHub Pages routing)
+
+### Removed
+- Removed `auto_passthrough` preference toggle and frontend auto-passthrough logic (backend owns degradation)
+- Removed `noProvider` state from forge store (replaced by routing SSE events)
+- Removed frontend MCP disconnect/reconnect handlers (backend owns via SSE)

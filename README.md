@@ -56,8 +56,8 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 │ Bar  │            │                      │             │
 │      │ Strategies │  Prompt Editor       │  Scores     │
 │      │ History    │  Result (Markdown)   │  Deltas     │
-│      │ Patterns   │  Diff View           │  Sparkline  │
-│      │ GitHub     │  Refinement Timeline │  Family     │
+│      │ Clusters   │  Diff View           │  Sparkline  │
+│      │ GitHub     │  Refinement Timeline │  Cluster    │
 │      │ Settings   │  3D Taxonomy         │  Detail     │
 ├──────┴────────────┴──────────────────────┴─────────────┤
 │                      Status Bar                        │
@@ -108,14 +108,14 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **MCP server** — use from any MCP-compatible IDE (Claude Code, Cursor, etc.)
 - **Passthrough mode** — IDE's own LLM does the optimization; server provides context + bias correction
 - **Force sampling / passthrough toggles** — pin the MCP pipeline to use the IDE's LLM (`force_sampling`) or always assemble for external processing (`force_passthrough`). Mutually exclusive, enforced server-side and client-side
-- **Sampling capability detection** — ASGI middleware detects MCP client sampling support on `initialize` handshake. Health endpoint surfaces `sampling_capable` with 30-minute staleness window. Frontend fast-polls (10s) for the first 2 minutes, then 60s steady-state
+- **Sampling capability detection** — ASGI middleware detects MCP client sampling support on `initialize` handshake. Health endpoint surfaces `sampling_capable` with 30-minute staleness window. Frontend polls at fixed 60s interval for display only
 - **Workspace scanning** — automatically discovers CLAUDE.md, AGENTS.md, .cursorrules for context injection
 - **Hybrid scoring** — LLM scores blended with heuristic analysis (structure, readability, constraint density) + z-score normalization against historical distribution. Dimension-specific weights prevent single-model bias. Divergence flags when LLM and heuristic disagree by >2.5 points
 - **Real-time events** — SSE-based event bus with toast notifications for file changes, MCP operations, and pipeline status
 - **Evolutionary taxonomy engine** — self-organizing hierarchical clustering that groups optimizations into a navigable taxonomy. Three execution paths: hot (per-optimization embedding + nearest-node search), warm (periodic HDBSCAN re-clustering with speculative lifecycle mutations), cold (full refit + UMAP 3D projection + OKLab coloring + Haiku labeling). Quality-gated: 5-dimension Q_system score (coherence, separation, coverage, DBCV, stability) prevents regressions. Snapshot audit trail for recovery
 - **3D taxonomy visualization** — Three.js interactive topology with LOD tiers (far/mid/near) based on persistence thresholds. Click-to-focus navigation, raycasting hover, billboard labels, force-directed collision resolution, Ctrl+F search, Q_system badge, and recluster controls
-- **Pattern suggestion on paste** — embeds pasted text, cosine-searches confirmed taxonomy nodes (≥0.72), suggests matching families with 1-click apply (50-char delta, 300ms debounce, 10s auto-dismiss). Applied patterns injected into optimizer context
-- **Bidirectional history–patterns navigation** — history items show intent labels and domain badges. Loading an optimization auto-selects its pattern family in Inspector. Clicking a linked optimization in a family detail loads it in the editor. Live family link: background pattern extraction triggers automatic UI sync via SSE
+- **Pattern suggestion on paste** — embeds pasted text, cosine-searches active clusters (≥0.72), suggests matching clusters with 1-click apply (50-char delta, 300ms debounce, 10s auto-dismiss). Applied patterns injected into optimizer context
+- **Bidirectional history–clusters navigation** — history items show intent labels and domain badges. Loading an optimization auto-selects its cluster in Inspector. Clicking a linked optimization in a cluster detail loads it in the editor. Live cluster link: background pattern extraction triggers automatic UI sync via SSE
 - **StatusBar breadcrumb** — shows `[domain] › intent_label` for the active optimization with domain color coding. Editor tabs use intent labels as titles
 - **Feedback loop** — thumbs up/down drives strategy affinity adaptation
 - **API key management** — set/update/remove via UI with Fernet encryption at rest
@@ -163,7 +163,7 @@ cd frontend && npm run build
 | `/api/refine` | POST (SSE) | Run refinement turn |
 | `/api/refine/{id}/versions` | GET | List refinement versions |
 | `/api/refine/{id}/rollback` | POST | Fork from a version |
-| `/api/history` | GET | List past optimizations (includes intent_label, domain, family_id) |
+| `/api/history` | GET | List past optimizations (includes intent_label, domain, cluster_id) |
 | `/api/feedback` | POST/GET | Submit/list feedback |
 | `/api/providers` | GET | Active provider info |
 | `/api/provider/api-key` | GET/PATCH/DELETE | API key management |
@@ -173,16 +173,14 @@ cd frontend && npm run build
 | `/api/settings` | GET | Read-only server config |
 | `/api/health` | GET | Health + pipeline metrics |
 | `/api/events` | GET (SSE) | Real-time event stream |
-| `/api/patterns/graph` | GET | Knowledge graph for radial mindmap |
-| `/api/patterns/match` | POST | Match prompt against known families |
-| `/api/patterns/families` | GET | List families (paginated) |
-| `/api/patterns/families/{id}` | GET/PATCH | Family detail / rename |
-| `/api/patterns/search` | GET | Semantic search across patterns |
-| `/api/patterns/stats` | GET | Pattern count + domain distribution |
-| `/api/taxonomy/tree` | GET | Flat taxonomy node list for 3D visualization |
-| `/api/taxonomy/node/{id}` | GET | Node detail with children, breadcrumb, family count |
-| `/api/taxonomy/stats` | GET | Q_system metrics, node counts, history sparkline |
-| `/api/taxonomy/recluster` | POST | Trigger cold-path refit (HDBSCAN + UMAP + labels) |
+| `/api/clusters` | GET | List clusters (paginated, state/domain filter) |
+| `/api/clusters/{id}` | GET | Cluster detail (children, breadcrumb, optimizations) |
+| `/api/clusters/{id}` | PATCH | Rename/state override |
+| `/api/clusters/match` | POST | Match prompt against clusters |
+| `/api/clusters/tree` | GET | Flat node list for 3D viz |
+| `/api/clusters/stats` | GET | Q metrics + sparkline |
+| `/api/clusters/templates` | GET | Proven templates |
+| `/api/clusters/recluster` | POST | Cold-path trigger |
 | `/api/github/auth/*` | GET/POST | GitHub OAuth flow |
 | `/api/github/repos/*` | GET/POST/DELETE | Repo management |
 
