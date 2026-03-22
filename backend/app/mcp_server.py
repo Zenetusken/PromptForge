@@ -25,7 +25,7 @@ import aiosqlite
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field
 
-from app.config import DATA_DIR, PROMPTS_DIR
+from app.config import DATA_DIR
 from app.providers.detector import detect_provider
 from app.schemas.mcp_models import (
     AnalyzeOutput,
@@ -494,7 +494,10 @@ async def synthesis_save_result(
 
     Chain: Call synthesis_feedback AFTER using the optimized prompt to report quality.
     """
-    return await handle_save_result(trace_id, optimized_prompt, changes_summary, task_type, strategy_used, scores, model, codebase_context, ctx)
+    return await handle_save_result(
+        trace_id, optimized_prompt, changes_summary, task_type,
+        strategy_used, scores, model, codebase_context, ctx,
+    )
 
 
 # ---- New tools (MCP tool chain expansion) ----

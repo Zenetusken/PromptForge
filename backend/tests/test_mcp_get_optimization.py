@@ -1,7 +1,6 @@
 """Tests for synthesis_get_optimization MCP tool."""
 
 import uuid
-
 from unittest.mock import AsyncMock, patch
 
 import pytest

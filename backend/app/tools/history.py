@@ -12,7 +12,7 @@ from sqlalchemy import select
 from app.database import async_session_factory
 from app.models import Feedback
 from app.schemas.mcp_models import HistoryItem, HistoryOutput
-from app.services.optimization_service import OptimizationService, VALID_SORT_COLUMNS
+from app.services.optimization_service import VALID_SORT_COLUMNS, OptimizationService
 
 logger = logging.getLogger(__name__)
 
