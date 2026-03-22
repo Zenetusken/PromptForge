@@ -6,10 +6,15 @@ Copyright 2025-2026 Project Synthesis contributors.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import func, select
 
 from app.config import PROMPTS_DIR
 from app.database import async_session_factory
+from app.models import Optimization
 from app.schemas.mcp_models import HealthOutput
+from app.services.optimization_service import OptimizationService
 from app.services.strategy_loader import StrategyLoader
 from app.tools._shared import get_routing
 
@@ -42,13 +47,6 @@ async def handle_health() -> HealthOutput:
     recent_error_rate: float | None = None
 
     try:
-        from datetime import datetime, timedelta, timezone
-
-        from sqlalchemy import func, select
-
-        from app.models import Optimization
-        from app.services.optimization_service import OptimizationService
-
         async with async_session_factory() as db:
             opt_svc = OptimizationService(db)
             # Total count

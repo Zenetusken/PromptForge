@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-_VALID_SORT_COLUMNS: frozenset[str] = frozenset(
+VALID_SORT_COLUMNS: frozenset[str] = frozenset(
     {
         "created_at",
         "overall_score",
@@ -94,10 +94,10 @@ class OptimizationService:
             has_more     — whether there are rows beyond this page
             next_offset  — offset to use for the next page, or None
         """
-        if sort_by not in _VALID_SORT_COLUMNS:
+        if sort_by not in VALID_SORT_COLUMNS:
             raise ValueError(
                 "Invalid sort column: %s. Must be one of: %s"
-                % (sort_by, ", ".join(sorted(_VALID_SORT_COLUMNS)))
+                % (sort_by, ", ".join(sorted(VALID_SORT_COLUMNS)))
             )
 
         # Build base filter predicates

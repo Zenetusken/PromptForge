@@ -7,15 +7,14 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy import select
+
 from app.database import async_session_factory
+from app.models import Feedback
 from app.schemas.mcp_models import HistoryItem, HistoryOutput
+from app.services.optimization_service import OptimizationService, VALID_SORT_COLUMNS
 
 logger = logging.getLogger(__name__)
-
-_VALID_SORT_COLUMNS = frozenset({
-    "created_at", "overall_score", "task_type", "strategy_used",
-    "duration_ms", "status", "intent_label", "domain",
-})
 
 
 async def handle_history(
@@ -30,12 +29,10 @@ async def handle_history(
     # Validate and clamp
     limit = max(1, min(limit, 50))
     offset = max(0, offset)
-    if sort_by not in _VALID_SORT_COLUMNS:
+    if sort_by not in VALID_SORT_COLUMNS:
         sort_by = "created_at"
     if sort_order not in ("asc", "desc"):
         sort_order = "desc"
-
-    from app.services.optimization_service import OptimizationService
 
     async with async_session_factory() as db:
         opt_svc = OptimizationService(db)
@@ -52,9 +49,6 @@ async def handle_history(
         optimizations = result["items"]
 
         # Batch lookup feedback ratings
-        from sqlalchemy import select
-        from app.models import Feedback
-
         opt_ids = [o.id for o in optimizations]
         feedback_map: dict[str, str] = {}
         if opt_ids:

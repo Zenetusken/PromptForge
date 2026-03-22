@@ -11,7 +11,7 @@ import uuid
 
 from mcp.server.fastmcp import Context
 
-from app.config import PROMPTS_DIR
+from app.config import PROMPTS_DIR, settings
 from app.database import async_session_factory
 from app.models import Optimization
 from app.schemas.mcp_models import OptimizeOutput
@@ -43,7 +43,6 @@ async def handle_optimize(
         raise ValueError(
             "Prompt too short (%d chars). Minimum is 20 characters." % len(prompt)
         )
-    from app.config import settings
     if len(prompt) > settings.MAX_RAW_PROMPT_CHARS:
         raise ValueError(
             "Prompt too long (%d chars). Maximum is %d characters."
