@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.models import PatternFamily, TaxonomyNode
+from app.models import PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 from tests.taxonomy.conftest import EMBEDDING_DIM
 
@@ -16,34 +16,34 @@ async def test_increment_usage_propagates_to_parent(db, mock_embedding, mock_pro
 
     # Create parent -> child node chain
     parent_centroid = rng.randn(EMBEDDING_DIM).astype(np.float32)
-    parent = TaxonomyNode(
+    parent = PromptCluster(
         label="Infrastructure",
         centroid_embedding=parent_centroid.tobytes(),
         member_count=10,
-        state="confirmed",
+        state="active",
         usage_count=0,
     )
     db.add(parent)
     await db.flush()
 
     child_centroid = rng.randn(EMBEDDING_DIM).astype(np.float32)
-    child = TaxonomyNode(
+    child = PromptCluster(
         label="API Architecture",
         parent_id=parent.id,
         centroid_embedding=child_centroid.tobytes(),
         member_count=5,
-        state="confirmed",
+        state="active",
         usage_count=0,
     )
     db.add(child)
     await db.flush()
 
     # Create a family under the child node
-    family = PatternFamily(
-        intent_label="REST API patterns",
+    family = PromptCluster(
+        label="REST API patterns",
         domain="REST API design",
         task_type="coding",
-        taxonomy_node_id=child.id,
+        parent_id=child.id,
         centroid_embedding=rng.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
         member_count=3,
         usage_count=0,
@@ -65,15 +65,15 @@ async def test_increment_usage_propagates_to_parent(db, mock_embedding, mock_pro
 
 @pytest.mark.asyncio
 async def test_increment_usage_no_node_is_noop(db, mock_embedding, mock_provider):
-    """Family with no taxonomy_node_id should still increment family only."""
+    """Family with no parent_id should still increment family only."""
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
     rng = np.random.RandomState(42)
 
-    family = PatternFamily(
-        intent_label="Orphan family",
+    family = PromptCluster(
+        label="Orphan family",
         domain="general",
         task_type="general",
-        taxonomy_node_id=None,
+        parent_id=None,
         centroid_embedding=rng.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
         member_count=1,
         usage_count=0,

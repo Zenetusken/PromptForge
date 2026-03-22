@@ -1,14 +1,15 @@
 <script lang="ts">
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { refinementStore } from '$lib/stores/refinement.svelte';
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
-  import { taxonomyColor, scoreColor, qHealthColor } from '$lib/utils/colors';
+  import { taxonomyColor, scoreColor, qHealthColor, stateColor } from '$lib/utils/colors';
 
   /** Known domains for the domain picker (legacy compat). */
   const KNOWN_DOMAINS = ['backend', 'frontend', 'database', 'security', 'devops', 'fullstack', 'general'];
   import { getOptimization } from '$lib/api/client';
-  import { updateFamily } from '$lib/api/patterns';
+  import { updateCluster } from '$lib/api/clusters';
+  import { addToast } from '$lib/stores/toast.svelte';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
   import { PHASE_LABELS } from '$lib/utils/dimensions';
@@ -27,8 +28,8 @@
     forgeStore.status === 'optimizing' ||
     forgeStore.status === 'scoring'
   );
-  const showFamilyDetail = $derived(
-    patternsStore.selectedFamilyId !== null && !forgeActive
+  const showClusterDetail = $derived(
+    clustersStore.selectedClusterId !== null && !forgeActive
   );
 
   async function openOptimization(traceId: string, optimizationId: string): Promise<void> {
@@ -43,7 +44,7 @@
   }
 
   function dismissFamily(): void {
-    patternsStore.selectFamily(null);
+    clustersStore.selectCluster(null);
   }
 
   // Rename state
@@ -52,8 +53,8 @@
   let renameSaving = $state(false);
 
   function startRename(): void {
-    if (!patternsStore.familyDetail) return;
-    renameValue = patternsStore.familyDetail.intent_label;
+    if (!clustersStore.clusterDetail) return;
+    renameValue = clustersStore.clusterDetail.label;
     renaming = true;
   }
 
@@ -63,15 +64,15 @@
   }
 
   async function submitRename(): Promise<void> {
-    const id = patternsStore.selectedFamilyId;
+    const id = clustersStore.selectedClusterId;
     const trimmed = renameValue.trim();
     if (!id || !trimmed || renameSaving) return;
     renameSaving = true;
     try {
-      await updateFamily(id, { intent_label: trimmed });
+      await updateCluster(id, { intent_label: trimmed });
       // Refresh the detail to reflect the new name
-      patternsStore.selectFamily(id);
-      patternsStore.invalidateTaxonomy();
+      clustersStore.selectCluster(id);
+      clustersStore.invalidateClusters();
       renaming = false;
     } catch {
       // keep rename input open on error
@@ -88,18 +89,34 @@
   }
 
   async function selectDomain(newDomain: string): Promise<void> {
-    const id = patternsStore.selectedFamilyId;
+    const id = clustersStore.selectedClusterId;
     if (!id || domainSaving) return;
     domainSaving = true;
     try {
-      await updateFamily(id, { domain: newDomain });
-      patternsStore.selectFamily(id);
-      patternsStore.invalidateTaxonomy();
+      await updateCluster(id, { domain: newDomain });
+      clustersStore.selectCluster(id);
+      clustersStore.invalidateClusters();
       domainPickerOpen = false;
     } catch {
       // keep picker open on error
     }
     domainSaving = false;
+  }
+
+  let promoteSaving = $state(false);
+
+  async function promoteCluster(newState: string): Promise<void> {
+    const id = clustersStore.selectedClusterId;
+    if (!id || promoteSaving) return;
+    promoteSaving = true;
+    try {
+      await updateCluster(id, { state: newState });
+      clustersStore.selectCluster(id);  // refresh detail
+      clustersStore.invalidateClusters();  // refresh tree
+    } catch {
+      addToast('deleted', 'State change failed');
+    }
+    promoteSaving = false;
   }
 
   // Sync feedback state from real-time events (e.g. MCP or cross-tab submissions)
@@ -128,23 +145,23 @@
   <!-- Body -->
   <div class="panel-body">
 
-    {#if showFamilyDetail}
+    {#if showClusterDetail}
       <!-- Pattern family detail -->
       <div class="family-detail">
-        {#if patternsStore.familyDetailLoading}
+        {#if clustersStore.clusterDetailLoading}
           <div class="phase-state">
             <div class="spinner" aria-label="Loading family" role="status"></div>
             <span class="phase-label">Loading family...</span>
           </div>
 
-        {:else if patternsStore.familyDetailError}
+        {:else if clustersStore.clusterDetailError}
           <div class="error-state">
             <span class="error-icon" aria-hidden="true">!</span>
-            <span class="error-text">{patternsStore.familyDetailError}</span>
+            <span class="error-text">{clustersStore.clusterDetailError}</span>
           </div>
 
-        {:else if patternsStore.familyDetail}
-          {@const family = patternsStore.familyDetail}
+        {:else if clustersStore.clusterDetail}
+          {@const family = clustersStore.clusterDetail}
 
           <!-- Family header -->
           <div class="family-header">
@@ -178,7 +195,7 @@
                 class="family-intent"
                 onclick={startRename}
                 title="Click to rename"
-              >{family.intent_label}</button>
+              >{family.label}</button>
             {/if}
             <button
               class="domain-badge"
@@ -187,6 +204,10 @@
               title="Click to change domain"
               aria-label="Change domain"
             >{family.domain}</button>
+            <span
+              class="state-badge"
+              style="color: {stateColor(family.state)}; border-color: {stateColor(family.state)};"
+            >{family.state}</span>
             {#if domainPickerOpen}
               <div class="domain-picker" role="listbox" aria-label="Select domain">
                 {#each KNOWN_DOMAINS as d (d)}
@@ -224,7 +245,31 @@
               <span class="meta-label">Avg Score</span>
               <span class="meta-value meta-value--cyan">{formatScore(family.avg_score)}</span>
             </div>
+            {#if family.preferred_strategy}
+              <div class="meta-row">
+                <span class="meta-label">Strategy</span>
+                <span class="meta-value meta-value--cyan">{family.preferred_strategy}</span>
+              </div>
+            {/if}
           </div>
+
+          <!-- State transition actions -->
+          {#if family.state === 'active' || family.state === 'mature'}
+            <button
+              class="action-btn action-btn--primary"
+              onclick={() => promoteCluster('template')}
+              disabled={promoteSaving}
+              title="Promote this cluster to template state"
+            >Promote to template</button>
+          {/if}
+          {#if family.state === 'archived'}
+            <button
+              class="action-btn"
+              onclick={() => promoteCluster('active')}
+              disabled={promoteSaving}
+              title="Restore this cluster to active state"
+            >Unarchive</button>
+          {/if}
 
           <!-- Meta-patterns -->
           {#if family.meta_patterns.length > 0}
@@ -265,8 +310,8 @@
       </div>
 
     {:else if !viewingCachedTab && forgeStore.status === 'idle'}
-      {#if patternsStore.taxonomyStats}
-        {@const stats = patternsStore.taxonomyStats}
+      {#if clustersStore.taxonomyStats}
+        {@const stats = clustersStore.taxonomyStats}
         <div class="health-panel">
           <div class="health-title">TAXONOMY HEALTH</div>
           <div class="health-metric">
@@ -282,9 +327,11 @@
             <span class="metric-value">{stats.q_separation?.toFixed(3) ?? '—'}</span>
           </div>
           <div class="health-counts">
-            <span>{stats.nodes?.confirmed ?? 0} confirmed</span>
+            <span>{stats.nodes?.active ?? 0} active</span>
             <span class="dot-sep">·</span>
             <span>{stats.nodes?.candidate ?? 0} candidate</span>
+            <span class="dot-sep">·</span>
+            <span>{stats.nodes?.template ?? 0} template</span>
           </div>
         </div>
       {:else}
@@ -864,5 +911,49 @@
 
   .dot-sep {
     color: var(--color-border-subtle);
+  }
+
+  /* State badge */
+  .state-badge {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    border: 1px solid;
+    padding: 1px 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
+  /* Action buttons */
+  .action-btn {
+    height: 20px;
+    width: 100%;
+    padding: 0 8px;
+    font-size: 10px;
+    font-family: var(--font-sans);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    cursor: pointer;
+    transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .action-btn:hover {
+    border-color: var(--color-border-accent);
+    background: var(--color-bg-hover);
+    color: var(--color-text-primary);
+  }
+
+  .action-btn--primary {
+    color: var(--color-neon-cyan);
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
+  }
+
+  .action-btn--primary:hover {
+    border-color: var(--color-neon-cyan);
+    background: color-mix(in srgb, var(--color-neon-cyan) 8%, transparent);
   }
 </style>

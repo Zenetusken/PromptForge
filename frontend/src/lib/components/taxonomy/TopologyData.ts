@@ -4,7 +4,7 @@
  * Pure functions — no Three.js dependency (just typed arrays and interfaces).
  * The renderer consumes SceneData to build Three.js objects.
  */
-import type { TaxonomyNode } from '$lib/api/taxonomy';
+import type { ClusterNode } from '$lib/api/clusters';
 import type { LODTier } from './TopologyRenderer';
 import { taxonomyColor } from '$lib/utils/colors';
 
@@ -13,11 +13,30 @@ export interface SceneNode {
   position: [number, number, number];
   color: string;
   size: number;
+  opacity: number;
   persistence: number;
   state: string;
   label: string;
   visible: boolean;
   parentId?: string;
+}
+
+/** Opacity by lifecycle state — candidates are translucent. */
+function stateOpacity(state: string): number {
+  return state === 'candidate' ? 0.4 : 1.0;
+}
+
+/** Size multiplier by lifecycle state — templates and mature nodes are larger. */
+function stateSizeMultiplier(state: string): number {
+  if (state === 'template') return 1.5;
+  if (state === 'mature') return 1.2;
+  return 1.0;
+}
+
+/** Color by lifecycle state — templates use neon-cyan override. */
+function stateNodeColor(state: string, oklabColor: string | null): string {
+  if (state === 'template') return '#00e5ff'; // neon-cyan override for templates
+  return taxonomyColor(oklabColor); // existing logic handles hex/domain/null
 }
 
 export interface SceneEdge {
@@ -42,7 +61,7 @@ const LOD_THRESHOLDS: Record<LODTier, number> = {
  * Convert flat taxonomy node list into scene-ready nodes and edges.
  * Backend `get_tree` returns a flat list — we build edges from `parent_id`.
  */
-export function buildSceneData(flatNodes: TaxonomyNode[]): SceneData {
+export function buildSceneData(flatNodes: ClusterNode[]): SceneData {
   const nodes: SceneNode[] = [];
   const edges: SceneEdge[] = [];
 
@@ -59,8 +78,9 @@ export function buildSceneData(flatNodes: TaxonomyNode[]): SceneData {
     nodes.push({
       id: node.id,
       position: [x, y, z],
-      color: taxonomyColor(node.color_hex),
-      size,
+      color: stateNodeColor(node.state, node.color_hex),
+      size: size * stateSizeMultiplier(node.state),
+      opacity: stateOpacity(node.state),
       persistence: node.persistence ?? 0.5,
       state: node.state,
       label: node.label ?? '',

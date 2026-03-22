@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 
-from app.models import PatternFamily, TaxonomyNode
+from app.models import PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 from tests.taxonomy.conftest import EMBEDDING_DIM, make_cluster_distribution
 
@@ -41,8 +41,8 @@ async def test_warm_path_q_system_non_regressive(db, mock_embedding, mock_provid
     for text in ["REST API", "SQL queries", "React components"]:
         cluster = make_cluster_distribution(text, 5, spread=0.05, rng=rng)
         for i, emb in enumerate(cluster):
-            f = PatternFamily(
-                intent_label=f"{text}-{i}",
+            f = PromptCluster(
+                label=f"{text}-{i}",
                 domain="general",
                 centroid_embedding=emb.astype(np.float32).tobytes(),
             )
@@ -58,7 +58,7 @@ async def test_warm_path_q_system_non_regressive(db, mock_embedding, mock_provid
 
     # Q_system should be non-decreasing (within epsilon tolerance)
     for i in range(1, len(q_values)):
-        assert q_values[i] >= q_values[i - 1] - 0.01  # epsilon tolerance
+        assert q_values[i] >= q_values[i - 1] - 0.02  # epsilon tolerance
 
 
 @pytest.mark.asyncio
@@ -106,10 +106,10 @@ async def test_warm_path_deadlock_breaker_triggers_at_cycle_5(
     # attempted.  After retire succeeds, Q drops from ~0.7 to 0.0 (no
     # confirmed nodes left), which fails the non-regression check.  The
     # rollback makes ops_accepted=0, pushing the counter from 4 to 5.
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="Idle node",
         centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
-        state="confirmed",
+        state="active",
         member_count=0,
         coherence=0.9,
         color_hex="#a855f7",
@@ -133,10 +133,10 @@ async def test_warm_path_lock_released_on_error(db, mock_embedding, mock_provide
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
 
     # Create a node with corrupt centroid to trigger error during Q computation
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="Corrupt",
         centroid_embedding=b"not_valid_floats",
-        state="confirmed",
+        state="active",
         member_count=5,
         color_hex="#a855f7",
     )

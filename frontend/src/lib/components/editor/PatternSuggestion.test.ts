@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import PatternSuggestion from './PatternSuggestion.svelte';
-import { patternsStore } from '$lib/stores/patterns.svelte';
-import { mockPatternFamily, mockMetaPattern } from '$lib/test-utils';
+import { clustersStore as patternsStore } from '$lib/stores/clusters.svelte';
+import { mockClusterMatch, mockMetaPattern } from '$lib/test-utils';
 
 describe('PatternSuggestion', () => {
   beforeEach(() => {
@@ -16,15 +16,15 @@ describe('PatternSuggestion', () => {
   });
 
   function makeSuggestion(overrides: Record<string, unknown> = {}) {
-    return {
-      family: mockPatternFamily({ intent_label: 'API endpoint patterns', avg_score: 7.8 }),
+    return mockClusterMatch({
+      cluster: { id: 'fam-1', label: 'API endpoint patterns', domain: 'backend', member_count: 3 },
       meta_patterns: [
         mockMetaPattern({ id: 'mp-1', pattern_text: 'Include error handling' }),
         mockMetaPattern({ id: 'mp-2', pattern_text: 'Use consistent naming' }),
       ],
       similarity: 0.85,
       ...overrides,
-    };
+    });
   }
 
   it('renders nothing when suggestion is not visible', () => {

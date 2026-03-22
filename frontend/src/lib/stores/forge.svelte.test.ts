@@ -21,7 +21,7 @@ vi.mock('$lib/api/client', async (importOriginal) => {
 
 import { forgeStore } from './forge.svelte';
 import { editorStore } from './editor.svelte';
-import { patternsStore } from './patterns.svelte';
+import { clustersStore as patternsStore } from './clusters.svelte';
 import { mockFetch, mockOptimizationResult, mockDimensionScores } from '../test-utils';
 import type { SSEEvent } from '$lib/api/client';
 import * as apiClient from '$lib/api/client';
@@ -255,7 +255,7 @@ describe('ForgeStore', () => {
 
   describe('loadFromRecord', () => {
     it('hydrates all state from optimization result', () => {
-      const result = mockOptimizationResult({ id: 'opt-load-1', family_id: null });
+      const result = mockOptimizationResult({ id: 'opt-load-1', cluster_id: null });
       forgeStore.loadFromRecord(result as any);
       expect(forgeStore.result).toEqual(result);
       expect(forgeStore.status).toBe('complete');
@@ -277,13 +277,13 @@ describe('ForgeStore', () => {
       expect(cacheResult).toHaveBeenCalledWith('opt-cache-1', result);
     });
 
-    it('selects family in patternsStore when family_id set', () => {
+    it('selects cluster in clustersStore when cluster_id set', () => {
       const fetchMock = mockFetch([
-        { match: '/patterns/families/fam-1', response: { id: 'fam-1', intent_label: 'API patterns', domain: 'backend', task_type: 'coding', usage_count: 3, member_count: 2, avg_score: 8.0, created_at: null, updated_at: null, meta_patterns: [], optimizations: [] } },
+        { match: '/clusters/clus-1', response: { id: 'clus-1', label: 'API patterns', domain: 'backend', task_type: 'coding', usage_count: 3, member_count: 2, avg_score: 8.0, state: 'active', created_at: null, updated_at: null, meta_patterns: [], optimizations: [] } },
       ]);
-      const result = mockOptimizationResult({ id: 'opt-family-1', family_id: 'fam-1' });
+      const result = mockOptimizationResult({ id: 'opt-cluster-1', cluster_id: 'clus-1' });
       forgeStore.loadFromRecord(result as any);
-      expect(patternsStore.selectedFamilyId).toBe('fam-1');
+      expect(patternsStore.selectedClusterId).toBe('clus-1');
     });
 
     it('clears assembledPrompt and passthroughStrategy', () => {
@@ -358,14 +358,14 @@ describe('ForgeStore', () => {
       forgeStore.passthroughStrategy = 'chain-of-thought';
       forgeStore.routingDecision = { tier: 'internal', provider: 'cli', reason: 'test', degraded_from: null };
       forgeStore.appliedPatternIds = ['mp-1'];
-      forgeStore.familyId = 'fam-1';
+      forgeStore.clusterId = 'clus-1';
       forgeStore.reset();
       expect(forgeStore.assembledPrompt).toBeNull();
       expect(forgeStore.passthroughTraceId).toBeNull();
       expect(forgeStore.passthroughStrategy).toBeNull();
       expect(forgeStore.routingDecision).toBeNull();
       expect(forgeStore.appliedPatternIds).toBeNull();
-      expect(forgeStore.familyId).toBeNull();
+      expect(forgeStore.clusterId).toBeNull();
     });
   });
 

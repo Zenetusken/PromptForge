@@ -1,0 +1,366 @@
+"""Tests for pipeline auto-injection pre-phase.
+
+Covers the _auto_inject_patterns() helper and its integration into the
+pipeline's optimize phase.
+"""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import numpy as np
+import pytest
+
+from app.services.pipeline import PipelineOrchestrator
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _rand_emb(dim: int = 384) -> np.ndarray:
+    v = np.random.randn(dim).astype(np.float32)
+    return v / np.linalg.norm(v)
+
+
+def _make_meta_pattern(cluster_id: str, text: str):
+    mp = MagicMock()
+    mp.cluster_id = cluster_id
+    mp.pattern_text = text
+    return mp
+
+
+def _make_taxonomy_engine(size: int = 1, matches=None):
+    """Build a minimal taxonomy_engine mock.
+
+    ``matches`` is the list returned by embedding_index.search().
+    """
+    embedding_index = MagicMock()
+    embedding_index.size = size
+    # search() is synchronous
+    embedding_index.search = MagicMock(return_value=matches if matches is not None else [])
+
+    engine = MagicMock()
+    engine.embedding_index = embedding_index
+    return engine
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _auto_inject_patterns()
+# ---------------------------------------------------------------------------
+
+class TestAutoInjectPatterns:
+    @pytest.fixture
+    def orchestrator(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "strategies").mkdir()
+        (prompts / "agent-guidance.md").write_text("System prompt.")
+        (prompts / "analyze.md").write_text("{{raw_prompt}}\n{{available_strategies}}")
+        (prompts / "optimize.md").write_text(
+            "{{raw_prompt}}\n{{analysis_summary}}\n{{strategy_instructions}}"
+        )
+        (prompts / "scoring.md").write_text("Score.")
+        (prompts / "manifest.json").write_text(
+            '{"analyze.md": {"required": ["raw_prompt", "available_strategies"], "optional": []},'
+            '"optimize.md": {"required": ["raw_prompt", "strategy_instructions", "analysis_summary"], "optional": []},'
+            '"scoring.md": {"required": [], "optional": []}}'
+        )
+        (prompts / "strategies" / "auto.md").write_text("Auto-select.")
+        return PipelineOrchestrator(prompts_dir=prompts)
+
+    async def test_returns_patterns_when_matches_found(self, orchestrator, db_session):
+        """When index finds matches and DB has MetaPatterns, returns pattern texts."""
+        cluster_id = "cluster-abc"
+        mp = _make_meta_pattern(cluster_id, "Use concise verbs in prompts")
+        engine = _make_taxonomy_engine(
+            size=1,
+            matches=[(cluster_id, 0.85)],
+        )
+
+        fake_embedding = _rand_emb()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mp]
+        db_session.execute = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "app.services.embedding_service.EmbeddingService.aembed_single",
+            new=AsyncMock(return_value=fake_embedding),
+        ):
+            texts, ids = await orchestrator._auto_inject_patterns(
+                raw_prompt="Write a function to sort a list",
+                taxonomy_engine=engine,
+                db=db_session,
+                trace_id="trace-001",
+            )
+
+        assert texts == ["Use concise verbs in prompts"]
+        assert ids == [cluster_id]
+
+    async def test_returns_empty_when_index_is_empty(self, orchestrator, db_session):
+        """When embedding index has size==0, returns empty lists immediately."""
+        engine = _make_taxonomy_engine(size=0, matches=[])
+
+        texts, ids = await orchestrator._auto_inject_patterns(
+            raw_prompt="Write a function",
+            taxonomy_engine=engine,
+            db=db_session,
+            trace_id="trace-002",
+        )
+
+        assert texts == []
+        assert ids == []
+        # search() should never be called if size == 0
+        engine.embedding_index.search.assert_not_called()
+
+    async def test_returns_empty_when_no_matches_above_threshold(self, orchestrator, db_session):
+        """When cosine search returns no matches, returns empty lists."""
+        engine = _make_taxonomy_engine(size=5, matches=[])
+
+        with patch(
+            "app.services.embedding_service.EmbeddingService.aembed_single",
+            new=AsyncMock(return_value=_rand_emb()),
+        ):
+            texts, ids = await orchestrator._auto_inject_patterns(
+                raw_prompt="Write a function",
+                taxonomy_engine=engine,
+                db=db_session,
+                trace_id="trace-003",
+            )
+
+        assert texts == []
+        assert ids == []
+
+    async def test_returns_empty_texts_when_no_db_meta_patterns(self, orchestrator, db_session):
+        """When matches found but no MetaPatterns in DB, returns ([], cluster_ids)."""
+        cluster_id = "cluster-xyz"
+        engine = _make_taxonomy_engine(size=1, matches=[(cluster_id, 0.80)])
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        db_session.execute = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "app.services.embedding_service.EmbeddingService.aembed_single",
+            new=AsyncMock(return_value=_rand_emb()),
+        ):
+            texts, ids = await orchestrator._auto_inject_patterns(
+                raw_prompt="Write something",
+                taxonomy_engine=engine,
+                db=db_session,
+                trace_id="trace-004",
+            )
+
+        assert texts == []
+        assert ids == [cluster_id]
+
+
+# ---------------------------------------------------------------------------
+# Integration-style tests — verify auto-injection wires into pipeline.run()
+# ---------------------------------------------------------------------------
+
+class TestPipelineAutoInjectionIntegration:
+    """Test that auto-injection is correctly wired into the pipeline."""
+
+    @pytest.fixture
+    def orchestrator(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        strategies = prompts / "strategies"
+        strategies.mkdir()
+        (prompts / "agent-guidance.md").write_text("System prompt.")
+        (prompts / "analyze.md").write_text("{{raw_prompt}}\n{{available_strategies}}")
+        (prompts / "optimize.md").write_text(
+            "{{raw_prompt}}\n{{analysis_summary}}\n{{strategy_instructions}}\n"
+            "{{applied_patterns}}"
+        )
+        (prompts / "scoring.md").write_text("Score.")
+        (prompts / "manifest.json").write_text(
+            '{"analyze.md": {"required": ["raw_prompt", "available_strategies"], "optional": []},'
+            '"optimize.md": {"required": ["raw_prompt", "strategy_instructions", "analysis_summary"],'
+            '"optional": ["codebase_guidance", "codebase_context", "adaptation_state", "applied_patterns"]},'
+            '"scoring.md": {"required": [], "optional": []}}'
+        )
+        (strategies / "auto.md").write_text("Auto-select.")
+        (strategies / "chain-of-thought.md").write_text("Think step by step.")
+        return PipelineOrchestrator(prompts_dir=prompts)
+
+    def _make_analysis(self):
+        from app.schemas.pipeline_contracts import AnalysisResult
+        return AnalysisResult(
+            task_type="coding",
+            weaknesses=["vague"],
+            strengths=["concise"],
+            selected_strategy="chain-of-thought",
+            strategy_rationale="good",
+            confidence=0.9,
+        )
+
+    def _make_optimization(self):
+        from app.schemas.pipeline_contracts import OptimizationResult
+        return OptimizationResult(
+            optimized_prompt="Write a Python function that sorts a list.",
+            changes_summary="Added specificity.",
+            strategy_used="chain-of-thought",
+        )
+
+    def _make_scores(self):
+        from app.schemas.pipeline_contracts import DimensionScores, ScoreResult
+        return ScoreResult(
+            prompt_a_scores=DimensionScores(
+                clarity=4.0, specificity=3.0, structure=5.0, faithfulness=5.0, conciseness=6.0,
+            ),
+            prompt_b_scores=DimensionScores(
+                clarity=8.0, specificity=8.0, structure=7.0, faithfulness=9.0, conciseness=7.0,
+            ),
+        )
+
+    async def test_context_injected_event_emitted_when_patterns_found(
+        self, orchestrator, mock_provider, db_session
+    ):
+        """When auto-injection finds patterns, a context_injected SSE event is emitted."""
+        mock_provider.complete_parsed.side_effect = [
+            self._make_analysis(),
+            self._make_optimization(),
+            self._make_scores(),
+        ]
+
+        cluster_id = "cluster-001"
+        mp = _make_meta_pattern(cluster_id, "Be explicit about return types")
+        engine = _make_taxonomy_engine(size=1, matches=[(cluster_id, 0.88)])
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mp]
+        db_session.execute = AsyncMock(return_value=mock_result)
+
+        events = []
+        with (
+            patch(
+                "app.services.pipeline.PipelineOrchestrator._auto_inject_patterns",
+                new=AsyncMock(return_value=(["Be explicit about return types"], [cluster_id])),
+            ),
+        ):
+            async for event in orchestrator.run(
+                raw_prompt="Write a sort function",
+                provider=mock_provider,
+                db=db_session,
+                taxonomy_engine=engine,
+            ):
+                events.append(event)
+
+        event_names = [e.event for e in events]
+        assert "context_injected" in event_names
+
+        injected = next(e for e in events if e.event == "context_injected")
+        assert injected.data["clusters"] == [cluster_id]
+        assert injected.data["patterns"] == 1
+
+    async def test_context_injected_not_emitted_when_no_patterns(
+        self, orchestrator, mock_provider, db_session
+    ):
+        """When auto-injection finds nothing, no context_injected event is emitted."""
+        mock_provider.complete_parsed.side_effect = [
+            self._make_analysis(),
+            self._make_optimization(),
+            self._make_scores(),
+        ]
+        engine = _make_taxonomy_engine(size=0, matches=[])
+
+        events = []
+        with patch(
+            "app.services.pipeline.PipelineOrchestrator._auto_inject_patterns",
+            new=AsyncMock(return_value=([], [])),
+        ):
+            async for event in orchestrator.run(
+                raw_prompt="Write a sort function",
+                provider=mock_provider,
+                db=db_session,
+                taxonomy_engine=engine,
+            ):
+                events.append(event)
+
+        event_names = [e.event for e in events]
+        assert "context_injected" not in event_names
+
+    async def test_no_auto_injection_when_applied_pattern_ids_provided(
+        self, orchestrator, mock_provider, db_session
+    ):
+        """When user provides explicit applied_pattern_ids, auto-injection is skipped."""
+        mock_provider.complete_parsed.side_effect = [
+            self._make_analysis(),
+            self._make_optimization(),
+            self._make_scores(),
+        ]
+        engine = _make_taxonomy_engine(size=5, matches=[("c1", 0.9)])
+
+        events = []
+        inject_mock = AsyncMock(return_value=(["some pattern"], ["c1"]))
+        with patch(
+            "app.services.pipeline.PipelineOrchestrator._auto_inject_patterns",
+            new=inject_mock,
+        ):
+            async for event in orchestrator.run(
+                raw_prompt="Write a sort function",
+                provider=mock_provider,
+                db=db_session,
+                taxonomy_engine=engine,
+                applied_pattern_ids=["explicit-pattern-id"],
+            ):
+                events.append(event)
+
+        # _auto_inject_patterns should never have been called
+        inject_mock.assert_not_called()
+        event_names = [e.event for e in events]
+        assert "context_injected" not in event_names
+
+    async def test_cluster_injection_added_to_context_sources(
+        self, orchestrator, mock_provider, db_session
+    ):
+        """When patterns are injected, context_sources['cluster_injection'] is True."""
+        mock_provider.complete_parsed.side_effect = [
+            self._make_analysis(),
+            self._make_optimization(),
+            self._make_scores(),
+        ]
+        cluster_id = "cluster-007"
+        engine = _make_taxonomy_engine(size=1, matches=[(cluster_id, 0.82)])
+
+        events = []
+        with patch(
+            "app.services.pipeline.PipelineOrchestrator._auto_inject_patterns",
+            new=AsyncMock(return_value=(["Use numbered steps"], [cluster_id])),
+        ):
+            async for event in orchestrator.run(
+                raw_prompt="Explain how to make coffee",
+                provider=mock_provider,
+                db=db_session,
+                taxonomy_engine=engine,
+            ):
+                events.append(event)
+
+        complete = next(e for e in events if e.event == "optimization_complete")
+        assert complete.data["context_sources"].get("cluster_injection") is True
+
+    async def test_auto_injection_failure_does_not_abort_pipeline(
+        self, orchestrator, mock_provider, db_session
+    ):
+        """A failing auto-injection is swallowed; pipeline completes normally."""
+        mock_provider.complete_parsed.side_effect = [
+            self._make_analysis(),
+            self._make_optimization(),
+            self._make_scores(),
+        ]
+        engine = _make_taxonomy_engine(size=1, matches=[("c1", 0.9)])
+
+        events = []
+        with patch(
+            "app.services.pipeline.PipelineOrchestrator._auto_inject_patterns",
+            new=AsyncMock(side_effect=RuntimeError("embedding service down")),
+        ):
+            async for event in orchestrator.run(
+                raw_prompt="Write a sort function",
+                provider=mock_provider,
+                db=db_session,
+                taxonomy_engine=engine,
+            ):
+                events.append(event)
+
+        event_names = [e.event for e in events]
+        assert "optimization_complete" in event_names
+        assert "error" not in event_names

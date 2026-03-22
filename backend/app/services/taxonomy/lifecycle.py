@@ -24,7 +24,7 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import PatternFamily, TaxonomyNode
+from app.models import PromptCluster
 from app.providers.base import LLMProvider
 from app.services.taxonomy.clustering import compute_pairwise_coherence, l2_normalize_1d
 from app.services.taxonomy.coloring import generate_color
@@ -60,47 +60,47 @@ def _compute_centroid(embeddings: list[np.ndarray]) -> np.ndarray:
 
 async def attempt_emerge(
     db: AsyncSession,
-    member_family_ids: list[str],
+    member_cluster_ids: list[str],
     embeddings: list[np.ndarray],
     warm_path_age: int,
     provider: LLMProvider | None,
     model: str,
-) -> TaxonomyNode | None:
-    """Create a new candidate TaxonomyNode from a cluster of PatternFamilies.
+) -> PromptCluster | None:
+    """Create a new candidate PromptCluster from a cluster of PatternFamilies.
 
     Steps:
       1. Compute centroid (mean, L2-normalised).
       2. Compute coherence (mean pairwise cosine similarity).
-      3. Generate a label from family intent_labels via Haiku.
+      3. Generate a label from family labels via Haiku.
       4. Generate a placeholder color (UMAP not run yet — use 0,0,0).
-      5. Persist TaxonomyNode (state="candidate").
+      5. Persist PromptCluster (state="candidate").
       6. Link each family to the new node.
 
     Args:
         db: Async DB session.
-        member_family_ids: IDs of PatternFamily rows forming this cluster.
+        member_cluster_ids: IDs of PromptCluster rows forming this cluster.
         embeddings: Corresponding embedding vectors (same order).
         warm_path_age: Number of warm-path cycles completed (for quality gates).
         provider: LLM provider for label generation (None → fallback label).
         model: Model ID passed to the labeling module.
 
     Returns:
-        The newly created TaxonomyNode, or None on failure.
+        The newly created PromptCluster, or None on failure.
     """
-    if not member_family_ids or not embeddings:
-        logger.warning("attempt_emerge: empty member_family_ids or embeddings — skipping")
+    if not member_cluster_ids or not embeddings:
+        logger.warning("attempt_emerge: empty member_cluster_ids or embeddings — skipping")
         return None
 
     try:
         centroid = _compute_centroid(embeddings)
         coherence = compute_pairwise_coherence(embeddings)
 
-        # Fetch family intent_labels for label generation.
+        # Fetch family labels for label generation.
         result = await db.execute(
-            select(PatternFamily).where(PatternFamily.id.in_(member_family_ids))
+            select(PromptCluster).where(PromptCluster.id.in_(member_cluster_ids))
         )
         families = result.scalars().all()
-        member_texts = [f.intent_label for f in families if f.intent_label]
+        member_texts = [f.label for f in families if f.label]
 
         label = await generate_label(
             provider=provider,
@@ -111,10 +111,10 @@ async def attempt_emerge(
         # Placeholder color — UMAP projection not yet available for new nodes.
         color_hex = generate_color(0.0, 0.0, 0.0)
 
-        node = TaxonomyNode(
+        node = PromptCluster(
             label=label,
             centroid_embedding=centroid.tobytes(),
-            member_count=len(member_family_ids),
+            member_count=len(member_cluster_ids),
             coherence=coherence,
             state="candidate",
             color_hex=color_hex,
@@ -124,7 +124,7 @@ async def attempt_emerge(
 
         # Link families to this node.
         for family in families:
-            family.taxonomy_node_id = node.id
+            family.parent_id = node.id
 
         await db.flush()
         logger.info(
@@ -143,11 +143,11 @@ async def attempt_emerge(
 
 async def attempt_merge(
     db: AsyncSession,
-    node_a: TaxonomyNode,
-    node_b: TaxonomyNode,
+    node_a: PromptCluster,
+    node_b: PromptCluster,
     warm_path_age: int,
-) -> TaxonomyNode | None:
-    """Combine two sibling TaxonomyNodes into a single survivor.
+) -> PromptCluster | None:
+    """Combine two sibling PromptClusters into a single survivor.
 
     The survivor is the node with more members (node_a wins ties).  The loser
     is marked retired and its families are reassigned to the survivor.
@@ -162,7 +162,7 @@ async def attempt_merge(
         warm_path_age: Warm-path age (unused directly; reserved for gate).
 
     Returns:
-        The survivor TaxonomyNode, or None on failure.
+        The survivor PromptCluster, or None on failure.
     """
     try:
         # Guard: self-merge is a no-op that would double member_count
@@ -204,16 +204,16 @@ async def attempt_merge(
         survivor.coherence = merged_coherence
 
         # Retire the loser.
-        loser.state = "retired"
-        loser.retired_at = datetime.now(timezone.utc)
+        loser.state = "archived"
+        loser.archived_at = datetime.now(timezone.utc)
 
         # Reassign loser's families to survivor.
         result = await db.execute(
-            select(PatternFamily).where(PatternFamily.taxonomy_node_id == loser.id)
+            select(PromptCluster).where(PromptCluster.parent_id == loser.id)
         )
         loser_families = result.scalars().all()
         for family in loser_families:
-            family.taxonomy_node_id = survivor.id
+            family.parent_id = survivor.id
 
         await db.flush()
         logger.info(
@@ -233,15 +233,15 @@ async def attempt_merge(
 
 async def attempt_split(
     db: AsyncSession,
-    parent_node: TaxonomyNode,
+    parent_node: PromptCluster,
     child_clusters: list[tuple[list[str], list[np.ndarray]]],
     warm_path_age: int,
     provider: LLMProvider | None,
     model: str,
-) -> list[TaxonomyNode]:
-    """Split a parent TaxonomyNode into child candidate nodes.
+) -> list[PromptCluster]:
+    """Split a parent PromptCluster into child candidate nodes.
 
-    Each element of *child_clusters* is a ``(family_ids, embeddings)`` tuple
+    Each element of *child_clusters* is a ``(cluster_ids, embeddings)`` tuple
     produced by the clustering module.  A new candidate child node is created
     for each cluster, inheriting the parent's id as ``parent_id``.  The
     parent's ``member_count`` is decremented by the number of members moved.
@@ -249,34 +249,34 @@ async def attempt_split(
     Args:
         db: Async DB session.
         parent_node: The node being split.
-        child_clusters: List of ``(family_ids, embeddings)`` tuples.
+        child_clusters: List of ``(cluster_ids, embeddings)`` tuples.
         warm_path_age: Warm-path age (reserved for quality gates).
         provider: LLM provider for child label generation.
         model: Model ID passed to the labeling module.
 
     Returns:
-        List of newly created child TaxonomyNode objects (may be empty on
+        List of newly created child PromptCluster objects (may be empty on
         error or if no clusters provided).
     """
     if not child_clusters:
         logger.warning("attempt_split: no child_clusters provided — skipping")
         return []
 
-    created_children: list[TaxonomyNode] = []
+    created_children: list[PromptCluster] = []
     total_moved = 0
 
-    for family_ids, embeddings in child_clusters:
-        if not family_ids or not embeddings:
+    for cluster_ids, embeddings in child_clusters:
+        if not cluster_ids or not embeddings:
             continue
         try:
             centroid = _compute_centroid(embeddings)
             coherence = compute_pairwise_coherence(embeddings)
 
             result = await db.execute(
-                select(PatternFamily).where(PatternFamily.id.in_(family_ids))
+                select(PromptCluster).where(PromptCluster.id.in_(cluster_ids))
             )
             families = result.scalars().all()
-            member_texts = [f.intent_label for f in families if f.intent_label]
+            member_texts = [f.label for f in families if f.label]
 
             label = await generate_label(
                 provider=provider,
@@ -285,11 +285,11 @@ async def attempt_split(
             )
             color_hex = generate_color(0.0, 0.0, 0.0)
 
-            child = TaxonomyNode(
+            child = PromptCluster(
                 label=label,
                 parent_id=parent_node.id,
                 centroid_embedding=centroid.tobytes(),
-                member_count=len(family_ids),
+                member_count=len(cluster_ids),
                 coherence=coherence,
                 state="candidate",
                 color_hex=color_hex,
@@ -298,11 +298,11 @@ async def attempt_split(
             await db.flush()
 
             for family in families:
-                family.taxonomy_node_id = child.id
+                family.parent_id = child.id
 
             await db.flush()
             created_children.append(child)
-            total_moved += len(family_ids)
+            total_moved += len(cluster_ids)
 
             logger.info(
                 "split: created child '%s' (id=%s, members=%d) under parent '%s'",
@@ -326,13 +326,13 @@ async def attempt_split(
 
 async def attempt_retire(
     db: AsyncSession,
-    node: TaxonomyNode,
+    node: PromptCluster,
     warm_path_age: int,
 ) -> bool:
-    """Retire an idle TaxonomyNode and redistribute its families.
+    """Retire an idle PromptCluster and redistribute its families.
 
     Families belonging to *node* are reassigned to the first available
-    confirmed sibling (same parent_id, state="confirmed", id != node.id).
+    active sibling (same parent_id, state="active", id != node.id).
     If no sibling exists, retirement is skipped.
 
     Args:
@@ -353,19 +353,19 @@ async def attempt_retire(
             )
             return False
 
-        # Find confirmed siblings.
+        # Find active siblings.
         result = await db.execute(
-            select(TaxonomyNode).where(
-                TaxonomyNode.parent_id == node.parent_id,
-                TaxonomyNode.state == "confirmed",
-                TaxonomyNode.id != node.id,
+            select(PromptCluster).where(
+                PromptCluster.parent_id == node.parent_id,
+                PromptCluster.state == "active",
+                PromptCluster.id != node.id,
             )
         )
         siblings = result.scalars().all()
 
         if not siblings:
             logger.info(
-                "retire: no confirmed siblings for node '%s' (id=%s) — skipping",
+                "retire: no active siblings for node '%s' (id=%s) — skipping",
                 node.label,
                 node.id,
             )
@@ -374,16 +374,16 @@ async def attempt_retire(
         # Redistribute families to the first sibling.
         target_sibling = siblings[0]
         families_result = await db.execute(
-            select(PatternFamily).where(PatternFamily.taxonomy_node_id == node.id)
+            select(PromptCluster).where(PromptCluster.parent_id == node.id)
         )
         families = families_result.scalars().all()
         for family in families:
-            family.taxonomy_node_id = target_sibling.id
+            family.parent_id = target_sibling.id
             target_sibling.member_count = (target_sibling.member_count or 0) + 1
 
         # Mark node as retired.
-        node.state = "retired"
-        node.retired_at = datetime.now(timezone.utc)
+        node.state = "archived"
+        node.archived_at = datetime.now(timezone.utc)
 
         await db.flush()
         logger.info(

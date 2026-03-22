@@ -1,0 +1,256 @@
+/**
+ * Cluster store — suggestion state, cluster detail, paste detection.
+ *
+ * Manages auto-suggestion on paste and cluster tree data for the topology view.
+ * Replaces the former patterns.svelte.ts store.
+ */
+
+import {
+  matchPattern, getClusterDetail, getClusterTree, getClusterStats,
+  getClusterTemplates,
+  type ClusterMatchResponse, type ClusterDetail, type ClusterNode, type ClusterStats,
+} from '$lib/api/clusters';
+
+const PASTE_CHAR_DELTA = 50;
+const PASTE_DEBOUNCE_MS = 300;
+const SUGGESTION_AUTO_DISMISS_MS = 10_000;
+
+/** Shape of a match result from the cluster match endpoint. */
+export type ClusterMatch = NonNullable<ClusterMatchResponse['match']>;
+
+class ClusterStore {
+  // Suggestion state
+  suggestion = $state<ClusterMatch | null>(null);
+  suggestionVisible = $state(false);
+
+  // Cluster detail (Inspector)
+  selectedClusterId = $state<string | null>(null);
+  clusterDetail = $state<ClusterDetail | null>(null);
+  clusterDetailLoading = $state(false);
+  clusterDetailError = $state<string | null>(null);
+
+  // Taxonomy tree and stats (unified)
+  taxonomyTree = $state<ClusterNode[]>([]);
+  taxonomyStats = $state<ClusterStats | null>(null);
+  taxonomyLoading = $state(false);
+  taxonomyError = $state<string | null>(null);
+
+  // Templates
+  templates = $state<ClusterNode[]>([]);
+
+  // Internal
+  private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private _dismissTimer: ReturnType<typeof setTimeout> | null = null;
+  private _lastLength = 0;
+  private _loadGeneration = 0;
+  private _clusterGeneration = 0;
+
+  /**
+   * Called on paste/input — checks if content delta exceeds threshold,
+   * debounces, then calls the match endpoint.
+   */
+  checkForPatterns(text: string): void {
+    const delta = Math.abs(text.length - this._lastLength);
+    this._lastLength = text.length;
+
+    if (delta < PASTE_CHAR_DELTA) return;
+
+    // Debounce
+    if (this._debounceTimer) clearTimeout(this._debounceTimer);
+    this._debounceTimer = setTimeout(async () => {
+      try {
+        const resp = await matchPattern(text);
+        if (resp.match) {
+          this.suggestion = resp.match;
+          this.suggestionVisible = true;
+          this._startDismissTimer();
+        } else {
+          this.suggestion = null;
+          this.suggestionVisible = false;
+        }
+      } catch (err) {
+        console.warn('Pattern match failed:', err);
+      }
+    }, PASTE_DEBOUNCE_MS);
+  }
+
+  /**
+   * User clicked [Apply] — returns the meta-pattern IDs for pipeline injection.
+   */
+  applySuggestion(): string[] | null {
+    if (!this.suggestion) return null;
+    const ids = this.suggestion.meta_patterns.map(mp => mp.id);
+    this.dismissSuggestion();
+    return ids;
+  }
+
+  /**
+   * User clicked [Skip] or auto-dismiss timer fired.
+   */
+  dismissSuggestion(): void {
+    this.suggestion = null;
+    this.suggestionVisible = false;
+    if (this._dismissTimer) {
+      clearTimeout(this._dismissTimer);
+      this._dismissTimer = null;
+    }
+  }
+
+  async loadTree(): Promise<void> {
+    const gen = ++this._loadGeneration;
+    this.taxonomyLoading = true;
+    this.taxonomyError = null;
+    try {
+      const [tree, stats] = await Promise.all([getClusterTree(), getClusterStats()]);
+      if (gen !== this._loadGeneration) return; // stale response
+      this.taxonomyTree = tree;
+      this.taxonomyStats = stats;
+    } catch (err) {
+      if (gen !== this._loadGeneration) return;
+      this.taxonomyError = (err instanceof Error && err.message) ? err.message : 'Failed to load clusters';
+      console.warn('Cluster tree load failed:', err);
+    } finally {
+      if (gen === this._loadGeneration) {
+        this.taxonomyLoading = false;
+      }
+    }
+  }
+
+  /** Called by SSE handler when taxonomy_changed fires. */
+  invalidateClusters(): void {
+    this.loadTree();
+  }
+
+  /** @deprecated Use invalidateClusters() */
+  invalidateTaxonomy(): void {
+    this.invalidateClusters();
+  }
+
+  /**
+   * Select a cluster for Inspector display. Pass null to deselect.
+   */
+  selectCluster(id: string | null): void {
+    this.selectedClusterId = id;
+    if (!id) {
+      this.clusterDetail = null;
+      this.clusterDetailError = null;
+      return;
+    }
+    this._loadClusterDetail(id);
+  }
+
+  /** @deprecated Use selectCluster() */
+  selectFamily(id: string | null): void {
+    this.selectCluster(id);
+  }
+
+  private async _loadClusterDetail(id: string): Promise<void> {
+    const gen = ++this._clusterGeneration;
+    this.clusterDetailLoading = true;
+    this.clusterDetailError = null;
+    try {
+      const detail = await getClusterDetail(id);
+      if (gen !== this._clusterGeneration) return; // stale response
+      this.clusterDetail = detail;
+    } catch (err) {
+      if (gen !== this._clusterGeneration) return;
+      this.clusterDetailError = (err instanceof Error && err.message) ? err.message : 'Failed to load cluster';
+      this.clusterDetail = null;
+    } finally {
+      if (gen === this._clusterGeneration) {
+        this.clusterDetailLoading = false;
+      }
+    }
+  }
+
+  /** Load template clusters. */
+  async loadTemplates(): Promise<void> {
+    try {
+      const resp = await getClusterTemplates({ limit: 100 });
+      this.templates = resp.items;
+    } catch (err) {
+      console.warn('Template load failed:', err);
+    }
+  }
+
+  /** Spawn a new optimization from a template cluster.
+   *  Returns the prompt, strategy, and label so the caller (ClusterNavigator)
+   *  can write them to forgeStore/editorStore without a circular import.
+   *  Returns null on empty optimizations or API failure. */
+  async spawnTemplate(clusterId: string): Promise<{ prompt: string; strategy: string | null; label: string } | null> {
+    try {
+      const detail = await getClusterDetail(clusterId);
+      if (!detail?.optimizations?.length) return null;
+
+      // Find highest-scoring member
+      const best = detail.optimizations.reduce((a, b) =>
+        (b.overall_score ?? 0) > (a.overall_score ?? 0) ? b : a
+      );
+
+      return {
+        prompt: best.raw_prompt ?? '',
+        strategy: detail.preferred_strategy ?? null,
+        label: detail.label,
+      };
+    } catch (err) {
+      console.warn('spawnTemplate failed:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Reset last length tracking (call when prompt is cleared).
+   */
+  resetTracking(): void {
+    this._lastLength = 0;
+  }
+
+  // -- Legacy compatibility aliases --
+
+  /** @deprecated Use selectedClusterId */
+  get selectedFamilyId(): string | null { return this.selectedClusterId; }
+  set selectedFamilyId(v: string | null) { this.selectedClusterId = v; }
+
+  /** @deprecated Use clusterDetail */
+  get familyDetail(): ClusterDetail | null { return this.clusterDetail; }
+
+  /** @deprecated Use clusterDetailLoading */
+  get familyDetailLoading(): boolean { return this.clusterDetailLoading; }
+
+  /** @deprecated Use clusterDetailError */
+  get familyDetailError(): string | null { return this.clusterDetailError; }
+
+  /** @internal Test-only: restore initial state */
+  _reset() {
+    this.suggestion = null;
+    this.suggestionVisible = false;
+    this.selectedClusterId = null;
+    this.clusterDetail = null;
+    this.clusterDetailLoading = false;
+    this.clusterDetailError = null;
+    this.taxonomyTree = [];
+    this.taxonomyStats = null;
+    this.taxonomyLoading = false;
+    this.taxonomyError = null;
+    this.templates = [];
+    if (this._debounceTimer) clearTimeout(this._debounceTimer);
+    if (this._dismissTimer) clearTimeout(this._dismissTimer);
+    this._debounceTimer = null;
+    this._dismissTimer = null;
+    this._lastLength = 0;
+    this._loadGeneration = 0;
+    this._clusterGeneration = 0;
+  }
+
+  private _startDismissTimer(): void {
+    if (this._dismissTimer) clearTimeout(this._dismissTimer);
+    this._dismissTimer = setTimeout(() => {
+      this.dismissSuggestion();
+    }, SUGGESTION_AUTO_DISMISS_MS);
+  }
+}
+
+export const clustersStore = new ClusterStore();
+
+/** @deprecated Use clustersStore */
+export const patternsStore = clustersStore;

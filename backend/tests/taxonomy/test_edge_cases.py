@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from sqlalchemy import select
 
-from app.models import Optimization, PatternFamily, TaxonomyNode
+from app.models import Optimization, PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 from tests.taxonomy.conftest import EMBEDDING_DIM
 
@@ -45,7 +45,7 @@ async def test_identical_embeddings_converge(db, mock_embedding, mock_provider):
         await engine.process_optimization(opt.id, db)
 
     # Should have at most 2-3 families, not 10
-    result = await db.execute(select(PatternFamily))
+    result = await db.execute(select(PromptCluster))
     families = result.scalars().all()
     assert len(families) <= 3, f"Expected convergence but got {len(families)} families"
 
@@ -127,7 +127,7 @@ async def test_no_nan_in_node_metrics(db, mock_embedding, mock_provider):
 
     await engine.run_warm_path(db)
 
-    result = await db.execute(select(TaxonomyNode))
+    result = await db.execute(select(PromptCluster))
     nodes = result.scalars().all()
     for node in nodes:
         if node.coherence is not None:

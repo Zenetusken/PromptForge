@@ -84,6 +84,60 @@ async def lifespan(app: FastAPI):
             )
             app.state.taxonomy_engine = engine
             set_engine(engine)
+
+            # Warm-load embedding index from active cluster centroids
+            try:
+                import numpy as _np
+                from sqlalchemy import select as _select
+
+                from app.models import PromptCluster
+
+                async with async_session_factory() as _db:
+                    _clusters = (
+                        await _db.execute(
+                            _select(PromptCluster).where(
+                                PromptCluster.state != "archived"
+                            )
+                        )
+                    ).scalars().all()
+                    _centroids: dict[str, _np.ndarray] = {}
+                    for _c in _clusters:
+                        if _c.centroid_embedding:
+                            try:
+                                _emb = _np.frombuffer(
+                                    _c.centroid_embedding, dtype=_np.float32
+                                )
+                                if _emb.shape[0] == 384:
+                                    _centroids[_c.id] = _emb
+                            except (ValueError, TypeError):
+                                continue
+                    await engine.embedding_index.rebuild(_centroids)
+                    logger.info(
+                        "EmbeddingIndex warm-loaded: %d centroids",
+                        len(_centroids),
+                    )
+            except Exception as idx_exc:
+                logger.warning(
+                    "EmbeddingIndex warm-load failed (non-fatal): %s", idx_exc
+                )
+
+            # Startup: backfill orphan optimizations with null cluster_id
+            try:
+                from app.services.prompt_lifecycle import PromptLifecycleService
+                async with async_session_factory() as _db:
+                    lifecycle = PromptLifecycleService()
+                    orphans_linked = await lifecycle.backfill_orphans(
+                        _db, engine.embedding_index
+                    )
+                    await _db.commit()
+                    logger.info(
+                        "Backfill: %d orphan optimizations linked", orphans_linked
+                    )
+            except Exception as backfill_exc:
+                logger.warning(
+                    "Orphan backfill failed (non-fatal): %s", backfill_exc
+                )
+
             logger.info("Taxonomy extraction listener started — subscribing to event bus")
 
             async for event in event_bus.subscribe():
@@ -99,6 +153,29 @@ async def lifespan(app: FastAPI):
                             try:
                                 async with async_session_factory() as db:
                                     await engine.process_optimization(oid, db)
+                                    # Hot path: check cluster promotion after
+                                    # process_optimization writes OptimizationPattern
+                                    from sqlalchemy import select as _sel
+
+                                    from app.models import OptimizationPattern as _OptPat
+                                    from app.services.prompt_lifecycle import (
+                                        PromptLifecycleService,
+                                    )
+                                    _row = (await db.execute(
+                                        _sel(_OptPat).where(
+                                            _OptPat.optimization_id == oid,
+                                            _OptPat.relationship == "source",
+                                        )
+                                    )).scalar_one_or_none()
+                                    if _row is not None and _row.cluster_id:
+                                        lifecycle = PromptLifecycleService()
+                                        await lifecycle.check_promotion(
+                                            db, _row.cluster_id
+                                        )
+                                        await lifecycle.update_strategy_affinity(
+                                            db, _row.cluster_id
+                                        )
+                                        await db.commit()
                             except Exception as task_exc:
                                 logger.error(
                                     "Background taxonomy extraction failed for %s: %s",
@@ -135,6 +212,9 @@ async def lifespan(app: FastAPI):
                     engine = getattr(app.state, "taxonomy_engine", None)
                     if engine:
                         from app.database import async_session_factory
+                        from app.services.prompt_lifecycle import (
+                            PromptLifecycleService,
+                        )
                         async with async_session_factory() as db:
                             result = await engine.run_warm_path(db)
                             if result:
@@ -145,6 +225,11 @@ async def lifespan(app: FastAPI):
                                     result.operations_attempted,
                                     result.snapshot_id,
                                 )
+                            # Warm path: curation + usage decay after clustering
+                            lifecycle = PromptLifecycleService()
+                            await lifecycle.curate(db)
+                            await lifecycle.decay_usage(db)
+                            await db.commit()
                 except Exception as exc:
                     logger.error("Warm path timer failed: %s", exc, exc_info=True)
         except asyncio.CancelledError:
@@ -323,14 +408,8 @@ except ImportError:
     pass
 
 try:
-    from app.routers.patterns import router as patterns_router
-    app.include_router(patterns_router)
-except ImportError:
-    pass
-
-try:
-    from app.routers.taxonomy import router as taxonomy_router
-    app.include_router(taxonomy_router)
+    from app.routers.clusters import router as clusters_router
+    app.include_router(clusters_router)
 except ImportError:
     pass
 

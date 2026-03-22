@@ -51,7 +51,7 @@ export interface OptimizationResult {
   context_sources: Record<string, boolean> | null;
   intent_label: string | null;
   domain: string | null;
-  family_id: string | null;
+  cluster_id: string | null;
 }
 
 export interface SSEEvent {
@@ -75,7 +75,7 @@ export interface HistoryItem {
   scoring_mode?: string;
   intent_label: string | null;
   domain: string | null;
-  family_id: string | null;
+  cluster_id: string | null;
   feedback_rating: string | null;
 }
 

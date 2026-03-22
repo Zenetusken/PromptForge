@@ -1,5 +1,5 @@
 <script lang="ts">
-  import PatternNavigator from './PatternNavigator.svelte';
+  import ClusterNavigator from './ClusterNavigator.svelte';
   import { githubStore } from '$lib/stores/github.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
@@ -11,7 +11,7 @@
   import { getSettings, getProviders, getHistory, getOptimization, getApiKey, setApiKey, deleteApiKey, getStrategies, getStrategy, updateStrategy } from '$lib/api/client';
   import type { SettingsResponse, ProvidersResponse, HistoryItem, ApiKeyStatus, StrategyInfo } from '$lib/api/client';
 
-  type Activity = 'editor' | 'history' | 'patterns' | 'github' | 'settings';
+  type Activity = 'editor' | 'history' | 'clusters' | 'github' | 'settings';
 
   let { active }: { active: Activity } = $props();
 
@@ -345,8 +345,8 @@
     </div>
 
   <!-- ============ PATTERNS PANEL ============ -->
-  {:else if active === 'patterns'}
-    <PatternNavigator />
+  {:else if active === 'clusters'}
+    <ClusterNavigator />
 
   <!-- ============ GITHUB PANEL ============ -->
   {:else if active === 'github'}

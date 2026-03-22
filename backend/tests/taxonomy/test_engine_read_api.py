@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.models import TaxonomyNode
+from app.models import PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 from tests.taxonomy.conftest import EMBEDDING_DIM
 
@@ -22,9 +22,9 @@ async def test_get_tree_returns_confirmed_and_candidate(db, mock_embedding, mock
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
     rng = np.random.RandomState(42)
 
-    for i, state in enumerate(["confirmed", "candidate", "retired"]):
+    for i, state in enumerate(["active", "candidate", "archived"]):
         centroid = rng.randn(EMBEDDING_DIM).astype(np.float32)
-        node = TaxonomyNode(
+        node = PromptCluster(
             label=f"node-{state}",
             centroid_embedding=centroid.tobytes(),
             member_count=5,
@@ -35,9 +35,9 @@ async def test_get_tree_returns_confirmed_and_candidate(db, mock_embedding, mock
 
     tree = await engine.get_tree(db)
     labels = [n["label"] for n in tree]
-    assert "node-confirmed" in labels
+    assert "node-active" in labels
     assert "node-candidate" in labels
-    assert "node-retired" not in labels
+    assert "node-archived" not in labels
 
 
 @pytest.mark.asyncio
@@ -47,12 +47,12 @@ async def test_get_node_returns_detail(db, mock_embedding, mock_provider):
     rng = np.random.RandomState(42)
 
     centroid = rng.randn(EMBEDDING_DIM).astype(np.float32)
-    node = TaxonomyNode(
+    node = PromptCluster(
         label="API Architecture",
         centroid_embedding=centroid.tobytes(),
         member_count=10,
         coherence=0.85,
-        state="confirmed",
+        state="active",
         color_hex="#a855f7",
     )
     db.add(node)
@@ -62,7 +62,7 @@ async def test_get_node_returns_detail(db, mock_embedding, mock_provider):
     assert detail is not None
     assert detail["label"] == "API Architecture"
     assert detail["member_count"] == 10
-    assert detail["state"] == "confirmed"
+    assert detail["state"] == "active"
 
 
 @pytest.mark.asyncio
@@ -78,7 +78,7 @@ async def test_get_stats_empty(db, mock_embedding, mock_provider):
     """get_stats on empty DB returns zero counts."""
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
     stats = await engine.get_stats(db)
-    assert stats["nodes"]["confirmed"] == 0
+    assert stats["nodes"]["active"] == 0
     assert stats["nodes"]["candidate"] == 0
     assert stats["total_families"] == 0
     assert stats["q_system"] is None
@@ -93,9 +93,9 @@ async def test_get_stats_counts(db, mock_embedding, mock_provider):
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
     rng = np.random.RandomState(42)
 
-    for state in ["confirmed", "confirmed", "candidate"]:
+    for state in ["active", "active", "candidate"]:
         centroid = rng.randn(EMBEDDING_DIM).astype(np.float32)
-        node = TaxonomyNode(
+        node = PromptCluster(
             label=f"node-{state}",
             centroid_embedding=centroid.tobytes(),
             member_count=5,
@@ -105,6 +105,6 @@ async def test_get_stats_counts(db, mock_embedding, mock_provider):
     await db.commit()
 
     stats = await engine.get_stats(db)
-    assert stats["nodes"]["confirmed"] == 2
+    assert stats["nodes"]["active"] == 2
     assert stats["nodes"]["candidate"] == 1
     assert stats["total_families"] == 0  # no families created in this test

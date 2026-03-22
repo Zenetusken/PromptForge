@@ -58,7 +58,7 @@ class TestComputeQSystem:
         """Single confirmed node: coherence=1.0, separation=1.0."""
         from app.services.taxonomy.quality import NodeMetrics
 
-        node = NodeMetrics(coherence=1.0, separation=1.0, state="confirmed")
+        node = NodeMetrics(coherence=1.0, separation=1.0, state="active")
         score = compute_q_system([node], QWeights.from_ramp(0.0), coverage=1.0)
         assert 0.0 <= score <= 1.0
         assert score > 0.5  # should be high with perfect metrics
@@ -67,8 +67,8 @@ class TestComputeQSystem:
         from app.services.taxonomy.quality import NodeMetrics
 
         nodes = [
-            NodeMetrics(coherence=0.8, separation=0.7, state="confirmed"),
-            NodeMetrics(coherence=0.9, separation=0.6, state="confirmed"),
+            NodeMetrics(coherence=0.8, separation=0.7, state="active"),
+            NodeMetrics(coherence=0.9, separation=0.6, state="active"),
         ]
         score = compute_q_system(nodes, QWeights.from_ramp(0.5), coverage=0.95)
         assert 0.0 <= score <= 1.0
@@ -76,7 +76,7 @@ class TestComputeQSystem:
     def test_nan_replaced_with_zero(self):
         from app.services.taxonomy.quality import NodeMetrics
 
-        node = NodeMetrics(coherence=float("nan"), separation=0.5, state="confirmed")
+        node = NodeMetrics(coherence=float("nan"), separation=0.5, state="active")
         score = compute_q_system([node], QWeights.from_ramp(0.0), coverage=1.0)
         assert math.isfinite(score)
 
@@ -84,8 +84,8 @@ class TestComputeQSystem:
         from app.services.taxonomy.quality import NodeMetrics
 
         nodes = [
-            NodeMetrics(coherence=0.8, separation=0.7, state="confirmed"),
-            NodeMetrics(coherence=0.0, separation=0.0, state="retired"),
+            NodeMetrics(coherence=0.8, separation=0.7, state="active"),
+            NodeMetrics(coherence=0.0, separation=0.0, state="archived"),
         ]
         score = compute_q_system(nodes, QWeights.from_ramp(0.0), coverage=1.0)
         # Retired node should not drag score down

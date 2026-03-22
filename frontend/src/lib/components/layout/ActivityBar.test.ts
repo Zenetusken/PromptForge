@@ -18,7 +18,7 @@ describe('ActivityBar', () => {
     const buttons = screen.getAllByRole('button');
     // 5 activity buttons (may include logo button)
     const activityButtons = screen.getAllByRole('button').filter(b =>
-      ['Editor', 'History', 'Patterns', 'GitHub', 'Settings'].includes(b.getAttribute('aria-label') ?? '')
+      ['Editor', 'History', 'Clusters', 'GitHub', 'Settings'].includes(b.getAttribute('aria-label') ?? '')
     );
     expect(activityButtons).toHaveLength(5);
   });
@@ -33,9 +33,9 @@ describe('ActivityBar', () => {
     expect(screen.getByRole('button', { name: 'History' })).toBeInTheDocument();
   });
 
-  it('renders a Patterns button', () => {
+  it('renders a Clusters button', () => {
     render(ActivityBar);
-    expect(screen.getByRole('button', { name: 'Patterns' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clusters' })).toBeInTheDocument();
   });
 
   it('renders a GitHub button', () => {
@@ -57,7 +57,7 @@ describe('ActivityBar', () => {
   it('non-active buttons have aria-pressed=false', () => {
     render(ActivityBar);
     expect(screen.getByRole('button', { name: 'History' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'Patterns' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Clusters' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-pressed', 'false');
   });
 
@@ -84,11 +84,11 @@ describe('ActivityBar', () => {
     expect(editorBtn).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('clicking Patterns makes it active', async () => {
+  it('clicking Clusters makes it active', async () => {
     const user = userEvent.setup();
     render(ActivityBar);
-    await user.click(screen.getByRole('button', { name: 'Patterns' }));
-    expect(screen.getByRole('button', { name: 'Patterns' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Clusters' }));
+    expect(screen.getByRole('button', { name: 'Clusters' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('clicking Settings makes it active', async () => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { formatScore } from '$lib/utils/formatting';
 
   interface Props {
@@ -9,30 +9,27 @@
   let { onApply }: Props = $props();
 
   function handleApply() {
-    const patterns = patternsStore.applySuggestion();
+    const patterns = clustersStore.applySuggestion();
     if (patterns) onApply(patterns);
   }
 
   function handleSkip() {
-    patternsStore.dismissSuggestion();
+    clustersStore.dismissSuggestion();
   }
 </script>
 
-{#if patternsStore.suggestionVisible && patternsStore.suggestion}
-  {@const match = patternsStore.suggestion}
+{#if clustersStore.suggestionVisible && clustersStore.suggestion}
+  {@const match = clustersStore.suggestion}
   <div class="suggestion-banner" role="alert">
     <div class="suggestion-content">
       <div class="suggestion-header">
         <span class="suggestion-icon">&#x27E1;</span>
         <span class="suggestion-label">
-          Matches "<strong>{match.family.intent_label}</strong>" pattern ({Math.round(match.similarity * 100)}%)
+          Matches "<strong>{match.cluster.label}</strong>" pattern ({Math.round(match.similarity * 100)}%)
         </span>
       </div>
       <div class="suggestion-meta">
         {match.meta_patterns.length} meta-pattern{match.meta_patterns.length !== 1 ? 's' : ''} available
-        {#if match.family.avg_score != null}
-          &middot; avg score {formatScore(match.family.avg_score)}
-        {/if}
       </div>
     </div>
     <div class="suggestion-actions">
@@ -96,9 +93,31 @@
     flex-shrink: 0;
   }
 
+  .action-btn {
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--color-contour);
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 
+  .action-btn:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-dim);
+  }
 
+  .action-btn--primary {
+    color: var(--color-neon-cyan);
+    border-color: var(--color-neon-cyan);
+  }
 
+  .action-btn--primary:hover {
+    background: color-mix(in srgb, var(--color-neon-cyan) 8%, transparent);
+  }
 
 
 </style>

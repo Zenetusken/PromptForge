@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import ProviderBadge from '$lib/components/shared/ProviderBadge.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
@@ -15,8 +15,8 @@
   const provider = $derived(forgeStore.provider);
   const version = $derived(forgeStore.version);
 
-  // Pattern count derived from taxonomy stats (loaded by patternsStore.loadTree)
-  const patternCount = $derived(patternsStore.taxonomyStats?.nodes?.confirmed ?? null);
+  // Cluster count derived from taxonomy stats (loaded by clustersStore.loadTree)
+  const clusterCount = $derived(clustersStore.taxonomyStats?.nodes?.active ?? null);
 
   const phaseDisplay = $derived(getPhaseLabel(forgeStore.status)?.toLowerCase() ?? null);
 
@@ -70,12 +70,12 @@
 
   <!-- Right side: pattern count + keyboard shortcut hint -->
   <div class="status-right">
-    {#if patternCount !== null && patternCount > 0}
-      <span class="status-patterns" title="{patternCount} pattern families">{patternCount} patterns</span>
+    {#if clusterCount !== null && clusterCount > 0}
+      <span class="status-patterns" title="{clusterCount} active clusters">{clusterCount} clusters</span>
     {/if}
-    {#if patternsStore.taxonomyStats?.q_system != null}
+    {#if clustersStore.taxonomyStats?.q_system != null}
       <span class="statusbar-item" title="Taxonomy health (Q_system)">
-        Q: <span style="color: {qHealthColor(patternsStore.taxonomyStats.q_system)}">{patternsStore.taxonomyStats.q_system.toFixed(2)}</span>
+        Q: <span style="color: {qHealthColor(clustersStore.taxonomyStats.q_system)}">{clustersStore.taxonomyStats.q_system.toFixed(2)}</span>
       </span>
     {/if}
     <span class="status-kbd" aria-label="Open command palette with Ctrl+K">Ctrl+K</span>

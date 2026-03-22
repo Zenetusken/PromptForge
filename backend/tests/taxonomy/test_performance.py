@@ -8,7 +8,7 @@ import time
 import numpy as np
 import pytest
 
-from app.models import Optimization, PatternFamily, TaxonomyNode
+from app.models import Optimization, PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 from tests.taxonomy.conftest import EMBEDDING_DIM
 
@@ -43,26 +43,26 @@ async def test_match_prompt_under_100ms(db, mock_embedding, mock_provider):
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
 
     # Create taxonomy nodes and families so the matching code exercises
-    # the full search path (match_prompt filters on taxonomy_node_id IS NOT NULL).
+    # the full search path (match_prompt filters on parent_id IS NOT NULL).
     rng = np.random.RandomState(0)
     for i in range(10):
         centroid = rng.randn(EMBEDDING_DIM).astype(np.float32)
         centroid /= np.linalg.norm(centroid) + 1e-9
 
-        node = TaxonomyNode(
+        node = PromptCluster(
             label=f"node-{i}",
             centroid_embedding=centroid.tobytes(),
             member_count=5,
-            state="confirmed",
+            state="active",
         )
         db.add(node)
         await db.flush()
 
-        f = PatternFamily(
-            intent_label=f"family-{i}",
+        f = PromptCluster(
+            label=f"family-{i}",
             domain="general",
             centroid_embedding=centroid.tobytes(),
-            taxonomy_node_id=node.id,
+            parent_id=node.id,
         )
         db.add(f)
     await db.commit()

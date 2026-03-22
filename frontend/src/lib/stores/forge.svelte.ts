@@ -5,7 +5,7 @@ import {
 } from '$lib/api/client';
 import type { OptimizationResult, DimensionScores, SSEEvent } from '$lib/api/client';
 import { editorStore } from '$lib/stores/editor.svelte';
-import { patternsStore } from '$lib/stores/patterns.svelte';
+import { clustersStore } from '$lib/stores/clusters.svelte';
 import { addToast } from '$lib/stores/toast.svelte';
 
 export type ForgeStatus = 'idle' | 'analyzing' | 'optimizing' | 'scoring' | 'complete' | 'error' | 'passthrough';
@@ -37,8 +37,8 @@ class ForgeStore {
   // Applied meta-pattern IDs from knowledge graph paste detection
   appliedPatternIds = $state<string[] | null>(null);
 
-  // Family link from knowledge graph (set when optimization is linked to a pattern family)
-  familyId = $state<string | null>(null);
+  // Cluster link (set when optimization is linked to a prompt cluster)
+  clusterId = $state<string | null>(null);
 
   /** Routing decision from the backend's first SSE event per optimize stream. */
   routingDecision = $state<{ tier: string; provider: string | null; reason: string; degraded_from: string | null } | null>(null);
@@ -92,7 +92,7 @@ class ForgeStore {
     const patternIds = this.appliedPatternIds;
 
     // Deselect pattern family so Inspector shows forge progress
-    patternsStore.selectFamily(null);
+    clustersStore.selectCluster(null);
 
     // Clear shared state
     this.error = null;
@@ -108,7 +108,7 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
     this.appliedPatternIds = null;
-    this.familyId = null;
+    this.clusterId = null;
     this.routingDecision = null;
 
     this.status = 'analyzing';
@@ -196,6 +196,9 @@ class ForgeStore {
         this.initialSuggestions = data.suggestions;
       }
       this.loadFromRecord(data as OptimizationResult);
+    } else if (eventType === 'context_injected') {
+      const d = event as unknown as { patterns?: number };
+      addToast('created', `${d.patterns ?? 0} patterns auto-injected`);
     } else if (eventType === 'error') {
       this.error = (event.error || event.message) as string;
       this.status = 'error';
@@ -251,9 +254,9 @@ class ForgeStore {
     this.scoreDeltas = opt.score_deltas ?? null;
 
     // Bidirectional family link — auto-select in patterns store so Inspector shows family detail
-    this.familyId = opt.family_id ?? null;
-    if (this.familyId) {
-      patternsStore.selectFamily(this.familyId);
+    this.clusterId = opt.cluster_id ?? null;
+    if (this.clusterId) {
+      clustersStore.selectCluster(this.clusterId);
     }
 
     // Cache the result in the editor store so each result tab has its own data
@@ -271,7 +274,7 @@ class ForgeStore {
     this.assembledPrompt = null;
     this.passthroughTraceId = null;
     this.passthroughStrategy = null;
-    this.familyId = null;
+    this.clusterId = null;
     this.routingDecision = null;
     this.status = 'idle';
   }
@@ -344,9 +347,9 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
     this.appliedPatternIds = null;
-    this.familyId = null;
+    this.clusterId = null;
     this.routingDecision = null;
-    patternsStore.resetTracking();
+    clustersStore.resetTracking();
   }
 }
 

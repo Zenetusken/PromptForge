@@ -1,7 +1,7 @@
 <script lang="ts">
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
-  import { patternsStore } from '$lib/stores/patterns.svelte';
+  import { clustersStore } from '$lib/stores/clusters.svelte';
   import { getStrategies } from '$lib/api/client';
   import PatternSuggestion from './PatternSuggestion.svelte';
   import { getPhaseLabel } from '$lib/utils/dimensions';
@@ -61,7 +61,7 @@
 
   function handleInput(e: Event) {
     const target = e.target as HTMLTextAreaElement;
-    patternsStore.checkForPatterns(target.value);
+    clustersStore.checkForPatterns(target.value);
   }
 
   // Track detached effect so we can clean up on re-invocation or unmount

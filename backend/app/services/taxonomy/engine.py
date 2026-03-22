@@ -4,11 +4,10 @@ Taxonomy Engine.
 Spec Section 2.3, 2.5, 2.6, 3.5, 4.2, 6.4, 7.3, 7.5, 8.5.
 
 Responsibilities:
-  - process_optimization: embed + assign family + extract meta-patterns (hot path)
+  - process_optimization: embed + assign cluster + extract meta-patterns (hot path)
   - run_warm_path: periodic re-clustering with lifecycle (split > emerge > merge > retire)
   - run_cold_path: full HDBSCAN + UMAP refit (the "defrag" operation)
-  - map_domain: embed domain_raw, optional Bayesian blend with applied pattern
-    centroids, cosine search over confirmed TaxonomyNode centroids.
+  - map_domain / match_prompt: delegated to matching.py
 """
 
 from __future__ import annotations
@@ -19,72 +18,50 @@ import logging
 from dataclasses import dataclass
 
 import numpy as np
-from pydantic import BaseModel
-from pydantic import Field as PydanticField
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PROMPTS_DIR, settings
 from app.models import (
-    MetaPattern,
     Optimization,
     OptimizationPattern,
-    PatternFamily,
-    TaxonomyNode,
+    PromptCluster,
     TaxonomySnapshot,
 )
 from app.providers.base import LLMProvider
 from app.services.embedding_service import EmbeddingService
 from app.services.prompt_loader import PromptLoader
+from app.services.taxonomy.embedding_index import EmbeddingIndex
+from app.services.taxonomy.family_ops import (
+    FAMILY_MERGE_THRESHOLD,
+    assign_cluster,
+    build_breadcrumb,
+    extract_meta_patterns,
+    merge_meta_pattern,
+)
+from app.services.taxonomy.matching import (
+    PatternMatch,
+    TaxonomyMapping,
+)
+from app.services.taxonomy.matching import (
+    map_domain as _map_domain,
+)
+from app.services.taxonomy.matching import (
+    match_prompt as _match_prompt,
+)
 from app.services.taxonomy.sparkline import compute_sparkline_data
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants — cosine similarity thresholds
+# Constants — warm path operational limits
+# (Matching thresholds imported from matching.py and re-exported for
+#  backward compatibility)
 # ---------------------------------------------------------------------------
 
-FAMILY_MERGE_THRESHOLD = 0.78
-PATTERN_MERGE_THRESHOLD = 0.82
-DOMAIN_ALIGNMENT_FLOOR = 0.35
-
-# Pattern matching thresholds (Spec Section 7.2, 7.4)
-FAMILY_MATCH_THRESHOLD = 0.72
-CLUSTER_MATCH_THRESHOLD = 0.60
-CANDIDATE_THRESHOLD = 0.80
-
-# Warm path operational limits
 DEADLOCK_BREAKER_THRESHOLD = 5  # consecutive rejected cycles before forcing
-MAX_META_PATTERNS_PER_EXTRACTION = 5  # max patterns per LLM extraction
 SPLIT_COHERENCE_FLOOR = 0.5  # below this coherence, node is a split candidate
 SPLIT_MIN_MEMBERS = 6  # minimum members before a node can be split
-PROMPT_TRUNCATION_LIMIT = 2000  # max chars for prompts sent to LLM extraction
-
-# ---------------------------------------------------------------------------
-# Public data-transfer objects
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class TaxonomyMapping:
-    """Result of map_domain — may be fully unmapped (taxonomy_node_id is None)."""
-
-    taxonomy_node_id: str | None
-    taxonomy_label: str | None
-    taxonomy_breadcrumb: list[str]
-    domain_raw: str
-
-
-@dataclass
-class PatternMatch:
-    """Result of a pattern similarity search against the knowledge graph."""
-
-    family: PatternFamily | None
-    taxonomy_node: TaxonomyNode | None
-    meta_patterns: list[MetaPattern]
-    similarity: float
-    match_level: str  # "family" | "cluster" | "none"
-    taxonomy_breadcrumb: list[str] | None = None
 
 
 @dataclass
@@ -110,21 +87,6 @@ class ColdPathResult:
 
 
 # ---------------------------------------------------------------------------
-# Pydantic schema for _extract_meta_patterns structured output
-# ---------------------------------------------------------------------------
-
-
-class _ExtractedPatterns(BaseModel):
-    model_config = {"extra": "forbid"}
-    patterns: list[str] = PydanticField(
-        description=(
-            "List of reusable meta-pattern descriptions extracted from the "
-            "optimization (max 5)."
-        ),
-    )
-
-
-# ---------------------------------------------------------------------------
 # TaxonomyEngine
 # ---------------------------------------------------------------------------
 
@@ -145,6 +107,7 @@ class TaxonomyEngine:
         self._embedding = embedding_service or EmbeddingService()
         self._provider = provider
         self._prompt_loader = PromptLoader(PROMPTS_DIR)
+        self._embedding_index = EmbeddingIndex(dim=384)
         # Lock gates concurrent hot-path writes to shared centroid state.
         self._lock: asyncio.Lock = asyncio.Lock()
         # Separate lock for warm/cold path deduplication (Spec Section 2.6).
@@ -155,6 +118,11 @@ class TaxonomyEngine:
         self._warm_path_age: int = 0
         # Set by deadlock breaker — caller should schedule cold path.
         self._cold_path_needed: bool = False
+
+    @property
+    def embedding_index(self) -> EmbeddingIndex:
+        """In-memory embedding search index for PromptCluster centroids."""
+        return self._embedding_index
 
     # ------------------------------------------------------------------
     # Public hot-path entry point
@@ -171,7 +139,7 @@ class TaxonomyEngine:
           1. Load optimization — skip if not 'completed'.
           2. Idempotency check via OptimizationPattern 'source' record.
           3. Embed raw_prompt.
-          4. Find or create PatternFamily via _assign_family().
+          4. Find or create PromptCluster via _assign_cluster().
           5. Extract meta-patterns via _extract_meta_patterns().
           6. Merge meta-patterns via _merge_meta_pattern().
           7. Write OptimizationPattern join record and commit.
@@ -212,40 +180,43 @@ class TaxonomyEngine:
             embedding = await self._embedding.aembed_single(opt.raw_prompt)
             opt.embedding = embedding.astype(np.float32).tobytes()
 
-            # 2. Find or create PatternFamily
+            # 2. Find or create PromptCluster
             # Use domain_raw (free-text from analyzer) as the canonical domain.
             # The taxonomy engine does NOT constrain domains to a hardcoded list —
             # domains are emergent properties discovered through clustering.
             async with self._lock:
-                family = await self._assign_family(
+                cluster = await assign_cluster(
                     db=db,
                     embedding=embedding,
-                    intent_label=opt.intent_label or "general",
+                    label=opt.intent_label or "general",
                     domain=opt.domain_raw or opt.domain or "general",
                     task_type=opt.task_type or "general",
                     overall_score=opt.overall_score,
+                    embedding_index=self._embedding_index,
                 )
 
             # 3. Extract meta-patterns
-            meta_texts = await self._extract_meta_patterns(opt, db)
+            meta_texts = await extract_meta_patterns(
+                opt, db, self._provider, self._prompt_loader,
+            )
 
             # 4. Merge meta-patterns
             for text in meta_texts:
-                await self._merge_meta_pattern(db, family.id, text)
+                await merge_meta_pattern(db, cluster.id, text, self._embedding)
 
             # 5. Write join record
             join = OptimizationPattern(
                 optimization_id=opt.id,
-                family_id=family.id,
+                cluster_id=cluster.id,
                 relationship="source",
             )
             db.add(join)
 
             await db.commit()
             logger.debug(
-                "Taxonomy extraction complete: opt=%s family='%s' meta_patterns=%d",
+                "Taxonomy extraction complete: opt=%s cluster='%s' meta_patterns=%d",
                 optimization_id,
-                family.intent_label,
+                cluster.label,
                 len(meta_texts),
             )
 
@@ -254,8 +225,8 @@ class TaxonomyEngine:
                 from app.services.event_bus import event_bus
                 event_bus.publish("taxonomy_changed", {
                     "optimization_id": optimization_id,
-                    "family_id": family.id,
-                    "family_label": family.intent_label,
+                    "cluster_id": cluster.id,
+                    "cluster_label": cluster.label,
                     "meta_patterns_added": len(meta_texts),
                 })
             except Exception as evt_exc:
@@ -270,7 +241,7 @@ class TaxonomyEngine:
             )
 
     # ------------------------------------------------------------------
-    # Pattern matching (Spec Section 7.2, 7.4, 7.7, 7.9)
+    # Pattern matching — delegated to matching.py
     # ------------------------------------------------------------------
 
     async def match_prompt(
@@ -278,281 +249,9 @@ class TaxonomyEngine:
     ) -> PatternMatch | None:
         """Hierarchical pattern matching for on-paste suggestion.
 
-        Reference: Spec Section 7.2, 7.4, 7.7, 7.9
-
-        Cascade search:
-        1. Embed prompt
-        2. Search leaf families -- if cosine >= family_threshold -> family match
-        3. If no leaf match, search parent clusters -- if cosine >= cluster_threshold -> cluster match
-        4. No match at any level -> return None
-
-        Cold-start: candidate families use strict 0.80 threshold (Spec 7.4).
-        Thresholds adapt per-cluster coherence (Spec 7.9).
+        Delegates to :func:`matching.match_prompt`.
         """
-        from app.services.taxonomy.quality import suggestion_threshold
-
-        # 1. Embed the prompt text
-        query_emb = await self._embedding.aembed_single(prompt_text)
-
-        # ------------------------------------------------------------------
-        # Level 1: Family-level search
-        # ------------------------------------------------------------------
-        result = await db.execute(
-            select(PatternFamily).where(
-                PatternFamily.taxonomy_node_id.isnot(None)
-            )
-        )
-        families = list(result.scalars().all())
-
-        if families:
-            # Build family centroids and load their parent nodes
-            valid_families: list[PatternFamily] = []
-            centroids: list[np.ndarray] = []
-            node_ids: set[str] = set()
-
-            for f in families:
-                try:
-                    c = np.frombuffer(f.centroid_embedding, dtype=np.float32)
-                    if c.shape[0] != query_emb.shape[0]:
-                        continue
-                    centroids.append(c)
-                    valid_families.append(f)
-                    if f.taxonomy_node_id:
-                        node_ids.add(f.taxonomy_node_id)
-                except (ValueError, TypeError):
-                    continue
-
-            skipped = len(families) - len(valid_families)
-            if skipped > 0:
-                logger.warning(
-                    "match_prompt: skipped %d/%d families (dimension mismatch or corrupt centroid)",
-                    skipped, len(families),
-                )
-
-            # Pre-load all referenced taxonomy nodes
-            node_map: dict[str, TaxonomyNode] = {}
-            if node_ids:
-                node_result = await db.execute(
-                    select(TaxonomyNode).where(TaxonomyNode.id.in_(list(node_ids)))
-                )
-                for n in node_result.scalars().all():
-                    node_map[n.id] = n
-
-            if centroids:
-                # Search all family centroids
-                matches = EmbeddingService.cosine_search(
-                    query_emb, centroids, top_k=len(centroids)
-                )
-
-                for idx, score in matches:
-                    family = valid_families[idx]
-                    node = node_map.get(family.taxonomy_node_id) if family.taxonomy_node_id else None
-
-                    # Determine threshold based on node state (Spec 7.4)
-                    if node and node.state == "candidate":
-                        threshold = CANDIDATE_THRESHOLD
-                    elif node:
-                        coherence = node.coherence if node.coherence is not None else 0.0
-                        threshold = suggestion_threshold(
-                            base=FAMILY_MATCH_THRESHOLD, coherence=coherence
-                        )
-                    else:
-                        threshold = FAMILY_MATCH_THRESHOLD
-
-                    if score >= threshold:
-                        # Load meta-patterns for this family
-                        mp_result = await db.execute(
-                            select(MetaPattern).where(
-                                MetaPattern.family_id == family.id
-                            )
-                        )
-                        meta_patterns = list(mp_result.scalars().all())
-
-                        breadcrumb = await self._build_breadcrumb(db, node) if node else []
-
-                        return PatternMatch(
-                            family=family,
-                            taxonomy_node=node,
-                            meta_patterns=meta_patterns,
-                            similarity=score,
-                            match_level="family",
-                            taxonomy_breadcrumb=breadcrumb,
-                        )
-
-        # ------------------------------------------------------------------
-        # Level 2: Cluster-level fallback
-        # ------------------------------------------------------------------
-        node_result = await db.execute(
-            select(TaxonomyNode).where(
-                TaxonomyNode.state.in_(["confirmed", "candidate"])
-            )
-        )
-        all_nodes = list(node_result.scalars().all())
-
-        if all_nodes:
-            valid_nodes: list[TaxonomyNode] = []
-            node_centroids: list[np.ndarray] = []
-
-            for n in all_nodes:
-                try:
-                    c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
-                    if c.shape[0] != query_emb.shape[0]:
-                        continue
-                    node_centroids.append(c)
-                    valid_nodes.append(n)
-                except (ValueError, TypeError):
-                    continue
-
-            skipped_nodes = len(all_nodes) - len(valid_nodes)
-            if skipped_nodes > 0:
-                logger.warning(
-                    "match_prompt: skipped %d/%d taxonomy nodes (dimension mismatch or corrupt centroid)",
-                    skipped_nodes, len(all_nodes),
-                )
-
-            if node_centroids:
-                matches = EmbeddingService.cosine_search(
-                    query_emb, node_centroids, top_k=len(node_centroids)
-                )
-
-                for idx, score in matches:
-                    node = valid_nodes[idx]
-                    coherence = node.coherence if node.coherence is not None else 0.0
-                    # Spec 7.4 strict CANDIDATE_THRESHOLD applies only at family
-                    # level. Cluster-level uses adaptive threshold for all node
-                    # states — the match is more general (parent cluster context).
-                    threshold = suggestion_threshold(
-                        base=CLUSTER_MATCH_THRESHOLD, coherence=coherence
-                    )
-
-                    if score >= threshold:
-                        # Aggregate meta-patterns from top-3 child families
-                        # ranked by cosine similarity to query (Spec 7.7)
-                        child_fam_result = await db.execute(
-                            select(PatternFamily)
-                            .where(PatternFamily.taxonomy_node_id == node.id)
-                        )
-                        candidate_families = list(child_fam_result.scalars().all())
-
-                        # Also include families from child nodes
-                        child_node_result = await db.execute(
-                            select(TaxonomyNode).where(
-                                TaxonomyNode.parent_id == node.id
-                            )
-                        )
-                        child_nodes = list(child_node_result.scalars().all())
-                        child_node_ids = [cn.id for cn in child_nodes]
-
-                        if child_node_ids:
-                            child_child_fam_result = await db.execute(
-                                select(PatternFamily)
-                                .where(
-                                    PatternFamily.taxonomy_node_id.in_(child_node_ids)
-                                )
-                            )
-                            candidate_families.extend(
-                                child_child_fam_result.scalars().all()
-                            )
-
-                        # Rank all candidate families by cosine similarity
-                        # to the query embedding and take top-3
-                        from app.services.taxonomy.clustering import cosine_similarity
-
-                        scored_families: list[tuple[PatternFamily, float]] = []
-                        for fam in candidate_families:
-                            try:
-                                fc = np.frombuffer(
-                                    fam.centroid_embedding, dtype=np.float32
-                                )
-                                if fc.shape[0] != query_emb.shape[0]:
-                                    continue
-                                sim = cosine_similarity(query_emb, fc)
-                                if sim > 0:
-                                    scored_families.append((fam, sim))
-                            except (ValueError, TypeError):
-                                continue
-
-                        scored_families.sort(key=lambda x: x[1], reverse=True)
-                        top_families = [f for f, _ in scored_families[:3]]
-
-                        # Gather meta-patterns from these families
-                        family_ids = [f.id for f in top_families]
-                        if family_ids:
-                            mp_result = await db.execute(
-                                select(MetaPattern).where(
-                                    MetaPattern.family_id.in_(family_ids)
-                                )
-                            )
-                            all_meta_patterns = list(mp_result.scalars().all())
-                        else:
-                            all_meta_patterns = []
-
-                        # Deduplicate at cosine 0.82
-                        deduped = self._deduplicate_meta_patterns(all_meta_patterns)
-
-                        breadcrumb = await self._build_breadcrumb(db, node)
-
-                        return PatternMatch(
-                            family=None,
-                            taxonomy_node=node,
-                            meta_patterns=deduped,
-                            similarity=score,
-                            match_level="cluster",
-                            taxonomy_breadcrumb=breadcrumb,
-                        )
-
-        # ------------------------------------------------------------------
-        # No match at any level
-        # ------------------------------------------------------------------
-        return PatternMatch(
-            family=None,
-            taxonomy_node=None,
-            meta_patterns=[],
-            similarity=0.0,
-            match_level="none",
-        )
-
-    def _deduplicate_meta_patterns(
-        self, patterns: list[MetaPattern]
-    ) -> list[MetaPattern]:
-        """Deduplicate meta-patterns by cosine similarity at PATTERN_MERGE_THRESHOLD.
-
-        Keeps the first occurrence (by order) and drops near-duplicates.
-        Patterns without embeddings are always kept.
-        """
-        if len(patterns) <= 1:
-            return patterns
-
-        from app.services.taxonomy.clustering import cosine_similarity
-
-        deduped: list[MetaPattern] = []
-        deduped_embeddings: list[np.ndarray] = []
-
-        for mp in patterns:
-            if not mp.embedding:
-                deduped.append(mp)
-                continue
-
-            try:
-                emb = np.frombuffer(mp.embedding, dtype=np.float32)
-            except (ValueError, TypeError):
-                deduped.append(mp)
-                continue
-
-            # Check against already-kept patterns
-            is_duplicate = False
-            for kept_emb in deduped_embeddings:
-                if emb.shape != kept_emb.shape:
-                    continue
-                if cosine_similarity(emb, kept_emb) >= PATTERN_MERGE_THRESHOLD:
-                    is_duplicate = True
-                    break
-
-            if not is_duplicate:
-                deduped.append(mp)
-                deduped_embeddings.append(emb)
-
-        return deduped
+        return await _match_prompt(prompt_text, db, self._embedding)
 
     # ------------------------------------------------------------------
     # Warm path (Spec Section 2.3, 2.5, 2.6, 3.5)
@@ -615,14 +314,14 @@ class TaxonomyEngine:
             is_non_regressive,
         )
 
-        # 1. Load all confirmed nodes
+        # 1. Load all active nodes
         result = await db.execute(
-            select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
+            select(PromptCluster).where(PromptCluster.state == "active")
         )
-        confirmed_nodes = list(result.scalars().all())
+        active_nodes = list(result.scalars().all())
 
         # 2. Compute Q_before
-        q_before = self._compute_q_from_nodes(confirmed_nodes)
+        q_before = self._compute_q_from_nodes(active_nodes)
 
         # 3. Gather candidate operations from lifecycle module
         ops_attempted = 0
@@ -631,16 +330,16 @@ class TaxonomyEngine:
         deadlock_breaker_used = False
 
         # --- Priority 1: Split (Spec Section 3.5) ---
-        # Detect split candidates: confirmed nodes with low coherence and enough
+        # Detect split candidates: active nodes with low coherence and enough
         # members to produce viable child clusters.
-        for node in confirmed_nodes:
+        for node in active_nodes:
             coherence = node.coherence if node.coherence is not None else 1.0
             if coherence < SPLIT_COHERENCE_FLOOR and (node.member_count or 0) >= SPLIT_MIN_MEMBERS:
                 ops_attempted += 1
                 # Gather families assigned to this node
                 fam_q = await db.execute(
-                    select(PatternFamily).where(
-                        PatternFamily.taxonomy_node_id == node.id
+                    select(PromptCluster).where(
+                        PromptCluster.parent_id == node.id
                     )
                 )
                 node_families = list(fam_q.scalars().all())
@@ -702,9 +401,9 @@ class TaxonomyEngine:
                                         )
 
         # --- Priority 2: Emerge ---
-        # Load unassigned families (no taxonomy_node_id) for emerge candidates
+        # Load unassigned families (no cluster_id) for emerge candidates
         fam_result = await db.execute(
-            select(PatternFamily).where(PatternFamily.taxonomy_node_id.is_(None))
+            select(PromptCluster).where(PromptCluster.parent_id.is_(None))
         )
         unassigned_families = list(fam_result.scalars().all())
 
@@ -712,12 +411,12 @@ class TaxonomyEngine:
         if len(unassigned_families) >= 3:
             ops_attempted += 1
             embeddings = []
-            family_ids = []
+            cluster_ids = []
             for f in unassigned_families:
                 try:
                     emb = np.frombuffer(f.centroid_embedding, dtype=np.float32)
                     embeddings.append(emb)
-                    family_ids.append(f.id)
+                    cluster_ids.append(f.id)
                 except (ValueError, TypeError):
                     continue
 
@@ -729,7 +428,7 @@ class TaxonomyEngine:
                     for cid in range(cluster_result.n_clusters):
                         mask = cluster_result.labels == cid
                         cluster_fam_ids = [
-                            family_ids[i] for i in range(len(family_ids)) if mask[i]
+                            cluster_ids[i] for i in range(len(cluster_ids)) if mask[i]
                         ]
                         cluster_embs = [
                             embeddings[i] for i in range(len(embeddings)) if mask[i]
@@ -737,7 +436,7 @@ class TaxonomyEngine:
                         if cluster_fam_ids:
                             node = await attempt_emerge(
                                 db=db,
-                                member_family_ids=cluster_fam_ids,
+                                member_cluster_ids=cluster_fam_ids,
                                 embeddings=cluster_embs,
                                 warm_path_age=self._warm_path_age,
                                 provider=self._provider,
@@ -749,11 +448,11 @@ class TaxonomyEngine:
                                     {"type": "emerge", "node_id": node.id}
                                 )
 
-        # Try merge on confirmed nodes that are close in embedding space
-        if len(confirmed_nodes) >= 2:
+        # Try merge on active nodes that are close in embedding space
+        if len(active_nodes) >= 2:
             centroids = []
-            valid_nodes: list[TaxonomyNode] = []
-            for n in confirmed_nodes:
+            valid_nodes: list[PromptCluster] = []
+            for n in active_nodes:
                 try:
                     c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                     centroids.append(c)
@@ -777,10 +476,12 @@ class TaxonomyEngine:
                     ops_attempted += 1
                     from app.services.taxonomy.lifecycle import attempt_merge
 
+                    merge_node_a = valid_nodes[int(best_i)]
+                    merge_node_b = valid_nodes[int(best_j)]
                     merged = await attempt_merge(
                         db=db,
-                        node_a=valid_nodes[int(best_i)],
-                        node_b=valid_nodes[int(best_j)],
+                        node_a=merge_node_a,
+                        node_b=merge_node_b,
                         warm_path_age=self._warm_path_age,
                     )
                     if merged:
@@ -788,9 +489,22 @@ class TaxonomyEngine:
                         operations_log.append(
                             {"type": "merge", "node_id": merged.id}
                         )
+                        # Update embedding index: upsert winner, remove loser
+                        winner_centroid = np.frombuffer(
+                            merged.centroid_embedding, dtype=np.float32
+                        )
+                        await self._embedding_index.upsert(
+                            merged.id, winner_centroid
+                        )
+                        loser = (
+                            merge_node_b
+                            if merged.id == merge_node_a.id
+                            else merge_node_a
+                        )
+                        await self._embedding_index.remove(loser.id)
 
-        # Try retire on idle nodes (member_count == 0 and confirmed)
-        for node in confirmed_nodes:
+        # Try retire on idle nodes (member_count == 0 and active)
+        for node in active_nodes:
             if (node.member_count or 0) == 0:
                 ops_attempted += 1
                 from app.services.taxonomy.lifecycle import attempt_retire
@@ -803,14 +517,15 @@ class TaxonomyEngine:
                 if retired:
                     ops_accepted += 1
                     operations_log.append({"type": "retire", "node_id": node.id})
+                    await self._embedding_index.remove(node.id)
 
         # 4. Update per-node separation and compute Q_after
         result = await db.execute(
-            select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
+            select(PromptCluster).where(PromptCluster.state == "active")
         )
-        confirmed_after = list(result.scalars().all())
-        self._update_per_node_separation(confirmed_after)
-        q_after = self._compute_q_from_nodes(confirmed_after)
+        active_after = list(result.scalars().all())
+        self._update_per_node_separation(active_after)
+        q_after = self._compute_q_from_nodes(active_after)
 
         if ops_accepted > 0 and not is_non_regressive(
             q_before, q_after, self._warm_path_age
@@ -825,11 +540,11 @@ class TaxonomyEngine:
             q_after = q_before
             ops_accepted = 0
             operations_log = []
-            # Re-query confirmed nodes after rollback so cache isn't stale
+            # Re-query active nodes after rollback so cache isn't stale
             result = await db.execute(
-                select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
+                select(PromptCluster).where(PromptCluster.state == "active")
             )
-            confirmed_after = list(result.scalars().all())
+            active_after = list(result.scalars().all())
 
         # 5. Deadlock breaker (Spec Section 2.5)
         if ops_attempted > 0 and ops_accepted == 0:
@@ -883,7 +598,7 @@ class TaxonomyEngine:
                         if forced_fam_ids:
                             node = await attempt_emerge(
                                 db=db,
-                                member_family_ids=forced_fam_ids,
+                                member_cluster_ids=forced_fam_ids,
                                 embeddings=forced_embs,
                                 warm_path_age=self._warm_path_age,
                                 provider=self._provider,
@@ -948,8 +663,8 @@ class TaxonomyEngine:
         """Full HDBSCAN + UMAP refit — the "defrag" operation.
 
         Acquires the same ``_warm_path_lock`` (cold path is a superset of
-        warm path).  Recluster all PatternFamily embeddings, update or create
-        TaxonomyNodes, run UMAP 3D projection with Procrustes alignment,
+        warm path).  Recluster all PromptCluster embeddings, update or create
+        PromptClusters, run UMAP 3D projection with Procrustes alignment,
         regenerate OKLab colors, create snapshot.
 
         Returns:
@@ -1003,13 +718,13 @@ class TaxonomyEngine:
         nodes_created = 0
         nodes_updated = 0
 
-        # 1. Load all PatternFamily embeddings
-        fam_result = await db.execute(select(PatternFamily))
+        # 1. Load all PromptCluster embeddings
+        fam_result = await db.execute(select(PromptCluster))
         families = list(fam_result.scalars().all())
 
         embeddings: list[np.ndarray] = []
-        valid_families: list[PatternFamily] = []
-        family_by_id: dict[str, PatternFamily] = {}
+        valid_families: list[PromptCluster] = []
+        family_by_id: dict[str, PromptCluster] = {}
         for f in families:
             try:
                 emb = np.frombuffer(f.centroid_embedding, dtype=np.float32)
@@ -1018,7 +733,7 @@ class TaxonomyEngine:
                 family_by_id[f.id] = f
             except (ValueError, TypeError):
                 logger.warning(
-                    "Skipping family '%s' — corrupt centroid", f.intent_label
+                    "Skipping cluster '%s' — corrupt centroid", f.label
                 )
 
         # 2. Run HDBSCAN clustering
@@ -1043,17 +758,17 @@ class TaxonomyEngine:
                 umap_fitted=False,
             )
 
-        # 3. Create/update TaxonomyNodes from cluster results
-        # Load existing confirmed nodes for potential updates
+        # 3. Create/update PromptClusters from cluster results
+        # Load existing active nodes for potential updates
         existing_result = await db.execute(
-            select(TaxonomyNode).where(
-                TaxonomyNode.state.in_(["confirmed", "candidate"])
+            select(PromptCluster).where(
+                PromptCluster.state.in_(["active", "candidate"])
             )
         )
         existing_nodes = {n.id: n for n in existing_result.scalars().all()}
 
         node_embeddings: list[np.ndarray] = []
-        all_nodes: list[TaxonomyNode] = []
+        all_nodes: list[PromptCluster] = []
 
         for cid in range(cluster_result.n_clusters):
             mask = cluster_result.labels == cid
@@ -1103,7 +818,7 @@ class TaxonomyEngine:
                 ).tobytes()
                 matched_node.member_count = len(cluster_fam_ids)
                 matched_node.coherence = coherence
-                matched_node.state = "confirmed"
+                matched_node.state = "active"
                 nodes_updated += 1
                 node = matched_node
             else:
@@ -1111,21 +826,21 @@ class TaxonomyEngine:
                 from app.services.taxonomy.labeling import generate_label
 
                 member_texts = [
-                    f.intent_label
+                    f.label
                     for f in valid_families
-                    if f.id in set(cluster_fam_ids) and f.intent_label
+                    if f.id in set(cluster_fam_ids) and f.label
                 ]
                 label = await generate_label(
                     provider=self._provider,
                     member_texts=member_texts,
                     model=settings.MODEL_HAIKU,
                 )
-                node = TaxonomyNode(
+                node = PromptCluster(
                     label=label,
                     centroid_embedding=centroid.astype(np.float32).tobytes(),
                     member_count=len(cluster_fam_ids),
                     coherence=coherence,
-                    state="confirmed",
+                    state="active",
                     color_hex=generate_color(0.0, 0.0, 0.0),
                 )
                 db.add(node)
@@ -1136,7 +851,7 @@ class TaxonomyEngine:
             for fid in cluster_fam_ids:
                 fam = family_by_id.get(fid)
                 if fam:
-                    fam.taxonomy_node_id = node.id
+                    fam.parent_id = node.id
 
             node_embeddings.append(centroid)
             all_nodes.append(node)
@@ -1188,18 +903,18 @@ class TaxonomyEngine:
         # 6. Compute per-node separation and update on each node
         #    Each node's separation = min cosine distance to any other node.
         result = await db.execute(
-            select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
+            select(PromptCluster).where(PromptCluster.state == "active")
         )
-        confirmed_after = list(result.scalars().all())
+        active_after = list(result.scalars().all())
 
-        self._update_per_node_separation(confirmed_after)
+        self._update_per_node_separation(active_after)
 
         # 7. Compute final Q_system (reads node.separation set above)
-        q_system = self._compute_q_from_nodes(confirmed_after)
+        q_system = self._compute_q_from_nodes(active_after)
 
         # 8. Aggregate metrics for snapshot
         node_centroids = []
-        for n in confirmed_after:
+        for n in active_after:
             try:
                 c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                 node_centroids.append(c)
@@ -1207,10 +922,21 @@ class TaxonomyEngine:
                 continue
 
         separation = compute_separation(node_centroids) if len(node_centroids) >= 2 else 1.0
-        coherences = [n.coherence for n in confirmed_after if n.coherence is not None]
+        coherences = [n.coherence for n in active_after if n.coherence is not None]
         mean_coherence = float(np.mean(coherences)) if coherences else 0.0
 
         await db.commit()
+
+        # 8b. Rebuild embedding index from active centroids
+        index_centroids: dict[str, np.ndarray] = {}
+        for n in active_after:
+            try:
+                emb = np.frombuffer(n.centroid_embedding, dtype=np.float32)
+                if emb.shape[0] == 384:
+                    index_centroids[n.id] = emb
+            except (ValueError, TypeError):
+                continue
+        await self._embedding_index.rebuild(index_centroids)
 
         # 9. Create snapshot
         snap = await create_snapshot(
@@ -1252,8 +978,8 @@ class TaxonomyEngine:
     # Warm/cold path helpers
     # ------------------------------------------------------------------
 
-    def _compute_q_from_nodes(self, nodes: list[TaxonomyNode]) -> float:
-        """Compute Q_system from a list of TaxonomyNode rows."""
+    def _compute_q_from_nodes(self, nodes: list[PromptCluster]) -> float:
+        """Compute Q_system from a list of PromptCluster rows."""
         from app.services.taxonomy.quality import (
             NodeMetrics,
             QWeights,
@@ -1269,14 +995,14 @@ class TaxonomyEngine:
                 NodeMetrics(
                     coherence=n.coherence if n.coherence is not None else 0.0,
                     separation=n.separation if n.separation is not None else 1.0,
-                    state=n.state or "confirmed",
+                    state=n.state or "active",
                 )
             )
 
-        # DBCV ramp: gate = ≥5 confirmed nodes, then ramp linearly over
+        # DBCV ramp: gate = >=5 active nodes, then ramp linearly over
         # warm_path_age / 20 observations (Spec Section 2.5).
-        confirmed_count = sum(1 for m in metrics if m.state == "confirmed")
-        if confirmed_count >= 5:
+        active_count = sum(1 for m in metrics if m.state == "active")
+        if active_count >= 5:
             ramp = min(1.0, max(0.0, self._warm_path_age / 20.0))
         else:
             ramp = 0.0
@@ -1285,7 +1011,7 @@ class TaxonomyEngine:
         return compute_q_system(metrics, weights)
 
     @staticmethod
-    def _update_per_node_separation(nodes: list[TaxonomyNode]) -> None:
+    def _update_per_node_separation(nodes: list[PromptCluster]) -> None:
         """Set each node's ``separation`` to the minimum cosine distance to any sibling.
 
         For a single node, separation is 1.0 (no siblings to conflict with).
@@ -1338,18 +1064,18 @@ class TaxonomyEngine:
         from app.services.taxonomy.clustering import compute_separation
         from app.services.taxonomy.snapshot import create_snapshot
 
-        # Load confirmed nodes for metrics
+        # Load active nodes for metrics
         result = await db.execute(
-            select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
+            select(PromptCluster).where(PromptCluster.state == "active")
         )
-        confirmed = list(result.scalars().all())
+        active_nodes = list(result.scalars().all())
 
         # Compute coherence and separation
-        coherences = [n.coherence for n in confirmed if n.coherence is not None]
+        coherences = [n.coherence for n in active_nodes if n.coherence is not None]
         mean_coherence = float(np.mean(coherences)) if coherences else 0.0
 
         centroids = []
-        for n in confirmed:
+        for n in active_nodes:
             try:
                 c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                 centroids.append(c)
@@ -1378,7 +1104,7 @@ class TaxonomyEngine:
         )
 
     # ------------------------------------------------------------------
-    # Domain mapping
+    # Domain mapping — delegated to matching.py
     # ------------------------------------------------------------------
 
     async def map_domain(
@@ -1387,507 +1113,13 @@ class TaxonomyEngine:
         db: AsyncSession,
         applied_pattern_ids: list[str] | None = None,
     ) -> TaxonomyMapping:
-        """Map a free-text domain string to the nearest confirmed TaxonomyNode.
+        """Map a free-text domain string to the nearest active PromptCluster.
 
-        If applied_pattern_ids are provided, compute a pattern centroid and
-        blend 70 % analyzer embedding + 30 % pattern centroid (Bayesian prior).
-
-        Args:
-            domain_raw: Raw domain string from the analyzer phase.
-            db: Async SQLAlchemy session.
-            applied_pattern_ids: Optional list of MetaPattern IDs applied to
-                this optimization — used to inject a pattern-based prior.
-
-        Returns:
-            TaxonomyMapping.  taxonomy_node_id is None when no confirmed node
-            has cosine similarity ≥ DOMAIN_ALIGNMENT_FLOOR.
+        Delegates to :func:`matching.map_domain`.
         """
-        # Embed domain_raw
-        query_emb = await self._embedding.aembed_single(domain_raw)
-
-        # Optional 70/30 Bayesian blend with pattern centroid
-        if applied_pattern_ids:
-            pattern_centroid = await self._compute_pattern_centroid(
-                db, applied_pattern_ids
-            )
-            if pattern_centroid is not None:
-                # 70 % analyzer, 30 % pattern prior
-                blended = 0.7 * query_emb + 0.3 * pattern_centroid
-                norm = np.linalg.norm(blended)
-                if norm > 0:
-                    query_emb = blended / norm
-
-        # Load confirmed TaxonomyNode centroids
-        result = await db.execute(
-            select(TaxonomyNode).where(TaxonomyNode.state == "confirmed")
+        return await _map_domain(
+            domain_raw, db, self._embedding, applied_pattern_ids
         )
-        nodes = result.scalars().all()
-
-        if not nodes:
-            return TaxonomyMapping(
-                taxonomy_node_id=None,
-                taxonomy_label=None,
-                taxonomy_breadcrumb=[],
-                domain_raw=domain_raw,
-            )
-
-        # Build centroid list, skip corrupt rows
-        valid_nodes: list[TaxonomyNode] = []
-        centroids: list[np.ndarray] = []
-        for node in nodes:
-            try:
-                c = np.frombuffer(node.centroid_embedding, dtype=np.float32)
-                if c.shape[0] != query_emb.shape[0]:
-                    logger.warning(
-                        "TaxonomyNode '%s' centroid dim %d != query dim %d — skipped",
-                        node.label,
-                        c.shape[0],
-                        query_emb.shape[0],
-                    )
-                    continue
-                centroids.append(c)
-                valid_nodes.append(node)
-            except (ValueError, TypeError) as exc:
-                logger.warning(
-                    "TaxonomyNode '%s' has corrupt centroid: %s — skipped",
-                    node.label,
-                    exc,
-                )
-
-        if not centroids:
-            return TaxonomyMapping(
-                taxonomy_node_id=None,
-                taxonomy_label=None,
-                taxonomy_breadcrumb=[],
-                domain_raw=domain_raw,
-            )
-
-        # Nearest centroid search
-        matches = EmbeddingService.cosine_search(query_emb, centroids, top_k=1)
-        if not matches:
-            return TaxonomyMapping(
-                taxonomy_node_id=None,
-                taxonomy_label=None,
-                taxonomy_breadcrumb=[],
-                domain_raw=domain_raw,
-            )
-
-        idx, score = matches[0]
-        if score < DOMAIN_ALIGNMENT_FLOOR:
-            return TaxonomyMapping(
-                taxonomy_node_id=None,
-                taxonomy_label=None,
-                taxonomy_breadcrumb=[],
-                domain_raw=domain_raw,
-            )
-
-        best_node = valid_nodes[idx]
-        breadcrumb = await self._build_breadcrumb(db, best_node)
-
-        return TaxonomyMapping(
-            taxonomy_node_id=best_node.id,
-            taxonomy_label=best_node.label,
-            taxonomy_breadcrumb=breadcrumb,
-            domain_raw=domain_raw,
-        )
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    async def _assign_family(
-        self,
-        db: AsyncSession,
-        embedding: np.ndarray,
-        intent_label: str,
-        domain: str,
-        task_type: str,
-        overall_score: float | None,
-    ) -> PatternFamily:
-        """Find nearest PatternFamily or create a new one.
-
-        Nearest centroid search with FAMILY_MERGE_THRESHOLD guard and
-        cross-domain merge prevention.  Updates centroid as running mean
-        ``(old * n + new) / (n+1)`` on merge.
-
-        Args:
-            db: Async SQLAlchemy session.
-            embedding: Unit-norm embedding of the raw prompt.
-            intent_label: Analyzer intent label.
-            domain: Free-text domain string from the analyzer (via domain_raw).
-            task_type: Analyzer task type.
-            overall_score: Pipeline overall score (may be None).
-
-        Returns:
-            Existing (updated) or newly-created PatternFamily.
-        """
-
-        result = await db.execute(select(PatternFamily))
-        families = result.scalars().all()
-
-        if families:
-            valid_families: list[PatternFamily] = []
-            centroids: list[np.ndarray] = []
-
-            for f in families:
-                try:
-                    c = np.frombuffer(f.centroid_embedding, dtype=np.float32)
-                    if c.shape[0] != embedding.shape[0]:
-                        logger.warning(
-                            "Skipping family '%s' — centroid dim %d != expected %d",
-                            f.intent_label,
-                            c.shape[0],
-                            embedding.shape[0],
-                        )
-                        continue
-                    centroids.append(c)
-                    valid_families.append(f)
-                except (ValueError, TypeError) as exc:
-                    logger.warning(
-                        "Skipping family '%s' — corrupt centroid: %s",
-                        f.intent_label,
-                        exc,
-                    )
-
-            if centroids:
-                matches = EmbeddingService.cosine_search(embedding, centroids, top_k=1)
-                if matches and matches[0][1] >= FAMILY_MERGE_THRESHOLD:
-                    idx, score = matches[0]
-                    family = valid_families[idx]
-
-                    # Cross-domain merge prevention
-                    if family.domain != domain:
-                        logger.info(
-                            "Cross-domain merge prevented: family '%s' domain=%s != "
-                            "incoming domain=%s (cosine=%.3f). Creating new family.",
-                            family.intent_label,
-                            family.domain,
-                            domain,
-                            score,
-                        )
-                        # Fall through to creation
-                    else:
-                        # Merge: update centroid as running mean, re-normalize
-                        old_centroid = np.frombuffer(
-                            family.centroid_embedding, dtype=np.float32
-                        )
-                        new_centroid = (old_centroid * family.member_count + embedding) / (
-                            family.member_count + 1
-                        )
-                        # Re-normalize to unit norm — running mean drifts
-                        # from unit sphere without this (critical for cosine
-                        # similarity accuracy on subsequent merges).
-                        c_norm = np.linalg.norm(new_centroid)
-                        if c_norm > 0:
-                            new_centroid = new_centroid / c_norm
-                        family.centroid_embedding = new_centroid.astype(
-                            np.float32
-                        ).tobytes()
-                        family.member_count += 1
-
-                        # avg_score tracks the running mean over members that
-                        # have a score.  Members with overall_score=None are
-                        # excluded intentionally — we cannot average with None.
-                        # When the first scored member arrives, avg_score is
-                        # seeded with that single score.
-                        if overall_score is not None and family.avg_score is not None:
-                            family.avg_score = round(
-                                (
-                                    family.avg_score * (family.member_count - 1)
-                                    + overall_score
-                                )
-                                / family.member_count,
-                                2,
-                            )
-                        elif overall_score is not None:
-                            family.avg_score = overall_score
-
-                        logger.debug(
-                            "Merged into family '%s' (cosine=%.3f, members=%d)",
-                            family.intent_label,
-                            score,
-                            family.member_count,
-                        )
-                        return family
-
-        # No match — create new family
-        family = PatternFamily(
-            intent_label=intent_label,
-            domain=domain,
-            task_type=task_type,
-            centroid_embedding=embedding.astype(np.float32).tobytes(),
-            member_count=1,
-            usage_count=0,
-            avg_score=overall_score,
-        )
-        db.add(family)
-        await db.flush()  # populate ID
-        logger.debug(
-            "Created new PatternFamily: id=%s label='%s' domain=%s",
-            family.id,
-            intent_label,
-            domain,
-        )
-        return family
-
-    async def _extract_meta_patterns(
-        self, opt: Optimization, db: AsyncSession
-    ) -> list[str]:
-        """Call Haiku to extract meta-patterns from a completed optimization.
-
-        Renders extract_patterns.md template, calls provider.complete_parsed()
-        with _ExtractedPatterns structured output.  Caps at 5 patterns.
-        Returns empty list on any error (non-fatal).
-
-        Args:
-            opt: Completed Optimization row with prompt text and metadata.
-            db: Async SQLAlchemy session (used for taxonomy node lookup).
-
-        Returns:
-            List of meta-pattern strings (at most 5).
-        """
-        if not self._provider:
-            logger.debug("No LLM provider — skipping meta-pattern extraction")
-            return []
-
-        try:
-            # Build taxonomy context string (Spec 7.6)
-            taxonomy_context = ""
-            if opt.taxonomy_node_id:
-                try:
-                    node_result = await db.execute(
-                        select(TaxonomyNode).where(TaxonomyNode.id == opt.taxonomy_node_id)
-                    )
-                    tax_node = node_result.scalar_one_or_none()
-                    if tax_node:
-                        breadcrumb = await self._build_breadcrumb(db, tax_node)
-                        taxonomy_context = (
-                            f'This prompt belongs to the "{tax_node.label}" pattern cluster '
-                            f"({' > '.join(breadcrumb)}).\n"
-                        )
-                except Exception as ctx_exc:
-                    logger.warning("Taxonomy context build failed (non-fatal): %s", ctx_exc)
-
-            template = self._prompt_loader.render(
-                "extract_patterns.md",
-                {
-                    "raw_prompt": opt.raw_prompt[:PROMPT_TRUNCATION_LIMIT],
-                    "optimized_prompt": (opt.optimized_prompt or "")[:PROMPT_TRUNCATION_LIMIT],
-                    "intent_label": opt.intent_label or "general",
-                    "domain_raw": opt.domain_raw or opt.domain or "general",
-                    "strategy_used": opt.strategy_used or "auto",
-                    "taxonomy_context": taxonomy_context,
-                },
-            )
-
-            response = await self._provider.complete_parsed(
-                model=settings.MODEL_HAIKU,
-                system_prompt=(
-                    "You are a prompt engineering analyst. "
-                    "Extract reusable meta-patterns."
-                ),
-                user_message=template,
-                output_format=_ExtractedPatterns,
-            )
-
-            patterns = [
-                str(p) for p in response.patterns if isinstance(p, str)
-            ][:MAX_META_PATTERNS_PER_EXTRACTION]
-            logger.debug(
-                "Haiku returned %d meta-patterns for opt=%s", len(patterns), opt.id
-            )
-            return patterns
-
-        except Exception as exc:
-            logger.warning(
-                "Meta-pattern extraction failed (non-fatal) for opt=%s: %s",
-                opt.id,
-                exc,
-            )
-            return []
-
-    async def _merge_meta_pattern(
-        self, db: AsyncSession, family_id: str, pattern_text: str
-    ) -> bool:
-        """Merge a meta-pattern into a family — enrich existing or create new.
-
-        Cosine search against existing MetaPatterns for the family.  If the
-        best match is ≥ PATTERN_MERGE_THRESHOLD: increment source_count and
-        update text if new version is longer.  Otherwise create a new row.
-
-        Args:
-            db: Async SQLAlchemy session.
-            family_id: PatternFamily PK.
-            pattern_text: Meta-pattern text extracted by Haiku.
-
-        Returns:
-            True if merged into existing pattern, False if new pattern created.
-        """
-        try:
-            result = await db.execute(
-                select(MetaPattern).where(MetaPattern.family_id == family_id)
-            )
-            existing = result.scalars().all()
-
-            pattern_embedding = await self._embedding.aembed_single(pattern_text)
-
-            if existing:
-                embeddings: list[np.ndarray] = []
-                for mp in existing:
-                    if mp.embedding:
-                        embeddings.append(
-                            np.frombuffer(mp.embedding, dtype=np.float32)
-                        )
-                    else:
-                        embeddings.append(
-                            np.zeros(self._embedding.dimension, dtype=np.float32)
-                        )
-
-                matches = EmbeddingService.cosine_search(
-                    pattern_embedding, embeddings, top_k=1
-                )
-                if matches and matches[0][1] >= PATTERN_MERGE_THRESHOLD:
-                    idx, score = matches[0]
-                    mp = existing[idx]
-                    mp.source_count += 1
-                    if len(pattern_text) > len(mp.pattern_text):
-                        mp.pattern_text = pattern_text
-                        mp.embedding = pattern_embedding.astype(np.float32).tobytes()
-                    logger.debug(
-                        "Enriched meta-pattern '%s' (cosine=%.3f, count=%d)",
-                        mp.pattern_text[:50],
-                        score,
-                        mp.source_count,
-                    )
-                    return True
-
-            # No match — create new MetaPattern
-            mp = MetaPattern(
-                family_id=family_id,
-                pattern_text=pattern_text,
-                embedding=pattern_embedding.astype(np.float32).tobytes(),
-                source_count=1,
-            )
-            db.add(mp)
-            logger.debug(
-                "Created new MetaPattern for family=%s: '%s'",
-                family_id,
-                pattern_text[:50],
-            )
-            return False
-
-        except Exception as exc:
-            logger.warning(
-                "Failed to merge meta-pattern into family=%s: %s",
-                family_id,
-                exc,
-            )
-            return False
-
-    async def _compute_pattern_centroid(
-        self, db: AsyncSession, pattern_ids: list[str]
-    ) -> np.ndarray | None:
-        """Compute mean centroid of TaxonomyNodes linked via MetaPattern → PatternFamily.
-
-        Looks up MetaPatterns by ID, gets their families' taxonomy_node_id,
-        loads the corresponding TaxonomyNode centroids, and returns the mean.
-
-        Args:
-            db: Async SQLAlchemy session.
-            pattern_ids: List of MetaPattern PKs.
-
-        Returns:
-            Mean centroid as float32 ndarray, or None if no valid nodes found.
-        """
-        if not pattern_ids:
-            return None
-
-        result = await db.execute(
-            select(MetaPattern).where(MetaPattern.id.in_(pattern_ids))
-        )
-        meta_patterns = result.scalars().all()
-
-        if not meta_patterns:
-            return None
-
-        # Collect unique family IDs
-        family_ids = list({mp.family_id for mp in meta_patterns if mp.family_id})
-        if not family_ids:
-            return None
-
-        # Load families to get taxonomy_node_ids
-        fam_result = await db.execute(
-            select(PatternFamily).where(PatternFamily.id.in_(family_ids))
-        )
-        families = fam_result.scalars().all()
-
-        node_ids = list(
-            {f.taxonomy_node_id for f in families if f.taxonomy_node_id}
-        )
-        if not node_ids:
-            return None
-
-        # Load TaxonomyNodes and collect their centroids
-        node_result = await db.execute(
-            select(TaxonomyNode).where(TaxonomyNode.id.in_(node_ids))
-        )
-        nodes = node_result.scalars().all()
-
-        vecs: list[np.ndarray] = []
-        for node in nodes:
-            try:
-                c = np.frombuffer(node.centroid_embedding, dtype=np.float32)
-                vecs.append(c)
-            except (ValueError, TypeError):
-                continue
-
-        if not vecs:
-            return None
-
-        mean = np.mean(np.stack(vecs, axis=0), axis=0).astype(np.float32)
-        norm = np.linalg.norm(mean)
-        if norm > 0:
-            mean = mean / norm
-        return mean
-
-    async def _build_breadcrumb(
-        self, db: AsyncSession, node: TaxonomyNode
-    ) -> list[str]:
-        """Walk parent_id chain upward and return labels from root to leaf.
-
-        Args:
-            db: Async SQLAlchemy session.
-            node: The leaf TaxonomyNode to start from.
-
-        Returns:
-            List of label strings ordered from root to leaf.
-        """
-        labels: list[str] = []
-        current: TaxonomyNode | None = node
-        visited: set[str] = set()  # cycle guard
-
-        while current is not None:
-            if current.id in visited:
-                logger.warning(
-                    "Breadcrumb cycle detected at node '%s' (id=%s) — stopping",
-                    current.label,
-                    current.id,
-                )
-                break
-            visited.add(current.id)
-            labels.append(current.label)
-
-            if current.parent_id is None:
-                break
-
-            parent_result = await db.execute(
-                select(TaxonomyNode).where(TaxonomyNode.id == current.parent_id)
-            )
-            current = parent_result.scalar_one_or_none()
-
-        # Reverse so list goes root → leaf
-        labels.reverse()
-        return labels
 
     # ------------------------------------------------------------------
     # Read API (Spec Section 6.3)
@@ -1898,11 +1130,14 @@ class TaxonomyEngine:
         db: AsyncSession,
         min_persistence: float = 0.0,
     ) -> list[dict]:
-        query = select(TaxonomyNode).where(
-            TaxonomyNode.state.in_(["confirmed", "candidate"])
+        # Show all non-archived lifecycle states in the topology view.
+        # Mature and template nodes are valid topology members — excluding
+        # them would create inconsistency with stats panel node counts.
+        query = select(PromptCluster).where(
+            PromptCluster.state.in_(["active", "candidate", "mature", "template"])
         )
         if min_persistence > 0:
-            query = query.where(TaxonomyNode.persistence >= min_persistence)
+            query = query.where(PromptCluster.persistence >= min_persistence)
         result = await db.execute(query)
         nodes = result.scalars().all()
         return [self._node_to_dict(n) for n in nodes]
@@ -1913,7 +1148,7 @@ class TaxonomyEngine:
         db: AsyncSession,
     ) -> dict | None:
         result = await db.execute(
-            select(TaxonomyNode).where(TaxonomyNode.id == node_id)
+            select(PromptCluster).where(PromptCluster.id == node_id)
         )
         node = result.scalar_one_or_none()
         if not node:
@@ -1921,16 +1156,16 @@ class TaxonomyEngine:
         node_dict = self._node_to_dict(node)
         # Add children
         children_result = await db.execute(
-            select(TaxonomyNode).where(TaxonomyNode.parent_id == node_id)
+            select(PromptCluster).where(PromptCluster.parent_id == node_id)
         )
         children = children_result.scalars().all()
         node_dict["children"] = [self._node_to_dict(c) for c in children]
         # Add breadcrumb
-        node_dict["breadcrumb"] = await self._build_breadcrumb(db, node)
+        node_dict["breadcrumb"] = await build_breadcrumb(db, node)
         # Add family count
         fam_count = await db.execute(
-            select(func.count(PatternFamily.id)).where(
-                PatternFamily.taxonomy_node_id == node_id
+            select(func.count(PromptCluster.id)).where(
+                PromptCluster.parent_id == node_id
             )
         )
         node_dict["family_count"] = fam_count.scalar() or 0
@@ -1939,18 +1174,20 @@ class TaxonomyEngine:
     async def get_stats(self, db: AsyncSession) -> dict:
         # Node state counts via GROUP BY (avoids loading full ORM objects + blobs)
         state_result = await db.execute(
-            select(TaxonomyNode.state, func.count(TaxonomyNode.id)).group_by(
-                TaxonomyNode.state
+            select(PromptCluster.state, func.count(PromptCluster.id)).group_by(
+                PromptCluster.state
             )
         )
         state_counts = dict(state_result.all())
-        confirmed = state_counts.get("confirmed", 0)
+        active = state_counts.get("active", 0)
         candidate = state_counts.get("candidate", 0)
-        retired = state_counts.get("retired", 0)
+        mature = state_counts.get("mature", 0)
+        template = state_counts.get("template", 0)
+        archived = state_counts.get("archived", 0)
 
         # max_depth + leaf_count: lightweight projection (id + parent_id + state only)
         tree_result = await db.execute(
-            select(TaxonomyNode.id, TaxonomyNode.parent_id, TaxonomyNode.state)
+            select(PromptCluster.id, PromptCluster.parent_id, PromptCluster.state)
         )
         tree_rows = tree_result.all()
         id_to_parent: dict[str, str | None] = {r.id: r.parent_id for r in tree_rows}
@@ -1970,13 +1207,15 @@ class TaxonomyEngine:
             if depth > max_depth:
                 max_depth = depth
 
-        active_ids = {r.id for r in tree_rows if r.state != "retired"}
+        active_ids = {r.id for r in tree_rows if r.state != "archived"}
         parent_ids = {r.parent_id for r in tree_rows if r.parent_id}
         leaf_count = sum(1 for nid in active_ids if nid not in parent_ids)
 
-        # Total pattern families via scalar COUNT (avoids materializing rows)
+        # Total pattern families (leaf clusters with a parent) via scalar COUNT
         fam_count_result = await db.execute(
-            select(func.count(PatternFamily.id))
+            select(func.count(PromptCluster.id)).where(
+                PromptCluster.parent_id.isnot(None)
+            )
         )
         total_families = fam_count_result.scalar() or 0
 
@@ -2032,9 +1271,11 @@ class TaxonomyEngine:
             "q_dbcv": q_dbcv,
             "total_families": total_families,
             "nodes": {
-                "confirmed": confirmed,
+                "active": active,
                 "candidate": candidate,
-                "retired": retired,
+                "mature": mature,
+                "template": template,
+                "archived": archived,
                 "max_depth": max_depth,
                 "leaf_count": leaf_count,
             },
@@ -2045,51 +1286,53 @@ class TaxonomyEngine:
             "warm_path_age": self._warm_path_age,
         }
 
-    async def increment_usage(self, family_id: str, db: AsyncSession) -> None:
-        """Increment usage on the family and propagate up the taxonomy tree.
+    async def increment_usage(self, cluster_id: str, db: AsyncSession) -> None:
+        """Increment usage on the cluster and propagate up the taxonomy tree.
 
         Spec Section 7.8 — usage count flows upward so that ancestor
-        nodes reflect aggregate activity from their subtree.
+        clusters reflect aggregate activity from their subtree.
 
         Args:
-            family_id: ID of the PatternFamily whose patterns were applied.
+            cluster_id: ID of the PromptCluster whose patterns were applied.
             db: Async SQLAlchemy session.
         """
-        family = await db.get(PatternFamily, family_id)
-        if not family:
-            logger.warning("increment_usage: family %s not found", family_id)
+        cluster = await db.get(PromptCluster, cluster_id)
+        if not cluster:
+            logger.warning("increment_usage: cluster %s not found", cluster_id)
             return
 
-        family.usage_count = (family.usage_count or 0) + 1
+        cluster.usage_count = (cluster.usage_count or 0) + 1
 
         # Walk up the taxonomy tree (with cycle guard)
-        node_id = family.taxonomy_node_id
+        parent_id = cluster.parent_id
         visited: set[str] = set()
-        while node_id:
-            if node_id in visited:
-                logger.warning("increment_usage: cycle detected at node %s", node_id)
+        while parent_id:
+            if parent_id in visited:
+                logger.warning("increment_usage: cycle detected at node %s", parent_id)
                 break
-            visited.add(node_id)
-            node = await db.get(TaxonomyNode, node_id)
-            if not node:
+            visited.add(parent_id)
+            parent = await db.get(PromptCluster, parent_id)
+            if not parent:
                 break
-            node.usage_count = (node.usage_count or 0) + 1
-            node_id = node.parent_id
+            parent.usage_count = (parent.usage_count or 0) + 1
+            parent_id = parent.parent_id
 
         await db.flush()
         logger.debug(
-            "Usage incremented: family=%s (usage=%d)",
-            family_id,
-            family.usage_count,
+            "Usage incremented: cluster=%s (usage=%d)",
+            cluster_id,
+            cluster.usage_count,
         )
 
     @staticmethod
-    def _node_to_dict(node: TaxonomyNode) -> dict:
+    def _node_to_dict(node: PromptCluster) -> dict:
         return {
             "id": node.id,
             "label": node.label,
             "parent_id": node.parent_id,
             "state": node.state,
+            "domain": node.domain,
+            "task_type": node.task_type,
             "member_count": node.member_count or 0,
             "coherence": node.coherence,
             "separation": node.separation,
@@ -2100,5 +1343,7 @@ class TaxonomyEngine:
             "umap_y": node.umap_y,
             "umap_z": node.umap_z,
             "usage_count": node.usage_count or 0,
+            "avg_score": node.avg_score,
+            "preferred_strategy": node.preferred_strategy,
             "created_at": node.created_at.isoformat() if node.created_at else None,
         }

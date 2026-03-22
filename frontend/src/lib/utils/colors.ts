@@ -55,3 +55,15 @@ export function qHealthColor(qSystem: number | null): string {
   if (qSystem >= 0.4) return 'var(--color-neon-yellow)';
   return 'var(--color-neon-red)';
 }
+
+/** Cluster lifecycle state color for state filter tabs and badges. */
+export function stateColor(state: string): string {
+  const map: Record<string, string> = {
+    candidate: '#7a7a9e',
+    active: '#4d8eff',
+    mature: '#a855f7',
+    template: '#00e5ff',
+    archived: '#2a2a3e',
+  };
+  return map[state] ?? '#7a7a9e';
+}

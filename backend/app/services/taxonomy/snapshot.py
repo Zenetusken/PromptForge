@@ -47,8 +47,8 @@ async def create_snapshot(
         q_system: Composite system quality score.
         q_coherence: Mean intra-cluster coherence.
         q_separation: Mean inter-cluster separation.
-        q_coverage: Fraction of optimizations covered by confirmed nodes.
-        q_dbcv: DBCV validity score (0.0 when < 5 confirmed nodes).
+        q_coverage: Fraction of optimizations covered by active nodes.
+        q_dbcv: DBCV validity score (0.0 when < 5 active nodes).
         operations: List of tree-mutation operation dicts (serialized as JSON).
         nodes_created: Count of nodes created in this cycle.
         nodes_retired: Count of nodes retired in this cycle.

@@ -6,7 +6,7 @@ Reference: Spec Section 9.1, Layer 3.
 import pytest
 from sqlalchemy import select
 
-from app.models import Optimization, PatternFamily
+from app.models import Optimization, PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 
 
@@ -43,7 +43,7 @@ async def test_distinct_domains_produce_distinct_clusters(db, mock_embedding, mo
     await engine.run_warm_path(db)
 
     # Check families were created
-    families = (await db.execute(select(PatternFamily))).scalars().all()
+    families = (await db.execute(select(PromptCluster))).scalars().all()
     assert len(families) >= 3, f"Expected >=3 families, got {len(families)}"
 
 
@@ -67,7 +67,7 @@ async def test_identical_prompts_converge(db, mock_embedding, mock_provider):
     for opt in all_opts:
         await engine.process_optimization(opt.id, db)
 
-    families = (await db.execute(select(PatternFamily))).scalars().all()
+    families = (await db.execute(select(PromptCluster))).scalars().all()
     # All 5 identical prompts should converge into 1 family
     assert len(families) == 1
     assert families[0].member_count == 5

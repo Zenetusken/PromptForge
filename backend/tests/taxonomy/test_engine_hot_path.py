@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.models import Optimization, PatternFamily
+from app.models import Optimization, PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 
 
@@ -65,7 +65,7 @@ async def test_process_optimization_idempotent(db, mock_embedding, mock_provider
 
 @pytest.mark.asyncio
 async def test_process_optimization_creates_family(db, mock_embedding, mock_provider):
-    """process_optimization should create a PatternFamily for the optimization."""
+    """process_optimization should create a PromptCluster for the optimization."""
     from sqlalchemy import select
 
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
@@ -83,8 +83,8 @@ async def test_process_optimization_creates_family(db, mock_embedding, mock_prov
 
     await engine.process_optimization(opt.id, db)
 
-    # A PatternFamily should have been created
-    result = await db.execute(select(PatternFamily))
+    # A PromptCluster should have been created
+    result = await db.execute(select(PromptCluster))
     families = result.scalars().all()
     assert len(families) == 1
     # domain_raw takes precedence over hardcoded domain field
@@ -127,7 +127,7 @@ async def test_process_optimization_merges_into_existing_family(
     await db.commit()
     await engine.process_optimization(opt2.id, db)
 
-    result = await db.execute(select(PatternFamily))
+    result = await db.execute(select(PromptCluster))
     families = result.scalars().all()
     # Both should collapse into a single family (identical embeddings)
     assert len(families) == 1
@@ -210,7 +210,7 @@ async def test_process_optimization_cross_domain_creates_new_family(
     await db.commit()
     await engine.process_optimization(opt2.id, db)
 
-    result = await db.execute(select(PatternFamily))
+    result = await db.execute(select(PromptCluster))
     families = result.scalars().all()
     # Cross-domain merge prevention → 2 families
     assert len(families) == 2
@@ -246,7 +246,7 @@ async def test_centroid_stays_normalized_after_multiple_merges(
         await db.commit()
         await engine.process_optimization(opt.id, db)
 
-    result = await db.execute(select(PatternFamily))
+    result = await db.execute(select(PromptCluster))
     families = result.scalars().all()
     assert len(families) == 1
 
