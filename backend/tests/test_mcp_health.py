@@ -43,13 +43,15 @@ async def test_health_with_provider():
         with patch("app.services.optimization_service.OptimizationService") as mock_opt_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={"total": 42, "items": []})
-            mock_svc.get_recent_error_counts = AsyncMock(return_value={"total": 100, "failed": 5})
+            mock_svc.get_recent_error_counts = AsyncMock(return_value={"last_hour": 2, "last_24h": 5})
             mock_opt_svc_cls.return_value = mock_svc
 
-            # Mock avg score query
-            mock_scalar = MagicMock()
-            mock_scalar.scalar.return_value = 7.5
-            mock_db.execute = AsyncMock(return_value=mock_scalar)
+            # Mock db.execute for avg score query AND total_24h count query
+            mock_avg_scalar = MagicMock()
+            mock_avg_scalar.scalar.return_value = 7.5
+            mock_count_scalar = MagicMock()
+            mock_count_scalar.scalar.return_value = 100
+            mock_db.execute = AsyncMock(side_effect=[mock_avg_scalar, mock_count_scalar])
 
             result = await synthesis_health()
 
@@ -61,6 +63,7 @@ async def test_health_with_provider():
     assert result.total_optimizations == 42
     assert "auto" in result.available_strategies
     assert "chain-of-thought" in result.available_strategies
+    assert result.recent_error_rate == 0.05  # 5 failed / 100 total in 24h
 
 
 async def test_health_degraded_no_provider():
@@ -83,7 +86,7 @@ async def test_health_degraded_no_provider():
         with patch("app.services.optimization_service.OptimizationService") as mock_opt_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={"total": 0, "items": []})
-            mock_svc.get_recent_error_counts = AsyncMock(return_value={"total": 0, "failed": 0})
+            mock_svc.get_recent_error_counts = AsyncMock(return_value={"last_hour": 0, "last_24h": 0})
             mock_opt_svc_cls.return_value = mock_svc
 
             result = await synthesis_health()
@@ -111,7 +114,7 @@ async def test_health_strategies_fallback():
         with patch("app.services.optimization_service.OptimizationService") as mock_opt_svc_cls:
             mock_svc = MagicMock()
             mock_svc.list_optimizations = AsyncMock(return_value={"total": 0, "items": []})
-            mock_svc.get_recent_error_counts = AsyncMock(return_value={"total": 0, "failed": 0})
+            mock_svc.get_recent_error_counts = AsyncMock(return_value={"last_hour": 0, "last_24h": 0})
             mock_opt_svc_cls.return_value = mock_svc
 
             result = await synthesis_health()

@@ -42,6 +42,11 @@ async def handle_health() -> HealthOutput:
     recent_error_rate: float | None = None
 
     try:
+        from datetime import datetime, timedelta, timezone
+
+        from sqlalchemy import func, select
+
+        from app.models import Optimization
         from app.services.optimization_service import OptimizationService
 
         async with async_session_factory() as db:
@@ -52,9 +57,6 @@ async def handle_health() -> HealthOutput:
 
             # Average score
             if total_optimizations > 0:
-                from sqlalchemy import func, select
-                from app.models import Optimization
-
                 score_result = await db.execute(
                     select(func.avg(Optimization.overall_score)).where(
                         Optimization.status == "completed",
@@ -65,12 +67,18 @@ async def handle_health() -> HealthOutput:
                 if avg_val is not None:
                     avg_score = round(float(avg_val), 2)
 
-            # Recent error rate
+            # Recent error rate (failed / total in last 24h)
             error_counts = await opt_svc.get_recent_error_counts()
-            total_recent = error_counts.get("total", 0)
-            failed_recent = error_counts.get("failed", 0)
-            if total_recent > 0:
-                recent_error_rate = round(failed_recent / total_recent, 3)
+            failed_24h = error_counts.get("last_24h", 0)
+            if failed_24h > 0:
+                total_24h_result = await db.execute(
+                    select(func.count(Optimization.id)).where(
+                        Optimization.created_at >= datetime.now(timezone.utc) - timedelta(hours=24),
+                    )
+                )
+                total_24h = total_24h_result.scalar() or 0
+                if total_24h > 0:
+                    recent_error_rate = round(failed_24h / total_24h, 3)
     except Exception as exc:
         logger.warning("Could not fetch optimization stats for health: %s", exc)
 
