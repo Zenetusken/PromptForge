@@ -17,6 +17,7 @@ from app.services.heuristic_scorer import HeuristicScorer
 from app.services.passthrough import assemble_passthrough_prompt
 from app.services.pipeline import PipelineOrchestrator
 from app.services.preferences import PreferencesService
+from app.services.taxonomy import get_engine as get_taxonomy_engine
 from app.utils.sse import format_sse
 
 logger = logging.getLogger(__name__)
@@ -158,7 +159,7 @@ async def optimize(
                 strategy_override=effective_strategy if effective_strategy != "auto" else None,
                 codebase_guidance=guidance,
                 applied_pattern_ids=body.applied_pattern_ids,
-                taxonomy_engine=getattr(request.app.state, "taxonomy_engine", None),
+                taxonomy_engine=get_taxonomy_engine(app=request.app),
             ):
                 yield format_sse(event.event, event.data)
         except Exception as exc:

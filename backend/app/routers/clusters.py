@@ -191,7 +191,7 @@ async def get_cluster_detail(
         )
         optimizations = opt_result.scalars().all()
 
-        node_data = {k: v for k, v in node.items() if k not in ("children", "breadcrumb", "family_count")}
+        node_data = {k: v for k, v in node.items() if k not in ("children", "breadcrumb")}
 
         return ClusterDetail(
             **node_data,
@@ -372,7 +372,8 @@ async def legacy_patterns_family_detail(request: Request, family_id: str):
 
 @router.patch("/api/patterns/families/{family_id}")
 async def legacy_patterns_family_update(request: Request, family_id: str):
-    return RedirectResponse(url=f"/api/clusters/{family_id}", status_code=307)
+    qs = f"?{request.query_params}" if request.query_params else ""
+    return RedirectResponse(url=f"/api/clusters/{family_id}{qs}", status_code=307)
 
 
 @router.post("/api/patterns/match")

@@ -410,43 +410,11 @@ class TaxonomyEngine:
         # Try emerge if enough unassigned families exist
         if len(unassigned_families) >= 3:
             ops_attempted += 1
-            embeddings = []
-            cluster_ids = []
-            for f in unassigned_families:
-                try:
-                    emb = np.frombuffer(f.centroid_embedding, dtype=np.float32)
-                    embeddings.append(emb)
-                    cluster_ids.append(f.id)
-                except (ValueError, TypeError):
-                    continue
-
-            if len(embeddings) >= 3:
-                cluster_result = batch_cluster(embeddings, min_cluster_size=3)
-                if cluster_result.n_clusters > 0:
-                    from app.services.taxonomy.lifecycle import attempt_emerge
-
-                    for cid in range(cluster_result.n_clusters):
-                        mask = cluster_result.labels == cid
-                        cluster_fam_ids = [
-                            cluster_ids[i] for i in range(len(cluster_ids)) if mask[i]
-                        ]
-                        cluster_embs = [
-                            embeddings[i] for i in range(len(embeddings)) if mask[i]
-                        ]
-                        if cluster_fam_ids:
-                            node = await attempt_emerge(
-                                db=db,
-                                member_cluster_ids=cluster_fam_ids,
-                                embeddings=cluster_embs,
-                                warm_path_age=self._warm_path_age,
-                                provider=self._provider,
-                                model=settings.MODEL_HAIKU,
-                            )
-                            if node:
-                                ops_accepted += 1
-                                operations_log.append(
-                                    {"type": "emerge", "node_id": node.id}
-                                )
+            emerged = await self._try_emerge_from_families(
+                db, unassigned_families, batch_cluster,
+            )
+            ops_accepted += len(emerged)
+            operations_log.extend(emerged)
 
         # Try merge on active nodes that are close in embedding space
         if len(active_nodes) >= 2:
@@ -563,56 +531,19 @@ class TaxonomyEngine:
 
             # Force the best single-dimension operation through regardless of
             # composite Q_system impact (Spec Section 2.5).
-            # Re-run emerge on unassigned families (cheapest constructive op).
+            # Re-run emerge on unassigned families (cheapest constructive op),
+            # limited to the first discovered cluster.
             if len(unassigned_families) >= 3:
-                from app.services.taxonomy.lifecycle import attempt_emerge
-
-                force_embs = []
-                force_ids = []
-                for f in unassigned_families:
-                    try:
-                        emb = np.frombuffer(
-                            f.centroid_embedding, dtype=np.float32
-                        )
-                        force_embs.append(emb)
-                        force_ids.append(f.id)
-                    except (ValueError, TypeError):
-                        continue
-
-                if len(force_embs) >= 3:
-                    cluster_result = batch_cluster(
-                        force_embs, min_cluster_size=3
+                emerged = await self._try_emerge_from_families(
+                    db, unassigned_families, batch_cluster, max_clusters=1,
+                )
+                ops_accepted += len(emerged)
+                operations_log.extend(emerged)
+                if emerged:
+                    logger.info(
+                        "Deadlock breaker forced emerge: node=%s",
+                        emerged[0].get("node_id"),
                     )
-                    if cluster_result.n_clusters > 0:
-                        mask = cluster_result.labels == 0
-                        forced_fam_ids = [
-                            force_ids[i]
-                            for i in range(len(force_ids))
-                            if mask[i]
-                        ]
-                        forced_embs = [
-                            force_embs[i]
-                            for i in range(len(force_embs))
-                            if mask[i]
-                        ]
-                        if forced_fam_ids:
-                            node = await attempt_emerge(
-                                db=db,
-                                member_cluster_ids=forced_fam_ids,
-                                embeddings=forced_embs,
-                                warm_path_age=self._warm_path_age,
-                                provider=self._provider,
-                                model=settings.MODEL_HAIKU,
-                            )
-                            if node:
-                                ops_accepted += 1
-                                operations_log.append(
-                                    {"type": "emerge", "node_id": node.id}
-                                )
-                                logger.info(
-                                    "Deadlock breaker forced emerge: node=%s",
-                                    node.id,
-                                )
 
             # Signal that a cold-path rebuild is needed (Spec Section 2.5).
             # We do NOT use asyncio.create_task(self.run_cold_path(db)) here
@@ -925,9 +856,8 @@ class TaxonomyEngine:
         coherences = [n.coherence for n in active_after if n.coherence is not None]
         mean_coherence = float(np.mean(coherences)) if coherences else 0.0
 
-        await db.commit()
-
-        # 8b. Rebuild embedding index from active centroids
+        # 8b. Rebuild embedding index from active centroids (in-memory, no
+        # commit needed — reads ORM objects still in the session).
         index_centroids: dict[str, np.ndarray] = {}
         for n in active_after:
             try:
@@ -938,7 +868,8 @@ class TaxonomyEngine:
                 continue
         await self._embedding_index.rebuild(index_centroids)
 
-        # 9. Create snapshot
+        # 9. Create snapshot — commits all pending node updates AND the
+        # snapshot in a single transaction (matching the warm-path pattern).
         snap = await create_snapshot(
             db,
             trigger="cold_path",
@@ -1051,6 +982,75 @@ class TaxonomyEngine:
             # Clamp to [0, 1] for safety
             nodes[orig_idx].separation = max(0.0, min(1.0, min_dist))
 
+    async def _try_emerge_from_families(
+        self,
+        db: AsyncSession,
+        families: list[PromptCluster],
+        batch_cluster_fn: object,
+        max_clusters: int | None = None,
+    ) -> list[dict]:
+        """Cluster unassigned families via HDBSCAN and attempt emerge for each.
+
+        Shared by the normal emerge path and the deadlock breaker to avoid
+        duplicating the embed → cluster → emerge pipeline.
+
+        Args:
+            db: Async DB session (caller-managed transaction).
+            families: Unassigned PromptCluster rows (parent_id IS NULL).
+            batch_cluster_fn: HDBSCAN clustering callable (typically
+                ``clustering.batch_cluster``).
+            max_clusters: If set, only attempt emerge for the first N
+                discovered clusters (deadlock breaker uses 1).
+
+        Returns:
+            List of ``{"type": "emerge", "node_id": ...}`` operation dicts
+            for each successfully emerged node.
+        """
+        from app.services.taxonomy.clustering import ClusterResult
+        from app.services.taxonomy.lifecycle import attempt_emerge
+
+        # Extract embeddings and IDs from families
+        embeddings: list[np.ndarray] = []
+        ids: list[str] = []
+        for f in families:
+            try:
+                emb = np.frombuffer(f.centroid_embedding, dtype=np.float32)
+                embeddings.append(emb)
+                ids.append(f.id)
+            except (ValueError, TypeError):
+                continue
+
+        if len(embeddings) < 3:
+            return []
+
+        cr: ClusterResult = batch_cluster_fn(embeddings)
+        if cr.n_clusters == 0:
+            return []
+
+        operations: list[dict] = []
+        limit = cr.n_clusters if max_clusters is None else min(max_clusters, cr.n_clusters)
+
+        for cluster_label in range(limit):
+            member_mask = cr.labels == cluster_label
+            member_ids = [ids[i] for i, m in enumerate(member_mask) if m]
+            member_embs = [embeddings[i] for i, m in enumerate(member_mask) if m]
+
+            if len(member_ids) < 2:
+                continue
+
+            node = await attempt_emerge(
+                db=db,
+                member_cluster_ids=member_ids,
+                embeddings=member_embs,
+                warm_path_age=self._warm_path_age,
+                provider=self._provider,
+                model=settings.MODEL_HAIKU,
+            )
+            if node is not None:
+                operations.append({"type": "emerge", "node_id": node.id})
+
+        return operations
+
     async def _create_warm_snapshot(
         self,
         db: AsyncSession,
@@ -1162,13 +1162,6 @@ class TaxonomyEngine:
         node_dict["children"] = [self._node_to_dict(c) for c in children]
         # Add breadcrumb
         node_dict["breadcrumb"] = await build_breadcrumb(db, node)
-        # Add family count
-        fam_count = await db.execute(
-            select(func.count(PromptCluster.id)).where(
-                PromptCluster.parent_id == node_id
-            )
-        )
-        node_dict["family_count"] = fam_count.scalar() or 0
         return node_dict
 
     async def get_stats(self, db: AsyncSession) -> dict:
@@ -1345,5 +1338,6 @@ class TaxonomyEngine:
             "usage_count": node.usage_count or 0,
             "avg_score": node.avg_score,
             "preferred_strategy": node.preferred_strategy,
+            "promoted_at": node.promoted_at.isoformat() if node.promoted_at else None,
             "created_at": node.created_at.isoformat() if node.created_at else None,
         }

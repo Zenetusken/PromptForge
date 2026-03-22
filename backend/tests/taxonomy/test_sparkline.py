@@ -40,6 +40,11 @@ class TestLTTB:
         result = lttb_downsample(values, 3)
         assert result == values
 
+    def test_target_one_returns_first_only(self):
+        values = [0.1, 0.5, 0.9, 0.3, 0.7]
+        result = lttb_downsample(values, 1)
+        assert result == [0.1]
+
 
 class TestComputeSparklineData:
     def test_empty_returns_empty(self):
@@ -83,3 +88,20 @@ class TestComputeSparklineData:
         values = [0.5 + i * 0.001 for i in range(100)]
         result = compute_sparkline_data(values, max_points=20)
         assert result.point_count == 20
+
+    def test_infinity_values_filtered(self):
+        result = compute_sparkline_data([0.5, float('inf'), float('-inf'), 0.7])
+        assert result.point_count == 2
+        assert result.current == 0.7
+
+    def test_all_zero_values(self):
+        result = compute_sparkline_data([0.0, 0.0, 0.0, 0.0])
+        assert result.point_count == 4
+        assert result.current == 0.0
+        assert result.trend == 0.0
+        # All same → normalized to 0.5
+        assert all(p == 0.5 for p in result.normalized)
+
+    def test_all_invalid_returns_empty(self):
+        result = compute_sparkline_data([float('nan'), float('inf'), float('-inf')])
+        assert result.point_count == 0
