@@ -55,7 +55,7 @@ export function mockOptimizationResult(overrides: Record<string, unknown> = {}) 
     context_sources: null,
     intent_label: 'Hello world program',
     domain: 'backend',
-    family_id: null,
+    cluster_id: null,
     ...overrides,
   };
 }
@@ -77,7 +77,7 @@ export function mockHistoryItem(overrides: Record<string, unknown> = {}) {
     scoring_mode: 'hybrid',
     intent_label: 'Hello world program',
     domain: 'backend',
-    family_id: null,
+    cluster_id: null,
     ...overrides,
   };
 }

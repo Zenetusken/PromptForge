@@ -77,9 +77,11 @@ export interface ClusterStats {
   q_dbcv: number | null;
   total_clusters: number;
   nodes: {
-    confirmed: number;
+    active: number;
     candidate: number;
-    retired: number;
+    mature: number;
+    template: number;
+    archived: number;
     max_depth: number;
     leaf_count: number;
   } | null;
@@ -168,7 +170,7 @@ export const triggerRecluster = () =>
 
 /**
  * List clusters (alias for getClusterTree).
- * PatternNavigator uses a paginated list — for now falls back to tree.
+ * ClusterNavigator uses a paginated list — for now falls back to tree.
  */
 export const listFamilies = async (params?: { offset?: number; limit?: number; domain?: string }): Promise<{
   total: number;

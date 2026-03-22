@@ -332,7 +332,7 @@ async def attempt_retire(
     """Retire an idle PromptCluster and redistribute its families.
 
     Families belonging to *node* are reassigned to the first available
-    confirmed sibling (same parent_id, state="active", id != node.id).
+    active sibling (same parent_id, state="active", id != node.id).
     If no sibling exists, retirement is skipped.
 
     Args:
@@ -353,7 +353,7 @@ async def attempt_retire(
             )
             return False
 
-        # Find confirmed siblings.
+        # Find active siblings.
         result = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.parent_id == node.parent_id,
@@ -365,7 +365,7 @@ async def attempt_retire(
 
         if not siblings:
             logger.info(
-                "retire: no confirmed siblings for node '%s' (id=%s) — skipping",
+                "retire: no active siblings for node '%s' (id=%s) — skipping",
                 node.label,
                 node.id,
             )

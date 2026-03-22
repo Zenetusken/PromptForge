@@ -1,6 +1,7 @@
 """Pydantic response models for the unified cluster API."""
 
 from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -68,6 +69,24 @@ class ClusterDetail(BaseModel):
     breadcrumb: list[str] | None = None
 
 
+class ClusterNodeCounts(BaseModel):
+    """Node state counts embedded in stats response."""
+    active: int = 0
+    candidate: int = 0
+    archived: int = 0
+    mature: int = 0
+    template: int = 0
+    max_depth: int = 0
+    leaf_count: int = 0
+
+
+class QHistoryEntry(BaseModel):
+    """Single entry in the quality history."""
+    timestamp: str | None = None
+    q_system: float | None = None
+    operations: int = 0
+
+
 class ClusterStats(BaseModel):
     q_system: float | None = None
     q_coherence: float | None = None
@@ -75,12 +94,12 @@ class ClusterStats(BaseModel):
     q_coverage: float | None = None
     q_dbcv: float | None = None
     total_clusters: int = 0
-    nodes: dict | None = None
-    last_warm_path: datetime | None = None
-    last_cold_path: datetime | None = None
-    warm_path_age: int = 0
-    q_history: list[float] | None = None
-    q_sparkline: list[float] | None = None
+    nodes: ClusterNodeCounts = ClusterNodeCounts()
+    last_warm_path: str | None = None
+    last_cold_path: str | None = None
+    warm_path_age: float | None = None
+    q_history: list[QHistoryEntry] = []
+    q_sparkline: list[float] = []
 
 
 class ClusterMatchResponse(BaseModel):

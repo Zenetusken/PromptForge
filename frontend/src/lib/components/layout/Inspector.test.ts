@@ -27,7 +27,7 @@ function makeFamilyDetail(overrides: Record<string, unknown> = {}) {
     id: 'fam-1',
     parent_id: null,
     label: 'API patterns',
-    state: 'confirmed',
+    state: 'active',
     domain: 'backend',
     task_type: 'coding',
     member_count: 3,
@@ -719,16 +719,16 @@ describe('Inspector', () => {
 
   // ── 15. State badge ──────────────────────────────────────────────────────────
 
-  it('renders state badge with correct text for confirmed state', async () => {
+  it('renders state badge with correct text for active state', async () => {
     patternsStore.selectedClusterId = 'fam-1';
-    patternsStore.clusterDetail = makeFamilyDetail({ state: 'confirmed' }) as any;
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'active' }) as any;
     patternsStore.clusterDetailLoading = false;
     mockFetch([]);
 
     render(Inspector);
 
     await waitFor(() => {
-      expect(screen.getByText('confirmed')).toBeInTheDocument();
+      expect(screen.getByText('active')).toBeInTheDocument();
     });
   });
 
@@ -805,9 +805,9 @@ describe('Inspector', () => {
     expect(screen.queryByText('Unarchive')).not.toBeInTheDocument();
   });
 
-  it('does not render action buttons when state is confirmed', async () => {
+  it('does not render promote/unarchive when state is candidate', async () => {
     patternsStore.selectedClusterId = 'fam-1';
-    patternsStore.clusterDetail = makeFamilyDetail({ state: 'confirmed' }) as any;
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'candidate' }) as any;
     patternsStore.clusterDetailLoading = false;
     mockFetch([]);
 
@@ -817,6 +817,20 @@ describe('Inspector', () => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
     });
     expect(screen.queryByText('Promote to template')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unarchive')).not.toBeInTheDocument();
+  });
+
+  it('renders promote button when state is active', async () => {
+    patternsStore.selectedClusterId = 'fam-1';
+    patternsStore.clusterDetail = makeFamilyDetail({ state: 'active' }) as any;
+    patternsStore.clusterDetailLoading = false;
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('Promote to template')).toBeInTheDocument();
+    });
     expect(screen.queryByText('Unarchive')).not.toBeInTheDocument();
   });
 

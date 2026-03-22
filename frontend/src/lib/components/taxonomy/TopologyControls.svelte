@@ -81,11 +81,13 @@
   {/if}
 
   <!-- Node counts -->
-  {#if stats}
+  {#if stats?.nodes}
     <div class="stats-row">
-      <span>{stats.nodes.confirmed} nodes</span>
+      <span>{stats.nodes.active} active</span>
       <span class="stats-sep">|</span>
       <span>{stats.nodes.candidate} candidates</span>
+      <span class="stats-sep">|</span>
+      <span>{stats.nodes.template} templates</span>
     </div>
   {/if}
 </div>

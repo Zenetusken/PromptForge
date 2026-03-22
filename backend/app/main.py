@@ -155,15 +155,16 @@ async def lifespan(app: FastAPI):
                                     await engine.process_optimization(oid, db)
                                     # Hot path: check cluster promotion after
                                     # process_optimization writes OptimizationPattern
+                                    from sqlalchemy import select as _sel
+
+                                    from app.models import OptimizationPattern as _OptPat
                                     from app.services.prompt_lifecycle import (
                                         PromptLifecycleService,
                                     )
-                                    from sqlalchemy import select as _sel
-                                    from app.models import OptimizationPattern as _OP
                                     _row = (await db.execute(
-                                        _sel(_OP).where(
-                                            _OP.optimization_id == oid,
-                                            _OP.relationship == "source",
+                                        _sel(_OptPat).where(
+                                            _OptPat.optimization_id == oid,
+                                            _OptPat.relationship == "source",
                                         )
                                     )).scalar_one_or_none()
                                     if _row is not None and _row.cluster_id:

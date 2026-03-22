@@ -26,7 +26,7 @@
   // Search state — local filtering from taxonomy tree
   let searchQuery = $state('');
   let searchActive = $derived(searchQuery.trim().length > 0);
-  interface LocalSearchResult { type: string; id: string; label: string; score: number; family_id?: string; }
+  interface LocalSearchResult { type: string; id: string; label: string; score: number; cluster_id?: string; }
   let searchResults = $derived.by<LocalSearchResult[]>(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
@@ -133,11 +133,10 @@
   }
 
   function selectSearchResult(result: LocalSearchResult) {
-    const familyId = result.type === 'family' ? result.id : result.family_id;
-    if (familyId) {
-      expandedId = familyId;
-      // selectFamily triggers _loadFamilyDetail — use store's state for detail
-      clustersStore.selectCluster(familyId);
+    const clusterId = result.type === 'family' ? result.id : result.cluster_id;
+    if (clusterId) {
+      expandedId = clusterId;
+      clustersStore.selectCluster(clusterId);
     }
     clearSearch();
   }

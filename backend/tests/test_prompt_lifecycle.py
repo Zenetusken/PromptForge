@@ -19,7 +19,8 @@ EMBEDDING_DIM = 384
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    """Naive UTC — matches service and SQLAlchemy DateTime() on SQLite."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ---------------------------------------------------------------------------

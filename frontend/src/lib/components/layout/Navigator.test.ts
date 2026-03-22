@@ -3,7 +3,7 @@ import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { mockFetch, mockHistoryItem, mockStrategyInfo, mockOptimizationResult } from '$lib/test-utils';
 
-// Mock ClusterNavigator sub-component (used when active='patterns')
+// Mock ClusterNavigator sub-component (used when active='clusters')
 vi.mock('$lib/components/layout/ClusterNavigator.svelte', () => ({
   default: () => ({ destroy: () => {} }),
 }));

@@ -93,9 +93,31 @@
     flex-shrink: 0;
   }
 
+  .action-btn {
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--color-contour);
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 
+  .action-btn:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-dim);
+  }
 
+  .action-btn--primary {
+    color: var(--color-neon-cyan);
+    border-color: var(--color-neon-cyan);
+  }
 
+  .action-btn--primary:hover {
+    background: color-mix(in srgb, var(--color-neon-cyan) 8%, transparent);
+  }
 
 
 </style>

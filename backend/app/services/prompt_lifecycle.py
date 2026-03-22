@@ -50,7 +50,14 @@ BACKFILL_THRESHOLD = 0.72
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    """Naive UTC timestamp — matches SQLAlchemy DateTime() round-trip on SQLite.
+
+    SQLAlchemy's ``DateTime()`` (without ``timezone=True``) strips timezone info
+    on storage and returns naive datetimes on read.  Using naive UTC here ensures
+    all in-memory comparisons (e.g. ``activity_time < stale_cutoff``) succeed
+    without ``TypeError: can't compare offset-naive and offset-aware datetimes``.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class PromptLifecycleService:

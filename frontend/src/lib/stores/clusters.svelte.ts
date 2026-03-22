@@ -107,7 +107,7 @@ class ClusterStore {
       this.taxonomyStats = stats;
     } catch (err) {
       if (gen !== this._loadGeneration) return;
-      this.taxonomyError = err instanceof Error ? err.message : 'Failed to load clusters';
+      this.taxonomyError = (err instanceof Error && err.message) ? err.message : 'Failed to load clusters';
       console.warn('Cluster tree load failed:', err);
     } finally {
       if (gen === this._loadGeneration) {
@@ -154,7 +154,7 @@ class ClusterStore {
       this.clusterDetail = detail;
     } catch (err) {
       if (gen !== this._clusterGeneration) return;
-      this.clusterDetailError = err instanceof Error ? err.message : 'Failed to load cluster';
+      this.clusterDetailError = (err instanceof Error && err.message) ? err.message : 'Failed to load cluster';
       this.clusterDetail = null;
     } finally {
       if (gen === this._clusterGeneration) {

@@ -291,7 +291,7 @@ describe('ClusterStore', () => {
       const detail = {
         id: 'fam-1',
         label: 'API endpoint patterns',
-        state: 'confirmed',
+        state: 'active',
         domain: 'backend',
         task_type: 'coding',
         member_count: 3,
@@ -318,7 +318,7 @@ describe('ClusterStore', () => {
     it('clears selectedClusterId and detail when null passed', () => {
       clustersStore.selectedClusterId = 'fam-1';
       clustersStore.clusterDetail = {
-        id: 'fam-1', label: 'test', state: 'confirmed', domain: 'backend',
+        id: 'fam-1', label: 'test', state: 'active', domain: 'backend',
         task_type: 'coding', member_count: 3, usage_count: 5, avg_score: 7.8,
         coherence: null, separation: null, preferred_strategy: null,
         promoted_at: null, meta_patterns: [], optimizations: [],
@@ -342,7 +342,7 @@ describe('ClusterStore', () => {
     it('sets clusterDetailLoading true during fetch then false', async () => {
       mockFetch([
         { match: '/clusters/fam-1', response: {
-          id: 'fam-1', label: 'test', state: 'confirmed', domain: 'backend',
+          id: 'fam-1', label: 'test', state: 'active', domain: 'backend',
           task_type: 'coding', member_count: 3, usage_count: 5, avg_score: 7.8,
           coherence: null, separation: null, preferred_strategy: null,
           promoted_at: null, meta_patterns: [], optimizations: [],

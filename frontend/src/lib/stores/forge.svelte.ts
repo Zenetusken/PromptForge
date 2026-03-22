@@ -37,8 +37,8 @@ class ForgeStore {
   // Applied meta-pattern IDs from knowledge graph paste detection
   appliedPatternIds = $state<string[] | null>(null);
 
-  // Family link from knowledge graph (set when optimization is linked to a pattern family)
-  familyId = $state<string | null>(null);
+  // Cluster link (set when optimization is linked to a prompt cluster)
+  clusterId = $state<string | null>(null);
 
   /** Routing decision from the backend's first SSE event per optimize stream. */
   routingDecision = $state<{ tier: string; provider: string | null; reason: string; degraded_from: string | null } | null>(null);
@@ -99,7 +99,7 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
     this.appliedPatternIds = null;
-    this.familyId = null;
+    this.clusterId = null;
     this.routingDecision = null;
 
     this.status = 'analyzing';
@@ -245,9 +245,9 @@ class ForgeStore {
     this.scoreDeltas = opt.score_deltas ?? null;
 
     // Bidirectional family link — auto-select in patterns store so Inspector shows family detail
-    this.familyId = opt.family_id ?? null;
-    if (this.familyId) {
-      clustersStore.selectCluster(this.familyId);
+    this.clusterId = opt.cluster_id ?? null;
+    if (this.clusterId) {
+      clustersStore.selectCluster(this.clusterId);
     }
 
     // Cache the result in the editor store so each result tab has its own data
@@ -265,7 +265,7 @@ class ForgeStore {
     this.assembledPrompt = null;
     this.passthroughTraceId = null;
     this.passthroughStrategy = null;
-    this.familyId = null;
+    this.clusterId = null;
     this.routingDecision = null;
     this.status = 'idle';
   }
@@ -327,7 +327,7 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
     this.appliedPatternIds = null;
-    this.familyId = null;
+    this.clusterId = null;
     this.routingDecision = null;
     this.samplingCapable = null;
     this.mcpDisconnected = false;
@@ -353,7 +353,7 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.initialSuggestions = [];
     this.appliedPatternIds = null;
-    this.familyId = null;
+    this.clusterId = null;
     this.routingDecision = null;
     clustersStore.resetTracking();
   }

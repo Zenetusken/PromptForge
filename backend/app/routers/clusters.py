@@ -27,7 +27,6 @@ from app.schemas.clusters import (
 )
 from app.services.taxonomy import TaxonomyEngine
 from app.services.taxonomy import get_engine as get_taxonomy_engine
-from app.services.taxonomy.sparkline import SparklineData
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +94,6 @@ async def get_cluster_stats(
     try:
         engine = _get_engine(request)
         data = await engine.get_stats(db)
-        # Engine returns SparklineData for q_sparkline — extract .normalized
-        sparkline = data.get("q_sparkline")
-        if isinstance(sparkline, SparklineData):
-            data["q_sparkline"] = sparkline.normalized
 
         # Map total_families -> total_clusters for the unified schema
         total_clusters = data.pop("total_families", 0)
@@ -290,7 +285,11 @@ async def match_cluster(
                 "id": cluster.id,
                 "label": cluster.label,
                 "domain": cluster.domain,
+                "task_type": cluster.task_type,
+                "usage_count": cluster.usage_count,
                 "member_count": cluster.member_count,
+                "avg_score": cluster.avg_score,
+                "created_at": cluster.created_at.isoformat() if cluster.created_at else None,
             }
         match_dict["meta_patterns"] = [
             {"id": mp.id, "pattern_text": mp.pattern_text, "source_count": mp.source_count}

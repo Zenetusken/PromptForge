@@ -138,7 +138,13 @@ async def assign_cluster(
         Existing (updated) or newly-created PromptCluster.
     """
 
-    result = await db.execute(select(PromptCluster))
+    # Only merge into non-archived clusters.  Archived clusters are
+    # effectively tombstoned and should never absorb new members.
+    result = await db.execute(
+        select(PromptCluster).where(
+            PromptCluster.state.in_(["candidate", "active", "mature", "template"])
+        )
+    )
     clusters = result.scalars().all()
 
     if clusters:
@@ -469,28 +475,35 @@ async def compute_pattern_centroid(
     if not cluster_ids:
         return None
 
-    # Load clusters to get parent_ids
+    # Load clusters referenced by these meta-patterns
     cluster_result = await db.execute(
         select(PromptCluster).where(PromptCluster.id.in_(cluster_ids))
     )
     clusters = cluster_result.scalars().all()
 
-    parent_ids = list(
-        {c.parent_id for c in clusters if c.parent_id}
-    )
-    if not parent_ids:
-        return None
+    # Prefer parent (broader topic) centroids when available.
+    # Fall back to the cluster's own centroid for root-level clusters
+    # so they still contribute to the Bayesian prior.
+    parent_ids = list({c.parent_id for c in clusters if c.parent_id})
 
-    # Load parent PromptClusters and collect their centroids
-    parent_result = await db.execute(
-        select(PromptCluster).where(PromptCluster.id.in_(parent_ids))
-    )
-    parents = parent_result.scalars().all()
-
+    # Collect parent centroids
     vecs: list[np.ndarray] = []
-    for p in parents:
+    if parent_ids:
+        parent_result = await db.execute(
+            select(PromptCluster).where(PromptCluster.id.in_(parent_ids))
+        )
+        for p in parent_result.scalars().all():
+            try:
+                c = np.frombuffer(p.centroid_embedding, dtype=np.float32)
+                vecs.append(c)
+            except (ValueError, TypeError):
+                continue
+
+    # Root-level clusters (no parent) — use their own centroids
+    root_clusters = [c for c in clusters if not c.parent_id]
+    for rc in root_clusters:
         try:
-            c = np.frombuffer(p.centroid_embedding, dtype=np.float32)
+            c = np.frombuffer(rc.centroid_embedding, dtype=np.float32)
             vecs.append(c)
         except (ValueError, TypeError):
             continue

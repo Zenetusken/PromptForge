@@ -12,8 +12,8 @@
   let provider = $state<string | null>(null);
   let version = $state<string | null>(null);
 
-  // Pattern count derived from taxonomy stats (loaded by clustersStore.loadTree)
-  const patternCount = $derived(clustersStore.taxonomyStats?.nodes?.confirmed ?? null);
+  // Cluster count derived from taxonomy stats (loaded by clustersStore.loadTree)
+  const clusterCount = $derived(clustersStore.taxonomyStats?.nodes?.active ?? null);
 
   let loaded = false;
   $effect(() => {
@@ -76,8 +76,8 @@
 
   <!-- Right side: pattern count + keyboard shortcut hint -->
   <div class="status-right">
-    {#if patternCount !== null && patternCount > 0}
-      <span class="status-patterns" title="{patternCount} pattern families">{patternCount} patterns</span>
+    {#if clusterCount !== null && clusterCount > 0}
+      <span class="status-patterns" title="{clusterCount} active clusters">{clusterCount} clusters</span>
     {/if}
     {#if clustersStore.taxonomyStats?.q_system != null}
       <span class="statusbar-item" title="Taxonomy health (Q_system)">

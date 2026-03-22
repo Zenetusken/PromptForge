@@ -40,13 +40,13 @@ from app.services.taxonomy.family_ops import (
     merge_meta_pattern,
 )
 from app.services.taxonomy.matching import (
-    CANDIDATE_THRESHOLD,
-    CLUSTER_MATCH_THRESHOLD,
-    DOMAIN_ALIGNMENT_FLOOR,
-    FAMILY_MATCH_THRESHOLD,
     PatternMatch,
     TaxonomyMapping,
+)
+from app.services.taxonomy.matching import (
     map_domain as _map_domain,
+)
+from app.services.taxonomy.matching import (
     match_prompt as _match_prompt,
 )
 from app.services.taxonomy.sparkline import compute_sparkline_data
@@ -314,14 +314,14 @@ class TaxonomyEngine:
             is_non_regressive,
         )
 
-        # 1. Load all confirmed nodes
+        # 1. Load all active nodes
         result = await db.execute(
             select(PromptCluster).where(PromptCluster.state == "active")
         )
-        confirmed_nodes = list(result.scalars().all())
+        active_nodes = list(result.scalars().all())
 
         # 2. Compute Q_before
-        q_before = self._compute_q_from_nodes(confirmed_nodes)
+        q_before = self._compute_q_from_nodes(active_nodes)
 
         # 3. Gather candidate operations from lifecycle module
         ops_attempted = 0
@@ -330,9 +330,9 @@ class TaxonomyEngine:
         deadlock_breaker_used = False
 
         # --- Priority 1: Split (Spec Section 3.5) ---
-        # Detect split candidates: confirmed nodes with low coherence and enough
+        # Detect split candidates: active nodes with low coherence and enough
         # members to produce viable child clusters.
-        for node in confirmed_nodes:
+        for node in active_nodes:
             coherence = node.coherence if node.coherence is not None else 1.0
             if coherence < SPLIT_COHERENCE_FLOOR and (node.member_count or 0) >= SPLIT_MIN_MEMBERS:
                 ops_attempted += 1
@@ -448,11 +448,11 @@ class TaxonomyEngine:
                                     {"type": "emerge", "node_id": node.id}
                                 )
 
-        # Try merge on confirmed nodes that are close in embedding space
-        if len(confirmed_nodes) >= 2:
+        # Try merge on active nodes that are close in embedding space
+        if len(active_nodes) >= 2:
             centroids = []
             valid_nodes: list[PromptCluster] = []
-            for n in confirmed_nodes:
+            for n in active_nodes:
                 try:
                     c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                     centroids.append(c)
@@ -503,8 +503,8 @@ class TaxonomyEngine:
                         )
                         await self._embedding_index.remove(loser.id)
 
-        # Try retire on idle nodes (member_count == 0 and confirmed)
-        for node in confirmed_nodes:
+        # Try retire on idle nodes (member_count == 0 and active)
+        for node in active_nodes:
             if (node.member_count or 0) == 0:
                 ops_attempted += 1
                 from app.services.taxonomy.lifecycle import attempt_retire
@@ -523,9 +523,9 @@ class TaxonomyEngine:
         result = await db.execute(
             select(PromptCluster).where(PromptCluster.state == "active")
         )
-        confirmed_after = list(result.scalars().all())
-        self._update_per_node_separation(confirmed_after)
-        q_after = self._compute_q_from_nodes(confirmed_after)
+        active_after = list(result.scalars().all())
+        self._update_per_node_separation(active_after)
+        q_after = self._compute_q_from_nodes(active_after)
 
         if ops_accepted > 0 and not is_non_regressive(
             q_before, q_after, self._warm_path_age
@@ -540,11 +540,11 @@ class TaxonomyEngine:
             q_after = q_before
             ops_accepted = 0
             operations_log = []
-            # Re-query confirmed nodes after rollback so cache isn't stale
+            # Re-query active nodes after rollback so cache isn't stale
             result = await db.execute(
                 select(PromptCluster).where(PromptCluster.state == "active")
             )
-            confirmed_after = list(result.scalars().all())
+            active_after = list(result.scalars().all())
 
         # 5. Deadlock breaker (Spec Section 2.5)
         if ops_attempted > 0 and ops_accepted == 0:
@@ -758,7 +758,7 @@ class TaxonomyEngine:
             )
 
         # 3. Create/update PromptClusters from cluster results
-        # Load existing confirmed nodes for potential updates
+        # Load existing active nodes for potential updates
         existing_result = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.state.in_(["active", "candidate"])
@@ -909,16 +909,16 @@ class TaxonomyEngine:
         result = await db.execute(
             select(PromptCluster).where(PromptCluster.state == "active")
         )
-        confirmed_after = list(result.scalars().all())
+        active_after = list(result.scalars().all())
 
-        self._update_per_node_separation(confirmed_after)
+        self._update_per_node_separation(active_after)
 
         # 7. Compute final Q_system (reads node.separation set above)
-        q_system = self._compute_q_from_nodes(confirmed_after)
+        q_system = self._compute_q_from_nodes(active_after)
 
         # 8. Aggregate metrics for snapshot
         node_centroids = []
-        for n in confirmed_after:
+        for n in active_after:
             try:
                 c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                 node_centroids.append(c)
@@ -926,14 +926,14 @@ class TaxonomyEngine:
                 continue
 
         separation = compute_separation(node_centroids) if len(node_centroids) >= 2 else 1.0
-        coherences = [n.coherence for n in confirmed_after if n.coherence is not None]
+        coherences = [n.coherence for n in active_after if n.coherence is not None]
         mean_coherence = float(np.mean(coherences)) if coherences else 0.0
 
         await db.commit()
 
-        # 8b. Rebuild embedding index from confirmed centroids
+        # 8b. Rebuild embedding index from active centroids
         index_centroids: dict[str, np.ndarray] = {}
-        for n in confirmed_after:
+        for n in active_after:
             try:
                 emb = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                 if emb.shape[0] == 384:
@@ -1054,18 +1054,18 @@ class TaxonomyEngine:
         from app.services.taxonomy.clustering import compute_separation
         from app.services.taxonomy.snapshot import create_snapshot
 
-        # Load confirmed nodes for metrics
+        # Load active nodes for metrics
         result = await db.execute(
             select(PromptCluster).where(PromptCluster.state == "active")
         )
-        confirmed = list(result.scalars().all())
+        active_nodes = list(result.scalars().all())
 
         # Compute coherence and separation
-        coherences = [n.coherence for n in confirmed if n.coherence is not None]
+        coherences = [n.coherence for n in active_nodes if n.coherence is not None]
         mean_coherence = float(np.mean(coherences)) if coherences else 0.0
 
         centroids = []
-        for n in confirmed:
+        for n in active_nodes:
             try:
                 c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                 centroids.append(c)
@@ -1103,7 +1103,7 @@ class TaxonomyEngine:
         db: AsyncSession,
         applied_pattern_ids: list[str] | None = None,
     ) -> TaxonomyMapping:
-        """Map a free-text domain string to the nearest confirmed PromptCluster.
+        """Map a free-text domain string to the nearest active PromptCluster.
 
         Delegates to :func:`matching.map_domain`.
         """
@@ -1120,8 +1120,11 @@ class TaxonomyEngine:
         db: AsyncSession,
         min_persistence: float = 0.0,
     ) -> list[dict]:
+        # Show all non-archived lifecycle states in the topology view.
+        # Mature and template nodes are valid topology members — excluding
+        # them would create inconsistency with stats panel node counts.
         query = select(PromptCluster).where(
-            PromptCluster.state.in_(["active", "candidate"])
+            PromptCluster.state.in_(["active", "candidate", "mature", "template"])
         )
         if min_persistence > 0:
             query = query.where(PromptCluster.persistence >= min_persistence)
@@ -1168,6 +1171,8 @@ class TaxonomyEngine:
         state_counts = dict(state_result.all())
         active = state_counts.get("active", 0)
         candidate = state_counts.get("candidate", 0)
+        mature = state_counts.get("mature", 0)
+        template = state_counts.get("template", 0)
         archived = state_counts.get("archived", 0)
 
         # max_depth + leaf_count: lightweight projection (id + parent_id + state only)
@@ -1258,6 +1263,8 @@ class TaxonomyEngine:
             "nodes": {
                 "active": active,
                 "candidate": candidate,
+                "mature": mature,
+                "template": template,
                 "archived": archived,
                 "max_depth": max_depth,
                 "leaf_count": leaf_count,

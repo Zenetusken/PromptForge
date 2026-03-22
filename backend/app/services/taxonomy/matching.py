@@ -228,31 +228,27 @@ async def match_prompt(
 
                 if score >= threshold:
                     # Aggregate meta-patterns from top-3 child families
-                    # ranked by cosine similarity to query (Spec 7.7)
-                    child_fam_result = await db.execute(
+                    # ranked by cosine similarity to query (Spec 7.7).
+                    # Load direct children once (covers both leaf families
+                    # and intermediate nodes in the unified PromptCluster model).
+                    children_result = await db.execute(
                         select(PromptCluster)
                         .where(PromptCluster.parent_id == node.id)
                     )
-                    candidate_families = list(child_fam_result.scalars().all())
+                    direct_children = list(children_result.scalars().all())
+                    candidate_families = list(direct_children)
 
-                    # Also include families from child nodes
-                    child_node_result = await db.execute(
-                        select(PromptCluster).where(
-                            PromptCluster.parent_id == node.id
-                        )
-                    )
-                    child_nodes = list(child_node_result.scalars().all())
-                    child_node_ids = [cn.id for cn in child_nodes]
-
+                    # Also include grandchildren (families under child nodes)
+                    child_node_ids = [cn.id for cn in direct_children]
                     if child_node_ids:
-                        child_child_fam_result = await db.execute(
+                        grandchildren_result = await db.execute(
                             select(PromptCluster)
                             .where(
                                 PromptCluster.parent_id.in_(child_node_ids)
                             )
                         )
                         candidate_families.extend(
-                            child_child_fam_result.scalars().all()
+                            grandchildren_result.scalars().all()
                         )
 
                     # Rank all candidate families by cosine similarity
@@ -360,7 +356,7 @@ def _deduplicate_meta_patterns(
 
 
 # ---------------------------------------------------------------------------
-# map_domain — domain string to nearest confirmed PromptCluster
+# map_domain — domain string to nearest active PromptCluster
 # ---------------------------------------------------------------------------
 
 
@@ -370,7 +366,7 @@ async def map_domain(
     embedding_service: EmbeddingService,
     applied_pattern_ids: list[str] | None = None,
 ) -> TaxonomyMapping:
-    """Map a free-text domain string to the nearest confirmed PromptCluster.
+    """Map a free-text domain string to the nearest active PromptCluster.
 
     If applied_pattern_ids are provided, compute a pattern centroid and
     blend 70 % analyzer embedding + 30 % pattern centroid (Bayesian prior).
@@ -383,7 +379,7 @@ async def map_domain(
             this optimization — used to inject a pattern-based prior.
 
     Returns:
-        TaxonomyMapping.  cluster_id is None when no confirmed node
+        TaxonomyMapping.  cluster_id is None when no active node
         has cosine similarity >= DOMAIN_ALIGNMENT_FLOOR.
     """
     # Embed domain_raw
@@ -401,7 +397,7 @@ async def map_domain(
             if norm > 0:
                 query_emb = blended / norm
 
-    # Load confirmed PromptCluster centroids
+    # Load active PromptCluster centroids
     result = await db.execute(
         select(PromptCluster).where(PromptCluster.state == "active")
     )

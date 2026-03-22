@@ -6,6 +6,7 @@ snapshots (copy-on-write). At 2000 clusters (384-dim), search is ~3ms.
 
 import asyncio
 import logging
+
 import numpy as np
 
 logger = logging.getLogger(__name__)

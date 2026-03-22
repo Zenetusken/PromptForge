@@ -1,6 +1,7 @@
 """Tests for the in-memory numpy embedding index."""
 import numpy as np
 import pytest
+
 from app.services.taxonomy.embedding_index import EmbeddingIndex
 
 

@@ -11,7 +11,6 @@ import pytest
 
 from app.services.pipeline import PipelineOrchestrator
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -226,8 +225,6 @@ class TestPipelineAutoInjectionIntegration:
         cluster_id = "cluster-001"
         mp = _make_meta_pattern(cluster_id, "Be explicit about return types")
         engine = _make_taxonomy_engine(size=1, matches=[(cluster_id, 0.88)])
-        fake_emb = _rand_emb()
-
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [mp]
         db_session.execute = AsyncMock(return_value=mock_result)

@@ -23,7 +23,7 @@ function mockClusterNode(overrides: Record<string, unknown> = {}) {
     id: 'fam-1',
     parent_id: null,
     label: 'API endpoint patterns',
-    state: 'confirmed',
+    state: 'active',
     domain: 'backend',
     task_type: 'coding',
     persistence: null,
@@ -71,7 +71,7 @@ function clusterDetail(overrides: Record<string, unknown> = {}) {
     id: 'fam-1',
     parent_id: null,
     label: 'API patterns',
-    state: 'confirmed',
+    state: 'active',
     domain: 'backend',
     task_type: 'coding',
     member_count: 3,
@@ -260,7 +260,7 @@ describe('ClusterNavigator', () => {
 
   // ── 3. Domain filtering (via search) ───────────────────────────────────────
   //
-  // Note: PatternNavigator groups families by domain but does NOT have a
+  // Note: ClusterNavigator groups families by domain but does NOT have a
   // separate domain filter UI element — filtering happens by displaying
   // grouped headers. The component uses listFamilies() without a domain param
   // on the initial load; domain filtering is rendered through domain grouping.
@@ -296,7 +296,7 @@ describe('ClusterNavigator', () => {
 
     // Pre-populate taxonomy tree for local search
     patternsStore.taxonomyTree = [
-      { id: 'node-1', parent_id: null, label: 'API patterns', state: 'confirmed', persistence: null, coherence: 0.9, separation: null, stability: null, member_count: 3, usage_count: 5, color_hex: '#a855f7', umap_x: null, umap_y: null, umap_z: null },
+      { id: 'node-1', parent_id: null, label: 'API patterns', state: 'active', persistence: null, coherence: 0.9, separation: null, stability: null, member_count: 3, usage_count: 5, color_hex: '#a855f7', umap_x: null, umap_y: null, umap_z: null },
     ] as any;
 
     defaultHandlers([]);
@@ -342,7 +342,7 @@ describe('ClusterNavigator', () => {
     const user = userEvent.setup();
 
     patternsStore.taxonomyTree = [
-      { id: 'node-1', parent_id: null, label: 'API patterns', state: 'confirmed', persistence: null, coherence: 0.9, separation: null, stability: null, member_count: 3, usage_count: 5, color_hex: '#a855f7', umap_x: null, umap_y: null, umap_z: null },
+      { id: 'node-1', parent_id: null, label: 'API patterns', state: 'active', persistence: null, coherence: 0.9, separation: null, stability: null, member_count: 3, usage_count: 5, color_hex: '#a855f7', umap_x: null, umap_y: null, umap_z: null },
     ] as any;
 
     defaultHandlers([
@@ -555,7 +555,7 @@ describe('ClusterNavigator', () => {
 
     // Pre-populate taxonomy tree for local search
     patternsStore.taxonomyTree = [
-      { id: 'fam-1', parent_id: null, label: 'API patterns', state: 'confirmed', persistence: null, coherence: 0.9, separation: null, stability: null, member_count: 3, usage_count: 5, color_hex: '#a855f7', umap_x: null, umap_y: null, umap_z: null },
+      { id: 'fam-1', parent_id: null, label: 'API patterns', state: 'active', persistence: null, coherence: 0.9, separation: null, stability: null, member_count: 3, usage_count: 5, color_hex: '#a855f7', umap_x: null, umap_y: null, umap_z: null },
     ] as any;
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {

@@ -322,9 +322,11 @@
             <span class="metric-value">{stats.q_separation?.toFixed(3) ?? '—'}</span>
           </div>
           <div class="health-counts">
-            <span>{stats.nodes?.confirmed ?? 0} confirmed</span>
+            <span>{stats.nodes?.active ?? 0} active</span>
             <span class="dot-sep">·</span>
             <span>{stats.nodes?.candidate ?? 0} candidate</span>
+            <span class="dot-sep">·</span>
+            <span>{stats.nodes?.template ?? 0} template</span>
           </div>
         </div>
       {:else}
