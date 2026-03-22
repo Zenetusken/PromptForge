@@ -23,6 +23,7 @@ __all__ = [
     "DATA_DIR",
     "PROMPTS_DIR",
     "async_session_factory",
+    "build_scores_dict",
     "get_routing",
     "get_taxonomy_engine",
     "resolve_workspace_guidance",
@@ -71,6 +72,25 @@ def get_taxonomy_engine():
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def build_scores_dict(obj: object) -> dict[str, float] | None:
+    """Build a {clarity, specificity, structure, faithfulness, conciseness} dict.
+
+    Works with any object that has ``score_clarity`` through ``score_conciseness``
+    attributes (e.g. ``Optimization``, ``RefinementTurn``).  Returns ``None`` if
+    ``score_clarity`` is missing or ``None``.
+    """
+    clarity = getattr(obj, "score_clarity", None)
+    if clarity is None:
+        return None
+    return {
+        "clarity": clarity,
+        "specificity": getattr(obj, "score_specificity", None) or 0.0,
+        "structure": getattr(obj, "score_structure", None) or 0.0,
+        "faithfulness": getattr(obj, "score_faithfulness", None) or 0.0,
+        "conciseness": getattr(obj, "score_conciseness", None) or 0.0,
+    }
 
 
 async def resolve_workspace_guidance(

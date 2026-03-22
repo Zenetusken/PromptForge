@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from app.database import async_session_factory
 from app.models import Feedback, Optimization, RefinementTurn
 from app.schemas.mcp_models import OptimizationDetailOutput
+from app.tools._shared import build_scores_dict
 
 logger = logging.getLogger(__name__)
 
@@ -52,20 +53,9 @@ async def handle_get_optimization(
         )
         refinement_versions = rv_result.scalar() or 0
 
-        # Build scores dict
-        scores: dict[str, float] | None = None
-        if opt.score_clarity is not None:
-            scores = {
-                "clarity": opt.score_clarity,
-                "specificity": opt.score_specificity or 0.0,
-                "structure": opt.score_structure or 0.0,
-                "faithfulness": opt.score_faithfulness or 0.0,
-                "conciseness": opt.score_conciseness or 0.0,
-            }
-
-        # Original scores and deltas
-        original_scores = opt.original_scores if hasattr(opt, "original_scores") else None
-        score_deltas = opt.score_deltas if hasattr(opt, "score_deltas") else None
+        scores = build_scores_dict(opt)
+        original_scores = opt.original_scores
+        score_deltas = opt.score_deltas
 
         created_str = opt.created_at.isoformat() if opt.created_at else None
 

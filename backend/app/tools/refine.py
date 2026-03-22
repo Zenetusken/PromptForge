@@ -9,7 +9,6 @@ import logging
 
 from mcp.server.fastmcp import Context
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
 from app.config import PROMPTS_DIR
 from app.database import async_session_factory
@@ -19,7 +18,7 @@ from app.services.event_notification import notify_event_bus
 from app.services.preferences import PreferencesService
 from app.services.refinement_service import RefinementService
 from app.services.routing import RoutingContext
-from app.tools._shared import DATA_DIR, get_routing, resolve_workspace_guidance
+from app.tools._shared import DATA_DIR, build_scores_dict, get_routing, resolve_workspace_guidance
 
 logger = logging.getLogger(__name__)
 
@@ -73,15 +72,7 @@ async def handle_refine(
         )
         if not existing_turns.scalar_one_or_none():
             # Seed the initial turn from the parent optimization
-            scores_dict = {}
-            if opt.score_clarity is not None:
-                scores_dict = {
-                    "clarity": opt.score_clarity,
-                    "specificity": opt.score_specificity or 0.0,
-                    "structure": opt.score_structure or 0.0,
-                    "faithfulness": opt.score_faithfulness or 0.0,
-                    "conciseness": opt.score_conciseness or 0.0,
-                }
+            scores_dict = build_scores_dict(opt) or {}
             await svc.create_initial_turn(
                 optimization_id=optimization_id,
                 prompt=opt.optimized_prompt,
