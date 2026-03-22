@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { listFamilies, type ClusterNode } from '$lib/api/clusters';
+  import type { ClusterNode } from '$lib/api/clusters';
   import { clustersStore } from '$lib/stores/clusters.svelte';
   import { editorStore, PROMPT_TAB_ID } from '$lib/stores/editor.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
@@ -9,13 +9,8 @@
 
   const PAGE_SIZE = 50;
 
-  let families = $state<ClusterNode[]>([]);
-  let loaded = $state(false);
-  let error = $state<string | null>(null);
-  let hasMore = $state(false);
-  let nextOffset = $state<number | null>(null);
-  let loadingMore = $state(false);
-  let totalFamilies = $state(0);
+  // Pagination state — families are derived from the store's tree (no redundant API calls)
+  let pageLimit = $state(PAGE_SIZE);
 
   // State filter — null = All
   // Candidate state intentionally excluded — candidates are transient internal nodes
@@ -23,25 +18,32 @@
   type StateFilter = null | 'active' | 'mature' | 'template' | 'archived';
   let stateFilter = $state<StateFilter>(null);
 
+  // Derive families directly from the store's taxonomy tree (already in memory)
+  const allFamilies = $derived(clustersStore.taxonomyTree);
+  const families = $derived(allFamilies.slice(0, pageLimit));
+  const totalFamilies = $derived(allFamilies.length);
+  const hasMore = $derived(pageLimit < allFamilies.length);
+  const loaded = $derived(!clustersStore.taxonomyLoading || allFamilies.length > 0);
+  const error = $derived(clustersStore.taxonomyError);
+
   // Search state — local filtering from taxonomy tree
   let searchQuery = $state('');
   let searchActive = $derived(searchQuery.trim().length > 0);
-  interface LocalSearchResult { type: string; id: string; label: string; score: number; cluster_id?: string; }
+  interface LocalSearchResult { id: string; label: string; score: number; }
   let searchResults = $derived.by<LocalSearchResult[]>(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
-    return clustersStore.taxonomyTree
+    return allFamilies
       .filter(node => (node.label ?? '').toLowerCase().includes(q))
       .slice(0, 10)
       .map(node => ({
-        type: 'family' as const,
         id: node.id,
         label: node.label ?? '',
         score: node.coherence ?? 0,
       }));
   });
 
-  // Expanded family — uses store's familyDetail state
+  // Expanded family — uses store's clusterDetail state
   let expandedId = $state<string | null>(null);
 
   // Proven Templates section — shown when no filter or template filter active
@@ -76,52 +78,19 @@
 
   let domains = $derived(Object.keys(grouped).sort());
 
-  // Load families on mount
+  // Ensure tree is loaded on mount (idempotent — store uses generation counter)
   let _mountLoaded = $state(false);
   $effect(() => {
     if (!_mountLoaded) {
       _mountLoaded = true;
-      loadFamilies();
+      if (allFamilies.length === 0) {
+        clustersStore.loadTree();
+      }
     }
   });
 
-  // Reload when taxonomy tree is refreshed (taxonomy_changed event)
-  let _lastTreeLen = $state(0);
-  $effect(() => {
-    const tl = clustersStore.taxonomyTree.length;
-    if (tl > 0 && tl !== _lastTreeLen) {
-      loadFamilies();
-    }
-    _lastTreeLen = tl;
-  });
-
-  async function loadFamilies() {
-    try {
-      error = null;
-      const resp = await listFamilies({ limit: PAGE_SIZE });
-      families = resp.items;
-      hasMore = resp.has_more;
-      nextOffset = resp.next_offset;
-      totalFamilies = resp.total;
-      loaded = true;
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load patterns';
-      loaded = true;
-    }
-  }
-
-  async function loadMore() {
-    if (!hasMore || nextOffset === null || loadingMore) return;
-    loadingMore = true;
-    try {
-      const resp = await listFamilies({ offset: nextOffset, limit: PAGE_SIZE });
-      families = [...families, ...resp.items];
-      hasMore = resp.has_more;
-      nextOffset = resp.next_offset;
-    } catch {
-      // Silently fail — user can retry
-    }
-    loadingMore = false;
+  function loadMore() {
+    pageLimit += PAGE_SIZE;
   }
 
   function handleSearchInput(e: Event) {
@@ -133,11 +102,8 @@
   }
 
   function selectSearchResult(result: LocalSearchResult) {
-    const clusterId = result.type === 'family' ? result.id : result.cluster_id;
-    if (clusterId) {
-      expandedId = clusterId;
-      clustersStore.selectCluster(clusterId);
-    }
+    expandedId = result.id;
+    clustersStore.selectCluster(result.id);
     clearSearch();
   }
 
@@ -148,7 +114,7 @@
       return;
     }
     expandedId = family.id;
-    // selectFamily triggers _loadFamilyDetail — use store's state for detail
+    // selectCluster triggers _loadClusterDetail — use store's state for detail
     clustersStore.selectCluster(family.id);
   }
 
@@ -232,7 +198,7 @@
             class="search-result"
             onclick={() => selectSearchResult(result)}
           >
-            <span class="badge-neon">{result.type === 'family' ? 'FAM' : 'PAT'}</span>
+            <span class="badge-neon">CLU</span>
             <span class="search-label">{result.label}</span>
             <span class="search-score font-mono">{(result.score * 100).toFixed(0)}%</span>
           </button>
@@ -332,9 +298,8 @@
         <button
           class="action-btn" style="margin-top: 4px; width: 100%;"
           onclick={loadMore}
-          disabled={loadingMore}
         >
-          {loadingMore ? 'Loading...' : 'Load more'}
+          Load more
         </button>
       {/if}
     {/if}
@@ -728,9 +693,4 @@
     color: var(--color-text-dim);
     flex-shrink: 0;
   }
-
-  /* ---- Load more ---- */
-
-
-
 </style>

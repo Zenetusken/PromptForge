@@ -10,6 +10,11 @@
   import * as THREE from 'three';
   import { triggerRecluster } from '$lib/api/clusters';
   import { addToast } from '$lib/stores/toast.svelte';
+  import { stateColor } from '$lib/utils/colors';
+
+  // Resolved at module level to avoid per-frame allocations
+  const HIGHLIGHT_COLOR = parseInt(stateColor('template').replace('#', ''), 16);
+  const EDGE_COLOR = parseInt(stateColor('archived').replace('#', ''), 16);
 
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
@@ -46,7 +51,7 @@
     }
     _highlightedColor = (mesh.material as THREE.MeshBasicMaterial).color.getHex();
     _highlightedId = nodeId;
-    (mesh.material as THREE.MeshBasicMaterial).color.setHex(0x00e5ff); // neon cyan
+    (mesh.material as THREE.MeshBasicMaterial).color.setHex(HIGHLIGHT_COLOR);
   }
 
   /** Clear any active highlight, restoring the original color. */
@@ -66,23 +71,26 @@
 
     // Clear previous
     interaction?.clear();
-    labels?.clear();
+    labels?.clear();  // disposes label sprites + textures
     nodeMeshes.clear();
     clearHighlight();
 
-    // Dispose GPU resources before clearing scene
+    // Dispose GPU resources before clearing scene.
+    // Track disposed geometries to avoid duplicate dispose on shared instances.
+    const disposedGeometries = new Set<THREE.BufferGeometry>();
     renderer.scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) {
-        obj.geometry.dispose();
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach((m) => m.dispose());
-        } else {
-          obj.material.dispose();
+      if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
+        if (!disposedGeometries.has(obj.geometry)) {
+          obj.geometry.dispose();
+          disposedGeometries.add(obj.geometry);
         }
-      } else if (obj instanceof THREE.LineSegments) {
-        obj.geometry.dispose();
-        (obj.material as THREE.Material).dispose();
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m: THREE.Material) => m.dispose());
+        } else {
+          (obj.material as THREE.Material).dispose();
+        }
       }
+      // Note: Sprites are already disposed by labels.clear() above
     });
 
     // Remove old scene children
@@ -90,7 +98,7 @@
       renderer.scene.remove(renderer.scene.children[0]);
     }
 
-    // Build nodes as individual meshes
+    // Build nodes as individual meshes (shared geometry, per-node material)
     const geometry = new THREE.IcosahedronGeometry(1, 1);
     for (const node of data.nodes) {
       if (!node.visible) continue;
@@ -123,7 +131,7 @@
       const edgeGeometry = new THREE.BufferGeometry();
       edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
       const edgeMaterial = new THREE.LineBasicMaterial({
-        color: 0x2a2a3e,
+        color: EDGE_COLOR,
         transparent: true,
         opacity: 0.4,
       });

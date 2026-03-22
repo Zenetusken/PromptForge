@@ -121,10 +121,6 @@ class ClusterStore {
     this.loadTree();
   }
 
-  /** @deprecated Use invalidateClusters() */
-  invalidateTaxonomy(): void {
-    this.invalidateClusters();
-  }
 
   /**
    * Select a cluster for Inspector display. Pass null to deselect.
@@ -137,11 +133,6 @@ class ClusterStore {
       return;
     }
     this._loadClusterDetail(id);
-  }
-
-  /** @deprecated Use selectCluster() */
-  selectFamily(id: string | null): void {
-    this.selectCluster(id);
   }
 
   private async _loadClusterDetail(id: string): Promise<void> {
@@ -205,21 +196,6 @@ class ClusterStore {
     this._lastLength = 0;
   }
 
-  // -- Legacy compatibility aliases --
-
-  /** @deprecated Use selectedClusterId */
-  get selectedFamilyId(): string | null { return this.selectedClusterId; }
-  set selectedFamilyId(v: string | null) { this.selectedClusterId = v; }
-
-  /** @deprecated Use clusterDetail */
-  get familyDetail(): ClusterDetail | null { return this.clusterDetail; }
-
-  /** @deprecated Use clusterDetailLoading */
-  get familyDetailLoading(): boolean { return this.clusterDetailLoading; }
-
-  /** @deprecated Use clusterDetailError */
-  get familyDetailError(): string | null { return this.clusterDetailError; }
-
   /** @internal Test-only: restore initial state */
   _reset() {
     this.suggestion = null;
@@ -251,6 +227,3 @@ class ClusterStore {
 }
 
 export const clustersStore = new ClusterStore();
-
-/** @deprecated Use clustersStore */
-export const patternsStore = clustersStore;

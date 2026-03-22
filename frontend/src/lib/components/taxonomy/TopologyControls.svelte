@@ -80,6 +80,16 @@
     </div>
   {/if}
 
+  <!-- Recluster button -->
+  <button
+    class="recluster-btn"
+    onclick={handleRecluster}
+    disabled={reclustering}
+    title="Trigger taxonomy recluster (cold path)"
+  >
+    {reclustering ? 'Reclustering...' : 'Recluster'}
+  </button>
+
   <!-- Node counts -->
   {#if stats?.nodes}
     <div class="stats-row">
@@ -149,6 +159,26 @@
 
   .search-input:focus {
     border-color: var(--color-neon-cyan);
+  }
+
+  .recluster-btn {
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .recluster-btn:hover:not(:disabled) {
+    border-color: var(--color-neon-cyan);
+    color: var(--color-neon-cyan);
+  }
+
+  .recluster-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .stats-row {

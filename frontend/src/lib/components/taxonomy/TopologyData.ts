@@ -6,7 +6,7 @@
  */
 import type { ClusterNode } from '$lib/api/clusters';
 import type { LODTier } from './TopologyRenderer';
-import { taxonomyColor } from '$lib/utils/colors';
+import { taxonomyColor, stateColor } from '$lib/utils/colors';
 
 export interface SceneNode {
   id: string;
@@ -35,7 +35,7 @@ function stateSizeMultiplier(state: string): number {
 
 /** Color by lifecycle state — templates use neon-cyan override. */
 function stateNodeColor(state: string, oklabColor: string | null): string {
-  if (state === 'template') return '#00e5ff'; // neon-cyan override for templates
+  if (state === 'template') return stateColor('template');
   return taxonomyColor(oklabColor); // existing logic handles hex/domain/null
 }
 

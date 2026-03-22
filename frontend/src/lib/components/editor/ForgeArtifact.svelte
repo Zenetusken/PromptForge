@@ -179,10 +179,6 @@
   }
 
 
-
-
-
-
   .prompt-output-wrap {
     flex: 1;
     overflow: auto;
