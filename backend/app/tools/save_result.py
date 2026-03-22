@@ -36,6 +36,9 @@ async def handle_save_result(
     model: str | None,
     codebase_context: str | None,
     ctx: Context | None,
+    *,
+    domain: str | None = None,
+    intent_label: str | None = None,
 ) -> SaveResultOutput:
     """Persist an optimization result from an external LLM."""
     logger.info("synthesis_save_result called: trace_id=%s model=%s", trace_id, model)
@@ -178,6 +181,9 @@ async def handle_save_result(
             opt.task_type = task_type or opt.task_type or "general"
             opt.strategy_used = strategy_used or opt.strategy_used or "auto"
             opt.changes_summary = changes_summary or ""
+            opt.domain = domain or opt.domain or "general"
+            opt.domain_raw = domain or opt.domain_raw or "general"
+            opt.intent_label = intent_label or opt.intent_label or "general"
             opt.score_clarity = final_scores.get("clarity")
             opt.score_specificity = final_scores.get("specificity")
             opt.score_structure = final_scores.get("structure")
@@ -201,6 +207,9 @@ async def handle_save_result(
                 task_type=task_type or "general",
                 strategy_used=strategy_used or "auto",
                 changes_summary=changes_summary or "",
+                domain=domain or "general",
+                domain_raw=domain or "general",
+                intent_label=intent_label or "general",
                 score_clarity=final_scores.get("clarity"),
                 score_specificity=final_scores.get("specificity"),
                 score_structure=final_scores.get("structure"),
@@ -222,6 +231,9 @@ async def handle_save_result(
             "id": opt_id,
             "trace_id": trace_id,
             "task_type": opt.task_type,
+            "intent_label": opt.intent_label or "general",
+            "domain": opt.domain or "general",
+            "domain_raw": opt.domain_raw or "general",
             "strategy_used": opt.strategy_used,
             "overall_score": overall,
             "provider": opt.provider,

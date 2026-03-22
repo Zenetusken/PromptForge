@@ -32,7 +32,12 @@ from app.schemas.pipeline_contracts import (
     SuggestionsOutput,
 )
 from app.services.heuristic_scorer import HeuristicScorer
-from app.services.pipeline_constants import CODING_KEYWORDS, CONFIDENCE_GATE
+from app.services.pattern_injection import auto_inject_patterns
+from app.services.pipeline_constants import (
+    CODING_KEYWORDS,
+    CONFIDENCE_GATE,
+    compute_optimize_max_tokens,
+)
 from app.services.preferences import PreferencesService
 from app.services.prompt_loader import PromptLoader
 from app.services.score_blender import blend_scores
@@ -126,39 +131,10 @@ class PipelineOrchestrator:
     ) -> tuple[list[str], list[str]]:
         """Auto-inject cluster meta-patterns based on prompt embedding similarity.
 
-        Returns (pattern_texts, cluster_ids). Both empty if no match or error.
+        Delegates to the shared ``pattern_injection.auto_inject_patterns()``
+        helper so the same logic is reused by the sampling pipeline.
         """
-        from app.models import MetaPattern
-        from app.services.embedding_service import EmbeddingService
-
-        embedding_svc = EmbeddingService()
-        embedding_index = taxonomy_engine.embedding_index
-        if embedding_index.size == 0:
-            return [], []
-
-        prompt_embedding = await embedding_svc.aembed_single(raw_prompt)
-        matches = embedding_index.search(prompt_embedding, k=3, threshold=0.72)
-        if not matches:
-            return [], []
-
-        auto_injected_cluster_ids = [m[0] for m in matches]
-        result = await db.execute(
-            select(MetaPattern).where(
-                MetaPattern.cluster_id.in_(auto_injected_cluster_ids)
-            )
-        )
-        patterns = result.scalars().all()
-        if not patterns:
-            return [], auto_injected_cluster_ids
-
-        pattern_texts = [p.pattern_text for p in patterns]
-        logger.info(
-            "Auto-injected %d patterns from %d clusters. trace_id=%s",
-            len(pattern_texts),
-            len(auto_injected_cluster_ids),
-            trace_id,
-        )
-        return pattern_texts, auto_injected_cluster_ids
+        return await auto_inject_patterns(raw_prompt, taxonomy_engine, db, trace_id)
 
     # ------------------------------------------------------------------
     # Main pipeline
@@ -434,9 +410,7 @@ class PipelineOrchestrator:
                 "applied_patterns": applied_patterns_text,
             })
 
-            # Dynamic output budget: scale with input length, cap at 65536
-            # (Opus 4.6 supports 128K but .parse() needs headroom to avoid timeouts)
-            dynamic_max_tokens = min(max(16384, len(raw_prompt) // 4 * 2), 65536)
+            dynamic_max_tokens = compute_optimize_max_tokens(len(raw_prompt))
 
             phase_start = time.monotonic()
             optimization: OptimizationResult = await self._call_provider(

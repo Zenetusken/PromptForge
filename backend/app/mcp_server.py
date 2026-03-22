@@ -484,6 +484,14 @@ async def synthesis_save_result(
     codebase_context: Annotated[str | None, Field(
         default=None, description="IDE-provided codebase context snapshot to store alongside the result.",
     )] = None,
+    domain: Annotated[str | None, Field(
+        default=None,
+        description="Domain category: 'backend', 'frontend', 'database', 'devops', "
+        "'security', 'fullstack', or 'general'. Defaults to 'general' if not provided.",
+    )] = None,
+    intent_label: Annotated[str | None, Field(
+        default=None, description="Short 3-6 word intent classification label. Defaults to 'general'.",
+    )] = None,
     ctx: Context | None = None,
 ) -> SaveResultOutput:
     """Persist an optimization result from an external LLM with bias correction.
@@ -497,6 +505,7 @@ async def synthesis_save_result(
     return await handle_save_result(
         trace_id, optimized_prompt, changes_summary, task_type,
         strategy_used, scores, model, codebase_context, ctx,
+        domain=domain, intent_label=intent_label,
     )
 
 

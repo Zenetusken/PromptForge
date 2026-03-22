@@ -24,6 +24,7 @@ from app.services.sampling_pipeline import run_sampling_pipeline
 from app.tools._shared import (
     DATA_DIR,
     get_routing,
+    get_taxonomy_engine,
     resolve_workspace_guidance,
 )
 
@@ -143,6 +144,7 @@ async def handle_optimize(
             codebase_guidance=guidance,
             repo_full_name=repo_full_name,
             applied_pattern_ids=applied_pattern_ids,
+            taxonomy_engine=get_taxonomy_engine(),
         ):
             if event.event == "optimization_complete":
                 result = event.data

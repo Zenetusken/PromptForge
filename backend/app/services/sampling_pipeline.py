@@ -57,7 +57,12 @@ from app.schemas.pipeline_contracts import (
 )
 from app.services.event_notification import notify_event_bus
 from app.services.heuristic_scorer import HeuristicScorer
-from app.services.pipeline_constants import CODING_KEYWORDS, CONFIDENCE_GATE
+from app.services.pattern_injection import auto_inject_patterns
+from app.services.pipeline_constants import (
+    CODING_KEYWORDS,
+    CONFIDENCE_GATE,
+    compute_optimize_max_tokens,
+)
 from app.services.preferences import PreferencesService
 from app.services.prompt_loader import PromptLoader
 from app.services.score_blender import blend_scores
@@ -414,6 +419,15 @@ async def run_sampling_pipeline(
         "workspace": codebase_guidance is not None,
     }
 
+    # Trace logger — optional; skip if directory cannot be created
+    from app.services.trace_logger import TraceLogger
+
+    try:
+        trace_logger: TraceLogger | None = TraceLogger(DATA_DIR / "traces")
+    except OSError:
+        logger.warning("Could not create traces directory; trace logging disabled")
+        trace_logger = None
+
     # Notify: pipeline start
     await notify_event_bus("optimization_start", {
         "trace_id": trace_id,
@@ -493,6 +507,14 @@ async def run_sampling_pipeline(
             )
     model_ids["analyze"] = analyze_model
     phase_durations["analyze_ms"] = int((time.monotonic() - phase_t0) * 1000)
+    if trace_logger:
+        trace_logger.log_phase(
+            trace_id=trace_id, phase="analyze",
+            duration_ms=phase_durations["analyze_ms"],
+            tokens_in=0, tokens_out=0,
+            model=analyze_model, provider="mcp_sampling",
+            result={"task_type": analysis.task_type, "strategy": analysis.selected_strategy},
+        )
     await notify_event_bus("optimization_status", {
         "trace_id": trace_id, "phase": "analyzing", "state": "complete",
     })
@@ -537,6 +559,31 @@ async def run_sampling_pipeline(
     except Exception as exc:
         logger.warning("Domain mapping failed (sampling, non-fatal): %s", exc)
 
+    # ------------------------------------------------------------------
+    # Pre-Phase: Auto-inject cluster meta-patterns
+    # ------------------------------------------------------------------
+    auto_injected_patterns: list[str] = []
+    auto_injected_cluster_ids: list[str] = []
+    if not applied_pattern_ids:
+        try:
+            from app.services.taxonomy import get_engine as _get_inject_engine
+
+            _inject_engine = _get_inject_engine()
+            if _inject_engine is not None:
+                async with async_session_factory() as _inject_db:
+                    auto_injected_patterns, auto_injected_cluster_ids = (
+                        await auto_inject_patterns(
+                            raw_prompt=prompt,
+                            taxonomy_engine=_inject_engine,
+                            db=_inject_db,
+                            trace_id=trace_id,
+                        )
+                    )
+                if auto_injected_patterns:
+                    context_sources["cluster_injection"] = True
+        except Exception as exc:
+            logger.warning("Sampling auto-injection failed (non-fatal): %s", exc)
+
     effective_strategy = analysis.selected_strategy
     if confidence < CONFIDENCE_GATE and not strategy_override:
         logger.info(
@@ -575,6 +622,22 @@ async def run_sampling_pipeline(
     if applied_patterns_text is not None:
         context_sources["patterns"] = True
 
+    # Merge auto-injected patterns (when no explicit applied_pattern_ids)
+    if auto_injected_patterns and not applied_patterns_text:
+        lines = [f"- {p}" for p in auto_injected_patterns]
+        applied_patterns_text = (
+            "The following proven patterns from past optimizations "
+            "should be applied where relevant:\n"
+            + "\n".join(lines)
+        )
+        context_sources["patterns"] = True
+    elif auto_injected_patterns and applied_patterns_text:
+        lines = [f"- {p}" for p in auto_injected_patterns]
+        applied_patterns_text += "\n" + "\n".join(lines)
+
+    # Merge auto-injected cluster IDs for usage tracking
+    applied_cluster_ids.update(auto_injected_cluster_ids)
+
     # 4c: Adaptation state
     adaptation_state: str | None = None
     adaptation_enabled = prefs.get("pipeline.enable_adaptation", prefs_snapshot)
@@ -594,15 +657,19 @@ async def run_sampling_pipeline(
     })
 
     optimize_prefs = _resolve_model_preferences("optimize", prefs_snapshot)
+    dynamic_max_tokens = compute_optimize_max_tokens(len(prompt))
     try:
         optimization, optimize_model = await _sampling_request_structured(
             ctx, system_prompt, optimize_msg, OptimizationResult,
+            max_tokens=dynamic_max_tokens,
             model_preferences=optimize_prefs,
         )
     except Exception:
         logger.warning("Structured optimization parsing failed, falling back to text")
         text, optimize_model = await _sampling_request_plain(
-            ctx, system_prompt, optimize_msg, model_preferences=optimize_prefs,
+            ctx, system_prompt, optimize_msg,
+            max_tokens=dynamic_max_tokens,
+            model_preferences=optimize_prefs,
         )
         try:
             optimization = _parse_text_response(text, OptimizationResult)
@@ -614,6 +681,14 @@ async def run_sampling_pipeline(
             )
     model_ids["optimize"] = optimize_model
     phase_durations["optimize_ms"] = int((time.monotonic() - phase_t0) * 1000)
+    if trace_logger:
+        trace_logger.log_phase(
+            trace_id=trace_id, phase="optimize",
+            duration_ms=phase_durations["optimize_ms"],
+            tokens_in=0, tokens_out=0,
+            model=optimize_model, provider="mcp_sampling",
+            result={"strategy_used": effective_strategy},
+        )
     await notify_event_bus("optimization_status", {
         "trace_id": trace_id, "phase": "optimizing", "state": "complete",
     })
@@ -692,6 +767,13 @@ async def run_sampling_pipeline(
                 )
 
         phase_durations["score_ms"] = int((time.monotonic() - phase_t0) * 1000)
+        if trace_logger:
+            trace_logger.log_phase(
+                trace_id=trace_id, phase="score",
+                duration_ms=phase_durations["score_ms"],
+                tokens_in=0, tokens_out=0,
+                model=model_ids.get("score", "unknown"), provider="mcp_sampling",
+            )
         await notify_event_bus("optimization_status", {
             "trace_id": trace_id, "phase": "scoring",
             "state": "complete" if scores else "skipped",
@@ -740,6 +822,13 @@ async def run_sampling_pipeline(
         except Exception as exc:
             logger.warning("Sampling suggestion generation failed (non-fatal): %s", exc)
         phase_durations["suggest_ms"] = int((time.monotonic() - phase_t0) * 1000)
+        if trace_logger:
+            trace_logger.log_phase(
+                trace_id=trace_id, phase="suggest",
+                duration_ms=phase_durations.get("suggest_ms", 0),
+                tokens_in=0, tokens_out=0,
+                model=model_ids.get("suggest", "unknown"), provider="mcp_sampling",
+            )
         await notify_event_bus("optimization_status", {
             "trace_id": trace_id, "phase": "suggesting",
             "state": "complete" if suggestions else "skipped",
@@ -863,6 +952,13 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
         "workspace": False,
     }
 
+    from app.services.trace_logger import TraceLogger
+
+    try:
+        trace_logger: TraceLogger | None = TraceLogger(DATA_DIR / "traces")
+    except OSError:
+        trace_logger = None
+
     # --- Phase 1: Analyze ---
     phase_t0 = time.monotonic()
     system_prompt = loader.load("agent-guidance.md")
@@ -879,6 +975,15 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
 
     analyze_ms = int((time.monotonic() - phase_t0) * 1000)
     phase_durations["analyze_ms"] = analyze_ms
+    if trace_logger:
+        trace_logger.log_phase(
+            trace_id="(pending)",  # trace_id assigned later
+            phase="analyze",
+            duration_ms=analyze_ms,
+            tokens_in=0, tokens_out=0,
+            model=_analyze_model, provider="mcp_sampling",
+            result={"task_type": analysis.task_type, "strategy": analysis.selected_strategy},
+        )
     logger.info(
         "Sampling analyze Phase 1 complete in %dms: task_type=%s strategy=%s",
         analyze_ms, analysis.task_type, analysis.selected_strategy,
@@ -926,6 +1031,7 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
     heur_scores = HeuristicScorer.score_prompt(prompt)
 
     score_prefs = _resolve_model_preferences("score", prefs_snapshot)
+    _score_model = "unknown"
     try:
         score_result, _score_model = await _sampling_request_structured(
             ctx, scoring_system, scorer_msg, ScoreResult,
@@ -945,6 +1051,14 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
             conciseness=heur_scores.get("conciseness", 5.0),
         )
     phase_durations["score_ms"] = int((time.monotonic() - phase_t0) * 1000)
+    if trace_logger:
+        trace_logger.log_phase(
+            trace_id="(pending)",
+            phase="score",
+            duration_ms=phase_durations["score_ms"],
+            tokens_in=0, tokens_out=0,
+            model=_score_model, provider="mcp_sampling",
+        )
 
     overall = baseline.overall
     total_ms = int((time.monotonic() - start) * 1000)

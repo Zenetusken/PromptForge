@@ -107,12 +107,23 @@ async def optimize(
     effective_strategy = body.strategy or _prefs.get("defaults.strategy", prefs_snapshot) or "auto"
 
     if decision.tier == "passthrough":
+        # Resolve adaptation state for passthrough template injection
+        adaptation_state: str | None = None
+        try:
+            from app.services.adaptation_tracker import AdaptationTracker
+
+            tracker = AdaptationTracker(db)
+            adaptation_state = await tracker.render_adaptation_state("general")
+        except Exception as exc:
+            logger.debug("Adaptation state unavailable for passthrough: %s", exc)
+
         # Inline passthrough — stream assembled template via SSE
         assembled, strategy_name = assemble_passthrough_prompt(
             prompts_dir=PROMPTS_DIR,
             raw_prompt=body.prompt,
             strategy_name=effective_strategy,
             codebase_guidance=guidance,
+            adaptation_state=adaptation_state,
         )
 
         trace_id = str(uuid.uuid4())
@@ -248,6 +259,16 @@ class PassthroughSaveRequest(BaseModel):
     trace_id: str = Field(..., description="Trace ID from the prepare step")
     optimized_prompt: str = Field(..., min_length=1, description="The externally-optimized prompt")
     changes_summary: str | None = Field(None, description="Optional summary of changes made")
+    domain: str | None = Field(
+        None,
+        description=(
+            "Domain category: 'backend', 'frontend', 'database',"
+            " 'devops', 'security', 'fullstack', or 'general'."
+        ),
+    )
+    intent_label: str | None = Field(
+        None, description="Short 3-6 word intent classification label.",
+    )
 
 
 @router.post("/optimize/passthrough")
@@ -266,10 +287,21 @@ async def passthrough_prepare(
     _prefs = PreferencesService(DATA_DIR)
     requested_strategy = body.strategy or _prefs.get("defaults.strategy") or "auto"
 
+    # Resolve adaptation state for passthrough template injection
+    adaptation_state: str | None = None
+    try:
+        from app.services.adaptation_tracker import AdaptationTracker
+
+        tracker = AdaptationTracker(db)
+        adaptation_state = await tracker.render_adaptation_state("general")
+    except Exception as exc:
+        logger.debug("Adaptation state unavailable for passthrough prepare: %s", exc)
+
     assembled, strategy_name = assemble_passthrough_prompt(
         prompts_dir=PROMPTS_DIR,
         raw_prompt=body.prompt,
         strategy_name=requested_strategy,
+        adaptation_state=adaptation_state,
     )
 
     trace_id = str(uuid.uuid4())
@@ -326,14 +358,63 @@ async def passthrough_save(
     scoring_mode = "skipped"
 
     if scoring_enabled:
-        # Heuristic-only scoring (no LLM needed)
-        optimized_scores = HeuristicScorer.score_prompt(
+        from app.schemas.pipeline_contracts import DimensionScores
+        from app.services.score_blender import blend_scores
+
+        # Heuristic scoring with z-score normalization via score blender
+        heur_optimized = HeuristicScorer.score_prompt(
             body.optimized_prompt, original=opt.raw_prompt,
         )
-        overall = round(sum(optimized_scores.values()) / len(optimized_scores), 2)
+        heur_original = HeuristicScorer.score_prompt(opt.raw_prompt)
 
-        # Score the original prompt too so we can compute deltas
-        original_scores = HeuristicScorer.score_prompt(opt.raw_prompt)
+        # Create DimensionScores from heuristic values for blending
+        heur_opt_dims = DimensionScores(
+            clarity=heur_optimized.get("clarity", 5.0),
+            specificity=heur_optimized.get("specificity", 5.0),
+            structure=heur_optimized.get("structure", 5.0),
+            faithfulness=heur_optimized.get("faithfulness", 5.0),
+            conciseness=heur_optimized.get("conciseness", 5.0),
+        )
+        heur_orig_dims = DimensionScores(
+            clarity=heur_original.get("clarity", 5.0),
+            specificity=heur_original.get("specificity", 5.0),
+            structure=heur_original.get("structure", 5.0),
+            faithfulness=heur_original.get("faithfulness", 5.0),
+            conciseness=heur_original.get("conciseness", 5.0),
+        )
+
+        # Fetch historical stats for z-score normalization
+        historical_stats: dict | None = None
+        try:
+            from app.services.optimization_service import OptimizationService
+            opt_svc = OptimizationService(db)
+            historical_stats = await opt_svc.get_score_distribution(
+                exclude_scoring_modes=["heuristic"],
+            )
+        except Exception as exc:
+            logger.debug("Historical stats unavailable for normalization: %s", exc)
+
+        blended_opt = blend_scores(heur_opt_dims, heur_optimized, historical_stats)
+        blended_orig = blend_scores(heur_orig_dims, heur_original, historical_stats)
+
+        opt_dims = blended_opt.to_dimension_scores()
+        orig_dims = blended_orig.to_dimension_scores()
+
+        optimized_scores = {
+            "clarity": opt_dims.clarity,
+            "specificity": opt_dims.specificity,
+            "structure": opt_dims.structure,
+            "faithfulness": opt_dims.faithfulness,
+            "conciseness": opt_dims.conciseness,
+        }
+        original_scores = {
+            "clarity": orig_dims.clarity,
+            "specificity": orig_dims.specificity,
+            "structure": orig_dims.structure,
+            "faithfulness": orig_dims.faithfulness,
+            "conciseness": orig_dims.conciseness,
+        }
+        overall = round(sum(optimized_scores.values()) / len(optimized_scores), 2)
         deltas = {
             dim: round(optimized_scores[dim] - original_scores[dim], 2)
             for dim in optimized_scores
@@ -343,6 +424,9 @@ async def passthrough_save(
     # Update record
     opt.optimized_prompt = body.optimized_prompt
     opt.changes_summary = body.changes_summary or ""
+    opt.domain = body.domain or opt.domain or "general"
+    opt.domain_raw = body.domain or getattr(opt, "domain_raw", None) or "general"
+    opt.intent_label = body.intent_label or opt.intent_label or "general"
     if optimized_scores:
         opt.score_clarity = optimized_scores["clarity"]
         opt.score_specificity = optimized_scores["specificity"]
@@ -365,6 +449,9 @@ async def passthrough_save(
         "id": opt.id,
         "trace_id": opt.trace_id,
         "task_type": opt.task_type,
+        "intent_label": opt.intent_label or "general",
+        "domain": opt.domain or "general",
+        "domain_raw": getattr(opt, "domain_raw", None) or "general",
         "strategy_used": opt.strategy_used,
         "overall_score": overall,
         "provider": "web_passthrough",

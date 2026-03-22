@@ -15,3 +15,11 @@ CODING_KEYWORDS: set[str] = {
     "function", "class", "api", "code", "program",
     "script", "endpoint", "database", "module", "import",
 }
+
+
+def compute_optimize_max_tokens(prompt_len: int) -> int:
+    """Dynamic output budget: scale with input length, cap at 65536.
+
+    Opus 4.6 supports 128K but ``.parse()`` needs headroom to avoid timeouts.
+    """
+    return min(max(16384, prompt_len // 4 * 2), 65536)

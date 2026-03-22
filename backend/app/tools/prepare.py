@@ -47,11 +47,23 @@ async def handle_prepare(
     # Auto-discover workspace roots (zero-config) or fall back to workspace_path
     guidance = await resolve_workspace_guidance(ctx, workspace_path)
 
+    # Resolve adaptation state for passthrough template injection
+    adaptation_state: str | None = None
+    try:
+        from app.services.adaptation_tracker import AdaptationTracker
+
+        async with async_session_factory() as _adapt_db:
+            tracker = AdaptationTracker(_adapt_db)
+            adaptation_state = await tracker.render_adaptation_state("general")
+    except Exception as exc:
+        logger.debug("Adaptation state unavailable for MCP prepare: %s", exc)
+
     assembled, strategy_name = assemble_passthrough_prompt(
         prompts_dir=PROMPTS_DIR,
         raw_prompt=prompt,
         strategy_name=effective_strategy,
         codebase_guidance=guidance,
+        adaptation_state=adaptation_state,
     )
 
     # Enforce max_context_tokens budget
