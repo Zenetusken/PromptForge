@@ -55,7 +55,7 @@ async def handle_match(prompt_text: str) -> MatchOutput:
     cluster = result.cluster
     cluster_id = cluster.id if cluster else None
     cluster_label = cluster.label if cluster else None
-    recommended_strategy = cluster.preferred_strategy if cluster and hasattr(cluster, "preferred_strategy") else None
+    recommended_strategy = cluster.preferred_strategy if cluster else None
 
     return MatchOutput(
         match_level=result.match_level,

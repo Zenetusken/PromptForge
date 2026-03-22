@@ -265,7 +265,8 @@ class SaveResultOutput(BaseModel):
         description="Mean of all dimension scores (0.0-10.0).",
     )
     strategy_compliance: str = Field(
-        description="Compliance assessment: 'full', 'partial', 'minimal', or 'none'.",
+        description="Compliance assessment: 'matched' (requested == used), "
+        "'partial' (different strategy used), or 'unknown' (no baseline).",
     )
     heuristic_flags: list[str] = Field(
         description="Quality issues flagged by heuristic analysis.",

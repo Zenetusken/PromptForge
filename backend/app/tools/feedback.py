@@ -24,14 +24,11 @@ async def handle_feedback(
     async with async_session_factory() as db:
         svc = FeedbackService(db)
 
-        try:
-            feedback = await svc.create_feedback(
-                optimization_id=optimization_id,
-                rating=rating,
-                comment=comment,
-            )
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
+        feedback = await svc.create_feedback(
+            optimization_id=optimization_id,
+            rating=rating,
+            comment=comment,
+        )
 
         await db.commit()
 
