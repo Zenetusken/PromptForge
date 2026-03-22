@@ -67,6 +67,9 @@ async def test_synthesis_optimize_with_provider():
         mock_notify.assert_any_call("optimization_created", {
             "id": "opt_123",
             "task_type": "",
+            "intent_label": "general",
+            "domain": "general",
+            "domain_raw": "general",
             "strategy_used": "auto",
             "overall_score": None,
             "provider": "mock_provider",

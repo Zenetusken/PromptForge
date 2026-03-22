@@ -269,6 +269,19 @@ class PassthroughSaveRequest(BaseModel):
     intent_label: str | None = Field(
         None, description="Short 3-6 word intent classification label.",
     )
+    scores: dict[str, float] | None = Field(
+        None,
+        description="External LLM's self-assessed dimension scores (clarity, specificity, etc.).",
+    )
+    task_type: str | None = Field(
+        None, description="Task classification from external LLM.",
+    )
+    strategy_used: str | None = Field(
+        None, description="Strategy the external LLM reports using.",
+    )
+    model: str | None = Field(
+        None, description="External model identifier.",
+    )
 
 
 @router.post("/optimize/passthrough")
@@ -287,6 +300,15 @@ async def passthrough_prepare(
     _prefs = PreferencesService(DATA_DIR)
     requested_strategy = body.strategy or _prefs.get("defaults.strategy") or "auto"
 
+    # Scan workspace for guidance files (same as main optimize endpoint)
+    guidance = None
+    if body.workspace_path:
+        from pathlib import Path as _Path
+
+        from app.services.roots_scanner import RootsScanner
+        scanner = RootsScanner()
+        guidance = scanner.scan(_Path(body.workspace_path))
+
     # Resolve adaptation state for passthrough template injection
     adaptation_state: str | None = None
     try:
@@ -301,6 +323,7 @@ async def passthrough_prepare(
         prompts_dir=PROMPTS_DIR,
         raw_prompt=body.prompt,
         strategy_name=requested_strategy,
+        codebase_guidance=guidance,
         adaptation_state=adaptation_state,
     )
 
@@ -361,27 +384,11 @@ async def passthrough_save(
         from app.schemas.pipeline_contracts import DimensionScores
         from app.services.score_blender import blend_scores
 
-        # Heuristic scoring with z-score normalization via score blender
+        # Heuristic baseline — always computed
         heur_optimized = HeuristicScorer.score_prompt(
             body.optimized_prompt, original=opt.raw_prompt,
         )
         heur_original = HeuristicScorer.score_prompt(opt.raw_prompt)
-
-        # Create DimensionScores from heuristic values for blending
-        heur_opt_dims = DimensionScores(
-            clarity=heur_optimized.get("clarity", 5.0),
-            specificity=heur_optimized.get("specificity", 5.0),
-            structure=heur_optimized.get("structure", 5.0),
-            faithfulness=heur_optimized.get("faithfulness", 5.0),
-            conciseness=heur_optimized.get("conciseness", 5.0),
-        )
-        heur_orig_dims = DimensionScores(
-            clarity=heur_original.get("clarity", 5.0),
-            specificity=heur_original.get("specificity", 5.0),
-            structure=heur_original.get("structure", 5.0),
-            faithfulness=heur_original.get("faithfulness", 5.0),
-            conciseness=heur_original.get("conciseness", 5.0),
-        )
 
         # Fetch historical stats for z-score normalization
         historical_stats: dict | None = None
@@ -394,10 +401,64 @@ async def passthrough_save(
         except Exception as exc:
             logger.debug("Historical stats unavailable for normalization: %s", exc)
 
-        blended_opt = blend_scores(heur_opt_dims, heur_optimized, historical_stats)
-        blended_orig = blend_scores(heur_orig_dims, heur_original, historical_stats)
+        if body.scores:
+            # Hybrid path: external LLM scores + heuristic blending
+            # (mirrors save_result.py hybrid_passthrough logic)
+            try:
+                corrected = HeuristicScorer.apply_bias_correction(body.scores)
+                corrected_dims = DimensionScores(
+                    clarity=corrected.get("clarity", 5.0),
+                    specificity=corrected.get("specificity", 5.0),
+                    structure=corrected.get("structure", 5.0),
+                    faithfulness=corrected.get("faithfulness", 5.0),
+                    conciseness=corrected.get("conciseness", 5.0),
+                )
 
-        opt_dims = blended_opt.to_dimension_scores()
+                blended_opt = blend_scores(
+                    corrected_dims, heur_optimized, historical_stats,
+                )
+                opt_dims = blended_opt.to_dimension_scores()
+                scoring_mode = "hybrid_passthrough"
+            except Exception as exc:
+                logger.warning(
+                    "Hybrid blending failed, falling back to heuristic: %s", exc,
+                )
+                heur_opt_dims = DimensionScores(
+                    clarity=heur_optimized.get("clarity", 5.0),
+                    specificity=heur_optimized.get("specificity", 5.0),
+                    structure=heur_optimized.get("structure", 5.0),
+                    faithfulness=heur_optimized.get("faithfulness", 5.0),
+                    conciseness=heur_optimized.get("conciseness", 5.0),
+                )
+                blended_opt = blend_scores(
+                    heur_opt_dims, heur_optimized, historical_stats,
+                )
+                opt_dims = blended_opt.to_dimension_scores()
+                scoring_mode = "heuristic"
+        else:
+            # Heuristic-only path (no external scores provided)
+            heur_opt_dims = DimensionScores(
+                clarity=heur_optimized.get("clarity", 5.0),
+                specificity=heur_optimized.get("specificity", 5.0),
+                structure=heur_optimized.get("structure", 5.0),
+                faithfulness=heur_optimized.get("faithfulness", 5.0),
+                conciseness=heur_optimized.get("conciseness", 5.0),
+            )
+            blended_opt = blend_scores(
+                heur_opt_dims, heur_optimized, historical_stats,
+            )
+            opt_dims = blended_opt.to_dimension_scores()
+            scoring_mode = "heuristic"
+
+        # Original scores — always heuristic-only
+        heur_orig_dims = DimensionScores(
+            clarity=heur_original.get("clarity", 5.0),
+            specificity=heur_original.get("specificity", 5.0),
+            structure=heur_original.get("structure", 5.0),
+            faithfulness=heur_original.get("faithfulness", 5.0),
+            conciseness=heur_original.get("conciseness", 5.0),
+        )
+        blended_orig = blend_scores(heur_orig_dims, heur_original, historical_stats)
         orig_dims = blended_orig.to_dimension_scores()
 
         optimized_scores = {
@@ -419,13 +480,31 @@ async def passthrough_save(
             dim: round(optimized_scores[dim] - original_scores[dim], 2)
             for dim in optimized_scores
         }
-        scoring_mode = "heuristic"
+
+    # Normalize strategy if external LLM returned a verbose name
+    effective_strategy = opt.strategy_used
+    if body.strategy_used:
+        from app.services.strategy_loader import StrategyLoader
+        strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
+        known = strategy_loader.list_strategies()
+        if body.strategy_used in known:
+            effective_strategy = body.strategy_used
+        else:
+            normalized = "auto"
+            lower = body.strategy_used.lower()
+            for name in known:
+                if name != "auto" and name in lower:
+                    normalized = name
+                    break
+            effective_strategy = normalized
 
     # Update record
     opt.optimized_prompt = body.optimized_prompt
     opt.changes_summary = body.changes_summary or ""
+    opt.task_type = body.task_type or opt.task_type or "general"
+    opt.strategy_used = effective_strategy
     opt.domain = body.domain or opt.domain or "general"
-    opt.domain_raw = body.domain or getattr(opt, "domain_raw", None) or "general"
+    opt.domain_raw = body.domain or opt.domain_raw or "general"
     opt.intent_label = body.intent_label or opt.intent_label or "general"
     if optimized_scores:
         opt.score_clarity = optimized_scores["clarity"]
@@ -438,7 +517,7 @@ async def passthrough_save(
     opt.score_deltas = deltas
     opt.scoring_mode = scoring_mode
     opt.status = "completed"
-    opt.model_used = "external"
+    opt.model_used = body.model or "external"
     await db.commit()
     await db.refresh(opt)
 
@@ -459,8 +538,8 @@ async def passthrough_save(
     })
 
     logger.info(
-        "Passthrough saved: trace_id=%s overall=%.2f scoring_mode=heuristic",
-        body.trace_id, overall,
+        "Passthrough saved: trace_id=%s overall=%.2f scoring_mode=%s",
+        body.trace_id, overall, scoring_mode,
     )
 
     # Passthrough optimizations have no family yet (extraction is async)

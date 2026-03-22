@@ -168,6 +168,9 @@ async def handle_optimize(
         await notify_event_bus("optimization_created", {
             "id": result.get("id", ""),
             "task_type": result.get("task_type", ""),
+            "intent_label": result.get("intent_label", "general"),
+            "domain": result.get("domain", "general"),
+            "domain_raw": result.get("domain_raw", "general"),
             "strategy_used": result.get("strategy_used", ""),
             "overall_score": result.get("overall_score"),
             "provider": decision.provider_name,

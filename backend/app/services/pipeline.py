@@ -351,6 +351,16 @@ class PipelineOrchestrator:
             adaptation_enabled = prefs.get("pipeline.enable_adaptation", prefs_snapshot)
             if not adaptation_enabled:
                 adaptation_state = None
+            elif adaptation_state is None:
+                # Resolve on-demand when not pre-provided (parity with sampling pipeline)
+                try:
+                    from app.services.adaptation_tracker import AdaptationTracker
+                    tracker = AdaptationTracker(db)
+                    adaptation_state = await tracker.render_adaptation_state(
+                        analysis.task_type,
+                    )
+                except Exception as exc:
+                    logger.debug("Adaptation state unavailable: %s", exc)
 
             strategy_instructions = self.strategy_loader.load(effective_strategy)
             analysis_summary = (
