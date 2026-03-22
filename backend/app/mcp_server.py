@@ -1,9 +1,11 @@
-"""Standalone MCP server with 4 optimization tools.
+"""Standalone MCP server — thin registration layer.
 
-When no local LLM provider is available, synthesis_optimize uses MCP sampling
-(ctx.session.create_message) to run the full pipeline through the IDE's
-LLM via ``sampling_pipeline.py``.  If the client doesn't support sampling,
-falls back to single-shot passthrough.
+Tool implementations live in ``app.tools.*`` modules.  This file owns:
+- FastMCP instance creation and tool registration
+- ASGI middleware for capability detection
+- Lifespan (routing / taxonomy init, state wiring)
+- Monkey-patch for session-less SSE reconnection
+- Entry point
 
 Copyright 2025-2026 Project Synthesis contributors.
 """
@@ -14,69 +16,42 @@ import asyncio
 import json as _json
 import logging
 import time
-import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Annotated
 
 import aiosqlite
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import Field
-from sqlalchemy import select
 
-from app.config import (
-    DATA_DIR,
-    PROMPTS_DIR,
-    settings,
-)
-from app.database import async_session_factory
-from app.models import Optimization
+from app.config import DATA_DIR, PROMPTS_DIR
 from app.providers.detector import detect_provider
 from app.schemas.mcp_models import (
     AnalyzeOutput,
+    FeedbackOutput,
+    HealthOutput,
+    HistoryOutput,
+    MatchOutput,
+    OptimizationDetailOutput,
     OptimizeOutput,
     PrepareOutput,
+    RefineOutput,
     SaveResultOutput,
-)
-from app.schemas.pipeline_contracts import (
-    AnalysisResult,
-    DimensionScores,
-    ScoreResult,
+    StrategiesOutput,
 )
 from app.services.event_notification import notify_event_bus
-from app.services.heuristic_scorer import HeuristicScorer
 from app.services.mcp_session_file import MCPSessionFile
-from app.services.passthrough import assemble_passthrough_prompt
-from app.services.pipeline import PipelineOrchestrator
-from app.services.preferences import PreferencesService
-from app.services.prompt_loader import PromptLoader
-from app.services.routing import RoutingContext, RoutingManager
-from app.services.sampling_pipeline import run_sampling_analyze, run_sampling_pipeline
-from app.services.score_blender import blend_scores
-from app.services.strategy_loader import StrategyLoader
-from app.services.workspace_intelligence import WorkspaceIntelligence
+from app.services.routing import RoutingManager
+from app.tools import _shared
 
 logger = logging.getLogger(__name__)
 
-# Module-level session file helper — used by middleware, tools, and entry point.
+# Module-level session file helper — used by middleware and entry point.
 _session_file = MCPSessionFile(DATA_DIR)
 
 # ---------------------------------------------------------------------------
 # Monkey-patch: allow session-less GETs for SSE reconnection after restart.
-#
-# When the MCP server restarts, all sessions are lost.  VS Code's MCP client
-# detects the broken SSE stream and sends GET /mcp *without* an Mcp-Session-Id
-# header (it lost the ID when the session was destroyed).  FastMCP's session
-# manager creates a new transport for this GET (session_id=None → new session),
-# but the transport's _validate_session then rejects the GET with 400 because
-# the *request* doesn't carry the session ID.
-#
-# This patch makes _validate_session accept GETs that lack a session ID by
-# returning True (skipping the check).  The response will include the new
-# Mcp-Session-Id header, allowing the client to use it for subsequent POSTs
-# (initialize + tool calls).
 # ---------------------------------------------------------------------------
 try:
     from mcp.server.streamable_http import StreamableHTTPServerTransport
@@ -90,7 +65,6 @@ try:
         if isinstance(request, _Req) and request.method == "GET":
             session_id = self._get_session_id(request)
             if not session_id and self.mcp_session_id:
-                # Let the GET through — the response will carry the session ID.
                 return True
         return await _orig_validate_session(self, request, send)
 
@@ -99,59 +73,18 @@ try:
 except Exception:
     logger.warning("Could not patch StreamableHTTPServerTransport — SSE reconnection may not work", exc_info=True)
 
-# Module-level routing manager — set once by the lifespan, read by tools and middleware.
-_routing: RoutingManager | None = None
 
-# Module-level taxonomy engine — hot-path-only domain mapping (Spec 6.7).
-# No warm/cold path timers in the MCP process; those run only in the FastAPI process.
-_taxonomy_engine = None
-
-# Shared workspace intelligence instance — caches profiles by root set.
-_workspace_intel = WorkspaceIntelligence()
-
-
-async def _resolve_workspace_guidance(
-    ctx: Context | None, workspace_path: str | None
-) -> str | None:
-    """Resolve workspace guidance: try roots/list first, fall back to workspace_path."""
-    roots: list[Path] = []
-
-    # Try MCP roots/list (zero-config)
-    if ctx:
-        try:
-            roots_result = await ctx.session.list_roots()
-            for root in roots_result.roots:
-                uri = str(root.uri)
-                if uri.startswith("file://"):
-                    roots.append(Path(uri.removeprefix("file://")))
-            if roots:
-                logger.debug("Resolved %d workspace roots via MCP roots/list", len(roots))
-        except Exception:
-            logger.debug("Client does not support roots/list — will try workspace_path fallback")
-
-    # Fallback: explicit workspace_path
-    if not roots and workspace_path:
-        roots = [Path(workspace_path)]
-        logger.debug("Using explicit workspace_path fallback: %s", workspace_path)
-
-    if not roots:
-        logger.debug("No workspace roots resolved — skipping guidance injection")
-        return None
-
-    profile = _workspace_intel.analyze(roots)
-    if profile:
-        logger.info("Workspace guidance resolved: %d chars from %d roots", len(profile), len(roots))
-    return profile
+# ---------------------------------------------------------------------------
+# Lifespan
+# ---------------------------------------------------------------------------
 
 
 @asynccontextmanager
 async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Detect the LLM provider and initialize routing at startup."""
-    global _routing, _taxonomy_engine
-    # Clear stale session from previous run (belt-and-suspenders with __main__ call)
     _clear_stale_session()
 
-    # Enable WAL mode for SQLite (same as main.py)
+    # Enable WAL mode for SQLite
     db_path = DATA_DIR / "synthesis.db"
     if db_path.exists():
         async with aiosqlite.connect(str(db_path)) as db:
@@ -159,57 +92,53 @@ async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
             await db.execute("PRAGMA busy_timeout=5000")
         logger.info("MCP lifespan: SQLite WAL mode enabled")
 
-    # Initialize routing service with cross-process notification bridge.
-    # The callback schedules an async task to POST the event to the backend's
-    # /api/events/_publish endpoint, which relays it to frontend SSE subscribers.
+    # Initialize routing with cross-process notification bridge.
     from app.services.event_bus import EventBus as _EventBus
 
     def _cross_process_notifier(event_type: str, payload: dict) -> None:
-        """Bridge: schedule cross-process HTTP POST from sync context."""
         try:
             asyncio.create_task(notify_event_bus(event_type, payload))
         except RuntimeError:
             logger.debug("Cross-process notifier: no running event loop (shutdown)")
 
     _mcp_event_bus = _EventBus()
-    _routing = RoutingManager(
+    routing = RoutingManager(
         event_bus=_mcp_event_bus,
         data_dir=DATA_DIR,
         is_mcp_process=True,
         cross_process_notify=_cross_process_notifier,
     )
+    _shared.set_routing(routing)
 
     _detected_provider = detect_provider()
     if _detected_provider:
-        _routing.set_provider(_detected_provider)
-        logger.info("MCP routing: provider=%s tiers=%s", _detected_provider.name, _routing.available_tiers)
+        routing.set_provider(_detected_provider)
+        logger.info("MCP routing: provider=%s tiers=%s", _detected_provider.name, routing.available_tiers)
     else:
-        logger.warning("MCP routing: no provider, tiers=%s", _routing.available_tiers)
+        logger.warning("MCP routing: no provider, tiers=%s", routing.available_tiers)
 
-    await _routing.start_disconnect_checker()
+    await routing.start_disconnect_checker()
 
     # Hot-path-only taxonomy engine for domain mapping (Spec 6.7)
-    _taxonomy_engine = None
     try:
         from app.services.embedding_service import EmbeddingService
         from app.services.taxonomy import TaxonomyEngine
 
-        _taxonomy_engine = TaxonomyEngine(
+        engine = TaxonomyEngine(
             embedding_service=EmbeddingService(),
             provider=_detected_provider,
         )
+        _shared.set_taxonomy_engine(engine)
         logger.info("MCP server: TaxonomyEngine initialized (hot-path only)")
     except Exception as exc:
         logger.warning("MCP server: TaxonomyEngine init failed (non-fatal): %s", exc)
 
     yield {}
 
-    await _routing.stop()
-    _taxonomy_engine = None
-    _routing = None
+    await routing.stop()
+    _shared.set_taxonomy_engine(None)
+    _shared.set_routing(None)
 
-    # Dispose database engine (MCP server runs as a separate process
-    # with its own SQLAlchemy engine import — must clean up independently).
     try:
         from app.database import dispose
         await dispose()
@@ -232,26 +161,10 @@ mcp = FastMCP(
 
 
 class _CapabilityDetectionMiddleware:
-    """Intercept the JSON-RPC ``initialize`` request to detect client capabilities.
+    """Intercept JSON-RPC ``initialize`` to detect client capabilities."""
 
-    The ``initialize`` message is the *first* thing an MCP client sends. Its
-    ``params.capabilities.sampling`` field tells us whether the client supports
-    ``sampling/createMessage``.  By peeking at the raw HTTP body we can write
-    ``mcp_session.json`` at handshake time — **before** any tool call — so the
-    frontend health poll picks up the new state within seconds.
-
-    The middleware re-assembles the request body transparently; downstream
-    handlers (FastMCP) receive the original bytes untouched.
-
-    All routing state changes are dispatched via ``RoutingManager``'s
-    ``cross_process_notify`` callback (set in the MCP lifespan).
-    """
-
-    # Throttle activity writes: at most once per 10 seconds
     _last_activity_write: float = 0.0
     _ACTIVITY_WRITE_THROTTLE: float = 10.0
-    # Track active SSE streams — proof that a client is connected even
-    # when no POSTs are happening (idle SSE has no body chunks).
     _active_sse_streams: int = 0
 
     def __init__(self, app):
@@ -261,7 +174,6 @@ class _CapabilityDetectionMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-
         method = scope.get("method", "")
         if method == "POST":
             await self._handle_post(scope, receive, send)
@@ -271,12 +183,7 @@ class _CapabilityDetectionMiddleware:
             await self.app(scope, receive, send)
 
     async def _handle_post(self, scope, receive, send):
-        """Buffer POST body, inspect for ``initialize``, track activity.
-
-        Cross-process notification is handled by RoutingManager's callback —
-        no manual ``notify_event_bus`` calls needed here.
-        """
-        self._touch_activity()  # throttled last_activity update
+        self._touch_activity()
         body_chunks: list[bytes] = []
         response_status: int = 0
 
@@ -296,16 +203,10 @@ class _CapabilityDetectionMiddleware:
 
         await self.app(scope, _buffered_receive, _capture_send)
 
-        # Detect failed reconnection: client sent a POST that got 404
-        # (stale Mcp-Session-Id) or 400 (missing session ID after restart).
         if response_status in (400, 404):
             self._invalidate_stale_session()
 
     async def _handle_get(self, scope, receive, send):
-        """Track SSE stream lifecycle, handle session-less reconnection.
-
-        Cross-process notification is handled by RoutingManager's callback.
-        """
         headers = dict(
             (k.decode() if isinstance(k, bytes) else k, v.decode() if isinstance(v, bytes) else v)
             for k, v in scope.get("headers", [])
@@ -320,7 +221,6 @@ class _CapabilityDetectionMiddleware:
 
         get_handled = False
         get_is_sse = False
-
         cls = _CapabilityDetectionMiddleware
 
         async def _capture_get_send(message):
@@ -334,10 +234,6 @@ class _CapabilityDetectionMiddleware:
                     get_is_sse = True
                     cls._active_sse_streams += 1
                     if not has_session_id:
-                        # Session-less GET = client reconnecting after
-                        # server restart.  Optimistically assume sampling.
-                        # RoutingManager.on_mcp_initialize fires the
-                        # cross-process event automatically.
                         cls._write_optimistic_session()
             elif message["type"] == "http.response.body" and get_is_sse:
                 cls._touch_activity()
@@ -351,50 +247,29 @@ class _CapabilityDetectionMiddleware:
                 cls._flush_sse_streams()
                 if cls._active_sse_streams == 0:
                     logger.info("Last SSE stream closed — client disconnected")
-                    # Immediately update routing state BEFORE any notification.
-                    # on_mcp_disconnect() fires the cross-process callback
-                    # internally, so the frontend gets the event with the
-                    # correct mcp_connected=False state.
-                    if _routing:
-                        _routing.on_mcp_disconnect()
+                    routing = _shared._routing
+                    if routing:
+                        routing.on_mcp_disconnect()
 
     @classmethod
     def _flush_sse_streams(cls) -> None:
-        """Write current ``_active_sse_streams`` count to ``mcp_session.json``.
-
-        Called when an SSE stream closes so the health endpoint immediately
-        sees the updated count.  When the last stream closes (count → 0),
-        we do NOT update ``last_activity`` — letting it go stale so the
-        health endpoint detects the disconnect via the normal staleness check.
-
-        When ``_routing`` is available, also refreshes its in-memory activity
-        timestamp to keep the on-disk file and RoutingManager in sync.
-        """
         try:
             fields: dict = {"sse_streams": cls._active_sse_streams}
-            # Only refresh activity if streams are still active; otherwise
-            # let staleness detection handle the disconnect.
             if cls._active_sse_streams > 0:
                 fields["last_activity"] = datetime.now(timezone.utc).isoformat()
-                # Keep RoutingManager in sync with file activity
-                if _routing:
-                    _routing.on_mcp_activity()
+                routing = _shared._routing
+                if routing:
+                    routing.on_mcp_activity()
             _session_file.update(**fields)
         except Exception:
             logger.debug("_flush_sse_streams: could not update mcp_session.json", exc_info=True)
 
     @classmethod
     def _write_optimistic_session(cls) -> None:
-        """Write ``mcp_session.json`` with ``sampling_capable=True`` optimistically.
-
-        Called when a session-less GET succeeds (200) — the client is reconnecting
-        its SSE stream after a server restart.  We assume sampling capability
-        because the client was previously connected.  If the client later sends
-        POST ``initialize`` the middleware will overwrite with the actual value.
-        """
         try:
-            if _routing:
-                _routing.on_mcp_initialize(sampling_capable=True)
+            routing = _shared._routing
+            if routing:
+                routing.on_mcp_initialize(sampling_capable=True)
             _session_file.write_session(True, sse_streams=cls._active_sse_streams)
             logger.info(
                 "Optimistic session write: sampling_capable=True "
@@ -405,16 +280,11 @@ class _CapabilityDetectionMiddleware:
 
     @staticmethod
     def _invalidate_stale_session() -> None:
-        """Remove ``mcp_session.json`` and update routing (failed reconnection).
-
-        Called when a client receives a 400/404 from the MCP transport layer,
-        indicating a stale or missing session ID.  The routing state update
-        triggers the cross-process callback automatically.
-        """
         removed = _session_file.delete()
         if removed:
-            if _routing:
-                _routing.on_session_invalidated()
+            routing = _shared._routing
+            if routing:
+                routing.on_session_invalidated()
             logger.info(
                 "Stale session cleanup: removed mcp_session.json after failed "
                 "client reconnection (400/404)",
@@ -422,20 +292,14 @@ class _CapabilityDetectionMiddleware:
 
     @classmethod
     def _touch_activity(cls) -> None:
-        """Update activity tracking (throttled to avoid spam).
-
-        RoutingManager handles reconnection detection and cross-process
-        notification internally via ``on_mcp_activity()``.
-        """
         now_mono = time.monotonic()
         if now_mono - cls._last_activity_write < cls._ACTIVITY_WRITE_THROTTLE:
             return
         cls._last_activity_write = now_mono
-
-        if _routing:
-            _routing.on_mcp_activity()
+        routing = _shared._routing
+        if routing:
+            routing.on_mcp_activity()
         else:
-            # Fallback: write directly to session file
             try:
                 data = _session_file.read()
                 if data is not None:
@@ -447,10 +311,6 @@ class _CapabilityDetectionMiddleware:
 
     @staticmethod
     def _inspect_initialize(body: bytes) -> None:
-        """If the body is a JSON-RPC ``initialize`` request, update routing state.
-
-        RoutingManager handles cross-process notification via its callback.
-        """
         try:
             data = _json.loads(body)
             if not isinstance(data, dict) or data.get("method") != "initialize":
@@ -470,10 +330,10 @@ class _CapabilityDetectionMiddleware:
                 params.get("protocolVersion", "?"),
             )
 
-            if _routing:
-                _routing.on_mcp_initialize(sampling_capable=sampling)
+            routing = _shared._routing
+            if routing:
+                routing.on_mcp_initialize(sampling_capable=sampling)
             else:
-                # Fallback: write session file directly (routing not yet initialized)
                 if not sampling and _session_file.should_skip_downgrade():
                     return
                 _session_file.write_session(sampling)
@@ -482,7 +342,6 @@ class _CapabilityDetectionMiddleware:
 
 
 # Patch streamable_http_app to inject the capability-detection middleware.
-# FastMCP creates a new Starlette app on each call, so we wrap the method.
 _original_streamable_http_app = mcp.streamable_http_app
 
 
@@ -495,7 +354,22 @@ def _patched_streamable_http_app(**kwargs):
 mcp.streamable_http_app = _patched_streamable_http_app
 
 
-# ---- Tool 1: synthesis_optimize ----
+# ---------------------------------------------------------------------------
+# Tool registrations — thin wrappers delegating to app.tools.* handlers
+# ---------------------------------------------------------------------------
+
+# Import handlers
+from app.tools.analyze import handle_analyze  # noqa: E402
+from app.tools.feedback import handle_feedback  # noqa: E402
+from app.tools.get_optimization import handle_get_optimization  # noqa: E402
+from app.tools.health import handle_health  # noqa: E402
+from app.tools.history import handle_history  # noqa: E402
+from app.tools.match import handle_match  # noqa: E402
+from app.tools.optimize import handle_optimize  # noqa: E402
+from app.tools.prepare import handle_prepare  # noqa: E402
+from app.tools.refine import handle_refine  # noqa: E402
+from app.tools.save_result import handle_save_result  # noqa: E402
+from app.tools.strategies import handle_strategies  # noqa: E402
 
 
 @mcp.tool(structured_output=True)
@@ -513,234 +387,27 @@ async def synthesis_optimize(
         default=None, description="Absolute path to the workspace root for context injection.",
     )] = None,
     applied_pattern_ids: Annotated[list[str] | None, Field(
-        default=None, description="List of MetaPattern IDs to inject into the optimizer context.",
+        default=None, description="List of MetaPattern IDs to inject into the optimizer context. "
+        "Get these from synthesis_match results.",
     )] = None,
     ctx: Context | None = None,
 ) -> OptimizeOutput:
     """Run the full optimization pipeline on a prompt.
 
-    Five execution paths (checked in order):
-    1. force_passthrough=True → assembled template returned immediately (manual processing)
-    2. force_sampling=True + client supports sampling → full pipeline via IDE's LLM
-    3. Local provider exists → full internal pipeline
-    4. No provider + client supports MCP sampling → full pipeline via IDE's LLM
-    5. No provider + no sampling → assembled template for manual processing
+    Call this to optimize any prompt. Returns the improved prompt, quality scores,
+    and follow-up suggestions.
 
-    pipeline.force_passthrough and pipeline.force_sampling are mutually exclusive.
+    Five execution paths (auto-selected by routing):
+    1. force_passthrough → assembled template for manual processing
+    2. force_sampling + sampling capable → full pipeline via IDE's LLM
+    3. Local provider → full internal pipeline
+    4. No provider + MCP sampling → full pipeline via IDE's LLM
+    5. Fallback → assembled template for manual processing
+
+    Chain: Call synthesis_match BEFORE this tool to get applied_pattern_ids.
+    Call synthesis_feedback AFTER using the result to close the learning loop.
     """
-    if len(prompt) < 20:
-        raise ValueError(
-            "Prompt too short (%d chars). Minimum is 20 characters." % len(prompt)
-        )
-    if len(prompt) > 200000:
-        raise ValueError(
-            "Prompt too long (%d chars). Maximum is 200,000 characters." % len(prompt)
-        )
-
-    # ---- Hoist: single PreferencesService + snapshot for all paths ----
-    prefs = PreferencesService(DATA_DIR)
-    prefs_snapshot = prefs.load()
-    effective_strategy = strategy or prefs.get("defaults.strategy", prefs_snapshot) or "auto"
-    guidance = await _resolve_workspace_guidance(ctx, workspace_path)
-
-    # ---- Routing decision ----
-    ctx_routing = RoutingContext(preferences=prefs_snapshot, caller="mcp")
-    decision = _routing.resolve(ctx_routing) if _routing else None
-
-    if decision is None:
-        raise ValueError("Routing service not initialized")
-
-    if decision.tier == "passthrough":
-        # Passthrough: assemble template for external LLM processing
-        logger.info("synthesis_optimize: tier=passthrough reason=%r", decision.reason)
-        assembled, strategy_name = assemble_passthrough_prompt(
-            prompts_dir=PROMPTS_DIR,
-            raw_prompt=prompt,
-            strategy_name=effective_strategy,
-            codebase_guidance=guidance,
-        )
-        trace_id = str(uuid.uuid4())
-        async with async_session_factory() as db:
-            pending = Optimization(
-                id=str(uuid.uuid4()),
-                raw_prompt=prompt,
-                status="pending",
-                trace_id=trace_id,
-                provider="mcp_passthrough",
-                strategy_used=strategy_name,
-                task_type="general",
-            )
-            db.add(pending)
-            await db.commit()
-        return OptimizeOutput(
-            status="pending_external",
-            pipeline_mode="passthrough",
-            strategy_used=strategy_name,
-            trace_id=trace_id,
-            assembled_prompt=assembled,
-            instructions=(
-                "No local LLM provider detected. Process the assembled_prompt "
-                "with your LLM, then call synthesis_save_result with the trace_id "
-                "and the optimized output. Include optimized_prompt, changes_summary, "
-                "task_type, strategy_used, and optionally scores "
-                "(clarity, specificity, structure, faithfulness, conciseness — each 1-10)."
-            ),
-        )
-
-    if decision.tier == "sampling":
-        # Sampling pipeline: run via IDE's LLM
-        logger.info("synthesis_optimize: tier=sampling reason=%r", decision.reason)
-        if not ctx or not hasattr(ctx, "session") or not ctx.session:
-            raise ValueError("Sampling tier selected but no MCP session available")
-        try:
-            result = await run_sampling_pipeline(
-                ctx, prompt,
-                effective_strategy if effective_strategy != "auto" else None,
-                guidance,
-                repo_full_name=repo_full_name,
-                applied_pattern_ids=applied_pattern_ids,
-            )
-            return _sampling_result_to_output(result)
-        except Exception as exc:
-            logger.error("Sampling pipeline failed: %s", exc, exc_info=True)
-            error_msg = await _persist_sampling_failure(prompt, effective_strategy, exc)
-            return OptimizeOutput(
-                status="error",
-                pipeline_mode="sampling",
-                strategy_used=effective_strategy,
-                warnings=[error_msg],
-            )
-
-    # Internal pipeline (decision.tier == "internal")
-    logger.info("synthesis_optimize: tier=internal provider=%s reason=%r", decision.provider_name, decision.reason)
-
-    start = time.monotonic()
-
-    logger.info(
-        "synthesis_optimize called: prompt_len=%d strategy=%s repo=%s",
-        len(prompt), effective_strategy, repo_full_name,
-    )
-
-    async with async_session_factory() as db:
-        orchestrator = PipelineOrchestrator(prompts_dir=PROMPTS_DIR)
-
-        result = None
-        async for event in orchestrator.run(
-            raw_prompt=prompt,
-            provider=decision.provider,
-            db=db,
-            strategy_override=effective_strategy if effective_strategy != "auto" else None,
-            codebase_guidance=guidance,
-            repo_full_name=repo_full_name,
-            applied_pattern_ids=applied_pattern_ids,
-        ):
-            if event.event == "optimization_complete":
-                result = event.data
-            elif event.event == "error":
-                error_msg = event.data.get("error", "Pipeline failed")
-                logger.error("synthesis_optimize pipeline error: %s", error_msg)
-                raise ValueError(error_msg)
-
-        if not result:
-            raise ValueError(
-                "Pipeline completed but produced no result. Check server logs for details."
-            )
-
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        logger.info(
-            "synthesis_optimize completed in %dms: optimization_id=%s strategy=%s",
-            elapsed_ms, result.get("id", ""), result.get("strategy_used", ""),
-        )
-
-        # Notify backend event bus (MCP runs in a separate process)
-        await notify_event_bus("optimization_created", {
-            "id": result.get("id", ""),
-            "task_type": result.get("task_type", ""),
-            "strategy_used": result.get("strategy_used", ""),
-            "overall_score": result.get("overall_score"),
-            "provider": decision.provider_name,
-            "status": "completed",
-        })
-        # Note: taxonomy_changed event is emitted by engine.process_optimization()
-        # after the extraction listener processes this optimization_created event.
-        # No premature event here — the taxonomy hasn't changed yet.
-
-        return OptimizeOutput(
-            status="completed",
-            pipeline_mode="internal",
-            optimization_id=result.get("id", ""),
-            optimized_prompt=result.get("optimized_prompt", ""),
-            task_type=result.get("task_type", ""),
-            strategy_used=result.get("strategy_used", ""),
-            changes_summary=result.get("changes_summary", ""),
-            scores=result.get("optimized_scores", result.get("scores", {})),
-            original_scores=result.get("original_scores", {}),
-            score_deltas=result.get("score_deltas", {}),
-            scoring_mode=result.get("scoring_mode", "independent"),
-            suggestions=result.get("suggestions", []),
-            warnings=result.get("warnings", []),
-            model_used=result.get("model_used"),
-            intent_label=result.get("intent_label"),
-            domain=result.get("domain"),
-            trace_id=result.get("trace_id"),
-        )
-
-
-async def _persist_sampling_failure(
-    prompt: str, strategy: str, exc: Exception,
-) -> str:
-    """Persist a failed sampling Optimization record and notify event bus.
-
-    Returns the formatted error message.  Non-fatal: swallows DB errors so
-    the caller can still return a response.
-    """
-    error_msg = f"Sampling pipeline failed: {type(exc).__name__}: {exc}"
-    try:
-        async with async_session_factory() as db:
-            db.add(Optimization(
-                id=str(uuid.uuid4()),
-                raw_prompt=prompt,
-                status="failed",
-                provider="mcp_sampling",
-                strategy_used=strategy,
-                task_type="general",
-                changes_summary=error_msg,
-            ))
-            await db.commit()
-    except Exception:
-        logger.debug("Failed to persist sampling failure record", exc_info=True)
-    await notify_event_bus("optimization_failed", {
-        "error": error_msg,
-        "provider": "mcp_sampling",
-        "pipeline_mode": "sampling",
-    })
-    return error_msg
-
-
-def _sampling_result_to_output(result: dict) -> OptimizeOutput:
-    """Convert a sampling pipeline result dict to OptimizeOutput."""
-    return OptimizeOutput(
-        status="completed",
-        pipeline_mode="sampling",
-        optimization_id=result.get("optimization_id", ""),
-        optimized_prompt=result.get("optimized_prompt", ""),
-        task_type=result.get("task_type", ""),
-        strategy_used=result.get("strategy_used", ""),
-        changes_summary=result.get("changes_summary", ""),
-        scores=result.get("scores", {}),
-        original_scores=result.get("original_scores", {}),
-        score_deltas=result.get("score_deltas", {}),
-        scoring_mode=result.get("scoring_mode", ""),
-        suggestions=result.get("suggestions", []),
-        warnings=result.get("warnings", []),
-        model_used=result.get("model_used"),
-        intent_label=result.get("intent_label"),
-        domain=result.get("domain"),
-        trace_id=result.get("trace_id"),
-    )
-
-
-# ---- Tool 2: synthesis_analyze ----
+    return await handle_optimize(prompt, strategy, repo_full_name, workspace_path, applied_pattern_ids, ctx)
 
 
 @mcp.tool(structured_output=True)
@@ -748,224 +415,15 @@ async def synthesis_analyze(
     prompt: Annotated[str, Field(description="The raw prompt text to analyze (min 20 chars).")],
     ctx: Context | None = None,
 ) -> AnalyzeOutput:
-    """Analyze a prompt and score it.
+    """Analyze a prompt and generate baseline quality scores.
 
-    Returns task type, weaknesses, strengths, strategy recommendation,
-    and baseline quality scores (5 dimensions). Persists to history as an
-    'analyzed' entry. Use the returned optimization_ready params to run
-    synthesis_optimize if the analysis suggests improvement is worthwhile.
+    Call BEFORE synthesis_optimize to understand prompt weaknesses and get a
+    strategy recommendation. Returns task classification, strengths, weaknesses,
+    recommended strategy, and baseline scores (5 dimensions).
 
-    When no local LLM provider is available but the client supports MCP
-    sampling, runs analysis via the IDE's LLM.
+    Chain: Use the returned selected_strategy when calling synthesis_optimize.
     """
-    if len(prompt) < 20:
-        raise ValueError(
-            "Prompt too short (%d chars). Minimum is 20 characters." % len(prompt)
-        )
-
-    _prefs = PreferencesService(DATA_DIR)
-    prefs_snapshot = _prefs.load()
-    ctx_routing = RoutingContext(preferences=prefs_snapshot, caller="mcp")
-    decision = _routing.resolve(ctx_routing) if _routing else None
-
-    if decision is None:
-        raise ValueError("Routing service not initialized")
-
-    provider = decision.provider
-
-    if decision.tier == "sampling":
-        logger.info("synthesis_analyze: tier=sampling prompt_len=%d reason=%r", len(prompt), decision.reason)
-        if ctx and hasattr(ctx, "session") and ctx.session:
-            try:
-                result = await run_sampling_analyze(ctx, prompt)
-                return AnalyzeOutput(**result)
-            except Exception as exc:
-                logger.warning("Sampling analyze failed: %s: %s", type(exc).__name__, exc)
-        raise ValueError("No LLM provider available. Set ANTHROPIC_API_KEY or install the Claude CLI.")
-
-    if decision.tier == "passthrough":
-        logger.info("synthesis_analyze: tier=passthrough — rejecting (analysis requires provider)")
-        raise ValueError("Analysis requires a local provider or MCP sampling capability.")
-
-    start = time.monotonic()
-    logger.info(
-        "synthesis_analyze: tier=internal provider=%s prompt_len=%d",
-        decision.provider_name, len(prompt),
-    )
-
-    loader = PromptLoader(PROMPTS_DIR)
-    strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
-
-    # --- Phase 1: Analyze ---
-    system_prompt = loader.load("agent-guidance.md")
-    analyze_msg = loader.render("analyze.md", {
-        "raw_prompt": prompt,
-        "available_strategies": strategy_loader.format_available(),
-    })
-
-    try:
-        analysis: AnalysisResult = await provider.complete_parsed(
-            model=_prefs.resolve_model("analyzer", prefs_snapshot),
-            system_prompt=system_prompt,
-            user_message=analyze_msg,
-            output_format=AnalysisResult,
-            max_tokens=16384,
-            effort="medium",
-        )
-    except Exception as exc:
-        logger.error("synthesis_analyze Phase 1 (analyze) failed: %s", exc)
-        raise ValueError("Analysis failed: %s" % exc) from exc
-
-    analyze_ms = int((time.monotonic() - start) * 1000)
-    logger.info(
-        "synthesis_analyze Phase 1 complete in %dms: task_type=%s strategy=%s confidence=%.2f",
-        analyze_ms, analysis.task_type, analysis.selected_strategy, analysis.confidence,
-    )
-
-    # --- Phase 2: Score original prompt ---
-    # Send the same prompt as both A and B — scorer evaluates it on its own merits.
-    scoring_system = loader.load("scoring.md")
-    scorer_msg = (
-        f"<prompt-a>\n{prompt}\n</prompt-a>\n\n"
-        f"<prompt-b>\n{prompt}\n</prompt-b>"
-    )
-
-    try:
-        score_result: ScoreResult = await provider.complete_parsed(
-            model=_prefs.resolve_model("scorer", prefs_snapshot),
-            system_prompt=scoring_system,
-            user_message=scorer_msg,
-            output_format=ScoreResult,
-            max_tokens=16384,
-            effort="medium",
-        )
-    except Exception as exc:
-        logger.error("synthesis_analyze Phase 2 (score) failed: %s", exc)
-        raise ValueError("Scoring failed: %s" % exc) from exc
-
-    # Both A and B are the same prompt — use prompt_a_scores as baseline
-    # Apply hybrid scoring for consistency with main pipeline
-    heur_scores = HeuristicScorer.score_prompt(prompt)
-    blended = blend_scores(score_result.prompt_a_scores, heur_scores)
-    baseline = blended.to_dimension_scores()
-    overall = baseline.overall
-
-    total_ms = int((time.monotonic() - start) * 1000)
-    logger.info(
-        "synthesis_analyze Phase 2 complete: overall=%.1f total_ms=%d",
-        overall, total_ms,
-    )
-
-    # --- Phase 2.5: Domain Mapping (Spec 6.7, hot-path only) ---
-    domain_raw = getattr(analysis, "domain", None) or "general"
-    cluster_id = None
-    if _taxonomy_engine is not None:
-        try:
-            async with async_session_factory() as db_map:
-                mapping = await _taxonomy_engine.map_domain(
-                    domain_raw=domain_raw,
-                    db=db_map,
-                    applied_pattern_ids=None,
-                )
-                cluster_id = mapping.cluster_id
-        except Exception as exc:
-            logger.warning("MCP domain mapping failed (non-fatal): %s", exc)
-
-    # --- Persist to DB ---
-    opt_id = str(uuid.uuid4())
-    trace_id = str(uuid.uuid4())
-
-    async with async_session_factory() as db:
-        opt = Optimization(
-            id=opt_id,
-            raw_prompt=prompt,
-            optimized_prompt="",
-            task_type=analysis.task_type,
-            intent_label=getattr(analysis, "intent_label", None) or "general",
-            domain=getattr(analysis, "domain", None) or "general",
-            strategy_used=analysis.selected_strategy,
-            changes_summary="",
-            score_clarity=baseline.clarity,
-            score_specificity=baseline.specificity,
-            score_structure=baseline.structure,
-            score_faithfulness=baseline.faithfulness,
-            score_conciseness=baseline.conciseness,
-            overall_score=overall,
-            domain_raw=domain_raw,
-            cluster_id=cluster_id,
-            provider=provider.name,
-            model_used=_prefs.resolve_model("analyzer", prefs_snapshot),
-            scoring_mode="baseline",
-            status="analyzed",
-            trace_id=trace_id,
-            duration_ms=total_ms,
-        )
-        db.add(opt)
-        await db.commit()
-
-    logger.info(
-        "synthesis_analyze persisted: optimization_id=%s trace_id=%s cluster_id=%s",
-        opt_id, trace_id, cluster_id,
-    )
-
-    # --- Notify event bus ---
-    await notify_event_bus("optimization_analyzed", {
-        "id": opt_id,
-        "trace_id": trace_id,
-        "task_type": analysis.task_type,
-        "strategy": analysis.selected_strategy,
-        "overall_score": overall,
-        "provider": provider.name,
-        "status": "analyzed",
-    })
-
-    # --- Build actionable next steps ---
-    next_steps = [
-        "Run `synthesis_optimize(prompt=..., strategy='%s')` to improve this prompt"
-        % analysis.selected_strategy,
-    ]
-    # Add weakness-specific suggestions
-    for weakness in analysis.weaknesses[:3]:
-        next_steps.append("Address: %s" % weakness)
-
-    # Find lowest-scoring dimension for targeted advice
-    dim_scores = {
-        "clarity": baseline.clarity,
-        "specificity": baseline.specificity,
-        "structure": baseline.structure,
-        "faithfulness": baseline.faithfulness,
-        "conciseness": baseline.conciseness,
-    }
-    weakest_dim = min(dim_scores, key=dim_scores.get)  # type: ignore[arg-type]
-    weakest_val = dim_scores[weakest_dim]
-    if weakest_val < 7.0:
-        next_steps.append(
-            "Focus on %s (scored %.1f/10) — this is the biggest opportunity for improvement"
-            % (weakest_dim, weakest_val)
-        )
-
-    return AnalyzeOutput(
-        optimization_id=opt_id,
-        task_type=analysis.task_type,
-        weaknesses=analysis.weaknesses,
-        strengths=analysis.strengths,
-        selected_strategy=analysis.selected_strategy,
-        strategy_rationale=analysis.strategy_rationale,
-        confidence=analysis.confidence,
-        baseline_scores=dim_scores,
-        overall_score=overall,
-        duration_ms=total_ms,
-        next_steps=next_steps,
-        optimization_ready={
-            "prompt": prompt,
-            "strategy": analysis.selected_strategy,
-        },
-        intent_label=getattr(analysis, "intent_label", None) or "general",
-        domain=getattr(analysis, "domain", None) or "general",
-    )
-
-
-# ---- Tool 3: synthesis_prepare_optimization ----
+    return await handle_analyze(prompt, ctx)
 
 
 @mcp.tool(structured_output=True)
@@ -975,11 +433,10 @@ async def synthesis_prepare_optimization(
     )],
     strategy: Annotated[str | None, Field(
         default=None,
-        description="Optimization strategy name (e.g. 'auto', 'chain-of-thought', 'few-shot', "
-        "'meta-prompting', 'role-playing', 'structured-output'). Defaults to user preference or 'auto'.",
+        description="Optimization strategy name. Defaults to user preference or 'auto'.",
     )] = None,
     max_context_tokens: Annotated[int, Field(
-        default=128000, description="Maximum context window budget in tokens. Assembled prompt is truncated to fit.",
+        default=128000, description="Maximum context window budget in tokens.",
     )] = 128000,
     workspace_path: Annotated[str | None, Field(
         default=None, description="Absolute path to the workspace root for context injection.",
@@ -989,79 +446,23 @@ async def synthesis_prepare_optimization(
     )] = None,
     ctx: Context | None = None,
 ) -> PrepareOutput:
-    """Assemble the full optimization prompt with context for an external LLM.
+    """Assemble the full optimization prompt for processing by YOUR LLM.
 
-    Call synthesis_save_result with the output.
+    This is step 1 of the passthrough workflow:
+    (1) Call this tool to get assembled_prompt and trace_id.
+    (2) Process assembled_prompt with your LLM to produce an optimized version.
+    (3) Call synthesis_save_result with the trace_id and the optimized output.
+
+    Use when you want your own LLM to perform the optimization instead of
+    the server's provider.
     """
-    if len(prompt) < 20:
-        raise ValueError(
-            "Prompt too short (%d chars). Minimum is 20 characters." % len(prompt)
-        )
-
-    # Resolve strategy: explicit param → user preference → auto
-    prefs = PreferencesService(DATA_DIR)
-    effective_strategy = strategy or prefs.get("defaults.strategy") or "auto"
-
-    logger.info(
-        "synthesis_prepare_optimization called: prompt_len=%d strategy=%s",
-        len(prompt), effective_strategy,
-    )
-
-    # Auto-discover workspace roots (zero-config) or fall back to workspace_path
-    guidance = await _resolve_workspace_guidance(ctx, workspace_path)
-
-    assembled, strategy_name = assemble_passthrough_prompt(
-        prompts_dir=PROMPTS_DIR,
-        raw_prompt=prompt,
-        strategy_name=effective_strategy,
-        codebase_guidance=guidance,
-    )
-
-    # Enforce max_context_tokens budget
-    estimated_tokens = len(assembled) // 4
-    if estimated_tokens > max_context_tokens:
-        max_chars = max_context_tokens * 4
-        assembled = assembled[:max_chars]
-        context_size_tokens = max_context_tokens
-    else:
-        context_size_tokens = estimated_tokens
-
-    trace_id = str(uuid.uuid4())
-
-    # Store pending optimization with raw_prompt for later save_result linkage
-    async with async_session_factory() as db:
-        pending = Optimization(
-            id=str(uuid.uuid4()),
-            raw_prompt=prompt,
-            status="pending",
-            trace_id=trace_id,
-            provider="mcp_passthrough",
-            strategy_used=strategy_name,
-            task_type="general",
-        )
-        db.add(pending)
-        await db.commit()
-
-    logger.info(
-        "synthesis_prepare_optimization completed: trace_id=%s strategy=%s tokens=%d",
-        trace_id, strategy_name, context_size_tokens,
-    )
-
-    return PrepareOutput(
-        trace_id=trace_id,
-        assembled_prompt=assembled,
-        context_size_tokens=context_size_tokens,
-        strategy_requested=strategy_name,
-    )
-
-
-# ---- Tool 4: synthesis_save_result ----
+    return await handle_prepare(prompt, strategy, max_context_tokens, workspace_path, repo_full_name, ctx)
 
 
 @mcp.tool(structured_output=True)
 async def synthesis_save_result(
-    trace_id: Annotated[str, Field(description="Trace ID from synthesis_prepare_optimization to link this result.")],
-    optimized_prompt: Annotated[str, Field(description="The optimized prompt text produced by the external LLM.")],
+    trace_id: Annotated[str, Field(description="Trace ID from synthesis_prepare_optimization.")],
+    optimized_prompt: Annotated[str, Field(description="The optimized prompt text produced by your LLM.")],
     changes_summary: Annotated[str | None, Field(
         default=None, description="Brief summary of changes made during optimization.",
     )] = None,
@@ -1070,8 +471,7 @@ async def synthesis_save_result(
         description="Task classification: 'coding', 'writing', 'analysis', 'creative', 'data', 'system', or 'general'.",
     )] = None,
     strategy_used: Annotated[str | None, Field(
-        default=None,
-        description="Strategy name used (e.g. 'auto', 'chain-of-thought'). Normalized to known strategies if verbose.",
+        default=None, description="Strategy name used. Normalized to known strategies if verbose.",
     )] = None,
     scores: Annotated[dict | None, Field(
         default=None,
@@ -1079,243 +479,173 @@ async def synthesis_save_result(
         "faithfulness, conciseness (0-10 float).",
     )] = None,
     model: Annotated[str | None, Field(
-        default=None, description="Model ID that produced the optimization (e.g. 'claude-sonnet-4-6').",
+        default=None, description="Model ID that produced the optimization.",
     )] = None,
     codebase_context: Annotated[str | None, Field(
         default=None, description="IDE-provided codebase context snapshot to store alongside the result.",
     )] = None,
     ctx: Context | None = None,
 ) -> SaveResultOutput:
-    """Persist an optimization result from an external LLM.
+    """Persist an optimization result from an external LLM with bias correction.
 
-    Applies bias correction to self-rated scores.
-    Optionally stores IDE-provided codebase context snapshot.
+    This is step 3 of the passthrough workflow (after synthesis_prepare_optimization).
+    Applies heuristic bias correction to self-rated scores and computes score deltas
+    against the original prompt.
+
+    Chain: Call synthesis_feedback AFTER using the optimized prompt to report quality.
     """
-    logger.info("synthesis_save_result called: trace_id=%s model=%s", trace_id, model)
-
-    # Normalize strategy_used — external LLMs often return verbose rationales
-    # instead of the short identifier. Match against known strategies.
-    if strategy_used:
-        strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
-        known = strategy_loader.list_strategies()
-        if strategy_used not in known:
-            # Try to extract a known strategy name from the verbose string
-            normalized = "auto"
-            lower = strategy_used.lower()
-            for name in known:
-                if name != "auto" and name in lower:
-                    normalized = name
-                    break
-            logger.info(
-                "Strategy normalized: '%s' → '%s'",
-                strategy_used[:80], normalized,
-            )
-            strategy_used = normalized
-
-    # Check scoring preference
-    prefs = PreferencesService(DATA_DIR)
-    scoring_enabled = prefs.get("pipeline.enable_scoring")
-    if scoring_enabled is None:
-        scoring_enabled = True  # default on
-
-    # Determine scoring mode and compute final scores
-    clean_scores: dict[str, float] = {}
-    heuristic_flags: list[str] = []
-    scoring_mode = "skipped" if not scoring_enabled else "heuristic"
-
-    if scores and scoring_enabled:
-        # IDE provided self-rated scores — clean and validate
-        scoring_mode = "hybrid_passthrough"
-        for k, v in scores.items():
-            try:
-                clean_scores[k] = float(v)
-            except (ValueError, TypeError):
-                clean_scores[k] = 5.0  # default
-
-    # Persist — look up pending optimization created by prepare, or create new
-    async with async_session_factory() as db:
-        # Look up pending optimization created by synthesis_prepare_optimization
-        result = await db.execute(
-            select(Optimization).where(Optimization.trace_id == trace_id)
-        )
-        opt = result.scalar_one_or_none()
-
-        # Determine strategy compliance by comparing prepare vs save
-        strategy_compliance = "unknown"
-        if opt and opt.strategy_used and strategy_used:
-            if opt.strategy_used == strategy_used:
-                strategy_compliance = "matched"
-            else:
-                strategy_compliance = "partial"
-                logger.info(
-                    "Strategy mismatch: requested=%s, used=%s",
-                    opt.strategy_used,
-                    strategy_used,
-                )
-        elif strategy_used:
-            strategy_compliance = "matched"  # no prepare to compare against
-
-        # Compute scores — hybrid blending matching the internal pipeline
-        heuristic_scores: dict[str, float] = {}
-        final_scores: dict[str, float] = {}
-        overall: float | None = None
-        original_scores: dict[str, float] | None = None
-        deltas: dict[str, float] | None = None
-
-        if scoring_enabled:
-            # Compute heuristic scores for the optimized prompt
-            heuristic_scores = HeuristicScorer.score_prompt(
-                optimized_prompt,
-                original=opt.raw_prompt if opt and opt.raw_prompt else None,
-            )
-
-            if clean_scores:
-                # IDE provided scores — blend with heuristics (same as internal pipeline)
-                try:
-                    # Apply bias correction BEFORE blending (discount self-rating inflation)
-                    corrected = HeuristicScorer.apply_bias_correction(clean_scores)
-                    ide_scores_corrected = DimensionScores(
-                        clarity=corrected.get("clarity", 5.0),
-                        specificity=corrected.get("specificity", 5.0),
-                        structure=corrected.get("structure", 5.0),
-                        faithfulness=corrected.get("faithfulness", 5.0),
-                        conciseness=corrected.get("conciseness", 5.0),
-                    )
-
-                    # Fetch historical stats for z-score normalization (non-fatal)
-                    historical_stats: dict | None = None
-                    try:
-                        from app.services.optimization_service import OptimizationService
-                        opt_svc = OptimizationService(db)
-                        historical_stats = await opt_svc.get_score_distribution(
-                            exclude_scoring_modes=["heuristic"],
-                        )
-                    except Exception:
-                        pass
-
-                    # Hybrid blend: bias-corrected IDE scores + heuristics
-                    blended = blend_scores(
-                        ide_scores_corrected, heuristic_scores, historical_stats,
-                    )
-                    blended_dims = blended.to_dimension_scores()
-                    final_scores = {
-                        "clarity": blended_dims.clarity,
-                        "specificity": blended_dims.specificity,
-                        "structure": blended_dims.structure,
-                        "faithfulness": blended_dims.faithfulness,
-                        "conciseness": blended_dims.conciseness,
-                    }
-
-                    # Divergence flags
-                    heuristic_flags = blended.divergence_flags or []
-
-                    scoring_mode = "hybrid_passthrough"
-
-                except Exception as exc:
-                    logger.warning("Hybrid blending failed, falling back to heuristic: %s", exc)
-                    final_scores = heuristic_scores
-                    scoring_mode = "heuristic"
-            else:
-                # No IDE scores — pure heuristic (same as before)
-                final_scores = heuristic_scores
-                scoring_mode = "heuristic"
-
-            overall = round(
-                sum(final_scores.values()) / max(len(final_scores), 1), 2,
-            )
-
-            # Compute original prompt scores + deltas when raw_prompt is available
-            if opt and opt.raw_prompt:
-                original_heur = HeuristicScorer.score_prompt(opt.raw_prompt)
-                original_scores = original_heur
-                deltas = {
-                    dim: round(final_scores[dim] - original_scores[dim], 2)
-                    for dim in final_scores
-                    if dim in original_scores
-                }
-
-        # Truncate codebase context if provided
-        context_snapshot = None
-        if codebase_context:
-            context_snapshot = codebase_context[: settings.MAX_CODEBASE_CONTEXT_CHARS]
-
-        if opt:
-            # Update existing pending record from prepare
-            opt.optimized_prompt = optimized_prompt
-            opt.task_type = task_type or opt.task_type or "general"
-            opt.strategy_used = strategy_used or opt.strategy_used or "auto"
-            opt.changes_summary = changes_summary or ""
-            opt.score_clarity = final_scores.get("clarity")
-            opt.score_specificity = final_scores.get("specificity")
-            opt.score_structure = final_scores.get("structure")
-            opt.score_faithfulness = final_scores.get("faithfulness")
-            opt.score_conciseness = final_scores.get("conciseness")
-            opt.overall_score = overall
-            opt.original_scores = original_scores
-            opt.score_deltas = deltas
-            opt.model_used = model or "external"
-            opt.scoring_mode = scoring_mode
-            opt.status = "completed"
-            if context_snapshot:
-                opt.codebase_context_snapshot = context_snapshot
-            opt_id = opt.id
-        else:
-            # No prepare was called — create new record (standalone save).
-            # No raw_prompt available, so no original_scores or deltas.
-            opt_id = str(uuid.uuid4())
-            opt = Optimization(
-                id=opt_id,
-                raw_prompt="",
-                optimized_prompt=optimized_prompt,
-                task_type=task_type or "general",
-                strategy_used=strategy_used or "auto",
-                changes_summary=changes_summary or "",
-                score_clarity=final_scores.get("clarity"),
-                score_specificity=final_scores.get("specificity"),
-                score_structure=final_scores.get("structure"),
-                score_faithfulness=final_scores.get("faithfulness"),
-                score_conciseness=final_scores.get("conciseness"),
-                overall_score=overall,
-                provider="mcp_passthrough",
-                model_used=model or "external",
-                scoring_mode=scoring_mode,
-                status="completed",
-                trace_id=trace_id,
-                codebase_context_snapshot=context_snapshot,
-            )
-            db.add(opt)
-
-        await db.commit()
-
-        # Notify backend event bus (MCP runs in a separate process)
-        await notify_event_bus("optimization_created", {
-            "id": opt_id,
-            "trace_id": trace_id,
-            "task_type": opt.task_type,
-            "strategy_used": opt.strategy_used,
-            "overall_score": overall,
-            "provider": opt.provider,
-            "status": "completed",
-        })
-
-    logger.info(
-        "synthesis_save_result completed: optimization_id=%s strategy_compliance=%s flags=%d",
-        opt_id, strategy_compliance, len(heuristic_flags),
-    )
-
-    return SaveResultOutput(
-        optimization_id=opt_id,
-        scoring_mode=scoring_mode,
-        scores={k: round(v, 2) for k, v in final_scores.items()} if final_scores else {},
-        original_scores=original_scores,
-        score_deltas=deltas,
-        overall_score=overall,
-        strategy_compliance=strategy_compliance,
-        heuristic_flags=heuristic_flags,
-    )
+    return await handle_save_result(trace_id, optimized_prompt, changes_summary, task_type, strategy_used, scores, model, codebase_context, ctx)
 
 
-# ---- Entry point ----
+# ---- New tools (MCP tool chain expansion) ----
+
+
+@mcp.tool(structured_output=True)
+async def synthesis_health(
+    ctx: Context | None = None,
+) -> HealthOutput:
+    """Check system capabilities and health before starting a workflow.
+
+    Call at the START of any optimization session. Returns available routing
+    tiers (internal/sampling/passthrough), active provider, and loaded strategies.
+    Use this to decide whether synthesis_optimize will work or if you need
+    synthesis_prepare_optimization (passthrough fallback).
+    """
+    return await handle_health()
+
+
+@mcp.tool(structured_output=True)
+async def synthesis_strategies(
+    ctx: Context | None = None,
+) -> StrategiesOutput:
+    """List available optimization strategies with descriptions.
+
+    Call BEFORE synthesis_optimize to choose the best strategy for your prompt
+    instead of defaulting to 'auto'. Returns strategy names, taglines, and
+    descriptions. Pass the returned name to synthesis_optimize's strategy parameter.
+    """
+    return await handle_strategies()
+
+
+@mcp.tool(structured_output=True)
+async def synthesis_history(
+    limit: Annotated[int, Field(
+        default=10, description="Number of results to return (1-50).",
+    )] = 10,
+    offset: Annotated[int, Field(
+        default=0, description="Pagination offset.",
+    )] = 0,
+    sort_by: Annotated[str, Field(
+        default="created_at",
+        description="Sort column: 'created_at', 'overall_score', 'task_type', 'strategy_used', 'duration_ms'.",
+    )] = "created_at",
+    sort_order: Annotated[str, Field(
+        default="desc", description="Sort direction: 'asc' or 'desc'.",
+    )] = "desc",
+    task_type: Annotated[str | None, Field(
+        default=None,
+        description="Filter by task type: 'coding', 'writing', 'analysis', 'creative', 'data', 'system', 'general'.",
+    )] = None,
+    status: Annotated[str | None, Field(
+        default=None, description="Filter by status: 'completed', 'failed', 'analyzed', 'pending'.",
+    )] = None,
+    ctx: Context | None = None,
+) -> HistoryOutput:
+    """Query optimization history with filtering and sorting.
+
+    Use to find past optimizations by task type, check which strategies
+    performed well (sort by overall_score desc), or find an optimization
+    to refine. Returns paginated summaries with 200-char prompt previews.
+
+    Chain: Call synthesis_get_optimization with a returned ID to get full details.
+    """
+    return await handle_history(limit, offset, sort_by, sort_order, task_type, status)
+
+
+@mcp.tool(structured_output=True)
+async def synthesis_get_optimization(
+    optimization_id: Annotated[str, Field(description="ID of the optimization to retrieve.")],
+    ctx: Context | None = None,
+) -> OptimizationDetailOutput:
+    """Retrieve full details of a specific optimization by ID.
+
+    Call after browsing synthesis_history to get the complete optimized prompt
+    text, or before synthesis_refine to understand what needs improving.
+    Returns full prompt texts, scores, feedback status, and refinement count.
+    """
+    return await handle_get_optimization(optimization_id)
+
+
+@mcp.tool(structured_output=True)
+async def synthesis_match(
+    prompt_text: Annotated[str, Field(
+        description="Prompt text to match against the knowledge graph (min 10 chars).",
+    )],
+    ctx: Context | None = None,
+) -> MatchOutput:
+    """Search the knowledge graph for clusters and reusable patterns similar to a prompt.
+
+    Call BEFORE synthesis_optimize to leverage past optimization knowledge.
+    Returns match quality (family/cluster/none), similarity score, cluster info,
+    and meta-pattern IDs.
+
+    Chain: Pass returned meta_patterns[].id values as applied_pattern_ids to
+    synthesis_optimize for knowledge-informed optimization.
+    """
+    return await handle_match(prompt_text)
+
+
+@mcp.tool(structured_output=True)
+async def synthesis_feedback(
+    optimization_id: Annotated[str, Field(description="ID of the optimization to rate.")],
+    rating: Annotated[str, Field(
+        description="Quality rating: 'thumbs_up' if the optimized prompt worked well, "
+        "'thumbs_down' if it underperformed.",
+    )],
+    comment: Annotated[str | None, Field(
+        default=None, description="Optional explanation of what worked or didn't.",
+    )] = None,
+    ctx: Context | None = None,
+) -> FeedbackOutput:
+    """Submit quality feedback on a completed optimization to drive strategy adaptation.
+
+    Call AFTER using an optimized prompt and observing its effectiveness.
+    Use 'thumbs_up' when the result produced good outcomes, 'thumbs_down'
+    when it underperformed. The system learns which strategies work best
+    for each task type based on accumulated feedback.
+    """
+    return await handle_feedback(optimization_id, rating, comment)
+
+
+@mcp.tool(structured_output=True)
+async def synthesis_refine(
+    optimization_id: Annotated[str, Field(description="ID of the optimization to refine.")],
+    refinement_request: Annotated[str, Field(
+        description="Specific refinement instruction (e.g., 'add more concrete examples', "
+        "'strengthen the error handling section', 'make it more concise').",
+    )],
+    branch_id: Annotated[str | None, Field(
+        default=None, description="Branch ID to refine on. Omit to use the latest branch.",
+    )] = None,
+    workspace_path: Annotated[str | None, Field(
+        default=None, description="Absolute path to workspace root for codebase context.",
+    )] = None,
+    ctx: Context | None = None,
+) -> RefineOutput:
+    """Iteratively improve an optimized prompt with specific instructions.
+
+    Call after synthesis_optimize when the result needs targeted improvement.
+    Each call is a fresh pipeline invocation (not multi-turn accumulation).
+    Returns the refined prompt, updated scores, score deltas, and suggestions.
+
+    Chain: Call synthesis_feedback after the final refinement to close the loop.
+    """
+    return await handle_refine(optimization_id, refinement_request, branch_id, workspace_path, ctx)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def create_mcp_server() -> FastMCP:
@@ -1324,13 +654,7 @@ def create_mcp_server() -> FastMCP:
 
 
 def _clear_stale_session() -> None:
-    """Remove stale ``mcp_session.json`` on server startup.
-
-    All MCP sessions live in-memory — a server restart invalidates every
-    session.  Without this cleanup, the health endpoint would keep reporting
-    ``sampling_capable=true`` from the old session until the 30-minute
-    staleness window expires.
-    """
+    """Remove stale ``mcp_session.json`` on server startup."""
     if _session_file.delete():
         logger.info("Startup: cleared stale mcp_session.json")
 

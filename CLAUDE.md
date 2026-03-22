@@ -179,11 +179,22 @@ Variable reference: `prompts/manifest.json`
 
 ## MCP server
 
-4 tools with `synthesis_` prefix on port 8001 (`http://127.0.0.1:8001/mcp`). All tools use `structured_output=True` (return Pydantic models, expose `outputSchema` to MCP clients):
+11 tools with `synthesis_` prefix on port 8001 (`http://127.0.0.1:8001/mcp`). All tools use `structured_output=True` (return Pydantic models, expose `outputSchema` to MCP clients). Tool handlers live in `backend/app/tools/*.py`; `mcp_server.py` is a thin registration layer (~420 lines).
+
+### Core pipeline tools
 - `synthesis_optimize` — full pipeline execution. Params: `prompt`, `strategy`, `repo_full_name`, `workspace_path`, `applied_pattern_ids` (list of meta-pattern IDs to inject into optimizer context). Returns `OptimizeOutput`.
 - `synthesis_analyze` — analysis + baseline scoring. Falls back to MCP sampling when no local provider. Returns `AnalyzeOutput`.
-- `synthesis_prepare_optimization` — assemble prompt + context for external LLM. Returns `PrepareOutput`.
-- `synthesis_save_result` — persist result with bias correction. Returns `SaveResultOutput`.
+- `synthesis_prepare_optimization` — assemble prompt + context for external LLM (step 1 of passthrough workflow). Returns `PrepareOutput`.
+- `synthesis_save_result` — persist result with bias correction (step 3 of passthrough workflow). Returns `SaveResultOutput`.
+
+### Workflow tools
+- `synthesis_health` — system capabilities check (provider, tiers, strategies, stats). Call at session start. Returns `HealthOutput`.
+- `synthesis_strategies` — list available optimization strategies with metadata. Returns `StrategiesOutput`.
+- `synthesis_history` — paginated optimization history with sort/filter. Returns `HistoryOutput`.
+- `synthesis_get_optimization` — full detail for a specific optimization (by ID or trace_id). Returns `OptimizationDetailOutput`.
+- `synthesis_match` — knowledge graph search for similar clusters and reusable patterns. Returns `MatchOutput`.
+- `synthesis_feedback` — submit quality feedback (thumbs_up/thumbs_down) to drive strategy adaptation. Returns `FeedbackOutput`.
+- `synthesis_refine` — iteratively improve an optimized prompt with specific instructions. Requires a local provider. Returns `RefineOutput`.
 
 ### Sampling capability detection
 
@@ -210,10 +221,13 @@ When no local provider is available (or `force_sampling=True`), the full pipelin
 - **Model ID capture**: `result.model` from each sampling response is collected per phase and persisted to DB (replaces hardcoded `"ide_llm"`).
 
 ### Adding a tool
-1. Add a `@mcp.tool(structured_output=True)` function in `mcp_server.py`
-2. Use the `synthesis_` prefix for all tool names
-3. The tool handler automatically participates in routing via `_routing.resolve()` — no manual capability writes needed
-4. Return a Pydantic model (define in `schemas/mcp_models.py`); raise `ValueError` for errors
+1. Define a Pydantic output model in `schemas/mcp_models.py`
+2. Create a handler in `backend/app/tools/<name>.py` with a `handle_<name>()` async function
+3. Re-export from `backend/app/tools/__init__.py`
+4. Add a thin `@mcp.tool(structured_output=True)` wrapper in `mcp_server.py` that calls the handler
+5. Use the `synthesis_` prefix for all tool names
+6. The handler accesses routing via `get_routing()` from `tools/_shared.py` — no manual capability writes needed
+7. Raise `ValueError` for user-facing errors
 
 ## Common tasks
 
@@ -274,7 +288,7 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 - **Real-time event bus**: `event_bus.py` publishes events to all SSE subscribers. Event types: `optimization_created`, `optimization_analyzed`, `optimization_failed`, `feedback_submitted`, `refinement_turn`, `strategy_changed`, `taxonomy_changed`, `routing_state_changed`. MCP server (separate process) notifies via HTTP POST to `/api/events/_publish`. Frontend auto-refreshes History on events, shows toast notifications, syncs Inspector feedback state, and updates StatusBar metrics.
 - **Workspace intelligence**: `workspace_intelligence.py` auto-detects project type from manifest files (package.json, requirements.txt, etc.) and injects workspace profile into MCP tool context via `roots/list`.
 - **MCP sampling detection**: ASGI middleware on `initialize` calls `RoutingManager.on_mcp_initialize()` (in-memory state primary, `mcp_session.json` write-through for restart recovery). Optimistic strategy prevents VS Code multi-session flicker (False never overwrites fresh True within 30-min window). `RoutingManager` owns in-memory `sampling_capable`, `mcp_connected`, timestamps. Health endpoint reads live state from `app.state.routing`. Background disconnect checker (60s poll, 300s staleness window). Dual staleness windows in `config.py`: `MCP_CAPABILITY_STALENESS_MINUTES` (30 min), `MCP_ACTIVITY_STALENESS_SECONDS` (300s). MCP server is sole writer to `mcp_session.json`. Frontend receives `routing_state_changed` SSE events — no longer makes routing decisions. Fixed 60s health polling for display only.
-- **MCP sampling pipeline**: full feature parity with internal pipeline — extracted into `services/sampling_pipeline.py`. Uses structured output via tool calling (`tools` + `tool_choice` on `create_message()`), `ModelPreferences` per phase, `SamplingLLMAdapter` for explore, and captures `result.model` for DB persistence. All 4 MCP tools use `structured_output=True` (return Pydantic models, expose `outputSchema`). `synthesis_analyze` falls back to sampling when no local provider.
+- **MCP sampling pipeline**: full feature parity with internal pipeline — extracted into `services/sampling_pipeline.py`. Uses structured output via tool calling (`tools` + `tool_choice` on `create_message()`), `ModelPreferences` per phase, `SamplingLLMAdapter` for explore, and captures `result.model` for DB persistence. All 11 MCP tools use `structured_output=True` (return Pydantic models, expose `outputSchema`). `synthesis_analyze` falls back to sampling when no local provider.
 - **Taxonomy engine**: evolutionary hierarchical clustering in `services/taxonomy/`. Process-wide singleton (`get_engine()`/`set_engine()`) with async lock-gated hot path. Three execution paths: hot (embed + cosine search nearest active node per optimization), warm (periodic HDBSCAN + speculative lifecycle mutations — emerge/merge/split/retire — gated by Q_system non-regression), cold (full HDBSCAN refit + UMAP 3D projection + OKLab coloring + Haiku labeling). Quality system: 5-dimension Q_system (coherence, separation, coverage, DBCV, stability) with adaptive weights that scale by active node count. Snapshot audit trail records every mutation cycle. Module decomposition: `engine.py` (~500 LOC) + `family_ops.py` (family CRUD) + `matching.py` (cascade search) + `embedding_index.py` (numpy index) extracted from former monolithic `engine.py` (~2100 LOC). Frontend: Three.js `SemanticTopology` with LOD tiers (persistence thresholds: far=0.6, mid=0.3, near=0.0), state-based chromatic encoding (opacity, size multiplier, color override per lifecycle state), raycasting interaction, force-directed layout (`TopologyWorker`), and `TopologyControls` overlay.
 - **Unified prompt lifecycle**: self-building cluster library. Post-completion background job embeds prompts, clusters into `PromptCluster` groups (cosine ≥0.78 merge), extracts meta-patterns via Haiku (cosine ≥0.82 pattern merge). On-paste detection (50-char delta, 300ms debounce) suggests matching clusters (cosine ≥0.72). Applied patterns injected into optimizer context via pre-phase `EmbeddingIndex` search. Models: `PromptCluster` (unified, lifecycle states), `MetaPattern` (enriched on duplicate, `cluster_id` FK), `OptimizationPattern` (join with relationship type). Cross-cluster edges at cosine ≥0.55. Domain color coding: backend=#a855f7, frontend=#fbbf24, database=#00d4aa, security=#ff3366, devops=#4d8eff, fullstack=#00e5ff, general=#7a7a9e. Endpoints unified under `/api/clusters/*` (legacy 301 redirects for `/api/patterns/*` and `/api/taxonomy/*`). UI: `ClusterNavigator` (state filter tabs, Proven Templates section, domain filter), Inspector cluster detail (linked optimizations, rename, state badge), SemanticTopology (state-based opacity/size/color encoding), StatusBar cluster count. Activity type `'clusters'` in layout routing.
 - **Intelligent routing**: centralized 5-tier priority chain in `services/routing.py`: force_passthrough > force_sampling > internal provider > auto sampling > passthrough fallback. Pure `resolve_route()` function (deterministic, no I/O) + thin `RoutingManager` wrapper (state lifecycle, SSE events, persistence, disconnect detection). Both FastAPI and MCP server own their own `RoutingManager` instance. `routing` SSE event emitted as first event in every optimize stream. `routing_state_changed` ambient SSE for tier availability changes. Frontend is purely reactive — never makes routing decisions. `caller` field gates sampling (REST callers never reach sampling tiers). Unified `POST /api/optimize` handles passthrough inline via SSE (no more 503).

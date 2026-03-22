@@ -23,7 +23,7 @@ async def test_synthesis_save_result(db_session):
         "conciseness": 5.0,
     }
 
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.save_result.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -44,7 +44,7 @@ async def test_synthesis_save_result(db_session):
 
 async def test_synthesis_save_result_standalone(db_session):
     """Save result without prior prepare: creates standalone record (no error)."""
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.save_result.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 

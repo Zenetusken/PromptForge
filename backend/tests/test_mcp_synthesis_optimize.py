@@ -28,14 +28,14 @@ async def test_synthesis_optimize_with_provider():
     mock_provider.name = "mock_provider"
 
     with (
-        patch("app.mcp_server._routing", _mock_routing(
+        patch("app.tools._shared._routing", _mock_routing(
             "internal", provider=mock_provider, provider_name="mock_provider",
         )),
-        patch("app.mcp_server.async_session_factory") as mock_session_factory,
-        patch("app.mcp_server.PipelineOrchestrator") as mock_orchestrator,
-        patch("app.mcp_server.notify_event_bus", new_callable=AsyncMock) as mock_notify,
-        patch("app.mcp_server._resolve_workspace_guidance", new_callable=AsyncMock) as mock_resolve,
-        patch("app.mcp_server.PreferencesService") as mock_prefs_service,
+        patch("app.tools.optimize.async_session_factory") as mock_session_factory,
+        patch("app.tools.optimize.PipelineOrchestrator") as mock_orchestrator,
+        patch("app.tools.optimize.notify_event_bus", new_callable=AsyncMock) as mock_notify,
+        patch("app.tools.optimize.resolve_workspace_guidance", new_callable=AsyncMock) as mock_resolve,
+        patch("app.tools.optimize.PreferencesService") as mock_prefs_service,
     ):
         mock_prefs = MagicMock()
         mock_prefs.get.return_value = False
@@ -80,9 +80,9 @@ async def test_synthesis_optimize_with_provider():
 async def test_synthesis_optimize_force_passthrough():
     """Passthrough tier: assembled prompt returned for external processing."""
     with (
-        patch("app.mcp_server._routing", _mock_routing("passthrough")),
-        patch("app.mcp_server.async_session_factory") as mock_session_factory,
-        patch("app.mcp_server.PreferencesService") as mock_prefs_service,
+        patch("app.tools._shared._routing", _mock_routing("passthrough")),
+        patch("app.tools.optimize.async_session_factory") as mock_session_factory,
+        patch("app.tools.optimize.PreferencesService") as mock_prefs_service,
     ):
         mock_prefs = MagicMock()
         mock_prefs.get.return_value = False
@@ -109,11 +109,11 @@ async def test_synthesis_optimize_no_provider_but_sampling():
     ctx.session.client_params.capabilities.sampling = True
 
     with (
-        patch("app.mcp_server._routing", _mock_routing("sampling")),
-        patch("app.mcp_server.run_sampling_pipeline", new_callable=AsyncMock) as mock_sampling,
-        patch("app.mcp_server.notify_event_bus", new_callable=AsyncMock),
-        patch("app.mcp_server.PreferencesService") as mock_prefs_service,
-        patch("app.mcp_server._resolve_workspace_guidance", new_callable=AsyncMock, return_value=""),
+        patch("app.tools._shared._routing", _mock_routing("sampling")),
+        patch("app.tools.optimize.run_sampling_pipeline", new_callable=AsyncMock) as mock_sampling,
+        patch("app.tools.optimize.notify_event_bus", new_callable=AsyncMock),
+        patch("app.tools.optimize.PreferencesService") as mock_prefs_service,
+        patch("app.tools.optimize.resolve_workspace_guidance", new_callable=AsyncMock, return_value=""),
     ):
         mock_prefs = MagicMock()
         mock_prefs.get.return_value = False
@@ -141,13 +141,13 @@ async def test_synthesis_optimize_pipeline_error():
     mock_provider.name = "mock_provider"
 
     with (
-        patch("app.mcp_server._routing", _mock_routing(
+        patch("app.tools._shared._routing", _mock_routing(
             "internal", provider=mock_provider, provider_name="mock_provider",
         )),
-        patch("app.mcp_server.async_session_factory") as mock_session_factory,
-        patch("app.mcp_server.PipelineOrchestrator") as mock_orchestrator,
-        patch("app.mcp_server._resolve_workspace_guidance", new_callable=AsyncMock, return_value=""),
-        patch("app.mcp_server.PreferencesService") as mock_prefs_service,
+        patch("app.tools.optimize.async_session_factory") as mock_session_factory,
+        patch("app.tools.optimize.PipelineOrchestrator") as mock_orchestrator,
+        patch("app.tools.optimize.resolve_workspace_guidance", new_callable=AsyncMock, return_value=""),
+        patch("app.tools.optimize.PreferencesService") as mock_prefs_service,
     ):
         mock_prefs = MagicMock()
         mock_prefs.get.return_value = False

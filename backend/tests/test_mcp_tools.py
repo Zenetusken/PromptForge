@@ -39,7 +39,7 @@ def _mock_routing(tier: str = "passthrough", provider=None, provider_name: str |
 
 async def test_prepare_returns_model(db_session) -> None:
     """synthesis_prepare_optimization returns a PrepareOutput model."""
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.prepare.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -56,7 +56,7 @@ async def test_prepare_returns_model(db_session) -> None:
 
 async def test_prepare_with_explicit_strategy(db_session) -> None:
     """Explicit strategy name is reflected in the returned strategy_requested."""
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.prepare.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -72,7 +72,7 @@ async def test_prepare_with_explicit_strategy(db_session) -> None:
 
 async def test_prepare_falls_back_to_auto_for_unknown_strategy(db_session) -> None:
     """Unknown strategy falls back to auto without raising."""
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.prepare.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -105,7 +105,7 @@ async def test_save_result_returns_model(db_session) -> None:
         "conciseness": 8.0,
     }
 
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.save_result.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -138,7 +138,7 @@ async def test_save_result_returns_model(db_session) -> None:
 
 async def test_save_result_without_scores(db_session) -> None:
     """Saving without IDE scores falls back to heuristic scoring."""
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.save_result.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -175,8 +175,8 @@ async def test_optimize_validates_prompt_too_long() -> None:
 async def test_optimize_returns_model(db_session) -> None:
     """synthesis_optimize returns an OptimizeOutput model (passthrough path)."""
     with (
-        patch("app.mcp_server._routing", _mock_routing("passthrough")),
-        patch("app.mcp_server.async_session_factory") as mock_factory,
+        patch("app.tools._shared._routing", _mock_routing("passthrough")),
+        patch("app.tools.optimize.async_session_factory") as mock_factory,
     ):
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -206,7 +206,7 @@ async def test_save_result_stores_codebase_context(db_session) -> None:
     """Passing codebase_context persists it (truncated) on the optimization record."""
     context_text = "Project uses FastAPI + SvelteKit. Key patterns: async, runes."
 
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.save_result.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -239,8 +239,8 @@ async def test_save_result_stores_codebase_context(db_session) -> None:
 async def test_optimize_passthrough_includes_strategy(db_session) -> None:
     """Passthrough mode includes the requested strategy in the assembled prompt."""
     with (
-        patch("app.mcp_server._routing", _mock_routing("passthrough")),
-        patch("app.mcp_server.async_session_factory") as mock_factory,
+        patch("app.tools._shared._routing", _mock_routing("passthrough")),
+        patch("app.tools.optimize.async_session_factory") as mock_factory,
     ):
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -257,8 +257,8 @@ async def test_optimize_passthrough_includes_strategy(db_session) -> None:
 async def test_optimize_passthrough_then_save_full_flow(db_session) -> None:
     """Full passthrough flow: optimize (pending) → save_result (completed)."""
     with (
-        patch("app.mcp_server._routing", _mock_routing("passthrough")),
-        patch("app.mcp_server.async_session_factory") as mock_factory,
+        patch("app.tools._shared._routing", _mock_routing("passthrough")),
+        patch("app.tools.optimize.async_session_factory") as mock_factory,
     ):
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -272,7 +272,7 @@ async def test_optimize_passthrough_then_save_full_flow(db_session) -> None:
     trace_id = pending.trace_id
 
     # Step 2: Save the external LLM's result
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.save_result.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -304,8 +304,8 @@ async def test_optimize_passthrough_then_save_full_flow(db_session) -> None:
 async def test_optimize_passthrough_save_without_scores(db_session) -> None:
     """Passthrough save without IDE scores falls back to heuristic."""
     with (
-        patch("app.mcp_server._routing", _mock_routing("passthrough")),
-        patch("app.mcp_server.async_session_factory") as mock_factory,
+        patch("app.tools._shared._routing", _mock_routing("passthrough")),
+        patch("app.tools.optimize.async_session_factory") as mock_factory,
     ):
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -316,7 +316,7 @@ async def test_optimize_passthrough_save_without_scores(db_session) -> None:
 
     trace_id = pending.trace_id
 
-    with patch("app.mcp_server.async_session_factory") as mock_factory:
+    with patch("app.tools.save_result.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__ = AsyncMock(return_value=db_session)
         mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
 
@@ -385,7 +385,7 @@ async def test_analyze_sampling_fallback(db_session) -> None:
     ctx.session.client_params = None
 
     with (
-        patch("app.mcp_server._routing", _mock_routing("sampling")),
+        patch("app.tools._shared._routing", _mock_routing("sampling")),
         patch("app.services.sampling_pipeline.async_session_factory") as mock_factory,
     ):
         mock_db = AsyncMock()

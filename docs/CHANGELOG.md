@@ -2,6 +2,17 @@
 
 All notable changes to Project Synthesis. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## Unreleased
+
+### Added
+- Added 7 new MCP tools completing the autonomous LLM workflow: `synthesis_health`, `synthesis_strategies`, `synthesis_history`, `synthesis_get_optimization`, `synthesis_match`, `synthesis_feedback`, `synthesis_refine`
+- Extracted MCP tool handlers into `backend/app/tools/` package (11 modules) — `mcp_server.py` is now a thin ~420-line registration layer
+- Added `tools/_shared.py` for module-level state management (routing, taxonomy engine) with setter/getter pattern
+
+### Changed
+- Rewrote all 11 MCP tool descriptions for LLM-first consumption with chaining hints (When → Returns → Chain)
+- Removed prompt echo from `AnalyzeOutput.optimization_ready` to eliminate token waste on large prompts
+
 ## v0.3.0 — 2026-03-22
 
 ### Added

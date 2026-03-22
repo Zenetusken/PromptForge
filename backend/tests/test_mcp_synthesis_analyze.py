@@ -60,13 +60,13 @@ async def test_synthesis_analyze_with_provider():
     mock_provider.complete_parsed.side_effect = side_effect
 
     with (
-        patch("app.mcp_server._routing", _mock_routing(
+        patch("app.tools._shared._routing", _mock_routing(
             "internal", provider=mock_provider, provider_name="mock_provider",
         )),
-        patch("app.mcp_server.async_session_factory") as mock_session_factory,
-        patch("app.mcp_server.blend_scores") as mock_blend,
-        patch("app.mcp_server.PreferencesService") as mock_prefs_service,
-        patch("app.mcp_server.HeuristicScorer") as mock_heuristic,
+        patch("app.tools.analyze.async_session_factory") as mock_session_factory,
+        patch("app.tools.analyze.blend_scores") as mock_blend,
+        patch("app.tools.analyze.PreferencesService") as mock_prefs_service,
+        patch("app.tools.analyze.HeuristicScorer") as mock_heuristic,
     ):
         mock_blend_result = MagicMock()
         mock_blend_result.to_dimension_scores.return_value = DimensionScores(
@@ -106,9 +106,9 @@ async def test_synthesis_analyze_no_provider_but_sampling():
     ctx.session.client_params = None
 
     with (
-        patch("app.mcp_server._routing", _mock_routing("sampling")),
-        patch("app.mcp_server.run_sampling_analyze", new_callable=AsyncMock) as mock_sampling,
-        patch("app.mcp_server.PreferencesService") as mock_prefs_service,
+        patch("app.tools._shared._routing", _mock_routing("sampling")),
+        patch("app.tools.analyze.run_sampling_analyze", new_callable=AsyncMock) as mock_sampling,
+        patch("app.tools.analyze.PreferencesService") as mock_prefs_service,
     ):
         mock_prefs = MagicMock()
         mock_prefs.load.return_value = {}
@@ -153,8 +153,8 @@ async def test_synthesis_analyze_no_provider_but_sampling():
 async def test_synthesis_analyze_no_provider_no_sampling():
     """Passthrough tier: analysis rejected (requires a provider)."""
     with (
-        patch("app.mcp_server._routing", _mock_routing("passthrough")),
-        patch("app.mcp_server.PreferencesService") as mock_prefs_service,
+        patch("app.tools._shared._routing", _mock_routing("passthrough")),
+        patch("app.tools.analyze.PreferencesService") as mock_prefs_service,
     ):
         mock_prefs = MagicMock()
         mock_prefs.load.return_value = {}

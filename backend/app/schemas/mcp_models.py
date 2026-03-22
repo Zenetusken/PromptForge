@@ -155,8 +155,8 @@ class AnalyzeOutput(BaseModel):
         description="Suggested next actions based on analysis results.",
     )
     optimization_ready: dict[str, str] = Field(
-        description="Pre-computed parameters to pass to synthesis_optimize "
-        "(keys: prompt, strategy).",
+        description="Pre-computed parameters for synthesis_optimize "
+        "(keys: strategy). The prompt is already in your context.",
     )
     intent_label: str = Field(
         default="general",
@@ -269,4 +269,306 @@ class SaveResultOutput(BaseModel):
     )
     heuristic_flags: list[str] = Field(
         description="Quality issues flagged by heuristic analysis.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# New tool output models (MCP tool chain expansion)
+# ---------------------------------------------------------------------------
+
+
+class FeedbackOutput(BaseModel):
+    """Output for synthesis_feedback."""
+
+    feedback_id: str = Field(
+        description="ID of the created feedback record.",
+    )
+    optimization_id: str = Field(
+        description="ID of the rated optimization.",
+    )
+    rating: str = Field(
+        description="Rating that was recorded: 'thumbs_up' or 'thumbs_down'.",
+    )
+    strategy_affinity_updated: bool = Field(
+        description="Whether strategy adaptation was triggered by this feedback.",
+    )
+
+
+class RefineOutput(BaseModel):
+    """Output for synthesis_refine."""
+
+    optimization_id: str = Field(
+        description="Parent optimization ID.",
+    )
+    version: int = Field(
+        description="New version number in the refinement chain.",
+    )
+    branch_id: str = Field(
+        description="Branch this refinement turn belongs to.",
+    )
+    refined_prompt: str = Field(
+        description="The refined prompt text after improvement.",
+    )
+    scores: dict[str, float] | None = Field(
+        default=None,
+        description="Quality scores for the refined prompt "
+        "(clarity, specificity, structure, faithfulness, conciseness).",
+    )
+    score_deltas: dict[str, float] | None = Field(
+        default=None,
+        description="Score changes from the previous version.",
+    )
+    overall_score: float | None = Field(
+        default=None,
+        description="Mean of all dimension scores (0.0-10.0).",
+    )
+    suggestions: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="Follow-up improvement suggestions, each with 'text' and 'source' keys.",
+    )
+    strategy_used: str | None = Field(
+        default=None,
+        description="Strategy used for this refinement turn.",
+    )
+
+
+class HistoryItem(BaseModel):
+    """Single optimization summary within HistoryOutput."""
+
+    id: str = Field(
+        description="Optimization ID.",
+    )
+    created_at: str | None = Field(
+        default=None,
+        description="ISO 8601 creation timestamp.",
+    )
+    task_type: str | None = Field(
+        default=None,
+        description="Classified task type.",
+    )
+    strategy_used: str | None = Field(
+        default=None,
+        description="Strategy used for optimization.",
+    )
+    overall_score: float | None = Field(
+        default=None,
+        description="Quality score (0.0-10.0).",
+    )
+    status: str = Field(
+        description="Optimization status: 'completed', 'failed', 'analyzed', 'pending'.",
+    )
+    intent_label: str | None = Field(
+        default=None,
+        description="Short intent label (3-6 words).",
+    )
+    domain: str | None = Field(
+        default=None,
+        description="Domain category.",
+    )
+    raw_prompt_preview: str | None = Field(
+        default=None,
+        description="First 200 characters of the original prompt.",
+    )
+    optimized_prompt_preview: str | None = Field(
+        default=None,
+        description="First 200 characters of the optimized prompt.",
+    )
+    feedback_rating: str | None = Field(
+        default=None,
+        description="Latest feedback rating ('thumbs_up', 'thumbs_down', or null).",
+    )
+
+
+class HistoryOutput(BaseModel):
+    """Output for synthesis_history."""
+
+    total: int = Field(
+        description="Total number of matching optimizations.",
+    )
+    count: int = Field(
+        description="Number of items returned in this page.",
+    )
+    has_more: bool = Field(
+        description="Whether more pages exist beyond this one.",
+    )
+    items: list[HistoryItem] = Field(
+        description="Optimization summaries for this page.",
+    )
+
+
+class MetaPatternSummary(BaseModel):
+    """Reusable pattern from the knowledge graph."""
+
+    id: str = Field(
+        description="Meta-pattern ID. Pass to synthesis_optimize.applied_pattern_ids "
+        "to inject this pattern into optimization context.",
+    )
+    pattern_text: str = Field(
+        description="The reusable technique or pattern text.",
+    )
+    source_count: int = Field(
+        description="Number of optimizations this pattern was extracted from.",
+    )
+
+
+class MatchOutput(BaseModel):
+    """Output for synthesis_match."""
+
+    match_level: str = Field(
+        description="Match quality: 'family' (strong, cosine >= 0.72), "
+        "'cluster' (moderate, cosine >= 0.60), or 'none'.",
+    )
+    similarity: float = Field(
+        description="Cosine similarity score (0.0-1.0).",
+    )
+    cluster_id: str | None = Field(
+        default=None,
+        description="Matched cluster ID.",
+    )
+    cluster_label: str | None = Field(
+        default=None,
+        description="Human-readable cluster label.",
+    )
+    taxonomy_breadcrumb: list[str] = Field(
+        default_factory=list,
+        description="Path from root to matched node in the taxonomy tree.",
+    )
+    meta_patterns: list[MetaPatternSummary] = Field(
+        default_factory=list,
+        description="Reusable patterns from this cluster. Pass their IDs to "
+        "synthesis_optimize.applied_pattern_ids.",
+    )
+    recommended_strategy: str | None = Field(
+        default=None,
+        description="Preferred strategy for this cluster based on feedback history.",
+    )
+
+
+class StrategyInfo(BaseModel):
+    """Single strategy entry within StrategiesOutput."""
+
+    name: str = Field(
+        description="Strategy identifier to pass to synthesis_optimize.",
+    )
+    tagline: str = Field(
+        description="One-line category or description (from YAML frontmatter).",
+    )
+    description: str = Field(
+        description="Full description of what this strategy does.",
+    )
+
+
+class StrategiesOutput(BaseModel):
+    """Output for synthesis_strategies."""
+
+    strategies: list[StrategyInfo] = Field(
+        description="Available optimization strategies.",
+    )
+
+
+class OptimizationDetailOutput(BaseModel):
+    """Output for synthesis_get_optimization."""
+
+    id: str = Field(
+        description="Optimization ID.",
+    )
+    created_at: str | None = Field(
+        default=None,
+        description="ISO 8601 creation timestamp.",
+    )
+    raw_prompt: str = Field(
+        description="Original prompt text.",
+    )
+    optimized_prompt: str | None = Field(
+        default=None,
+        description="Optimized prompt text.",
+    )
+    task_type: str | None = Field(
+        default=None,
+        description="Classified task type.",
+    )
+    strategy_used: str | None = Field(
+        default=None,
+        description="Strategy used for optimization.",
+    )
+    changes_summary: str | None = Field(
+        default=None,
+        description="Summary of changes made during optimization.",
+    )
+    scores: dict[str, float] | None = Field(
+        default=None,
+        description="Quality dimension scores (clarity, specificity, structure, "
+        "faithfulness, conciseness).",
+    )
+    original_scores: dict[str, float] | None = Field(
+        default=None,
+        description="Baseline scores of the original prompt.",
+    )
+    score_deltas: dict[str, float] | None = Field(
+        default=None,
+        description="Per-dimension score changes (optimized minus original).",
+    )
+    overall_score: float | None = Field(
+        default=None,
+        description="Mean of all dimension scores (0.0-10.0).",
+    )
+    status: str = Field(
+        description="Optimization status.",
+    )
+    intent_label: str | None = Field(
+        default=None,
+        description="3-6 word intent label.",
+    )
+    domain: str | None = Field(
+        default=None,
+        description="Domain category.",
+    )
+    scoring_mode: str | None = Field(
+        default=None,
+        description="How scores were computed: 'independent', 'hybrid', "
+        "'heuristic', 'hybrid_passthrough', or 'skipped'.",
+    )
+    has_feedback: bool = Field(
+        default=False,
+        description="Whether feedback has been submitted for this optimization.",
+    )
+    refinement_versions: int = Field(
+        default=0,
+        description="Number of refinement turns completed.",
+    )
+
+
+class HealthOutput(BaseModel):
+    """Output for synthesis_health."""
+
+    status: str = Field(
+        description="System status: 'healthy' if a provider is available, "
+        "'degraded' if passthrough-only.",
+    )
+    provider: str | None = Field(
+        default=None,
+        description="Active LLM provider name (e.g. 'claude_cli', 'anthropic_api').",
+    )
+    available_tiers: list[str] = Field(
+        description="Reachable routing tiers: 'internal', 'sampling', 'passthrough'.",
+    )
+    sampling_capable: bool | None = Field(
+        default=None,
+        description="Whether the MCP client supports sampling (null if unknown).",
+    )
+    total_optimizations: int = Field(
+        default=0,
+        description="Total optimizations in history.",
+    )
+    avg_score: float | None = Field(
+        default=None,
+        description="Average quality score across completed optimizations.",
+    )
+    recent_error_rate: float | None = Field(
+        default=None,
+        description="Error rate in the last 24 hours (0.0-1.0).",
+    )
+    available_strategies: list[str] = Field(
+        default_factory=list,
+        description="Names of loaded optimization strategies.",
     )

@@ -500,7 +500,7 @@ class TestCapabilityDetectionMiddleware:
         Sets ``_routing = None`` so middleware uses the fallback file-write path.
         """
         _patch_mcp_data_dir(monkeypatch, tmp_path)
-        monkeypatch.setattr("app.mcp_server._routing", None)
+        monkeypatch.setattr("app.tools._shared._routing", None)
         return tmp_path
 
     @staticmethod
@@ -751,7 +751,7 @@ class TestCapabilityDetectionMiddlewareWithRouting:
         from app.services.event_bus import EventBus
         from app.services.routing import RoutingManager
         rm = RoutingManager(event_bus=EventBus(), data_dir=tmp_path)
-        monkeypatch.setattr("app.mcp_server._routing", rm)
+        monkeypatch.setattr("app.tools._shared._routing", rm)
         return rm
 
     @staticmethod
@@ -965,7 +965,7 @@ class TestTouchActivityWithRouting:
         from app.services.event_bus import EventBus
         from app.services.routing import RoutingManager
         rm = RoutingManager(event_bus=EventBus(), data_dir=tmp_path)
-        monkeypatch.setattr("app.mcp_server._routing", rm)
+        monkeypatch.setattr("app.tools._shared._routing", rm)
         return rm
 
     def test_touch_calls_routing_on_mcp_activity(self, routing):
@@ -1013,7 +1013,7 @@ class TestTouchActivity:
     @pytest.fixture()
     def data_dir(self, tmp_path, monkeypatch):
         _patch_mcp_data_dir(monkeypatch, tmp_path)
-        monkeypatch.setattr("app.mcp_server._routing", None)
+        monkeypatch.setattr("app.tools._shared._routing", None)
         return tmp_path
 
     @staticmethod
