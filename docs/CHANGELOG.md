@@ -2,7 +2,7 @@
 
 All notable changes to Project Synthesis. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## v0.3.0-dev (Unreleased)
+## v0.3.0 — 2026-03-22
 
 ### Added
 - Added 3-phase pipeline orchestrator (analyze → optimize → score) with independent subagent context windows
