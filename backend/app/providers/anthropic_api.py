@@ -8,7 +8,7 @@ Adaptive thinking for Opus/Sonnet, disabled for Haiku.
 from __future__ import annotations
 
 import logging
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import anthropic
 from anthropic import AsyncAnthropic
@@ -35,7 +35,90 @@ class AnthropicAPIProvider(LLMProvider):
     name = "anthropic_api"
 
     def __init__(self, api_key: str | None = None) -> None:
-        self._client = AsyncAnthropic(api_key=api_key) if api_key else AsyncAnthropic()
+        # Disable SDK built-in retries (default max_retries=2) so the
+        # app-level call_provider_with_retry() is the sole retry controller.
+        # Without this, retries compound: up to 6 total attempts with
+        # conflicting backoff strategies (SDK exponential vs app fixed).
+        if api_key:
+            self._client = AsyncAnthropic(api_key=api_key, max_retries=0)
+        else:
+            self._client = AsyncAnthropic(max_retries=0)
+
+    # ------------------------------------------------------------------
+    # Shared helpers — eliminate duplication between parse / stream paths
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_kwargs(
+        model: str,
+        system_prompt: str,
+        user_message: str,
+        output_format: type[T],
+        max_tokens: int,
+        effort: str | None,
+    ) -> dict[str, Any]:
+        """Assemble kwargs common to both parse() and stream() calls."""
+        system = [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+
+        thinking = LLMProvider.thinking_config(model)
+
+        is_haiku = "haiku" in model.lower()
+        output_config: dict | None = None
+        if effort is not None and not is_haiku:
+            output_config = {"effort": effort}
+
+        kwargs: dict[str, Any] = dict(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user_message}],
+            thinking=thinking,
+            output_format=output_format,
+        )
+        if output_config is not None:
+            kwargs["output_config"] = output_config
+
+        return kwargs
+
+    def _track_usage(self, response: Any, *, streaming: bool = False) -> None:
+        """Extract token usage from response and log it."""
+        usage = response.usage
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+
+        self.last_usage = TokenUsage(
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_read_tokens=cache_read,
+            cache_creation_tokens=cache_creation,
+        )
+
+        parts = [
+            f"model={response.model}",
+            f"in={usage.input_tokens}",
+            f"out={usage.output_tokens}",
+        ]
+        if streaming:
+            parts.append("streaming=true")
+        if cache_read:
+            parts.append(f"cache_read={cache_read}")
+        if cache_creation:
+            parts.append(f"cache_write={cache_creation}")
+        if response.stop_reason and response.stop_reason != "end_turn":
+            parts.append(f"stop={response.stop_reason}")
+
+        method = "complete_parsed_streaming" if streaming else "complete_parsed"
+        logger.info("anthropic_api %s %s", method, " ".join(parts))
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def complete_parsed(
         self,
@@ -53,95 +136,103 @@ class AnthropicAPIProvider(LLMProvider):
         - Effort parameter via ``output_config`` (non-Haiku only)
         - Typed error handling mapped to ProviderError hierarchy
         """
-        system = [
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ]
-
-        thinking = self.thinking_config(model)
-
-        is_haiku = "haiku" in model.lower()
-        output_config: dict | None = None
-        if effort is not None and not is_haiku:
-            output_config = {"effort": effort}
-
-        kwargs: dict = dict(
-            model=model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user_message}],
-            thinking=thinking,
-            output_format=output_format,
+        kwargs = self._build_kwargs(
+            model, system_prompt, user_message, output_format, max_tokens, effort,
         )
-        if output_config is not None:
-            kwargs["output_config"] = output_config
 
         try:
             response = await self._client.messages.parse(**kwargs)
-        except anthropic.RateLimitError as exc:
-            retry_after = _extract_retry_after(exc)
-            raise ProviderRateLimitError(
-                f"Rate limited: {exc.message}",
-                retry_after=retry_after,
-            ) from exc
-        except anthropic.AuthenticationError as exc:
-            raise ProviderAuthError(
-                f"Authentication failed: {exc.message}"
-            ) from exc
-        except anthropic.PermissionDeniedError as exc:
-            raise ProviderAuthError(
-                f"Permission denied: {exc.message}"
-            ) from exc
-        except anthropic.BadRequestError as exc:
-            raise ProviderBadRequestError(
-                f"Invalid request: {exc.message}"
-            ) from exc
-        except anthropic.APIStatusError as exc:
-            if exc.status_code == 529:
-                raise ProviderOverloadedError(
-                    f"API overloaded: {exc.message}"
-                ) from exc
-            raise ProviderError(
-                f"API error ({exc.status_code}): {exc.message}",
-                retryable=exc.status_code >= 500,
-            ) from exc
-        except anthropic.APIConnectionError as exc:
-            raise ProviderError(
-                f"Connection error: {exc}",
-                retryable=True,
-            ) from exc
+        except anthropic.APIError as exc:
+            _raise_provider_error(exc)
 
-        # Track token usage including prompt cache stats
-        usage = response.usage
-        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
-        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        self._track_usage(response)
+        return response.parsed_output
 
-        self.last_usage = TokenUsage(
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-            cache_read_tokens=cache_read,
-            cache_creation_tokens=cache_creation,
+    async def complete_parsed_streaming(
+        self,
+        model: str,
+        system_prompt: str,
+        user_message: str,
+        output_format: type[T],
+        max_tokens: int = 16384,
+        effort: str | None = None,
+    ) -> T:
+        """Streaming variant — prevents HTTP timeouts on long outputs.
+
+        Uses ``messages.stream()`` with ``get_final_message()`` to collect
+        the complete response. Recommended for high ``max_tokens`` calls
+        (e.g. Opus optimize phase with up to 128K output tokens).
+
+        Same error handling, caching, and thinking config as ``complete_parsed``.
+        """
+        kwargs = self._build_kwargs(
+            model, system_prompt, user_message, output_format, max_tokens, effort,
         )
 
-        # Build log message with cache and stop reason details
-        parts = [
-            f"model={model}",
-            f"in={usage.input_tokens}",
-            f"out={usage.output_tokens}",
-        ]
-        if cache_read:
-            parts.append(f"cache_read={cache_read}")
-        if cache_creation:
-            parts.append(f"cache_write={cache_creation}")
-        if response.stop_reason and response.stop_reason != "end_turn":
-            parts.append(f"stop={response.stop_reason}")
+        try:
+            async with self._client.messages.stream(**kwargs) as stream:
+                response = await stream.get_final_message()
+        except anthropic.APIError as exc:
+            _raise_provider_error(exc)
 
-        logger.info("anthropic_api complete_parsed %s", " ".join(parts))
-
+        self._track_usage(response, streaming=True)
         return response.parsed_output
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+
+def _raise_provider_error(exc: anthropic.APIError) -> None:
+    """Map any ``anthropic.APIError`` to the appropriate ``ProviderError``.
+
+    Always raises — return type is ``None`` only for the type checker.
+    """
+    if isinstance(exc, anthropic.RateLimitError):
+        retry_after = _extract_retry_after(exc)
+        raise ProviderRateLimitError(
+            f"Rate limited: {exc.message}",
+            retry_after=retry_after,
+        ) from exc
+
+    if isinstance(exc, anthropic.AuthenticationError):
+        raise ProviderAuthError(
+            f"Authentication failed: {exc.message}"
+        ) from exc
+
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        raise ProviderAuthError(
+            f"Permission denied: {exc.message}"
+        ) from exc
+
+    if isinstance(exc, anthropic.BadRequestError):
+        raise ProviderBadRequestError(
+            f"Invalid request: {exc.message}"
+        ) from exc
+
+    if isinstance(exc, anthropic.APIConnectionError):
+        raise ProviderError(
+            f"Connection error: {exc}",
+            retryable=True,
+        ) from exc
+
+    # APIStatusError (includes 529 overloaded)
+    if isinstance(exc, anthropic.APIStatusError):
+        if exc.status_code == 529:
+            raise ProviderOverloadedError(
+                f"API overloaded: {exc.message}"
+            ) from exc
+        raise ProviderError(
+            f"API error ({exc.status_code}): {exc.message}",
+            retryable=exc.status_code >= 500,
+        ) from exc
+
+    # Catch-all for any future APIError subclasses
+    raise ProviderError(
+        f"Unexpected API error: {exc}",
+        retryable=True,
+    ) from exc
 
 
 def _extract_retry_after(exc: anthropic.RateLimitError) -> int | None:

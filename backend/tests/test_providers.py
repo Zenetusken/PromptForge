@@ -55,6 +55,21 @@ class TestAnthropicAPIProvider:
         provider._client = mock_client
         return provider
 
+    def test_disables_sdk_builtin_retries(self):
+        """AsyncAnthropic client is created with max_retries=0 to prevent double retry."""
+        with patch("app.providers.anthropic_api.AsyncAnthropic") as mock_cls:
+            from app.providers.anthropic_api import AnthropicAPIProvider
+
+            # Without API key
+            AnthropicAPIProvider()
+            mock_cls.assert_called_with(max_retries=0)
+
+            mock_cls.reset_mock()
+
+            # With API key
+            AnthropicAPIProvider(api_key="sk-test")
+            mock_cls.assert_called_with(api_key="sk-test", max_retries=0)
+
     def _make_mock_response(self, parsed_output: AnalysisResult) -> MagicMock:
         """Create a mock ParsedMessage with given parsed_output."""
         mock_resp = MagicMock()
@@ -120,6 +135,40 @@ class TestAnthropicAPIProvider:
         assert block["cache_control"] == {"type": "ephemeral"}
 
     @pytest.mark.asyncio
+    async def test_streaming_calls_messages_stream(self):
+        """complete_parsed_streaming uses messages.stream() instead of parse()."""
+        analysis = _make_analysis_result()
+        mock_resp = self._make_mock_response(analysis)
+
+        # Build an async context manager mock for messages.stream()
+        mock_stream = AsyncMock()
+        mock_stream.get_final_message = AsyncMock(return_value=mock_resp)
+        mock_stream_cm = MagicMock()
+        mock_stream_cm.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_messages = MagicMock()
+        mock_messages.stream = MagicMock(return_value=mock_stream_cm)
+        mock_client = MagicMock()
+        mock_client.messages = mock_messages
+
+        provider = self._make_provider(mock_client)
+        result = await provider.complete_parsed_streaming(
+            model="claude-opus-4-6",
+            system_prompt="You are an optimizer.",
+            user_message="Optimize this prompt.",
+            output_format=AnalysisResult,
+            max_tokens=131072,
+        )
+
+        assert result is analysis
+        mock_messages.stream.assert_called_once()
+        call_kwargs = mock_messages.stream.call_args.kwargs
+        assert call_kwargs["model"] == "claude-opus-4-6"
+        assert call_kwargs["max_tokens"] == 131072
+        assert call_kwargs["output_format"] is AnalysisResult
+
+    @pytest.mark.asyncio
     async def test_does_not_pass_effort_for_haiku(self):
         """Effort is NOT included in output_config for Haiku models."""
         analysis = _make_analysis_result()
@@ -144,6 +193,58 @@ class TestAnthropicAPIProvider:
         output_config = call_kwargs.get("output_config")
         if output_config is not None:
             assert "effort" not in output_config
+
+
+# ---------------------------------------------------------------------------
+# call_provider_with_retry — streaming dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestCallProviderWithRetryStreaming:
+    @pytest.mark.asyncio
+    async def test_dispatches_to_streaming_method(self):
+        """When streaming=True, call_provider_with_retry uses complete_parsed_streaming."""
+        from app.providers.base import LLMProvider, call_provider_with_retry
+
+        analysis = _make_analysis_result()
+        provider = MagicMock(spec=LLMProvider)
+        provider.complete_parsed = AsyncMock(return_value=analysis)
+        provider.complete_parsed_streaming = AsyncMock(return_value=analysis)
+
+        result = await call_provider_with_retry(
+            provider,
+            model="claude-opus-4-6",
+            system_prompt="sys",
+            user_message="msg",
+            output_format=AnalysisResult,
+            streaming=True,
+        )
+
+        assert result is analysis
+        provider.complete_parsed_streaming.assert_called_once()
+        provider.complete_parsed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dispatches_to_non_streaming_by_default(self):
+        """When streaming=False (default), uses complete_parsed."""
+        from app.providers.base import LLMProvider, call_provider_with_retry
+
+        analysis = _make_analysis_result()
+        provider = MagicMock(spec=LLMProvider)
+        provider.complete_parsed = AsyncMock(return_value=analysis)
+        provider.complete_parsed_streaming = AsyncMock(return_value=analysis)
+
+        result = await call_provider_with_retry(
+            provider,
+            model="claude-opus-4-6",
+            system_prompt="sys",
+            user_message="msg",
+            output_format=AnalysisResult,
+        )
+
+        assert result is analysis
+        provider.complete_parsed.assert_called_once()
+        provider.complete_parsed_streaming.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +336,43 @@ class TestClaudeCLIProvider:
 
     @pytest.mark.asyncio
     async def test_passes_effort_flag(self):
-        """Passes --effort flag when effort parameter is provided."""
+        """Passes --effort flag when effort parameter is provided (non-Haiku)."""
+        import json
+
+        analysis = _make_analysis_result()
+        envelope = {
+            "type": "result",
+            "structured_output": analysis.model_dump(),
+            "usage": {},
+        }
+        stdout_json = json.dumps(envelope).encode()
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(stdout_json, b""))
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = mock_proc
+
+            from app.providers.claude_cli import ClaudeCLIProvider
+
+            provider = ClaudeCLIProvider()
+            await provider.complete_parsed(
+                model="claude-sonnet-4-6",
+                system_prompt="You are an analyzer.",
+                user_message="Analyze this.",
+                output_format=AnalysisResult,
+                effort="high",
+            )
+
+        call_args = mock_exec.call_args[0]
+        assert "--effort" in call_args
+        effort_idx = list(call_args).index("--effort")
+        assert call_args[effort_idx + 1] == "high"
+
+    @pytest.mark.asyncio
+    async def test_skips_effort_flag_for_haiku(self):
+        """Haiku doesn't support effort — flag must be omitted."""
         import json
 
         analysis = _make_analysis_result()
@@ -265,9 +402,7 @@ class TestClaudeCLIProvider:
             )
 
         call_args = mock_exec.call_args[0]
-        assert "--effort" in call_args
-        effort_idx = list(call_args).index("--effort")
-        assert call_args[effort_idx + 1] == "high"
+        assert "--effort" not in call_args
 
     @pytest.mark.asyncio
     async def test_raises_provider_error_on_subprocess_failure(self):

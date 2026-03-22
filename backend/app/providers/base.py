@@ -117,6 +117,31 @@ class LLMProvider(ABC):
         """
         ...
 
+    async def complete_parsed_streaming(
+        self,
+        model: str,
+        system_prompt: str,
+        user_message: str,
+        output_format: type[T],
+        max_tokens: int = 16384,
+        effort: str | None = None,
+    ) -> T:
+        """Streaming variant of ``complete_parsed``.
+
+        Prevents HTTP timeouts on long outputs (e.g. Opus 128K).
+        Default implementation falls back to non-streaming ``complete_parsed``.
+        Providers that support native streaming (e.g. Anthropic API) should
+        override this with ``messages.stream()`` + ``get_final_message()``.
+        """
+        return await self.complete_parsed(
+            model=model,
+            system_prompt=system_prompt,
+            user_message=user_message,
+            output_format=output_format,
+            max_tokens=max_tokens,
+            effort=effort,
+        )
+
     @staticmethod
     def thinking_config(model: str) -> dict[str, str]:
         """Return thinking configuration for the given model.
@@ -147,6 +172,7 @@ async def call_provider_with_retry(
     output_format: type[T],
     max_tokens: int = 16384,
     effort: str | None = None,
+    streaming: bool = False,
     max_retries: int = _DEFAULT_MAX_RETRIES,
     retry_delay: float = _DEFAULT_RETRY_DELAY,
 ) -> T:
@@ -155,13 +181,18 @@ async def call_provider_with_retry(
     Only retries on retryable errors (rate limits, server errors, overload).
     Non-retryable errors (bad request, auth) fail immediately.
 
+    When ``streaming=True``, dispatches to ``complete_parsed_streaming()``
+    which prevents HTTP timeouts on long outputs (e.g. Opus 128K).
+
     Used by both PipelineOrchestrator and RefinementService to avoid
     duplicating retry logic.
     """
+    call_fn = provider.complete_parsed_streaming if streaming else provider.complete_parsed
+
     last_exc: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
-            return await provider.complete_parsed(
+            return await call_fn(
                 model=model,
                 system_prompt=system_prompt,
                 user_message=user_message,

@@ -75,8 +75,9 @@ class ClaudeCLIProvider(LLMProvider):
             json.dumps(schema),
         ]
 
-        # Pass effort level when specified (low/medium/high/max)
-        if effort:
+        # Pass effort level when specified (low/medium/high/max).
+        # Haiku doesn't support the effort parameter — skip it to avoid errors.
+        if effort and "haiku" not in model.lower():
             cmd.extend(["--effort", effort])
 
         logger.debug("claude_cli executing model=%s effort=%s", model, effort)
