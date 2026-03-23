@@ -34,9 +34,12 @@ from app.schemas.pipeline_contracts import (
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.pattern_injection import auto_inject_patterns
 from app.services.pipeline_constants import (
+    ANALYZE_MAX_TOKENS,
     CODING_KEYWORDS,
     CONFIDENCE_GATE,
+    SCORE_MAX_TOKENS,
     compute_optimize_max_tokens,
+    resolve_fallback_strategy,
 )
 from app.services.preferences import PreferencesService
 from app.services.prompt_loader import PromptLoader
@@ -82,6 +85,7 @@ class PipelineOrchestrator:
         effort: str | None = None,
         max_tokens: int = 16384,
         streaming: bool = False,
+        cache_ttl: str | None = None,
     ) -> Any:
         """Call provider with smart retry logic.
 
@@ -101,6 +105,7 @@ class PipelineOrchestrator:
             max_tokens=max_tokens,
             effort=effort,
             streaming=streaming,
+            cache_ttl=cache_ttl,
         )
 
     @staticmethod
@@ -222,7 +227,45 @@ class PipelineOrchestrator:
             yield PipelineEvent(event="status", data={"stage": "analyze", "state": "running"})
 
             system_prompt = self._load_system_prompt()
-            available_strategies = self.strategy_loader.format_available()
+
+            # Resolve blocked strategies (low approval rate) to filter from analyzer input
+            blocked_strategies: set[str] = set()
+            adaptation_enabled = prefs.get("pipeline.enable_adaptation", prefs_snapshot)
+            if adaptation_enabled and not strategy_override:
+                try:
+                    from app.services.adaptation_tracker import AdaptationTracker
+                    _tracker = AdaptationTracker(db)
+                    # Pre-scan: we don't know the task_type yet (analyzer determines it),
+                    # so collect blocked strategies across ALL task types to prevent
+                    # universally-disliked strategies from being presented.
+                    from sqlalchemy import select as sa_select
+
+                    from app.models import StrategyAffinity
+                    _result = await db.execute(sa_select(StrategyAffinity))
+                    _all_rows = _result.scalars().all()
+                    _by_strategy: dict[str, list[float]] = {}
+                    _by_strategy_total: dict[str, int] = {}
+                    for _row in _all_rows:
+                        _total = (_row.thumbs_up or 0) + (_row.thumbs_down or 0)
+                        if _total >= AdaptationTracker._MIN_FEEDBACK_FOR_GATE:
+                            _by_strategy.setdefault(_row.strategy, []).append(_row.approval_rate)
+                            _by_strategy_total[_row.strategy] = (
+                                _by_strategy_total.get(_row.strategy, 0) + _total
+                            )
+                    for _strat, _rates in _by_strategy.items():
+                        _avg = sum(_rates) / len(_rates)
+                        if _avg < AdaptationTracker._BLOCK_THRESHOLD:
+                            blocked_strategies.add(_strat)
+                            logger.info(
+                                "Strategy '%s' blocked pre-analysis: avg_approval=%.2f across %d task types",
+                                _strat, _avg, len(_rates),
+                            )
+                except Exception as exc:
+                    logger.debug("Adaptation pre-filter unavailable: %s", exc)
+
+            available_strategies = self.strategy_loader.format_available(
+                blocked=blocked_strategies,
+            )
 
             analyze_msg = self.prompt_loader.render("analyze.md", {
                 "raw_prompt": raw_prompt,
@@ -236,7 +279,8 @@ class PipelineOrchestrator:
                 user_message=analyze_msg,
                 output_format=AnalysisResult,
                 model=prefs.resolve_model("analyzer", prefs_snapshot),
-                effort="medium",
+                effort=prefs.get("pipeline.analyzer_effort", prefs_snapshot) or "low",
+                max_tokens=ANALYZE_MAX_TOKENS,
             )
 
             yield PipelineEvent(event="status", data={"stage": "analyze", "state": "complete"})
@@ -251,7 +295,11 @@ class PipelineOrchestrator:
                     duration_ms=analyze_duration,
                     tokens_in=usage.input_tokens, tokens_out=usage.output_tokens,
                     model=prefs.resolve_model("analyzer", prefs_snapshot), provider=provider.name,
-                    result={"task_type": analysis.task_type, "strategy": analysis.selected_strategy},
+                    result={
+                        "task_type": analysis.task_type,
+                        "strategy": analysis.selected_strategy,
+                        "effort": prefs.get("pipeline.analyzer_effort", prefs_snapshot) or "low",
+                    },
                 )
 
             # Semantic check
@@ -309,12 +357,32 @@ class PipelineOrchestrator:
 
             # Confidence gate
             effective_strategy = analysis.selected_strategy
+
+            # Validate analyzer's strategy exists on disk (prevent hallucinated names)
+            available = self.strategy_loader.list_strategies()
+            fallback = resolve_fallback_strategy(available)
+            if effective_strategy and available and effective_strategy not in available:
+                logger.warning(
+                    "Analyzer selected unknown strategy '%s' (available: %s) — "
+                    "falling back to '%s'. trace_id=%s",
+                    effective_strategy, ", ".join(available), fallback, trace_id,
+                )
+                effective_strategy = fallback
+
+            # Enforce adaptation block — override if analyzer picked a blocked strategy
+            if effective_strategy in blocked_strategies and not strategy_override:
+                logger.info(
+                    "Overriding blocked strategy '%s' to '%s' (low approval rate). trace_id=%s",
+                    effective_strategy, fallback, trace_id,
+                )
+                effective_strategy = fallback
+
             if confidence < CONFIDENCE_GATE and not strategy_override:
                 logger.info(
-                    "Confidence gate triggered (%.2f < %.2f), overriding strategy to 'auto'",
-                    confidence, CONFIDENCE_GATE,
+                    "Confidence gate triggered (%.2f < %.2f), overriding strategy to '%s'",
+                    confidence, CONFIDENCE_GATE, fallback,
                 )
-                effective_strategy = "auto"
+                effective_strategy = fallback
 
             if strategy_override:
                 effective_strategy = strategy_override
@@ -496,7 +564,9 @@ class PipelineOrchestrator:
                     user_message=scorer_msg,
                     output_format=ScoreResult,
                     model=prefs.resolve_model("scorer", prefs_snapshot),
-                    effort="medium",
+                    effort=prefs.get("pipeline.scorer_effort", prefs_snapshot) or "low",
+                    max_tokens=SCORE_MAX_TOKENS,
+                    cache_ttl="1h",
                 )
 
                 yield PipelineEvent(event="status", data={"stage": "score", "state": "complete"})
@@ -511,6 +581,7 @@ class PipelineOrchestrator:
                         duration_ms=score_duration,
                         tokens_in=usage.input_tokens, tokens_out=usage.output_tokens,
                         model=prefs.resolve_model("scorer", prefs_snapshot), provider=provider.name,
+                        result={"effort": prefs.get("pipeline.scorer_effort", prefs_snapshot) or "low"},
                     )
 
                 # Map A/B scores back to original/optimized

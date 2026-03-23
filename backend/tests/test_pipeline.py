@@ -12,6 +12,7 @@ from app.schemas.pipeline_contracts import (
     ScoreResult,
 )
 from app.services.pipeline import PipelineOrchestrator
+from app.services.pipeline_constants import resolve_fallback_strategy
 
 
 def _make_analysis(**overrides):
@@ -239,3 +240,138 @@ class TestPipelineOrchestrator:
         complete_event = next(e for e in events if e.event == "optimization_complete")
         assert complete_event.data.get("scoring_mode") == "skipped"
         assert complete_event.data.get("optimized_scores") is None
+
+    async def test_unknown_strategy_falls_back_to_auto(self, orchestrator, mock_provider, db_session):
+        """When analyzer selects a strategy that doesn't exist on disk, fall back to 'auto'."""
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(selected_strategy="tree-of-thought", confidence=0.9),
+            _make_optimization(strategy_used="auto"),
+            _make_scores(),
+        ]
+        events = []
+        async for event in orchestrator.run(
+            raw_prompt="test prompt", provider=mock_provider, db=db_session,
+        ):
+            events.append(event)
+        # Optimizer should receive auto.md content (not tree-of-thought)
+        optimizer_call = mock_provider.complete_parsed.call_args_list[1]
+        user_msg = optimizer_call.kwargs.get("user_message", "")
+        assert "Auto-select" in user_msg
+
+
+class TestResolveFallbackStrategy:
+    def test_auto_exists(self):
+        """When 'auto' is in the list, returns 'auto'."""
+        assert resolve_fallback_strategy(["auto", "chain-of-thought"]) == "auto"
+
+    def test_auto_missing(self):
+        """When 'auto' is not in the list, returns the first available strategy."""
+        assert resolve_fallback_strategy(["chain-of-thought", "few-shot"]) == "chain-of-thought"
+
+    def test_empty_list(self):
+        """When no strategies exist, returns 'auto' anyway (graceful degradation)."""
+        assert resolve_fallback_strategy([]) == "auto"
+
+
+class TestStrategyFiltering:
+    def test_format_available_filters_blocked(self, orchestrator):
+        """format_available excludes blocked strategies from the bullet list."""
+        result = orchestrator.strategy_loader.format_available(
+            blocked={"chain-of-thought"},
+        )
+        assert "chain-of-thought" not in result
+        assert "auto" in result
+
+    def test_format_available_no_blocked(self, orchestrator):
+        """format_available includes all strategies when no blocked set."""
+        result = orchestrator.strategy_loader.format_available()
+        assert "chain-of-thought" in result
+        assert "auto" in result
+
+
+class TestPipelinePerformanceParams:
+    """Tests for effort, max_tokens, and cache_ttl parameters per phase."""
+
+    async def test_analyze_phase_uses_effort_preference(
+        self, orchestrator, mock_provider, db_session
+    ):
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(), _make_optimization(), _make_scores(),
+        ]
+        async for _ in orchestrator.run(
+            raw_prompt="test prompt", provider=mock_provider, db=db_session,
+        ):
+            pass
+        # First call is analyze
+        analyze_call = mock_provider.complete_parsed.call_args_list[0]
+        assert analyze_call.kwargs["effort"] == "low"
+
+    async def test_analyze_phase_uses_reduced_max_tokens(
+        self, orchestrator, mock_provider, db_session
+    ):
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(), _make_optimization(), _make_scores(),
+        ]
+        async for _ in orchestrator.run(
+            raw_prompt="test prompt", provider=mock_provider, db=db_session,
+        ):
+            pass
+        analyze_call = mock_provider.complete_parsed.call_args_list[0]
+        assert analyze_call.kwargs["max_tokens"] == 4096
+
+    async def test_score_phase_uses_effort_preference(
+        self, orchestrator, mock_provider, db_session
+    ):
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(), _make_optimization(), _make_scores(),
+        ]
+        async for _ in orchestrator.run(
+            raw_prompt="test prompt", provider=mock_provider, db=db_session,
+        ):
+            pass
+        # Third call is score
+        score_call = mock_provider.complete_parsed.call_args_list[2]
+        assert score_call.kwargs["effort"] == "low"
+
+    async def test_score_phase_uses_reduced_max_tokens(
+        self, orchestrator, mock_provider, db_session
+    ):
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(), _make_optimization(), _make_scores(),
+        ]
+        async for _ in orchestrator.run(
+            raw_prompt="test prompt", provider=mock_provider, db=db_session,
+        ):
+            pass
+        score_call = mock_provider.complete_parsed.call_args_list[2]
+        assert score_call.kwargs["max_tokens"] == 4096
+
+    async def test_score_phase_passes_cache_ttl(
+        self, orchestrator, mock_provider, db_session
+    ):
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(), _make_optimization(), _make_scores(),
+        ]
+        async for _ in orchestrator.run(
+            raw_prompt="test prompt", provider=mock_provider, db=db_session,
+        ):
+            pass
+        score_call = mock_provider.complete_parsed.call_args_list[2]
+        assert score_call.kwargs["cache_ttl"] == "1h"
+
+    async def test_optimize_phase_unchanged(
+        self, orchestrator, mock_provider, db_session
+    ):
+        """Optimize phase keeps existing effort='high', streaming=True, dynamic max_tokens."""
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(), _make_optimization(), _make_scores(),
+        ]
+        async for _ in orchestrator.run(
+            raw_prompt="test prompt", provider=mock_provider, db=db_session,
+        ):
+            pass
+        # Second call is optimize — goes through complete_parsed_streaming
+        optimize_call = mock_provider.complete_parsed_streaming.call_args_list[0]
+        assert optimize_call.kwargs["effort"] == "high"
+        # Dynamic max_tokens should be >= 16384
+        assert optimize_call.kwargs["max_tokens"] >= 16384
