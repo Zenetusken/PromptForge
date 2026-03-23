@@ -160,6 +160,8 @@
     try {
       apiKeyStatus = await setApiKey(apiKeyInput.trim());
       apiKeyInput = '';
+      providers = await getProviders();
+      addToast('created', 'API key saved');
     } catch (err: unknown) {
       apiKeyError = err instanceof Error ? err.message : 'Failed to set API key';
     } finally {
@@ -171,6 +173,8 @@
     apiKeyError = null;
     try {
       apiKeyStatus = await deleteApiKey();
+      providers = await getProviders();
+      addToast('deleted', 'API key removed');
     } catch (err: unknown) {
       apiKeyError = err instanceof Error ? err.message : 'Failed to remove API key';
     }
@@ -579,7 +583,7 @@
             <span class="accordion-arrow" class:accordion-arrow--open={showProvider}>&#x25B8;</span>
             <span class="sub-heading">Provider</span>
             <span class="accordion-summary">
-              {providers?.active_provider ?? '—'}
+              {forgeStore.provider ?? '—'}
               {#if apiKeyStatus?.configured}
                 <span style="color: var(--color-neon-green);">&#x2713;</span>
               {/if}
@@ -590,7 +594,7 @@
               <div class="data-row">
                 <span class="data-label">Active</span>
                 <span class="data-value font-mono" style="color: var(--color-neon-cyan);">
-                  {providers?.active_provider ?? '—'}
+                  {forgeStore.provider ?? '—'}
                 </span>
               </div>
               {#if providers?.available?.length}
