@@ -678,12 +678,20 @@
                   <span class="data-value font-mono">{settings.max_raw_prompt_chars.toLocaleString()}</span>
                 </div>
                 <div class="data-row">
+                  <span class="data-label">Context budget</span>
+                  <span class="data-value font-mono">{settings.max_context_tokens.toLocaleString()} tokens</span>
+                </div>
+                <div class="data-row">
                   <span class="data-label">Embedding</span>
                   <span class="data-value font-mono">{settings.embedding_model}</span>
                 </div>
                 <div class="data-row">
-                  <span class="data-label">Rate limit</span>
+                  <span class="data-label">Optimize rate</span>
                   <span class="data-value font-mono">{settings.optimize_rate_limit}</span>
+                </div>
+                <div class="data-row">
+                  <span class="data-label">Feedback rate</span>
+                  <span class="data-value font-mono">{settings.feedback_rate_limit}</span>
                 </div>
                 <div class="data-row">
                   <span class="data-label">Retention</span>
@@ -691,7 +699,7 @@
                 </div>
                 <div class="data-row">
                   <span class="data-label">Scoring</span>
-                  <span class="data-value font-mono">hybrid</span>
+                  <span class="data-value font-mono" title="LLM + heuristic blended scores">hybrid</span>
                 </div>
               </div>
             {/if}
