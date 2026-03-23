@@ -11,6 +11,10 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - System prompt (`agent-guidance.md`) expanded to 5000+ tokens for cache activation across all providers
 
 ### Added
+- Exposed `refine_rate_limit` and `database_engine` in `GET /api/settings` endpoint
+- Added Version row to System section (sourced from health polling via `forgeStore.version`)
+- Added Database, Refine rate rows to System section
+- Added Score health (mean, stddev with clustering warning) and Phase durations to System section from health polling
 - Per-phase effort preferences: `pipeline.analyzer_effort`, `pipeline.scorer_effort` (default: `low`)
 - `pipeline.optimizer_effort` now accepts `low` and `medium` (expanded from `high`/`max` only)
 - `cache_ttl` parameter threaded through full provider chain (base → API → CLI → pipeline → refinement)

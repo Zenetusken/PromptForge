@@ -38,7 +38,7 @@ import { githubStore } from '$lib/stores/github.svelte';
 
 const DEFAULT_SETTINGS = {
   max_raw_prompt_chars: 50000,
-  max_context_tokens: 8000,
+  max_context_tokens: 80000,
   optimize_rate_limit: '10/minute',
   feedback_rate_limit: '30/minute',
   refine_rate_limit: '10/minute',
@@ -48,10 +48,12 @@ const DEFAULT_SETTINGS = {
 };
 
 function defaultFetchHandlers(overrides: Record<string, unknown> = {}) {
-  // Use 'in' to distinguish explicit null (simulate error) from omitted (use default).
-  const settingsEntry = 'settings' in overrides && overrides.settings === null
-    ? { match: '/api/settings', response: { detail: 'Internal Server Error' }, status: 500 }
-    : { match: '/api/settings', response: ('settings' in overrides ? overrides.settings : DEFAULT_SETTINGS) };
+  // settings: null → HTTP 500 (simulates backend down); omitted → DEFAULT_SETTINGS
+  const settingsEntry = 'settings' in overrides
+    ? (overrides.settings === null
+      ? { match: '/api/settings', response: 'Internal Server Error', status: 500 }
+      : { match: '/api/settings', response: overrides.settings })
+    : { match: '/api/settings', response: DEFAULT_SETTINGS };
 
   return mockFetch([
     {
@@ -632,18 +634,7 @@ describe('Navigator', () => {
 
   it('System accordion expands to show settings data', async () => {
     const user = userEvent.setup();
-    defaultFetchHandlers({
-      settings: {
-        max_raw_prompt_chars: 50000,
-        max_context_tokens: 80000,
-        optimize_rate_limit: '10/minute',
-        feedback_rate_limit: '30/minute',
-        refine_rate_limit: '10/minute',
-        embedding_model: 'all-MiniLM-L6-v2',
-        trace_retention_days: 7,
-        database_engine: 'sqlite',
-      },
-    });
+    defaultFetchHandlers();
     render(Navigator, { props: { active: 'settings' } });
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /System/i })).toBeInTheDocument();
@@ -651,14 +642,15 @@ describe('Navigator', () => {
     await user.click(screen.getByRole('button', { name: /System/i }));
     await waitFor(() => {
       expect(screen.getByText('50,000')).toBeInTheDocument();
+      expect(screen.getByText('80,000 tokens')).toBeInTheDocument();
+      expect(screen.getByText('all-MiniLM-L6-v2')).toBeInTheDocument();
+      expect(screen.getByText('sqlite')).toBeInTheDocument();
+      expect(screen.getByText('30/minute')).toBeInTheDocument();
+      expect(screen.getByText('7d')).toBeInTheDocument();
+      expect(screen.getByText('hybrid')).toBeInTheDocument();
+      // optimize_rate_limit and refine_rate_limit are both '10/minute'
+      expect(screen.getAllByText('10/minute')).toHaveLength(2);
     });
-    expect(screen.getByText('80,000 tokens')).toBeInTheDocument();
-    expect(screen.getByText('all-MiniLM-L6-v2')).toBeInTheDocument();
-    expect(screen.getByText('sqlite')).toBeInTheDocument();
-    expect(screen.getByText('30/minute')).toBeInTheDocument();
-    expect(screen.getByText('7d')).toBeInTheDocument();
-    expect(screen.getByText('hybrid')).toBeInTheDocument();
-    expect(screen.getAllByText('10/minute')).toHaveLength(2);
   });
 
   it('System section shows version from forgeStore', async () => {
