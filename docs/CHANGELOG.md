@@ -4,6 +4,37 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Changed
+- Pipeline analyze and score phases now use `effort="low"` (was `"medium"`), reducing latency 30-40%
+- Analyze and score max_tokens reduced from 16384 to 4096 (matching actual output size)
+- Scoring system prompt cache TTL extended from 5min to 1h (fewer cache writes)
+- System prompt (`agent-guidance.md`) expanded to 5000+ tokens for cache activation across all providers
+
+### Added
+- Per-phase effort preferences: `pipeline.analyzer_effort`, `pipeline.scorer_effort` (default: `low`)
+- `pipeline.optimizer_effort` now accepts `low` and `medium` (expanded from `high`/`max` only)
+- `cache_ttl` parameter threaded through full provider chain (base → API → CLI → pipeline → refinement)
+- EFFORT section in settings panel with per-phase effort controls (low/medium/high/max)
+- Effort level included in trace logger output for each phase
+
+### Fixed
+- Wired `check_degenerate()` into `FeedbackService.create_feedback()` — degenerate feedback (>90% same rating over 10+ feedbacks) now skips affinity updates to freeze saturated counters
+- Added analyzer strategy validation against disk in both `pipeline.py` and `sampling_pipeline.py` — hallucinated strategy names now fall back to validated fallback instead of silently polluting the DB
+- Added orphaned strategy affinity cleanup at startup — removes `StrategyAffinity` rows for strategies no longer on disk
+- Made confidence gate fallback resilient — `resolve_fallback_strategy()` validates "auto" exists on disk, falls back to first available strategy if not. No more hardcoded `"auto"` assumption
+- Added programmatic adaptation enforcement — strategies with approval_rate < 0.3 and ≥5 feedbacks are filtered from the analyzer's available list and overridden post-selection. Adaptation is no longer advisory-only
+- Wired file watcher to sanitize preferences on strategy deletion — when a strategy file is deleted, the persisted default preference is immediately reset if it references the deleted strategy
+- Changed event bus overflow strategy — full subscriber queues now drop oldest event instead of killing the subscriber connection, preventing silent SSE disconnections
+- Added sequence numbers and replay buffer (200 events) to event bus — enables `Last-Event-ID` reconnection replay in SSE endpoint
+- Added SSE reconnection reconciliation — frontend refetches health, strategies, and cluster tree after EventSource reconnects to cover any missed events
+- Added `preferences_changed` event — `PATCH /api/preferences` now publishes to event bus; frontend preferences store updates reactively via SSE
+- Added visibility-change fallback for strategy dropdown — re-fetches strategy list when browser tab becomes visible, defense-in-depth against missed SSE events
+- Added cluster detail refresh on taxonomy change — `invalidateClusters()` now also refreshes the Inspector detail view when a cluster is selected
+- Added toast notification on failed session restore — users now see "Previous session could not be restored" instead of silent empty state
+- Changed taxonomy engine to use lazy provider resolution — `_provider` is now a property that resolves via callable, ensuring hot-reloaded providers (API key change) are picked up automatically
+- Added 5-minute TTL to workspace intelligence cache — workspace profiles now expire and re-scan manifest files instead of caching indefinitely until restart
+- Added `invalidate_all()` method to explore cache for manual full flush
+
 ### Added
 - Added streaming support for optimize/refine phases via `messages.stream()` + `get_final_message()` — prevents HTTP timeouts on long Opus outputs up to 128K tokens
 - Added `complete_parsed_streaming()` to LLM provider interface with fallback default in base class
