@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api", tags=["providers"])
 
 class ProviderInfo(BaseModel):
     active_provider: str | None = Field(description="Name of the active LLM provider, or null if none detected.")
-    available: list[str] = Field(description="List of supported provider identifiers.")
+    available: list[str] = Field(description="List of actually usable provider identifiers.")
+    routing_tiers: list[str] = Field(default_factory=lambda: ["passthrough"], description="Currently reachable routing tiers.")
 
 
 class ApiKeyStatus(BaseModel):
@@ -28,11 +29,23 @@ class ApiKeyStatus(BaseModel):
 
 @router.get("/providers")
 async def get_providers(request: Request) -> ProviderInfo:
+    import shutil
+
     routing = getattr(request.app.state, "routing", None)
     provider_name = routing.state.provider_name if routing else None
+
+    available: list[str] = []
+    if shutil.which("claude"):
+        available.append("claude_cli")
+    if _read_api_key():
+        available.append("anthropic_api")
+
+    routing_tiers = routing.available_tiers if routing else ["passthrough"]
+
     return ProviderInfo(
         active_provider=provider_name,
-        available=["claude_cli", "anthropic_api", "mcp_passthrough"],
+        available=available,
+        routing_tiers=routing_tiers,
     )
 
 

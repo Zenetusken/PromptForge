@@ -220,6 +220,9 @@ class TestProvidersRouter:
         assert "active_provider" in data
         assert data["active_provider"] == "mock"
         assert "available" in data
+        assert isinstance(data["available"], list)
+        assert "routing_tiers" in data
+        assert isinstance(data["routing_tiers"], list)
 
 
 class TestSettingsRouter:

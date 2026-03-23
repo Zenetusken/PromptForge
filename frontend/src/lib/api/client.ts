@@ -94,6 +94,7 @@ export interface HistoryResponse {
 export interface ProvidersResponse {
   active_provider: string | null;
   available: string[];
+  routing_tiers: string[];
 }
 
 export interface SettingsResponse {

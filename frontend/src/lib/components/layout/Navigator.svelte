@@ -603,6 +603,12 @@
                   <span class="data-value">{providers.available.join(', ')}</span>
                 </div>
               {/if}
+              {#if providers?.routing_tiers?.length}
+                <div class="data-row">
+                  <span class="data-label">Tiers</span>
+                  <span class="data-value">{providers.routing_tiers.join(', ')}</span>
+                </div>
+              {/if}
               <div class="data-row">
                 <span class="data-label">API key</span>
                 <span class="data-value font-mono" style="color: {apiKeyStatus?.configured ? 'var(--color-neon-green)' : 'var(--color-text-dim)'};">
