@@ -739,10 +739,31 @@
                   <span class="data-label">Retention</span>
                   <span class="data-value font-mono">{settings.trace_retention_days}d</span>
                 </div>
+                {#if forgeStore.phaseDurations}
+                  {#each Object.entries(forgeStore.phaseDurations) as [phase, ms]}
+                    <div class="data-row">
+                      <span class="data-label">{phase}</span>
+                      <span class="data-value font-mono">{ms.toLocaleString()}ms</span>
+                    </div>
+                  {/each}
+                {/if}
                 <div class="data-row">
                   <span class="data-label">Scoring</span>
                   <span class="data-value font-mono" title="LLM + heuristic blended scores">hybrid</span>
                 </div>
+                {#if forgeStore.scoreHealth}
+                  <div class="data-row">
+                    <span class="data-label">Score mean</span>
+                    <span class="data-value font-mono">{forgeStore.scoreHealth.last_n_mean.toFixed(1)}</span>
+                  </div>
+                  <div class="data-row">
+                    <span class="data-label">Score stddev</span>
+                    <span class="data-value font-mono"
+                      style={forgeStore.scoreHealth.clustering_warning ? 'color: var(--color-neon-red)' : ''}>
+                      {forgeStore.scoreHealth.last_n_stddev.toFixed(2)}
+                    </span>
+                  </div>
+                {/if}
               </div>
             {:else}
               <p class="empty-note">Backend unavailable</p>

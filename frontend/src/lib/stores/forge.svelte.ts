@@ -56,6 +56,10 @@ class ForgeStore {
   recentErrors = $state<{ last_hour: number; last_24h: number } | null>(null);
   /** Average pipeline duration in ms from health polling. */
   avgDurationMs = $state<number | null>(null);
+  /** Score distribution health from health polling. */
+  scoreHealth = $state<{ last_n_mean: number; last_n_stddev: number; count: number; clustering_warning: boolean } | null>(null);
+  /** Per-phase average durations in ms from health polling. */
+  phaseDurations = $state<Record<string, number> | null>(null);
 
   /** Canonical routing state updater — both SSE and health poll MUST use this. */
   updateRoutingState(input: {
@@ -332,6 +336,8 @@ class ForgeStore {
     this.version = null;
     this.recentErrors = null;
     this.avgDurationMs = null;
+    this.scoreHealth = null;
+    this.phaseDurations = null;
   }
 
   reset() {

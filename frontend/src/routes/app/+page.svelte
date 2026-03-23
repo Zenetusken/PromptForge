@@ -97,6 +97,8 @@
     });
     forgeStore.recentErrors = h.recent_errors ?? null;
     forgeStore.avgDurationMs = h.avg_duration_ms ?? null;
+    forgeStore.scoreHealth = h.score_health ?? null;
+    forgeStore.phaseDurations = (h.phase_durations && Object.keys(h.phase_durations).length > 0) ? h.phase_durations : null;
     if (delta.samplingChanged) addToast('created', 'MCP client connected with sampling capability');
   }
 
