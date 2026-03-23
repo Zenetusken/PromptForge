@@ -30,7 +30,7 @@ from app.schemas.pipeline_contracts import (
     SuggestionsOutput,
 )
 from app.services.heuristic_scorer import HeuristicScorer
-from app.services.pipeline_constants import compute_optimize_max_tokens
+from app.services.pipeline_constants import ANALYZE_MAX_TOKENS, SCORE_MAX_TOKENS, compute_optimize_max_tokens
 from app.services.preferences import PreferencesService
 from app.services.prompt_loader import PromptLoader
 from app.services.score_blender import blend_scores
@@ -73,6 +73,7 @@ class RefinementService:
         effort: str | None = None,
         max_tokens: int = 16384,
         streaming: bool = False,
+        cache_ttl: str | None = None,
     ) -> Any:
         """Call provider with smart retry logic.
 
@@ -89,6 +90,7 @@ class RefinementService:
             max_tokens=max_tokens,
             effort=effort,
             streaming=streaming,
+            cache_ttl=cache_ttl,
         )
 
     # ------------------------------------------------------------------
@@ -216,7 +218,8 @@ class RefinementService:
             user_message=analyze_msg,
             output_format=AnalysisResult,
             model=_prefs.resolve_model("analyzer", _prefs_snapshot),
-            effort="medium",
+            effort=_prefs.get("pipeline.analyzer_effort", _prefs_snapshot) or "low",
+            max_tokens=ANALYZE_MAX_TOKENS,
         )
 
         yield PipelineEvent(event="status", data={"stage": "analyze", "state": "complete"})
@@ -295,7 +298,9 @@ class RefinementService:
                 user_message=scorer_msg,
                 output_format=ScoreResult,
                 model=_prefs.resolve_model("scorer", _prefs_snapshot),
-                effort="medium",
+                effort=_prefs.get("pipeline.scorer_effort", _prefs_snapshot) or "low",
+                max_tokens=SCORE_MAX_TOKENS,
+                cache_ttl="1h",
             )
 
             # Map A/B scores back to original/optimized
