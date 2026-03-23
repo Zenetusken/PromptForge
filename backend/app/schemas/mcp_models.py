@@ -239,6 +239,19 @@ class SaveResultInput(BaseModel):
         default=None,
         description="Model ID that produced the optimization (e.g. 'claude-sonnet-4-6').",
     )
+    codebase_context: str | None = Field(
+        default=None,
+        description="IDE-provided codebase context snapshot to store alongside the result.",
+    )
+    domain: str | None = Field(
+        default=None,
+        description="Domain category: 'backend', 'frontend', 'database', "
+        "'devops', 'security', 'fullstack', or 'general'.",
+    )
+    intent_label: str | None = Field(
+        default=None,
+        description="Short 3-6 word intent classification label.",
+    )
 
 
 class SaveResultOutput(BaseModel):

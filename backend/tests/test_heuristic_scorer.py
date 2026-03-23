@@ -103,18 +103,3 @@ def test_specificity_with_constraints() -> None:
     )
     score = HeuristicScorer.heuristic_specificity(prompt)
     assert score > 5.0
-
-
-# ---------------------------------------------------------------------------
-# detect_divergence
-# ---------------------------------------------------------------------------
-
-
-def test_divergence_detection() -> None:
-    """Flags dimensions where |llm - heuristic| > 2.0."""
-    llm_scores = {"clarity": 9.0, "specificity": 5.0, "structure": 8.0}
-    heuristic_scores = {"clarity": 6.0, "specificity": 5.5, "structure": 5.5}
-    diverged = HeuristicScorer.detect_divergence(llm_scores, heuristic_scores)
-    assert "clarity" in diverged
-    assert "specificity" not in diverged
-    assert "structure" in diverged

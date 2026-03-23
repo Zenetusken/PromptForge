@@ -16,7 +16,7 @@ from app.services.strategy_loader import StrategyLoader
 
 logger = logging.getLogger(__name__)
 
-_SCORING_RUBRIC_MAX_CHARS = 2000
+_SCORING_RUBRIC_MAX_CHARS = 4000
 
 
 def resolve_strategy(

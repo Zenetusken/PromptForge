@@ -34,6 +34,10 @@ async def handle_prepare(
         raise ValueError(
             "Prompt too short (%d chars). Minimum is 20 characters." % len(prompt)
         )
+    if max_context_tokens < 1:
+        raise ValueError(
+            "max_context_tokens must be a positive integer (got %d)" % max_context_tokens
+        )
 
     # Resolve strategy: explicit param → user preference → auto
     prefs = PreferencesService(DATA_DIR)

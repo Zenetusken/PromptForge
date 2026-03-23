@@ -92,7 +92,7 @@ class HeuristicScorer:
         ):
             score += 1.0
 
-        return min(10.0, score)
+        return round(min(10.0, score), 2)
 
     @staticmethod
     def heuristic_conciseness(prompt: str) -> float:
@@ -190,7 +190,7 @@ class HeuristicScorer:
         hits = sum(1 for w in ambiguity if w in prompt.lower())
         score -= hits * 0.5
 
-        return round(max(1.0, min(10.0, score)), 1)
+        return round(max(1.0, min(10.0, score)), 2)
 
     @staticmethod
     def heuristic_faithfulness(original: str, optimized: str) -> float:
@@ -254,37 +254,3 @@ class HeuristicScorer:
             "conciseness": cls.heuristic_conciseness(prompt),
         }
 
-    # ------------------------------------------------------------------
-    # Divergence detection
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def detect_divergence(
-        llm_scores: dict[str, float],
-        heuristic_scores: dict[str, float],
-        threshold: float = 2.0,
-    ) -> list[str]:
-        """Return dimension names where |llm_score − heuristic_score| > threshold.
-
-        Only dimensions present in *both* dicts are compared.
-
-        Args:
-            llm_scores: Scores assigned by the LLM.
-            heuristic_scores: Scores from the heuristic methods.
-            threshold: Absolute difference that triggers a divergence flag.
-
-        Returns:
-            Sorted list of dimension names that diverge beyond *threshold*.
-        """
-        diverged = [
-            dim
-            for dim in llm_scores
-            if dim in heuristic_scores
-            and abs(llm_scores[dim] - heuristic_scores[dim]) > threshold
-        ]
-        if diverged:
-            logger.info(
-                "Score divergence detected in %d dimension(s): %s (threshold=%.1f)",
-                len(diverged), diverged, threshold,
-            )
-        return sorted(diverged)

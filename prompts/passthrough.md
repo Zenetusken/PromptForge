@@ -40,4 +40,22 @@ Score both prompts on 5 dimensions (1-10 each):
 - **faithfulness** — Does the optimized preserve intent? (Original always 5.0)
 - **conciseness** — Is every word necessary?
 
-Return JSON with: optimized_prompt, changes_summary, task_type, strategy_used, scores: {clarity, specificity, structure, faithfulness, conciseness}
+Return a JSON object with this exact structure:
+
+```json
+{
+  "optimized_prompt": "The full optimized prompt text...",
+  "changes_summary": "Brief description of what changed and why...",
+  "task_type": "coding|writing|analysis|creative|data|system|general",
+  "strategy_used": "The strategy name you applied",
+  "scores": {
+    "clarity": 7.5,
+    "specificity": 8.0,
+    "structure": 7.0,
+    "faithfulness": 9.0,
+    "conciseness": 7.5
+  }
+}
+```
+
+Scores should evaluate the OPTIMIZED prompt only (1.0-10.0 scale, decimals encouraged). Use the scoring rubric above for calibration.

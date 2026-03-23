@@ -112,10 +112,14 @@ async def resolve_workspace_guidance(
         except Exception:
             logger.debug("Client does not support roots/list — will try workspace_path fallback")
 
-    # Fallback: explicit workspace_path
+    # Fallback: explicit workspace_path (validated)
     if not roots and workspace_path:
-        roots = [Path(workspace_path)]
-        logger.debug("Using explicit workspace_path fallback: %s", workspace_path)
+        wp = Path(workspace_path)
+        if wp.is_dir():
+            roots = [wp]
+            logger.debug("Using explicit workspace_path fallback: %s", workspace_path)
+        else:
+            logger.debug("workspace_path is not a valid directory: %s", workspace_path)
 
     if not roots:
         logger.debug("No workspace roots resolved — skipping guidance injection")
