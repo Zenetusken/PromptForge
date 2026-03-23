@@ -36,7 +36,23 @@ import { githubStore } from '$lib/stores/github.svelte';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+const DEFAULT_SETTINGS = {
+  max_raw_prompt_chars: 50000,
+  max_context_tokens: 8000,
+  optimize_rate_limit: '10/minute',
+  feedback_rate_limit: '30/minute',
+  refine_rate_limit: '10/minute',
+  embedding_model: 'all-MiniLM-L6-v2',
+  trace_retention_days: 7,
+  database_engine: 'sqlite',
+};
+
 function defaultFetchHandlers(overrides: Record<string, unknown> = {}) {
+  // Use 'in' to distinguish explicit null (simulate error) from omitted (use default).
+  const settingsEntry = 'settings' in overrides && overrides.settings === null
+    ? { match: '/api/settings', response: { detail: 'Internal Server Error' }, status: 500 }
+    : { match: '/api/settings', response: ('settings' in overrides ? overrides.settings : DEFAULT_SETTINGS) };
+
   return mockFetch([
     {
       match: '/api/history',
@@ -58,19 +74,7 @@ function defaultFetchHandlers(overrides: Record<string, unknown> = {}) {
       match: '/api/providers',
       response: (overrides.providers ?? { active_provider: 'claude-cli', available: ['claude_cli'], routing_tiers: ['internal'] }),
     },
-    {
-      match: '/api/settings',
-      response: (overrides.settings ?? {
-        version: '0.1.0',
-        environment: 'development',
-        max_raw_prompt_chars: 50000,
-        max_context_tokens: 8000,
-        embedding_model: 'all-MiniLM-L6-v2',
-        optimize_rate_limit: '10/minute',
-        feedback_rate_limit: '30/minute',
-        trace_retention_days: 7,
-      }),
-    },
+    settingsEntry,
     {
       match: '/api/provider/api-key',
       response: (overrides.apiKey ?? { configured: false, masked_key: null }),
@@ -630,12 +634,14 @@ describe('Navigator', () => {
     const user = userEvent.setup();
     defaultFetchHandlers({
       settings: {
-        version: '0.1.0',
-        environment: 'development',
         max_raw_prompt_chars: 50000,
-        embedding_model: 'all-MiniLM-L6-v2',
+        max_context_tokens: 80000,
         optimize_rate_limit: '10/minute',
+        feedback_rate_limit: '30/minute',
+        refine_rate_limit: '10/minute',
+        embedding_model: 'all-MiniLM-L6-v2',
         trace_retention_days: 7,
+        database_engine: 'sqlite',
       },
     });
     render(Navigator, { props: { active: 'settings' } });
@@ -645,6 +651,40 @@ describe('Navigator', () => {
     await user.click(screen.getByRole('button', { name: /System/i }));
     await waitFor(() => {
       expect(screen.getByText('50,000')).toBeInTheDocument();
+    });
+    expect(screen.getByText('80,000 tokens')).toBeInTheDocument();
+    expect(screen.getByText('all-MiniLM-L6-v2')).toBeInTheDocument();
+    expect(screen.getByText('sqlite')).toBeInTheDocument();
+    expect(screen.getByText('30/minute')).toBeInTheDocument();
+    expect(screen.getByText('7d')).toBeInTheDocument();
+    expect(screen.getByText('hybrid')).toBeInTheDocument();
+    expect(screen.getAllByText('10/minute')).toHaveLength(2);
+  });
+
+  it('System section shows version from forgeStore', async () => {
+    const user = userEvent.setup();
+    forgeStore.version = '0.1.0-dev';
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /System/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /System/i }));
+    await waitFor(() => {
+      expect(screen.getByText('0.1.0-dev')).toBeInTheDocument();
+    });
+  });
+
+  it('System section shows Backend unavailable when settings fetch fails', async () => {
+    const user = userEvent.setup();
+    defaultFetchHandlers({ settings: null });
+    render(Navigator, { props: { active: 'settings' } });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /System/i })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /System/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Backend unavailable')).toBeInTheDocument();
     });
   });
 

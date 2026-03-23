@@ -364,6 +364,9 @@ class TestSettingsRouter:
         assert "feedback_rate_limit" in data
         assert "embedding_model" in data
         assert "trace_retention_days" in data
+        assert "refine_rate_limit" in data
+        assert "database_engine" in data
+        assert data["database_engine"] == "sqlite"
 
 
 class TestGitHubAuth:
