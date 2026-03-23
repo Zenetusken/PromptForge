@@ -99,7 +99,9 @@ async def test_lifespan_startup_and_shutdown():
                     if hasattr(app.state, "extraction_task") and app.state.extraction_task:
                         await app.state.extraction_task
 
-                mock_session.execute.assert_called_once()
+                # At least 1 execute: stale-optimization cleanup at shutdown,
+                # plus orphaned strategy affinity cleanup at startup.
+                assert mock_session.execute.call_count >= 1
 
 
 async def test_lifespan_startup_handler_errors_do_not_crash():

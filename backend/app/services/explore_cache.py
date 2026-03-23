@@ -54,5 +54,13 @@ class ExploreCache:
         if keys_to_remove:
             logger.info("Explore cache invalidated %d entries for %s", len(keys_to_remove), repo_full_name)
 
+    def invalidate_all(self) -> int:
+        """Flush the entire cache. Returns the number of entries cleared."""
+        count = len(self._store)
+        self._store.clear()
+        if count:
+            logger.info("Explore cache fully invalidated (%d entries)", count)
+        return count
+
     def stats(self) -> dict:
         return {"hits": self._hits, "misses": self._misses, "size": len(self._store)}

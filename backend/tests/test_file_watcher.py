@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from watchfiles import Change
 
-from app.services.file_watcher import watch_strategy_files
+from app.services.file_watcher import _sanitize_preferences_on_delete, watch_strategy_files
 
 
 @pytest.mark.asyncio
@@ -85,3 +85,71 @@ async def test_watch_strategy_files_successful_events():
         assert args[0] == "strategy_changed"
         assert args[1]["action"] == "deleted"
         assert args[1]["name"] == "test_strategy3"
+
+
+def test_sanitize_preferences_on_delete_resets_default(tmp_path):
+    """When the deleted strategy matches the persisted default, preferences are reset."""
+    mock_svc = MagicMock()
+    mock_snapshot = {"defaults": {"strategy": "my-custom-strategy"}}
+    mock_svc.load.return_value = mock_snapshot
+    mock_svc.get.return_value = "my-custom-strategy"
+
+    with patch("app.services.preferences.PreferencesService", return_value=mock_svc):
+        _sanitize_preferences_on_delete("my-custom-strategy")
+
+    # load() was called (which triggers _sanitize internally)
+    mock_svc.load.assert_called_once()
+
+
+def test_sanitize_preferences_on_delete_ignores_non_matching():
+    """When the deleted strategy does NOT match the default, no action needed."""
+    mock_svc = MagicMock()
+    mock_snapshot = {"defaults": {"strategy": "auto"}}
+    mock_svc.load.return_value = mock_snapshot
+    mock_svc.get.return_value = "auto"
+
+    with patch("app.services.preferences.PreferencesService", return_value=mock_svc):
+        _sanitize_preferences_on_delete("some-other-strategy")
+
+    # load() was called but the strategy didn't match — no reset needed
+    mock_svc.load.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_event_triggers_preferences_sanitization():
+    """When a strategy file is deleted, _sanitize_preferences_on_delete is called."""
+    async def mock_awatch(*args, **kwargs):
+        yield {(Change.deleted, "/fake/path/custom-strategy.md")}
+        raise asyncio.CancelledError()
+
+    mock_bus = MagicMock()
+
+    with patch("app.services.file_watcher.Path.is_dir", return_value=True), \
+         patch("app.services.file_watcher.awatch", side_effect=mock_awatch), \
+         patch("app.services.file_watcher.time.time", return_value=12345.6), \
+         patch("app.services.event_bus.event_bus", mock_bus), \
+         patch("app.services.file_watcher._sanitize_preferences_on_delete") as mock_sanitize:
+
+        await watch_strategy_files(Path("/fake/path"))
+
+        mock_sanitize.assert_called_once_with("custom-strategy")
+
+
+@pytest.mark.asyncio
+async def test_create_event_does_not_trigger_sanitization():
+    """When a strategy file is created, preferences sanitization is NOT called."""
+    async def mock_awatch(*args, **kwargs):
+        yield {(Change.added, "/fake/path/new-strategy.md")}
+        raise asyncio.CancelledError()
+
+    mock_bus = MagicMock()
+
+    with patch("app.services.file_watcher.Path.is_dir", return_value=True), \
+         patch("app.services.file_watcher.awatch", side_effect=mock_awatch), \
+         patch("app.services.file_watcher.time.time", return_value=12345.6), \
+         patch("app.services.event_bus.event_bus", mock_bus), \
+         patch("app.services.file_watcher._sanitize_preferences_on_delete") as mock_sanitize:
+
+        await watch_strategy_files(Path("/fake/path"))
+
+        mock_sanitize.assert_not_called()

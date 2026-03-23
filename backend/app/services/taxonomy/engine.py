@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -96,16 +97,23 @@ class TaxonomyEngine:
 
     Args:
         embedding_service: EmbeddingService instance (or mock in tests).
-        provider: LLM provider used for Haiku calls. None disables LLM steps.
+        provider: LLM provider for Haiku calls. None disables LLM steps.
+            Ignored when *provider_resolver* is set.
+        provider_resolver: Callable returning the current LLM provider.
+            When set, ``_provider`` resolves lazily on every access so
+            hot-reloaded providers (e.g. API key change) are picked up
+            automatically.  Falls back to *provider* if not given.
     """
 
     def __init__(
         self,
         embedding_service: EmbeddingService | None = None,
         provider: LLMProvider | None = None,
+        provider_resolver: Callable[[], LLMProvider | None] | None = None,
     ) -> None:
         self._embedding = embedding_service or EmbeddingService()
-        self._provider = provider
+        self._provider_direct: LLMProvider | None = provider
+        self._provider_resolver = provider_resolver
         self._prompt_loader = PromptLoader(PROMPTS_DIR)
         self._embedding_index = EmbeddingIndex(dim=384)
         # Lock gates concurrent hot-path writes to shared centroid state.
@@ -118,6 +126,13 @@ class TaxonomyEngine:
         self._warm_path_age: int = 0
         # Set by deadlock breaker — caller should schedule cold path.
         self._cold_path_needed: bool = False
+
+    @property
+    def _provider(self) -> LLMProvider | None:
+        """Resolve the current LLM provider, preferring the live resolver."""
+        if self._provider_resolver is not None:
+            return self._provider_resolver()
+        return self._provider_direct
 
     @property
     def embedding_index(self) -> EmbeddingIndex:

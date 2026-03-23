@@ -52,6 +52,21 @@ class TestExploreCache:
         assert "abc123" in key
         assert "Write a function" not in key
 
+    def test_invalidate_all(self):
+        cache = ExploreCache(ttl_seconds=60, max_entries=10)
+        cache.set("a", "1")
+        cache.set("b", "2")
+        cache.set("c", "3")
+        assert cache.invalidate_all() == 3
+        assert cache.get("a") is None
+        assert cache.get("b") is None
+        assert cache.get("c") is None
+        assert cache.stats()["size"] == 0
+
+    def test_invalidate_all_empty(self):
+        cache = ExploreCache(ttl_seconds=60, max_entries=10)
+        assert cache.invalidate_all() == 0
+
     def test_stats(self):
         cache = ExploreCache(ttl_seconds=60, max_entries=10)
         cache.set("a", "1")

@@ -132,3 +132,41 @@ class TestEmptyRoots:
         """Empty root list returns None."""
         intel = WorkspaceIntelligence()
         assert intel.analyze([]) is None
+
+
+# ---------------------------------------------------------------------------
+# 7. test_cache_ttl_expiry
+# ---------------------------------------------------------------------------
+
+class TestCacheTTLExpiry:
+    def test_cache_expires_after_ttl(self, tmp_path: Path):
+        """Cache entry expires after TTL, triggering a re-scan."""
+        _make_file(tmp_path, "requirements.txt", "fastapi\n")
+
+        intel = WorkspaceIntelligence()
+        profile1 = intel.analyze([tmp_path])
+        assert profile1 is not None
+
+        # Simulate TTL expiry by backdating the cached timestamp
+        cache_key = frozenset(str(r) for r in [tmp_path])
+        profile_val, _ = intel._cache[cache_key]
+        intel._cache[cache_key] = (profile_val, 0.0)  # epoch = very old
+
+        # Next call should re-scan (detect_stack called again)
+        with patch.object(intel, "_detect_stack", wraps=intel._detect_stack) as mock_detect:
+            profile2 = intel.analyze([tmp_path])
+            mock_detect.assert_called_once()
+
+        assert profile2 is not None
+
+    def test_cache_fresh_within_ttl(self, tmp_path: Path):
+        """Cache entry within TTL serves from cache without re-scan."""
+        _make_file(tmp_path, "requirements.txt", "fastapi\n")
+
+        intel = WorkspaceIntelligence()
+        intel.analyze([tmp_path])
+
+        # Second call should use cache (detect_stack NOT called)
+        with patch.object(intel, "_detect_stack", wraps=intel._detect_stack) as mock_detect:
+            intel.analyze([tmp_path])
+            mock_detect.assert_not_called()

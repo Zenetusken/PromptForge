@@ -126,7 +126,7 @@ async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
 
         engine = TaxonomyEngine(
             embedding_service=EmbeddingService(),
-            provider=_detected_provider,
+            provider_resolver=lambda: routing.state.provider,
         )
         _shared.set_taxonomy_engine(engine)
         logger.info("MCP server: TaxonomyEngine initialized (hot-path only)")

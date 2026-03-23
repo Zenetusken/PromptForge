@@ -5,6 +5,7 @@ Copyright 2025-2026 Project Synthesis contributors.
 
 import json
 import logging
+import time
 from pathlib import Path
 
 from app.services.roots_scanner import RootsScanner
@@ -35,11 +36,14 @@ _NODE_PACKAGES = {
 }
 
 
+_WORKSPACE_CACHE_TTL = 300  # 5 minutes — _detect_stack is cheap (manifest reads only)
+
+
 class WorkspaceIntelligence:
     """Scan workspace roots to build a compact project profile."""
 
     def __init__(self) -> None:
-        self._cache: dict[frozenset[str], str] = {}
+        self._cache: dict[frozenset[str], tuple[str, float]] = {}
         self._scanner = RootsScanner()
 
     def analyze(self, roots: list[Path]) -> str | None:
@@ -47,9 +51,13 @@ class WorkspaceIntelligence:
         if not roots:
             return None
         cache_key = frozenset(str(r) for r in roots)
-        if cache_key in self._cache:
-            logger.debug("Workspace profile cache hit for %d roots", len(roots))
-            return self._cache[cache_key]
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            profile, cached_at = cached
+            if time.monotonic() - cached_at < _WORKSPACE_CACHE_TTL:
+                logger.debug("Workspace profile cache hit for %d roots", len(roots))
+                return profile
+            logger.debug("Workspace profile cache expired for %d roots", len(roots))
 
         logger.debug("Analyzing %d workspace roots: %s", len(roots), [str(r) for r in roots])
         guidance = self._scanner.scan_roots(roots)
@@ -57,7 +65,7 @@ class WorkspaceIntelligence:
         profile = self._build_profile(stack, guidance)
 
         if profile:
-            self._cache[cache_key] = profile
+            self._cache[cache_key] = (profile, time.monotonic())
             logger.info(
                 "Workspace profile built: %d chars, languages=%s, frameworks=%s",
                 len(profile), stack["languages"], stack["frameworks"],
