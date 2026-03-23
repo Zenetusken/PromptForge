@@ -232,7 +232,7 @@ class RoutingManager:
     def available_tiers(self) -> list[str]:
         """Which tiers are currently reachable (for frontend display)."""
         tiers: list[str] = []
-        if self._state.provider:
+        if self._state.provider is not None:
             tiers.append("internal")
         if self._state.sampling_capable is True and self._state.mcp_connected:
             tiers.append("sampling")
@@ -516,29 +516,36 @@ class RoutingManager:
             logger.info("routing.recovery no session file — starting with defaults")
             return _defaults
 
-        # Apply staleness checks
-        sampling = data.get("sampling_capable", False)
-        if not self._session_file.is_capability_fresh(data):
-            sampling = None  # Stale → unknown
+        try:
+            # Apply staleness checks
+            sampling = data.get("sampling_capable", False)
+            if not self._session_file.is_capability_fresh(data):
+                sampling = None  # Stale → unknown
 
-        connected = not self._session_file.detect_disconnect(data)
+            connected = not self._session_file.detect_disconnect(data)
 
-        last_activity = None
-        if "last_activity" in data:
-            try:
-                last_activity = datetime.fromisoformat(data["last_activity"])
-            except (ValueError, TypeError):
-                pass
+            last_activity = None
+            if "last_activity" in data:
+                try:
+                    last_activity = datetime.fromisoformat(data["last_activity"])
+                except (ValueError, TypeError):
+                    pass
 
-        logger.info(
-            "routing.recovery sampling_capable=%s mcp_connected=%s last_activity=%s",
-            sampling, connected, last_activity,
-        )
-        return RoutingState(
-            provider=None,  # Provider set separately via set_provider()
-            provider_name=None,
-            sampling_capable=sampling,
-            mcp_connected=connected,
-            last_capability_update=None,
-            last_activity=last_activity,
-        )
+            logger.info(
+                "routing.recovery sampling_capable=%s mcp_connected=%s last_activity=%s",
+                sampling, connected, last_activity,
+            )
+            return RoutingState(
+                provider=None,  # Provider set separately via set_provider()
+                provider_name=None,
+                sampling_capable=sampling,
+                mcp_connected=connected,
+                last_capability_update=None,
+                last_activity=last_activity,
+            )
+        except Exception:
+            logger.warning(
+                "routing.recovery corrupt session data — starting with defaults",
+                exc_info=True,
+            )
+            return _defaults
