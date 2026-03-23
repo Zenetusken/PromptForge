@@ -97,7 +97,9 @@
   let apiKeyInput = $state('');
   let apiKeyError = $state<string | null>(null);
   let apiKeySaving = $state(false);
+  let apiKeyDeleting = $state(false);
   let confirmingDelete = $state(false);
+  let confirmDeleteTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ---- Settings accordion state ----
   let showProvider = $state(false);
@@ -161,25 +163,37 @@
     try {
       apiKeyStatus = await setApiKey(apiKeyInput.trim());
       apiKeyInput = '';
-      providers = await getProviders();
       addToast('created', 'API key saved');
     } catch (err: unknown) {
       apiKeyError = err instanceof Error ? err.message : 'Failed to set API key';
     } finally {
       apiKeySaving = false;
     }
+    // Re-fetch available providers list non-blocking (key already saved above)
+    getProviders().then((p) => { providers = p; }).catch((e) => console.debug('Provider refresh failed:', e));
   }
 
   async function handleDeleteApiKey() {
     apiKeyError = null;
+    apiKeyDeleting = true;
+    if (confirmDeleteTimer) { clearTimeout(confirmDeleteTimer); confirmDeleteTimer = null; }
     try {
       apiKeyStatus = await deleteApiKey();
-      providers = await getProviders();
       addToast('deleted', 'API key removed');
     } catch (err: unknown) {
       apiKeyError = err instanceof Error ? err.message : 'Failed to remove API key';
+    } finally {
+      apiKeyDeleting = false;
+      confirmingDelete = false;
     }
+    // Re-fetch available providers list non-blocking (key already deleted above)
+    getProviders().then((p) => { providers = p; }).catch((e) => console.debug('Provider refresh failed:', e));
   }
+
+  // Cleanup confirmation timer on component teardown
+  $effect(() => {
+    return () => { if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer); };
+  });
 
   // Fetch history when the history panel becomes active
   $effect(() => {
@@ -654,18 +668,18 @@
                 {#if apiKeyStatus?.configured}
                   <button
                     class="action-btn"
+                    disabled={apiKeyDeleting}
                     style={confirmingDelete ? 'color: var(--color-neon-red); border-color: var(--color-neon-red);' : ''}
                     onclick={() => {
                       if (confirmingDelete) {
-                        confirmingDelete = false;
                         handleDeleteApiKey();
                       } else {
                         confirmingDelete = true;
-                        setTimeout(() => { confirmingDelete = false; }, 3000);
+                        confirmDeleteTimer = setTimeout(() => { confirmingDelete = false; confirmDeleteTimer = null; }, 3000);
                       }
                     }}
                   >
-                    {confirmingDelete ? 'CONFIRM?' : 'REMOVE'}
+                    {apiKeyDeleting ? 'REMOVING...' : confirmingDelete ? 'CONFIRM?' : 'REMOVE'}
                   </button>
                 {/if}
               </div>

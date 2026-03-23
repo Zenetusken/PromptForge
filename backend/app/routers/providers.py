@@ -3,6 +3,8 @@
 import base64
 import hashlib
 import logging
+import shutil
+import time
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -12,11 +14,39 @@ from app.config import DATA_DIR, settings
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["providers"])
 
+# --- Cached lookups (avoid per-request overhead) ---
+
+# CLI presence rarely changes during a process lifetime; check once at import.
+_CLAUDE_CLI_AVAILABLE: bool = shutil.which("claude") is not None
+
+# Lightweight API key presence check with short TTL to avoid per-request
+# Fernet decryption while still reacting to key set/delete within seconds.
+# Stores a boolean (not the key itself) to minimize plaintext exposure.
+_API_KEY_CACHE_TTL = 5.0  # seconds
+_api_key_cache: tuple[float, bool] = (0.0, False)
+
+
+def _has_api_key() -> bool:
+    """Check whether an API key is configured (cached, avoids Fernet on every call)."""
+    global _api_key_cache
+    now = time.monotonic()
+    if now - _api_key_cache[0] < _API_KEY_CACHE_TTL:
+        return _api_key_cache[1]
+    present = _read_api_key() is not None
+    _api_key_cache = (now, present)
+    return present
+
+
+def invalidate_api_key_cache() -> None:
+    """Force next _has_api_key() call to re-read. Called after set/delete."""
+    global _api_key_cache
+    _api_key_cache = (0.0, False)
+
 
 class ProviderInfo(BaseModel):
     active_provider: str | None = Field(description="Name of the active LLM provider, or null if none detected.")
     available: list[str] = Field(description="List of actually usable provider identifiers.")
-    routing_tiers: list[str] = Field(default_factory=lambda: ["passthrough"], description="Currently reachable routing tiers.")
+    routing_tiers: list[str] = Field(description="Currently reachable routing tiers.")
 
 
 class ApiKeyStatus(BaseModel):
@@ -29,15 +59,13 @@ class ApiKeyStatus(BaseModel):
 
 @router.get("/providers")
 async def get_providers(request: Request) -> ProviderInfo:
-    import shutil
-
     routing = getattr(request.app.state, "routing", None)
     provider_name = routing.state.provider_name if routing else None
 
     available: list[str] = []
-    if shutil.which("claude"):
+    if _CLAUDE_CLI_AVAILABLE:
         available.append("claude_cli")
-    if _read_api_key():
+    if _has_api_key():
         available.append("anthropic_api")
 
     routing_tiers = routing.available_tiers if routing else ["passthrough"]
@@ -74,6 +102,7 @@ async def set_api_key(body: ApiKeyRequest, request: Request) -> ApiKeyStatus:
         )
 
     _write_api_key(key)
+    invalidate_api_key_cache()
     logger.info("API key updated (last 4: ...%s)", key[-4:])
 
     # Hot-reload: create provider and update routing
@@ -98,6 +127,7 @@ async def delete_api_key(request: Request) -> ApiKeyStatus:
     if cred_file.exists():
         cred_file.unlink()
         logger.info("API key credentials file deleted")
+    invalidate_api_key_cache()
 
     # Clear provider from routing service
     routing = getattr(request.app.state, "routing", None)

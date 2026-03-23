@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from app.schemas.pipeline_contracts import (
     AnalysisResult,
     DimensionScores,
@@ -223,6 +225,132 @@ class TestProvidersRouter:
         assert isinstance(data["available"], list)
         assert "routing_tiers" in data
         assert isinstance(data["routing_tiers"], list)
+
+
+class TestProviderDetection:
+    """Tests for dynamic provider detection and caching in providers.py."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_api_key_cache(self):
+        """Ensure cache state doesn't leak between tests."""
+        import app.routers.providers as pmod
+
+        original = pmod._api_key_cache
+        yield
+        pmod._api_key_cache = original
+
+    async def test_cli_available_and_api_key_set(self, app_client, monkeypatch):
+        """Both CLI and API key present → both in available list."""
+        import app.routers.providers as pmod
+
+        monkeypatch.setattr(pmod, "_CLAUDE_CLI_AVAILABLE", True)
+        monkeypatch.setattr(pmod, "_has_api_key", lambda: True)
+
+        resp = await app_client.get("/api/providers")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "claude_cli" in data["available"]
+        assert "anthropic_api" in data["available"]
+
+    async def test_no_cli_no_api_key(self, app_client, monkeypatch):
+        """Neither CLI nor API key → empty available list."""
+        import app.routers.providers as pmod
+
+        monkeypatch.setattr(pmod, "_CLAUDE_CLI_AVAILABLE", False)
+        monkeypatch.setattr(pmod, "_has_api_key", lambda: False)
+
+        resp = await app_client.get("/api/providers")
+        data = resp.json()
+        assert "claude_cli" not in data["available"]
+        assert "anthropic_api" not in data["available"]
+
+    async def test_cli_only(self, app_client, monkeypatch):
+        """CLI on PATH but no API key → only claude_cli listed."""
+        import app.routers.providers as pmod
+
+        monkeypatch.setattr(pmod, "_CLAUDE_CLI_AVAILABLE", True)
+        monkeypatch.setattr(pmod, "_has_api_key", lambda: False)
+
+        resp = await app_client.get("/api/providers")
+        data = resp.json()
+        assert data["available"] == ["claude_cli"]
+
+    async def test_api_key_only(self, app_client, monkeypatch):
+        """API key configured but no CLI → only anthropic_api listed."""
+        import app.routers.providers as pmod
+
+        monkeypatch.setattr(pmod, "_CLAUDE_CLI_AVAILABLE", False)
+        monkeypatch.setattr(pmod, "_has_api_key", lambda: True)
+
+        resp = await app_client.get("/api/providers")
+        data = resp.json()
+        assert data["available"] == ["anthropic_api"]
+
+    def test_has_api_key_cache_hit(self):
+        """_has_api_key returns cached boolean within TTL window."""
+        import time
+
+        import app.routers.providers as pmod
+
+        # Seed cache: key present
+        pmod._api_key_cache = (time.monotonic(), True)
+        assert pmod._has_api_key() is True
+
+        # Seed cache: no key
+        pmod._api_key_cache = (time.monotonic(), False)
+        assert pmod._has_api_key() is False
+
+    def test_has_api_key_cache_miss_after_ttl(self, monkeypatch):
+        """_has_api_key re-reads when cache is stale."""
+        import app.routers.providers as pmod
+
+        # Set stale cache (timestamp 0 is always expired)
+        pmod._api_key_cache = (0.0, False)
+        monkeypatch.setattr(pmod, "_read_api_key", lambda: "sk-fresh1234")
+
+        assert pmod._has_api_key() is True
+
+    def test_invalidate_api_key_cache(self):
+        """invalidate_api_key_cache forces re-read on next call."""
+        import time
+
+        import app.routers.providers as pmod
+
+        # Fill cache
+        pmod._api_key_cache = (time.monotonic(), True)
+        assert pmod._has_api_key() is True
+
+        # Invalidate
+        pmod.invalidate_api_key_cache()
+        assert pmod._api_key_cache == (0.0, False)
+
+    def test_cache_stores_boolean_not_key(self, monkeypatch):
+        """Cache must store a boolean, never the plaintext API key."""
+        import app.routers.providers as pmod
+
+        pmod._api_key_cache = (0.0, False)
+        monkeypatch.setattr(pmod, "_read_api_key", lambda: "sk-secret1234")
+
+        pmod._has_api_key()
+
+        _ts, cached_value = pmod._api_key_cache
+        assert cached_value is True  # boolean, not the key string
+        assert cached_value != "sk-secret1234"
+
+    def test_routing_tiers_field_requires_explicit_value(self):
+        """ProviderInfo.routing_tiers has no default — must be provided."""
+        from pydantic import ValidationError
+
+        from app.routers.providers import ProviderInfo
+
+        with pytest.raises(ValidationError):
+            ProviderInfo(active_provider=None, available=[])
+
+        # Should succeed when provided
+        info = ProviderInfo(
+            active_provider=None, available=[], routing_tiers=["passthrough"]
+        )
+        assert info.routing_tiers == ["passthrough"]
 
 
 class TestSettingsRouter:
