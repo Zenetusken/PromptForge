@@ -4,6 +4,30 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Fixed
+- Removed double-correction (bias + z-score) from passthrough hybrid scoring that systematically deflated passthrough scores vs internal pipeline
+- Fixed asymmetric delta computation in MCP `save_result` — original scores now use the same blending pipeline as optimized scores
+- Fixed heuristic-only passthrough path running through `blend_scores()` z-score normalization (designed for LLM scores only)
+- Guarded `_recover_state()` in routing against corrupt `mcp_session.json` (non-dict JSON crashed MCP server startup)
+- Fixed `available_tiers` truthiness check inconsistency with `resolve_route()` identity check
+- Fixed SSE error/end handlers not recognizing passthrough mode — UI no longer gets stuck in "analyzing" on connection drop
+- Added passthrough session persistence to localStorage — page refresh no longer loses assembled prompt and trace state
+
+### Changed
+- Increased passthrough scoring rubric cap from 2000 to 4000 chars (all 5 dimension definitions now included)
+- Replaced vague JSON output instruction in passthrough template with structured schema example
+- Added rate limiting to `POST /api/optimize/passthrough/save` (was unprotected)
+- Added `max_context_tokens` validation in prepare handler (rejects non-positive values)
+- Added `workspace_path` directory validation (skips non-existent paths instead of scanning arbitrary locations)
+- Added `codebase_context`, `domain`, `intent_label` fields to `SaveResultInput` schema (matches tool wrapper)
+- Removed unused `detect_divergence()` from `HeuristicScorer` (dead code; `blend_scores` has its own inline check)
+- Standardized heuristic scorer rounding to 2 decimal places across all dimensions
+- Added `DimensionScores.from_dict()` / `.to_dict()` helpers — eliminated 11 repeated dict↔model conversion patterns across passthrough code paths
+- Used `DimensionScores.compute_deltas()` and `.overall` instead of manual computation in passthrough save handlers
+- Extracted strategy normalization into `StrategyLoader.normalize_strategy()` — removed duplicated fuzzy matching logic from `save_result.py` and `optimize.py`
+
+### Added
+
 ### Changed
 - Pipeline analyze and score phases now use `effort="low"` (was `"medium"`), reducing latency 30-40%
 - Analyze and score max_tokens reduced from 16384 to 4096 (matching actual output size)

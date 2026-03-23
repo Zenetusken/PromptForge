@@ -555,6 +555,129 @@ class TestPassthroughScoringLogic:
 
 
 # ---------------------------------------------------------------------------
+# Hybrid passthrough scoring mode (external scores + blending)
+# ---------------------------------------------------------------------------
+
+
+class TestPassthroughHybridScoring:
+    """Tests for the hybrid_passthrough scoring mode in the REST save endpoint."""
+
+    async def _prepare(self, app_client, prompt=VALID_PROMPT):
+        resp = await app_client.post(
+            "/api/optimize/passthrough", json={"prompt": prompt},
+        )
+        assert resp.status_code == 200
+        return resp.json()
+
+    async def test_save_with_external_scores_uses_hybrid_mode(self, app_client):
+        """POST /optimize/passthrough/save with scores dict → scoring_mode=hybrid_passthrough."""
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "scores": {
+                    "clarity": 8.0, "specificity": 7.5, "structure": 7.0,
+                    "faithfulness": 9.0, "conciseness": 7.5,
+                },
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["scoring_mode"] == "hybrid_passthrough"
+        assert data["overall_score"] is not None
+
+    async def test_save_hybrid_scores_within_valid_range(self, app_client):
+        """All blended scores must be in [1.0, 10.0]."""
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "scores": {
+                    "clarity": 9.5, "specificity": 8.0, "structure": 8.5,
+                    "faithfulness": 9.0, "conciseness": 8.0,
+                },
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        for dim in ["clarity", "specificity", "structure", "faithfulness", "conciseness"]:
+            score = data["scores"][dim]
+            assert 1.0 <= score <= 10.0, f"{dim}={score} out of range"
+
+    async def test_save_scoring_disabled_returns_skipped(self, app_client):
+        """With enable_scoring=False, scoring_mode is 'skipped' and no scores computed."""
+        prep = await self._prepare(app_client)
+        with patch("app.routers.optimize.PreferencesService") as mock_prefs_cls:
+            mock_prefs = mock_prefs_cls.return_value
+            mock_prefs.get.return_value = False
+            resp = await app_client.post(
+                "/api/optimize/passthrough/save",
+                json={
+                    "trace_id": prep["trace_id"],
+                    "optimized_prompt": LONG_OPTIMIZED,
+                    "scores": {
+                        "clarity": 8.0, "specificity": 7.5, "structure": 7.0,
+                        "faithfulness": 9.0, "conciseness": 7.5,
+                    },
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["scoring_mode"] == "skipped"
+        assert data["overall_score"] is None
+
+    async def test_save_with_extreme_scores_clamped(self, app_client):
+        """External scores > 10 or < 0 produce final scores clamped to [1.0, 10.0]."""
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "scores": {
+                    "clarity": 15.0, "specificity": -2.0, "structure": 10.0,
+                    "faithfulness": 0.0, "conciseness": 100.0,
+                },
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        for dim in ["clarity", "specificity", "structure", "faithfulness", "conciseness"]:
+            score = data["scores"][dim]
+            assert 1.0 <= score <= 10.0, f"{dim}={score} out of range after blending"
+
+    async def test_no_bias_correction_on_hybrid_scores(self, app_client):
+        """External scores are NOT multiplied by 0.85 before blending (bias correction removed)."""
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "scores": {
+                    "clarity": 10.0, "specificity": 10.0, "structure": 10.0,
+                    "faithfulness": 10.0, "conciseness": 10.0,
+                },
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # Without z-score normalization (fresh DB, <10 samples), blend formula is:
+        # blended = w_h * heuristic + (1-w_h) * external
+        # For clarity (w_h=0.30): 0.30*heur + 0.70*10.0
+        # With bias correction (old): 0.30*heur + 0.70*8.5 → lower
+        # Without bias correction: 0.30*heur + 0.70*10.0 → higher
+        # Clarity heuristic for LONG_OPTIMIZED is ~5-7, so blended should be > 8.0
+        assert data["scores"]["clarity"] > 8.0, (
+            f"clarity={data['scores']['clarity']} suggests bias correction is still applied"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Interaction with GET /api/optimize/{trace_id}
 # ---------------------------------------------------------------------------
 
