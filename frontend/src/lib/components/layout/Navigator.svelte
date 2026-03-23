@@ -716,12 +716,20 @@
                   <span class="data-value font-mono">{settings.embedding_model}</span>
                 </div>
                 <div class="data-row">
+                  <span class="data-label">Database</span>
+                  <span class="data-value font-mono">{settings.database_engine}</span>
+                </div>
+                <div class="data-row">
                   <span class="data-label">Optimize rate</span>
                   <span class="data-value font-mono">{settings.optimize_rate_limit}</span>
                 </div>
                 <div class="data-row">
                   <span class="data-label">Feedback rate</span>
                   <span class="data-value font-mono">{settings.feedback_rate_limit}</span>
+                </div>
+                <div class="data-row">
+                  <span class="data-label">Refine rate</span>
+                  <span class="data-value font-mono">{settings.refine_rate_limit}</span>
                 </div>
                 <div class="data-row">
                   <span class="data-label">Retention</span>

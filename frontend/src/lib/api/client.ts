@@ -102,8 +102,10 @@ export interface SettingsResponse {
   max_context_tokens: number;
   optimize_rate_limit: string;
   feedback_rate_limit: string;
+  refine_rate_limit: string;
   embedding_model: string;
   trace_retention_days: number;
+  database_engine: string;
 }
 
 export interface GitHubUser {
