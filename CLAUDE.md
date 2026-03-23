@@ -70,7 +70,7 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 - `adaptation_tracker.py` — strategy affinity tracking with degenerate pattern detection
 - `heuristic_scorer.py` — 5-dimension heuristics (clarity, specificity, structure, faithfulness, conciseness) + `score_prompt()` facade + passthrough bias correction
 - `score_blender.py` — hybrid scoring engine: blends LLM + heuristic scores with z-score normalization and divergence detection
-- `preferences.py` — persistent user preferences (model selection, pipeline toggles, default strategy, optimizer effort). File-based JSON at `data/preferences.json`. Snapshot pattern for pipeline consistency. Validates `optimizer_effort` (`"high"` | `"max"`).
+- `preferences.py` — persistent user preferences (model selection, pipeline toggles, default strategy, per-phase effort). File-based JSON at `data/preferences.json`. Snapshot pattern for pipeline consistency. Validates `optimizer_effort`, `analyzer_effort`, `scorer_effort` (`"low"` | `"medium"` | `"high"` | `"max"`).
 - `file_watcher.py` — background watchfiles.awatch() task for strategy file hot-reload. Publishes `strategy_changed` events to event bus on file add/modify/delete.
 - `refinement_service.py` — refinement sessions, version CRUD, branching/rollback, suggestion generation
 - `trace_logger.py` — per-phase JSONL traces to `data/traces/`, daily rotation
@@ -275,7 +275,7 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 - **Provider injection**: detected once at startup, injected via `app.state.routing` (RoutingManager) and MCP lifespan context. All routers call `routing.resolve()` to get the active provider.
 - **Prompt templates**: all prompts live in `prompts/` with `{{variable}}` substitution. Validated at startup. Hot-reloaded on every call. Never hardcode prompts in application code.
 - **Scorer bias mitigation**: A/B randomized presentation order + **hybrid scoring** (LLM scores blended with model-independent heuristics via `score_blender.py`). Dimension-specific weights: structure 50% heuristic, conciseness/specificity 40%, clarity 30%, faithfulness 20%. Z-score normalization applied when ≥10 historical samples exist. Divergence flags when LLM and heuristic disagree by >2.5 points.
-- **User preferences**: file-based JSON (`data/preferences.json`), loaded as frozen snapshot per pipeline run. Model selection per phase (analyzer/optimizer/scorer), pipeline toggles (explore/scoring/adaptation), default strategy, optimizer effort (`"high"` | `"max"`). Non-configurable: explore synthesis and suggestions always use Haiku. Lean mode = explore+scoring off = 2 LLM calls only.
+- **User preferences**: file-based JSON (`data/preferences.json`), loaded as frozen snapshot per pipeline run. Model selection per phase (analyzer/optimizer/scorer), pipeline toggles (explore/scoring/adaptation), default strategy, per-phase effort (`"low"` | `"medium"` | `"high"` | `"max"` for analyzer, optimizer, scorer). Non-configurable: explore synthesis and suggestions always use Haiku. Lean mode = explore+scoring off = 2 LLM calls only.
 - **Passthrough protocol**: MCP `synthesis_prepare_optimization` assembles the full prompt; external LLM processes it; `synthesis_save_result` persists with heuristic bias correction.
 - **Pagination envelope**: all list endpoints return `{total, count, offset, items, has_more, next_offset}`.
 - **GitHub token layer**: tokens are Fernet-encrypted at rest. `github_service.encrypt_token` / `decrypt_token` are the only entry points.

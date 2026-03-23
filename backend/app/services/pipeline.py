@@ -519,7 +519,10 @@ class PipelineOrchestrator:
                     duration_ms=optimize_duration,
                     tokens_in=usage.input_tokens, tokens_out=usage.output_tokens,
                     model=prefs.resolve_model("optimizer", prefs_snapshot), provider=provider.name,
-                    result={"strategy_used": effective_strategy},
+                    result={
+                        "strategy_used": effective_strategy,
+                        "effort": prefs.get("pipeline.optimizer_effort", prefs_snapshot) or "high",
+                    },
                 )
 
             yield PipelineEvent(event="prompt_preview", data={

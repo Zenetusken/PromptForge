@@ -288,3 +288,66 @@ class TestRefinementService:
         assert latest.suggestions is not None
         assert len(latest.suggestions) == 3
         assert latest.suggestions[0]["text"] == "Add error handling"
+
+
+class TestRefinementPerformanceParams:
+    """Tests for effort, max_tokens, and cache_ttl on refinement phases."""
+
+    async def test_analyze_phase_effort_and_max_tokens(
+        self, service, sample_opt, mock_provider, db_session
+    ):
+        turn1 = await service.create_initial_turn(
+            optimization_id=sample_opt.id,
+            prompt=sample_opt.optimized_prompt,
+            scores_dict={"clarity": 7.0},
+            strategy_used="chain-of-thought",
+        )
+
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(),
+            _make_optimization(),
+            _make_scores(),
+            _make_suggestions(),
+        ]
+
+        async for _ in service.create_refinement_turn(
+            optimization_id=sample_opt.id,
+            branch_id=turn1.branch_id,
+            refinement_request="Improve it",
+        ):
+            pass
+
+        # First complete_parsed call is analyze
+        analyze_call = mock_provider.complete_parsed.call_args_list[0]
+        assert analyze_call.kwargs["effort"] == "low"
+        assert analyze_call.kwargs["max_tokens"] == 4096
+
+    async def test_score_phase_effort_max_tokens_and_cache_ttl(
+        self, service, sample_opt, mock_provider, db_session
+    ):
+        turn1 = await service.create_initial_turn(
+            optimization_id=sample_opt.id,
+            prompt=sample_opt.optimized_prompt,
+            scores_dict={"clarity": 7.0},
+            strategy_used="chain-of-thought",
+        )
+
+        mock_provider.complete_parsed.side_effect = [
+            _make_analysis(),
+            _make_optimization(),
+            _make_scores(),
+            _make_suggestions(),
+        ]
+
+        async for _ in service.create_refinement_turn(
+            optimization_id=sample_opt.id,
+            branch_id=turn1.branch_id,
+            refinement_request="Improve it",
+        ):
+            pass
+
+        # Score call: analyze=[0], refine goes through streaming, score=[2]
+        score_call = mock_provider.complete_parsed.call_args_list[2]
+        assert score_call.kwargs["effort"] == "low"
+        assert score_call.kwargs["max_tokens"] == 4096
+        assert score_call.kwargs["cache_ttl"] == "1h"
