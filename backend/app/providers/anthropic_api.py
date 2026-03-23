@@ -56,13 +56,17 @@ class AnthropicAPIProvider(LLMProvider):
         output_format: type[T],
         max_tokens: int,
         effort: str | None,
+        cache_ttl: str | None = None,
     ) -> dict[str, Any]:
         """Assemble kwargs common to both parse() and stream() calls."""
+        cache_control: dict[str, str] = {"type": "ephemeral"}
+        if cache_ttl is not None:
+            cache_control["ttl"] = cache_ttl
         system = [
             {
                 "type": "text",
                 "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
+                "cache_control": cache_control,
             }
         ]
 
@@ -128,6 +132,7 @@ class AnthropicAPIProvider(LLMProvider):
         output_format: type[T],
         max_tokens: int = 16384,
         effort: str | None = None,
+        cache_ttl: str | None = None,
     ) -> T:
         """Make an LLM call and return a parsed Pydantic model.
 
@@ -137,7 +142,7 @@ class AnthropicAPIProvider(LLMProvider):
         - Typed error handling mapped to ProviderError hierarchy
         """
         kwargs = self._build_kwargs(
-            model, system_prompt, user_message, output_format, max_tokens, effort,
+            model, system_prompt, user_message, output_format, max_tokens, effort, cache_ttl,
         )
 
         try:
@@ -156,6 +161,7 @@ class AnthropicAPIProvider(LLMProvider):
         output_format: type[T],
         max_tokens: int = 16384,
         effort: str | None = None,
+        cache_ttl: str | None = None,
     ) -> T:
         """Streaming variant — prevents HTTP timeouts on long outputs.
 
@@ -166,7 +172,7 @@ class AnthropicAPIProvider(LLMProvider):
         Same error handling, caching, and thinking config as ``complete_parsed``.
         """
         kwargs = self._build_kwargs(
-            model, system_prompt, user_message, output_format, max_tokens, effort,
+            model, system_prompt, user_message, output_format, max_tokens, effort, cache_ttl,
         )
 
         try:

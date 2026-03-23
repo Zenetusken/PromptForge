@@ -48,6 +48,7 @@ class ClaudeCLIProvider(LLMProvider):
         output_format: type[T],
         max_tokens: int = 16384,
         effort: str | None = None,
+        cache_ttl: str | None = None,
     ) -> T:
         """Run claude CLI and parse JSON output as a Pydantic model.
 

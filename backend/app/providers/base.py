@@ -105,6 +105,7 @@ class LLMProvider(ABC):
         output_format: type[T],
         max_tokens: int = 16384,
         effort: str | None = None,
+        cache_ttl: str | None = None,
     ) -> T:
         """Make an LLM call and return a parsed Pydantic model.
 
@@ -125,6 +126,7 @@ class LLMProvider(ABC):
         output_format: type[T],
         max_tokens: int = 16384,
         effort: str | None = None,
+        cache_ttl: str | None = None,
     ) -> T:
         """Streaming variant of ``complete_parsed``.
 
@@ -140,6 +142,7 @@ class LLMProvider(ABC):
             output_format=output_format,
             max_tokens=max_tokens,
             effort=effort,
+            cache_ttl=cache_ttl,
         )
 
     @staticmethod
@@ -172,6 +175,7 @@ async def call_provider_with_retry(
     output_format: type[T],
     max_tokens: int = 16384,
     effort: str | None = None,
+    cache_ttl: str | None = None,
     streaming: bool = False,
     max_retries: int = _DEFAULT_MAX_RETRIES,
     retry_delay: float = _DEFAULT_RETRY_DELAY,
@@ -199,6 +203,7 @@ async def call_provider_with_retry(
                 output_format=output_format,
                 max_tokens=max_tokens,
                 effort=effort,
+                cache_ttl=cache_ttl,
             )
         except ProviderError as exc:
             if not exc.retryable:
