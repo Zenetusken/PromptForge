@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+from collections import deque
 from collections.abc import AsyncGenerator
 
 logger = logging.getLogger(__name__)
@@ -12,29 +13,72 @@ logger = logging.getLogger(__name__)
 # shutdown timer kicks in.
 _SHUTDOWN_SENTINEL = object()
 
+# Replay buffer size — keeps the last N events for SSE reconnection replay.
+# ~200 events × ~1KB each ≈ 200KB memory, negligible.
+_REPLAY_BUFFER_SIZE = 200
+
 
 class EventBus:
-    """Pub/sub backed by asyncio.Queue per subscriber."""
+    """Pub/sub backed by asyncio.Queue per subscriber.
+
+    Features:
+    - Monotonically increasing sequence numbers on every event
+    - Bounded replay buffer for SSE ``Last-Event-ID`` reconnection
+    - Overflow-safe: drops oldest queued event instead of removing subscriber
+    """
 
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue] = set()
         self._shutting_down = False
+        self._sequence: int = 0
+        self._replay_buffer: deque[dict] = deque(maxlen=_REPLAY_BUFFER_SIZE)
 
     def publish(self, event_type: str, data: dict) -> None:
         if self._shutting_down:
             return
-        payload = {"event": event_type, "data": data, "timestamp": time.time()}
-        dead = []
+        self._sequence += 1
+        payload = {
+            "event": event_type,
+            "data": data,
+            "timestamp": time.time(),
+            "seq": self._sequence,
+        }
+        self._replay_buffer.append(payload)
         for queue in self._subscribers:
             try:
                 queue.put_nowait(payload)
             except asyncio.QueueFull:
-                dead.append(queue)
-        for q in dead:
-            self._subscribers.discard(q)
-            logger.warning("Dropped slow event subscriber")
+                # Drop oldest event from this subscriber's queue to make room,
+                # keeping the connection alive instead of killing the subscriber.
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(payload)
+                except asyncio.QueueFull:
+                    pass  # Truly stuck — skip this event for this subscriber
+                logger.warning(
+                    "Event bus queue overflow for subscriber — dropped oldest event"
+                )
         if self._subscribers:
-            logger.debug("Published %s to %d subscribers", event_type, len(self._subscribers))
+            logger.debug(
+                "Published %s (seq=%d) to %d subscribers",
+                event_type, self._sequence, len(self._subscribers),
+            )
+
+    def replay_since(self, seq: int) -> list[dict]:
+        """Return all buffered events with sequence number > *seq*.
+
+        Used by the SSE endpoint to replay missed events on reconnection
+        via the ``Last-Event-ID`` header.
+        """
+        return [e for e in self._replay_buffer if e["seq"] > seq]
+
+    @property
+    def current_sequence(self) -> int:
+        """Current sequence counter (last published event's seq)."""
+        return self._sequence
 
     async def subscribe(self) -> AsyncGenerator[dict, None]:
         queue: asyncio.Queue = asyncio.Queue(maxsize=100)

@@ -73,19 +73,25 @@ async def test_no_subscribers(bus: EventBus) -> None:
 
 
 @pytest.mark.asyncio
-async def test_slow_subscriber_dropped(bus: EventBus) -> None:
-    """A subscriber whose queue is full gets dropped on next publish."""
-    # Manually add a full queue
+async def test_overflow_drops_oldest_not_subscriber(bus: EventBus) -> None:
+    """When a subscriber's queue is full, drop oldest event (keep subscriber alive)."""
+    # Manually add a full queue with maxsize=1
     full_queue: asyncio.Queue = asyncio.Queue(maxsize=1)
-    full_queue.put_nowait({"event": "filler", "data": {}, "timestamp": 0})
+    full_queue.put_nowait({"event": "filler", "data": {}, "timestamp": 0, "seq": 0})
     bus._subscribers.add(full_queue)
 
     assert bus.subscriber_count == 1
 
-    # This publish should drop the slow subscriber
+    # This publish should drop the filler and insert the new event
     bus.publish("overflow", {"y": 2})
 
-    assert bus.subscriber_count == 0
+    # Subscriber is still connected (NOT removed)
+    assert bus.subscriber_count == 1
+
+    # The queue now holds the new event (filler was dropped)
+    event = full_queue.get_nowait()
+    assert event["event"] == "overflow"
+    assert event["data"] == {"y": 2}
 
 
 @pytest.mark.asyncio
@@ -110,3 +116,104 @@ async def test_subscriber_cleanup(bus: EventBus) -> None:
     # Explicitly close the generator to trigger finally
     await gen.aclose()
     assert bus.subscriber_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Sequence number tests
+# ---------------------------------------------------------------------------
+
+
+def test_sequence_monotonically_increasing(bus: EventBus) -> None:
+    """Each publish increments the sequence number."""
+    assert bus.current_sequence == 0
+
+    bus.publish("a", {"i": 1})
+    assert bus.current_sequence == 1
+
+    bus.publish("b", {"i": 2})
+    assert bus.current_sequence == 2
+
+    bus.publish("c", {"i": 3})
+    assert bus.current_sequence == 3
+
+
+@pytest.mark.asyncio
+async def test_events_contain_seq(bus: EventBus) -> None:
+    """Published events include a `seq` field."""
+    received: list[dict] = []
+
+    async def consume():
+        async for event in bus.subscribe():
+            received.append(event)
+            if len(received) >= 2:
+                break
+
+    task = asyncio.create_task(consume())
+    await asyncio.sleep(0.01)
+
+    bus.publish("ev1", {})
+    bus.publish("ev2", {})
+    await asyncio.wait_for(task, timeout=2.0)
+
+    assert received[0]["seq"] == 1
+    assert received[1]["seq"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Replay buffer tests
+# ---------------------------------------------------------------------------
+
+
+def test_replay_since_returns_missed_events(bus: EventBus) -> None:
+    """replay_since returns all events with seq > given value."""
+    bus.publish("a", {"i": 1})
+    bus.publish("b", {"i": 2})
+    bus.publish("c", {"i": 3})
+
+    # Replay since seq=1 should return events 2 and 3
+    missed = bus.replay_since(1)
+    assert len(missed) == 2
+    assert missed[0]["event"] == "b"
+    assert missed[0]["seq"] == 2
+    assert missed[1]["event"] == "c"
+    assert missed[1]["seq"] == 3
+
+
+def test_replay_since_zero_returns_all(bus: EventBus) -> None:
+    """replay_since(0) returns all buffered events."""
+    bus.publish("a", {})
+    bus.publish("b", {})
+    assert len(bus.replay_since(0)) == 2
+
+
+def test_replay_since_future_returns_empty(bus: EventBus) -> None:
+    """replay_since with a seq beyond current returns empty list."""
+    bus.publish("a", {})
+    assert len(bus.replay_since(999)) == 0
+
+
+def test_replay_buffer_bounded() -> None:
+    """Replay buffer respects maxlen — old events are evicted."""
+    from app.services.event_bus import _REPLAY_BUFFER_SIZE
+
+    bus = EventBus()
+    for i in range(_REPLAY_BUFFER_SIZE + 50):
+        bus.publish("x", {"i": i})
+
+    # Buffer should hold exactly _REPLAY_BUFFER_SIZE events
+    all_events = bus.replay_since(0)
+    assert len(all_events) == _REPLAY_BUFFER_SIZE
+
+    # Oldest retained event should be seq 51 (first 50 evicted)
+    assert all_events[0]["seq"] == 51
+
+
+def test_shutdown_suppresses_publish(bus: EventBus) -> None:
+    """After shutdown, publish is a no-op."""
+    bus.publish("before", {})
+    assert bus.current_sequence == 1
+
+    bus.shutdown()
+    bus.publish("after", {})
+    # Sequence should not advance
+    assert bus.current_sequence == 1
