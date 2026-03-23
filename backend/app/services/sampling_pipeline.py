@@ -62,6 +62,7 @@ from app.services.pipeline_constants import (
     CODING_KEYWORDS,
     CONFIDENCE_GATE,
     compute_optimize_max_tokens,
+    resolve_fallback_strategy,
 )
 from app.services.preferences import PreferencesService
 from app.services.prompt_loader import PromptLoader
@@ -82,6 +83,10 @@ _SAMPLING_TIMEOUT_SECONDS: float = 120.0
 # Model preference presets per pipeline phase
 # ---------------------------------------------------------------------------
 
+# NOTE: User preferences pipeline.analyzer_effort and pipeline.scorer_effort
+# are available but NOT applied here — MCP sampling has no effort parameter.
+# The IDE controls model behavior via ModelPreferences. Mapping effort to
+# intelligence/speed ratios is deferred until MCP sampling supports effort.
 _PHASE_PRESETS: dict[str, dict[str, Any]] = {
     "analyze": {"hint": settings.MODEL_SONNET, "intelligence": 0.6, "speed": 0.7},
     "optimize": {"hint": settings.MODEL_OPUS, "intelligence": 0.9, "speed": 0.3},
@@ -476,7 +481,34 @@ async def run_sampling_pipeline(
     })
     phase_t0 = time.monotonic()
     logger.info("Sampling pipeline Phase 1: Analyze")
-    available_strategies = strategy_loader.format_available()
+
+    # Resolve blocked strategies (low approval rate) to filter from analyzer input
+    blocked_strategies: set[str] = set()
+    adaptation_enabled = prefs.get("pipeline.enable_adaptation", prefs_snapshot)
+    if adaptation_enabled and not strategy_override:
+        try:
+            from app.models import StrategyAffinity
+            from app.services.adaptation_tracker import AdaptationTracker
+            async with async_session_factory() as _db:
+                _result = await _db.execute(select(StrategyAffinity))
+                _all_rows = _result.scalars().all()
+                _by_strategy: dict[str, list[float]] = {}
+                for _row in _all_rows:
+                    _total = (_row.thumbs_up or 0) + (_row.thumbs_down or 0)
+                    if _total >= AdaptationTracker._MIN_FEEDBACK_FOR_GATE:
+                        _by_strategy.setdefault(_row.strategy, []).append(_row.approval_rate)
+                for _strat, _rates in _by_strategy.items():
+                    _avg = sum(_rates) / len(_rates)
+                    if _avg < AdaptationTracker._BLOCK_THRESHOLD:
+                        blocked_strategies.add(_strat)
+                        logger.info(
+                            "Sampling: strategy '%s' blocked pre-analysis: avg_approval=%.2f",
+                            _strat, _avg,
+                        )
+        except Exception as exc:
+            logger.debug("Sampling adaptation pre-filter unavailable: %s", exc)
+
+    available_strategies = strategy_loader.format_available(blocked=blocked_strategies)
     analyze_msg = loader.render("analyze.md", {
         "raw_prompt": prompt,
         "available_strategies": available_strategies,
@@ -585,12 +617,32 @@ async def run_sampling_pipeline(
             logger.warning("Sampling auto-injection failed (non-fatal): %s", exc)
 
     effective_strategy = analysis.selected_strategy
+
+    # Validate analyzer's strategy exists on disk (prevent hallucinated names)
+    available = strategy_loader.list_strategies()
+    fallback = resolve_fallback_strategy(available)
+    if effective_strategy and available and effective_strategy not in available:
+        logger.warning(
+            "Analyzer selected unknown strategy '%s' (available: %s) — "
+            "falling back to '%s'. trace_id=%s",
+            effective_strategy, ", ".join(available), fallback, trace_id,
+        )
+        effective_strategy = fallback
+
+    # Enforce adaptation block — override if analyzer picked a blocked strategy
+    if effective_strategy in blocked_strategies and not strategy_override:
+        logger.info(
+            "Sampling: overriding blocked strategy '%s' to '%s' (low approval rate). trace_id=%s",
+            effective_strategy, fallback, trace_id,
+        )
+        effective_strategy = fallback
+
     if confidence < CONFIDENCE_GATE and not strategy_override:
         logger.info(
-            "Confidence gate triggered (%.2f < %.2f), overriding strategy to 'auto'",
-            confidence, CONFIDENCE_GATE,
+            "Confidence gate triggered (%.2f < %.2f), overriding strategy to '%s'",
+            confidence, CONFIDENCE_GATE, fallback,
         )
-        effective_strategy = "auto"
+        effective_strategy = fallback
 
     if strategy_override:
         effective_strategy = strategy_override
