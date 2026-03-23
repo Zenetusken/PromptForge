@@ -255,14 +255,19 @@ class StrategyLoader:
         """Return all strategies with their frontmatter metadata."""
         return [self.load_metadata(name) for name in self.list_strategies()]
 
-    def format_available(self) -> str:
+    def format_available(self, blocked: set[str] | None = None) -> str:
         """Format available strategies as a bullet list for the analyzer prompt.
 
         Includes taglines when available for richer context.
+        If *blocked* is provided, those strategies are excluded from the list
+        so the analyzer cannot select them.
         """
+        blocked = blocked or set()
         results = []
         for meta in self.list_with_metadata():
             name = meta["name"]
+            if name in blocked:
+                continue
             tagline = meta.get("tagline", "")
             if tagline:
                 results.append(f"- {name} ({tagline})")

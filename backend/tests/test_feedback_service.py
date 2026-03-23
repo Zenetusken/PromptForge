@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Feedback, Optimization
+from app.services.adaptation_tracker import AdaptationTracker
 from app.services.feedback_service import FeedbackService
 
 # ---------------------------------------------------------------------------
@@ -95,3 +96,52 @@ async def test_get_aggregation(db_session: AsyncSession, opt_id: str) -> None:
     assert agg["total"] == 3
     assert agg["thumbs_up"] == 2
     assert agg["thumbs_down"] == 1
+
+
+async def test_feedback_triggers_degenerate_check(
+    db_session: AsyncSession, opt_id: str,
+) -> None:
+    """create_feedback calls check_degenerate after updating affinity.
+
+    After enough one-sided feedback, the degenerate check should detect
+    the pattern (logged as warning, non-fatal).
+    """
+    svc = FeedbackService(db_session)
+
+    # Submit 11 thumbs_up — enough to trigger degenerate detection
+    for _ in range(11):
+        await svc.create_feedback(opt_id, "thumbs_up")
+
+    # Verify the tracker sees the degenerate pattern
+    tracker = AdaptationTracker(db_session)
+    is_degenerate = await tracker.check_degenerate("generation", "chain-of-thought")
+    assert is_degenerate is True
+
+
+async def test_degenerate_skips_affinity_update(
+    db_session: AsyncSession, opt_id: str,
+) -> None:
+    """Once feedback is degenerate, further feedback does NOT update affinity.
+
+    The counter should freeze at the degenerate state — no more signal value.
+    """
+    svc = FeedbackService(db_session)
+    tracker = AdaptationTracker(db_session)
+
+    # Submit 11 thumbs_up to reach degenerate state
+    for _ in range(11):
+        await svc.create_feedback(opt_id, "thumbs_up")
+
+    # Record the affinity state after reaching degenerate
+    affinities_before = await tracker.get_affinities("generation")
+    count_before = affinities_before["chain-of-thought"]["thumbs_up"]
+
+    # Submit 3 more — these should be skipped (degenerate)
+    for _ in range(3):
+        await svc.create_feedback(opt_id, "thumbs_up")
+
+    affinities_after = await tracker.get_affinities("generation")
+    count_after = affinities_after["chain-of-thought"]["thumbs_up"]
+
+    # Counts should NOT have increased
+    assert count_after == count_before

@@ -4,12 +4,13 @@ import json
 import logging
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PROMPTS_DIR
 from app.models import StrategyAffinity
 from app.services.prompt_loader import PromptLoader
+from app.services.strategy_loader import StrategyLoader
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,29 @@ class AdaptationTracker:
             for row in rows
         }
 
+    # Minimum total feedbacks before a strategy can be blocked
+    _MIN_FEEDBACK_FOR_GATE = 5
+    # Approval rate below which a strategy is blocked for a task type
+    _BLOCK_THRESHOLD = 0.3
+
+    async def get_blocked_strategies(self, task_type: str) -> set[str]:
+        """Return strategy names with approval_rate < 0.3 and ≥5 total feedbacks.
+
+        These strategies have been consistently rated poorly by users for the
+        given task_type and should be excluded from the analyzer's available list.
+        """
+        affinities = await self.get_affinities(task_type)
+        blocked: set[str] = set()
+        for strategy, data in affinities.items():
+            total = data["thumbs_up"] + data["thumbs_down"]
+            if total >= self._MIN_FEEDBACK_FOR_GATE and data["approval_rate"] < self._BLOCK_THRESHOLD:
+                blocked.add(strategy)
+                logger.info(
+                    "Strategy '%s' blocked for task_type='%s': approval_rate=%.2f (%d feedbacks)",
+                    strategy, task_type, data["approval_rate"], total,
+                )
+        return blocked
+
     async def render_adaptation_state(self, task_type: str) -> str | None:
         """Render the adaptation.md template with affinities for the given task_type.
 
@@ -139,3 +163,34 @@ class AdaptationTracker:
                 task_type, strategy, dominant, total, dominant / total * 100,
             )
         return is_degenerate
+
+    async def cleanup_orphaned_affinities(self) -> int:
+        """Remove StrategyAffinity rows for strategies no longer on disk.
+
+        Returns the number of rows deleted.
+        """
+        loader = StrategyLoader(self._loader.prompts_dir / "strategies")
+        available = set(loader.list_strategies())
+        if not available:
+            # No strategies on disk — skip cleanup to avoid wiping everything
+            return 0
+
+        result = await self._session.execute(select(StrategyAffinity))
+        rows = result.scalars().all()
+
+        orphaned_ids = [
+            row.id for row in rows if row.strategy not in available
+        ]
+        if not orphaned_ids:
+            return 0
+
+        await self._session.execute(
+            delete(StrategyAffinity).where(StrategyAffinity.id.in_(orphaned_ids))
+        )
+        await self._session.commit()
+
+        logger.info(
+            "Cleaned up %d orphaned strategy affinity rows (strategies no longer on disk)",
+            len(orphaned_ids),
+        )
+        return len(orphaned_ids)

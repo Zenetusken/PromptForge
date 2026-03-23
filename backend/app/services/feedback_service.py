@@ -79,7 +79,19 @@ class FeedbackService:
         if opt.task_type and opt.strategy_used:
             try:
                 tracker = AdaptationTracker(self._session)
-                await tracker.update_affinity(opt.task_type, opt.strategy_used, rating)
+
+                # Skip affinity update when feedback is degenerate (>90% same
+                # rating over 10+ feedbacks). Further updates would only push
+                # the rate closer to 1.0/0.0 with no new signal — the strategy
+                # is already effectively blocked or proven via get_blocked_strategies().
+                if await tracker.check_degenerate(opt.task_type, opt.strategy_used):
+                    logger.info(
+                        "Skipping affinity update — degenerate feedback detected "
+                        "for task_type=%s strategy=%s",
+                        opt.task_type, opt.strategy_used,
+                    )
+                else:
+                    await tracker.update_affinity(opt.task_type, opt.strategy_used, rating)
             except Exception:
                 logger.exception(
                     "AdaptationTracker.update_affinity failed for optimization %s — ignoring",

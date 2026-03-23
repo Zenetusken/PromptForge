@@ -61,6 +61,16 @@ async def lifespan(app: FastAPI):
         # Don't prevent startup — log error but continue
         # (templates might be updated before first request)
 
+    # Clean up orphaned strategy affinities (strategies deleted from disk)
+    try:
+        from app.database import async_session_factory
+        from app.services.adaptation_tracker import AdaptationTracker
+        async with async_session_factory() as db:
+            tracker = AdaptationTracker(db)
+            await tracker.cleanup_orphaned_affinities()
+    except Exception as exc:
+        logger.debug("Strategy affinity cleanup skipped: %s", exc)
+
     # Start strategy file watcher
     watcher_task = asyncio.create_task(
         watch_strategy_files(PROMPTS_DIR / "strategies")
@@ -80,7 +90,7 @@ async def lifespan(app: FastAPI):
 
             engine = TaxonomyEngine(
                 embedding_service=EmbeddingService(),
-                provider=app.state.routing.state.provider,
+                provider_resolver=lambda: app.state.routing.state.provider,
             )
             app.state.taxonomy_engine = engine
             set_engine(engine)
