@@ -198,6 +198,24 @@ class StrategyLoader:
         logger.debug("Loaded strategy %s (%d chars)", name, len(body))
         return body
 
+    def normalize_strategy(self, raw: str) -> str:
+        """Normalize a verbose LLM strategy name to a known strategy.
+
+        External LLMs often return rationales or long names instead of the
+        exact strategy identifier. This does a fuzzy substring match against
+        known strategies, defaulting to ``"auto"`` if no match is found.
+        """
+        known = self.list_strategies()
+        if raw in known:
+            return raw
+        lower = raw.lower()
+        for name in known:
+            if name != "auto" and name in lower:
+                logger.info("Strategy normalized: '%s' → '%s'", raw[:80], name)
+                return name
+        logger.info("Strategy normalized: '%s' → 'auto' (no match)", raw[:80])
+        return "auto"
+
     def load_metadata(self, name: str) -> dict[str, Any]:
         """Load frontmatter metadata for a strategy.
 

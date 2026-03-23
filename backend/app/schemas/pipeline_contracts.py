@@ -15,7 +15,7 @@ Every field includes a ``Field(description=...)`` so that schemas derived via
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -59,6 +59,17 @@ class DimensionScores(BaseModel):
                 raise ValueError(f"{name} must be between 1.0 and 10.0, got {value}")
         return self
 
+    _DIMENSIONS: ClassVar[tuple[str, ...]] = ("clarity", "specificity", "structure", "faithfulness", "conciseness")
+
+    @classmethod
+    def from_dict(cls, d: dict[str, float], default: float = 5.0) -> "DimensionScores":
+        """Construct from a dict, using *default* for missing dimensions."""
+        return cls(**{dim: d.get(dim, default) for dim in cls._DIMENSIONS})
+
+    def to_dict(self) -> dict[str, float]:
+        """Export the five dimensions as a plain dict."""
+        return {dim: getattr(self, dim) for dim in self._DIMENSIONS}
+
     @property
     def overall(self) -> float:
         """Mean of the five dimension scores, rounded to 2 decimal places."""
@@ -69,7 +80,7 @@ class DimensionScores(BaseModel):
     def compute_deltas(cls, original: "DimensionScores", optimized: "DimensionScores") -> dict[str, float]:
         return {
             dim: round(getattr(optimized, dim) - getattr(original, dim), 2)
-            for dim in ("clarity", "specificity", "structure", "faithfulness", "conciseness")
+            for dim in cls._DIMENSIONS
         }
 
 

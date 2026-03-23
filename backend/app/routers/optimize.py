@@ -354,6 +354,7 @@ async def passthrough_prepare(
 async def passthrough_save(
     body: PassthroughSaveRequest,
     db: AsyncSession = Depends(get_db),
+    _rate: None = Depends(RateLimit(lambda: settings.OPTIMIZE_RATE_LIMIT)),
 ) -> OptimizationDetail:
     """Save an externally-optimized prompt result.
 
@@ -402,20 +403,16 @@ async def passthrough_save(
             logger.debug("Historical stats unavailable for normalization: %s", exc)
 
         if body.scores:
-            # Hybrid path: external LLM scores + heuristic blending
-            # (mirrors save_result.py hybrid_passthrough logic)
+            # Hybrid path: external LLM scores + heuristic blending.
+            # No bias correction — z-score normalization and dimension-
+            # specific heuristic weights already guard against LLM
+            # overconfidence.
             try:
-                corrected = HeuristicScorer.apply_bias_correction(body.scores)
-                corrected_dims = DimensionScores(
-                    clarity=corrected.get("clarity", 5.0),
-                    specificity=corrected.get("specificity", 5.0),
-                    structure=corrected.get("structure", 5.0),
-                    faithfulness=corrected.get("faithfulness", 5.0),
-                    conciseness=corrected.get("conciseness", 5.0),
+                external_dims = DimensionScores.from_dict(
+                    {k: float(v) for k, v in body.scores.items()},
                 )
-
                 blended_opt = blend_scores(
-                    corrected_dims, heur_optimized, historical_stats,
+                    external_dims, heur_optimized, historical_stats,
                 )
                 opt_dims = blended_opt.to_dimension_scores()
                 scoring_mode = "hybrid_passthrough"
@@ -423,80 +420,36 @@ async def passthrough_save(
                 logger.warning(
                     "Hybrid blending failed, falling back to heuristic: %s", exc,
                 )
-                heur_opt_dims = DimensionScores(
-                    clarity=heur_optimized.get("clarity", 5.0),
-                    specificity=heur_optimized.get("specificity", 5.0),
-                    structure=heur_optimized.get("structure", 5.0),
-                    faithfulness=heur_optimized.get("faithfulness", 5.0),
-                    conciseness=heur_optimized.get("conciseness", 5.0),
-                )
-                blended_opt = blend_scores(
-                    heur_opt_dims, heur_optimized, historical_stats,
-                )
-                opt_dims = blended_opt.to_dimension_scores()
+                opt_dims = DimensionScores.from_dict(heur_optimized)
                 scoring_mode = "heuristic"
         else:
-            # Heuristic-only path (no external scores provided)
-            heur_opt_dims = DimensionScores(
-                clarity=heur_optimized.get("clarity", 5.0),
-                specificity=heur_optimized.get("specificity", 5.0),
-                structure=heur_optimized.get("structure", 5.0),
-                faithfulness=heur_optimized.get("faithfulness", 5.0),
-                conciseness=heur_optimized.get("conciseness", 5.0),
-            )
-            blended_opt = blend_scores(
-                heur_opt_dims, heur_optimized, historical_stats,
-            )
-            opt_dims = blended_opt.to_dimension_scores()
+            # Heuristic-only path — use raw heuristic scores directly.
+            # No blending: z-score normalization is designed for LLM
+            # scores, not model-independent heuristics.
+            opt_dims = DimensionScores.from_dict(heur_optimized)
             scoring_mode = "heuristic"
 
-        # Original scores — always heuristic-only
-        heur_orig_dims = DimensionScores(
-            clarity=heur_original.get("clarity", 5.0),
-            specificity=heur_original.get("specificity", 5.0),
-            structure=heur_original.get("structure", 5.0),
-            faithfulness=heur_original.get("faithfulness", 5.0),
-            conciseness=heur_original.get("conciseness", 5.0),
-        )
-        blended_orig = blend_scores(heur_orig_dims, heur_original, historical_stats)
-        orig_dims = blended_orig.to_dimension_scores()
+        # Original scores — symmetric with optimized path
+        if scoring_mode == "hybrid_passthrough":
+            blended_orig = blend_scores(
+                DimensionScores.from_dict(heur_original),
+                heur_original, historical_stats,
+            )
+            orig_dims = blended_orig.to_dimension_scores()
+        else:
+            orig_dims = DimensionScores.from_dict(heur_original)
 
-        optimized_scores = {
-            "clarity": opt_dims.clarity,
-            "specificity": opt_dims.specificity,
-            "structure": opt_dims.structure,
-            "faithfulness": opt_dims.faithfulness,
-            "conciseness": opt_dims.conciseness,
-        }
-        original_scores = {
-            "clarity": orig_dims.clarity,
-            "specificity": orig_dims.specificity,
-            "structure": orig_dims.structure,
-            "faithfulness": orig_dims.faithfulness,
-            "conciseness": orig_dims.conciseness,
-        }
-        overall = round(sum(optimized_scores.values()) / len(optimized_scores), 2)
-        deltas = {
-            dim: round(optimized_scores[dim] - original_scores[dim], 2)
-            for dim in optimized_scores
-        }
+        optimized_scores = opt_dims.to_dict()
+        original_scores = orig_dims.to_dict()
+        overall = opt_dims.overall
+        deltas = DimensionScores.compute_deltas(orig_dims, opt_dims)
 
     # Normalize strategy if external LLM returned a verbose name
     effective_strategy = opt.strategy_used
     if body.strategy_used:
         from app.services.strategy_loader import StrategyLoader
         strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
-        known = strategy_loader.list_strategies()
-        if body.strategy_used in known:
-            effective_strategy = body.strategy_used
-        else:
-            normalized = "auto"
-            lower = body.strategy_used.lower()
-            for name in known:
-                if name != "auto" and name in lower:
-                    normalized = name
-                    break
-            effective_strategy = normalized
+        effective_strategy = strategy_loader.normalize_strategy(body.strategy_used)
 
     # Update record
     opt.optimized_prompt = body.optimized_prompt
@@ -538,8 +491,8 @@ async def passthrough_save(
     })
 
     logger.info(
-        "Passthrough saved: trace_id=%s overall=%.2f scoring_mode=%s",
-        body.trace_id, overall, scoring_mode,
+        "Passthrough saved: trace_id=%s overall=%s scoring_mode=%s",
+        body.trace_id, f"{overall:.2f}" if overall is not None else "N/A", scoring_mode,
     )
 
     # Passthrough optimizations have no family yet (extraction is async)

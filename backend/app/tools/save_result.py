@@ -46,19 +46,7 @@ async def handle_save_result(
     # Normalize strategy_used — external LLMs often return verbose rationales
     if strategy_used:
         strategy_loader = StrategyLoader(PROMPTS_DIR / "strategies")
-        known = strategy_loader.list_strategies()
-        if strategy_used not in known:
-            normalized = "auto"
-            lower = strategy_used.lower()
-            for name in known:
-                if name != "auto" and name in lower:
-                    normalized = name
-                    break
-            logger.info(
-                "Strategy normalized: '%s' → '%s'",
-                strategy_used[:80], normalized,
-            )
-            strategy_used = normalized
+        strategy_used = strategy_loader.normalize_strategy(strategy_used)
 
     # Check scoring preference
     prefs = PreferencesService(DATA_DIR)
@@ -72,7 +60,6 @@ async def handle_save_result(
     scoring_mode = "skipped" if not scoring_enabled else "heuristic"
 
     if scores and scoring_enabled:
-        scoring_mode = "hybrid_passthrough"
         for k, v in scores.items():
             try:
                 clean_scores[k] = float(v)
@@ -114,39 +101,30 @@ async def handle_save_result(
                 original=opt.raw_prompt if opt and opt.raw_prompt else None,
             )
 
+            # Fetch historical stats for z-score normalization (shared by
+            # both hybrid and original-score blending).
+            historical_stats: dict | None = None
+            try:
+                from app.services.optimization_service import OptimizationService
+                opt_svc = OptimizationService(db)
+                historical_stats = await opt_svc.get_score_distribution(
+                    exclude_scoring_modes=["heuristic"],
+                )
+            except Exception as exc:
+                logger.debug("Could not fetch score distribution: %s", exc)
+
             if clean_scores:
                 try:
-                    corrected = HeuristicScorer.apply_bias_correction(clean_scores)
-                    ide_scores_corrected = DimensionScores(
-                        clarity=corrected.get("clarity", 5.0),
-                        specificity=corrected.get("specificity", 5.0),
-                        structure=corrected.get("structure", 5.0),
-                        faithfulness=corrected.get("faithfulness", 5.0),
-                        conciseness=corrected.get("conciseness", 5.0),
-                    )
-
-                    historical_stats: dict | None = None
-                    try:
-                        from app.services.optimization_service import OptimizationService
-                        opt_svc = OptimizationService(db)
-                        historical_stats = await opt_svc.get_score_distribution(
-                            exclude_scoring_modes=["heuristic"],
-                        )
-                    except Exception as exc:
-                        logger.debug("Could not fetch score distribution: %s", exc)
-
+                    # Build DimensionScores directly from external scores —
+                    # no bias correction.  Z-score normalization (inside
+                    # blend_scores) and dimension-specific heuristic weights
+                    # already guard against LLM overconfidence.
+                    ide_scores = DimensionScores.from_dict(clean_scores)
                     blended = blend_scores(
-                        ide_scores_corrected, heuristic_scores, historical_stats,
+                        ide_scores, heuristic_scores, historical_stats,
                     )
-                    blended_dims = blended.to_dimension_scores()
-                    final_scores = {
-                        "clarity": blended_dims.clarity,
-                        "specificity": blended_dims.specificity,
-                        "structure": blended_dims.structure,
-                        "faithfulness": blended_dims.faithfulness,
-                        "conciseness": blended_dims.conciseness,
-                    }
-
+                    opt_dims = blended.to_dimension_scores()
+                    final_scores = opt_dims.to_dict()
                     heuristic_flags = blended.divergence_flags or []
                     scoring_mode = "hybrid_passthrough"
 
@@ -158,18 +136,28 @@ async def handle_save_result(
                 final_scores = heuristic_scores
                 scoring_mode = "heuristic"
 
-            overall = round(
-                sum(final_scores.values()) / max(len(final_scores), 1), 2,
-            )
+            opt_ds = DimensionScores.from_dict(final_scores)
+            overall = opt_ds.overall
 
+            # Compute original scores and deltas — both sides must use
+            # the same scoring pipeline for symmetric comparison.
             if opt and opt.raw_prompt:
                 original_heur = HeuristicScorer.score_prompt(opt.raw_prompt)
-                original_scores = original_heur
-                deltas = {
-                    dim: round(final_scores[dim] - original_scores[dim], 2)
-                    for dim in final_scores
-                    if dim in original_scores
-                }
+                if scoring_mode == "hybrid_passthrough":
+                    # Blend originals through the same pipeline as optimized
+                    try:
+                        blended_orig = blend_scores(
+                            DimensionScores.from_dict(original_heur),
+                            original_heur, historical_stats,
+                        )
+                        orig_ds = blended_orig.to_dimension_scores()
+                        original_scores = orig_ds.to_dict()
+                    except Exception:
+                        original_scores = original_heur
+                else:
+                    original_scores = original_heur
+                orig_ds = DimensionScores.from_dict(original_scores)
+                deltas = DimensionScores.compute_deltas(orig_ds, opt_ds)
 
         # Truncate codebase context if provided
         context_snapshot = None
