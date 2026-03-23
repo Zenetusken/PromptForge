@@ -95,6 +95,8 @@
       provider: h.provider ?? null,
       version: h.version ?? null,
     });
+    forgeStore.recentErrors = h.recent_errors ?? null;
+    forgeStore.avgDurationMs = h.avg_duration_ms ?? null;
     if (delta.samplingChanged) addToast('created', 'MCP client connected with sampling capability');
   }
 

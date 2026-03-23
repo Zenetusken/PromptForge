@@ -52,6 +52,10 @@ class ForgeStore {
   provider = $state<string | null>(null);
   /** Backend version from health polling. */
   version = $state<string | null>(null);
+  /** Recent error counts from health polling. */
+  recentErrors = $state<{ last_hour: number; last_24h: number } | null>(null);
+  /** Average pipeline duration in ms from health polling. */
+  avgDurationMs = $state<number | null>(null);
 
   /** Canonical routing state updater — both SSE and health poll MUST use this. */
   updateRoutingState(input: {

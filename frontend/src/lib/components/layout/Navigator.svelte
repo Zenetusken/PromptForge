@@ -616,6 +616,20 @@
                   {apiKeyStatus?.configured ? apiKeyStatus.masked_key || 'configured' : 'not set'}
                 </span>
               </div>
+              {#if forgeStore.avgDurationMs != null}
+                <div class="data-row">
+                  <span class="data-label">Avg latency</span>
+                  <span class="data-value font-mono">{forgeStore.avgDurationMs}ms</span>
+                </div>
+              {/if}
+              {#if forgeStore.recentErrors?.last_hour}
+                <div class="data-row">
+                  <span class="data-label">Errors (1h)</span>
+                  <span class="data-value font-mono" style="color: var(--color-neon-red);">
+                    {forgeStore.recentErrors.last_hour}
+                  </span>
+                </div>
+              {/if}
             </div>
             <form class="api-key-form" onsubmit={(e: Event) => { e.preventDefault(); handleSetApiKey(); }} autocomplete="off">
               <input type="text" name="username" value="anthropic-api-key" autocomplete="username" class="sr-only" tabindex="-1" aria-hidden="true" />
