@@ -5,26 +5,26 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Added
-- Unified `ContextEnrichmentService` replacing 5 scattered context resolution call sites with a single `enrich()` entry point
-- `HeuristicAnalyzer` for zero-LLM passthrough classification (task_type, domain, weaknesses, strengths, strategy recommendation)
+- Added unified `ContextEnrichmentService` replacing 5 scattered context resolution call sites with a single `enrich()` entry point
+- Added `HeuristicAnalyzer` for zero-LLM passthrough classification (task_type, domain, weaknesses, strengths, strategy recommendation)
 - Augmented `RepoIndexService` with type-aware structured file outlines and `query_curated_context()` for token-conscious codebase retrieval
-- Passthrough tier now receives analysis summary, codebase context from pre-built index, applied meta-patterns, and task-specific adaptation state
-- New config settings: `INDEX_OUTLINE_MAX_CHARS`, `INDEX_CURATED_MAX_CHARS`, `INDEX_CURATED_MIN_SIMILARITY`, `INDEX_CURATED_MAX_PER_DIR`, `INDEX_DOMAIN_BOOST`
+- Added analysis summary, codebase context from pre-built index, applied meta-patterns, and task-specific adaptation state to passthrough tier
+- Added config settings: `INDEX_OUTLINE_MAX_CHARS`, `INDEX_CURATED_MAX_CHARS`, `INDEX_CURATED_MIN_SIMILARITY`, `INDEX_CURATED_MAX_PER_DIR`, `INDEX_DOMAIN_BOOST`
 - Enhanced `RootsScanner` with subdirectory discovery: `discover_project_dirs()` detects immediate subdirectories containing manifest files (`package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `go.mod`) and skips ignored dirs (`node_modules`, `.venv`, `__pycache__`, etc.)
 - Expanded `GUIDANCE_FILES` list to include `GEMINI.md`, `.clinerules`, and `CONVENTIONS.md`
-- `RootsScanner.scan()` now scans root + manifest-detected subdirectories and deduplicates identical content by SHA256 hash (root copy wins)
+- Updated `RootsScanner.scan()` to scan root + manifest-detected subdirectories and deduplicate identical content by SHA256 hash (root copy wins)
 - Added frontend tier resolver (`routing.svelte.ts`) — unified derived state mirroring the backend's 5-tier priority chain (force_passthrough > force_sampling > internal > auto_sampling > passthrough)
-- Navigator settings panel now adapts to the effective execution tier — Models, Effort, and pipeline feature toggles (Explore/Scoring/Adaptation) are hidden in passthrough mode since they are irrelevant without an LLM
+- Added tier-adaptive Navigator settings panel — Models, Effort, and pipeline feature toggles (Explore/Scoring/Adaptation) are hidden in passthrough mode since they are irrelevant without an LLM
 - Added passthrough workflow guide modal — interactive stepper explaining the 6-step manual passthrough protocol, feature comparison matrix across all three execution tiers, and "don't show on toggle" preference. Triggered on passthrough toggle enable and via help button in PassthroughView header.
 - Exposed `refine_rate_limit` and `database_engine` in `GET /api/settings` endpoint
 - Added Version row to System section (sourced from health polling via `forgeStore.version`)
 - Added Database, Refine rate rows to System section
 - Added Score health (mean, stddev with clustering warning) and Phase durations to System section from health polling
-- Per-phase effort preferences: `pipeline.analyzer_effort`, `pipeline.scorer_effort` (default: `low`)
-- `pipeline.optimizer_effort` now accepts `low` and `medium` (expanded from `high`/`max` only)
+- Added per-phase effort preferences: `pipeline.analyzer_effort`, `pipeline.scorer_effort` (default: `low`)
+- Expanded `pipeline.optimizer_effort` to accept `low` and `medium` (was `high`/`max` only)
 - `cache_ttl` parameter threaded through full provider chain (base → API → CLI → pipeline → refinement)
-- EFFORT section in settings panel with per-phase effort controls (low/medium/high/max)
-- Effort level included in trace logger output for each phase
+- Added EFFORT section in settings panel with per-phase effort controls (low/medium/high/max)
+- Included effort level in trace logger output for each phase
 - Added streaming support for optimize/refine phases via `messages.stream()` + `get_final_message()` — prevents HTTP timeouts on long Opus outputs up to 128K tokens
 - Added `complete_parsed_streaming()` to LLM provider interface with fallback default in base class
 - Added `streaming` parameter to `call_provider_with_retry()` dispatcher
@@ -40,27 +40,27 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ### Changed
 - Shared `EmbeddingService` singleton across taxonomy engine and `ContextEnrichmentService` in both FastAPI and MCP lifespans (was creating duplicate instances)
-- `EnrichedContext.context_sources` now uses `MappingProxyType` for runtime immutability (callers convert to `dict()` at DB boundary)
-- `HeuristicAnalyzer._score_category()` now uses word-boundary regex matching instead of substring search (prevents false positives like "class" matching "classification")
+- Changed `EnrichedContext.context_sources` to use `MappingProxyType` for runtime immutability (callers convert to `dict()` at DB boundary)
+- Changed `HeuristicAnalyzer._score_category()` to use word-boundary regex matching instead of substring search (prevents false positives like "class" matching "classification")
 - Removed unused `prompt_lower` parameter from `_classify_domain()` helper
-- `ContextEnrichmentService.enrich()` now respects `preferences_snapshot["enable_adaptation"]` to skip adaptation state resolution when disabled
+- Updated `ContextEnrichmentService.enrich()` to respect `preferences_snapshot["enable_adaptation"]` to skip adaptation state resolution when disabled
 - Improved error logging when `ContextEnrichmentService` init fails — now explicitly warns that passthrough and pattern resolution will be unavailable
-- Passthrough optimizations now persist `task_type`, `domain`, `intent_label`, and `context_sources` from heuristic analysis (previously hardcoded "general")
+- Persisted `task_type`, `domain`, `intent_label`, and `context_sources` from heuristic analysis for passthrough optimizations (previously hardcoded "general")
 - Added `EnrichedContext` accessor properties (`task_type`, `domain_value`, `intent_label`, `analysis_summary`, `context_sources_dict`) eliminating 20+ repeated null-guard expressions across call sites
 - Added content capping to `ContextEnrichmentService`: codebase context capped at `MAX_CODEBASE_CONTEXT_CHARS` and wrapped in `<untrusted-context>`, adaptation state capped at `MAX_ADAPTATION_CHARS`
-- `HeuristicAnalyzer` keyword signals now match spec: added 8 missing keywords (`database`, `create`, `data`, `pipeline`, `query`, `setup`, `auth`), corrected 5 weights (`write` 0.5→0.6, `design` 0.5→0.7, `API` 0.7→0.8, `index` 0.5→0.6, `deploy` 0.7→0.8)
+- Corrected `HeuristicAnalyzer` keyword signals to match spec: added 8 missing keywords (`database`, `create`, `data`, `pipeline`, `query`, `setup`, `auth`), corrected 5 weights (`write` 0.5→0.6, `design` 0.5→0.7, `API` 0.7→0.8, `index` 0.5→0.6, `deploy` 0.7→0.8)
 - Pre-compiled word-boundary regex patterns at module load time (was recompiling ~100+ patterns per analysis call)
-- `_detect_weaknesses` and `_detect_strengths` now receive pre-computed `has_constraints`/`has_outcome`/`has_audience` flags instead of re-scanning keyword sets
-- `is_question` structural signal now influences analysis classification (boosts analysis type when question form detected)
-- Intent labels for non-general domains now include trailing "task" suffix per spec (e.g. "implement backend coding task")
-- Intent label verb fallback now produces `"{task_type} optimization"` per spec (was `"optimize {task_type} task"`)
+- Updated `_detect_weaknesses` and `_detect_strengths` to receive pre-computed `has_constraints`/`has_outcome`/`has_audience` flags instead of re-scanning keyword sets
+- Used `is_question` structural signal to influence analysis classification (boosts analysis type when question form detected)
+- Updated intent labels for non-general domains to include trailing "task" suffix per spec (e.g. "implement backend coding task")
+- Changed intent label verb fallback to produce `"{task_type} optimization"` per spec (was `"optimize {task_type} task"`)
 - Added "target audience unclear" weakness check for writing/creative prompts (spec compliance)
-- Underspecification threshold raised from 15 to 50 words per spec
-- REST `OptimizeRequest` now includes optional `repo_full_name` field — enables curated codebase context for web UI passthrough optimizations
+- Raised underspecification threshold from 15 to 50 words per spec
+- Added optional `repo_full_name` field to REST `OptimizeRequest` — enables curated codebase context for web UI passthrough optimizations
 - Removed unused `_prompts_dir` and `_data_dir` instance attributes from `ContextEnrichmentService`
-- `WorkspaceIntelligence._detect_stack()` uses `discover_project_dirs()` for monorepo subdirectory scanning
-- `passthrough.md` template expanded with `{{analysis_summary}}`, `{{codebase_context}}`, and `{{applied_patterns}}` sections
-- All optimize/prepare/refine call sites now use unified `ContextEnrichmentService.enrich()` instead of inline context resolution
+- Updated `WorkspaceIntelligence._detect_stack()` to use `discover_project_dirs()` for monorepo subdirectory scanning
+- Expanded `passthrough.md` template with `{{analysis_summary}}`, `{{codebase_context}}`, and `{{applied_patterns}}` sections
+- Migrated all optimize/prepare/refine call sites to use unified `ContextEnrichmentService.enrich()` instead of inline context resolution
 - Suppressed refinement timeline for passthrough results — refinement requires a local provider and would 503
 - Hid stale phase durations from Navigator System section in passthrough mode
 - Changed hardcoded "hybrid" scoring label to dynamic — shows "heuristic" in passthrough mode
@@ -77,10 +77,10 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Added `DimensionScores.from_dict()` / `.to_dict()` helpers — eliminated 11 repeated dict↔model conversion patterns across passthrough code paths
 - Used `DimensionScores.compute_deltas()` and `.overall` instead of manual computation in passthrough save handlers
 - Extracted strategy normalization into `StrategyLoader.normalize_strategy()` — removed duplicated fuzzy matching logic from `save_result.py` and `optimize.py`
-- Pipeline analyze and score phases now use `effort="low"` (was `"medium"`), reducing latency 30-40%
-- Analyze and score max_tokens reduced from 16384 to 4096 (matching actual output size)
-- Scoring system prompt cache TTL extended from 5min to 1h (fewer cache writes)
-- System prompt (`agent-guidance.md`) expanded to 5000+ tokens for cache activation across all providers
+- Changed pipeline analyze and score phases to use `effort="low"` (was `"medium"`), reducing latency 30-40%
+- Reduced analyze and score max_tokens from 16384 to 4096 (matching actual output size)
+- Extended scoring system prompt cache TTL from 5min to 1h (fewer cache writes)
+- Expanded system prompt (`agent-guidance.md`) to 5000+ tokens for cache activation across all providers
 - Raised optimize/refine `max_tokens` cap from 65,536 to 131,072 (safe with streaming)
 - Refactored `anthropic_api.py` — extracted `_build_kwargs()`, `_track_usage()`, `_raise_provider_error()` helpers, eliminating ~70 lines of duplicated error handling
 - Rewrote all 11 MCP tool descriptions for LLM-first consumption with chaining hints (When → Returns → Chain)

@@ -237,7 +237,7 @@ def _build_embedding_text(path: str, outline: FileOutline) -> str:
 _DOMAIN_PATH_PATTERNS: dict[str, list[str]] = {
     "backend": ["backend/", "server/", "api/", "app/"],
     "frontend": ["frontend/", "src/components/", "src/lib/"],
-    "database": ["models/", "migrations/", "alembic/"],
+    "database": ["models/", "migrations/", ".sql", "alembic/"],
     "devops": ["docker", "ci/", ".github/workflows/"],
     "security": ["auth", "security/", "middleware/"],
 }

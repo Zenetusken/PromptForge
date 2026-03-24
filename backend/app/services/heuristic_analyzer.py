@@ -439,7 +439,7 @@ class HeuristicAnalyzer:
                     best_key = max(candidates, key=lambda k: candidates[k].get("approval_rate", 0))
                     return best_key
         except Exception:
-            logger.debug("Adaptation tracker unavailable")
+            logger.debug("Adaptation tracker unavailable", exc_info=True)
 
         # Static fallback
         return _DEFAULT_STRATEGY_MAP.get(task_type, "auto")
