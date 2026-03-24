@@ -811,10 +811,12 @@ describe('Navigator', () => {
     preferencesStore.prefs.pipeline.force_passthrough = true;
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'settings' } });
-    expect(screen.getByText('Scoring')).toBeInTheDocument();
-    // The SCORING section shows "Mode" label with "heuristic" value
+    // Scope to sub-heading to avoid ambiguity with System accordion "Scoring" row
+    expect(screen.getByText('Scoring', { selector: '.sub-heading' })).toBeInTheDocument();
+    // Both CONTEXT and SCORING sections show "heuristic"
+    expect(screen.getByText('Mode')).toBeInTheDocument();
     const modeLabels = screen.getAllByText('heuristic');
-    expect(modeLabels.length).toBeGreaterThanOrEqual(1);
+    expect(modeLabels.length).toBeGreaterThanOrEqual(2);
   });
 
   it('hides Effort section in passthrough mode', () => {
@@ -829,6 +831,20 @@ describe('Navigator', () => {
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'settings' } });
     expect(screen.getByText('Effort')).toBeInTheDocument();
+  });
+
+  it('clicking Adaptation toggle in CONTEXT section calls setPipelineToggle', async () => {
+    const user = userEvent.setup();
+    forgeStore.provider = null;
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    preferencesStore.prefs.pipeline.enable_adaptation = true;
+    const spy = vi.spyOn(preferencesStore, 'setPipelineToggle').mockResolvedValue(undefined);
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    const toggle = screen.getByRole('switch', { name: /Toggle Adaptation/i });
+    await user.click(toggle);
+    expect(spy).toHaveBeenCalledWith('enable_adaptation', false);
+    spy.mockRestore();
   });
 
   // ── Settings — keydown on strategy row ────────────────────────────────────
