@@ -5,6 +5,11 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Added
+- Unified `ContextEnrichmentService` replacing 5 scattered context resolution call sites with a single `enrich()` entry point
+- `HeuristicAnalyzer` for zero-LLM passthrough classification (task_type, domain, weaknesses, strengths, strategy recommendation)
+- Augmented `RepoIndexService` with type-aware structured file outlines and `query_curated_context()` for token-conscious codebase retrieval
+- Passthrough tier now receives analysis summary, codebase context from pre-built index, applied meta-patterns, and task-specific adaptation state
+- New config settings: `INDEX_OUTLINE_MAX_CHARS`, `INDEX_CURATED_MAX_CHARS`, `INDEX_CURATED_MIN_SIMILARITY`, `INDEX_CURATED_MAX_PER_DIR`, `INDEX_DOMAIN_BOOST`
 - Enhanced `RootsScanner` with subdirectory discovery: `discover_project_dirs()` detects immediate subdirectories containing manifest files (`package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `go.mod`) and skips ignored dirs (`node_modules`, `.venv`, `__pycache__`, etc.)
 - Expanded `GUIDANCE_FILES` list to include `GEMINI.md`, `.clinerules`, and `CONVENTIONS.md`
 - `RootsScanner.scan()` now scans root + manifest-detected subdirectories and deduplicates identical content by SHA256 hash (root copy wins)
@@ -32,6 +37,15 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Extracted shared `auto_inject_patterns()` into `services/pattern_injection.py` and `compute_optimize_max_tokens()` into `pipeline_constants.py` — eliminates duplication between internal and sampling pipelines
 - Added optional `domain` and `intent_label` fields to REST `PassthroughSaveRequest` for parity with MCP `synthesis_save_result`
 - Added adaptation state injection to all passthrough prepare paths (REST inline, REST dedicated, MCP `synthesis_prepare_optimization`)
+
+### Changed
+- Passthrough optimizations now persist `task_type`, `domain`, `intent_label`, and `context_sources` from heuristic analysis (previously hardcoded "general")
+- `WorkspaceIntelligence._detect_stack()` uses `discover_project_dirs()` for monorepo subdirectory scanning
+- `passthrough.md` template expanded with `{{analysis_summary}}`, `{{codebase_context}}`, and `{{applied_patterns}}` sections
+- All optimize/prepare/refine call sites now use unified `ContextEnrichmentService.enrich()` instead of inline context resolution
+
+### Removed
+- Removed `resolve_workspace_guidance()` from `tools/_shared.py` (replaced by `ContextEnrichmentService`)
 
 ### Changed
 - Suppressed refinement timeline for passthrough results — refinement requires a local provider and would 503

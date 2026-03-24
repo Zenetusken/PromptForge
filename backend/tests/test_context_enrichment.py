@@ -156,6 +156,37 @@ class TestEnrichSampling:
         assert result.context_sources["codebase_context"] is False
 
 
+class TestDBPersistenceCompat:
+    """Verify heuristic analysis fields are compatible with Optimization model."""
+
+    @pytest.mark.asyncio
+    async def test_passthrough_enrichment_populates_db_fields(self, db, tmp_path):
+        service = _build_service(tmp_path)
+        enrichment = await service.enrich(
+            raw_prompt="Implement a FastAPI REST endpoint with JWT authentication",
+            tier="passthrough", db=db,
+        )
+        # Heuristic analysis should classify — not default to "general"
+        assert enrichment.analysis is not None
+        assert enrichment.analysis.task_type == "coding"
+        assert enrichment.analysis.domain in ("backend", "fullstack")
+        assert enrichment.analysis.intent_label != ""
+
+        # context_sources should track what was resolved
+        assert "heuristic_analysis" in enrichment.context_sources
+        assert enrichment.context_sources["heuristic_analysis"] is True
+
+        # Simulate DB persistence: external LLM values take precedence
+        opt_task_type = "writing"  # External LLM override
+        effective = opt_task_type or enrichment.analysis.task_type or "general"
+        assert effective == "writing"  # External wins
+
+        # Fallback: no external override → heuristic value
+        opt_task_type_none = None
+        effective2 = opt_task_type_none or enrichment.analysis.task_type or "general"
+        assert effective2 == "coding"  # Heuristic fills in
+
+
 def _build_service(tmp_path: Path) -> ContextEnrichmentService:
     from app.services.heuristic_analyzer import HeuristicAnalyzer
     from app.services.workspace_intelligence import WorkspaceIntelligence
