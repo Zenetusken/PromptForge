@@ -8,6 +8,8 @@
   import { scoreColor, taxonomyColor } from '$lib/utils/colors';
   import { formatScore, formatRelativeTime } from '$lib/utils/formatting';
   import { forceSamplingTooltip, forcePassthroughTooltip } from '$lib/utils/mcp-tooltips';
+  import { passthroughGuide } from '$lib/stores/passthrough-guide.svelte';
+  import { routing } from '$lib/stores/routing.svelte';
   import { getSettings, getProviders, getHistory, getOptimization, getApiKey, setApiKey, deleteApiKey, getStrategies, getStrategy, updateStrategy } from '$lib/api/client';
   import type { SettingsResponse, ProvidersResponse, HistoryItem, ApiKeyStatus, StrategyInfo } from '$lib/api/client';
 
@@ -440,7 +442,8 @@
         <span class="section-heading">Settings</span>
       </header>
       <div class="panel-body">
-        <!-- Models (always visible — primary control) -->
+        <!-- Models — hidden in passthrough (no LLM to configure) -->
+        {#if !routing.isPassthrough}
         <div class="sub-section">
           <span class="sub-heading">Models</span>
           <div class="card-terminal">
@@ -464,11 +467,14 @@
             {/each}
           </div>
         </div>
+        {/if}
 
         <!-- Pipeline (always visible — primary control) -->
         <div class="sub-section">
           <span class="sub-heading">Pipeline</span>
           <div class="card-terminal">
+            <!-- Feature toggles — hidden in passthrough (no separate phases) -->
+            {#if !routing.isPassthrough}
             {#each [
               { label: 'Explore', key: 'enable_explore' },
               { label: 'Scoring', key: 'enable_scoring' },
@@ -493,6 +499,7 @@
                 <span class="badge-neon">LEAN MODE</span>
               </div>
             {/if}
+            {/if}
             <!-- Force sampling — rendered separately for disabled-state support -->
             <div class="data-row">
               <span class="data-label" title="Use IDE's LLM for the 3-phase pipeline via MCP sampling">Force IDE sampling</span>
@@ -516,7 +523,11 @@
               <button
                 class="toggle-track"
                 class:toggle-track--on={preferencesStore.pipeline.force_passthrough}
-                onclick={() => preferencesStore.setPipelineToggle('force_passthrough', !preferencesStore.pipeline.force_passthrough)}
+                onclick={() => {
+                  const newVal = !preferencesStore.pipeline.force_passthrough;
+                  preferencesStore.setPipelineToggle('force_passthrough', newVal);
+                  if (newVal) passthroughGuide.show(true);
+                }}
                 role="switch"
                 aria-checked={preferencesStore.pipeline.force_passthrough}
                 aria-label="Toggle Force passthrough"
@@ -530,7 +541,8 @@
           </div>
         </div>
 
-        <!-- Effort (per-phase speed vs quality) -->
+        <!-- Effort — hidden in passthrough (no LLM effort to configure) -->
+        {#if !routing.isPassthrough}
         <div class="sub-section">
           <span class="sub-heading">Effort</span>
           <div class="card-terminal">
@@ -555,6 +567,7 @@
             {/each}
           </div>
         </div>
+        {/if}
 
         <!-- Defaults (always visible — primary control) -->
         <div class="sub-section">

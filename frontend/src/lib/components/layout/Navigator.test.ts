@@ -96,6 +96,9 @@ describe('Navigator', () => {
     preferencesStore._reset();
     githubStore._reset();
     vi.clearAllMocks();
+    // Set a provider so routing resolver sees internal tier (not passthrough),
+    // ensuring Models/Effort/Pipeline toggles are visible in tests.
+    forgeStore.provider = 'claude_cli';
   });
 
   afterEach(() => {

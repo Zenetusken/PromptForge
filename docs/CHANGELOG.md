@@ -4,14 +4,31 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
-### Fixed
-- Removed double-correction (bias + z-score) from passthrough hybrid scoring that systematically deflated passthrough scores vs internal pipeline
-- Fixed asymmetric delta computation in MCP `save_result` — original scores now use the same blending pipeline as optimized scores
-- Fixed heuristic-only passthrough path running through `blend_scores()` z-score normalization (designed for LLM scores only)
-- Guarded `_recover_state()` in routing against corrupt `mcp_session.json` (non-dict JSON crashed MCP server startup)
-- Fixed `available_tiers` truthiness check inconsistency with `resolve_route()` identity check
-- Fixed SSE error/end handlers not recognizing passthrough mode — UI no longer gets stuck in "analyzing" on connection drop
-- Added passthrough session persistence to localStorage — page refresh no longer loses assembled prompt and trace state
+### Added
+- Added frontend tier resolver (`routing.svelte.ts`) — unified derived state mirroring the backend's 5-tier priority chain (force_passthrough > force_sampling > internal > auto_sampling > passthrough)
+- Navigator settings panel now adapts to the effective execution tier — Models, Effort, and pipeline feature toggles (Explore/Scoring/Adaptation) are hidden in passthrough mode since they are irrelevant without an LLM
+- Added passthrough workflow guide modal — interactive stepper explaining the 6-step manual passthrough protocol, feature comparison matrix across all three execution tiers, and "don't show on toggle" preference. Triggered on passthrough toggle enable and via help button in PassthroughView header.
+- Exposed `refine_rate_limit` and `database_engine` in `GET /api/settings` endpoint
+- Added Version row to System section (sourced from health polling via `forgeStore.version`)
+- Added Database, Refine rate rows to System section
+- Added Score health (mean, stddev with clustering warning) and Phase durations to System section from health polling
+- Per-phase effort preferences: `pipeline.analyzer_effort`, `pipeline.scorer_effort` (default: `low`)
+- `pipeline.optimizer_effort` now accepts `low` and `medium` (expanded from `high`/`max` only)
+- `cache_ttl` parameter threaded through full provider chain (base → API → CLI → pipeline → refinement)
+- EFFORT section in settings panel with per-phase effort controls (low/medium/high/max)
+- Effort level included in trace logger output for each phase
+- Added streaming support for optimize/refine phases via `messages.stream()` + `get_final_message()` — prevents HTTP timeouts on long Opus outputs up to 128K tokens
+- Added `complete_parsed_streaming()` to LLM provider interface with fallback default in base class
+- Added `streaming` parameter to `call_provider_with_retry()` dispatcher
+- Added `optimizer_effort` user preference (`"high"` | `"max"`) with validation and sanitization in `PreferencesService`
+- Added 7 new MCP tools completing the autonomous LLM workflow: `synthesis_health`, `synthesis_strategies`, `synthesis_history`, `synthesis_get_optimization`, `synthesis_match`, `synthesis_feedback`, `synthesis_refine`
+- Extracted MCP tool handlers into `backend/app/tools/` package (11 modules) — `mcp_server.py` is now a thin ~420-line registration layer
+- Added `tools/_shared.py` for module-level state management (routing, taxonomy engine) with setter/getter pattern
+- Added per-phase JSONL trace logging to the MCP sampling pipeline (`provider: "mcp_sampling"`, token counts omitted as MCP sampling does not expose them)
+- Added optional `domain` and `intent_label` parameters to `synthesis_save_result` MCP tool (backward-compatible, defaults to `"general"`)
+- Extracted shared `auto_inject_patterns()` into `services/pattern_injection.py` and `compute_optimize_max_tokens()` into `pipeline_constants.py` — eliminates duplication between internal and sampling pipelines
+- Added optional `domain` and `intent_label` fields to REST `PassthroughSaveRequest` for parity with MCP `synthesis_save_result`
+- Added adaptation state injection to all passthrough prepare paths (REST inline, REST dedicated, MCP `synthesis_prepare_optimization`)
 
 ### Changed
 - Increased passthrough scoring rubric cap from 2000 to 4000 chars (all 5 dimension definitions now included)
@@ -25,27 +42,28 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Added `DimensionScores.from_dict()` / `.to_dict()` helpers — eliminated 11 repeated dict↔model conversion patterns across passthrough code paths
 - Used `DimensionScores.compute_deltas()` and `.overall` instead of manual computation in passthrough save handlers
 - Extracted strategy normalization into `StrategyLoader.normalize_strategy()` — removed duplicated fuzzy matching logic from `save_result.py` and `optimize.py`
-
-### Added
-
-### Changed
 - Pipeline analyze and score phases now use `effort="low"` (was `"medium"`), reducing latency 30-40%
 - Analyze and score max_tokens reduced from 16384 to 4096 (matching actual output size)
 - Scoring system prompt cache TTL extended from 5min to 1h (fewer cache writes)
 - System prompt (`agent-guidance.md`) expanded to 5000+ tokens for cache activation across all providers
-
-### Added
-- Exposed `refine_rate_limit` and `database_engine` in `GET /api/settings` endpoint
-- Added Version row to System section (sourced from health polling via `forgeStore.version`)
-- Added Database, Refine rate rows to System section
-- Added Score health (mean, stddev with clustering warning) and Phase durations to System section from health polling
-- Per-phase effort preferences: `pipeline.analyzer_effort`, `pipeline.scorer_effort` (default: `low`)
-- `pipeline.optimizer_effort` now accepts `low` and `medium` (expanded from `high`/`max` only)
-- `cache_ttl` parameter threaded through full provider chain (base → API → CLI → pipeline → refinement)
-- EFFORT section in settings panel with per-phase effort controls (low/medium/high/max)
-- Effort level included in trace logger output for each phase
+- Raised optimize/refine `max_tokens` cap from 65,536 to 131,072 (safe with streaming)
+- Refactored `anthropic_api.py` — extracted `_build_kwargs()`, `_track_usage()`, `_raise_provider_error()` helpers, eliminating ~70 lines of duplicated error handling
+- Rewrote all 11 MCP tool descriptions for LLM-first consumption with chaining hints (When → Returns → Chain)
+- Removed prompt echo from `AnalyzeOutput.optimization_ready` to eliminate token waste on large prompts
+- Extracted shared `build_scores_dict()` helper into `tools/_shared.py` (eliminates duplication in get_optimization + refine handlers)
+- Moved inline imports to module level in health, history, and optimize handlers for consistency
+- Imported `VALID_SORT_COLUMNS` from `OptimizationService` in history handler (single source of truth, no divergence risk)
+- Renamed `_VALID_SORT_COLUMNS` to `VALID_SORT_COLUMNS` in optimization_service.py (public API for cross-module use)
+- Replaced `hasattr` checks with direct attribute access on ORM columns in get_optimization and match handlers
 
 ### Fixed
+- Removed double-correction (bias + z-score) from passthrough hybrid scoring that systematically deflated passthrough scores vs internal pipeline
+- Fixed asymmetric delta computation in MCP `save_result` — original scores now use the same blending pipeline as optimized scores
+- Fixed heuristic-only passthrough path running through `blend_scores()` z-score normalization (designed for LLM scores only)
+- Guarded `_recover_state()` in routing against corrupt `mcp_session.json` (non-dict JSON crashed MCP server startup)
+- Fixed `available_tiers` truthiness check inconsistency with `resolve_route()` identity check
+- Fixed SSE error/end handlers not recognizing passthrough mode — UI no longer gets stuck in "analyzing" on connection drop
+- Added passthrough session persistence to localStorage — page refresh no longer loses assembled prompt and trace state
 - Wired `check_degenerate()` into `FeedbackService.create_feedback()` — degenerate feedback (>90% same rating over 10+ feedbacks) now skips affinity updates to freeze saturated counters
 - Added analyzer strategy validation against disk in both `pipeline.py` and `sampling_pipeline.py` — hallucinated strategy names now fall back to validated fallback instead of silently polluting the DB
 - Added orphaned strategy affinity cleanup at startup — removes `StrategyAffinity` rows for strategies no longer on disk
@@ -62,28 +80,6 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Changed taxonomy engine to use lazy provider resolution — `_provider` is now a property that resolves via callable, ensuring hot-reloaded providers (API key change) are picked up automatically
 - Added 5-minute TTL to workspace intelligence cache — workspace profiles now expire and re-scan manifest files instead of caching indefinitely until restart
 - Added `invalidate_all()` method to explore cache for manual full flush
-
-### Added
-- Added streaming support for optimize/refine phases via `messages.stream()` + `get_final_message()` — prevents HTTP timeouts on long Opus outputs up to 128K tokens
-- Added `complete_parsed_streaming()` to LLM provider interface with fallback default in base class
-- Added `streaming` parameter to `call_provider_with_retry()` dispatcher
-- Added `optimizer_effort` user preference (`"high"` | `"max"`) with validation and sanitization in `PreferencesService`
-- Added 7 new MCP tools completing the autonomous LLM workflow: `synthesis_health`, `synthesis_strategies`, `synthesis_history`, `synthesis_get_optimization`, `synthesis_match`, `synthesis_feedback`, `synthesis_refine`
-- Extracted MCP tool handlers into `backend/app/tools/` package (11 modules) — `mcp_server.py` is now a thin ~420-line registration layer
-- Added `tools/_shared.py` for module-level state management (routing, taxonomy engine) with setter/getter pattern
-
-### Changed
-- Raised optimize/refine `max_tokens` cap from 65,536 to 131,072 (safe with streaming)
-- Refactored `anthropic_api.py` — extracted `_build_kwargs()`, `_track_usage()`, `_raise_provider_error()` helpers, eliminating ~70 lines of duplicated error handling
-- Rewrote all 11 MCP tool descriptions for LLM-first consumption with chaining hints (When → Returns → Chain)
-- Removed prompt echo from `AnalyzeOutput.optimization_ready` to eliminate token waste on large prompts
-- Extracted shared `build_scores_dict()` helper into `tools/_shared.py` (eliminates duplication in get_optimization + refine handlers)
-- Moved inline imports to module level in health, history, and optimize handlers for consistency
-- Imported `VALID_SORT_COLUMNS` from `OptimizationService` in history handler (single source of truth, no divergence risk)
-- Renamed `_VALID_SORT_COLUMNS` to `VALID_SORT_COLUMNS` in optimization_service.py (public API for cross-module use)
-- Replaced `hasattr` checks with direct attribute access on ORM columns in get_optimization and match handlers
-
-### Fixed
 - Fixed double retry on Anthropic API provider — SDK default `max_retries=2` compounded with app-level retry for up to 6 attempts; now set to `max_retries=0`
 - Fixed 3 unprotected LLM call sites (`codebase_explorer`, `taxonomy/labeling`, `taxonomy/family_ops`) missing retry wrappers — transient 429/529 errors silently dropped results
 - Fixed effort parameter passed to Haiku models in both API and CLI providers — Haiku doesn't support effort
@@ -98,15 +94,6 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Removed unused `selectinload` import from refine handler
 - Updated README.md MCP section from 4 to 11 tools with complete tool listing
 - Fixed test patch targets for health and history tests after moving imports to module level
-
-### Added
-- Added per-phase JSONL trace logging to the MCP sampling pipeline (`provider: "mcp_sampling"`, token counts omitted as MCP sampling does not expose them)
-- Added optional `domain` and `intent_label` parameters to `synthesis_save_result` MCP tool (backward-compatible, defaults to `"general"`)
-- Extracted shared `auto_inject_patterns()` into `services/pattern_injection.py` and `compute_optimize_max_tokens()` into `pipeline_constants.py` — eliminates duplication between internal and sampling pipelines
-- Added optional `domain` and `intent_label` fields to REST `PassthroughSaveRequest` for parity with MCP `synthesis_save_result`
-- Added adaptation state injection to all passthrough prepare paths (REST inline, REST dedicated, MCP `synthesis_prepare_optimization`)
-
-### Fixed
 - Fixed REST passthrough save event bus notification missing `intent_label`, `domain`, `domain_raw` fields — taxonomy extraction listener now receives full metadata
 - Fixed passthrough prompt assembly missing adaptation state in all three prepare paths (REST inline, REST dedicated endpoint, MCP tool)
 - Fixed REST dedicated passthrough prepare ignoring `workspace_path` — now scans workspace for guidance files matching the inline passthrough path
