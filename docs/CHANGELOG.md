@@ -22,7 +22,7 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Added Score health (mean, stddev with clustering warning) and Phase durations to System section from health polling
 - Added per-phase effort preferences: `pipeline.analyzer_effort`, `pipeline.scorer_effort` (default: `low`)
 - Expanded `pipeline.optimizer_effort` to accept `low` and `medium` (was `high`/`max` only)
-- `cache_ttl` parameter threaded through full provider chain (base → API → CLI → pipeline → refinement)
+- Threaded `cache_ttl` parameter through full provider chain (base → API → CLI → pipeline → refinement)
 - Added EFFORT section in settings panel with per-phase effort controls (low/medium/high/max)
 - Included effort level in trace logger output for each phase
 - Added streaming support for optimize/refine phases via `messages.stream()` + `get_final_message()` — prevents HTTP timeouts on long Opus outputs up to 128K tokens
