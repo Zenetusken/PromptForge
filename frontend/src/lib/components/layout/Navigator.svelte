@@ -442,8 +442,41 @@
         <span class="section-heading">Settings</span>
       </header>
       <div class="panel-body">
-        <!-- Models — hidden in passthrough (no LLM to configure) -->
-        {#if !routing.isPassthrough}
+        <!-- Models / Context — morphs by tier -->
+        {#if routing.isPassthrough}
+        <div class="sub-section">
+          <span class="sub-heading" style="color: var(--color-neon-yellow);">Context</span>
+          <div class="card-terminal">
+            <div class="data-row">
+              <span class="data-label" style="color: var(--color-text-dim);">Analysis</span>
+              <span class="data-value" style="color: var(--color-neon-yellow); font-size: 10px;">heuristic</span>
+            </div>
+            <div class="data-row">
+              <span class="data-label" style="color: var(--color-text-dim);">Codebase</span>
+              <span class="data-value" style="color: var(--color-neon-yellow); font-size: 10px; {!githubStore.linkedRepo ? 'opacity: 0.4;' : ''}">
+                {githubStore.linkedRepo ? 'via index' : 'no repo'}
+              </span>
+            </div>
+            <div class="data-row">
+              <span class="data-label" style="color: var(--color-text-dim);">Patterns</span>
+              <span class="data-value" style="color: var(--color-neon-yellow); font-size: 10px;">auto-injected</span>
+            </div>
+            <div class="data-row">
+              <span class="data-label">Adaptation</span>
+              <button
+                class="toggle-track"
+                class:toggle-track--on={preferencesStore.pipeline.enable_adaptation}
+                onclick={() => preferencesStore.setPipelineToggle('enable_adaptation', !preferencesStore.pipeline.enable_adaptation)}
+                role="switch"
+                aria-checked={preferencesStore.pipeline.enable_adaptation}
+                aria-label="Toggle Adaptation"
+              >
+                <span class="toggle-thumb"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+        {:else}
         <div class="sub-section">
           <span class="sub-heading">Models</span>
           <div class="card-terminal">
@@ -541,8 +574,18 @@
           </div>
         </div>
 
-        <!-- Effort — hidden in passthrough (no LLM effort to configure) -->
-        {#if !routing.isPassthrough}
+        <!-- Effort / Scoring — morphs by tier -->
+        {#if routing.isPassthrough}
+        <div class="sub-section">
+          <span class="sub-heading" style="color: var(--color-neon-yellow);">Scoring</span>
+          <div class="card-terminal">
+            <div class="data-row">
+              <span class="data-label" style="color: var(--color-text-dim);">Mode</span>
+              <span class="data-value" style="color: var(--color-neon-yellow); font-size: 10px;">heuristic</span>
+            </div>
+          </div>
+        </div>
+        {:else}
         <div class="sub-section">
           <span class="sub-heading">Effort</span>
           <div class="card-terminal">

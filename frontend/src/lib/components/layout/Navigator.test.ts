@@ -720,7 +720,9 @@ describe('Navigator', () => {
     });
     await user.click(screen.getByRole('button', { name: /System/i }));
     await waitFor(() => {
-      expect(screen.getByText('heuristic')).toBeInTheDocument();
+      // Multiple "heuristic" labels exist in passthrough mode (CONTEXT section + System accordion)
+      const heuristicEls = screen.getAllByText('heuristic');
+      expect(heuristicEls.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -753,6 +755,80 @@ describe('Navigator', () => {
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'settings' } });
     expect(screen.getByText('PASSTHROUGH')).toBeInTheDocument();
+  });
+
+  // ── Settings — passthrough CONTEXT section ─────────────────────────────────
+
+  it('shows CONTEXT section with read-only indicators in passthrough mode', () => {
+    forgeStore.provider = null;
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('Context')).toBeInTheDocument();
+    // Multiple "heuristic" labels in passthrough (CONTEXT Analysis + SCORING Mode)
+    expect(screen.getAllByText('heuristic').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('auto-injected')).toBeInTheDocument();
+  });
+
+  it('shows "via index" when GitHub repo is linked in passthrough mode', () => {
+    forgeStore.provider = null;
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    (githubStore as any).linkedRepo = { full_name: 'owner/repo' };
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('via index')).toBeInTheDocument();
+  });
+
+  it('shows "no repo" when no GitHub repo linked in passthrough mode', () => {
+    forgeStore.provider = null;
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    (githubStore as any).linkedRepo = null;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('no repo')).toBeInTheDocument();
+  });
+
+  it('shows Adaptation toggle in CONTEXT section in passthrough mode', () => {
+    forgeStore.provider = null;
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByRole('switch', { name: /Toggle Adaptation/i })).toBeInTheDocument();
+  });
+
+  it('hides Models section in passthrough mode', () => {
+    forgeStore.provider = null;
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.queryByText('Models')).not.toBeInTheDocument();
+  });
+
+  // ── Settings — passthrough SCORING section ─────────────────────────────────
+
+  it('shows SCORING section with heuristic mode in passthrough mode', () => {
+    forgeStore.provider = null;
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('Scoring')).toBeInTheDocument();
+    // The SCORING section shows "Mode" label with "heuristic" value
+    const modeLabels = screen.getAllByText('heuristic');
+    expect(modeLabels.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('hides Effort section in passthrough mode', () => {
+    forgeStore.provider = null;
+    preferencesStore.prefs.pipeline.force_passthrough = true;
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.queryByText('Effort')).not.toBeInTheDocument();
+  });
+
+  it('shows Effort section in internal mode', () => {
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'settings' } });
+    expect(screen.getByText('Effort')).toBeInTheDocument();
   });
 
   // ── Settings — keydown on strategy row ────────────────────────────────────
