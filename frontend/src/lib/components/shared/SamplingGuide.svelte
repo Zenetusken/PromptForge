@@ -25,8 +25,8 @@
       number: 2,
       title: 'You enter a prompt',
       description:
-        'Type or paste your prompt in the editor. The system routes to the IDE\'s LLM instead of the backend provider. Model Hints and Effort Hints steer the IDE\'s model selection.',
-      detail: 'Hints are advisory — the IDE has final say on which model to use',
+        'Type or paste your prompt in the editor. The system routes to the IDE\'s LLM instead of the backend provider. The IDE selects which model to use for each phase.',
+      detail: 'Model used per phase is displayed as each phase completes',
       accent: 'cyan',
     },
     {
@@ -68,7 +68,7 @@
   ariaLabel="MCP sampling workflow guide"
   accentColor="var(--color-neon-green)"
   whyTitle="WHY SAMPLING"
-  whyText="Your IDE's LLM powers the entire optimization pipeline via MCP sampling. Full 3-phase pipeline (analyze, optimize, score) runs through the IDE — no backend provider or API key needed. Model and effort preferences are transmitted as hints; the IDE has final say on model selection."
+  whyText="Your IDE's LLM powers the entire optimization pipeline via MCP sampling. Full 3-phase pipeline (analyze, optimize, score) runs through the IDE — no backend provider or API key needed. The IDE selects the model — the actual model used is captured per phase and displayed in real time."
   steps={STEPS}
   comparison={TIER_COMPARISON}
   highlightColumn="sampling"
