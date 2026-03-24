@@ -610,49 +610,43 @@ async def query_curated_context(
 
 **File**: `prompts/passthrough.md`
 
-Add new optional sections that the enrichment service populates. Section placement order in the template (matching `optimize.md` structure for consistency):
+Add new optional sections that the enrichment service populates. Section placement order places all context before strategy, so the external LLM sees the full picture before receiving optimisation instructions:
 
 ```markdown
-## User Prompt
+<user-prompt>
 {{raw_prompt}}
+</user-prompt>
 
-## Analysis                          <!-- NEW section, after raw_prompt -->
+<analysis-summary>                   <!-- NEW section -->
 {{analysis_summary}}
-<!-- Formatted by HeuristicAnalyzer.format_analysis_summary() as:
-Task type: coding
-Domain: backend
-Weaknesses:
-- lacks constraints — no boundaries for the output
-- no examples to anchor expected output
-Strengths:
-- specific technical context provided
-- well-organized prompt structure
-Recommended strategy: structured-output (confidence: 0.82)
--->
+</analysis-summary>
 
-## Strategy Instructions
-{{strategy_instructions}}
-
-## Codebase Context                  <!-- NEW section, after strategy -->
-{{codebase_context}}
-<!-- From RepoIndexService.query_curated_context() — structured file outlines -->
-
-## Workspace Context
+<codebase-context>                   <!-- Merged workspace + curated index -->
 {{codebase_guidance}}
+{{codebase_context}}                 <!-- NEW variable -->
+</codebase-context>
 
-## Proven Patterns                   <!-- NEW section, after workspace -->
+<applied-patterns>                   <!-- NEW section -->
 {{applied_patterns}}
-<!-- From taxonomy engine auto-injection — bullet list of reusable patterns -->
+</applied-patterns>
 
-## Adaptation History
+<adaptation>
 {{adaptation_state}}
+</adaptation>
 
-## Scoring Rubric
+<strategy>
+{{strategy_instructions}}
+</strategy>
+
+<scoring-rubric>
 {{scoring_rubric_excerpt}}
+</scoring-rubric>
 
 ## Instructions
 [existing passthrough instructions]
 ```
+
+The `PromptLoader` strips empty XML sections when the variable is `None`, so sections gracefully disappear when context is unavailable. Workspace guidance and curated codebase context are co-located in `<codebase-context>` because both provide code-level awareness to the external LLM.
 
 Each new section is wrapped in its own heading. The `PromptLoader` strips empty XML/heading sections when the variable is `None`, so sections gracefully disappear when context is unavailable.
 

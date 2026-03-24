@@ -83,7 +83,7 @@ async def handle_optimize(
             strategy_name=effective_strategy,
             codebase_guidance=enrichment.workspace_guidance,
             adaptation_state=enrichment.adaptation_state,
-            analysis_summary=enrichment.analysis.format_summary() if enrichment.analysis else None,
+            analysis_summary=enrichment.analysis_summary,
             codebase_context=enrichment.codebase_context,
             applied_patterns=enrichment.applied_patterns,
         )
@@ -96,11 +96,11 @@ async def handle_optimize(
                 trace_id=trace_id,
                 provider="mcp_passthrough",
                 strategy_used=strategy_name,
-                task_type=enrichment.analysis.task_type if enrichment.analysis else "general",
-                domain=enrichment.analysis.domain if enrichment.analysis else "general",
-                domain_raw=enrichment.analysis.domain if enrichment.analysis else "general",
-                intent_label=enrichment.analysis.intent_label if enrichment.analysis else "general",
-                context_sources=dict(enrichment.context_sources),
+                task_type=enrichment.task_type,
+                domain=enrichment.domain_value,
+                domain_raw=enrichment.domain_value,
+                intent_label=enrichment.intent_label,
+                context_sources=enrichment.context_sources_dict,
             )
             db.add(pending)
             await db.commit()
@@ -165,7 +165,7 @@ async def handle_optimize(
             codebase_guidance=enrichment.workspace_guidance,
             codebase_context=enrichment.codebase_context,
             adaptation_state=enrichment.adaptation_state,
-            context_sources=dict(enrichment.context_sources),
+            context_sources=enrichment.context_sources_dict,
             repo_full_name=repo_full_name,
             applied_pattern_ids=applied_pattern_ids,
             taxonomy_engine=get_taxonomy_engine(),

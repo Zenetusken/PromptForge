@@ -119,7 +119,7 @@ async def optimize(
             strategy_name=effective_strategy,
             codebase_guidance=enrichment.workspace_guidance,
             adaptation_state=enrichment.adaptation_state,
-            analysis_summary=enrichment.analysis.format_summary() if enrichment.analysis else None,
+            analysis_summary=enrichment.analysis_summary,
             codebase_context=enrichment.codebase_context,
             applied_patterns=enrichment.applied_patterns,
         )
@@ -130,11 +130,11 @@ async def optimize(
             id=opt_id, raw_prompt=body.prompt, status="pending",
             trace_id=trace_id, provider="web_passthrough",
             strategy_used=strategy_name,
-            task_type=enrichment.analysis.task_type if enrichment.analysis else "general",
-            domain=enrichment.analysis.domain if enrichment.analysis else "general",
-            domain_raw=enrichment.analysis.domain if enrichment.analysis else "general",
-            intent_label=enrichment.analysis.intent_label if enrichment.analysis else "general",
-            context_sources=dict(enrichment.context_sources),
+            task_type=enrichment.task_type,
+            domain=enrichment.domain_value,
+            domain_raw=enrichment.domain_value,
+            intent_label=enrichment.intent_label,
+            context_sources=enrichment.context_sources_dict,
         )
         db.add(pending)
         await db.commit()
@@ -174,7 +174,7 @@ async def optimize(
                 codebase_guidance=enrichment.workspace_guidance,
                 codebase_context=enrichment.codebase_context,
                 adaptation_state=enrichment.adaptation_state,
-                context_sources=dict(enrichment.context_sources),
+                context_sources=enrichment.context_sources_dict,
                 applied_pattern_ids=body.applied_pattern_ids,
                 taxonomy_engine=get_taxonomy_engine(app=request.app),
             ):
@@ -326,7 +326,7 @@ async def passthrough_prepare(
         strategy_name=requested_strategy,
         codebase_guidance=enrichment.workspace_guidance,
         adaptation_state=enrichment.adaptation_state,
-        analysis_summary=enrichment.analysis.format_summary() if enrichment.analysis else None,
+        analysis_summary=enrichment.analysis_summary,
         codebase_context=enrichment.codebase_context,
         applied_patterns=enrichment.applied_patterns,
     )
@@ -341,11 +341,11 @@ async def passthrough_prepare(
         trace_id=trace_id,
         provider="web_passthrough",
         strategy_used=strategy_name,
-        task_type=enrichment.analysis.task_type if enrichment.analysis else "general",
-        domain=enrichment.analysis.domain if enrichment.analysis else "general",
-        domain_raw=enrichment.analysis.domain if enrichment.analysis else "general",
-        intent_label=enrichment.analysis.intent_label if enrichment.analysis else "general",
-        context_sources=dict(enrichment.context_sources),
+        task_type=enrichment.task_type,
+        domain=enrichment.domain_value,
+        domain_raw=enrichment.domain_value,
+        intent_label=enrichment.intent_label,
+        context_sources=enrichment.context_sources_dict,
     )
     db.add(pending)
     await db.commit()

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.services.heuristic_analyzer import HeuristicAnalysis, HeuristicAnalyzer
 from app.services.workspace_intelligence import WorkspaceIntelligence
 
@@ -42,6 +43,33 @@ class EnrichedContext:
     context_sources: MappingProxyType[str, bool] = field(
         default_factory=lambda: MappingProxyType({}),
     )
+
+    # -- Convenience accessors (avoid repeated null-guard boilerplate) --
+
+    @property
+    def task_type(self) -> str:
+        """Task type from heuristic analysis, defaulting to 'general'."""
+        return self.analysis.task_type if self.analysis else "general"
+
+    @property
+    def domain_value(self) -> str:
+        """Domain from heuristic analysis, defaulting to 'general'."""
+        return self.analysis.domain if self.analysis else "general"
+
+    @property
+    def intent_label(self) -> str:
+        """Intent label from heuristic analysis, defaulting to 'general'."""
+        return self.analysis.intent_label if self.analysis else "general"
+
+    @property
+    def analysis_summary(self) -> str | None:
+        """Formatted analysis summary for template injection."""
+        return self.analysis.format_summary() if self.analysis else None
+
+    @property
+    def context_sources_dict(self) -> dict[str, bool]:
+        """Plain dict copy of context_sources for JSON/DB serialization."""
+        return dict(self.context_sources)
 
 
 class ContextEnrichmentService:
@@ -81,8 +109,10 @@ class ContextEnrichmentService:
 
         ``preferences_snapshot``, when provided, gates optional layers:
         - ``enable_adaptation``: if ``False``, skip adaptation state resolution.
-        Content capping and ``<untrusted-context>`` wrapping remain the caller's
-        responsibility (currently handled by ``ContextResolver``).
+
+        Content capping is applied inline: ``codebase_context`` is capped at
+        ``MAX_CODEBASE_CONTEXT_CHARS`` and wrapped in ``<untrusted-context>``;
+        ``adaptation_state`` is capped at ``MAX_ADAPTATION_CHARS``.
         """
         prefs = preferences_snapshot or {}
 
@@ -125,7 +155,11 @@ class ContextEnrichmentService:
             raw_prompt, applied_pattern_ids, db,
         )
 
-        # 6. Context sources audit (frozen via MappingProxyType)
+        # 6. Content capping and injection hardening
+        codebase_context = self._cap_codebase_context(codebase_context)
+        adaptation = self._cap_adaptation_state(adaptation)
+
+        # 7. Context sources audit (frozen via MappingProxyType)
         sources = MappingProxyType({
             "workspace_guidance": guidance is not None,
             "codebase_context": codebase_context is not None,
@@ -170,7 +204,11 @@ class ContextEnrichmentService:
         if not roots:
             return None
 
-        return self._workspace_intel.analyze(roots)
+        try:
+            return self._workspace_intel.analyze(roots)
+        except Exception:
+            logger.debug("Workspace guidance resolution failed", exc_info=True)
+            return None
 
     async def _query_index_context(
         self,
@@ -248,3 +286,35 @@ class ContextEnrichmentService:
         except Exception:
             logger.debug("Pattern resolution failed", exc_info=True)
         return None
+
+    # -- Content capping helpers --
+
+    @staticmethod
+    def _cap_codebase_context(text: str | None) -> str | None:
+        """Cap codebase context and wrap in <untrusted-context>."""
+        if text is None:
+            return None
+        capped = text[: settings.MAX_CODEBASE_CONTEXT_CHARS]
+        if len(capped) < len(text):
+            logger.info(
+                "Truncated codebase_context from %d to %d chars",
+                len(text), settings.MAX_CODEBASE_CONTEXT_CHARS,
+            )
+        return (
+            '<untrusted-context source="curated-index">\n'
+            f"{capped}\n"
+            "</untrusted-context>"
+        )
+
+    @staticmethod
+    def _cap_adaptation_state(text: str | None) -> str | None:
+        """Cap adaptation state to configured maximum."""
+        if text is None:
+            return None
+        capped = text[: settings.MAX_ADAPTATION_CHARS]
+        if len(capped) < len(text):
+            logger.info(
+                "Truncated adaptation_state from %d to %d chars",
+                len(text), settings.MAX_ADAPTATION_CHARS,
+            )
+        return capped

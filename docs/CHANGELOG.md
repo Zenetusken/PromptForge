@@ -46,6 +46,13 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - `ContextEnrichmentService.enrich()` now respects `preferences_snapshot["enable_adaptation"]` to skip adaptation state resolution when disabled
 - Improved error logging when `ContextEnrichmentService` init fails — now explicitly warns that passthrough and pattern resolution will be unavailable
 - Passthrough optimizations now persist `task_type`, `domain`, `intent_label`, and `context_sources` from heuristic analysis (previously hardcoded "general")
+- Added `EnrichedContext` accessor properties (`task_type`, `domain_value`, `intent_label`, `analysis_summary`, `context_sources_dict`) eliminating 20+ repeated null-guard expressions across call sites
+- Added content capping to `ContextEnrichmentService`: codebase context capped at `MAX_CODEBASE_CONTEXT_CHARS` and wrapped in `<untrusted-context>`, adaptation state capped at `MAX_ADAPTATION_CHARS`
+- `HeuristicAnalyzer` keyword signals now match spec: added 8 missing keywords (`database`, `create`, `data`, `pipeline`, `query`, `setup`, `auth`), corrected 5 weights (`write` 0.5→0.6, `design` 0.5→0.7, `API` 0.7→0.8, `index` 0.5→0.6, `deploy` 0.7→0.8)
+- Pre-compiled word-boundary regex patterns at module load time (was recompiling ~100+ patterns per analysis call)
+- `_detect_weaknesses` and `_detect_strengths` now receive pre-computed `has_constraints`/`has_outcome` flags instead of re-scanning keyword sets
+- `is_question` structural signal now influences analysis classification (boosts analysis type when question form detected)
+- Intent labels for non-general domains now include trailing "task" suffix per spec (e.g. "implement backend coding task")
 - `WorkspaceIntelligence._detect_stack()` uses `discover_project_dirs()` for monorepo subdirectory scanning
 - `passthrough.md` template expanded with `{{analysis_summary}}`, `{{codebase_context}}`, and `{{applied_patterns}}` sections
 - All optimize/prepare/refine call sites now use unified `ContextEnrichmentService.enrich()` instead of inline context resolution
@@ -83,6 +90,8 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Removed `resolve_workspace_guidance()` from `tools/_shared.py` (replaced by `ContextEnrichmentService`)
 
 ### Fixed
+- Wrapped `_resolve_workspace_guidance` call to `WorkspaceIntelligence.analyze()` in try/except — unguarded call could crash the entire enrichment request on unexpected errors
+- Fixed `test_prune_weekly_best_retention` — used hour offsets instead of day offsets so 3 test snapshots always land in the same ISO week regardless of test execution date
 - Removed double-correction (bias + z-score) from passthrough hybrid scoring that systematically deflated passthrough scores vs internal pipeline
 - Fixed asymmetric delta computation in MCP `save_result` — original scores now use the same blending pipeline as optimized scores
 - Fixed heuristic-only passthrough path running through `blend_scores()` z-score normalization (designed for LLM scores only)

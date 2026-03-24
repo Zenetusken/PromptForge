@@ -62,9 +62,10 @@ _TASK_TYPE_SIGNALS: dict[str, list[tuple[str, float]]] = {
         ("bug", 0.9), ("test", 0.7), ("deploy", 0.6),
         ("class", 0.6), ("module", 0.6), ("code", 0.5),
         ("fix", 0.6), ("build", 0.5), ("migrate", 0.7),
+        ("database", 0.5),
     ],
     "writing": [
-        ("write", 0.5), ("draft", 0.9), ("blog", 1.0),
+        ("write", 0.6), ("draft", 0.9), ("blog", 1.0),
         ("article", 1.0), ("essay", 1.0), ("copy", 0.8),
         ("tone", 0.7), ("audience", 0.6), ("narrative", 0.8),
         ("publish", 0.7), ("editorial", 0.9),
@@ -76,27 +77,29 @@ _TASK_TYPE_SIGNALS: dict[str, list[tuple[str, float]]] = {
         ("investigate", 0.7), ("examine", 0.7),
     ],
     "creative": [
-        ("brainstorm", 1.0), ("imagine", 0.9), ("story", 1.0),
-        ("generate ideas", 0.9), ("creative", 0.8), ("invent", 0.9),
-        ("design", 0.5), ("concept", 0.6),
+        ("create", 0.5), ("brainstorm", 1.0), ("imagine", 0.9),
+        ("story", 1.0), ("generate ideas", 0.9), ("creative", 0.8),
+        ("invent", 0.9), ("design", 0.7), ("concept", 0.6),
     ],
     "data": [
-        ("dataset", 0.9), ("etl", 1.0), ("transform", 0.6),
-        ("schema", 0.7), ("aggregate", 0.8), ("visualization", 0.7),
+        ("data", 0.6), ("dataset", 0.9), ("etl", 1.0),
+        ("pipeline", 0.6), ("transform", 0.6), ("schema", 0.7),
+        ("query", 0.7), ("aggregate", 0.8), ("visualization", 0.7),
         ("csv", 0.8), ("dataframe", 0.9), ("pandas", 0.9),
     ],
     "system": [
         ("system prompt", 1.0), ("agent", 0.7), ("workflow", 0.6),
         ("automate", 0.8), ("orchestrate", 0.9), ("configure", 0.7),
-        ("infrastructure", 0.7), ("prompt engineer", 0.9),
+        ("setup", 0.5), ("infrastructure", 0.7), ("prompt engineer", 0.9),
     ],
 }
 
 _DOMAIN_SIGNALS: dict[str, list[tuple[str, float]]] = {
     "backend": [
-        ("api", 0.7), ("endpoint", 0.9), ("server", 0.8),
+        ("api", 0.8), ("endpoint", 0.9), ("server", 0.8),
         ("middleware", 0.9), ("fastapi", 1.0), ("django", 1.0),
-        ("flask", 1.0), ("authentication", 0.7), ("route", 0.6),
+        ("flask", 1.0), ("database", 0.6), ("authentication", 0.7),
+        ("route", 0.6),
     ],
     "frontend": [
         ("react", 1.0), ("svelte", 1.0), ("component", 0.8),
@@ -105,20 +108,40 @@ _DOMAIN_SIGNALS: dict[str, list[tuple[str, float]]] = {
     ],
     "database": [
         ("sql", 1.0), ("migration", 0.9), ("schema", 0.8),
-        ("query", 0.7), ("index", 0.5), ("postgresql", 1.0),
+        ("query", 0.7), ("index", 0.6), ("postgresql", 1.0),
         ("sqlite", 1.0), ("orm", 0.8), ("table", 0.6),
     ],
     "devops": [
         ("docker", 1.0), ("ci/cd", 1.0), ("kubernetes", 1.0),
         ("terraform", 1.0), ("nginx", 0.9), ("monitoring", 0.7),
-        ("deploy", 0.7), ("pipeline", 0.5),
+        ("deploy", 0.8), ("pipeline", 0.5),
     ],
     "security": [
-        ("encryption", 1.0), ("vulnerability", 1.0), ("cors", 0.9),
-        ("jwt", 0.9), ("oauth", 0.9), ("sanitize", 0.8),
+        ("auth", 0.7), ("encryption", 1.0), ("vulnerability", 1.0),
+        ("cors", 0.9), ("jwt", 0.9), ("oauth", 0.9), ("sanitize", 0.8),
         ("injection", 0.9), ("xss", 1.0), ("csrf", 1.0),
     ],
 }
+
+
+# Pre-compiled word-boundary patterns for all single-word keywords.
+# Built once at import time to avoid recompilation in hot loops.
+_KEYWORD_PATTERNS: dict[str, re.Pattern[str]] = {}
+
+
+def _precompile_keyword_patterns() -> None:
+    """Pre-compile regex for all single-word signals at module load."""
+    for signal_dict in (_TASK_TYPE_SIGNALS, _DOMAIN_SIGNALS):
+        for keywords in signal_dict.values():
+            for keyword, _weight in keywords:
+                kw = keyword.lower()
+                if " " not in kw and kw not in _KEYWORD_PATTERNS:
+                    _KEYWORD_PATTERNS[kw] = re.compile(
+                        r"\b" + re.escape(kw) + r"\b",
+                    )
+
+
+_precompile_keyword_patterns()
 
 
 def _classify_domain(scored: dict[str, float]) -> str:
@@ -207,7 +230,9 @@ class HeuristicAnalyzer:
         # Layer 2: Structural signals
         has_code_blocks = bool(_CODE_BLOCK_RE.search(raw_prompt))
         has_lists = bool(re.search(r"^\s*[-*]\s", raw_prompt, re.MULTILINE))
-        is_question = first_sentence.strip().startswith(("what", "how", "why", "when", "which", "is", "are", "can", "does"))
+        is_question = first_sentence.strip().startswith(
+            ("what", "how", "why", "when", "which", "is", "are", "can", "does"),
+        )
 
         # Boost coding confidence if code blocks present
         if has_code_blocks and task_type != "coding":
@@ -216,9 +241,26 @@ class HeuristicAnalyzer:
                 task_type = "coding"
                 task_confidence = max(task_confidence, coding_score)
 
+        # Boost analysis confidence if question form detected
+        if is_question and task_type not in ("coding", "analysis"):
+            analysis_score = self._score_category(prompt_lower, first_sentence, _TASK_TYPE_SIGNALS.get("analysis", []))
+            if analysis_score > task_confidence * 0.5:
+                task_type = "analysis"
+                task_confidence = max(task_confidence, analysis_score)
+
+        # Pre-compute shared keyword flags for weakness/strength detection
+        has_constraints = any(kw in prompt_lower for kw in _CONSTRAINT_KEYWORDS)
+        has_outcome = any(kw in prompt_lower for kw in _OUTCOME_KEYWORDS)
+
         # Layer 3: Weakness detection
-        weaknesses = self._detect_weaknesses(raw_prompt, prompt_lower, words, task_type)
-        strengths = self._detect_strengths(raw_prompt, prompt_lower, words, has_code_blocks, has_lists)
+        weaknesses = self._detect_weaknesses(
+            raw_prompt, prompt_lower, words, task_type,
+            has_constraints, has_outcome,
+        )
+        strengths = self._detect_strengths(
+            raw_prompt, prompt_lower, words, has_code_blocks, has_lists,
+            has_constraints, has_outcome,
+        )
 
         # Layer 4: Strategy from adaptation tracker
         strategy = await self._select_strategy(db, task_type)
@@ -263,10 +305,10 @@ class HeuristicAnalyzer:
     ) -> float:
         """Score a category by weighted keyword presence with positional boost.
 
-        Uses word-boundary matching to avoid false positives (e.g. "class"
-        should not match "classification").  Multi-word keywords (e.g.
-        "system prompt") use simple substring search since ``\\b`` would
-        not match internal spaces correctly.
+        Uses pre-compiled word-boundary patterns to avoid false positives
+        (e.g. "class" should not match "classification").  Multi-word
+        keywords (e.g. "system prompt") use simple substring search since
+        ``\\b`` would not match internal spaces correctly.
         """
         score = 0.0
         for keyword, weight in keywords:
@@ -276,9 +318,13 @@ class HeuristicAnalyzer:
                 found_in_prompt = kw in prompt_lower
                 found_in_first = kw in first_sentence
             else:
-                pattern = re.compile(r"\b" + re.escape(kw) + r"\b")
-                found_in_prompt = bool(pattern.search(prompt_lower))
-                found_in_first = bool(pattern.search(first_sentence))
+                pat = _KEYWORD_PATTERNS.get(kw)
+                if pat:
+                    found_in_prompt = bool(pat.search(prompt_lower))
+                    found_in_first = bool(pat.search(first_sentence))
+                else:
+                    found_in_prompt = kw in prompt_lower
+                    found_in_first = kw in first_sentence
             if found_in_prompt:
                 # 2x boost if keyword appears in first sentence
                 multiplier = 2.0 if found_in_first else 1.0
@@ -288,6 +334,7 @@ class HeuristicAnalyzer:
     def _detect_weaknesses(
         self, raw_prompt: str, prompt_lower: str,
         words: list[str], task_type: str,
+        has_constraints: bool, has_outcome: bool,
     ) -> list[str]:
         weaknesses: list[str] = []
         word_count = len(words)
@@ -298,12 +345,10 @@ class HeuristicAnalyzer:
             weaknesses.append("vague language reduces precision")
 
         # Missing constraints
-        has_constraints = any(kw in prompt_lower for kw in _CONSTRAINT_KEYWORDS)
         if not has_constraints and word_count > 10:
             weaknesses.append("lacks constraints — no boundaries for the output")
 
         # Missing outcome
-        has_outcome = any(kw in prompt_lower for kw in _OUTCOME_KEYWORDS)
         if not has_outcome and word_count > 15:
             weaknesses.append("no measurable outcome defined")
 
@@ -332,6 +377,7 @@ class HeuristicAnalyzer:
     def _detect_strengths(
         self, raw_prompt: str, prompt_lower: str,
         words: list[str], has_code_blocks: bool, has_lists: bool,
+        has_constraints: bool, has_outcome: bool,
     ) -> list[str]:
         strengths: list[str] = []
 
@@ -340,7 +386,6 @@ class HeuristicAnalyzer:
         if has_lists:
             strengths.append("well-organized prompt structure")
 
-        has_constraints = any(kw in prompt_lower for kw in _CONSTRAINT_KEYWORDS)
         if has_constraints:
             strengths.append("clear constraints defined")
 
@@ -352,7 +397,6 @@ class HeuristicAnalyzer:
         if tech_count >= 2:
             strengths.append("specific technical context provided")
 
-        has_outcome = any(kw in prompt_lower for kw in _OUTCOME_KEYWORDS)
         if has_outcome:
             strengths.append("measurable outcome specified")
 
@@ -425,7 +469,7 @@ class HeuristicAnalyzer:
         """Generate a short 3-6 word intent label."""
         first_verb = self._extract_first_verb(raw_prompt)
         if domain != "general":
-            label = f"{first_verb} {domain} {task_type}"
+            label = f"{first_verb} {domain} {task_type} task"
         else:
             label = f"{first_verb} {task_type} task"
         # Cap at 6 words
