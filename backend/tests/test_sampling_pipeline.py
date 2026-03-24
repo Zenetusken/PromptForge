@@ -1,7 +1,7 @@
 """Tests for the sampling pipeline service (sampling_pipeline.py).
 
-Verifies structured output via tool calling, text fallback, model preference
-resolution, and end-to-end pipeline execution with mocked MCP sampling.
+Verifies structured output via tool calling, text fallback, and end-to-end
+pipeline execution with mocked MCP sampling.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from app.services.sampling_pipeline import (
     SamplingLLMAdapter,
     _parse_text_response,
     _pydantic_to_mcp_tool,
-    _resolve_model_preferences,
     _sampling_request_plain,
     _sampling_request_structured,
 )
@@ -104,91 +103,30 @@ def test_parse_text_response_invalid():
 
 
 # ---------------------------------------------------------------------------
-# _resolve_model_preferences
+# No model_preferences in sampling requests
 # ---------------------------------------------------------------------------
 
 
-def test_model_preferences_resolution_defaults():
-    """Default phase presets produce expected hint names."""
-    prefs = _resolve_model_preferences("analyze")
-    assert len(prefs.hints) == 1
-    assert "sonnet" in prefs.hints[0].name.lower()
-
-    prefs = _resolve_model_preferences("optimize")
-    assert "opus" in prefs.hints[0].name.lower()
-
-    prefs = _resolve_model_preferences("suggest")
-    assert "haiku" in prefs.hints[0].name.lower()
+@pytest.mark.asyncio
+async def test_sampling_request_plain_sends_no_model_preferences():
+    """Verify _sampling_request_plain does not include model_preferences in kwargs."""
+    ctx = _make_ctx(create_message_return=_make_text_result("hello"))
+    text, model_id = await _sampling_request_plain(ctx, "system", "user")
+    call_kwargs = ctx.session.create_message.call_args
+    assert "model_preferences" not in call_kwargs.kwargs
+    assert text == "hello"
 
 
-def test_model_preferences_with_user_override():
-    """User preference overrides the default hint."""
-    snapshot = {"models": {"analyzer": "opus"}}
-    prefs = _resolve_model_preferences("analyze", snapshot)
-
-    # Should use opus model ID instead of default sonnet
-    assert "opus" in prefs.hints[0].name.lower()
-
-
-def test_model_preferences_unknown_phase():
-    """Unknown phase falls back to analyze defaults."""
-    prefs = _resolve_model_preferences("nonexistent_phase")
-    assert len(prefs.hints) == 1
-
-
-def test_model_preferences_effort_defaults():
-    """Default effort per phase matches internal pipeline defaults."""
-    # analyze defaults to low effort
-    prefs = _resolve_model_preferences("analyze")
-    assert prefs.intelligencePriority == 0.3
-    assert prefs.speedPriority == 0.9
-    assert prefs.costPriority == 0.8
-
-    # optimize defaults to high effort
-    prefs = _resolve_model_preferences("optimize")
-    assert prefs.intelligencePriority == 0.8
-    assert prefs.speedPriority == 0.3
-    assert prefs.costPriority == 0.3
-
-
-def test_model_preferences_effort_override():
-    """User effort preference overrides the default priorities."""
-    snapshot = {"models": {}, "pipeline": {"analyzer_effort": "max"}}
-    prefs = _resolve_model_preferences("analyze", snapshot)
-    assert prefs.intelligencePriority == 1.0
-    assert prefs.speedPriority == 0.0
-    assert prefs.costPriority == 0.0
-
-
-def test_model_preferences_effort_medium():
-    """Medium effort produces balanced priorities."""
-    snapshot = {"models": {}, "pipeline": {"optimizer_effort": "medium"}}
-    prefs = _resolve_model_preferences("optimize", snapshot)
-    assert prefs.intelligencePriority == 0.5
-    assert prefs.speedPriority == 0.5
-    assert prefs.costPriority == 0.5
-
-
-def test_model_preferences_suggest_ignores_effort():
-    """Suggest phase ignores user effort — always uses low preset."""
-    snapshot = {"models": {}, "pipeline": {"scorer_effort": "max"}}
-    prefs = _resolve_model_preferences("suggest", snapshot)
-    # Suggest has no pref_key, so effort override is skipped
-    assert prefs.intelligencePriority == 0.3
-    assert prefs.speedPriority == 0.9
-    assert "haiku" in prefs.hints[0].name.lower()
-
-
-def test_model_preferences_combined_model_and_effort():
-    """Both model and effort can be overridden simultaneously."""
-    snapshot = {
-        "models": {"optimizer": "haiku"},
-        "pipeline": {"optimizer_effort": "low"},
-    }
-    prefs = _resolve_model_preferences("optimize", snapshot)
-    assert "haiku" in prefs.hints[0].name.lower()
-    assert prefs.intelligencePriority == 0.3
-    assert prefs.speedPriority == 0.9
+@pytest.mark.asyncio
+async def test_sampling_request_structured_sends_no_model_preferences():
+    """Verify _sampling_request_structured does not include model_preferences."""
+    ctx = _make_ctx(create_message_return=_make_tool_use_result({"name": "x", "value": 1}))
+    result, model_id = await _sampling_request_structured(
+        ctx, "system", "user", _SimpleModel,
+    )
+    call_kwargs = ctx.session.create_message.call_args
+    assert "model_preferences" not in call_kwargs.kwargs
+    assert result.name == "x"
 
 
 # ---------------------------------------------------------------------------

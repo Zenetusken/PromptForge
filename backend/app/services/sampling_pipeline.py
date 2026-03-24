@@ -9,8 +9,8 @@ Key features over a plain text-only sampling call:
   ``Tool`` schema via ``tools`` + ``tool_choice`` so the IDE returns typed JSON.
   Falls back to text parsing if the client does not support tool calling in
   sampling.
-- **Model preferences per phase** — ``ModelPreferences`` hints steer the IDE
-  towards the right model class (e.g. Opus for optimize, Haiku for suggest).
+- **Per-phase model capture** — the actual model used by the IDE is recorded
+  from each ``CreateMessageResult.model`` field and persisted to DB.
 - **Feature parity** with the internal CLI/API pipeline: explore, adaptation,
   applied patterns, suggest, intent drift, z-score normalization.
 
@@ -31,8 +31,6 @@ from typing import Any, TypeVar
 from mcp.server.fastmcp import Context
 from mcp.types import (
     CreateMessageResult,
-    ModelHint,
-    ModelPreferences,
     SamplingMessage,
     TextContent,
     ToolChoice,
@@ -44,7 +42,7 @@ from mcp.types import (
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.config import DATA_DIR, PROMPTS_DIR, settings
+from app.config import DATA_DIR, PROMPTS_DIR
 from app.database import async_session_factory
 from app.models import Optimization
 from app.providers.base import LLMProvider, TokenUsage
@@ -80,38 +78,7 @@ T = TypeVar("T", bound=BaseModel)
 _SAMPLING_TIMEOUT_SECONDS: float = 120.0
 
 # ---------------------------------------------------------------------------
-# Model preference presets per pipeline phase
-# ---------------------------------------------------------------------------
-
-# Default model hint and effort per phase (matches internal pipeline defaults).
-_PHASE_PRESETS: dict[str, dict[str, str]] = {
-    "analyze": {"hint": settings.MODEL_SONNET, "default_effort": "low"},
-    "optimize": {"hint": settings.MODEL_OPUS, "default_effort": "high"},
-    "score": {"hint": settings.MODEL_SONNET, "default_effort": "low"},
-    "suggest": {"hint": settings.MODEL_HAIKU, "default_effort": "low"},
-}
-
-# Map user preference names to full model IDs for hints.
-_PREF_TO_MODEL: dict[str, str] = {
-    "sonnet": settings.MODEL_SONNET,
-    "opus": settings.MODEL_OPUS,
-    "haiku": settings.MODEL_HAIKU,
-}
-
-# Map effort levels to MCP ModelPreferences priority triad.
-# intelligencePriority: higher = prefer smarter/deeper reasoning.
-# speedPriority:        higher = prefer faster responses.
-# costPriority:         higher = prefer cheaper models.
-_EFFORT_PRIORITIES: dict[str, dict[str, float]] = {
-    "low": {"intelligence": 0.3, "speed": 0.9, "cost": 0.8},
-    "medium": {"intelligence": 0.5, "speed": 0.5, "cost": 0.5},
-    "high": {"intelligence": 0.8, "speed": 0.3, "cost": 0.3},
-    "max": {"intelligence": 1.0, "speed": 0.0, "cost": 0.0},
-}
-
-
-# ---------------------------------------------------------------------------
-# Helpers: Pydantic → MCP Tool, model preferences
+# Helpers: Pydantic → MCP Tool
 # ---------------------------------------------------------------------------
 
 
@@ -126,56 +93,6 @@ def _pydantic_to_mcp_tool(
     )
 
 
-def _resolve_model_preferences(
-    phase: str,
-    prefs_snapshot: dict | None = None,
-) -> ModelPreferences:
-    """Map a pipeline phase to ``ModelPreferences`` with model and effort hints.
-
-    Uses the phase preset as baseline.  When a user preference snapshot is
-    provided, model hint and effort priorities are overridden from the user's
-    choices.  Effort is mapped to the MCP priority triad
-    (``intelligencePriority``, ``speedPriority``, ``costPriority``).
-    """
-    preset = _PHASE_PRESETS.get(phase, _PHASE_PRESETS["analyze"])
-
-    # Determine hint model ID (presets use full model IDs from settings)
-    hint_name: str = preset["hint"]
-    effort: str = preset["default_effort"]
-
-    # Phase → preference key mapping (suggest is always fixed).
-    pref_key_map: dict[str, str | None] = {
-        "analyze": "analyzer",
-        "optimize": "optimizer",
-        "score": "scorer",
-        "suggest": None,
-    }
-    pref_key = pref_key_map.get(phase)
-
-    # Override from user preferences when available
-    if prefs_snapshot and pref_key:
-        # Model hint override
-        models_conf = prefs_snapshot.get("models", {})
-        user_choice = models_conf.get(pref_key, "")
-        if user_choice in _PREF_TO_MODEL:
-            hint_name = _PREF_TO_MODEL[user_choice]
-
-        # Effort override
-        pipeline_conf = prefs_snapshot.get("pipeline", {})
-        user_effort = pipeline_conf.get(f"{pref_key}_effort", "")
-        if user_effort in _EFFORT_PRIORITIES:
-            effort = user_effort
-
-    priorities = _EFFORT_PRIORITIES.get(effort, _EFFORT_PRIORITIES["medium"])
-
-    return ModelPreferences(
-        hints=[ModelHint(name=hint_name)],
-        intelligencePriority=priorities["intelligence"],
-        speedPriority=priorities["speed"],
-        costPriority=priorities["cost"],
-    )
-
-
 # ---------------------------------------------------------------------------
 # Sampling request primitives
 # ---------------------------------------------------------------------------
@@ -187,7 +104,6 @@ async def _sampling_request_plain(
     user: str,
     *,
     max_tokens: int = 16384,
-    model_preferences: ModelPreferences | None = None,
 ) -> tuple[str, str]:
     """Send a text-only sampling request.  Returns ``(text, model_id)``."""
     kwargs: dict[str, Any] = {
@@ -195,8 +111,6 @@ async def _sampling_request_plain(
         "system_prompt": system,
         "max_tokens": max_tokens,
     }
-    if model_preferences is not None:
-        kwargs["model_preferences"] = model_preferences
 
     try:
         result: CreateMessageResult = await asyncio.wait_for(
@@ -267,7 +181,6 @@ async def _sampling_request_structured(
     output_model: type[T],
     *,
     max_tokens: int = 16384,
-    model_preferences: ModelPreferences | None = None,
     tool_name: str = "respond",
 ) -> tuple[T, str]:
     """Send a structured sampling request using tool calling.
@@ -291,8 +204,6 @@ async def _sampling_request_structured(
             "tools": [tool],
             "tool_choice": ToolChoice(mode="required"),
         }
-        if model_preferences is not None:
-            kwargs["model_preferences"] = model_preferences
 
         try:
             result: CreateMessageResult = await asyncio.wait_for(
@@ -323,7 +234,6 @@ async def _sampling_request_structured(
         text, model_id = await _sampling_request_plain(
             ctx, system, user,
             max_tokens=max_tokens,
-            model_preferences=model_preferences,
         )
         return _parse_text_response(text, output_model), model_id
 
@@ -366,11 +276,11 @@ class SamplingLLMAdapter(LLMProvider):
     """Minimal ``LLMProvider`` wrapper that delegates to MCP sampling.
 
     Only ``complete_parsed()`` is implemented — sufficient for
-    ``CodebaseExplorer`` which needs a single Haiku synthesis call.
+    ``CodebaseExplorer`` which needs a single synthesis call.  The IDE
+    selects which model to use.
 
     Note: The ``model`` parameter in ``complete_parsed()`` is intentionally
-    ignored.  The adapter always uses Haiku model preferences (the "suggest"
-    phase preset), matching ``CodebaseExplorer``'s design assumption.
+    ignored — the IDE has full control over model selection.
     """
 
     name = "mcp_sampling"
@@ -388,12 +298,10 @@ class SamplingLLMAdapter(LLMProvider):
         max_tokens: int = 16384,
         effort: str | None = None,
     ) -> T:
-        """Delegate to structured sampling with Haiku preferences."""
-        prefs = _resolve_model_preferences("suggest")  # Haiku
+        """Delegate to structured sampling — IDE selects the model."""
         parsed, _model_id = await _sampling_request_structured(
             self._ctx, system_prompt, user_message, output_format,
             max_tokens=max_tokens,
-            model_preferences=prefs,
         )
         return parsed
 
@@ -534,17 +442,15 @@ async def run_sampling_pipeline(
         "available_strategies": available_strategies,
     })
 
-    analyze_prefs = _resolve_model_preferences("analyze", prefs_snapshot)
     try:
         analysis, analyze_model = await _sampling_request_structured(
             ctx, system_prompt, analyze_msg, AnalysisResult,
-            model_preferences=analyze_prefs,
         )
     except Exception:
         # Last resort fallback
         logger.warning("Structured analysis parsing failed, using fallback")
         text, analyze_model = await _sampling_request_plain(
-            ctx, system_prompt, analyze_msg, model_preferences=analyze_prefs,
+            ctx, system_prompt, analyze_msg,
         )
         try:
             analysis = _parse_text_response(text, AnalysisResult)
@@ -697,20 +603,17 @@ async def run_sampling_pipeline(
         "applied_patterns": applied_patterns_text,
     })
 
-    optimize_prefs = _resolve_model_preferences("optimize", prefs_snapshot)
     dynamic_max_tokens = compute_optimize_max_tokens(len(prompt))
     try:
         optimization, optimize_model = await _sampling_request_structured(
             ctx, system_prompt, optimize_msg, OptimizationResult,
             max_tokens=dynamic_max_tokens,
-            model_preferences=optimize_prefs,
         )
     except Exception:
         logger.warning("Structured optimization parsing failed, falling back to text")
         text, optimize_model = await _sampling_request_plain(
             ctx, system_prompt, optimize_msg,
             max_tokens=dynamic_max_tokens,
-            model_preferences=optimize_prefs,
         )
         try:
             optimization = _parse_text_response(text, OptimizationResult)
@@ -770,12 +673,10 @@ async def run_sampling_pipeline(
             f"<prompt-b>\n{prompt_b}\n</prompt-b>"
         )
 
-        score_prefs = _resolve_model_preferences("score", prefs_snapshot)
         scores: ScoreResult | None = None
         try:
             scores, score_model = await _sampling_request_structured(
                 ctx, scoring_system, scorer_msg, ScoreResult,
-                model_preferences=score_prefs,
             )
             model_ids["score"] = score_model
         except Exception:
@@ -851,11 +752,9 @@ async def run_sampling_pipeline(
                 "weaknesses": ", ".join(analysis.weaknesses) if analysis.weaknesses else "none identified",
                 "strategy_used": effective_strategy,
             })
-            suggest_prefs = _resolve_model_preferences("suggest", prefs_snapshot)
             suggest_result, suggest_model = await _sampling_request_structured(
                 ctx, system_prompt, suggest_msg, SuggestionsOutput,
                 max_tokens=2048,
-                model_preferences=suggest_prefs,
             )
             suggestions = suggest_result.suggestions
             model_ids["suggest"] = suggest_model
@@ -1008,10 +907,8 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
         "available_strategies": strategy_loader.format_available(),
     })
 
-    analyze_prefs = _resolve_model_preferences("analyze", prefs_snapshot)
     analysis, _analyze_model = await _sampling_request_structured(
         ctx, system_prompt, analyze_msg, AnalysisResult,
-        model_preferences=analyze_prefs,
     )
 
     analyze_ms = int((time.monotonic() - phase_t0) * 1000)
@@ -1071,12 +968,10 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
     # Compute heuristic scores once (used in both try and except branches)
     heur_scores = HeuristicScorer.score_prompt(prompt)
 
-    score_prefs = _resolve_model_preferences("score", prefs_snapshot)
     _score_model = "unknown"
     try:
         score_result, _score_model = await _sampling_request_structured(
             ctx, scoring_system, scorer_msg, ScoreResult,
-            model_preferences=score_prefs,
         )
         # Hybrid blend
         historical_stats = await _fetch_historical_stats()
