@@ -93,6 +93,10 @@ class OptimizeOutput(BaseModel):
         default=None,
         description="Model ID that performed the optimization (e.g. 'claude-sonnet-4-6').",
     )
+    models_by_phase: dict[str, str] | None = Field(
+        default=None,
+        description="Per-phase model IDs: {analyze: '...', optimize: '...', score: '...'}.",
+    )
     intent_label: str | None = Field(
         default=None,
         description="3-6 word intent label extracted by the analyzer.",
