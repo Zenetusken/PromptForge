@@ -164,6 +164,13 @@ class PipelineOrchestrator:
         prefs = PreferencesService(DATA_DIR)
         prefs_snapshot = prefs.load()
         optimizer_model = prefs.resolve_model("optimizer", prefs_snapshot)
+        analyzer_model = prefs.resolve_model("analyzer", prefs_snapshot)
+        scorer_model = prefs.resolve_model("scorer", prefs_snapshot)
+        model_ids: dict[str, str] = {
+            "analyze": analyzer_model,
+            "optimize": optimizer_model,
+            "score": scorer_model,
+        }
 
         yield PipelineEvent(event="optimization_start", data={"trace_id": trace_id})
 
@@ -273,7 +280,7 @@ class PipelineOrchestrator:
                 max_tokens=ANALYZE_MAX_TOKENS,
             )
 
-            yield PipelineEvent(event="status", data={"stage": "analyze", "state": "complete"})
+            yield PipelineEvent(event="status", data={"stage": "analyze", "state": "complete", "model": analyzer_model})
 
             analyze_duration = int((time.monotonic() - phase_start) * 1000)
             phase_durations["analyze_ms"] = analyze_duration
@@ -466,7 +473,7 @@ class PipelineOrchestrator:
                 streaming=True,
             )
 
-            yield PipelineEvent(event="status", data={"stage": "optimize", "state": "complete"})
+            yield PipelineEvent(event="status", data={"stage": "optimize", "state": "complete", "model": optimizer_model})
 
             optimize_duration = int((time.monotonic() - phase_start) * 1000)
             phase_durations["optimize_ms"] = optimize_duration
@@ -531,7 +538,7 @@ class PipelineOrchestrator:
                     cache_ttl="1h",
                 )
 
-                yield PipelineEvent(event="status", data={"stage": "score", "state": "complete"})
+                yield PipelineEvent(event="status", data={"stage": "score", "state": "complete", "model": scorer_model})
 
                 score_duration = int((time.monotonic() - phase_start) * 1000)
                 phase_durations["score_ms"] = score_duration
@@ -715,6 +722,7 @@ class PipelineOrchestrator:
                 original_scores=original_scores.model_dump() if original_scores else None,
                 score_deltas=deltas,
                 tokens_by_phase=phase_durations,
+                models_by_phase=model_ids,
             )
             db.add(db_opt)
 
@@ -795,6 +803,7 @@ class PipelineOrchestrator:
                 overall_score=optimized_scores.overall if optimized_scores else None,
                 provider=provider.name,
                 model_used=optimizer_model,
+                models_by_phase=model_ids,
                 scoring_mode="hybrid" if optimized_scores else "skipped",
                 duration_ms=duration_ms,
                 status="completed",
@@ -836,6 +845,7 @@ class PipelineOrchestrator:
                     duration_ms=duration_ms,
                     provider=provider.name,
                     model_used=optimizer_model,
+                    models_by_phase=model_ids,
                 )
                 db.add(failed_opt)
                 await db.commit()

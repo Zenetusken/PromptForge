@@ -312,6 +312,10 @@ class PipelineResult(BaseModel):
     )
     provider: str = Field(description="LLM provider name (e.g. 'claude_cli', 'anthropic_api').")
     model_used: str = Field(description="Model ID used for optimization.")
+    models_by_phase: dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-phase model IDs: {analyze: '...', optimize: '...', score: '...'}.",
+    )
     scoring_mode: str = Field(
         description="Scoring method: 'independent', 'hybrid', 'heuristic', or 'skipped'.",
     )
