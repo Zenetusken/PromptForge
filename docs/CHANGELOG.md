@@ -4,7 +4,9 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
-_No changes yet._
+### Changed
+- Updated PassthroughGuide feature matrix to reflect v0.3.1 capabilities: score phase now shows "Heuristic / Hybrid", codebase explore shows "Roots + index", and pattern injection is now marked available (✓) instead of unavailable
+- Expanded PassthroughGuide step 1 description to mention codebase context and applied patterns
 
 ## v0.3.1 — 2026-03-24
 
