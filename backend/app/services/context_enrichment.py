@@ -77,16 +77,14 @@ class ContextEnrichmentService:
 
     def __init__(
         self,
-        prompts_dir: Path,
-        data_dir: Path,
+        prompts_dir: Path,      # noqa: ARG002 — reserved for future template use
+        data_dir: Path,         # noqa: ARG002 — reserved for future preferences use
         workspace_intel: WorkspaceIntelligence,
         embedding_service: Any,          # EmbeddingService
         heuristic_analyzer: HeuristicAnalyzer,
         github_client: Any,              # GitHubClient
         taxonomy_engine: Any | None = None,
     ) -> None:
-        self._prompts_dir = prompts_dir
-        self._data_dir = data_dir
         self._workspace_intel = workspace_intel
         self._embedding_service = embedding_service
         self._heuristic_analyzer = heuristic_analyzer

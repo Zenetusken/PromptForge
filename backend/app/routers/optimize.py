@@ -68,6 +68,7 @@ class OptimizeRequest(BaseModel):
     prompt: str = Field(..., min_length=20, description="The raw prompt to optimize")
     strategy: str | None = Field(None, description="Strategy override")
     workspace_path: str | None = Field(None, description="Workspace root for guidance file scanning")
+    repo_full_name: str | None = Field(None, description="GitHub repo (owner/name) for curated codebase context")
     applied_pattern_ids: list[str] | None = Field(None, description="Pattern IDs to inject into optimizer context")
 
 
@@ -107,6 +108,7 @@ async def optimize(
         tier=decision.tier,
         db=db,
         workspace_path=body.workspace_path,
+        repo_full_name=body.repo_full_name,
         applied_pattern_ids=body.applied_pattern_ids,
         preferences_snapshot=prefs_snapshot,
     )
@@ -317,6 +319,7 @@ async def passthrough_prepare(
         tier="passthrough",
         db=db,
         workspace_path=body.workspace_path,
+        repo_full_name=body.repo_full_name,
         applied_pattern_ids=body.applied_pattern_ids,
     )
 

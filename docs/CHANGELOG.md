@@ -50,9 +50,14 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Added content capping to `ContextEnrichmentService`: codebase context capped at `MAX_CODEBASE_CONTEXT_CHARS` and wrapped in `<untrusted-context>`, adaptation state capped at `MAX_ADAPTATION_CHARS`
 - `HeuristicAnalyzer` keyword signals now match spec: added 8 missing keywords (`database`, `create`, `data`, `pipeline`, `query`, `setup`, `auth`), corrected 5 weights (`write` 0.5→0.6, `design` 0.5→0.7, `API` 0.7→0.8, `index` 0.5→0.6, `deploy` 0.7→0.8)
 - Pre-compiled word-boundary regex patterns at module load time (was recompiling ~100+ patterns per analysis call)
-- `_detect_weaknesses` and `_detect_strengths` now receive pre-computed `has_constraints`/`has_outcome` flags instead of re-scanning keyword sets
+- `_detect_weaknesses` and `_detect_strengths` now receive pre-computed `has_constraints`/`has_outcome`/`has_audience` flags instead of re-scanning keyword sets
 - `is_question` structural signal now influences analysis classification (boosts analysis type when question form detected)
 - Intent labels for non-general domains now include trailing "task" suffix per spec (e.g. "implement backend coding task")
+- Intent label verb fallback now produces `"{task_type} optimization"` per spec (was `"optimize {task_type} task"`)
+- Added "target audience unclear" weakness check for writing/creative prompts (spec compliance)
+- Underspecification threshold raised from 15 to 50 words per spec
+- REST `OptimizeRequest` now includes optional `repo_full_name` field — enables curated codebase context for web UI passthrough optimizations
+- Removed unused `_prompts_dir` and `_data_dir` instance attributes from `ContextEnrichmentService`
 - `WorkspaceIntelligence._detect_stack()` uses `discover_project_dirs()` for monorepo subdirectory scanning
 - `passthrough.md` template expanded with `{{analysis_summary}}`, `{{codebase_context}}`, and `{{applied_patterns}}` sections
 - All optimize/prepare/refine call sites now use unified `ContextEnrichmentService.enrich()` instead of inline context resolution

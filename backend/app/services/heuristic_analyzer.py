@@ -189,6 +189,12 @@ _OUTCOME_KEYWORDS = {
     "should return", "expected", "format",
 }
 
+# Audience/persona keywords
+_AUDIENCE_KEYWORDS = {
+    "audience", "persona", "reader", "user", "customer", "developer",
+    "beginner", "expert", "stakeholder", "team", "client",
+}
+
 
 class HeuristicAnalyzer:
     """Zero-LLM prompt classifier and weakness detector."""
@@ -251,11 +257,12 @@ class HeuristicAnalyzer:
         # Pre-compute shared keyword flags for weakness/strength detection
         has_constraints = any(kw in prompt_lower for kw in _CONSTRAINT_KEYWORDS)
         has_outcome = any(kw in prompt_lower for kw in _OUTCOME_KEYWORDS)
+        has_audience = any(kw in prompt_lower for kw in _AUDIENCE_KEYWORDS)
 
         # Layer 3: Weakness detection
         weaknesses = self._detect_weaknesses(
             raw_prompt, prompt_lower, words, task_type,
-            has_constraints, has_outcome,
+            has_constraints, has_outcome, has_audience,
         )
         strengths = self._detect_strengths(
             raw_prompt, prompt_lower, words, has_code_blocks, has_lists,
@@ -335,6 +342,7 @@ class HeuristicAnalyzer:
         self, raw_prompt: str, prompt_lower: str,
         words: list[str], task_type: str,
         has_constraints: bool, has_outcome: bool,
+        has_audience: bool,
     ) -> list[str]:
         weaknesses: list[str] = []
         word_count = len(words)
@@ -352,8 +360,12 @@ class HeuristicAnalyzer:
         if not has_outcome and word_count > 15:
             weaknesses.append("no measurable outcome defined")
 
-        # Too short for complex task
-        if task_type in ("coding", "data", "system") and word_count < 15:
+        # Missing audience/persona
+        if not has_audience and task_type in ("writing", "creative") and word_count > 10:
+            weaknesses.append("target audience unclear")
+
+        # Too short for complex task (spec: < 50 words for non-trivial)
+        if task_type in ("coding", "data", "system") and word_count < 50:
             weaknesses.append("prompt underspecified for task complexity")
 
         # No examples
@@ -468,7 +480,10 @@ class HeuristicAnalyzer:
     ) -> str:
         """Generate a short 3-6 word intent label."""
         first_verb = self._extract_first_verb(raw_prompt)
-        if domain != "general":
+        if first_verb is None:
+            # Spec fallback: "{task_type} optimization"
+            label = f"{task_type} optimization"
+        elif domain != "general":
             label = f"{first_verb} {domain} {task_type} task"
         else:
             label = f"{first_verb} {task_type} task"
@@ -477,8 +492,8 @@ class HeuristicAnalyzer:
         return " ".join(words)
 
     @staticmethod
-    def _extract_first_verb(text: str) -> str:
-        """Extract the first likely verb from the prompt."""
+    def _extract_first_verb(text: str) -> str | None:
+        """Extract the first likely verb from the prompt, or None if not found."""
         common_verbs = {
             "implement", "create", "build", "write", "design", "refactor",
             "fix", "add", "remove", "update", "migrate", "deploy", "test",
@@ -490,4 +505,4 @@ class HeuristicAnalyzer:
             cleaned = re.sub(r"[^a-z]", "", word)
             if cleaned in common_verbs:
                 return cleaned
-        return "optimize"  # Safe fallback
+        return None
