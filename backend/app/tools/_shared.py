@@ -24,14 +24,17 @@ __all__ = [
     "PROMPTS_DIR",
     "async_session_factory",
     "build_scores_dict",
+    "get_context_service",
     "get_routing",
     "get_taxonomy_engine",
     "resolve_workspace_guidance",
+    "set_context_service",
     "set_routing",
     "set_taxonomy_engine",
 ]
 
 if TYPE_CHECKING:
+    from app.services.context_enrichment import ContextEnrichmentService
     from app.services.routing import RoutingManager
 
 logger = logging.getLogger(__name__)
@@ -43,6 +46,7 @@ logger = logging.getLogger(__name__)
 _routing: RoutingManager | None = None
 _taxonomy_engine = None  # TaxonomyEngine | None (avoid import for startup speed)
 _workspace_intel = WorkspaceIntelligence()
+_context_service: ContextEnrichmentService | None = None
 
 
 def set_routing(routing: RoutingManager | None) -> None:
@@ -67,6 +71,19 @@ def get_routing() -> RoutingManager:
 def get_taxonomy_engine():
     """Return the taxonomy engine (may be None if init failed)."""
     return _taxonomy_engine
+
+
+def set_context_service(svc: ContextEnrichmentService | None) -> None:
+    """Set the module-level context enrichment service (called by lifespan)."""
+    global _context_service
+    _context_service = svc
+
+
+def get_context_service() -> ContextEnrichmentService:
+    """Return the context enrichment service or raise if not initialized."""
+    if _context_service is None:
+        raise ValueError("Context enrichment service not initialized")
+    return _context_service
 
 
 # ---------------------------------------------------------------------------
