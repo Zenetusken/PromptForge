@@ -807,6 +807,7 @@ async def run_sampling_pipeline(
             scoring_mode=scoring_mode,
             duration_ms=elapsed_ms,
             tokens_by_phase=phase_durations,
+            models_by_phase=model_ids,
             context_sources=context_sources,
             status="completed",
             trace_id=trace_id,
@@ -859,6 +860,7 @@ async def run_sampling_pipeline(
         "scoring_mode": scoring_mode,
         "pipeline_mode": "sampling",
         "model_used": model_ids.get("optimize", "unknown"),
+        "models_by_phase": model_ids,
         "suggestions": suggestions,
         "warnings": warnings,
         "intent_label": getattr(analysis, "intent_label", None) or "general",
@@ -1028,6 +1030,7 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
             trace_id=trace_id,
             duration_ms=total_ms,
             tokens_by_phase=phase_durations,
+            models_by_phase={"analyze": _analyze_model, "score": _score_model},
             context_sources=context_sources,
         )
         db.add(opt)
