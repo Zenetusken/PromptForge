@@ -10,6 +10,9 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Navigator MODELS section now morphs in-place to a CONTEXT section in passthrough mode, showing read-only indicators for heuristic analysis, codebase index status, auto-injected patterns, and an Adaptation toggle
 - Navigator EFFORT section now morphs in-place to a SCORING section in passthrough mode, showing read-only "heuristic" mode indicator
 
+### Removed
+- Removed deprecated `preparePassthrough()` API function and `PassthroughPrepareResult` type from frontend client (passthrough now handled inline via SSE)
+
 ## v0.3.1 — 2026-03-24
 
 ### Added
