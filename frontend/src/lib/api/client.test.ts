@@ -18,7 +18,6 @@ import {
   updateStrategy,
   getOptimization,
   savePassthrough,
-  preparePassthrough,
   githubLogin,
   githubMe,
   githubLogout,
@@ -381,23 +380,6 @@ describe('savePassthrough', () => {
     const [, opts] = mock.mock.calls[0];
     const body = JSON.parse((opts as RequestInit).body as string);
     expect(body.changes_summary).toBeUndefined();
-  });
-});
-
-// ── preparePassthrough ──────────────────────────────────────────
-
-describe('preparePassthrough', () => {
-  it('sends POST /optimize/passthrough', async () => {
-    const prepResp = { trace_id: 'trace-1', optimization_id: 'opt-1', assembled_prompt: 'Full prompt', strategy_requested: 'auto' };
-    const mock = mockFetch([{ match: '/optimize/passthrough', response: prepResp }]);
-    const result = await preparePassthrough('My prompt', 'auto');
-    expect(result.trace_id).toBe('trace-1');
-    const [url, opts] = mock.mock.calls[0];
-    expect(url).toContain('/optimize/passthrough');
-    expect((opts as RequestInit).method).toBe('POST');
-    const body = JSON.parse((opts as RequestInit).body as string);
-    expect(body.prompt).toBe('My prompt');
-    expect(body.strategy).toBe('auto');
   });
 });
 

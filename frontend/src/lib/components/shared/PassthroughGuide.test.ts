@@ -113,6 +113,22 @@ describe('PassthroughGuide', () => {
     expect(screen.getByText('Dependencies')).toBeInTheDocument();
   });
 
+  it('feature matrix shows hybrid scoring, index context, and pattern injection for passthrough', () => {
+    passthroughGuide.show(false);
+    render(PassthroughGuide);
+    // Score phase: Heuristic / Hybrid
+    expect(screen.getByText('Heuristic / Hybrid')).toBeInTheDocument();
+    // Codebase explore: Roots + index
+    expect(screen.getByText('Roots + index')).toBeInTheDocument();
+    // Pattern injection passthrough cell: checkmark (not cross)
+    const patternRow = screen
+      .getAllByRole('row')
+      .find((r) => r.textContent?.includes('Pattern injection'));
+    expect(patternRow).toBeDefined();
+    const passthroughCell = patternRow!.querySelectorAll('td')[3];
+    expect(passthroughCell.textContent?.trim()).toBe('\u2713');
+  });
+
   it('renders comparison table headers', () => {
     passthroughGuide.show(false);
     render(PassthroughGuide);

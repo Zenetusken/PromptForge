@@ -27,7 +27,7 @@
       number: 1,
       title: 'System assembles your prompt',
       description:
-        'Strategy template, scoring rubric, workspace context, and adaptation state are injected into a single optimized instruction.',
+        'Strategy template, scoring rubric, workspace context, codebase context, applied patterns, and adaptation state are assembled into a single optimized instruction.',
       detail: 'All context enrichment happens server-side. The assembled prompt appears in the editor.',
       accent: 'yellow',
     },
@@ -81,15 +81,9 @@
   const COMPARISON: ComparisonRow[] = [
     { feature: 'Analyze phase', internal: '\u2713', sampling: '\u2713', passthrough: 'Implicit' },
     { feature: 'Optimize phase', internal: '\u2713', sampling: '\u2713', passthrough: 'Single-shot' },
-    { feature: 'Score phase', internal: 'LLM', sampling: 'LLM', passthrough: 'Heuristic' },
-    { feature: 'Codebase explore', internal: '\u2713', sampling: '\u2713', passthrough: 'Roots only' },
-    {
-      feature: 'Pattern injection',
-      internal: '\u2713',
-      sampling: '\u2713',
-      passthrough: '\u2717',
-      passthroughDim: true,
-    },
+    { feature: 'Score phase', internal: 'LLM', sampling: 'LLM', passthrough: 'Heuristic / Hybrid' },
+    { feature: 'Codebase explore', internal: '\u2713', sampling: '\u2713', passthrough: 'Roots + index' },
+    { feature: 'Pattern injection', internal: '\u2713', sampling: '\u2713', passthrough: '\u2713' },
     {
       feature: 'Suggestions',
       internal: '\u2713',
@@ -742,7 +736,7 @@
 
   .td-passthrough--dim {
     color: var(--color-text-dim);
-    opacity: 0.5;
+    opacity: 0.4;
   }
 
   /* ------------------------------------------------------------------ */

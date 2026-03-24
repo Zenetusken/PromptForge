@@ -270,20 +270,6 @@ export const getOptimization = (traceId: string) =>
 
 // ---- Passthrough (no-provider mode) ----
 
-export interface PassthroughPrepareResult {
-  trace_id: string;
-  optimization_id: string;
-  assembled_prompt: string;
-  strategy_requested: string;
-}
-
-/** @deprecated Use unified POST /api/optimize — backend routes to passthrough via SSE */
-export const preparePassthrough = (prompt: string, strategy: string | null) =>
-  apiFetch<PassthroughPrepareResult>('/optimize/passthrough', {
-    method: 'POST',
-    body: JSON.stringify({ prompt, strategy: strategy || undefined }),
-  });
-
 export const savePassthrough = (traceId: string, optimizedPrompt: string, changesSummary?: string) =>
   apiFetch<OptimizationResult>('/optimize/passthrough/save', {
     method: 'POST',

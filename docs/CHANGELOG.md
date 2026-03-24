@@ -4,7 +4,14 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
-_No changes yet._
+### Changed
+- Updated PassthroughGuide feature matrix to reflect v0.3.1 capabilities: score phase now shows "Heuristic / Hybrid", codebase explore shows "Roots + index", and pattern injection is now marked available (✓) instead of unavailable
+- Expanded PassthroughGuide step 1 description to mention codebase context and applied patterns
+- Navigator MODELS section now morphs in-place to a CONTEXT section in passthrough mode, showing read-only indicators for heuristic analysis, codebase index status, auto-injected patterns, and an Adaptation toggle
+- Navigator EFFORT section now morphs in-place to a SCORING section in passthrough mode, showing read-only "heuristic" mode indicator
+
+### Removed
+- Removed deprecated `preparePassthrough()` API function and `PassthroughPrepareResult` type from frontend client (passthrough now handled inline via SSE)
 
 ## v0.3.1 — 2026-03-24
 
