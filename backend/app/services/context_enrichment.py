@@ -74,7 +74,13 @@ class ContextEnrichmentService:
         applied_pattern_ids: list[str] | None = None,
         preferences_snapshot: dict | None = None,
     ) -> EnrichedContext:
-        """Resolve all context layers for the given tier."""
+        """Resolve all context layers for the given tier.
+
+        Note: ``preferences_snapshot`` is accepted for forward compatibility —
+        callers (Task 7) may use it to gate layers (e.g. ``enable_adaptation``).
+        Content capping and ``<untrusted-context>`` wrapping remain the caller's
+        responsibility (currently handled by ``ContextResolver``).
+        """
 
         # 1. Workspace guidance — ALL tiers, same path
         guidance = await self._resolve_workspace_guidance(mcp_ctx, workspace_path)
