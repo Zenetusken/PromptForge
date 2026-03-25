@@ -932,12 +932,12 @@ describe('Navigator', () => {
     expect(pendingLabels.length).toBe(3);
   });
 
-  it('applies green accent to "IDE Model" heading in sampling mode', () => {
+  it('applies tier accent to "IDE Model" heading in sampling mode', () => {
     setupSamplingMode();
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'settings' } });
     const heading = screen.getByText('IDE Model');
-    expect(heading.classList.contains('sub-heading--sampling')).toBe(true);
+    expect(heading.classList.contains('sub-heading--tier')).toBe(true);
   });
 
   it('uses green VIA MCP SAMPLING badge (not cyan)', () => {

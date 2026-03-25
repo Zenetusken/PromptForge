@@ -453,7 +453,7 @@
         <!-- Models / Context — morphs by tier -->
         {#if routing.isPassthrough}
         <div class="sub-section">
-          <span class="sub-heading sub-heading--passthrough">Context</span>
+          <span class="sub-heading sub-heading--tier">Context</span>
           <div class="card-terminal">
             <div class="data-row">
               <span class="data-label">Analysis</span>
@@ -486,7 +486,7 @@
         </div>
         {:else if routing.isSampling}
         <div class="sub-section">
-          <span class="sub-heading sub-heading--sampling">IDE Model</span>
+          <span class="sub-heading sub-heading--tier">IDE Model</span>
           <div class="card-terminal">
             {#each [
               { label: 'Analyzer', key: 'analyze' },
@@ -504,7 +504,7 @@
         </div>
         {:else}
         <div class="sub-section">
-          <span class="sub-heading">Models</span>
+          <span class="sub-heading sub-heading--tier">Models</span>
           <div class="card-terminal">
             {#each [
               { label: 'Analyzer', phase: 'analyzer' },
@@ -530,7 +530,7 @@
 
         <!-- Pipeline (always visible — primary control) -->
         <div class="sub-section">
-          <span class="sub-heading">Pipeline</span>
+          <span class="sub-heading sub-heading--tier">Pipeline</span>
           <div class="card-terminal">
             <!-- Feature toggles — hidden in passthrough (no separate phases) -->
             {#if !routing.isPassthrough}
@@ -617,7 +617,7 @@
         <!-- Effort — internal tier only (passthrough + sampling handled by Routing/Connection + System) -->
         {#if !routing.isPassthrough && !routing.isSampling}
         <div class="sub-section">
-          <span class="sub-heading">Effort</span>
+          <span class="sub-heading sub-heading--tier">Effort</span>
           <div class="card-terminal">
             {#each [
               { label: 'Analyzer', key: 'analyzer_effort' },
@@ -681,9 +681,7 @@
             aria-expanded={showProvider}
           >
             <span class="accordion-arrow" class:accordion-arrow--open={showProvider}>&#x25B8;</span>
-            <span class="sub-heading"
-              class:sub-heading--sampling={routing.isSampling}
-              class:sub-heading--passthrough={routing.isPassthrough}
+            <span class="sub-heading sub-heading--tier"
             >{routing.isPassthrough ? 'Routing' : routing.isSampling ? 'Connection' : 'Provider'}</span>
             <span class="accordion-summary">
               {#if routing.isPassthrough}
@@ -841,10 +839,7 @@
             aria-expanded={showSystem}
           >
             <span class="accordion-arrow" class:accordion-arrow--open={showSystem}>&#x25B8;</span>
-            <span class="sub-heading"
-              class:sub-heading--sampling={routing.isSampling}
-              class:sub-heading--passthrough={routing.isPassthrough}
-            >System</span>
+            <span class="sub-heading sub-heading--tier">System</span>
             <span class="accordion-summary">v{forgeStore.version ?? '?'}</span>
           </button>
           {#if showSystem}
@@ -1407,13 +1402,10 @@
   }
 
   /* ---- Tier-adaptive utilities ---- */
-  .sub-heading--passthrough {
-    color: var(--color-neon-yellow);
+  .sub-heading--tier {
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
-  .sub-heading--sampling {
-    color: var(--color-neon-green);
-  }
 
   .degradation-notice {
     font-family: var(--font-mono);
