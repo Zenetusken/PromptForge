@@ -12,9 +12,8 @@
   // Tab-aware result: use per-tab cached data when available, fall back to global forge state
   const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
 
-  // Provider and version are fed reactively from forgeStore (via health polls + SSE events)
+  // Provider is fed reactively from forgeStore (via health polls + SSE events)
   const provider = $derived(forgeStore.provider);
-  const version = $derived(forgeStore.version);
 
   // Short provider label for secondary display (e.g. "cli", "api")
   const providerShort = $derived.by(() => {
@@ -49,7 +48,7 @@
   aria-label="Status bar"
   style="background: var(--color-bg-secondary); border-top: 1px solid var(--color-border-subtle);"
 >
-  <!-- Left side: logo + tier badge + provider + version -->
+  <!-- Left side: logo + tier badge + provider -->
   <div class="status-left">
     <div style="opacity: 0.8; margin-right: 2px;">
       <Logo size={14} variant="mark" />
@@ -61,7 +60,6 @@
     {#if forgeStore.mcpDisconnected && !routing.isDegraded && !routing.isAutoFallback}
       <span class="status-disconnected" title="MCP client disconnected">disconnected</span>
     {/if}
-    <span class="status-item">{version ? `v${version}` : ''}</span>
     {#if phaseDisplay}
       <span class="status-phase" class:status-phase-passthrough={phaseDisplay === 'passthrough'} class:status-phase-sampling={routing.isSampling}>{phaseDisplay}...</span>
     {:else if lastScore}
@@ -112,12 +110,7 @@
     gap: 4px;
   }
 
-  .status-item {
-    font-size: 10px;
-    font-family: var(--font-mono);
-    color: var(--color-text-dim);
-    white-space: nowrap;
-  }
+
 
   .status-kbd {
     font-size: 10px;
