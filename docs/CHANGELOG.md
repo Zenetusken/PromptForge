@@ -4,6 +4,14 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Changed
+- Replaced SHA256 Fernet key derivation with PBKDF2-SHA256 (600K iterations) and context-specific salts (ADR-002)
+- Added transparent legacy credential migration via `decrypt_with_migration()`
+- Extended API key format validation to require minimum 40 characters
+
+### Added
+- Added shared `backend/app/utils/crypto.py` with `derive_fernet()` and `decrypt_with_migration()`
+
 ## v0.3.2 — 2026-03-25
 
 ### Added

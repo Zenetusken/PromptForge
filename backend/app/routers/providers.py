@@ -1,7 +1,5 @@
 """Provider info and API key management endpoints."""
 
-import base64
-import hashlib
 import logging
 import shutil
 import time
@@ -10,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.config import DATA_DIR, settings
+from app.utils.crypto import derive_fernet, decrypt_with_migration
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["providers"])
@@ -95,10 +94,10 @@ class ApiKeyRequest(BaseModel):
 async def set_api_key(body: ApiKeyRequest, request: Request) -> ApiKeyStatus:
     """Set or update the Anthropic API key. Persists encrypted to disk."""
     key = body.api_key.strip()
-    if not key.startswith("sk-"):
+    if not key.startswith("sk-") or len(key) < 40:
         raise HTTPException(
             400,
-            "Invalid API key format. Anthropic API keys start with 'sk-'.",
+            "Invalid API key format. Anthropic keys start with 'sk-' and are at least 40 characters.",
         )
 
     _write_api_key(key)
@@ -138,6 +137,9 @@ async def delete_api_key(request: Request) -> ApiKeyStatus:
     return ApiKeyStatus(configured=False, masked_key=None)
 
 
+_API_CREDENTIAL_CONTEXT = "synthesis-api-credential-v1"
+
+
 def _read_api_key() -> str | None:
     """Read API key: check env var first, then encrypted file."""
     if settings.ANTHROPIC_API_KEY:
@@ -146,14 +148,16 @@ def _read_api_key() -> str | None:
     if not cred_file.exists():
         return None
     try:
-        from cryptography.fernet import Fernet
-
         secret = settings.resolve_secret_key()
-        fernet_key = base64.urlsafe_b64encode(
-            hashlib.sha256(secret.encode()).digest()
+
+        def _persist_migrated(new_ciphertext: bytes) -> None:
+            cred_file.write_bytes(new_ciphertext)
+            logger.info("API credential migrated to PBKDF2 encryption")
+
+        plaintext = decrypt_with_migration(
+            cred_file.read_bytes(), secret, _API_CREDENTIAL_CONTEXT, _persist_migrated,
         )
-        f = Fernet(fernet_key)
-        return f.decrypt(cred_file.read_bytes()).decode()
+        return plaintext.decode()
     except Exception:
         logger.warning("Failed to decrypt API credentials")
         return None
@@ -161,13 +165,8 @@ def _read_api_key() -> str | None:
 
 def _write_api_key(key: str) -> None:
     """Encrypt and persist API key to disk."""
-    from cryptography.fernet import Fernet
-
     secret = settings.resolve_secret_key()
-    fernet_key = base64.urlsafe_b64encode(
-        hashlib.sha256(secret.encode()).digest()
-    )
-    f = Fernet(fernet_key)
+    f = derive_fernet(secret, _API_CREDENTIAL_CONTEXT)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     cred_file = DATA_DIR / ".api_credentials"
     cred_file.write_bytes(f.encrypt(key.encode()))

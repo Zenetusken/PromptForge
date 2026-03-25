@@ -669,15 +669,15 @@ class TestApiKeyManagement:
         try:
             resp = await app_client.patch(
                 "/api/provider/api-key",
-                json={"api_key": "sk-test-key-1234567890"},
+                json={"api_key": "sk-ant-test-key-1234567890abcdefghijklmnop"},
             )
             assert resp.status_code == 200
-            assert resp.json()["masked_key"] == "sk-...7890"
+            assert resp.json()["masked_key"] == "sk-...mnop"
 
             # Verify GET returns configured
             resp = await app_client.get("/api/provider/api-key")
             assert resp.json()["configured"] is True
-            assert resp.json()["masked_key"] == "sk-...7890"
+            assert resp.json()["masked_key"] == "sk-...mnop"
         finally:
             settings.ANTHROPIC_API_KEY = original
             # Clean up credential file
@@ -693,7 +693,7 @@ class TestApiKeyManagement:
             # Set first
             await app_client.patch(
                 "/api/provider/api-key",
-                json={"api_key": "sk-test-key-1234567890"},
+                json={"api_key": "sk-ant-test-key-1234567890abcdefghijklmnop"},
             )
             # Delete
             resp = await app_client.delete("/api/provider/api-key")
