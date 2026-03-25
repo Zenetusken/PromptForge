@@ -92,7 +92,7 @@ class HeuristicScorer:
         ):
             score += 1.0
 
-        return round(min(10.0, score), 2)
+        return round(max(1.0, min(10.0, score)), 2)
 
     @staticmethod
     def heuristic_conciseness(prompt: str) -> float:
@@ -169,7 +169,7 @@ class HeuristicScorer:
             1 for pattern, flags in checks if re.search(pattern, prompt, flags)
         )
         score = 2.0 + hits * 1.3
-        return round(min(10.0, score), 2)
+        return round(max(1.0, min(10.0, score)), 2)
 
     @staticmethod
     def heuristic_clarity(prompt: str) -> float:

@@ -1179,3 +1179,287 @@ class TestEnrichedPassthrough:
         )
         assert "auth.py" in assembled
         assert "relevance: 0.87" in assembled
+
+
+# ---------------------------------------------------------------------------
+# Domain validation whitelist
+# ---------------------------------------------------------------------------
+
+
+class TestDomainValidation:
+    """Verify that domain is validated against the VALID_DOMAINS whitelist."""
+
+    async def _prepare(self, app_client, prompt=VALID_PROMPT):
+        resp = await app_client.post(
+            "/api/optimize/passthrough", json={"prompt": prompt},
+        )
+        assert resp.status_code == 200
+        return resp.json()
+
+    async def test_save_valid_domain_is_accepted(self, app_client, db_session):
+        """Known domain values are stored as-is."""
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "domain": "backend",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["domain"] == "backend"
+
+        # Verify DB persistence
+        result = await db_session.execute(
+            select(Optimization).where(Optimization.trace_id == prep["trace_id"])
+        )
+        opt = result.scalar_one()
+        assert opt.domain == "backend"
+
+    async def test_save_invalid_domain_falls_back_to_general(self, app_client, db_session):
+        """Unknown domain values are replaced with 'general'."""
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "domain": "hacking",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["domain"] == "general"
+
+    async def test_save_invalid_domain_preserves_raw_in_domain_raw(self, app_client, db_session):
+        """Invalid domain is rejected for domain but preserved in domain_raw."""
+        prep = await self._prepare(app_client)
+        await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "domain": "custom_domain",
+            },
+        )
+        result = await db_session.execute(
+            select(Optimization).where(Optimization.trace_id == prep["trace_id"])
+        )
+        opt = result.scalar_one()
+        assert opt.domain == "general"
+        assert opt.domain_raw == "custom_domain"
+
+    async def test_save_all_valid_domains_accepted(self, app_client):
+        """Every valid domain value is accepted without fallback."""
+        from app.dependencies.rate_limit import _storage
+
+        valid_domains = ["backend", "frontend", "database", "devops", "security", "fullstack", "general"]
+        for domain in valid_domains:
+            _storage.reset()  # Avoid 429 across 7 iterations
+            prep = await self._prepare(app_client)
+            resp = await app_client.post(
+                "/api/optimize/passthrough/save",
+                json={
+                    "trace_id": prep["trace_id"],
+                    "optimized_prompt": LONG_OPTIMIZED,
+                    "domain": domain,
+                },
+            )
+            assert resp.status_code == 200
+            assert resp.json()["domain"] == domain, f"Domain '{domain}' was not accepted"
+
+
+# ---------------------------------------------------------------------------
+# Intent label length cap
+# ---------------------------------------------------------------------------
+
+
+class TestIntentLabelValidation:
+    """Verify intent_label is capped at 100 characters."""
+
+    async def _prepare(self, app_client, prompt=VALID_PROMPT):
+        resp = await app_client.post(
+            "/api/optimize/passthrough", json={"prompt": prompt},
+        )
+        assert resp.status_code == 200
+        return resp.json()
+
+    async def test_save_long_intent_label_truncated(self, app_client, db_session):
+        """Intent labels exceeding 100 chars are truncated."""
+        long_label = "a" * 200
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "intent_label": long_label,
+            },
+        )
+        assert resp.status_code == 200
+        result = await db_session.execute(
+            select(Optimization).where(Optimization.trace_id == prep["trace_id"])
+        )
+        opt = result.scalar_one()
+        assert len(opt.intent_label) == 100
+
+    async def test_save_short_intent_label_unchanged(self, app_client, db_session):
+        """Short intent labels pass through unmodified."""
+        label = "refactor auth middleware"
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "intent_label": label,
+            },
+        )
+        assert resp.status_code == 200
+        result = await db_session.execute(
+            select(Optimization).where(Optimization.trace_id == prep["trace_id"])
+        )
+        opt = result.scalar_one()
+        assert opt.intent_label == label
+
+
+# ---------------------------------------------------------------------------
+# Passthrough SSE inline event format
+# ---------------------------------------------------------------------------
+
+
+class TestPassthroughSSEInline:
+    """Verify the inline passthrough SSE stream from POST /api/optimize."""
+
+    @staticmethod
+    def _parse_sse_events(text: str) -> list[dict]:
+        """Parse SSE data lines into event dicts.
+
+        format_sse() emits: ``data: {"event": "...", ...}\\n\\n``
+        The event type is embedded in the JSON payload, not as a separate ``event:`` line.
+        """
+        import json as _json
+
+        events = []
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("data: "):
+                events.append(_json.loads(line[len("data: "):]))
+        return events
+
+    async def test_optimize_passthrough_tier_streams_sse(self, app_client):
+        """POST /api/optimize with no provider streams routing + passthrough SSE events."""
+        app_client._transport.app.state.routing.set_provider(None)
+        resp = await app_client.post(
+            "/api/optimize",
+            json={"prompt": VALID_PROMPT},
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+
+        events = self._parse_sse_events(resp.text)
+
+        # Should have exactly 2 events: routing + passthrough
+        assert len(events) == 2
+        assert events[0]["event"] == "routing"
+        assert events[0]["tier"] == "passthrough"
+        assert events[1]["event"] == "passthrough"
+        assert "assembled_prompt" in events[1]
+        assert "trace_id" in events[1]
+        assert "strategy" in events[1]
+        assert VALID_PROMPT in events[1]["assembled_prompt"]
+
+    async def test_optimize_passthrough_sse_has_valid_trace_id(self, app_client):
+        """The passthrough SSE trace_id is a valid UUID."""
+        app_client._transport.app.state.routing.set_provider(None)
+        resp = await app_client.post(
+            "/api/optimize",
+            json={"prompt": VALID_PROMPT},
+        )
+        events = self._parse_sse_events(resp.text)
+        passthrough_events = [e for e in events if e.get("event") == "passthrough"]
+        assert len(passthrough_events) == 1
+        uuid.UUID(passthrough_events[0]["trace_id"])  # Validates UUID format
+
+
+# ---------------------------------------------------------------------------
+# Heuristic scorer clamping consistency
+# ---------------------------------------------------------------------------
+
+
+class TestHeuristicScorerClamping:
+    """Verify all heuristic scorer methods clamp to [1.0, 10.0]."""
+
+    def test_structure_minimum_is_clamped(self):
+        """heuristic_structure returns >= 1.0 even for empty input."""
+        score = HeuristicScorer.heuristic_structure("")
+        assert score >= 1.0
+
+    def test_structure_maximum_is_clamped(self):
+        """heuristic_structure returns <= 10.0 even for maximally structured input."""
+        prompt = (
+            "# H1\n## H2\n### H3\n"
+            "- item 1\n- item 2\n- item 3\n"
+            "<tag></tag><other></other>\n"
+            "Output format: json schema yaml xml markdown\n"
+        )
+        score = HeuristicScorer.heuristic_structure(prompt)
+        assert 1.0 <= score <= 10.0
+
+    def test_specificity_minimum_is_clamped(self):
+        """heuristic_specificity returns >= 1.0 for minimal input."""
+        score = HeuristicScorer.heuristic_specificity("")
+        assert score >= 1.0
+
+    def test_conciseness_minimum_is_clamped(self):
+        """heuristic_conciseness returns >= 1.0 for filler-heavy input."""
+        filler_heavy = " ".join(
+            ["please note that", "it is very important to", "basically", "essentially"] * 10
+        )
+        score = HeuristicScorer.heuristic_conciseness(filler_heavy)
+        assert score >= 1.0
+
+    def test_clarity_minimum_is_clamped(self):
+        """heuristic_clarity returns >= 1.0 for ambiguous input."""
+        ambiguous = "maybe something stuff things etc perhaps somehow"
+        score = HeuristicScorer.heuristic_clarity(ambiguous)
+        assert score >= 1.0
+
+    def test_all_dimensions_have_consistent_range(self):
+        """All score_prompt dimensions fall within [1.0, 10.0]."""
+        prompts = [
+            "",
+            "x",
+            "Write a function",
+            LONG_OPTIMIZED,
+            "a " * 10000,  # Very long prompt
+        ]
+        for prompt in prompts:
+            scores = HeuristicScorer.score_prompt(prompt)
+            for dim, val in scores.items():
+                assert 1.0 <= val <= 10.0, f"{dim}={val} out of [1.0, 10.0] for prompt[:50]={prompt[:50]!r}"
+
+
+# ---------------------------------------------------------------------------
+# VALID_DOMAINS shared constant
+# ---------------------------------------------------------------------------
+
+
+class TestValidDomainsConstant:
+    """Verify VALID_DOMAINS is consistent across all consumers."""
+
+    def test_pipeline_constants_exports_valid_domains(self):
+        from app.services.pipeline_constants import VALID_DOMAINS
+        assert isinstance(VALID_DOMAINS, set)
+        assert "backend" in VALID_DOMAINS
+        assert "general" in VALID_DOMAINS
+
+    def test_router_and_tools_use_same_constant(self):
+        """Both optimize router and save_result tool import from pipeline_constants."""
+        from app.routers.optimize import VALID_DOMAINS as router_domains
+        from app.services.pipeline_constants import VALID_DOMAINS as canonical
+        from app.tools.save_result import VALID_DOMAINS as tool_domains
+        assert router_domains is canonical
+        assert tool_domains is canonical

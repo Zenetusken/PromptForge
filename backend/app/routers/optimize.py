@@ -16,6 +16,7 @@ from app.models import Optimization, OptimizationPattern
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.passthrough import assemble_passthrough_prompt
 from app.services.pipeline import PipelineOrchestrator
+from app.services.pipeline_constants import VALID_DOMAINS
 from app.services.preferences import PreferencesService
 from app.services.taxonomy import get_engine as get_taxonomy_engine
 from app.utils.sse import format_sse
@@ -412,7 +413,7 @@ async def passthrough_save(
             from app.services.optimization_service import OptimizationService
             opt_svc = OptimizationService(db)
             historical_stats = await opt_svc.get_score_distribution(
-                exclude_scoring_modes=["heuristic"],
+                exclude_scoring_modes=["heuristic", "hybrid_passthrough"],
             )
         except Exception as exc:
             logger.debug("Historical stats unavailable for normalization: %s", exc)
@@ -424,7 +425,7 @@ async def passthrough_save(
             # overconfidence.
             try:
                 external_dims = DimensionScores.from_dict(
-                    {k: float(v) for k, v in body.scores.items()},
+                    {k: max(1.0, min(10.0, float(v))) for k, v in body.scores.items()},
                 )
                 blended_opt = blend_scores(
                     external_dims, heur_optimized, historical_stats,
@@ -471,9 +472,13 @@ async def passthrough_save(
     opt.changes_summary = body.changes_summary or ""
     opt.task_type = body.task_type or opt.task_type or "general"
     opt.strategy_used = effective_strategy
-    opt.domain = body.domain or opt.domain or "general"
+    validated_domain = (
+        body.domain if body.domain in VALID_DOMAINS
+        else (opt.domain if opt.domain in VALID_DOMAINS else "general")
+    )
+    opt.domain = validated_domain
     opt.domain_raw = body.domain or opt.domain_raw or "general"
-    opt.intent_label = body.intent_label or opt.intent_label or "general"
+    opt.intent_label = (body.intent_label or opt.intent_label or "general")[:100]
     if optimized_scores:
         opt.score_clarity = optimized_scores["clarity"]
         opt.score_specificity = optimized_scores["specificity"]
