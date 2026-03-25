@@ -270,6 +270,8 @@
 <aside
   class="navigator"
   style="background: var(--color-bg-secondary); border-right: 1px solid var(--color-border-subtle);"
+  style:--tier-accent={routing.tierColor}
+  style:--tier-accent-rgb={routing.tierColorRgb}
   aria-label="Navigator"
 >
   <!-- ============ EDITOR PANEL ============ -->
@@ -1040,8 +1042,8 @@
   }
 
   .strat-row--active {
-    border-color: var(--color-neon-cyan);
-    background: rgba(0, 229, 255, 0.04);
+    border-color: var(--tier-accent, var(--color-neon-cyan));
+    background: rgba(var(--tier-accent-rgb, 0, 229, 255), 0.04);
   }
 
   .strat-name {
@@ -1054,7 +1056,7 @@
   }
 
   .strat-row--active .strat-name {
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   .strat-tag {
@@ -1086,7 +1088,7 @@
   }
 
   .strat-edit:hover {
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   .strategy-editor {
