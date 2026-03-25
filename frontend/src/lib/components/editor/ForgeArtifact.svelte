@@ -2,7 +2,6 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { refinementStore } from '$lib/stores/refinement.svelte';
-  import { routing } from '$lib/stores/routing.svelte';
   import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
   import { copyToClipboard } from '$lib/utils/formatting';
 
@@ -42,7 +41,7 @@
   }
 </script>
 
-<div class="forge-artifact" style:--tier-accent={routing.tierColor}>
+<div class="forge-artifact">
   {#if !result}
     <div class="empty-result">
       <span class="empty-label">No result yet — click SYNTHESIZE to optimize your prompt</span>

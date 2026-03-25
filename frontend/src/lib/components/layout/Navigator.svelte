@@ -270,8 +270,6 @@
 <aside
   class="navigator"
   style="background: var(--color-bg-secondary); border-right: 1px solid var(--color-border-subtle);"
-  style:--tier-accent={routing.tierColor}
-  style:--tier-accent-rgb={routing.tierColorRgb}
   aria-label="Navigator"
 >
   <!-- ============ EDITOR PANEL ============ -->

@@ -2,7 +2,7 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { clustersStore } from '$lib/stores/clusters.svelte';
-  import { routing } from '$lib/stores/routing.svelte';
+
   import { getStrategies } from '$lib/api/client';
   import PatternSuggestion from './PatternSuggestion.svelte';
   import { getPhaseLabel } from '$lib/utils/dimensions';
@@ -127,7 +127,7 @@
   </div>
 
   <!-- Action bar (bottom — strategy select + phase label + synthesize button) -->
-  <div class="action-bar" style:--tier-accent={routing.tierColor} style:--tier-accent-rgb={routing.tierColorRgb}>
+  <div class="action-bar">
     <span class="action-label">STRATEGY</span>
     <select
       class="strategy-select"

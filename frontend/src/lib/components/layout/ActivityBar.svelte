@@ -1,6 +1,5 @@
 <script lang="ts">
   import Logo from '$lib/components/shared/Logo.svelte';
-  import { routing } from '$lib/stores/routing.svelte';
 
   type Activity = 'editor' | 'history' | 'clusters' | 'github' | 'settings';
 
@@ -18,7 +17,6 @@
 <nav
   class="activity-bar"
   style="background: var(--color-bg-secondary); border-right: 1px solid var(--color-border-subtle);"
-  style:--tier-accent={routing.tierColor}
   aria-label="Activity bar"
 >
   <!-- Brand mark at top of activity bar -->

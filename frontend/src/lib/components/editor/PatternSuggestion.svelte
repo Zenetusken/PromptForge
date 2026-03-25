@@ -1,7 +1,6 @@
 <script lang="ts">
   import { clustersStore } from '$lib/stores/clusters.svelte';
   import { formatScore } from '$lib/utils/formatting';
-  import { routing } from '$lib/stores/routing.svelte';
 
   interface Props {
     onApply: (patterns: string[]) => void;
@@ -21,7 +20,7 @@
 
 {#if clustersStore.suggestionVisible && clustersStore.suggestion}
   {@const match = clustersStore.suggestion}
-  <div class="suggestion-banner" role="alert" style:--tier-accent={routing.tierColor}>
+  <div class="suggestion-banner" role="alert">
     <div class="suggestion-content">
       <div class="suggestion-header">
         <span class="suggestion-icon">&#x27E1;</span>

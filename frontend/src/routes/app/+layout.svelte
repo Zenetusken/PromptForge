@@ -10,6 +10,7 @@
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { clustersStore } from '$lib/stores/clusters.svelte';
+  import { routing } from '$lib/stores/routing.svelte';
 
   let { children } = $props();
 
@@ -38,7 +39,7 @@
   <title>Project Synthesis</title>
 </svelte:head>
 
-<div class="workbench">
+<div class="workbench" style:--tier-accent={routing.tierColor} style:--tier-accent-rgb={routing.tierColorRgb}>
   <div class="activity-bar">
     <ActivityBar bind:active={activeActivity} />
   </div>
