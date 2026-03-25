@@ -405,6 +405,14 @@ class RoutingManager:
         Clears both ``mcp_connected`` and ``sampling_capable`` — after the
         staleness window, we cannot assume the client is still alive or that
         it still supports sampling.
+
+        **Cross-process awareness:** The MCP server writes ``last_activity``
+        to ``mcp_session.json`` on every POST, but only broadcasts
+        cross-process events on state *changes* (connect/disconnect), not on
+        routine activity.  Before declaring disconnect, we read the session
+        file to check whether the MCP server has seen recent activity that
+        the backend doesn't know about.  If the file shows fresh activity,
+        we sync our in-memory state instead of disconnecting.
         """
         from app.config import MCP_ACTIVITY_STALENESS_SECONDS
 
@@ -416,6 +424,31 @@ class RoutingManager:
                         datetime.now(timezone.utc) - self._state.last_activity
                     ).total_seconds()
                     if elapsed > MCP_ACTIVITY_STALENESS_SECONDS:
+                        # Before disconnecting, check the session file —
+                        # the MCP server may have fresh activity we missed.
+                        if self._session_file:
+                            data = self._session_file.read()
+                            if data and not self._session_file.is_activity_stale(data):
+                                # Session file has fresh activity — sync
+                                # our state from it instead of disconnecting.
+                                try:
+                                    fresh_activity = datetime.fromisoformat(
+                                        data["last_activity"],
+                                    )
+                                except (KeyError, ValueError, TypeError):
+                                    fresh_activity = None
+                                if fresh_activity:
+                                    logger.info(
+                                        "routing.disconnect_averted "
+                                        "in_memory_stale=%.0fs "
+                                        "session_file_fresh=True",
+                                        elapsed,
+                                    )
+                                    self._update_state(
+                                        last_activity=fresh_activity,
+                                        mcp_connected=True,
+                                    )
+                                    continue
                         logger.info(
                             "routing.disconnect activity_stale=%.0fs threshold=%ds",
                             elapsed, MCP_ACTIVITY_STALENESS_SECONDS,

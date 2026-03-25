@@ -420,8 +420,11 @@ class TestManagerDisconnectLoop:
         assert mgr.state.mcp_connected is True
 
         # Set last_activity to far in the past (beyond staleness threshold)
+        # Both in-memory state AND session file must be stale for disconnect
         stale_time = datetime.now(timezone.utc) - timedelta(seconds=600)
         mgr._update_state(last_activity=stale_time)
+        if mgr._session_file:
+            mgr._session_file.update(last_activity=stale_time.isoformat())
 
         # Subscribe to events
         queue: asyncio.Queue = asyncio.Queue(maxsize=10)
