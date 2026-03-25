@@ -121,7 +121,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **StatusBar breadcrumb** — shows CLI/API/SAMPLING/PASSTHROUGH tier badge + `[domain] › intent_label` for the active optimization with domain color coding. Editor tabs use intent labels as titles
 - **Feedback loop** — thumbs up/down drives strategy affinity adaptation
 - **API key management** — set/update/remove via UI with Fernet encryption at rest
-- **Per-phase effort controls** — configure `low`/`medium`/`high`/`max` effort per pipeline phase (analyzer, optimizer, scorer) via Settings
+- **Per-phase effort controls** — configure `low`/`medium`/`high`/`max` effort per pipeline phase (analyzer, optimizer, scorer) via Settings. Applies to internal tier; sampling tier defers to the IDE's model selection
 - **Structured repo indexing** — type-aware file outlines (Python classes/functions/imports, TypeScript exports, Svelte runes) with domain-boosted semantic retrieval and token-budget packing
 - **Unified context enrichment** — single `ContextEnrichmentService.enrich()` entry point resolves workspace guidance, heuristic analysis, codebase context, adaptation state, and applied patterns for all routing tiers
 - **Trace logging** — per-phase JSONL traces to `data/traces/` with daily rotation and configurable retention
@@ -163,11 +163,14 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (~30s)
+# Backend tests (~70s, 968 tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
-# Frontend type check
+# Frontend type check (935 files)
 cd frontend && npx svelte-check
+
+# Frontend tests (851 tests)
+cd frontend && npm test
 
 # Frontend build
 cd frontend && npm run build
