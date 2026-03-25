@@ -5,6 +5,12 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Added
+- Added `VALID_DOMAINS` whitelist in `pipeline_constants.py` — shared across MCP and REST passthrough handlers
+- Added domain validation against whitelist in passthrough save (invalid domains fall back to "general")
+- Added `intent_label` 100-character cap in passthrough save
+- Added workspace path safety validation in MCP prepare handler (blocks system directories)
+- Added anti-inflation guidance and structured metadata fields (`domain`, `intent_label`) to passthrough template
+- Added 16 new passthrough audit tests (domain validation, intent_label cap, SSE format, heuristic clamping, constant identity)
 - Added environment-gated MCP server authentication via bearer token (ADR-001)
 - Added PBKDF2-SHA256 key derivation with context-specific salts (ADR-002)
 - Added structured audit logging for sensitive operations (AuditLog model + service)
@@ -15,6 +21,7 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Added shared `backend/app/utils/crypto.py` with `derive_fernet()` and `decrypt_with_migration()`
 
 ### Changed
+- Passthrough template now provides per-dimension scale anchors and calibration guidance for external LLMs
 - Hardened cookie security: SameSite=Lax, environment-gated Secure flag, /api path scope, 14-day session lifetime
 - Restricted CORS to explicit method/header allowlists
 - Sanitized error messages across all routers (no exception detail leakage)
@@ -25,6 +32,10 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Pinned all Python and frontend dependencies to exact versions (ADR-003)
 
 ### Fixed
+- Clamped external passthrough scores to [1.0, 10.0] before hybrid blending
+- Excluded `hybrid_passthrough` from z-score historical stats to prevent cross-mode contamination
+- Normalized heuristic scorer clamping to consistent `max(1.0, min(10.0, score))` pattern
+- Fixed contradictory scoring instructions in passthrough template ("Score both" vs "Score optimized only")
 - Added `wss://` to CSP for secure WebSocket connections
 - Enabled HSTS header in nginx (conditional on TLS)
 - Tightened data directory permissions to 0700

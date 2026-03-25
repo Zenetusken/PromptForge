@@ -70,7 +70,7 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 - `optimization_service.py` — CRUD, sort/filter, score distribution tracking, recent error counts
 - `feedback_service.py` — feedback CRUD + synchronous adaptation tracker update
 - `adaptation_tracker.py` — strategy affinity tracking with degenerate pattern detection
-- `heuristic_scorer.py` — 5-dimension heuristics (clarity, specificity, structure, faithfulness, conciseness) + `score_prompt()` facade + passthrough bias correction
+- `heuristic_scorer.py` — 5-dimension heuristics (clarity, specificity, structure, faithfulness, conciseness) + `score_prompt()` facade. Consistent `max(1.0, min(10.0, score))` clamping across all dimensions
 - `score_blender.py` — hybrid scoring engine: blends LLM + heuristic scores with z-score normalization and divergence detection
 - `preferences.py` — persistent user preferences (model selection, pipeline toggles, default strategy, per-phase effort). File-based JSON at `data/preferences.json`. Snapshot pattern for pipeline consistency. Validates `optimizer_effort`, `analyzer_effort`, `scorer_effort` (`"low"` | `"medium"` | `"high"` | `"max"`).
 - `file_watcher.py` — background watchfiles.awatch() task for strategy file hot-reload. Publishes `strategy_changed` events to event bus on file add/modify/delete.
@@ -82,7 +82,7 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 - `repo_index_service.py` — background repo file indexing with type-aware structured outlines (`FileOutline`) and `query_curated_context()` for token-conscious semantic retrieval with domain boosting and budget packing
 - `passthrough.py` — shared passthrough prompt assembly (strategy resolution, scoring rubric loading, template rendering) used by both REST and MCP passthrough paths
 - `pattern_injection.py` — shared `auto_inject_patterns()` for cluster meta-pattern discovery from taxonomy embedding index (used by internal + sampling pipelines)
-- `pipeline_constants.py` — shared pipeline constants (`CONFIDENCE_GATE`, `FALLBACK_STRATEGY`, `resolve_fallback_strategy()`) for both pipeline implementations
+- `pipeline_constants.py` — shared pipeline constants (`CONFIDENCE_GATE`, `FALLBACK_STRATEGY`, `VALID_DOMAINS`, `resolve_fallback_strategy()`) for both pipeline implementations
 - `event_notification.py` — cross-process HTTP-based event bus notification for MCP server → backend event publishing
 - `mcp_session_file.py` — stateless `mcp_session.json` read/write/staleness helper (used by MCP server and health endpoint)
 - `github_service.py` — Fernet token encryption/decryption
@@ -196,7 +196,7 @@ Variable reference: `prompts/manifest.json`
 - `synthesis_optimize` — full pipeline execution. Params: `prompt`, `strategy`, `repo_full_name`, `workspace_path`, `applied_pattern_ids` (list of meta-pattern IDs to inject into optimizer context). Returns `OptimizeOutput`.
 - `synthesis_analyze` — analysis + baseline scoring. Falls back to MCP sampling when no local provider. Returns `AnalyzeOutput`.
 - `synthesis_prepare_optimization` — assemble prompt + context for external LLM (step 1 of passthrough workflow). Returns `PrepareOutput`.
-- `synthesis_save_result` — persist result with bias correction (step 3 of passthrough workflow). Returns `SaveResultOutput`.
+- `synthesis_save_result` — persist result with hybrid scoring and domain validation (step 3 of passthrough workflow). Returns `SaveResultOutput`.
 
 ### Workflow tools
 - `synthesis_health` — system capabilities check (provider, tiers, strategies, stats). Call at session start. Returns `HealthOutput`.
@@ -284,9 +284,9 @@ Exit codes: `0` = allow, `2` = block (fix errors first).
 - **Pipeline**: 3 subagent phases (analyze → optimize → score) orchestrated by `pipeline.py`. Each phase is an independent LLM call with a fresh context window. Optimize/refine phases use streaming (`messages.stream()`) to prevent HTTP timeouts on long Opus outputs (up to 128K tokens). Explore phase runs when a GitHub repo is linked AND `enable_explore` preference is true. Scoring phase skippable via `enable_scoring` preference (lean mode = 2 LLM calls only).
 - **Provider injection**: detected once at startup, injected via `app.state.routing` (RoutingManager) and MCP lifespan context. All routers call `routing.resolve()` to get the active provider.
 - **Prompt templates**: all prompts live in `prompts/` with `{{variable}}` substitution. Validated at startup. Hot-reloaded on every call. Never hardcode prompts in application code.
-- **Scorer bias mitigation**: A/B randomized presentation order + **hybrid scoring** (LLM scores blended with model-independent heuristics via `score_blender.py`). Dimension-specific weights: structure 50% heuristic, conciseness/specificity 40%, clarity 30%, faithfulness 20%. Z-score normalization applied when ≥10 historical samples exist. Divergence flags when LLM and heuristic disagree by >2.5 points.
+- **Scorer bias mitigation**: A/B randomized presentation order + **hybrid scoring** (LLM scores blended with model-independent heuristics via `score_blender.py`). Dimension-specific weights: structure 50% heuristic, conciseness/specificity 40%, clarity 30%, faithfulness 20%. Z-score normalization applied when ≥10 historical samples exist. Divergence flags when LLM and heuristic disagree by >2.5 points. Passthrough scores clamped to [1.0, 10.0] before blending; `hybrid_passthrough` excluded from z-score historical distribution to prevent cross-mode contamination.
 - **User preferences**: file-based JSON (`data/preferences.json`), loaded as frozen snapshot per pipeline run. Model selection per phase (analyzer/optimizer/scorer), pipeline toggles (explore/scoring/adaptation), default strategy, per-phase effort (`"low"` | `"medium"` | `"high"` | `"max"` for analyzer, optimizer, scorer). Non-configurable: explore synthesis and suggestions always use Haiku. Lean mode = explore+scoring off = 2 LLM calls only.
-- **Passthrough protocol**: MCP `synthesis_prepare_optimization` assembles the full prompt; external LLM processes it; `synthesis_save_result` persists with heuristic bias correction.
+- **Passthrough protocol**: MCP `synthesis_prepare_optimization` assembles the full prompt (with workspace path safety validation); external LLM processes it; `synthesis_save_result` persists with hybrid scoring (no bias correction — z-score + heuristic blending suffice) and domain whitelist validation.
 - **Pagination envelope**: all list endpoints return `{total, count, offset, items, has_more, next_offset}`.
 - **GitHub token layer**: tokens are Fernet-encrypted at rest. `github_service.encrypt_token` / `decrypt_token` are the only entry points.
 - **API key management**: `GET/PATCH/DELETE /api/provider/api-key`. Key encrypted at rest in `data/.api_credentials`. Provider hot-reloads when key is set.

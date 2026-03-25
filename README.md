@@ -106,7 +106,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Production diff viewer** — unified and split modes with word-level highlighting
 - **GitHub integration** — link a repo for codebase-aware optimization via semantic embedding search
 - **MCP server** — use from any MCP-compatible IDE (VS Code, Claude Code, etc.)
-- **Passthrough mode** — IDE's own LLM does the optimization; server provides context + heuristic analysis + bias correction. Zero-LLM `HeuristicAnalyzer` classifies task type, domain, weaknesses, and recommends strategy without any LLM calls
+- **Passthrough mode** — IDE's own LLM does the optimization; server provides context + heuristic analysis + hybrid scoring with domain validation. Zero-LLM `HeuristicAnalyzer` classifies task type, domain, weaknesses, and recommends strategy without any LLM calls
 - **Force sampling / passthrough toggles** — pin the pipeline to use the IDE's LLM (`force_sampling`) or always assemble for external processing (`force_passthrough`). Mutually exclusive, enforced server-side and client-side
 - **Sampling capability detection** — ASGI middleware detects MCP client sampling support on `initialize` handshake. Cross-process disconnect detection reads session file before clearing state. Frontend receives real-time SSE events for tier changes
 - **Tier-aware UI** — entire UI adapts accent color to active routing tier: cyan for CLI/API, green for sampling, yellow for passthrough. Includes brand logo, activity bar, tabs, buttons, inputs, headings, and all interactive elements. Settings sections (Provider/Connection/Routing, System) morph content per tier
@@ -137,7 +137,7 @@ The MCP server provides 11 tools with `synthesis_` prefix on port 8001. All tool
 | `synthesis_optimize` | Full pipeline — send a prompt, get back optimized version with scores. 5 execution paths: force_passthrough → force_sampling → provider → sampling fallback → passthrough fallback |
 | `synthesis_analyze` | Analysis + baseline scoring — task type, weaknesses, strategy recommendation, quality scores, actionable next steps |
 | `synthesis_prepare_optimization` | Assemble prompt + context for your IDE's LLM to process (step 1 of passthrough workflow) |
-| `synthesis_save_result` | Persist the IDE LLM's result with heuristic bias correction (step 3 of passthrough workflow) |
+| `synthesis_save_result` | Persist the IDE LLM's result with hybrid scoring and domain validation (step 3 of passthrough workflow) |
 
 ### Workflow tools
 
@@ -163,7 +163,7 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (~70s, 968 tests)
+# Backend tests (~90s, 1036 tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
 # Frontend type check (935 files)
