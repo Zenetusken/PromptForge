@@ -439,7 +439,7 @@ describe('Navigator', () => {
     });
   });
 
-  it('shows SET KEY and REMOVE buttons when provider section is expanded and key configured', async () => {
+  it('shows SET and DEL buttons when provider section is expanded and key configured', async () => {
     defaultFetchHandlers({
       apiKey: { configured: true, masked_key: 'sk-...xyz' },
     });
@@ -447,20 +447,20 @@ describe('Navigator', () => {
     const accordionBtn = screen.getByRole('button', { name: /Provider/i });
     await userEvent.click(accordionBtn);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /SET KEY/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /REMOVE/i })).toBeInTheDocument();
+      expect(screen.getByText('SET')).toBeInTheDocument();
+      expect(screen.getByText('DEL')).toBeInTheDocument();
     });
   });
 
-  it('does not show REMOVE button when no API key configured', async () => {
+  it('does not show DEL button when no API key configured', async () => {
     defaultFetchHandlers({ apiKey: { configured: false, masked_key: null } });
     render(Navigator, { props: { active: 'settings' } });
     const accordionBtn = screen.getByRole('button', { name: /Provider/i });
     await userEvent.click(accordionBtn);
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /SET KEY/i })).toBeInTheDocument();
+      expect(screen.getByText('SET')).toBeInTheDocument();
     });
-    expect(screen.queryByRole('button', { name: /REMOVE/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('DEL')).not.toBeInTheDocument();
   });
 
   // ── Strategy editor ────────────────────────────────────────────────────────
@@ -720,9 +720,9 @@ describe('Navigator', () => {
     });
     await user.click(screen.getByRole('button', { name: /System/i }));
     await waitFor(() => {
-      // CONTEXT (Analysis) + ROUTING (Analysis, Scoring) + System (Scoring) = 4 "heuristic" labels
+      // CONTEXT (Analysis) + System (Scoring) = 2 visible (Routing accordion collapsed)
       const heuristicEls = screen.getAllByText('heuristic');
-      expect(heuristicEls.length).toBeGreaterThanOrEqual(3);
+      expect(heuristicEls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -806,13 +806,17 @@ describe('Navigator', () => {
 
   // ── Settings — passthrough SCORING section ─────────────────────────────────
 
-  it('shows "Routing" section with heuristic labels in passthrough mode', () => {
+  it('shows "Routing" section with heuristic labels in passthrough mode', async () => {
+    const user = userEvent.setup();
     forgeStore.provider = null;
     preferencesStore.prefs.pipeline.force_passthrough = true;
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'settings' } });
-    // Routing section replaces Provider in passthrough — shows execution + analysis + scoring
-    expect(screen.getByText('Execution')).toBeInTheDocument();
+    // Open Routing accordion (replaces Provider in passthrough)
+    await user.click(screen.getByRole('button', { name: /Routing/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Execution')).toBeInTheDocument();
+    });
     const heuristicLabels = screen.getAllByText('heuristic');
     expect(heuristicLabels.length).toBeGreaterThanOrEqual(2);
   });

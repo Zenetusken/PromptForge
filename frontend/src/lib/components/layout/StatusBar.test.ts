@@ -109,11 +109,11 @@ describe('StatusBar', () => {
     expect(phase.classList.contains('status-phase-sampling')).toBe(true);
   });
 
-  it('shows version from health API after load', async () => {
+  it('does not show version in status bar (moved to System accordion)', () => {
     mockFetch([]);
     forgeStore.version = '1.2.3';
     render(StatusBar);
-    expect(screen.getByText('v1.2.3')).toBeInTheDocument();
+    expect(screen.queryByText('v1.2.3')).not.toBeInTheDocument();
   });
 
   it('shows last score after forge is complete', () => {
@@ -225,18 +225,18 @@ describe('StatusBar', () => {
   // TierBadge integration
   // -----------------------------------------------------------------------
 
-  it('shows INTERNAL tier badge when provider is available', () => {
+  it('shows CLI tier badge when claude_cli provider is available', () => {
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     forgeStore.provider = 'claude_cli';
     render(StatusBar);
-    expect(screen.getByText('INTERNAL')).toBeInTheDocument();
+    expect(screen.getByText('CLI')).toBeInTheDocument();
   });
 
-  it('shows provider short label next to tier badge in internal mode', () => {
+  it('shows API tier badge when anthropic_api provider is available', () => {
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
-    forgeStore.provider = 'claude_cli';
+    forgeStore.provider = 'anthropic_api';
     render(StatusBar);
-    expect(screen.getByText('cli')).toBeInTheDocument();
+    expect(screen.getByText('API')).toBeInTheDocument();
   });
 
   it('shows SAMPLING tier badge when auto-sampling active', () => {
@@ -252,15 +252,14 @@ describe('StatusBar', () => {
   // Auto-fallback and degradation display
   // -----------------------------------------------------------------------
 
-  it('shows clean INTERNAL badge during auto-fallback (no struck-through SAMPLING)', () => {
+  it('shows clean CLI badge during auto-fallback (no struck-through SAMPLING)', () => {
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     forgeStore.provider = 'claude_cli';
     forgeStore.samplingCapable = true;
     forgeStore.mcpDisconnected = true;
     preferencesStore.prefs.pipeline.force_sampling = true;
     render(StatusBar);
-    expect(screen.getByText('INTERNAL')).toBeInTheDocument();
-    expect(screen.getByText('cli')).toBeInTheDocument();
+    expect(screen.getByText('CLI')).toBeInTheDocument();
     // No struck-through SAMPLING — auto-fallback is seamless
     expect(screen.queryByTitle('Requested tier unavailable')).not.toBeInTheDocument();
     expect(screen.queryByText('disconnected')).not.toBeInTheDocument();
