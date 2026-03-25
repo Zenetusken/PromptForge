@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/github", tags=["github"])
 
 
+def _is_secure() -> bool:
+    """Return True when FRONTEND_URL uses HTTPS (production)."""
+    return bool(settings.FRONTEND_URL and settings.FRONTEND_URL.startswith("https://"))
+
+
 class LoginUrlResponse(BaseModel):
     url: str = Field(description="GitHub OAuth authorization URL to redirect the user to.")
 
@@ -53,7 +58,10 @@ async def _get_session_token(request: Request, db: AsyncSession) -> tuple[str, s
 async def github_login(response: Response) -> LoginUrlResponse:
     """Generate OAuth URL, set state cookie, return URL."""
     state = secrets.token_urlsafe(32)
-    response.set_cookie("github_oauth_state", state, httponly=True, max_age=600)
+    response.set_cookie(
+        "github_oauth_state", state, httponly=True, max_age=600,
+        samesite="lax", secure=_is_secure(),
+    )
     github_svc = GitHubService(
         secret_key=settings.resolve_secret_key(),
         client_id=settings.GITHUB_OAUTH_CLIENT_ID,
@@ -71,8 +79,10 @@ async def github_callback(
     db: AsyncSession = Depends(get_db),
 ) -> GitHubUserResponse:
     """Exchange code for token, encrypt, store in DB."""
+    import hmac
+
     cookie_state = request.cookies.get("github_oauth_state")
-    if not cookie_state or cookie_state != state:
+    if not cookie_state or not hmac.compare_digest(cookie_state, state):
         raise HTTPException(
             400,
             "Invalid OAuth state. The login link may have expired. Please try logging in again.",
@@ -95,8 +105,8 @@ async def github_callback(
         error_desc = data.get("error_description", "unknown error")
         logger.warning("GitHub OAuth token exchange failed: %s", error_desc)
         raise HTTPException(
-            400,
-            "GitHub OAuth token exchange failed: %s. Try logging in again." % error_desc,
+            status_code=400,
+            detail="Authentication failed. Please try again.",
         )
 
     github_client = GitHubClient()
@@ -127,8 +137,26 @@ async def github_callback(
         db.add(row)
     await db.commit()
 
-    response.set_cookie("session_id", session_id, httponly=True, max_age=86400 * 30)
+    response.set_cookie(
+        "session_id", session_id, httponly=True, max_age=86400 * 14,
+        samesite="lax", secure=_is_secure(), path="/api",
+    )
     logger.info("GitHub OAuth callback completed: user=%s", user.get("login"))
+
+    # Audit log
+    try:
+        from app.services.audit_logger import log_event
+
+        await log_event(
+            db=db,
+            action="github_login",
+            actor_ip=request.client.host if request.client else None,
+            detail={"github_login": user.get("login")},
+            outcome="success",
+        )
+    except Exception:
+        logger.debug("Audit log write failed", exc_info=True)
+
     return GitHubUserResponse(login=user.get("login"), avatar_url=user.get("avatar_url"))
 
 
@@ -170,5 +198,19 @@ async def github_logout(
         if token_row:
             await db.delete(token_row)
             await db.commit()
-    response.delete_cookie("session_id")
+    response.delete_cookie("session_id", path="/api")
+
+    # Audit log
+    try:
+        from app.services.audit_logger import log_event
+
+        await log_event(
+            db=db,
+            action="github_logout",
+            actor_ip=request.client.host if request.client else None,
+            outcome="success",
+        )
+    except Exception:
+        logger.debug("Audit log write failed", exc_info=True)
+
     return OkResponse()

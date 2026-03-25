@@ -12,7 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
+from app.dependencies.rate_limit import RateLimit
 from app.models import MetaPattern, Optimization, OptimizationPattern, PromptCluster
 from app.schemas.clusters import (
     ClusterDetail,
@@ -105,9 +107,11 @@ async def get_cluster_stats(
 
 @router.get("/api/clusters/templates")
 async def get_cluster_templates(
+    request: Request,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
+    _rate: None = Depends(RateLimit(lambda: settings.DEFAULT_RATE_LIMIT)),
 ) -> ClusterListResponse:
     """List clusters with state=template, sorted by avg_score descending."""
     query = (
@@ -162,6 +166,7 @@ async def get_cluster_detail(
     request: Request,
     cluster_id: str,
     db: AsyncSession = Depends(get_db),
+    _rate: None = Depends(RateLimit(lambda: settings.DEFAULT_RATE_LIMIT)),
 ) -> ClusterDetail:
     """Single cluster with children, breadcrumb, meta-patterns, and linked optimizations."""
     try:

@@ -123,6 +123,18 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = Field(
         default="http://localhost:5199", description="Frontend origin URL for CORS.",
     )
+    DEVELOPMENT_MODE: bool = Field(
+        default=False,
+        description="Enable development mode (localhost CORS, relaxed cookie security).",
+    )
+
+    # --- MCP Auth ---
+    MCP_AUTH_TOKEN: str | None = Field(
+        default=None, description="Bearer token for MCP server auth. None = no auth (local dev).",
+    )
+    MCP_ALLOW_QUERY_TOKEN: bool = Field(
+        default=True, description="Allow ?token= query param for SSE clients. Disable in production.",
+    )
 
     # --- Explore Cache ---
     EXPLORE_RESULT_CACHE_TTL: int = Field(
@@ -143,6 +155,11 @@ class Settings(BaseSettings):
     # --- Traces ---
     TRACE_RETENTION_DAYS: int = Field(
         default=30, description="Number of days to retain JSONL trace files before cleanup.",
+    )
+
+    # --- Audit ---
+    AUDIT_RETENTION_DAYS: int = Field(
+        default=90, description="Days to retain audit log entries before auto-pruning.",
     )
 
     # --- Database ---

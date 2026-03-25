@@ -87,7 +87,7 @@ async def refine(
     if not opt:
         raise HTTPException(
             status_code=404,
-            detail="Optimization '%s' not found." % body.optimization_id,
+            detail="Optimization not found.",
         )
 
     logger.info("POST /api/refine: optimization_id=%s branch=%s", body.optimization_id, body.branch_id)
@@ -154,7 +154,7 @@ async def get_versions(
     if not opt:
         raise HTTPException(
             status_code=404,
-            detail="Optimization '%s' not found." % optimization_id,
+            detail="Optimization not found.",
         )
 
     ref_svc = RefinementService(db=db, provider=None, prompts_dir=PROMPTS_DIR)
@@ -198,7 +198,7 @@ async def rollback(
     if not opt:
         raise HTTPException(
             status_code=404,
-            detail="Optimization '%s' not found." % optimization_id,
+            detail="Optimization not found.",
         )
 
     ref_svc = RefinementService(db=db, provider=None, prompts_dir=PROMPTS_DIR)
@@ -209,7 +209,8 @@ async def rollback(
         # NoResultFound, ValueError, LookupError → 404; others → 400
         from sqlalchemy.exc import NoResultFound
         status = 404 if isinstance(exc, (ValueError, LookupError, NoResultFound)) else 400
-        raise HTTPException(status_code=status, detail=str(exc)) from exc
+        logger.warning("Rollback failed: %s", exc)
+        raise HTTPException(status_code=status, detail="Rollback failed.") from exc
 
     return {
         "id": new_branch.id,

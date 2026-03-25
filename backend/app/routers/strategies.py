@@ -4,15 +4,22 @@ Fully adaptive: strategies are discovered from disk. Adding/removing
 .md files in prompts/strategies/ is auto-detected.
 """
 
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.config import PROMPTS_DIR
+from app.config import PROMPTS_DIR, settings
+from app.dependencies.rate_limit import RateLimit
 from app.services.strategy_loader import (
     StrategyLoader,
     _parse_frontmatter,
     validate_frontmatter,
 )
+
+logger = logging.getLogger(__name__)
+
+_MAX_STRATEGY_SIZE = 50_000
 
 router = APIRouter(prefix="/api", tags=["strategies"])
 
@@ -52,7 +59,10 @@ def _safe_strategy_path(name: str):
 
 
 @router.get("/strategies")
-async def list_strategies() -> list[StrategyMetadata]:
+async def list_strategies(
+    request: Request,
+    _rate: None = Depends(RateLimit(lambda: settings.DEFAULT_RATE_LIMIT)),
+) -> list[StrategyMetadata]:
     """List all available strategies with frontmatter metadata.
 
     Returns name, tagline, description, and validation warnings.
@@ -71,14 +81,15 @@ async def get_strategy(name: str) -> StrategyDetail:
     try:
         content = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
+        logger.error("Failed to read strategy file '%s': %s", name, exc)
         raise HTTPException(
-            status_code=500, detail=f"Failed to read strategy file: {exc}",
+            status_code=500, detail="Failed to read strategy file.",
         ) from exc
     return StrategyDetail(name=name, content=content)
 
 
 @router.put("/strategies/{name}")
-async def update_strategy(name: str, body: StrategyUpdate) -> StrategyUpdateResponse:
+async def update_strategy(name: str, body: StrategyUpdate, request: Request) -> StrategyUpdateResponse:
     """Update a strategy .md file on disk.
 
     Validates frontmatter before saving. Returns the saved content
@@ -87,6 +98,9 @@ async def update_strategy(name: str, body: StrategyUpdate) -> StrategyUpdateResp
     path = _safe_strategy_path(name)
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"Strategy '{name}' not found")
+
+    if len(body.content) > _MAX_STRATEGY_SIZE:
+        raise HTTPException(status_code=413, detail="Strategy file exceeds 50KB limit.")
 
     # Validate frontmatter before writing
     meta, content_body = _parse_frontmatter(body.content)
@@ -113,9 +127,26 @@ async def update_strategy(name: str, body: StrategyUpdate) -> StrategyUpdateResp
     try:
         path.write_text(body.content, encoding="utf-8")
     except OSError as exc:
+        logger.error("Failed to write strategy file '%s': %s", name, exc)
         raise HTTPException(
-            status_code=500, detail="Failed to write strategy file: %s" % exc,
+            status_code=500, detail="Failed to save strategy.",
         ) from exc
+
+    # Audit log
+    try:
+        from app.database import async_session_factory
+        from app.services.audit_logger import log_event
+
+        async with async_session_factory() as audit_db:
+            await log_event(
+                db=audit_db,
+                action="strategy_updated",
+                actor_ip=request.client.host if request.client else None,
+                detail={"strategy_name": name},
+                outcome="success",
+            )
+    except Exception:
+        logger.debug("Audit log write failed", exc_info=True)
 
     return StrategyUpdateResponse(
         name=name,

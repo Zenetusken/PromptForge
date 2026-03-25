@@ -343,9 +343,9 @@ class TestPreferencesChangedEvent:
         with mock_patch.object(event_bus, "publish") as mock_publish:
             # Swap in our tmp_path-based service
             with mock_patch("app.routers.preferences._svc", svc):
-                from app.routers.preferences import patch_preferences
-
-                result = await patch_preferences({"models": {"analyzer": "haiku"}})
+                from app.routers.preferences import PreferencesUpdate, _ModelsUpdate, patch_preferences
+                body = PreferencesUpdate(models=_ModelsUpdate(analyzer="haiku"))
+                result = await patch_preferences(body)
 
             mock_publish.assert_called_once_with("preferences_changed", result)
             assert result["models"]["analyzer"] == "haiku"
