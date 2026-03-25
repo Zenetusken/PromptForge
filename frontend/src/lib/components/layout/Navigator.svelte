@@ -1119,7 +1119,7 @@
   }
 
   .strategy-textarea:focus {
-    border-color: rgba(0, 229, 255, 0.3);
+    border-color: rgba(var(--tier-accent-rgb, 0, 229, 255), 0.3);
     outline: none;
   }
 
@@ -1290,7 +1290,7 @@
   }
 
   .pref-input:focus {
-    border-color: rgba(0, 229, 255, 0.3);
+    border-color: rgba(var(--tier-accent-rgb, 0, 229, 255), 0.3);
   }
 
   .pref-input::placeholder {
@@ -1344,7 +1344,7 @@
   }
 
   .pref-select:focus {
-    border-color: rgba(0, 229, 255, 0.3);
+    border-color: rgba(var(--tier-accent-rgb, 0, 229, 255), 0.3);
     outline: none;
   }
 
@@ -1362,8 +1362,8 @@
   }
 
   .toggle-track--on {
-    background: rgba(0, 229, 255, 0.15);
-    border-color: var(--color-neon-cyan);
+    background: rgba(var(--tier-accent-rgb, 0, 229, 255), 0.15);
+    border-color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   .toggle-thumb {
@@ -1378,7 +1378,7 @@
 
   .toggle-track--on .toggle-thumb {
     left: 15px;
-    background: var(--color-neon-cyan);
+    background: var(--tier-accent, var(--color-neon-cyan));
   }
 
   /* Green toggle variant — sampling tier accent */
@@ -1421,11 +1421,11 @@
   .autofallback-notice {
     font-family: var(--font-mono);
     font-size: 9px;
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     padding: 3px 6px;
     margin: 2px 0;
-    border-left: 2px solid rgba(0, 229, 255, 0.4);
-    background: rgba(0, 229, 255, 0.04);
+    border-left: 2px solid rgba(var(--tier-accent-rgb, 0, 229, 255), 0.4);
+    background: rgba(var(--tier-accent-rgb, 0, 229, 255), 0.04);
     line-height: 1.4;
   }
 

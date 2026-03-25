@@ -359,9 +359,9 @@
   }
 
   .state-tab--active {
-    color: var(--color-neon-cyan);
-    border-color: var(--color-neon-cyan);
-    background: color-mix(in srgb, var(--color-neon-cyan) 8%, transparent);
+    color: var(--tier-accent, var(--color-neon-cyan));
+    border-color: var(--tier-accent, var(--color-neon-cyan));
+    background: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 8%, transparent);
   }
 
   /* ---- Search ---- */
@@ -389,7 +389,7 @@
   }
 
   .search-input:focus {
-    border-color: color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
+    border-color: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 30%, transparent);
   }
 
   .search-input::placeholder {
@@ -455,7 +455,7 @@
 
   .search-score {
     font-size: 9px;
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     flex-shrink: 0;
   }
 
@@ -475,7 +475,7 @@
   }
 
   .mindmap-btn:hover {
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   /* ---- Proven Templates ---- */
@@ -570,9 +570,9 @@
   }
 
   .use-template-btn:hover {
-    color: var(--color-neon-cyan);
-    border-color: var(--color-neon-cyan);
-    background: color-mix(in srgb, var(--color-neon-cyan) 8%, transparent);
+    color: var(--tier-accent, var(--color-neon-cyan));
+    border-color: var(--tier-accent, var(--color-neon-cyan));
+    background: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 8%, transparent);
   }
 
   /* ---- Domain groups ---- */
@@ -638,9 +638,9 @@
   }
 
   .family-row--expanded {
-    border-color: var(--color-neon-cyan);
-    border-left-color: var(--state-color, var(--color-neon-cyan));
-    background: color-mix(in srgb, var(--color-neon-cyan) 4%, transparent);
+    border-color: var(--tier-accent, var(--color-neon-cyan));
+    border-left-color: var(--state-color, var(--tier-accent, var(--color-neon-cyan)));
+    background: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 4%, transparent);
   }
 
   .family-label {
@@ -654,7 +654,7 @@
   }
 
   .family-row--expanded .family-label {
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   .family-badges {

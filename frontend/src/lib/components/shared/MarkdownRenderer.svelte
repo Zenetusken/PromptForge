@@ -52,7 +52,7 @@
 
   .md-render :global(h1) {
     font-size: 14px;
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     border-bottom: 1px solid var(--color-border-subtle);
     padding-bottom: 4px;
     margin-bottom: 8px;
@@ -61,7 +61,7 @@
 
   .md-render :global(h2) {
     font-size: 12px;
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     border-bottom: 1px solid var(--color-border-subtle);
     padding-bottom: 3px;
     margin-bottom: 6px;
@@ -125,7 +125,7 @@
     font-size: 11px;
     background: var(--color-bg-hover);
     border: 1px solid var(--color-border-subtle);
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     padding: 1px 4px;
     line-height: 1.4;
   }
@@ -193,7 +193,7 @@
     content: '▸';
     position: absolute;
     left: -14px;
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     font-size: 10px;
     line-height: 1.8;
   }
@@ -235,7 +235,7 @@
     text-align: right;
     font-family: var(--font-mono);
     font-size: 10px;
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     line-height: 1.8;
   }
 
@@ -333,14 +333,14 @@
 
   /* ---- Links ---- */
   .md-render :global(a) {
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     text-decoration: none;
-    border-bottom: 1px solid rgba(0, 229, 255, 0.2);
+    border-bottom: 1px solid rgba(var(--tier-accent-rgb, 0, 229, 255), 0.2);
     transition: border-color 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .md-render :global(a:hover) {
-    border-bottom-color: var(--color-neon-cyan);
+    border-bottom-color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   /* ---- Images ---- */

@@ -461,7 +461,7 @@
     width: 20px;
     height: 20px;
     border: 1px solid var(--color-border-subtle);
-    border-top-color: var(--color-neon-cyan);
+    border-top-color: var(--tier-accent, var(--color-neon-cyan));
     animation: spin 800ms linear infinite;
     flex-shrink: 0;
   }
@@ -554,7 +554,7 @@
   }
 
   .meta-value--cyan {
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   .meta-value--green {
@@ -649,7 +649,7 @@
   }
 
   .family-intent:hover {
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   .rename-form {
@@ -669,7 +669,7 @@
     font-family: var(--font-display);
     color: var(--color-text-primary);
     background: var(--color-bg-input);
-    border: 1px solid color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 30%, transparent);
     outline: none;
   }
 
@@ -693,7 +693,7 @@
   }
 
   .rename-save:hover {
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   .rename-save:disabled {
@@ -814,7 +814,7 @@
   .source-badge {
     font-size: 9px;
     font-family: var(--font-mono);
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     background: var(--color-bg-secondary);
     border: 1px solid var(--color-border-subtle);
     padding: 0 4px;
@@ -869,7 +869,7 @@
   .opt-score {
     font-size: 10px;
     font-family: var(--font-mono);
-    color: var(--color-neon-cyan);
+    color: var(--tier-accent, var(--color-neon-cyan));
     flex-shrink: 0;
   }
 
@@ -963,12 +963,12 @@
   }
 
   .action-btn--primary {
-    color: var(--color-neon-cyan);
-    border-color: color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
+    color: var(--tier-accent, var(--color-neon-cyan));
+    border-color: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 30%, transparent);
   }
 
   .action-btn--primary:hover {
-    border-color: var(--color-neon-cyan);
-    background: color-mix(in srgb, var(--color-neon-cyan) 8%, transparent);
+    border-color: var(--tier-accent, var(--color-neon-cyan));
+    background: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 8%, transparent);
   }
 </style>
