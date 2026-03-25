@@ -11,6 +11,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Domain whitelist — used by passthrough save handlers to validate input
+# ---------------------------------------------------------------------------
+
+VALID_DOMAINS: set[str] = {
+    "backend", "frontend", "database", "devops", "security", "fullstack", "general",
+}
+
+# ---------------------------------------------------------------------------
 # Thresholds
 # ---------------------------------------------------------------------------
 

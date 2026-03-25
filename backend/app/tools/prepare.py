@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 
 from mcp.server.fastmcp import Context
 
@@ -38,6 +39,17 @@ async def handle_prepare(
         raise ValueError(
             "max_context_tokens must be a positive integer (got %d)" % max_context_tokens
         )
+
+    # Validate workspace_path — reject obviously unsafe paths
+    if workspace_path:
+        wp = Path(workspace_path).resolve()
+        # Block system directories and common sensitive paths
+        _blocked_prefixes = ("/etc", "/var", "/proc", "/sys", "/root", "/boot", "/dev")
+        if any(str(wp).startswith(prefix) for prefix in _blocked_prefixes):
+            raise ValueError(
+                "workspace_path '%s' points to a system directory. "
+                "Only user workspace directories are allowed." % workspace_path
+            )
 
     # Resolve strategy: explicit param → user preference → auto
     prefs = PreferencesService(DATA_DIR)

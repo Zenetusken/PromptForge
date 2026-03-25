@@ -18,6 +18,7 @@ from app.schemas.mcp_models import SaveResultOutput
 from app.schemas.pipeline_contracts import DimensionScores
 from app.services.event_notification import notify_event_bus
 from app.services.heuristic_scorer import HeuristicScorer
+from app.services.pipeline_constants import VALID_DOMAINS
 from app.services.preferences import PreferencesService
 from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
@@ -62,7 +63,7 @@ async def handle_save_result(
     if scores and scoring_enabled:
         for k, v in scores.items():
             try:
-                clean_scores[k] = float(v)
+                clean_scores[k] = max(1.0, min(10.0, float(v)))
             except (ValueError, TypeError):
                 clean_scores[k] = 5.0
 
@@ -108,7 +109,7 @@ async def handle_save_result(
                 from app.services.optimization_service import OptimizationService
                 opt_svc = OptimizationService(db)
                 historical_stats = await opt_svc.get_score_distribution(
-                    exclude_scoring_modes=["heuristic"],
+                    exclude_scoring_modes=["heuristic", "hybrid_passthrough"],
                 )
             except Exception as exc:
                 logger.debug("Could not fetch score distribution: %s", exc)
@@ -169,9 +170,13 @@ async def handle_save_result(
             opt.task_type = task_type or opt.task_type or "general"
             opt.strategy_used = strategy_used or opt.strategy_used or "auto"
             opt.changes_summary = changes_summary or ""
-            opt.domain = domain or opt.domain or "general"
+            validated_domain = (
+                domain if domain in VALID_DOMAINS
+                else (opt.domain if opt.domain in VALID_DOMAINS else "general")
+            )
+            opt.domain = validated_domain
             opt.domain_raw = domain or opt.domain_raw or "general"
-            opt.intent_label = intent_label or opt.intent_label or "general"
+            opt.intent_label = (intent_label or opt.intent_label or "general")[:100]
             opt.score_clarity = final_scores.get("clarity")
             opt.score_specificity = final_scores.get("specificity")
             opt.score_structure = final_scores.get("structure")
@@ -196,9 +201,9 @@ async def handle_save_result(
                 task_type=task_type or "general",
                 strategy_used=strategy_used or "auto",
                 changes_summary=changes_summary or "",
-                domain=domain or "general",
+                domain=domain if domain in VALID_DOMAINS else "general",
                 domain_raw=domain or "general",
-                intent_label=intent_label or "general",
+                intent_label=(intent_label or "general")[:100],
                 score_clarity=final_scores.get("clarity"),
                 score_specificity=final_scores.get("specificity"),
                 score_structure=final_scores.get("structure"),
