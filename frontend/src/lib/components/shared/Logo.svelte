@@ -27,7 +27,7 @@
     viewBox="0 0 32 32" 
     aria-hidden="true" 
     fill="none" 
-    stroke="var(--color-neon-cyan)" 
+    stroke="var(--tier-accent, var(--color-neon-cyan))" 
     stroke-width="1.8" 
     stroke-linecap="round" 
     stroke-linejoin="round"
@@ -40,13 +40,13 @@
     <path class="brand-packet" d="M 24 8 L 12 8 A 4 4 0 0 0 12 16 L 20 16 A 4 4 0 0 1 20 24 L 8 24" />
     
     <!-- Top Terminal -->
-    <rect class="top-terminal" x="21.5" y="5.5" width="5" height="5" fill="var(--color-bg-primary)" stroke="var(--color-neon-cyan)" stroke-width="1.8" rx="1.25" />
+    <rect class="top-terminal" x="21.5" y="5.5" width="5" height="5" fill="var(--color-bg-primary)" stroke="var(--tier-accent, var(--color-neon-cyan))" stroke-width="1.8" rx="1.25" />
     
     <!-- Center Node -->
-    <circle class="center-node" cx="16" cy="16" r="3" fill="var(--color-neon-cyan)" stroke="none" />
+    <circle class="center-node" cx="16" cy="16" r="3" fill="var(--tier-accent, var(--color-neon-cyan))" stroke="none" />
     
     <!-- Bottom Terminal -->
-    <rect class="bottom-terminal" x="5.5" y="21.5" width="5" height="5" fill="var(--color-bg-primary)" stroke="var(--color-neon-cyan)" stroke-width="1.8" rx="1.25" />
+    <rect class="bottom-terminal" x="5.5" y="21.5" width="5" height="5" fill="var(--color-bg-primary)" stroke="var(--tier-accent, var(--color-neon-cyan))" stroke-width="1.8" rx="1.25" />
   </svg>
 
   {#if variant === 'full'}
@@ -145,14 +145,14 @@
 
   @keyframes terminal-pulse {
     0% { transform: scale(1); fill: var(--color-bg-primary); }
-    40% { transform: scale(1.4); fill: var(--color-neon-cyan); stroke-width: 2.5px; }
+    40% { transform: scale(1.4); fill: var(--tier-accent, var(--color-neon-cyan)); stroke-width: 2.5px; }
     100% { transform: scale(1); fill: var(--color-bg-primary); }
   }
 
   @keyframes center-pulse {
-    0% { transform: scale(1); fill: var(--color-neon-cyan); }
+    0% { transform: scale(1); fill: var(--tier-accent, var(--color-neon-cyan)); }
     40% { transform: scale(1.8); fill: var(--color-text-primary); }
-    100% { transform: scale(1); fill: var(--color-neon-cyan); }
+    100% { transform: scale(1); fill: var(--tier-accent, var(--color-neon-cyan)); }
   }
 
   .brand-text {
