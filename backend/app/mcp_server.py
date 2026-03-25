@@ -300,6 +300,54 @@ mcp = FastMCP(
 
 
 # ---------------------------------------------------------------------------
+# ASGI middleware: environment-gated bearer token authentication
+# ---------------------------------------------------------------------------
+
+
+class _MCPAuthMiddleware:
+    """Environment-gated bearer token authentication for MCP server.
+
+    When auth_token is None (MCP_AUTH_TOKEN not set), acts as a no-op.
+    When set, requires Authorization: Bearer <token> on all HTTP requests.
+    SSE fallback: accepts ?token=<value> when allow_query_token is True.
+    """
+
+    def __init__(self, app, auth_token: str | None = None, allow_query_token: bool = True) -> None:
+        self.app = app
+        self.auth_token = auth_token
+        self.allow_query_token = allow_query_token
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or self.auth_token is None:
+            # Pass through non-HTTP scopes (lifespan, websocket) and unauthenticated mode
+            return await self.app(scope, receive, send)
+
+        import hmac
+
+        # Check Authorization header (constant-time comparison)
+        headers = dict(scope.get("headers", []))
+        auth_header = headers.get(b"authorization", b"").decode()
+        expected = f"Bearer {self.auth_token}"
+        if hmac.compare_digest(auth_header, expected):
+            return await self.app(scope, receive, send)
+
+        # Check query param fallback for SSE (constant-time comparison)
+        if self.allow_query_token:
+            from urllib.parse import parse_qs
+            qs = parse_qs(scope.get("query_string", b"").decode())
+            candidate = qs.get("token", [""])[0]
+            if candidate and hmac.compare_digest(candidate, self.auth_token):
+                return await self.app(scope, receive, send)
+
+        # Reject — send 401
+        logger.warning("MCP auth failure from %s", scope.get("client", ("unknown",))[0])
+        await send({"type": "http.response.start", "status": 401, "headers": [
+            (b"content-type", b"application/json"),
+        ]})
+        await send({"type": "http.response.body", "body": b'{"error":"Unauthorized"}'})
+
+
+# ---------------------------------------------------------------------------
 # ASGI middleware: detect sampling capability on MCP initialize handshake
 # ---------------------------------------------------------------------------
 
@@ -501,6 +549,13 @@ _original_streamable_http_app = mcp.streamable_http_app
 def _patched_streamable_http_app(**kwargs):
     app = _original_streamable_http_app(**kwargs)
     app.add_middleware(_CapabilityDetectionMiddleware)
+    # Auth middleware wraps outermost — checked before capability detection
+    from app.config import settings
+    app.add_middleware(
+        _MCPAuthMiddleware,
+        auth_token=settings.MCP_AUTH_TOKEN,
+        allow_query_token=settings.MCP_ALLOW_QUERY_TOKEN,
+    )
     return app
 
 

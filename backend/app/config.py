@@ -127,6 +127,14 @@ class Settings(BaseSettings):
         default=False, description="Enable development mode (localhost CORS, relaxed cookie security). NOT FastAPI debug mode.",
     )
 
+    # --- MCP Auth ---
+    MCP_AUTH_TOKEN: str | None = Field(
+        default=None, description="Bearer token for MCP server auth. None = no auth (local dev).",
+    )
+    MCP_ALLOW_QUERY_TOKEN: bool = Field(
+        default=True, description="Allow ?token= query param for SSE clients. Disable in production.",
+    )
+
     # --- Explore Cache ---
     EXPLORE_RESULT_CACHE_TTL: int = Field(
         default=3600, description="Explore result cache TTL in seconds.",

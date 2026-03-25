@@ -1,7 +1,8 @@
-"""Tests for cookie security hardening (W1)."""
+"""Tests for security hardening (W1: cookies, W2: MCP auth)."""
 
+import asyncio
 import inspect
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -139,3 +140,85 @@ class TestSessionCookiePath:
         assert 'path="/api"' in source or "path='/api'" in source, (
             "delete_cookie('session_id') must include path='/api' to match the set_cookie path"
         )
+
+
+class TestMCPAuthMiddleware:
+    """W2: MCP server authentication."""
+
+    async def test_middleware_noop_when_token_not_configured(self):
+        """When MCP_AUTH_TOKEN is not set, all requests pass through."""
+        from app.mcp_server import _MCPAuthMiddleware
+        app_mock = AsyncMock()
+        middleware = _MCPAuthMiddleware(app_mock, auth_token=None, allow_query_token=True)
+        scope = {"type": "http", "method": "POST", "path": "/mcp", "headers": [], "query_string": b""}
+        receive = AsyncMock()
+        send = AsyncMock()
+        await middleware(scope, receive, send)
+        app_mock.assert_called_once()
+
+    async def test_middleware_rejects_missing_token(self):
+        """When MCP_AUTH_TOKEN is set, requests without token get 401."""
+        from app.mcp_server import _MCPAuthMiddleware
+        app_mock = AsyncMock()
+        middleware = _MCPAuthMiddleware(app_mock, auth_token="secret-token", allow_query_token=True)
+        scope = {"type": "http", "method": "POST", "path": "/mcp", "headers": [], "query_string": b""}
+        receive = AsyncMock()
+        send = AsyncMock()
+        await middleware(scope, receive, send)
+        app_mock.assert_not_called()
+
+    async def test_middleware_accepts_valid_bearer_token(self):
+        """Valid Authorization: Bearer token passes through."""
+        from app.mcp_server import _MCPAuthMiddleware
+        app_mock = AsyncMock()
+        middleware = _MCPAuthMiddleware(app_mock, auth_token="secret-token", allow_query_token=True)
+        scope = {
+            "type": "http", "method": "POST", "path": "/mcp",
+            "headers": [(b"authorization", b"Bearer secret-token")],
+            "query_string": b"",
+        }
+        receive = AsyncMock()
+        send = AsyncMock()
+        await middleware(scope, receive, send)
+        app_mock.assert_called_once()
+
+    async def test_middleware_accepts_query_param_token(self):
+        """SSE fallback: ?token=<value> is accepted when allowed."""
+        from app.mcp_server import _MCPAuthMiddleware
+        app_mock = AsyncMock()
+        middleware = _MCPAuthMiddleware(app_mock, auth_token="secret-token", allow_query_token=True)
+        scope = {
+            "type": "http", "method": "GET", "path": "/mcp",
+            "headers": [],
+            "query_string": b"token=secret-token",
+        }
+        receive = AsyncMock()
+        send = AsyncMock()
+        await middleware(scope, receive, send)
+        app_mock.assert_called_once()
+
+    async def test_middleware_rejects_wrong_token(self):
+        """Wrong token gets 401."""
+        from app.mcp_server import _MCPAuthMiddleware
+        app_mock = AsyncMock()
+        middleware = _MCPAuthMiddleware(app_mock, auth_token="secret-token", allow_query_token=True)
+        scope = {
+            "type": "http", "method": "POST", "path": "/mcp",
+            "headers": [(b"authorization", b"Bearer wrong-token")],
+            "query_string": b"",
+        }
+        receive = AsyncMock()
+        send = AsyncMock()
+        await middleware(scope, receive, send)
+        app_mock.assert_not_called()
+
+    async def test_middleware_passes_non_http_scopes(self):
+        """Non-HTTP scopes (lifespan, websocket) always pass through."""
+        from app.mcp_server import _MCPAuthMiddleware
+        app_mock = AsyncMock()
+        middleware = _MCPAuthMiddleware(app_mock, auth_token="secret-token", allow_query_token=True)
+        scope = {"type": "lifespan"}
+        receive = AsyncMock()
+        send = AsyncMock()
+        await middleware(scope, receive, send)
+        app_mock.assert_called_once()
