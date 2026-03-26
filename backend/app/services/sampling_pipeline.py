@@ -209,29 +209,39 @@ def _parse_text_response(text: str, model_cls: type[T]) -> T:
 
 
 def _strip_meta_header(text: str) -> str:
-    """Remove LLM-added meta-headers like '# Optimized Prompt' from the top.
+    """Remove LLM-added meta-headers and code fences from the prompt.
 
-    LLMs in sampling mode often prepend a title like '# Optimized Prompt'
-    or '## Optimized Prompt' before the actual content.  This is
-    meta-commentary, not part of the prompt.
+    LLMs in sampling mode often:
+    1. Prepend a title like '# Optimized Prompt' before the actual content
+    2. Wrap the entire prompt in a markdown code fence (```markdown ... ```)
+
+    Both are meta-commentary artifacts, not part of the prompt.
     """
+    # 1. Strip markdown code fence wrapping the entire content.
+    #    LLMs sometimes return: ```markdown\n<actual prompt>\n```
+    stripped = text.strip()
+    if re.match(r"^```(?:markdown|md)?\s*\n", stripped, re.IGNORECASE):
+        # Remove opening fence
+        stripped = re.sub(r"^```(?:markdown|md)?\s*\n", "", stripped, count=1, flags=re.IGNORECASE)
+        # Remove closing fence (at end)
+        stripped = re.sub(r"\n```\s*$", "", stripped)
+        text = stripped
+
+    # 2. Strip meta-header line
     lines = text.split("\n")
-    # Strip leading blank lines
     while lines and not lines[0].strip():
         lines.pop(0)
-    # Check if first non-blank line is a meta-header
     if lines:
-        first = lines[0].strip().lower()
+        first = lines[0].strip().lower().rstrip(":").rstrip()
         meta_headers = [
-            "# optimized prompt", "## optimized prompt",
-            "# optimized version", "## optimized version",
-            "# improved prompt", "## improved prompt",
-            "# rewritten prompt", "## rewritten prompt",
+            "# optimized prompt", "## optimized prompt", "### optimized prompt",
+            "# optimized version", "## optimized version", "### optimized version",
+            "# improved prompt", "## improved prompt", "### improved prompt",
+            "# rewritten prompt", "## rewritten prompt", "### rewritten prompt",
+            "# enhanced prompt", "## enhanced prompt", "### enhanced prompt",
         ]
-        first_clean = first.rstrip(":").rstrip()
-        if any(first_clean == h for h in meta_headers):
+        if any(first == h for h in meta_headers):
             lines.pop(0)
-            # Also strip blank line after removed header
             while lines and not lines[0].strip():
                 lines.pop(0)
     return "\n".join(lines)

@@ -21,7 +21,10 @@
     let text = result?.optimized_prompt || '';
     // Strip LLM meta-headers like "# Optimized Prompt" (defensive — backend also strips)
     text = text.replace(/^#{1,3}\s+(?:optimized|improved|rewritten|enhanced)\s+(?:prompt|version)\s*:?\s*\n*/i, '');
-    return text;
+    // Strip markdown code fences wrapping the entire prompt (LLM artifact)
+    // Matches: ```markdown\n...\n``` or ```\n...\n```
+    text = text.replace(/^```(?:markdown|md)?\s*\n([\s\S]*?)```\s*$/i, '$1');
+    return text.trim();
   });
 
   const displayLabel = $derived.by(() => {
@@ -172,7 +175,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: var(--color-text-dim);
+    color: var(--tier-accent, var(--color-text-dim));
   }
 
   .header-actions {
