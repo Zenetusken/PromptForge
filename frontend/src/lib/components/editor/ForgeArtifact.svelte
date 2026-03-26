@@ -19,10 +19,12 @@
     const selected = refinementStore.selectedVersion;
     if (selected && selected.prompt) return selected.prompt;
     let text = result?.optimized_prompt || '';
-    // Strip LLM meta-headers like "# Optimized Prompt" (defensive — backend also strips)
+    // Strip LLM preamble + meta-headers + code fences (defensive — backend also strips)
+    // 1. Remove preamble like "Here is the optimized prompt:\n\n"
+    text = text.replace(/^(?:here\s+is|below\s+is)[^`\n]*(?:prompt|version)[^`\n]*:?\s*\n+/i, '');
+    // 2. Remove meta-headers like "# Optimized Prompt"
     text = text.replace(/^#{1,3}\s+(?:optimized|improved|rewritten|enhanced)\s+(?:prompt|version)\s*:?\s*\n*/i, '');
-    // Strip markdown code fences wrapping the entire prompt (LLM artifact)
-    // Matches: ```markdown\n...\n``` or ```\n...\n```
+    // 3. Unwrap markdown code fences wrapping the entire prompt
     text = text.replace(/^```(?:markdown|md)?\s*\n([\s\S]*?)```\s*$/i, '$1');
     return text.trim();
   });

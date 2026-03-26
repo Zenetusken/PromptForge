@@ -209,14 +209,21 @@ def _parse_text_response(text: str, model_cls: type[T]) -> T:
 
 
 def _strip_meta_header(text: str) -> str:
-    """Remove LLM-added meta-headers and code fences from the prompt.
+    """Remove LLM-added preambles, meta-headers, and code fences from the prompt.
 
     LLMs in sampling mode often:
-    1. Prepend a title like '# Optimized Prompt' before the actual content
-    2. Wrap the entire prompt in a markdown code fence (```markdown ... ```)
+    1. Add a preamble like "Here is the optimized prompt using..."
+    2. Prepend a title like '# Optimized Prompt' before the actual content
+    3. Wrap the entire prompt in a markdown code fence (```markdown ... ```)
 
-    Both are meta-commentary artifacts, not part of the prompt.
+    All are meta-commentary artifacts, not part of the prompt.
     """
+    # 0. Strip preamble sentences like "Here is the optimized prompt..."
+    text = re.sub(
+        r"^(?:here\s+is|below\s+is)[^`\n]*(?:prompt|version)[^`\n]*:?\s*\n+",
+        "", text, count=1, flags=re.IGNORECASE,
+    )
+
     # 1. Strip markdown code fence wrapping the entire content.
     #    LLMs sometimes return: ```markdown\n<actual prompt>\n```
     stripped = text.strip()
