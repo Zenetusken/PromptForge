@@ -225,14 +225,17 @@ def _strip_meta_header(text: str) -> str:
     )
 
     # 1. Strip markdown code fence wrapping the entire content.
-    #    LLMs sometimes return: ```markdown\n<actual prompt>\n```
+    #    LLMs sometimes return: ```markdown\n<actual prompt>\n```\n\n# ...
     stripped = text.strip()
     if re.match(r"^```(?:markdown|md)?\s*\n", stripped, re.IGNORECASE):
         # Remove opening fence
         stripped = re.sub(r"^```(?:markdown|md)?\s*\n", "", stripped, count=1, flags=re.IGNORECASE)
-        # Remove closing fence (at end)
-        stripped = re.sub(r"\n```\s*$", "", stripped)
+        # Remove closing fence and anything after it (trailing # headers, whitespace)
+        stripped = re.sub(r"\n```\s*(?:\n.*)?$", "", stripped)
         text = stripped
+
+    # 1b. Strip orphaned trailing markers (e.g., lone "#" or "##" from truncated sections)
+    text = re.sub(r"\n#{1,3}\s*$", "", text)
 
     # 2. Strip meta-header line
     lines = text.split("\n")
