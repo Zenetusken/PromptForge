@@ -790,15 +790,29 @@ class TestCapabilityDetectionMiddlewareWithRouting:
         assert routing.state.sampling_capable is True
         assert routing.state.mcp_connected is True
 
-    def test_optimistic_via_routing(self, routing):
-        """A False initialize immediately downgrades routing state (no optimistic buffer)."""
+    def test_no_downgrade_when_sampling_active(self, routing):
+        """A non-sampling initialize does NOT downgrade when sampling is already active.
+
+        Multiple MCP clients can connect (e.g., VS Code native + bridge).
+        Only the bridge declares sampling. The native client reconnects
+        periodically — its initialize must not clear sampling set by the bridge.
+        """
         from app.mcp_server import _CapabilityDetectionMiddleware
         _CapabilityDetectionMiddleware._inspect_initialize(
             self._make_initialize_body({"sampling": {}})
         )
         assert routing.state.sampling_capable is True
 
-        # Second: no sampling — immediately overwrites
+        # Second: non-sampling client connects — should NOT downgrade
+        _CapabilityDetectionMiddleware._inspect_initialize(
+            self._make_initialize_body({"roots": {}})
+        )
+        assert routing.state.sampling_capable is True  # preserved
+
+    def test_first_non_sampling_init_sets_false(self, routing):
+        """First initialize without sampling correctly sets False (no prior state)."""
+        from app.mcp_server import _CapabilityDetectionMiddleware
+        assert routing.state.sampling_capable is None  # no prior state
         _CapabilityDetectionMiddleware._inspect_initialize(
             self._make_initialize_body({"roots": {}})
         )

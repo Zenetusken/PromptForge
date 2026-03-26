@@ -533,7 +533,22 @@ class _CapabilityDetectionMiddleware:
 
             routing = _shared._routing
             if routing:
-                routing.on_mcp_initialize(sampling_capable=sampling)
+                # Don't downgrade sampling when a non-sampling client
+                # connects while a sampling-capable client is already
+                # active.  Multiple MCP clients (VS Code native + bridge)
+                # can connect to the same server — only the bridge
+                # declares sampling.  VS Code native reconnects
+                # periodically and would clear sampling on each reconnect.
+                if not sampling and routing.state.sampling_capable is True:
+                    logger.info(
+                        "Capability detection middleware: ignoring sampling=False "
+                        "from %s (sampling already active from another client)",
+                        client_info.get("name", "unknown"),
+                    )
+                    # Still update activity/connected state
+                    routing.on_mcp_activity()
+                else:
+                    routing.on_mcp_initialize(sampling_capable=sampling)
             else:
                 if not sampling and _session_file.should_skip_downgrade():
                     return
