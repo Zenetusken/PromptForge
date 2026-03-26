@@ -108,11 +108,16 @@ async def optimize(
     if not context_service:
         raise HTTPException(status_code=503, detail="Context enrichment service not initialized.")
 
+    # Default workspace_path to PROJECT_ROOT for web UI requests (which
+    # don't send workspace_path). Ensures CLAUDE.md context is always available.
+    from app.config import PROJECT_ROOT
+    effective_workspace = body.workspace_path or str(PROJECT_ROOT)
+
     enrichment = await context_service.enrich(
         raw_prompt=body.prompt,
         tier=decision.tier,
         db=db,
-        workspace_path=body.workspace_path,
+        workspace_path=effective_workspace,
         repo_full_name=body.repo_full_name,
         applied_pattern_ids=body.applied_pattern_ids,
         preferences_snapshot=prefs_snapshot,
@@ -132,11 +137,18 @@ async def optimize(
             })
             yield format_sse("status", {"phase": "analyze", "status": "running"})
             try:
+                # Default workspace_path to the project root so the MCP tool
+                # can scan for CLAUDE.md / AGENTS.md and inject workspace context.
+                # The web UI doesn't send workspace_path, but the server IS
+                # the project — its guidance files are the relevant context.
+                from app.config import PROJECT_ROOT
+                effective_workspace = body.workspace_path or str(PROJECT_ROOT)
+
                 # Launch MCP call as background task so we can yield keepalives
                 task = asyncio.ensure_future(call_mcp_tool("synthesis_optimize", {
                     "prompt": body.prompt,
                     "strategy": body.strategy,
-                    "workspace_path": body.workspace_path,
+                    "workspace_path": effective_workspace,
                     "repo_full_name": body.repo_full_name,
                     "applied_pattern_ids": body.applied_pattern_ids,
                 }))
