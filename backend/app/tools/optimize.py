@@ -160,6 +160,11 @@ async def handle_optimize(
     async with async_session_factory() as db:
         orchestrator = PipelineOrchestrator(prompts_dir=PROMPTS_DIR)
 
+        # Forward key pipeline events to the event bus so the web UI
+        # shows live progress (phase transitions, scores, model IDs)
+        # when the optimization is triggered from the IDE via MCP.
+        forward_events = {"status", "score_card", "prompt_preview", "optimization_start", "suggestions"}
+
         result = None
         async for event in orchestrator.run(
             raw_prompt=prompt,
@@ -174,6 +179,8 @@ async def handle_optimize(
             applied_pattern_ids=applied_pattern_ids,
             taxonomy_engine=get_taxonomy_engine(),
         ):
+            if event.event in forward_events:
+                await notify_event_bus(f"optimization_{event.event}", event.data)
             if event.event == "optimization_complete":
                 result = event.data
             elif event.event == "error":

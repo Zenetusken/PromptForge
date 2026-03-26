@@ -52,6 +52,32 @@
           }
         }
       }
+      // Live pipeline progress from MCP-triggered optimizations.
+      // These events are forwarded by the MCP tool handler to the event bus
+      // so the web UI shows phase transitions, model IDs, and scores in real time.
+      if (type === 'optimization_status') {
+        const d = data as { phase?: string; status?: string; state?: string; model?: string };
+        const phase = d.phase;
+        const state = d.status || d.state;
+        if (state === 'running' || state === 'complete') {
+          if (phase === 'analyze' || phase === 'analyzing') forgeStore.status = 'analyzing';
+          else if (phase === 'optimize' || phase === 'optimizing') forgeStore.status = 'optimizing';
+          else if (phase === 'score' || phase === 'scoring') forgeStore.status = 'scoring';
+        }
+        if (d.model && phase) {
+          forgeStore.phaseModels = { ...forgeStore.phaseModels, [phase]: d.model };
+        }
+      }
+      if (type === 'optimization_score_card') {
+        const d = data as { optimized_scores?: any; original_scores?: any; deltas?: Record<string, number> };
+        if (d.optimized_scores) forgeStore.scores = d.optimized_scores as import('$lib/api/client').DimensionScores;
+        if (d.original_scores) forgeStore.originalScores = d.original_scores as import('$lib/api/client').DimensionScores;
+        if (d.deltas) forgeStore.scoreDeltas = d.deltas;
+      }
+      if (type === 'optimization_optimization_start') {
+        const d = data as { trace_id?: string };
+        if (d.trace_id) forgeStore.traceId = d.trace_id;
+      }
       if (type === 'optimization_failed') {
         window.dispatchEvent(new CustomEvent('optimization-event', { detail: data }));
         addToast('deleted', (data.error as string) || 'Optimization failed');
