@@ -18,9 +18,9 @@
   /** Shared handler for new MCP sampling capability detection (DRY: SSE + health). */
   function onSamplingDetected(): void {
     addToast('created', 'MCP client connected with sampling capability');
-    // Toggle logic is handled atomically in the SSE/health handlers.
-    // Do NOT clear passthrough here — setPipelineToggle('force_sampling', true)
-    // already clears force_passthrough in the same PATCH via mutual exclusion.
+    if (preferencesStore.pipeline.force_passthrough) {
+      preferencesStore.setPipelineToggle('force_passthrough', false);
+    }
   }
 
   // Real-time event stream
@@ -96,35 +96,45 @@
       }
       if (type === 'routing_state_changed') {
         const d = data as { trigger?: string; provider: string | null; sampling_capable: boolean | null; mcp_connected: boolean; available_tiers: string[] };
+
+        // Snapshot previous state for transition detection
         const wasSamplingCapable = forgeStore.samplingCapable === true;
+        const hadProvider = !!forgeStore.provider;
+
+        // Apply new state
         const delta = forgeStore.updateRoutingState({
           sampling_capable: d.sampling_capable,
           mcp_disconnected: !d.mcp_connected,
           provider: d.provider,
         });
 
-        // Atomic toggle sync: ONE setPipelineToggle call per state change.
-        // setPipelineToggle('force_sampling', true) automatically clears
-        // force_passthrough via mutual exclusion — no separate PATCH needed.
+        // ── Toggle auto-sync (transition-based, not every-event) ──
+        //
+        // Sampling connected (transition: was false/null → now true)
         if (delta.samplingChanged) {
           onSamplingDetected();
-          // Enable sampling in one atomic PATCH (also clears passthrough)
+          // Enable sampling, which auto-clears passthrough via mutual exclusion
           preferencesStore.setPipelineToggle('force_sampling', true);
-        } else if (wasSamplingCapable && d.sampling_capable !== true) {
-          // Sampling went away — disable in one atomic PATCH
+        }
+
+        // Sampling disconnected (transition: was true → now false/null)
+        if (wasSamplingCapable && d.sampling_capable !== true) {
           if (preferencesStore.pipeline.force_sampling) {
             preferencesStore.setPipelineToggle('force_sampling', false);
           }
-        } else if (preferencesStore.pipeline.force_passthrough && d.provider) {
-          // Internal provider appeared — disable passthrough
+        }
+
+        // Internal provider appeared (transition: had none → now have one)
+        // Only auto-clear passthrough when a BETTER tier newly appears.
+        if (!hadProvider && d.provider && preferencesStore.pipeline.force_passthrough) {
           preferencesStore.setPipelineToggle('force_passthrough', false);
         }
 
+        // ── Toasts ──
         if (delta.reconnected) addToast('created', 'MCP client reconnected');
-        // Only toast on disconnect when no local provider (true degradation).
-        // When CLI/API is available, the auto-fallback is silent.
         if (delta.disconnected && !forgeStore.provider) addToast('deleted', 'MCP client disconnected');
-        // Trigger onboarding guide for the new tier (dedup guard prevents redundant opens)
+
+        // ── Tier guide ──
         queueMicrotask(() => triggerTierGuide(routing.tier));
       }
       if (type === 'preferences_changed') {
@@ -173,18 +183,25 @@
     forgeStore.avgDurationMs = h.avg_duration_ms ?? null;
     forgeStore.scoreHealth = h.score_health ?? null;
     forgeStore.phaseDurations = (h.phase_durations && Object.keys(h.phase_durations).length > 0) ? h.phase_durations : null;
-    // Atomic toggle sync (mirrors SSE handler logic).
     if (delta.samplingChanged) {
       onSamplingDetected();
-      preferencesStore.setPipelineToggle('force_sampling', true);
-    } else if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
-      preferencesStore.setPipelineToggle('force_sampling', false);
-    } else if (preferencesStore.pipeline.force_passthrough && (h.sampling_capable === true || h.provider)) {
-      preferencesStore.setPipelineToggle('force_passthrough', false);
+      if (!preferencesStore.pipeline.force_sampling) {
+        preferencesStore.setPipelineToggle('force_sampling', true);
+      }
     }
 
     if (!firstHealthReceived) {
       firstHealthReceived = true;
+      // Startup-only safety net: clear stale toggle preferences that
+      // conflict with actual capabilities. Only runs ONCE on first
+      // health response — never on subsequent polls (which would
+      // override user's explicit toggle choices).
+      if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
+        preferencesStore.setPipelineToggle('force_sampling', false);
+      }
+      if (preferencesStore.pipeline.force_passthrough && (h.sampling_capable === true || h.provider)) {
+        preferencesStore.setPipelineToggle('force_passthrough', false);
+      }
       queueMicrotask(() => triggerTierGuide(routing.tier));
     }
   }
