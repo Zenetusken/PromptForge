@@ -358,6 +358,8 @@ class _CapabilityDetectionMiddleware:
     _last_activity_write: float = 0.0
     _ACTIVITY_WRITE_THROTTLE: float = 10.0
     _active_sse_streams: int = 0
+    _sampling_session_ids: set[str] = set()  # Sessions that declared sampling
+    _sampling_sse_sessions: set[str] = set()  # SSE streams from sampling sessions
 
     def __init__(self, app):
         self.app = app
@@ -378,19 +380,47 @@ class _CapabilityDetectionMiddleware:
         self._touch_activity()
         body_chunks: list[bytes] = []
         response_status: int = 0
+        is_initialize = False
+        sampling_declared = False
+        cls = _CapabilityDetectionMiddleware
 
         async def _buffered_receive():
+            nonlocal is_initialize, sampling_declared
             message = await receive()
             if message["type"] == "http.request":
                 body_chunks.append(message.get("body", b""))
                 if not message.get("more_body", False):
-                    self._inspect_initialize(b"".join(body_chunks))
+                    body = b"".join(body_chunks)
+                    # Detect if this is an initialize with sampling
+                    try:
+                        data = _json.loads(body)
+                        if isinstance(data, dict) and data.get("method") == "initialize":
+                            is_initialize = True
+                            caps = data.get("params", {}).get("capabilities", {})
+                            sampling_declared = caps.get("sampling") is not None
+                    except Exception:
+                        pass
+                    self._inspect_initialize(body)
             return message
 
         async def _capture_send(message):
             nonlocal response_status
             if message["type"] == "http.response.start":
                 response_status = message.get("status", 0)
+                # Capture the new session ID from initialize response
+                if is_initialize and response_status == 200:
+                    resp_headers = dict(
+                        (k.decode() if isinstance(k, bytes) else k,
+                         v.decode() if isinstance(v, bytes) else v)
+                        for k, v in message.get("headers", [])
+                    )
+                    new_session_id = resp_headers.get("mcp-session-id", "")
+                    if new_session_id:
+                        if sampling_declared:
+                            cls._sampling_session_ids.add(new_session_id)
+                            logger.info("Sampling session registered: %s", new_session_id[:12])
+                        else:
+                            cls._sampling_session_ids.discard(new_session_id)
             await send(message)
 
         await self.app(scope, _buffered_receive, _capture_send)
@@ -404,6 +434,8 @@ class _CapabilityDetectionMiddleware:
             for k, v in scope.get("headers", [])
         )
         has_session_id = "mcp-session-id" in headers
+        session_id = headers.get("mcp-session-id", "")
+        is_sampling_stream = session_id in self._sampling_session_ids
 
         if not has_session_id:
             logger.info(
@@ -425,6 +457,9 @@ class _CapabilityDetectionMiddleware:
                 elif status == 200:
                     get_is_sse = True
                     cls._active_sse_streams += 1
+                    if is_sampling_stream:
+                        cls._sampling_sse_sessions.add(session_id)
+                        logger.info("Sampling SSE stream opened: %s", session_id[:12])
                     if not has_session_id:
                         cls._write_optimistic_session()
                     else:
@@ -445,46 +480,26 @@ class _CapabilityDetectionMiddleware:
         finally:
             if get_is_sse:
                 cls._active_sse_streams = max(0, cls._active_sse_streams - 1)
+                # Track if THIS was a sampling stream
+                was_sampling = session_id in cls._sampling_sse_sessions
+                if was_sampling:
+                    cls._sampling_sse_sessions.discard(session_id)
+                    logger.info(
+                        "Sampling SSE stream closed: %s — INSTANT disconnect",
+                        session_id[:12],
+                    )
                 cls._flush_sse_streams()
                 if cls._active_sse_streams == 0:
                     logger.info("Last SSE stream closed — client disconnected")
                     routing = _shared._routing
                     if routing:
                         routing.on_mcp_disconnect()
-                else:
-                    # An SSE stream closed but others remain (e.g., Claude Code).
-                    # If sampling was active, the closed stream may be the bridge.
-                    # Schedule a deferred check: if no sampling-capable initialize
-                    # arrives within 15s, clear sampling state.
+                elif was_sampling:
+                    # The sampling client's stream closed but non-sampling
+                    # clients (Claude Code) remain. Clear sampling IMMEDIATELY.
                     routing = _shared._routing
                     if routing and routing.state.sampling_capable is True:
-                        logger.info(
-                            "SSE stream closed (remaining=%d) — scheduling sampling revalidation",
-                            cls._active_sse_streams,
-                        )
-                        asyncio.create_task(cls._deferred_sampling_check(routing))
-
-    @classmethod
-    async def _deferred_sampling_check(cls, routing) -> None:
-        """After an SSE stream closes, wait then check if sampling is still alive.
-
-        When the bridge disconnects but Claude Code stays connected,
-        ``_active_sse_streams`` drops from 2→1 (not 0), so the normal
-        disconnect path doesn't fire. This deferred check waits 15s
-        for a fresh sampling ``initialize`` — if none arrives, the
-        bridge is gone and sampling should be cleared.
-        """
-        await asyncio.sleep(15)
-        if routing.state.sampling_capable is not True:
-            return  # Already cleared by another path
-        if routing.state.last_capability_update:
-            elapsed = (
-                datetime.now(timezone.utc) - routing.state.last_capability_update
-            ).total_seconds()
-            if elapsed < 30:
-                return  # Fresh sampling init received — bridge is still alive
-        logger.info("Sampling revalidation: no fresh sampling init after SSE close — clearing")
-        routing.on_mcp_disconnect()
+                        routing.on_mcp_disconnect()
 
     @classmethod
     def _flush_sse_streams(cls) -> None:
