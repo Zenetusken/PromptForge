@@ -18,7 +18,10 @@
     // If a refinement version is selected, show that version's prompt
     const selected = refinementStore.selectedVersion;
     if (selected && selected.prompt) return selected.prompt;
-    return result?.optimized_prompt || '';
+    let text = result?.optimized_prompt || '';
+    // Strip LLM meta-headers like "# Optimized Prompt" (defensive — backend also strips)
+    text = text.replace(/^#{1,3}\s+(?:optimized|improved|rewritten|enhanced)\s+(?:prompt|version)\s*:?\s*\n*/i, '');
+    return text;
   });
 
   const displayLabel = $derived.by(() => {
@@ -182,6 +185,7 @@
   .prompt-output-wrap {
     flex: 1;
     overflow: auto;
+    overflow-x: hidden;
     background: var(--color-bg-input);
     border-bottom: 1px solid var(--color-border-subtle);
     min-height: 0;
@@ -200,6 +204,8 @@
 
   .prompt-output-md {
     padding: 6px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .changes-section {

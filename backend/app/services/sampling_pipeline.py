@@ -228,7 +228,8 @@ def _strip_meta_header(text: str) -> str:
             "# improved prompt", "## improved prompt",
             "# rewritten prompt", "## rewritten prompt",
         ]
-        if any(first == h for h in meta_headers):
+        first_clean = first.rstrip(":").rstrip()
+        if any(first_clean == h for h in meta_headers):
             lines.pop(0)
             # Also strip blank line after removed header
             while lines and not lines[0].strip():

@@ -420,15 +420,18 @@
             </div>
           {/if}
           {#if activeResult?.models_by_phase && activeResult.provider === 'mcp_sampling'}
-            <div class="meta-row">
-              <span class="meta-label">Models</span>
-              <span
-                class="meta-value meta-value--green"
-                title="analyze: {activeResult.models_by_phase.analyze || '?'} / optimize: {activeResult.models_by_phase.optimize || '?'} / score: {activeResult.models_by_phase.score || '?'}"
-              >
-                {activeResult.models_by_phase.analyze || '?'} / {activeResult.models_by_phase.optimize || '?'} / {activeResult.models_by_phase.score || '?'}
-              </span>
-            </div>
+            {#each [
+              { label: 'Analyzer', key: 'analyze' },
+              { label: 'Optimizer', key: 'optimize' },
+              { label: 'Scorer', key: 'score' },
+            ] as { label, key }}
+              <div class="meta-row">
+                <span class="meta-label">{label}</span>
+                <span class="meta-value meta-value--green">
+                  {activeResult.models_by_phase[key] || '?'}
+                </span>
+              </div>
+            {/each}
           {/if}
         </div>
 
