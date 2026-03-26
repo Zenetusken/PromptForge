@@ -110,3 +110,7 @@ sse_mcp_client*.py
 test_tools.py
 backend/mcp_client.py
 backend/mcp_wrapper_stdio.py
+
+# IDE debugging scripts (scratch)
+test_scoring.py
+test_scoring_fallback.py
