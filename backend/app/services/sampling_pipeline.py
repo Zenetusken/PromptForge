@@ -957,7 +957,7 @@ async def run_sampling_pipeline(
                 )
         else:
             # LLM scoring failed or was unavailable — use heuristic scores
-            # directly (already computed at lines 652-655).
+            # directly (already computed above via HeuristicScorer.score_prompt).
             original_scores = DimensionScores.from_dict(heur_original)
             optimized_scores = DimensionScores.from_dict(heur_optimized)
             deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
@@ -1162,9 +1162,23 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
         "available_strategies": strategy_loader.format_available(),
     })
 
-    analysis, _analyze_model = await _sampling_request_structured(
-        ctx, system_prompt, analyze_msg, AnalysisResult,
-    )
+    try:
+        analysis, _analyze_model = await _sampling_request_structured(
+            ctx, system_prompt, analyze_msg, AnalysisResult,
+        )
+    except Exception:
+        logger.warning("Structured analysis parsing failed in analyze-only, using fallback")
+        try:
+            text, _analyze_model = await _sampling_request_plain(
+                ctx, system_prompt, analyze_msg,
+            )
+            try:
+                analysis = _parse_text_response(text, AnalysisResult)
+            except Exception:
+                analysis = _build_analysis_from_text(text, "auto", raw_prompt=prompt)
+        except Exception:
+            analysis = _build_analysis_from_text("", "auto", raw_prompt=prompt)
+            _analyze_model = "unknown"
 
     analyze_ms = int((time.monotonic() - phase_t0) * 1000)
     phase_durations["analyze_ms"] = analyze_ms
@@ -1215,6 +1229,11 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
     # --- Phase 2: Baseline score ---
     phase_t0 = time.monotonic()
     scoring_system = loader.load("scoring.md")
+    # For sampling: append explicit JSON output directive (same as main pipeline)
+    scoring_system += (
+        "\n\nYou MUST output ONLY valid JSON matching the ScoreResult schema. "
+        "No markdown, no reasoning text, no commentary outside the JSON structure."
+    )
     scorer_msg = (
         f"<prompt-a>\n{prompt}\n</prompt-a>\n\n"
         f"<prompt-b>\n{prompt}\n</prompt-b>"
@@ -1227,6 +1246,7 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
     try:
         score_result, _score_model = await _sampling_request_structured(
             ctx, scoring_system, scorer_msg, ScoreResult,
+            max_tokens=1024,
         )
         # Hybrid blend
         historical_stats = await _fetch_historical_stats()
