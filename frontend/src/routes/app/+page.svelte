@@ -119,11 +119,11 @@
           preferencesStore.setPipelineToggle('force_sampling', false);
         }
 
-        // Auto-disable force_passthrough when a better tier becomes available.
-        // Passthrough is the fallback — if internal or sampling appear, upgrade.
-        if (preferencesStore.pipeline.force_passthrough && (d.provider || d.sampling_capable === true)) {
-          preferencesStore.setPipelineToggle('force_passthrough', false);
-        }
+        // Auto-disable force_passthrough ONLY when sampling newly connects.
+        // Passthrough + sampling are mutually exclusive per the routing matrix.
+        // We do NOT auto-disable passthrough when internal provider exists —
+        // the user may intentionally prefer passthrough over internal.
+        // (onSamplingDetected already handles sampling→passthrough clearing.)
 
         if (delta.reconnected) addToast('created', 'MCP client reconnected');
         // Only toast on disconnect when no local provider (true degradation).
@@ -190,10 +190,10 @@
     if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
       preferencesStore.setPipelineToggle('force_sampling', false);
     }
-    // Auto-disable force_passthrough when a better tier is available.
-    if (preferencesStore.pipeline.force_passthrough && (h.sampling_capable === true || h.provider)) {
-      preferencesStore.setPipelineToggle('force_passthrough', false);
-    }
+    // Note: force_passthrough is NOT auto-disabled when internal provider
+    // exists — user may intentionally prefer passthrough over internal.
+    // Passthrough is only auto-disabled when sampling connects (via
+    // onSamplingDetected which already handles this).
 
     if (!firstHealthReceived) {
       firstHealthReceived = true;
