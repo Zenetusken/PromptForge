@@ -912,7 +912,20 @@
                   {/if}
                   <div class="data-row">
                     <span class="data-label">Scoring</span>
-                    <span class="data-value neon-green" title="LLM + heuristic blended scores via IDE sampling">hybrid (via IDE)</span>
+                    {#if forgeStore.result?.scoring_mode}
+                      {@const mode = forgeStore.result.scoring_mode}
+                      {@const scoreModel = forgeStore.phaseModels['score']}
+                      <span
+                        class="data-value"
+                        class:neon-green={mode === 'hybrid'}
+                        class:neon-cyan={mode === 'heuristic'}
+                        title={scoreModel ? `${mode} — scored by ${scoreModel}` : mode}
+                      >
+                        {mode}{scoreModel ? ` (${scoreModel})` : ''}
+                      </span>
+                    {:else}
+                      <span class="data-value" class:data-value--dim={true}>pending</span>
+                    {/if}
                   </div>
                   {#if forgeStore.scoreHealth}
                     <div class="data-row">
