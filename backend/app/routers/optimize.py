@@ -1,5 +1,6 @@
 """Optimization endpoints — POST /api/optimize (SSE), GET /api/optimize/{trace_id}, passthrough."""
 
+import asyncio
 import logging
 import uuid
 
@@ -131,31 +132,43 @@ async def optimize(
             })
             yield format_sse("status", {"phase": "analyze", "status": "running"})
             try:
-                result = await call_mcp_tool("synthesis_optimize", {
+                # Launch MCP call as background task so we can yield keepalives
+                task = asyncio.ensure_future(call_mcp_tool("synthesis_optimize", {
                     "prompt": body.prompt,
                     "strategy": body.strategy,
                     "workspace_path": body.workspace_path,
                     "repo_full_name": body.repo_full_name,
                     "applied_pattern_ids": body.applied_pattern_ids,
-                })
-                # The MCP tool persists the optimization and returns OptimizeOutput.
+                }))
+
+                # Keepalive loop: yield SSE comments every 10s to prevent
+                # browser/proxy idle timeout during the 20-30s MCP call.
+                while not task.done():
+                    try:
+                        await asyncio.wait_for(asyncio.shield(task), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        yield ": keepalive\n\n"
+
+                result = task.result()
+
                 # Fetch the full record from DB so the SSE event matches the
-                # OptimizationDetail shape the frontend expects (id, raw_prompt, etc.)
+                # OptimizationDetail shape the frontend expects.
                 trace_id = result.get("trace_id")
                 if trace_id:
                     yield format_sse("optimization_start", {"trace_id": trace_id})
-                    opt_result = await db.execute(
-                        select(Optimization).where(Optimization.trace_id == trace_id)
-                    )
-                    opt = opt_result.scalar_one_or_none()
-                    if opt:
-                        cluster_id = await _get_cluster_id(db, opt.id)
-                        detail = _serialize_optimization(opt, cluster_id=cluster_id)
-                        yield format_sse("optimization_complete", detail.model_dump())
-                    else:
-                        # Fallback: emit raw MCP result (partial shape)
-                        logger.warning("Sampling proxy: optimization not found for trace_id=%s", trace_id)
-                        yield format_sse("optimization_complete", result)
+                    from app.database import async_session_factory
+                    async with async_session_factory() as fresh_db:
+                        opt_result = await fresh_db.execute(
+                            select(Optimization).where(Optimization.trace_id == trace_id)
+                        )
+                        opt = opt_result.scalar_one_or_none()
+                        if opt:
+                            cluster_id = await _get_cluster_id(fresh_db, opt.id)
+                            detail = _serialize_optimization(opt, cluster_id=cluster_id)
+                            yield format_sse("optimization_complete", detail.model_dump())
+                        else:
+                            logger.warning("Sampling proxy: optimization not found for trace_id=%s", trace_id)
+                            yield format_sse("optimization_complete", result)
                 else:
                     yield format_sse("optimization_complete", result)
             except Exception as exc:

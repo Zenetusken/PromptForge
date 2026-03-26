@@ -129,21 +129,42 @@ class ForgeStore {
       this.strategy,
       (event: SSEEvent) => this.handleEvent(event),
       (err: Error) => {
-        this.error = err.message;
-        this.status = 'error';
-        // Passthrough SSE is only 2 events — no reconnection needed.
         // Internal pipeline: attempt reconnection via trace ID polling.
-        if (this.traceId && !this.passthroughTraceId) this.reconnect();
+        if (this.traceId && !this.passthroughTraceId) {
+          this.error = err.message;
+          this.status = 'error';
+          this.reconnect();
+        } else if (!this.traceId && !this.passthroughTraceId
+                   && ['analyzing', 'optimizing', 'scoring'].includes(this.status)) {
+          // Sampling proxy: no traceId yet — the event bus (/api/events)
+          // may still deliver the result. Wait before showing error.
+          setTimeout(() => {
+            if (this.status !== 'complete' && this.status !== 'idle') {
+              this.error = 'Connection lost. Check history for results.';
+              this.status = 'error';
+            }
+          }, 15_000);
+        } else {
+          this.error = err.message;
+          this.status = 'error';
+        }
       },
       () => {
         if (this.status !== 'complete' && this.status !== 'error') {
-          if (this.status === 'passthrough') return; // Already received passthrough event — done
+          if (this.status === 'passthrough') return;
           if (this.traceId) {
             this.reconnect();
           } else if (this.passthroughTraceId) {
-            // Stream dropped before passthrough event arrived
             this.error = 'Connection lost during passthrough setup. Please try again.';
             this.status = 'error';
+          } else if (['analyzing', 'optimizing', 'scoring'].includes(this.status)) {
+            // Sampling proxy: stream ended without result — event bus may deliver
+            setTimeout(() => {
+              if (this.status !== 'complete' && this.status !== 'idle') {
+                this.error = 'Connection lost. Check history for results.';
+                this.status = 'error';
+              }
+            }, 15_000);
           }
         }
       },

@@ -5,9 +5,8 @@
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import type { Preferences } from '$lib/stores/preferences.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
-  import { getHealth, getOptimization, connectEventStream } from '$lib/api/client';
+  import { getHealth, connectEventStream } from '$lib/api/client';
   import type { HealthResponse } from '$lib/api/client';
-  import { editorStore } from '$lib/stores/editor.svelte';
   import { triggerTierGuide } from '$lib/stores/tier-onboarding.svelte';
   import { routing } from '$lib/stores/routing.svelte';
 
@@ -35,22 +34,20 @@
           const label = type === 'optimization_analyzed' ? 'analyzed' : 'optimized';
           addToast('created', `Prompt ${label}`);
         }
-        // Auto-load result when forge is in an active state but the forge SSE
-        // stream didn't deliver the result (REST proxy timeout, MCP direct call).
-        // This bridges the gap between the ambient event bus and the forge store.
-        if (
-          type === 'optimization_created' &&
-          data.trace_id &&
-          data.status === 'completed' &&
-          !forgeStore.result &&
-          (forgeStore.status === 'analyzing' || forgeStore.status === 'optimizing' || forgeStore.status === 'scoring')
-        ) {
-          getOptimization(data.trace_id as string).then((opt) => {
-            if (opt.status === 'completed' && !forgeStore.result) {
-              forgeStore.loadFromRecord(opt);
-              editorStore.openResult(opt.id);
-            }
-          }).catch(() => { /* reconnect polling will catch it */ });
+        // Auto-load sampling result via event bus when the SSE optimize stream
+        // may have dropped (the /api/events SSE has its own keepalive and is
+        // more reliable than the /api/optimize SSE during long MCP calls).
+        if (type === 'optimization_created' && data.trace_id && data.status === 'completed') {
+          const isWaiting = ['analyzing', 'optimizing', 'scoring'].includes(forgeStore.status);
+          if (isWaiting) {
+            import('$lib/api/client').then(({ getOptimization }) => {
+              getOptimization(data.trace_id as string).then(opt => {
+                if (opt.status === 'completed' && forgeStore.status !== 'complete') {
+                  forgeStore.loadFromRecord(opt);
+                }
+              }).catch(() => {});
+            });
+          }
         }
       }
       if (type === 'optimization_failed') {
