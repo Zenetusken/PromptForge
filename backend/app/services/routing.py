@@ -438,7 +438,7 @@ class RoutingManager:
 
         while True:
             try:
-                await asyncio.sleep(60)
+                await asyncio.sleep(30)
 
                 # ── Reconnection detection (when disconnected) ────────
                 if not self._state.mcp_connected and self._session_file:
@@ -467,16 +467,33 @@ class RoutingManager:
                     continue
 
                 # ── Disconnect detection (when connected) ─────────────
+                # Use a shorter window (60s) than the startup recovery
+                # staleness (300s). The bridge health check runs every 10s,
+                # so 60s = 6 missed heartbeats = definitive disconnect.
+                _dc_staleness = 60.0
+
                 if self._state.mcp_connected and self._state.last_activity:
                     elapsed = (
                         datetime.now(timezone.utc) - self._state.last_activity
                     ).total_seconds()
-                    if elapsed > MCP_ACTIVITY_STALENESS_SECONDS:
+                    if elapsed > _dc_staleness:
                         # Before disconnecting, check the session file —
                         # the MCP server may have fresh activity we missed.
                         if self._session_file:
                             data = self._session_file.read()
-                            if data and not self._session_file.is_activity_stale(data):
+                            file_fresh = False
+                            if data:
+                                try:
+                                    file_activity = datetime.fromisoformat(
+                                        data.get("last_activity", ""),
+                                    )
+                                    file_elapsed = (
+                                        datetime.now(timezone.utc) - file_activity
+                                    ).total_seconds()
+                                    file_fresh = file_elapsed < _dc_staleness
+                                except (ValueError, TypeError):
+                                    pass
+                            if file_fresh:
                                 try:
                                     fresh_activity = datetime.fromisoformat(
                                         data["last_activity"],
