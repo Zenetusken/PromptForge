@@ -142,6 +142,13 @@
     if (delta.samplingChanged) onSamplingDetected();
     // Startup onboarding: after the first health response, the routing store
     // has all data to derive the tier.  Trigger the appropriate guide once.
+    // Auto-disable force_sampling if sampling is not available.
+    // Runs on every health poll — catches startup with stale preference
+    // AND runtime disconnects between SSE events.
+    if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
+      preferencesStore.setPipelineToggle('force_sampling', false);
+    }
+
     if (!firstHealthReceived) {
       firstHealthReceived = true;
       queueMicrotask(() => triggerTierGuide(routing.tier));
