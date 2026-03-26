@@ -912,20 +912,13 @@
                   {/if}
                   <div class="data-row">
                     <span class="data-label">Scoring</span>
-                    {#if forgeStore.result?.scoring_mode}
-                      {@const mode = forgeStore.result.scoring_mode}
-                      {@const scoreModel = forgeStore.phaseModels['score']}
-                      <span
-                        class="data-value"
-                        class:neon-green={mode === 'hybrid'}
-                        class:neon-cyan={mode === 'heuristic'}
-                        title={scoreModel ? `${mode} — scored by ${scoreModel}` : mode}
-                      >
-                        {mode}{scoreModel ? ` (${scoreModel})` : ''}
-                      </span>
-                    {:else}
-                      <span class="data-value" class:data-value--dim={true}>pending</span>
-                    {/if}
+                    <span
+                      class="data-value neon-green"
+                      class:data-value--dim={!forgeStore.phaseModels['score'] && !forgeStore.result?.scoring_mode}
+                      title={forgeStore.result?.scoring_mode || 'pending'}
+                    >
+                      {forgeStore.phaseModels['score'] || forgeStore.result?.scoring_mode || 'pending'}
+                    </span>
                   </div>
                   {#if forgeStore.scoreHealth}
                     <div class="data-row">
