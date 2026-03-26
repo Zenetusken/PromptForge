@@ -68,7 +68,7 @@
   ariaLabel="MCP sampling workflow guide"
   accentColor="var(--color-neon-green)"
   whyTitle="WHY SAMPLING"
-  whyText="The IDE's LLM runs the full 3-phase pipeline (analyze, optimize, score) via MCP sampling. No backend provider or API key needed — uses your IDE subscription directly. Hybrid scoring blends the IDE LLM's evaluation with model-independent heuristics. Workspace context, taxonomy patterns, and adaptation state are injected identically to internal mode."
+  whyText="Your IDE's LLM runs the full pipeline via MCP sampling — no API key needed. Currently supported in VS Code only."
   steps={STEPS}
   comparison={TIER_COMPARISON}
   highlightColumn="sampling"
