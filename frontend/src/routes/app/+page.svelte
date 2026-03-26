@@ -18,9 +18,9 @@
   /** Shared handler for new MCP sampling capability detection (DRY: SSE + health). */
   function onSamplingDetected(): void {
     addToast('created', 'MCP client connected with sampling capability');
-    if (preferencesStore.pipeline.force_passthrough) {
-      preferencesStore.setPipelineToggle('force_passthrough', false);
-    }
+    // Toggle logic is handled atomically in the SSE/health handlers.
+    // Do NOT clear passthrough here — setPipelineToggle('force_sampling', true)
+    // already clears force_passthrough in the same PATCH via mutual exclusion.
   }
 
   // Real-time event stream
@@ -103,22 +103,20 @@
           provider: d.provider,
         });
 
-        // Auto-enable force_sampling when sampling becomes available
+        // Atomic toggle sync: ONE setPipelineToggle call per state change.
+        // setPipelineToggle('force_sampling', true) automatically clears
+        // force_passthrough via mutual exclusion — no separate PATCH needed.
         if (delta.samplingChanged) {
           onSamplingDetected();
-          if (!preferencesStore.pipeline.force_sampling) {
-            preferencesStore.setPipelineToggle('force_sampling', true);
+          // Enable sampling in one atomic PATCH (also clears passthrough)
+          preferencesStore.setPipelineToggle('force_sampling', true);
+        } else if (wasSamplingCapable && d.sampling_capable !== true) {
+          // Sampling went away — disable in one atomic PATCH
+          if (preferencesStore.pipeline.force_sampling) {
+            preferencesStore.setPipelineToggle('force_sampling', false);
           }
-        }
-
-        // Auto-disable force_sampling INSTANTLY when sampling goes away.
-        if (wasSamplingCapable && d.sampling_capable !== true && preferencesStore.pipeline.force_sampling) {
-          preferencesStore.setPipelineToggle('force_sampling', false);
-        }
-
-        // Auto-disable force_passthrough when a better tier becomes available.
-        // Passthrough is the fallback — if internal or sampling appear, upgrade.
-        if (preferencesStore.pipeline.force_passthrough && (d.provider || d.sampling_capable === true)) {
+        } else if (preferencesStore.pipeline.force_passthrough && d.provider) {
+          // Internal provider appeared — disable passthrough
           preferencesStore.setPipelineToggle('force_passthrough', false);
         }
 
@@ -175,20 +173,13 @@
     forgeStore.avgDurationMs = h.avg_duration_ms ?? null;
     forgeStore.scoreHealth = h.score_health ?? null;
     forgeStore.phaseDurations = (h.phase_durations && Object.keys(h.phase_durations).length > 0) ? h.phase_durations : null;
+    // Atomic toggle sync (mirrors SSE handler logic).
     if (delta.samplingChanged) {
       onSamplingDetected();
-      // Auto-enable force_sampling when detected via health poll
-      if (!preferencesStore.pipeline.force_sampling) {
-        preferencesStore.setPipelineToggle('force_sampling', true);
-      }
-    }
-    // Auto-disable force_sampling if sampling is not available.
-    // Safety net for startup with stale preferences.json.
-    if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
+      preferencesStore.setPipelineToggle('force_sampling', true);
+    } else if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
       preferencesStore.setPipelineToggle('force_sampling', false);
-    }
-    // Auto-disable force_passthrough when a better tier is available.
-    if (preferencesStore.pipeline.force_passthrough && (h.sampling_capable === true || h.provider)) {
+    } else if (preferencesStore.pipeline.force_passthrough && (h.sampling_capable === true || h.provider)) {
       preferencesStore.setPipelineToggle('force_passthrough', false);
     }
 
