@@ -144,6 +144,8 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .empty-result {
@@ -194,6 +196,8 @@
     background: var(--color-bg-input);
     border-bottom: 1px solid var(--color-border-subtle);
     min-height: 0;
+    min-width: 0;
+    width: 100%;
   }
 
   .prompt-output {

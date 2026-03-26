@@ -74,7 +74,7 @@
   }
   .activity-bar { grid-row: 1 / 2; grid-column: 1; overflow: hidden; }
   .navigator { grid-row: 1 / 2; grid-column: 2; overflow: hidden; }
-  .editor-area { grid-row: 1 / 2; grid-column: 3; overflow: hidden; }
+  .editor-area { grid-row: 1 / 2; grid-column: 3; overflow: hidden; min-width: 0; }
   .inspector { grid-row: 1 / 2; grid-column: 4; overflow: hidden; }
   .status-bar { grid-row: 2; grid-column: 1 / -1; }
 </style>

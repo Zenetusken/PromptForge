@@ -151,6 +151,7 @@
     height: 100%;
     background: var(--color-bg-primary);
     overflow: hidden;
+    min-width: 0;
   }
 
   .tab-bar {

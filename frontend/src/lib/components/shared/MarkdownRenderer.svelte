@@ -31,6 +31,9 @@
     line-height: 1.6;
     color: var(--color-text-primary);
     word-break: break-word;
+    overflow-wrap: anywhere;
+    min-width: 0;
+    max-width: 100%;
   }
 
   /* ---- Headings ---- */
