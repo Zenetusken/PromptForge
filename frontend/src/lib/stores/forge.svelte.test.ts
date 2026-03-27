@@ -480,6 +480,11 @@ describe('ForgeStore', () => {
       forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
       forgeStore.forge();
 
+      // Simulate receiving a traceId (optimization_start event) so the error
+      // callback enters the immediate-error branch instead of the deferred
+      // sampling proxy branch (15s setTimeout).
+      forgeStore.traceId = 'trace-err-1';
+
       errorCallback(new Error('Connection dropped'));
 
       expect(forgeStore.error).toBe('Connection dropped');

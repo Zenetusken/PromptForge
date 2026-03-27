@@ -32,27 +32,27 @@ describe('PassthroughGuide', () => {
     passthroughGuide.show(false);
     render(PassthroughGuide);
     expect(screen.getByText('WHY PASSTHROUGH')).toBeInTheDocument();
-    expect(screen.getByText(/Zero-dependency fallback/)).toBeInTheDocument();
+    expect(screen.getByText(/No API key or CLI needed/)).toBeInTheDocument();
   });
 
   it('renders all 6 step titles', () => {
     passthroughGuide.show(false);
     render(PassthroughGuide);
-    expect(screen.getByText('System assembles your prompt')).toBeInTheDocument();
+    expect(screen.getByText('Prompt assembled')).toBeInTheDocument();
     expect(screen.getByText('Copy the assembled prompt')).toBeInTheDocument();
-    expect(screen.getByText('Paste into your LLM')).toBeInTheDocument();
-    expect(screen.getByText('Copy the LLM response')).toBeInTheDocument();
+    expect(screen.getByText('Paste into any LLM')).toBeInTheDocument();
+    expect(screen.getByText('Copy the response')).toBeInTheDocument();
     expect(screen.getByText('Paste result back')).toBeInTheDocument();
-    expect(screen.getByText('System scores and persists')).toBeInTheDocument();
+    expect(screen.getByText('Scored and saved')).toBeInTheDocument();
   });
 
   it('renders first step expanded by default', () => {
     passthroughGuide.show(false);
     render(PassthroughGuide);
     // First step's description should be visible
-    expect(screen.getByText(/Strategy template, scoring rubric/)).toBeInTheDocument();
+    expect(screen.getByText(/workspace context, patterns, and scoring rubric/)).toBeInTheDocument();
     // Second step's description should NOT be visible
-    expect(screen.queryByText(/Click COPY or select all text/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Click COPY to grab/)).not.toBeInTheDocument();
   });
 
   it('clicking a collapsed step expands it', async () => {
@@ -64,9 +64,9 @@ describe('PassthroughGuide', () => {
     await user.click(screen.getByText('Copy the assembled prompt'));
 
     // Step 2 description should now be visible
-    expect(screen.getByText(/Click COPY or select all text/)).toBeInTheDocument();
+    expect(screen.getByText(/Click COPY to grab/)).toBeInTheDocument();
     // Step 1 description should be hidden
-    expect(screen.queryByText(/Strategy template, scoring rubric/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/workspace context, patterns, and scoring rubric/)).not.toBeInTheDocument();
   });
 
   it('NEXT button advances to next step', async () => {
@@ -78,7 +78,7 @@ describe('PassthroughGuide', () => {
     await user.click(screen.getByText('NEXT'));
 
     // Step 2 should now be expanded
-    expect(screen.getByText(/Click COPY or select all text/)).toBeInTheDocument();
+    expect(screen.getByText(/Click COPY to grab/)).toBeInTheDocument();
   });
 
   it('PREV button goes back', async () => {
@@ -90,7 +90,7 @@ describe('PassthroughGuide', () => {
     await user.click(screen.getByText('PREV'));
 
     // Step 2 (index 1) should now be expanded
-    expect(screen.getByText(/Click COPY or select all text/)).toBeInTheDocument();
+    expect(screen.getByText(/Click COPY to grab/)).toBeInTheDocument();
   });
 
   it('NEXT on last step closes modal', async () => {
@@ -225,12 +225,14 @@ describe('PassthroughGuide', () => {
     expect(stepNumbers[4]).not.toHaveClass('step-number--active');
   });
 
-  it('step notes use // prefix instead of border', () => {
+  it('step descriptions are plain text (no note prefix)', () => {
     passthroughGuide.show(false);
     render(PassthroughGuide);
+    // step-note was removed in TierGuide — only step-desc paragraphs remain
     const prefix = document.querySelector('.step-note-prefix');
-    expect(prefix).toBeInTheDocument();
-    expect(prefix!.textContent).toBe('//');
+    expect(prefix).not.toBeInTheDocument();
+    const desc = document.querySelector('.step-desc');
+    expect(desc).toBeInTheDocument();
   });
 
   it('step headers have aria-expanded attribute', () => {

@@ -67,7 +67,8 @@ describe('MarkdownRenderer', () => {
     const { container } = render(MarkdownRenderer, { props: { content: '' } });
     const div = container.querySelector('.md-render');
     expect(div).toBeInTheDocument();
-    expect(div!.innerHTML).toBe('');
+    // Svelte 5 renders empty {@html ''} as an HTML comment node
+    expect(div!.textContent).toBe('');
   });
 
   it('renders bold text', () => {
