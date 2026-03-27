@@ -103,6 +103,10 @@ VSGithub/mcp-copilot-extension/node_modules/
 VSGithub/mcp-copilot-extension/out/
 VSGithub/mcp-copilot-extension/*.vsix
 VSGithub/mcp-copilot-extension/package-lock.json
+VSGithub/mcp-copilot-extension/sync-tools.js
+VSGithub/mcp-copilot-extension/test_bundle.js
+VSGithub/mcp-copilot-extension/update_package.js
+frontend/.vscode/
 backend/.venv
 
 # MCP debugging/test scripts (scratch)

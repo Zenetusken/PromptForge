@@ -74,7 +74,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2, 384-dim, CPU) |
 | LLM | Configurable per phase — Opus, Sonnet, Haiku (via Settings) |
 | Scoring | Hybrid: LLM scores blended with model-independent heuristics + z-score normalization |
-| MCP | Streamable HTTP on port 8001 — sampling detection via ASGI middleware |
+| MCP | Streamable HTTP on port 8001 — process-level singleton routing with dual disconnect detection |
 | Versioning | `version.json` → `scripts/sync-version.sh` propagates to backend + frontend |
 
 ## Services
@@ -106,9 +106,10 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Production diff viewer** — unified and split modes with word-level highlighting
 - **GitHub integration** — link a repo for codebase-aware optimization via semantic embedding search
 - **MCP server** — use from any MCP-compatible IDE (VS Code, Claude Code, etc.)
+- **VS Code bridge extension** — MCP Copilot Bridge (`VSGithub/mcp-copilot-extension/`) connects via Streamable HTTP, declares sampling capability, and forwards `sampling/createMessage` to VS Code's Language Model API. 10s health check with auto-reconnect
 - **Passthrough mode** — IDE's own LLM does the optimization; server provides context + heuristic analysis + hybrid scoring with domain validation. Zero-LLM `HeuristicAnalyzer` classifies task type, domain, weaknesses, and recommends strategy without any LLM calls
 - **Force sampling / passthrough toggles** — pin the pipeline to use the IDE's LLM (`force_sampling`) or always assemble for external processing (`force_passthrough`). Mutually exclusive, enforced server-side and client-side
-- **Sampling capability detection** — ASGI middleware detects MCP client sampling support on `initialize` handshake. Cross-process disconnect detection reads session file before clearing state. Frontend receives real-time SSE events for tier changes
+- **Sampling capability detection** — ASGI middleware with dual-layer guard (RoutingManager state + class-level SSE tracking) prevents non-sampling clients from overwriting sampling state. Process-level singleton RoutingManager survives per-session lifespan churn. Two disconnect signals: full (all SSE closed) vs sampling-only (bridge leaves, Claude Code stays). Frontend receives real-time SSE events for tier changes
 - **Tier-aware UI** — entire UI adapts accent color to active routing tier: cyan for CLI/API, green for sampling, yellow for passthrough. Includes brand logo, activity bar, tabs, buttons, inputs, headings, and all interactive elements. Settings sections (Provider/Connection/Routing, System) morph content per tier
 - **Per-phase model display** — actual model IDs used by the IDE are captured per phase and displayed in real time (Navigator IDE Model section + Inspector metadata). Stored in `models_by_phase` DB column for audit trail
 - **Workspace scanning** — automatically discovers CLAUDE.md, AGENTS.md, GEMINI.md, .cursorrules, .clinerules, CONVENTIONS.md for context injection. Monorepo-aware: `discover_project_dirs()` scans manifest-containing subdirectories with SHA256 deduplication
@@ -163,7 +164,7 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (~90s, 1037 tests)
+# Backend tests (~90s, 1042 tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
 # Frontend type check (935 files)

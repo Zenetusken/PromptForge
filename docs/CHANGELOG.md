@@ -4,6 +4,27 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.6-dev — 2026-03-27
+
+### Fixed
+- Fixed 6 routing tier bugs caused by per-session RoutingManager replacement — RoutingManager is now a process-level singleton guarded by `_process_initialized` flag
+- Fixed lifespan exit nullifying `_shared._routing` — per-session cleanup removed entirely; singletons survive all Streamable HTTP sessions
+- Fixed `_clear_stale_session()` racing with middleware writes — moved to `__main__` (process startup) only
+- Fixed `_inspect_initialize` guard bypass after RoutingManager replacement — added secondary check via `_sampling_sse_sessions` (class-level, survives startup races)
+- Fixed `on_mcp_disconnect()` clearing `mcp_connected` when only the sampling bridge disconnected — new `on_sampling_disconnect()` clears only `sampling_capable`, keeps `mcp_connected=True`
+- Fixed `disconnect_averted` pattern firing every 60s when only non-sampling clients connected
+
+### Added
+- Added `on_sampling_disconnect()` to RoutingManager — differentiates partial (bridge leaves) vs full (all clients leave) disconnect
+- Added dual-layer guard in `_inspect_initialize`: primary (RoutingManager state) + secondary (`_sampling_sse_sessions`) prevents non-sampling clients from overwriting sampling state
+- Added 6 unit tests for `on_sampling_disconnect` (state, events, idempotency, tiers, persistence, chained disconnect)
+- Added `backend/CLAUDE.md` — routing internals (singleton pattern, tier decision, state transitions, middleware guard logic, disconnect signals) + sampling pipeline internals (fallback chain, free-text vs JSON phases, text cleaning, bridge workaround, passthrough workflow, monkey patches)
+- Added `docs/routing-architecture.md` — comprehensive routing reference with ASCII diagrams, state machine, multi-client coordination, disconnect detection, cross-process communication, persistence/recovery, common scenarios, failure modes
+- Exposed VS Code bridge source and sampling config to remote (`.vscode/settings.json`, `VSGithub/mcp-copilot-extension/` source files)
+
+### Changed
+- Sampling capability detection section in CLAUDE.md rewritten to reflect singleton pattern, dual-layer guard, and two disconnect signals
+
 ## v0.3.5-dev — 2026-03-26
 
 ### Added
