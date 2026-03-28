@@ -15,6 +15,25 @@
   let sseHadError = false;
   let firstHealthReceived = false;
   let pendingGuide = false;
+  let pendingHealthDelta: { health: HealthResponse; delta: any } | null = null;
+
+  /**
+   * Reconcile force toggles with actual system capabilities.
+   * Called after BOTH health and preferences are loaded to avoid races.
+   */
+  function reconcileToggles(h: HealthResponse, delta: any): void {
+    // Sampling just became available → auto-enable force_sampling, clear force_passthrough
+    if (delta.samplingChanged) {
+      onSamplingDetected();
+      if (!preferencesStore.pipeline.force_sampling) {
+        preferencesStore.setPipelineToggle('force_sampling', true);
+      }
+    }
+    // Sampling no longer available → clear stale force_sampling
+    if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
+      preferencesStore.setPipelineToggle('force_sampling', false);
+    }
+  }
 
   /** Shared handler for new MCP sampling capability detection (DRY: SSE + health). */
   function onSamplingDetected(): void {
@@ -171,25 +190,17 @@
     forgeStore.avgDurationMs = h.avg_duration_ms ?? null;
     forgeStore.scoreHealth = h.score_health ?? null;
     forgeStore.phaseDurations = (h.phase_durations && Object.keys(h.phase_durations).length > 0) ? h.phase_durations : null;
-    if (delta.samplingChanged) {
-      onSamplingDetected();
-      // Auto-enable force_sampling when detected via health poll
-      if (!preferencesStore.pipeline.force_sampling) {
-        preferencesStore.setPipelineToggle('force_sampling', true);
-      }
-    }
-    // Auto-disable force_sampling if sampling is not available.
-    // Safety net for startup with stale preferences.json.
-    if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
-      preferencesStore.setPipelineToggle('force_sampling', false);
-    }
-
     if (!firstHealthReceived) {
       firstHealthReceived = true;
-      // Don't trigger yet — wait for preferences to load so the tier
-      // reflects force_passthrough/force_sampling, not stale defaults.
-      // The $effect below handles the deferred trigger.
+      // Defer ALL toggle auto-sync and guide trigger until preferences load.
+      // Otherwise we'd read/write stale defaults, and init() would overwrite
+      // our patches when it resolves.
       pendingGuide = true;
+      pendingHealthDelta = { health: h, delta };
+    } else if (!preferencesStore.loading) {
+      // Subsequent health polls (every 60s) — preferences already loaded,
+      // safe to auto-sync toggles immediately.
+      reconcileToggles(h, delta);
     }
   }
 
@@ -200,12 +211,19 @@
     return () => clearInterval(timer);
   });
 
-  // Gate: trigger tier guide only after BOTH health AND preferences have loaded.
-  // Without this, health resolves first (provider=cli → tier=internal) before
-  // preferences arrive (force_passthrough=true → tier=passthrough), showing
-  // the wrong onboarding modal.
+  // Gate: process toggle reconciliation AND trigger tier guide only after BOTH
+  // health AND preferences have loaded. This prevents:
+  // 1. Reading stale default preferences for toggle decisions
+  // 2. init() overwriting toggle patches when it resolves
+  // 3. Showing the wrong onboarding modal
   $effect(() => {
     if (pendingGuide && !preferencesStore.loading) {
+      // First: reconcile toggles with actual capabilities
+      if (pendingHealthDelta) {
+        reconcileToggles(pendingHealthDelta.health, pendingHealthDelta.delta);
+        pendingHealthDelta = null;
+      }
+      // Then: trigger guide for the (now correct) tier
       pendingGuide = false;
       queueMicrotask(() => triggerTierGuide(routing.tier));
     }
