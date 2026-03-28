@@ -207,6 +207,14 @@ cd frontend && npm run build
 | `/api/github/auth/*` | GET/POST | GitHub OAuth flow |
 | `/api/github/repos/*` | GET/POST/DELETE | Repo management |
 
+## Roadmap
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for planned improvements. Key upcoming items:
+
+- **Multi-label domain tags** — replace single domain field with `domain_tags` for multi-dimensional classification
+- **Unified scoring service** — consolidate duplicated scoring orchestration across all pipeline tiers
+- **Conciseness heuristic calibration** — domain-aware TTR adjustment for technical specification prompts
+
 ## License
 
 Apache 2.0

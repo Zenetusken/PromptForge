@@ -279,6 +279,10 @@ cd frontend && npm run dev
 docker compose up --build -d
 ```
 
+## Roadmap protocol
+
+`docs/ROADMAP.md` tracks improvements that require breaking changes (schema migrations, multi-file refactors, breaking API changes). When you identify such an improvement, add it under the appropriate status (Planned/Exploring/Deferred) with a Context section. Move items to Completed when shipped. Non-breaking improvements should be implemented immediately — never deferred to the roadmap.
+
 ## Claude Code automation
 
 ### `.mcp.json`
