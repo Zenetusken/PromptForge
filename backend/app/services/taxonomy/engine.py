@@ -502,6 +502,17 @@ class TaxonomyEngine:
                     operations_log.append({"type": "retire", "node_id": node.id})
                     await self._embedding_index.remove(node.id)
 
+        # --- Domain discovery (ADR-004) ---
+        # After lifecycle mutations, before quality gate.  Domain nodes have
+        # state="domain" so they don't affect Q_system (computed from active
+        # nodes only).  Safe to run even if lifecycle ops are later rolled back.
+        new_domains = await self._propose_domains(db)
+        if new_domains:
+            logger.info(
+                "Warm path discovered %d new domains: %s",
+                len(new_domains), new_domains,
+            )
+
         # 4. Update per-node separation and compute Q_after
         result = await db.execute(
             select(PromptCluster).where(PromptCluster.state == "active")
@@ -1065,6 +1076,197 @@ class TaxonomyEngine:
                 operations.append({"type": "emerge", "node_id": node.id})
 
         return operations
+
+    # ------------------------------------------------------------------
+    # Domain discovery (ADR-004)
+    # ------------------------------------------------------------------
+
+    async def _propose_domains(self, db: AsyncSession) -> list[str]:
+        """Inspect 'general' domain children and propose new domains.
+
+        Scans active clusters parented under the "general" domain node.
+        For each candidate with sufficient members and coherence, inspects
+        the ``domain_raw`` field of linked optimizations.  When a single
+        parsed primary domain reaches the consistency threshold and no
+        domain node with that label already exists, a new domain node is
+        created.
+
+        Returns:
+            List of newly created domain labels.
+        """
+        from collections import Counter
+
+        from app.services.pipeline_constants import (
+            DOMAIN_COUNT_CEILING,
+            DOMAIN_DISCOVERY_CONSISTENCY,
+            DOMAIN_DISCOVERY_MIN_COHERENCE,
+            DOMAIN_DISCOVERY_MIN_MEMBERS,
+        )
+        from app.utils.text_cleanup import parse_domain
+
+        # --- Step a: Check domain ceiling ---
+        ceiling_q = await db.execute(
+            select(func.count()).select_from(PromptCluster).where(
+                PromptCluster.state == "domain",
+            )
+        )
+        domain_count = ceiling_q.scalar() or 0
+
+        if domain_count >= DOMAIN_COUNT_CEILING:
+            logger.warning(
+                "Domain ceiling reached (%d >= %d) — skipping discovery",
+                domain_count, DOMAIN_COUNT_CEILING,
+            )
+            try:
+                from app.services.event_bus import event_bus
+                event_bus.publish("domain_ceiling_reached", {
+                    "domain_count": domain_count,
+                    "ceiling": DOMAIN_COUNT_CEILING,
+                })
+            except Exception:
+                pass
+            return []
+
+        # --- Step b: Find "general" domain node ---
+        gen_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.label == "general",
+            )
+        )
+        general_node = gen_q.scalar_one_or_none()
+        if general_node is None:
+            logger.debug("No 'general' domain node — skipping discovery")
+            return []
+
+        # --- Step c: Query eligible children ---
+        children_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.parent_id == general_node.id,
+                PromptCluster.state == "active",
+                PromptCluster.member_count >= DOMAIN_DISCOVERY_MIN_MEMBERS,
+                PromptCluster.coherence >= DOMAIN_DISCOVERY_MIN_COHERENCE,
+            )
+        )
+        candidates = list(children_q.scalars().all())
+        if not candidates:
+            return []
+
+        # --- Step d-f: Gather existing domain labels for dedup ---
+        existing_q = await db.execute(
+            select(PromptCluster.label).where(
+                PromptCluster.state == "domain",
+            )
+        )
+        existing_domains: set[str] = {
+            row[0] for row in existing_q.all() if row[0]
+        }
+
+        created: list[str] = []
+
+        for candidate in candidates:
+            # Query domain_raw from linked optimizations
+            opt_q = await db.execute(
+                select(Optimization.domain_raw).where(
+                    Optimization.cluster_id == candidate.id,
+                    Optimization.domain_raw.isnot(None),
+                )
+            )
+            domain_raws = [row[0] for row in opt_q.all() if row[0]]
+            if not domain_raws:
+                continue
+
+            # Parse primaries and count
+            primaries: Counter[str] = Counter()
+            for raw in domain_raws:
+                primary, _ = parse_domain(raw)
+                primaries[primary] += 1
+
+            total = len(domain_raws)
+            top_primary, top_count = primaries.most_common(1)[0]
+
+            # Skip "general" — it's not a discovery target
+            if top_primary == "general":
+                continue
+
+            # Check consistency threshold
+            if top_count / total < DOMAIN_DISCOVERY_CONSISTENCY:
+                continue
+
+            # Skip if domain already exists
+            if top_primary in existing_domains:
+                continue
+
+            # Check ceiling again (may have created domains in this loop)
+            if (domain_count + len(created)) >= DOMAIN_COUNT_CEILING:
+                break
+
+            # Create the domain node
+            await self._create_domain_node(db, top_primary, existing_domains)
+            created.append(top_primary)
+            existing_domains.add(top_primary)
+
+        return created
+
+    async def _create_domain_node(
+        self,
+        db: AsyncSession,
+        label: str,
+        existing_domains: set[str],
+    ) -> PromptCluster:
+        """Create a new domain node with a maximally distant color.
+
+        Args:
+            db: Async DB session.
+            label: Domain label (e.g. "marketing").
+            existing_domains: Set of existing domain labels (for color computation).
+
+        Returns:
+            The newly created PromptCluster domain node.
+        """
+        from app.services.taxonomy.coloring import compute_max_distance_color
+
+        # Gather existing domain colors for max-distance computation
+        if existing_domains:
+            color_q = await db.execute(
+                select(PromptCluster.color_hex).where(
+                    PromptCluster.state == "domain",
+                    PromptCluster.color_hex.isnot(None),
+                )
+            )
+            existing_colors = [row[0] for row in color_q.all() if row[0]]
+        else:
+            existing_colors = []
+
+        color_hex = compute_max_distance_color(existing_colors)
+
+        node = PromptCluster(
+            label=label,
+            state="domain",
+            domain=label,
+            persistence=1.0,
+            color_hex=color_hex,
+            cluster_metadata={"source": "discovered"},
+        )
+        db.add(node)
+        await db.flush()
+
+        logger.info(
+            "Created discovered domain node: label=%s color=%s id=%s",
+            label, color_hex, node.id,
+        )
+
+        try:
+            from app.services.event_bus import event_bus
+            event_bus.publish("domain_created", {
+                "label": label,
+                "node_id": node.id,
+                "source": "discovered",
+            })
+        except Exception:
+            pass
+
+        return node
 
     async def _create_warm_snapshot(
         self,
