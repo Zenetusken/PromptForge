@@ -48,12 +48,25 @@ describe('buildSceneData', () => {
 
   it('creates hierarchical edges from parent_id', () => {
     const flat = [
-      makeNode({ id: 'parent' }),
-      makeNode({ id: 'child', parent_id: 'parent' }),
+      makeNode({ id: 'parent', domain: 'backend' }),
+      makeNode({ id: 'child', parent_id: 'parent', domain: 'frontend' }),
     ];
     const result = buildSceneData(flat);
+    // 1 hierarchical edge only (different domains → no similarity edge)
     expect(result.edges).toHaveLength(1);
     expect(result.edges[0]).toEqual({ from: 'parent', to: 'child', type: 'hierarchical' });
+  });
+
+  it('creates same-domain similarity edges', () => {
+    const flat = [
+      makeNode({ id: 'a', domain: 'backend' }),
+      makeNode({ id: 'b', domain: 'backend' }),
+      makeNode({ id: 'c', domain: 'frontend' }),
+    ];
+    const result = buildSceneData(flat);
+    const simEdges = result.edges.filter(e => e.type === 'similarity');
+    expect(simEdges).toHaveLength(1);
+    expect(simEdges[0]).toEqual({ from: 'a', to: 'b', type: 'similarity' });
   });
 
   it('defaults persistence to 0.5 when node has null persistence', () => {

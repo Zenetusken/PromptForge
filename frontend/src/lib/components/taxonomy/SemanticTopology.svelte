@@ -158,8 +158,9 @@
       renderer.scene.add(lines);
     }
 
-    // Labels (near LOD only, but template labels always visible)
+    // Labels — always visible for small graphs (≤ 8 nodes), otherwise near LOD only
     if (labels) {
+      const alwaysShowLabels = data.nodes.filter(n => n.visible).length <= 8;
       const templateSprites: import('three').Sprite[] = [];
       for (const node of data.nodes) {
         if (!node.visible) continue;
@@ -169,8 +170,8 @@
           templateSprites.push(sprite);
         }
       }
-      labels.setVisible(lodTier === 'near');
-      // Template nodes: labels always visible regardless of LOD
+      labels.setVisible(lodTier === 'near' || alwaysShowLabels);
+      // Template nodes: labels always visible regardless of LOD or count
       for (const sprite of templateSprites) {
         sprite.visible = true;
       }

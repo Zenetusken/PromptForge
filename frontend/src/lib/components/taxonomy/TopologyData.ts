@@ -68,10 +68,12 @@ export function buildSceneData(flatNodes: ClusterNode[]): SceneData {
   const edges: SceneEdge[] = [];
 
   for (const node of flatNodes) {
-    // Deterministic fallback position for nodes without UMAP coords
-    const x = node.umap_x ?? hashFloat(node.id, 0) * 20 - 10;
-    const y = node.umap_y ?? hashFloat(node.id, 1) * 20 - 10;
-    const z = node.umap_z ?? hashFloat(node.id, 2) * 20 - 10;
+    // Position: UMAP coords scaled to scene units, or hash-based fallback.
+    // UMAP outputs ~[-1, 1]; multiply by 10 for comfortable spacing.
+    const UMAP_SCALE = 10;
+    const x = node.umap_x != null ? node.umap_x * UMAP_SCALE : hashFloat(node.id, 0) * 20 - 10;
+    const y = node.umap_y != null ? node.umap_y * UMAP_SCALE : hashFloat(node.id, 1) * 20 - 10;
+    const z = node.umap_z != null ? node.umap_z * UMAP_SCALE : hashFloat(node.id, 2) * 20 - 10;
 
     // Size: blend member_count and usage_count, clamped
     const raw = Math.log2(Math.max(1, node.member_count + node.usage_count * 0.5));
@@ -80,7 +82,7 @@ export function buildSceneData(flatNodes: ClusterNode[]): SceneData {
     nodes.push({
       id: node.id,
       position: [x, y, z],
-      color: stateNodeColor(node.state, node.color_hex ?? node.domain),
+      color: stateNodeColor(node.state, node.domain ?? node.color_hex),
       size: size * stateSizeMultiplier(node.state),
       opacity: stateOpacity(node.state),
       persistence: node.persistence ?? 0.5,
@@ -93,6 +95,20 @@ export function buildSceneData(flatNodes: ClusterNode[]): SceneData {
     // Hierarchical edges from parent_id
     if (node.parent_id) {
       edges.push({ from: node.parent_id, to: node.id, type: 'hierarchical' });
+    }
+  }
+
+  // Same-domain edges — connect nodes that share a domain keyword
+  // (visual grouping for related clusters)
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = flatNodes[i];
+      const b = flatNodes[j];
+      const domA = (a.domain ?? 'general').toLowerCase();
+      const domB = (b.domain ?? 'general').toLowerCase();
+      if (domA !== 'general' && domB !== 'general' && domA === domB) {
+        edges.push({ from: nodes[i].id, to: nodes[j].id, type: 'similarity' });
+      }
     }
   }
 
