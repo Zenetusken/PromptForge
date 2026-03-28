@@ -410,6 +410,12 @@
               <span class="meta-value meta-value--cyan">{activeResult.strategy_used}</span>
             </div>
           {/if}
+          {#if activeResult?.domain && activeResult.domain !== 'general'}
+            <div class="meta-row">
+              <span class="meta-label">Domain</span>
+              <span class="meta-value">{activeResult.domain}</span>
+            </div>
+          {/if}
           {#if activeResult?.provider}
             <div class="meta-row">
               <span class="meta-label">Provider</span>
@@ -436,19 +442,27 @@
               </span>
             </div>
           {/if}
-          {#if activeResult?.models_by_phase && activeResult.provider === 'mcp_sampling'}
+          {#if activeResult?.models_by_phase && !isPassthroughResult_}
             {#each [
               { label: 'Analyzer', key: 'analyze' },
               { label: 'Optimizer', key: 'optimize' },
               { label: 'Scorer', key: 'score' },
             ] as { label, key }}
-              <div class="meta-row">
-                <span class="meta-label">{label}</span>
-                <span class="meta-value meta-value--green">
-                  {activeResult.models_by_phase[key] || '?'}
-                </span>
-              </div>
+              {#if activeResult.models_by_phase[key]}
+                <div class="meta-row">
+                  <span class="meta-label">{label}</span>
+                  <span class="meta-value" class:meta-value--green={activeResult.provider === 'mcp_sampling'} class:meta-value--cyan={activeResult.provider !== 'mcp_sampling'}>
+                    {activeResult.models_by_phase[key]}
+                  </span>
+                </div>
+              {/if}
             {/each}
+          {/if}
+          {#if activeResult?.duration_ms}
+            <div class="meta-row">
+              <span class="meta-label">Duration</span>
+              <span class="meta-value">{(activeResult.duration_ms / 1000).toFixed(1)}s</span>
+            </div>
           {/if}
         </div>
 
@@ -461,6 +475,13 @@
                 <span class="suggestion-text">{sug.text}</span>
               </div>
             {/each}
+          </div>
+        {/if}
+
+        {#if activeResult?.changes_summary}
+          <div class="changes-section">
+            <div class="section-heading">Changes</div>
+            <p class="changes-text">{activeResult.changes_summary}</p>
           </div>
         {/if}
 
@@ -605,6 +626,22 @@
 
   .meta-value.neon-yellow {
     color: var(--color-neon-yellow);
+  }
+
+  /* Changes summary */
+  .changes-section {
+    margin-top: 6px;
+  }
+
+  .changes-text {
+    font-size: 9px;
+    font-family: var(--font-sans);
+    color: var(--color-text-secondary);
+    line-height: 1.3;
+    padding: 3px 6px;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    margin: 0;
   }
 
   /* Suggestions */
