@@ -4,6 +4,48 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.7-dev — 2026-03-28
+
+### Added
+- Added `parse_domain()` utility in `app/utils/text_cleanup` for "primary: qualifier" domain format parsing
+- Added multi-dimensional domain classification — LLM analyze prompt and heuristic analyzer output "primary: qualifier" format (e.g., "backend: security") when cross-cutting domains detected
+- Added zero-LLM heuristic suggestions via `generate_heuristic_suggestions()` — 3 deterministic suggestions (score/analysis/strategy) for passthrough tier, 18 unit tests
+- Added structural meta-pattern extraction via `extract_structural_patterns()` — score delta + regex detection, passthrough results now contribute patterns to taxonomy
+- Added `heuristic_flags` JSON column to Optimization model for score divergence persistence across all tiers
+- Added `suggestions` JSON column to Optimization model — persisted for all tiers (was only streamed via SSE, never stored)
+- Added `was_truncated` field to MCP `PrepareOutput` schema
+- Added `title_case_label()` utility with acronym preservation (API, CSS, JWT, etc.)
+- Added `docs/ROADMAP.md` — project roadmap with planned/exploring/deferred/completed sections
+- Added Inspector suggestions section for all tiers (score/analysis/strategy labels)
+- Added Inspector changes section with MarkdownRenderer (was flat text)
+- Added Inspector metadata: duration, domain, per-phase models for internal tier
+- Added Pattern Graph same-domain edges connecting related clusters
+- Added Pattern Graph always-visible labels for small graphs (≤ 8 nodes)
+- Added Pattern Graph UMAP position scaling (10x) for proper node spread
+
+### Changed
+- Domain colors overhauled to electric neon palette with zero tier accent overlap: backend=#b44aff, frontend=#ff4895, database=#36b5ff, security=#ff2255, devops=#6366f1, fullstack=#d946ef
+- Pattern Graph nodes use sharp wireframe contour over dark fill (brand zero-effects directive)
+- Domain color priority: domain name takes precedence over OKLab color_hex in Pattern Graph
+- LOD thresholds lowered (far=0.4, mid=0.2) so default clusters visible before cold-path recluster
+- Taxonomy merge prevention compares primary domain only (ignores qualifier)
+- Frontend `taxonomyColor()` parses "primary: qualifier" format and does keyword matching for free-form strings
+- Passthrough text cleanup runs before heuristic scoring (was after — scores reflected uncleaned preambles)
+- Strategy learning now includes validated passthrough results (thumbs_up feedback via correlated EXISTS subquery)
+- Passthrough guide step 6 updated to mention suggestions; feature matrix Suggestions row changed ✗ → ✓
+- Intent labels title-cased at all persistence boundaries for display consistency across tiers
+
+### Fixed
+- Fixed CI lockfile: regenerated with Node 24 for cross-platform optional dependencies
+- Fixed 3 frontend tests: PassthroughGuide (TierGuide refactor), forge SSE error (traceId), MarkdownRenderer (Svelte 5 comments)
+- Fixed passthrough output length validation (MAX_RAW_PROMPT_CHARS) in both MCP and REST save paths
+- Fixed `DATA_DIR` import-time capture in optimize.py router — tests read real preferences instead of fixture
+- Fixed cluster detail loading stuck indefinitely — generation counter race in `_loadClusterDetail` finally block
+- Fixed cluster skeleton buffering after Inspector dismiss — sync ClusterNavigator expandedId with store
+- Fixed Pattern Graph nodes invisible — LOD thresholds too high for default persistence (0.5)
+- Fixed wrong onboarding modal on startup — gated tier guide trigger on preferences load completion
+- Fixed startup toggle auto-sync race — deferred reconciliation to after both health AND preferences loaded
+
 ## v0.3.6-dev — 2026-03-27
 
 ### Fixed
