@@ -235,29 +235,33 @@ def compute_max_distance_color(existing_hex: list[str]) -> str:
     Returns:
         Hex color string like ``#rrggbb``.
     """
-    from app.services.pipeline_constants import TIER_ACCENTS  # avoid circular import
+    try:
+        from app.services.pipeline_constants import TIER_ACCENTS  # avoid circular import
 
-    all_hex = [h for h in existing_hex + TIER_ACCENTS if h and h.startswith("#")]
-    if not all_hex:
-        return "#a855f7"  # Default purple when no reference colors exist
+        all_hex = [h for h in existing_hex + TIER_ACCENTS if h and h.startswith("#")]
+        if not all_hex:
+            return "#a855f7"  # Default purple when no reference colors exist
 
-    existing_lab = [hex_to_oklab(h) for h in all_hex]
+        existing_lab = [hex_to_oklab(h) for h in all_hex]
 
-    best_color: tuple[float, float, float] | None = None
-    best_min_dist = 0.0
+        best_color: tuple[float, float, float] | None = None
+        best_min_dist = 0.0
 
-    # Sample candidates in OKLab (a, b) plane; L=0.7 gives neon brightness
-    for a_val in np.linspace(-0.15, 0.15, 50):
-        for b_val in np.linspace(-0.15, 0.15, 50):
-            candidate = (0.7, float(a_val), float(b_val))
-            min_dist = min(
-                delta_e_oklab(candidate, e) for e in existing_lab
-            )
-            if min_dist > best_min_dist:
-                best_min_dist = min_dist
-                best_color = candidate
+        # Sample candidates in OKLab (a, b) plane; L=0.7 gives neon brightness
+        for a_val in np.linspace(-0.15, 0.15, 50):
+            for b_val in np.linspace(-0.15, 0.15, 50):
+                candidate = (0.7, float(a_val), float(b_val))
+                min_dist = min(
+                    delta_e_oklab(candidate, e) for e in existing_lab
+                )
+                if min_dist > best_min_dist:
+                    best_min_dist = min_dist
+                    best_color = candidate
 
-    if best_color is None:
+        if best_color is None:
+            return "#7a7a9e"
+
+        return oklab_to_hex(best_color[0], best_color[1], best_color[2])
+    except Exception:
+        logger.warning("OKLab color computation failed, using fallback gray", exc_info=True)
         return "#7a7a9e"
-
-    return oklab_to_hex(best_color[0], best_color[1], best_color[2])

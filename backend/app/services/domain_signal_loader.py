@@ -77,6 +77,17 @@ class DomainSignalLoader:
 
             self._signals = new_signals
             self._precompile_patterns()
+
+            total_keywords = sum(len(kws) for kws in new_signals.values())
+            logger.info(
+                "DomainSignalLoader loaded %d domains with %d total keywords",
+                len(self._signals), total_keywords,
+            )
+            if not self._signals and clusters:
+                logger.warning(
+                    "DomainSignalLoader: no domain signals loaded — "
+                    "classifier will default to 'general'"
+                )
         except Exception:
             logger.exception("DomainSignalLoader.load failed — using empty signals")
 
