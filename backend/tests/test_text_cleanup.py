@@ -1,6 +1,6 @@
 """Tests for app.utils.text_cleanup — LLM output normalization utilities."""
 
-from app.utils.text_cleanup import split_prompt_and_changes, strip_meta_header
+from app.utils.text_cleanup import parse_domain, split_prompt_and_changes, strip_meta_header
 
 # ---------------------------------------------------------------------------
 # strip_meta_header
@@ -106,3 +106,45 @@ class TestSplitPromptAndChanges:
         prompt, changes = split_prompt_and_changes(text)
         assert not prompt.startswith("#")
         assert "Content" in prompt
+
+
+class TestParseDomain:
+    def test_simple_domain(self) -> None:
+        primary, qualifier = parse_domain("backend")
+        assert primary == "backend"
+        assert qualifier is None
+
+    def test_colon_format(self) -> None:
+        primary, qualifier = parse_domain("backend: security")
+        assert primary == "backend"
+        assert qualifier == "security"
+
+    def test_colon_no_space(self) -> None:
+        primary, qualifier = parse_domain("frontend:React")
+        assert primary == "frontend"
+        assert qualifier == "React"
+
+    def test_free_form_legacy(self) -> None:
+        primary, qualifier = parse_domain("REST API design")
+        assert primary == "REST API design"
+        assert qualifier is None
+
+    def test_empty_string(self) -> None:
+        primary, qualifier = parse_domain("")
+        assert primary == "general"
+        assert qualifier is None
+
+    def test_none_input(self) -> None:
+        primary, qualifier = parse_domain(None)
+        assert primary == "general"
+        assert qualifier is None
+
+    def test_general_passthrough(self) -> None:
+        primary, qualifier = parse_domain("general")
+        assert primary == "general"
+        assert qualifier is None
+
+    def test_multiple_colons(self) -> None:
+        primary, qualifier = parse_domain("backend: REST: v2")
+        assert primary == "backend"
+        assert qualifier == "REST: v2"

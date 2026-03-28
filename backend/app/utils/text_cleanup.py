@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["strip_meta_header", "split_prompt_and_changes", "title_case_label"]
+__all__ = ["strip_meta_header", "split_prompt_and_changes", "title_case_label", "parse_domain"]
 
 # Words that should stay uppercase (acronyms, initialisms)
 _UPPERCASE_WORDS = frozenset({
@@ -135,3 +135,22 @@ def split_prompt_and_changes(text: str) -> tuple[str, str]:
                 return strip_meta_header(prompt_part), changes_part[:500]
 
     return strip_meta_header(text), "Restructured with added specificity and constraints"
+
+
+def parse_domain(raw: str | None) -> tuple[str, str | None]:
+    """Parse a domain string into (primary, qualifier).
+
+    Supports three formats:
+    - ``"backend"`` → ``("backend", None)``
+    - ``"backend: security"`` → ``("backend", "security")``
+    - ``"REST API design"`` → ``("REST API design", None)``  (legacy free-form)
+
+    Returns ``("general", None)`` for empty/None input.
+    """
+    if not raw or not raw.strip():
+        return ("general", None)
+    raw = raw.strip()
+    if ":" in raw:
+        primary, _, qualifier = raw.partition(":")
+        return (primary.strip(), qualifier.strip() or None)
+    return (raw, None)
