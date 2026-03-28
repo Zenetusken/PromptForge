@@ -37,14 +37,21 @@ export function scoreColor(score: number | null): string {
  * Resolve a taxonomy color. Accepts either:
  * - a hex color string (returned as-is)
  * - a domain name ("backend", "frontend", etc.) — resolved via DOMAIN_COLORS
+ * - a free-form domain string ("frontend CSS architecture") — matched by keyword
  * - null/undefined — returns FALLBACK_COLOR
  */
 export function taxonomyColor(color: string | null | undefined): string {
   if (!color) return FALLBACK_COLOR;
   // If it's a hex color, return directly
   if (color.startsWith('#')) return color;
-  // Otherwise treat as domain name
-  return DOMAIN_COLORS[color] ?? FALLBACK_COLOR;
+  // Exact match first
+  if (color in DOMAIN_COLORS) return DOMAIN_COLORS[color];
+  // Keyword match: check if any known domain keyword appears in the string
+  const lower = color.toLowerCase();
+  for (const [domain, hex] of Object.entries(DOMAIN_COLORS)) {
+    if (domain !== 'general' && lower.includes(domain)) return hex;
+  }
+  return FALLBACK_COLOR;
 }
 
 /** Q_system health color for StatusBar badge. */

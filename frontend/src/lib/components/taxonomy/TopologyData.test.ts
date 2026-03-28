@@ -75,8 +75,14 @@ describe('buildSceneData', () => {
     expect(result.nodes[0].label).toBe('');
   });
 
-  it('uses fallback color for null color_hex', () => {
-    const tree = [makeNode({ color_hex: null })];
+  it('uses domain color as fallback when color_hex is null', () => {
+    const tree = [makeNode({ color_hex: null, domain: 'backend' })];
+    const result = buildSceneData(tree);
+    expect(result.nodes[0].color).toBe('#a855f7'); // backend domain color
+  });
+
+  it('uses general fallback for unknown domain with null color_hex', () => {
+    const tree = [makeNode({ color_hex: null, domain: 'unknown-domain' })];
     const result = buildSceneData(tree);
     expect(result.nodes[0].color).toBe('#7a7a9e'); // FALLBACK_COLOR
   });

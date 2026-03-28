@@ -75,12 +75,12 @@ export function buildSceneData(flatNodes: ClusterNode[]): SceneData {
 
     // Size: blend member_count and usage_count, clamped
     const raw = Math.log2(Math.max(1, node.member_count + node.usage_count * 0.5));
-    const size = Math.max(0.3, Math.min(3.0, raw * 0.5));
+    const size = Math.max(0.6, Math.min(3.0, raw * 0.5));
 
     nodes.push({
       id: node.id,
       position: [x, y, z],
-      color: stateNodeColor(node.state, node.color_hex),
+      color: stateNodeColor(node.state, node.color_hex ?? node.domain),
       size: size * stateSizeMultiplier(node.state),
       opacity: stateOpacity(node.state),
       persistence: node.persistence ?? 0.5,
