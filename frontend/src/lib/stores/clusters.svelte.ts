@@ -110,9 +110,7 @@ class ClusterStore {
       this.taxonomyError = (err instanceof Error && err.message) ? err.message : 'Failed to load clusters';
       console.warn('Cluster tree load failed:', err);
     } finally {
-      if (gen === this._loadGeneration) {
-        this.taxonomyLoading = false;
-      }
+      this.taxonomyLoading = false;
     }
   }
 
@@ -133,8 +131,11 @@ class ClusterStore {
   selectCluster(id: string | null): void {
     this.selectedClusterId = id;
     if (!id) {
+      // Increment generation to invalidate any in-flight detail loads
+      ++this._clusterGeneration;
       this.clusterDetail = null;
       this.clusterDetailError = null;
+      this.clusterDetailLoading = false;
       return;
     }
     this._loadClusterDetail(id);
@@ -146,16 +147,17 @@ class ClusterStore {
     this.clusterDetailError = null;
     try {
       const detail = await getClusterDetail(id);
-      if (gen !== this._clusterGeneration) return; // stale response
+      if (gen !== this._clusterGeneration) return; // stale — newer load in flight
       this.clusterDetail = detail;
     } catch (err) {
       if (gen !== this._clusterGeneration) return;
       this.clusterDetailError = (err instanceof Error && err.message) ? err.message : 'Failed to load cluster';
       this.clusterDetail = null;
     } finally {
-      if (gen === this._clusterGeneration) {
-        this.clusterDetailLoading = false;
-      }
+      // Always clear loading. If a newer call is in flight, it will have
+      // already set clusterDetailLoading=true synchronously before its
+      // first await, so there's no visible flash of false.
+      this.clusterDetailLoading = false;
     }
   }
 
