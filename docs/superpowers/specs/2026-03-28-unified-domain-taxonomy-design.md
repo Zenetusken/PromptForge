@@ -408,9 +408,740 @@ No fallback maps, no legacy constants. Clean removal.
 
 ---
 
-## 6. New Services
+## 6. Service Integration Map
 
-### 6.1 DomainSignalLoader (`backend/app/services/domain_signal_loader.py`)
+Every service that touches domain data requires modification. This section maps each integration point with the exact change, data flow direction, and error contract.
+
+### 6.1 Pipeline Services — Domain Resolution Path
+
+#### `pipeline.py` — Internal pipeline (lines 303–340, 704–734, 787–788)
+
+**Current flow:** `analysis.domain` → `apply_domain_gate()` → `effective_domain` (string from `VALID_DOMAINS`) → DB persistence + event broadcast.
+
+**New flow:**
+```python
+# Phase 1.5: Domain resolution (replaces apply_domain_gate)
+domain_raw = analysis.domain or "general"
+domain_node = await domain_resolver.resolve(db, domain_raw, confidence)
+effective_domain = domain_node.label
+
+# Phase 2: Taxonomy mapping (unchanged — already uses domain_raw)
+mapping = await taxonomy_engine.map_domain(
+    domain_raw=domain_raw, db=db, applied_pattern_ids=applied_pattern_ids,
+)
+
+# Persistence: both fields stored
+db_opt = Optimization(
+    domain=effective_domain,       # Resolved domain node label
+    domain_raw=domain_raw,         # Analyzer's original output
+    cluster_id=mapping.cluster_id, # Mapped cluster
+)
+```
+
+**Error contract:** If `domain_resolver.resolve()` fails (DB error, no domain nodes), fall back to `"general"` with WARNING log. Pipeline must never fail due to domain resolution.
+
+#### `sampling_pipeline.py` — Sampling path (lines 632–660, 965–966)
+
+**Identical changes** to `pipeline.py`. Uses `getattr(analysis, "domain", None)` for safe attribute access. Same `domain_resolver.resolve()` call, same fallback.
+
+#### `pipeline_constants.py` — Constant replacements (lines 17–19, 82–94)
+
+**Removed:**
+- `VALID_DOMAINS` set
+- `apply_domain_gate()` function
+- `DOMAIN_CONFIDENCE_GATE` constant
+
+**Added:**
+```python
+# Domain discovery thresholds
+DOMAIN_DISCOVERY_MIN_MEMBERS = 5
+DOMAIN_DISCOVERY_MIN_COHERENCE = 0.6
+DOMAIN_DISCOVERY_CONSISTENCY = 0.60
+DOMAIN_COHERENCE_FLOOR = 0.3
+TIER_ACCENTS = ["#00e5ff", "#22ff88", "#fbbf24"]
+```
+
+**Impact:** All importers of `VALID_DOMAINS` and `apply_domain_gate` must be updated. Exact list: `pipeline.py`, `sampling_pipeline.py`, `optimize.py`, `save_result.py`.
+
+### 6.2 Heuristic Classification — Signal Loading
+
+#### `heuristic_analyzer.py` — Domain classification (lines 97–177)
+
+**Removed:**
+- `_DOMAIN_SIGNALS` module-level dict (5 hardcoded keyword dictionaries)
+- `_classify_domain()` function with hardcoded fullstack promotion
+- `_precompile_keyword_patterns()` for domain signals
+
+**Replaced with:**
+```python
+class HeuristicAnalyzer:
+    def __init__(self, signal_loader: DomainSignalLoader):
+        self._signal_loader = signal_loader
+
+    def _classify_domain(self, scored: dict[str, float]) -> str:
+        return self._signal_loader.classify(scored)
+
+    def _score_domains(self, words: set[str]) -> dict[str, float]:
+        return self._signal_loader.score(words)
+```
+
+**Initialization:** `DomainSignalLoader` loaded at app startup via `lifespan()`, stored on `app.state`. Injected into `HeuristicAnalyzer` via constructor. Hot-reloaded on `domain_created` events.
+
+**Error contract:** If signal loader has no loaded signals (empty DB, startup race), `classify()` returns `"general"`. Never raises.
+
+#### `context_enrichment.py` — Domain value property (line 50–52)
+
+**Unchanged.** `domain_value` property returns `self.analysis.domain` from heuristic analysis. The heuristic analyzer now uses `DomainSignalLoader` internally, so `analysis.domain` can contain any discovered domain label (not just the 7 seed values).
+
+**Downstream consumers of `enrichment.domain_value`:**
+- `optimize.py:230–231` (passthrough pending optimization)
+- `optimize.py:448` (prepare passthrough response)
+- `tools/optimize.py:104–105` (MCP passthrough)
+- `tools/prepare.py:111–112` (MCP prepare)
+
+All store the value in `domain` and `domain_raw` — no validation change needed since domain is now resolved by `domain_resolver`, not by whitelist.
+
+### 6.3 Validation Layer — Domain Resolution Service
+
+#### New: `domain_resolver.py` (`backend/app/services/domain_resolver.py`)
+
+Replaces all `VALID_DOMAINS` whitelist checks with domain node lookup.
+
+```python
+class DomainResolver:
+    """Resolves free-form domain strings to domain node labels.
+
+    Cached in-memory with event-bus invalidation. All callers get
+    the same resolver instance via app.state.domain_resolver.
+    """
+
+    _cache: dict[str, str] = {}          # primary → domain label
+    _domain_labels: set[str] = set()     # known domain node labels
+
+    async def load(self, db: AsyncSession) -> None:
+        """Load all domain node labels into cache."""
+        result = await db.execute(
+            select(PromptCluster.label).where(PromptCluster.state == "domain")
+        )
+        self._domain_labels = {row[0] for row in result}
+        self._cache.clear()
+        logger.info("DomainResolver loaded %d domain labels", len(self._domain_labels))
+
+    async def resolve(
+        self, db: AsyncSession, domain_raw: str | None, confidence: float
+    ) -> str:
+        """Resolve a free-form domain string to a known domain label.
+
+        Returns the domain label if the primary matches a domain node.
+        Falls back to 'general' if:
+        - domain_raw is None/empty
+        - confidence < DOMAIN_CONFIDENCE_GATE (0.6)
+        - primary doesn't match any domain node
+        """
+        if not domain_raw or not domain_raw.strip():
+            return "general"
+
+        if confidence < DOMAIN_CONFIDENCE_GATE:
+            logger.debug(
+                "Domain confidence gate: %.2f < %.2f, defaulting to 'general'",
+                confidence, DOMAIN_CONFIDENCE_GATE,
+            )
+            return "general"
+
+        primary, _ = parse_domain(domain_raw)
+
+        # Cache hit
+        if primary in self._cache:
+            return self._cache[primary]
+
+        # Check against domain nodes
+        if primary in self._domain_labels:
+            self._cache[primary] = primary
+            return primary
+
+        # Unknown primary — default to "general"
+        self._cache[primary] = "general"
+        return "general"
+
+    def invalidate(self) -> None:
+        """Clear cache. Called on domain_created events."""
+        self._cache.clear()
+        self._domain_labels.clear()
+```
+
+**Used by:**
+- `pipeline.py` — replaces `apply_domain_gate()` + `VALID_DOMAINS` check
+- `sampling_pipeline.py` — same replacement
+- `optimize.py:586–591` — passthrough save validation
+- `save_result.py:195–208` — MCP save validation
+
+### 6.4 Router Layer — Validation & Response Changes
+
+#### `routers/optimize.py` — Passthrough save (lines 585–591)
+
+**Before:**
+```python
+from app.services.pipeline_constants import VALID_DOMAINS
+domain_primary, _ = parse_domain(body.domain)
+validated_domain = domain_primary if domain_primary in VALID_DOMAINS else "general"
+```
+
+**After:**
+```python
+domain_resolver: DomainResolver = request.app.state.domain_resolver
+validated_domain = await domain_resolver.resolve(db, body.domain, confidence=1.0)
+```
+
+**SSE event emission (lines 630–631):** No change — already emits `domain` and `domain_raw`.
+
+#### `routers/optimize.py` — Optimization detail (line 351)
+
+**No change.** `domain=opt.domain` already returns the stored label.
+
+#### `routers/history.py` — History list (line 123)
+
+**No change.** `domain=opt.domain` serialization unchanged.
+
+#### `routers/clusters.py` — Domain update (lines 251–254)
+
+**Before:** Accepts any string, no validation.
+
+**After:**
+```python
+if body.domain is not None:
+    domain_resolver: DomainResolver = request.app.state.domain_resolver
+    if body.domain not in domain_resolver._domain_labels:
+        raise HTTPException(422, f"Unknown domain: '{body.domain}'. Use GET /api/domains for valid options.")
+    old_domain = cluster.domain
+    cluster.domain = body.domain
+    logger.info("Cluster domain changed: id=%s '%s' -> '%s'", cluster_id, old_domain, body.domain)
+```
+
+#### `routers/clusters.py` — Domain filter (tree, list, stats)
+
+**No change.** Filter queries use `PromptCluster.domain == filter_value` — works for any domain label.
+
+#### `routers/health.py` — Domain count
+
+**Added field:**
+```python
+domain_count = await db.scalar(
+    select(func.count()).where(PromptCluster.state == "domain")
+)
+```
+
+### 6.5 MCP Tool Layer
+
+#### `tools/save_result.py` — Domain validation (lines 195–208)
+
+**Before:**
+```python
+from app.services.pipeline_constants import VALID_DOMAINS
+domain_primary, _ = parse_domain(domain)
+validated_domain = domain_primary if domain_primary in VALID_DOMAINS else "general"
+```
+
+**After:**
+```python
+domain_resolver = get_domain_resolver()  # from tools/_shared.py
+validated_domain = await domain_resolver.resolve(db, domain, confidence=1.0)
+```
+
+#### `tools/optimize.py` — Domain in output (lines 207–208, 232)
+
+**No change.** Output already includes `domain` from pipeline result.
+
+#### `tools/analyze.py` — Domain from analysis (lines 162, 242)
+
+**No change.** Domain flows from analyzer output, stored as-is in `domain_raw`. The `domain` field gets the resolved value from pipeline.
+
+#### `tools/prepare.py` — Domain from enrichment (lines 111–112)
+
+**No change.** Domain flows from `enrichment.domain_value`.
+
+#### `tools/match.py` — Domain in match
+
+**No change.** Match queries taxonomy engine which already uses embedding-based search.
+
+#### `tools/health.py` — Domain count
+
+**Added:** `domain_count` field in health output, mirroring router change.
+
+#### `tools/_shared.py` — New accessor
+
+**Added:**
+```python
+_domain_resolver: DomainResolver | None = None
+
+def set_domain_resolver(resolver: DomainResolver) -> None:
+    global _domain_resolver
+    _domain_resolver = resolver
+
+def get_domain_resolver() -> DomainResolver:
+    if _domain_resolver is None:
+        raise RuntimeError("DomainResolver not initialized")
+    return _domain_resolver
+```
+
+### 6.6 Taxonomy Engine — Domain-Aware Operations
+
+#### `engine.py` — Hot path (lines 205–217)
+
+**Before:** `domain=opt.domain_raw or opt.domain or "general"` passed to `assign_cluster()`.
+
+**After:** Same flow. The hot path passes the raw domain to `assign_cluster()` for cross-domain merge prevention. Domain node resolution happens upstream in the pipeline. No change needed in engine.
+
+#### `engine.py` — Warm path: domain discovery addition
+
+**New step** added after HDBSCAN clustering and lifecycle mutations:
+
+```python
+async def run_warm_path(self, db: AsyncSession) -> WarmPathResult:
+    # ... existing HDBSCAN + lifecycle operations ...
+
+    # Domain discovery: propose new domains from coherent "general" sub-populations
+    new_domains = await self._propose_domains(db)
+    if new_domains:
+        # Reload signal loader for immediate heuristic availability
+        signal_loader = get_signal_loader()
+        await signal_loader.load(db)
+        # Reload domain resolver cache
+        domain_resolver = get_domain_resolver()
+        await domain_resolver.load(db)
+        logger.info("Warm path discovered %d new domains: %s", len(new_domains), new_domains)
+
+    # ... existing quality gate + snapshot ...
+```
+
+#### `engine.py` — Cold path color assignment
+
+**Modified:** `assign_colors()` call passes domain state awareness (see Guardrail 4.1).
+
+#### `family_ops.py` — Cross-domain merge prevention (lines 182–194)
+
+**No change.** `parse_domain()` extracts primary, string equality check prevents cross-domain merges. Works for any domain label, not just the seed 7.
+
+#### `family_ops.py` — New cluster creation (lines 245–267)
+
+**No change.** Stores `domain=domain` parameter as-is. Domain is now any valid label from the analyzer or the resolved domain.
+
+#### `lifecycle.py` — Emerge (lines 61–141)
+
+**Before:** Domain defaults to `"general"` (column default).
+
+**After:** Emerge inherits domain from majority of member clusters:
+```python
+# Determine domain from member cluster majority
+member_domains = [c.domain for c in member_clusters if c.domain]
+domain_counts = Counter(member_domains)
+inherited_domain = domain_counts.most_common(1)[0][0] if domain_counts else "general"
+
+node = PromptCluster(
+    label=label,
+    domain=inherited_domain,
+    # ...
+)
+```
+
+#### `lifecycle.py` — Split (lines 234–324)
+
+**Before:** Children default to `"general"`.
+
+**After:** Children inherit from parent (already in guardrail 4.5):
+```python
+child = PromptCluster(
+    domain=parent.label if parent.state == "domain" else parent.domain,
+    state="candidate",
+    # ...
+)
+```
+
+#### `lifecycle.py` — Merge (lines 144–231)
+
+**Before:** Survivor retains its domain, no check.
+
+**After:** Domain merge guard added (guardrail 4.4). For non-domain nodes, survivor retains domain (no change).
+
+#### `lifecycle.py` — Retire (lines 327–401)
+
+**Before:** No domain check.
+
+**After:** Domain retire exemption (guardrail 4.2).
+
+#### `matching.py` — map_domain (lines 363–472)
+
+**No change.** Already embedding-based. Works for any domain string.
+
+#### `quality.py` — Coherence threshold
+
+**Added:** `coherence_threshold(node)` function returns `DOMAIN_COHERENCE_FLOOR` for domain nodes (guardrail 4.3). All warm path quality gate calls use this function instead of hardcoded threshold.
+
+#### `coloring.py` — Color assignment
+
+**Added:** `compute_max_distance_color()` function. Cold path `assign_colors()` skips domain nodes (guardrail 4.1).
+
+#### `snapshot.py` — Audit trail
+
+**Extended:** Snapshot `operations` JSON log includes domain discovery events:
+```json
+{
+    "type": "domain_discovered",
+    "label": "marketing",
+    "source_cluster_id": "uuid",
+    "member_count": 12,
+    "consistency": 0.75,
+    "color_hex": "#xx"
+}
+```
+
+#### `embedding_index.py` — No change
+
+Indexes cluster embeddings by ID. Domain-agnostic.
+
+#### `sparkline.py` — No change
+
+Q_system visualization. Domain-agnostic.
+
+### 6.7 Supporting Services — Indirect Integration
+
+#### `optimization_service.py` — Sort/filter (line 30)
+
+**No change.** `"domain"` is already in `VALID_SORT_COLUMNS`. Sorting/filtering works for any domain label.
+
+#### `feedback_service.py` — Feedback loop
+
+**No change.** Feedback tracks `(task_type, strategy)` affinity, not domain. Domain influence is indirect through cluster membership.
+
+**Future enhancement (not in this spec):** domain-aware strategy affinity for richer adaptation.
+
+#### `adaptation_tracker.py` — Strategy affinity
+
+**No change.** Per `(task_type, strategy)` tracking is domain-agnostic.
+
+#### `heuristic_scorer.py` — Scoring
+
+**No change.** Heuristic scoring is domain-agnostic (clarity, specificity, structure, faithfulness, conciseness).
+
+#### `score_blender.py` — Blending
+
+**No change.** Blends LLM + heuristic scores without domain weighting.
+
+#### `prompt_lifecycle.py` — Cluster curation
+
+**No change.** Curation operates on cluster state, coherence, score. Domain is a cluster attribute that persists through curation.
+
+#### `pattern_injection.py` — Meta-pattern injection
+
+**No change.** `auto_inject_patterns()` uses embedding index search, domain-agnostic.
+
+#### `passthrough.py` — Passthrough assembly (lines 43–92)
+
+**No change.** `analysis_summary` parameter contains domain from heuristic analysis. Injected into `passthrough.md` template. Works for any domain label.
+
+#### `prompt_loader.py` — Template rendering
+
+**New variable:** `{{known_domains}}` added to the render context for `analyze.md`. Value: comma-separated list of domain node labels from `DomainResolver._domain_labels`.
+
+```python
+# In pipeline.py, before calling analyzer:
+domain_list = ", ".join(sorted(domain_resolver._domain_labels))
+# Injected into analyze.md template via PromptLoader.render()
+```
+
+#### `workspace_intelligence.py` — No change
+
+Workspace analysis is domain-agnostic.
+
+#### `context_resolver.py` — No change
+
+Per-source character caps and untrusted-context wrapping are domain-agnostic.
+
+#### `event_bus.py` — Event types
+
+**Added event types:** `domain_created`, `domain_merge_proposed`. Registered in event type constants. MCP server's cross-process HTTP notification handles these like existing events.
+
+#### `event_notification.py` — Cross-process
+
+**No change.** `notify_event_bus()` forwards any event type. New domain events flow through the same HTTP POST path.
+
+#### `mcp_session_file.py` — No change
+
+Session file tracks MCP connection state, not domain state.
+
+#### `mcp_proxy.py` — No change
+
+REST→MCP sampling proxy is domain-agnostic.
+
+### 6.8 App Lifecycle — Startup & Initialization
+
+#### `main.py` — FastAPI lifespan
+
+**Added initialization:**
+```python
+async def lifespan(app: FastAPI):
+    # ... existing startup ...
+
+    # Domain services
+    domain_resolver = DomainResolver()
+    async with get_session() as db:
+        await domain_resolver.load(db)
+    app.state.domain_resolver = domain_resolver
+
+    signal_loader = DomainSignalLoader()
+    async with get_session() as db:
+        await signal_loader.load(db)
+    app.state.signal_loader = signal_loader
+
+    # Subscribe to domain events for cache invalidation
+    event_bus.subscribe("domain_created", _on_domain_created)
+    event_bus.subscribe("taxonomy_changed", _on_taxonomy_changed)
+
+    # ... existing startup ...
+
+async def _on_domain_created(event: dict) -> None:
+    """Invalidate caches when a new domain is discovered."""
+    resolver: DomainResolver = app.state.domain_resolver
+    loader: DomainSignalLoader = app.state.signal_loader
+    async with get_session() as db:
+        await resolver.load(db)
+        await loader.load(db)
+    logger.info("Domain caches reloaded after domain_created: %s", event.get("label"))
+```
+
+#### `mcp_server.py` — MCP lifespan
+
+**Added:** Same `DomainResolver` and `DomainSignalLoader` initialization in the `_process_initialized` guard block. Stored via `tools/_shared.py` accessors (`set_domain_resolver`, `set_signal_loader`).
+
+---
+
+## 7. Logging Strategy
+
+Structured logging for every domain operation. All domain log entries include `domain=` and `trace_id=` (where available) for grep-based debugging.
+
+### 7.1 Log levels by operation
+
+| Operation | Level | Message pattern | When |
+|-----------|-------|----------------|------|
+| Domain resolved | `DEBUG` | `"Domain resolved: raw='%s' → label='%s' trace_id=%s"` | Every pipeline run |
+| Domain confidence gate | `DEBUG` | `"Domain confidence gate: %.2f < %.2f, defaulting to 'general'"` | Confidence below threshold |
+| Domain mapped to cluster | `INFO` | `"Domain mapped: '%s' → node '%s' (%s) trace_id=%s"` | Successful taxonomy mapping |
+| Domain mapping failed | `WARNING` | `"Domain mapping failed: '%s' — no matching cluster, trace_id=%s"` | No cluster found above threshold |
+| Cross-domain merge prevented | `INFO` | `"Cross-domain merge prevented: cluster '%s' domain=%s != incoming domain=%s (cosine=%.3f)"` | `assign_cluster()` domain check |
+| Domain discovery proposed | `INFO` | `"Domain proposed: '%s' (members=%d, coherence=%.3f, consistency=%.1f%%)"` | Warm path discovery |
+| Domain node created | `INFO` | `"Domain created: label='%s', color='%s', source='discovered', snapshot=%s"` | Successful domain creation |
+| Domain discovery skipped | `DEBUG` | `"Domain discovery skipped for cluster %s: %s"` | Threshold not met (with reason) |
+| Domain re-parenting | `INFO` | `"Re-parented %d clusters from 'general' to '%s'"` | Post-creation re-parenting |
+| Domain backfill | `INFO` | `"Backfilled %d optimizations from 'general' to '%s'"` | Post-creation optimization update |
+| Domain merge proposed | `INFO` | `"Domain merge proposed (requires approval): %s ← %s (cosine=%.3f)"` | Warm path detects merge candidate |
+| Domain retire skipped | `INFO` | `"Skipping retire for domain node: %s"` | Guardrail prevents retire |
+| Signal loader reload | `INFO` | `"DomainSignalLoader loaded %d domains with %d total keywords"` | Startup and hot-reload |
+| Signal loader empty | `WARNING` | `"DomainSignalLoader: no domain signals loaded — classifier will default to 'general'"` | Empty DB or startup race |
+| Domain resolver reload | `INFO` | `"DomainResolver loaded %d domain labels"` | Startup and hot-reload |
+| Domain color assigned | `DEBUG` | `"Domain color computed: '%s' → %s (min_distance=%.4f)"` | OKLab max-distance calculation |
+| Domain keyword extraction | `DEBUG` | `"Extracted %d TF-IDF keywords for domain '%s' from %d prompts"` | Discovery keyword extraction |
+| Domain validation error | `WARNING` | `"Unknown domain '%s' in cluster update, rejecting"` | PATCH endpoint validation |
+| Domain promotion | `INFO` | `"Cluster %s promoted to domain: label='%s'"` | Manual promotion via API |
+
+### 7.2 Trace logger integration
+
+Domain discovery events are recorded in `trace_logger.py` JSONL traces:
+
+```json
+{
+    "phase": "domain_discovery",
+    "timestamp": "2026-03-28T14:30:00Z",
+    "domain_label": "marketing",
+    "source_cluster_id": "uuid",
+    "member_count": 12,
+    "coherence": 0.78,
+    "consistency": 0.75,
+    "color_hex": "#ab45cd",
+    "keywords_extracted": 15,
+    "clusters_reparented": 3,
+    "optimizations_backfilled": 28,
+    "snapshot_id": "uuid"
+}
+```
+
+---
+
+## 8. Error Handling
+
+### 8.1 Error taxonomy
+
+Every domain-related failure is classified into one of three categories:
+
+| Category | Behavior | Example |
+|----------|----------|---------|
+| **Recoverable** | Log WARNING, use fallback, continue | Unknown domain → "general" |
+| **Degraded** | Log ERROR, skip operation, continue pipeline | Domain discovery DB error → skip discovery, pipeline continues |
+| **Fatal** | Log CRITICAL, raise, fail startup | No domain nodes in DB after migration → startup fails |
+
+### 8.2 Error handling by component
+
+#### DomainResolver
+
+```python
+async def resolve(self, db: AsyncSession, domain_raw: str | None, confidence: float) -> str:
+    try:
+        primary, _ = parse_domain(domain_raw)
+        if primary in self._domain_labels:
+            return primary
+        return "general"
+    except Exception:
+        logger.warning("DomainResolver.resolve() failed for '%s', defaulting to 'general'", domain_raw, exc_info=True)
+        return "general"  # RECOVERABLE: never block pipeline
+```
+
+#### DomainSignalLoader
+
+```python
+async def load(self, db: AsyncSession) -> None:
+    try:
+        domains = await db.execute(
+            select(PromptCluster).where(PromptCluster.state == "domain")
+        )
+        # ... load signals ...
+    except Exception:
+        logger.error("DomainSignalLoader.load() failed — classifier will use empty signals", exc_info=True)
+        self._signals = {}  # DEGRADED: classifier defaults to "general"
+        # Do NOT raise — app can function without domain signals
+```
+
+#### Domain discovery (warm path)
+
+```python
+async def _propose_domains(self, db: AsyncSession) -> list[str]:
+    created = []
+    try:
+        general_node = await self._get_domain_node(db, "general")
+        if general_node is None:
+            logger.error("Domain discovery: 'general' domain node not found — skipping")
+            return []  # DEGRADED: skip discovery
+
+        candidates = await self._find_discovery_candidates(db, general_node.id)
+        for cluster in candidates:
+            try:
+                label = await self._evaluate_candidate(db, cluster)
+                if label:
+                    await self._create_domain_node(db, label, cluster)
+                    created.append(label)
+            except Exception:
+                logger.error(
+                    "Domain discovery failed for cluster %s — skipping",
+                    cluster.id, exc_info=True,
+                )
+                # DEGRADED: skip this candidate, continue with others
+                continue
+
+    except Exception:
+        logger.error("Domain discovery failed entirely — skipping", exc_info=True)
+        # DEGRADED: warm path continues without domain discovery
+
+    return created
+```
+
+#### OKLab color computation
+
+```python
+def compute_max_distance_color(existing_hex: list[str]) -> str:
+    try:
+        # ... OKLab computation ...
+        return oklab_to_hex(best_color)
+    except Exception:
+        logger.warning("OKLab color computation failed, using fallback gray", exc_info=True)
+        return "#7a7a9e"  # RECOVERABLE: general's gray as safe default
+```
+
+#### TF-IDF keyword extraction
+
+```python
+async def _extract_domain_keywords(self, db: AsyncSession, cluster: PromptCluster, top_k: int = 15) -> list:
+    try:
+        # ... TF-IDF extraction ...
+        return ranked
+    except Exception:
+        logger.warning(
+            "Keyword extraction failed for cluster %s — domain will have no heuristic signals",
+            cluster.id, exc_info=True,
+        )
+        return []  # RECOVERABLE: domain created without signals, embedding-based classification still works
+```
+
+#### Re-parenting and backfill
+
+```python
+async def _reparent_to_domain(self, db: AsyncSession, domain_node: PromptCluster, label: str) -> int:
+    try:
+        count = await self._execute_reparent(db, domain_node, label)
+        logger.info("Re-parented %d clusters from 'general' to '%s'", count, label)
+        return count
+    except Exception:
+        logger.error(
+            "Re-parenting failed for domain '%s' — clusters remain under 'general'",
+            label, exc_info=True,
+        )
+        # DEGRADED: domain node exists but children not yet moved
+        # Next warm path cycle will detect and retry
+        return 0
+```
+
+#### Migration
+
+```python
+def upgrade():
+    # Check idempotency
+    existing = op.get_bind().execute(
+        text("SELECT COUNT(*) FROM prompt_cluster WHERE state = 'domain'")
+    ).scalar()
+    if existing >= 7:
+        logger.info("Migration: domain nodes already exist (%d), skipping seed", existing)
+        return
+
+    # ... insert seed domains ...
+
+    # Validate post-migration
+    count = op.get_bind().execute(
+        text("SELECT COUNT(*) FROM prompt_cluster WHERE state = 'domain'")
+    ).scalar()
+    if count < 7:
+        raise RuntimeError(f"Migration validation failed: expected 7 domain nodes, found {count}")
+        # FATAL: migration must succeed for app to function
+```
+
+#### App startup validation
+
+```python
+async def _validate_domain_nodes(db: AsyncSession) -> None:
+    """Verify domain nodes exist after migration. Called in lifespan."""
+    count = await db.scalar(
+        select(func.count()).where(PromptCluster.state == "domain")
+    )
+    if count == 0:
+        logger.critical("No domain nodes found — run migration first")
+        raise RuntimeError("Domain nodes missing. Run: alembic upgrade head")
+    logger.info("Domain validation passed: %d domain nodes", count)
+```
+
+### 8.3 Error propagation rules
+
+1. **Domain resolution never raises.** Any error in `DomainResolver.resolve()` returns `"general"`. The pipeline must never fail because a domain couldn't be classified.
+
+2. **Domain discovery errors are isolated.** Each candidate is processed independently. One failed candidate doesn't block others. Total discovery failure doesn't block the warm path.
+
+3. **Signal loader errors degrade gracefully.** If signals can't be loaded, the heuristic classifier returns `"general"` for all domains. The LLM analyzer and embedding-based taxonomy still function.
+
+4. **Re-parenting errors are self-healing.** If re-parenting fails after domain creation, the domain node exists but has no children. The next warm path cycle detects orphaned clusters under "general" that should be under the new domain and retries.
+
+5. **Color computation errors use safe default.** If OKLab computation fails, the domain gets `"general"`'s gray (`#7a7a9e`). Functional but visually suboptimal — fixed on next cold path or manual recolor.
+
+6. **Frontend handles missing domains gracefully.** If `/api/domains` returns empty (API error, loading race), `domainStore.colorFor()` returns fallback gray. Inspector picker shows empty state with retry button. Topology renders nodes with their `color_hex` directly (API-supplied, not store-dependent).
+
+---
+
+## 9. New Services
+
+### 9.1 DomainSignalLoader (`backend/app/services/domain_signal_loader.py`)
 
 Replaces `_DOMAIN_SIGNALS` in `heuristic_analyzer.py`.
 
@@ -441,15 +1172,19 @@ class DomainSignalLoader:
 
 Loaded at startup. Hot-reloaded on `domain_created` and `taxonomy_changed` events via event bus subscription.
 
-### 6.2 Domain color service (extension of `taxonomy/coloring.py`)
+### 9.2 DomainResolver (`backend/app/services/domain_resolver.py`)
+
+Full specification in Section 6.3 above.
+
+### 9.3 Domain color service (extension of `taxonomy/coloring.py`)
 
 `compute_max_distance_color()` added to `coloring.py`. Reuses existing OKLab conversion utilities.
 
 ---
 
-## 7. API Changes
+## 10. API Changes
 
-### 7.1 New endpoint: `GET /api/domains`
+### 10.1 New endpoint: `GET /api/domains`
 
 ```python
 @router.get("/api/domains")
@@ -473,7 +1208,7 @@ async def list_domains(db: AsyncSession = Depends(get_db)) -> list[DomainInfo]:
     ]
 ```
 
-### 7.2 New schema: `DomainInfo`
+### 10.2 New schema: `DomainInfo`
 
 ```python
 class DomainInfo(BaseModel):
@@ -485,32 +1220,32 @@ class DomainInfo(BaseModel):
     source: str = "seed"  # seed | discovered
 ```
 
-### 7.3 New endpoint: `POST /api/domains/{id}/promote`
+### 10.3 New endpoint: `POST /api/domains/{id}/promote`
 
 Promotes a mature cluster to domain status. Validates:
 - Source cluster must be `state="mature"` or `state="active"` with `member_count >= 5`
 - No existing domain node with the same label
 - Assigns OKLab max-distance color
 
-### 7.4 Modified: `PATCH /api/clusters/{id}`
+### 10.4 Modified: `PATCH /api/clusters/{id}`
 
 Accepts `state="domain"` only with explicit validation:
 - Caller must confirm intent (e.g., `"confirm_domain_promotion": true` in body)
 - Target cluster must meet minimum thresholds (member_count, coherence)
 
-### 7.5 Modified: `GET /api/health`
+### 10.5 Modified: `GET /api/health`
 
 Adds `domain_count: int` to health response.
 
-### 7.6 Modified: `GET /api/clusters/tree`
+### 10.6 Modified: `GET /api/clusters/tree`
 
 Domain nodes appear as root-level entries with their child clusters nested. No schema change — `ClusterNode` already has `parent_id` and `state`.
 
 ---
 
-## 8. Frontend Architecture
+## 11. Frontend Architecture
 
-### 8.1 Domain store (`frontend/src/lib/stores/domains.svelte.ts`)
+### 11.1 Domain store (`frontend/src/lib/stores/domains.svelte.ts`)
 
 New reactive store that is the single source of truth for domain data:
 
@@ -541,7 +1276,7 @@ function colorFor(domain: string): string { ... }
 
 Initialized in app startup. Refreshed on `domain_created` and `taxonomy_changed` SSE events.
 
-### 8.2 Color resolution (`colors.ts`)
+### 11.2 Color resolution (`colors.ts`)
 
 `taxonomyColor()` rewritten to resolve from domain store:
 
@@ -561,7 +1296,7 @@ export function taxonomyColor(color: string | null | undefined): string {
 
 No hardcoded `DOMAIN_COLORS` map.
 
-### 8.3 Inspector domain picker
+### 11.3 Inspector domain picker
 
 ```svelte
 {#each domainStore.labels as d (d)}
@@ -577,15 +1312,15 @@ No hardcoded `DOMAIN_COLORS` map.
 
 No hardcoded `KNOWN_DOMAINS` array.
 
-### 8.4 Topology rendering
+### 11.4 Topology rendering
 
 Domain nodes render as larger spheres (2x cluster radius) with `persistence=1.0` ensuring they're always visible regardless of LOD tier. Their pinned `color_hex` is used directly.
 
 ---
 
-## 9. Migration Plan
+## 12. Migration Plan
 
-### 9.1 Alembic migration: `add_domain_nodes`
+### 12.1 Alembic migration: `add_domain_nodes`
 
 **Step 1:** Add `metadata` column to `prompt_cluster`:
 ```python
@@ -620,7 +1355,7 @@ for domain in seed_domains:
     )
 ```
 
-### 9.2 Migration safety
+### 12.2 Migration safety
 
 - **Idempotent:** Checks for existing domain nodes before inserting. Safe to re-run.
 - **Reversible:** Downgrade drops domain nodes, nullifies re-parented `parent_id`, restores `domain="general"` on backfilled rows.
@@ -628,7 +1363,7 @@ for domain in seed_domains:
 
 ---
 
-## 10. Configuration Constants
+## 13. Configuration Constants
 
 All in `pipeline_constants.py` (replacing `VALID_DOMAINS`):
 
@@ -647,7 +1382,7 @@ TIER_ACCENTS = ["#00e5ff", "#22ff88", "#fbbf24"]  # internal, sampling, passthro
 
 ---
 
-## 11. Event Bus Integration
+## 14. Event Bus Integration
 
 New SSE event types:
 
@@ -662,7 +1397,7 @@ Frontend handlers:
 
 ---
 
-## 12. Testing Strategy
+## 15. Testing Strategy
 
 ### Unit tests
 - `DomainSignalLoader`: load from domain metadata, classify with dynamic signals, hot-reload on event
