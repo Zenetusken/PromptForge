@@ -31,7 +31,9 @@
   const viewingCachedTab = $derived(editorStore.activeResult !== null);
 
   const isPassthrough = $derived(forgeStore.status === 'passthrough');
-  const isHeuristicScored = $derived(activeResult?.scoring_mode === 'heuristic');
+  const isHeuristicScored = $derived(
+    activeResult?.scoring_mode === 'heuristic' || activeResult?.scoring_mode === 'hybrid_passthrough',
+  );
   const isPassthroughResult_ = $derived(isPassthroughResult(activeResult));
   // Family detail is shown only when selected AND forge is not actively running
   const forgeActive = $derived(
@@ -408,16 +410,30 @@
               <span class="meta-value meta-value--cyan">{activeResult.strategy_used}</span>
             </div>
           {/if}
-          {#if isHeuristicScored}
-            <div class="meta-row">
-              <span class="meta-label">Scoring</span>
-              <span class="data-value neon-yellow">{isPassthroughResult_ ? 'heuristic (passthrough)' : 'heuristic'}</span>
-            </div>
-          {/if}
-          {#if activeResult?.provider && !isPassthroughResult_}
+          {#if activeResult?.provider}
             <div class="meta-row">
               <span class="meta-label">Provider</span>
-              <span class="meta-value">{activeResult.provider}</span>
+              <span class="meta-value" class:neon-yellow={isPassthroughResult_}>
+                {isPassthroughResult_ ? 'passthrough' : activeResult.provider}
+              </span>
+            </div>
+          {/if}
+          {#if activeResult?.scoring_mode && activeResult.scoring_mode !== 'skipped' && activeResult.scores}
+            <div class="meta-row">
+              <span class="meta-label">Scoring</span>
+              <span class="meta-value" class:neon-yellow={isHeuristicScored}>
+                {activeResult.scoring_mode === 'hybrid_passthrough' ? 'hybrid (external + heuristic)'
+                  : activeResult.scoring_mode === 'heuristic' ? 'heuristic only'
+                  : activeResult.scoring_mode}
+              </span>
+            </div>
+          {/if}
+          {#if activeResult?.model_used}
+            <div class="meta-row">
+              <span class="meta-label">Model</span>
+              <span class="meta-value" class:neon-yellow={isPassthroughResult_} class:meta-value--green={activeResult.provider === 'mcp_sampling'}>
+                {activeResult.model_used}
+              </span>
             </div>
           {/if}
           {#if activeResult?.models_by_phase && activeResult.provider === 'mcp_sampling'}
@@ -435,6 +451,18 @@
             {/each}
           {/if}
         </div>
+
+        {#if activeResult?.suggestions && activeResult.suggestions.length > 0}
+          <div class="suggestions-section">
+            <div class="section-heading">Suggestions</div>
+            {#each activeResult.suggestions as sug}
+              <div class="suggestion-item">
+                <span class="suggestion-source">{sug.source}</span>
+                <span class="suggestion-text">{sug.text}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
 
         {#if refinementStore.scoreProgression.length >= 2}
           <div class="sparkline-section">
@@ -573,6 +601,42 @@
 
   .meta-value--green {
     color: var(--color-neon-green);
+  }
+
+  .meta-value.neon-yellow {
+    color: var(--color-neon-yellow);
+  }
+
+  /* Suggestions */
+  .suggestions-section {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 6px;
+  }
+
+  .suggestion-item {
+    display: flex;
+    gap: 6px;
+    padding: 3px 6px;
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+  }
+
+  .suggestion-source {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--tier-accent, var(--color-neon-cyan));
+    text-transform: uppercase;
+    flex-shrink: 0;
+    min-width: 52px;
+  }
+
+  .suggestion-text {
+    font-size: 9px;
+    font-family: var(--font-sans);
+    color: var(--color-text-secondary);
+    line-height: 1.3;
   }
 
   /* Error state */

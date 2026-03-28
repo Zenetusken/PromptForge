@@ -56,6 +56,8 @@ export function mockOptimizationResult(overrides: Record<string, unknown> = {}) 
     intent_label: 'Hello world program',
     domain: 'backend',
     cluster_id: null,
+    heuristic_flags: [],
+    suggestions: [],
     ...overrides,
   };
 }
