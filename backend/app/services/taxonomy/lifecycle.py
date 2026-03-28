@@ -17,6 +17,7 @@ Reference: Spec Sections 3.1–3.5.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
@@ -144,6 +145,11 @@ async def attempt_emerge(
             model=model,
         )
 
+        # Inherit domain from the majority of member clusters.
+        member_domains = [f.domain for f in families if f.domain]
+        domain_counts = Counter(member_domains)
+        inherited_domain = domain_counts.most_common(1)[0][0] if domain_counts else "general"
+
         # Placeholder color — UMAP projection not yet available for new nodes.
         color_hex = generate_color(0.0, 0.0, 0.0)
 
@@ -154,6 +160,7 @@ async def attempt_emerge(
             coherence=coherence,
             state="candidate",
             color_hex=color_hex,
+            domain=inherited_domain,
         )
         db.add(node)
         await db.flush()  # obtain node.id before linking families
@@ -323,6 +330,14 @@ async def attempt_split(
             )
             color_hex = generate_color(0.0, 0.0, 0.0)
 
+            # Inherit domain from the parent: domain-state nodes use their
+            # label as the domain value; all other nodes pass the domain field.
+            child_domain = (
+                parent_node.label
+                if parent_node.state == "domain"
+                else parent_node.domain
+            )
+
             child = PromptCluster(
                 label=label,
                 parent_id=parent_node.id,
@@ -331,6 +346,7 @@ async def attempt_split(
                 coherence=coherence,
                 state="candidate",
                 color_hex=color_hex,
+                domain=child_domain,
             )
             db.add(child)
             await db.flush()
