@@ -58,7 +58,6 @@ from app.services.event_notification import notify_event_bus
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.pattern_injection import auto_inject_patterns
 from app.services.pipeline_constants import (
-    apply_domain_gate,
     compute_optimize_max_tokens,
     resolve_effective_strategy,
     semantic_check,
@@ -631,9 +630,17 @@ async def run_sampling_pipeline(
 
     # Semantic check + domain confidence gate (shared with internal pipeline)
     confidence = semantic_check(analysis.task_type, prompt, analysis.confidence)
-    effective_domain = apply_domain_gate(
-        getattr(analysis, "domain", None), confidence,
-    )
+
+    # Resolve domain via domain nodes (replaces hardcoded VALID_DOMAINS whitelist)
+    try:
+        from app.tools._shared import get_domain_resolver
+        _resolver = get_domain_resolver()
+        async with async_session_factory() as _domain_db:
+            effective_domain = await _resolver.resolve(
+                _domain_db, getattr(analysis, "domain", None) or "general", confidence,
+            )
+    except (ValueError, Exception):
+        effective_domain = "general"
 
     # Domain mapping (Spec Section 4.2, 4.4)
     domain_raw = getattr(analysis, "domain", None) or "general"  # pre-gate

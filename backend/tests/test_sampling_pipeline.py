@@ -282,7 +282,14 @@ async def test_run_sampling_pipeline_full():
     ctx = _make_ctx()
     ctx.session.create_message = AsyncMock(side_effect=mock_create_message)
 
-    with patch("app.services.sampling_pipeline.async_session_factory") as mock_factory:
+    # Set up a DomainResolver with known domain labels so the sampling
+    # pipeline can resolve "backend" without hitting a real DB.
+    from app.services.domain_resolver import DomainResolver
+    _test_resolver = DomainResolver()
+    _test_resolver._domain_labels = {"backend", "frontend", "database", "devops", "security", "fullstack", "general"}
+
+    with patch("app.services.sampling_pipeline.async_session_factory") as mock_factory, \
+         patch("app.tools._shared._domain_resolver", _test_resolver):
         mock_db = AsyncMock()
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()

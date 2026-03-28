@@ -19,7 +19,7 @@ from app.schemas.pipeline_contracts import DimensionScores
 from app.services.event_notification import notify_event_bus
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.heuristic_suggestions import generate_heuristic_suggestions
-from app.services.pipeline_constants import VALID_DOMAINS
+from app.tools._shared import get_domain_resolver
 from app.services.preferences import PreferencesService
 from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
@@ -197,10 +197,13 @@ async def handle_save_result(
             opt.task_type = task_type or opt.task_type or "general"
             opt.strategy_used = strategy_used or opt.strategy_used or "auto"
             opt.changes_summary = changes_summary or ""
-            validated_domain = (
-                domain if domain in VALID_DOMAINS
-                else (opt.domain if opt.domain in VALID_DOMAINS else "general")
-            )
+            try:
+                _resolver = get_domain_resolver()
+                validated_domain = await _resolver.resolve(
+                    db, domain or opt.domain or "general", confidence=1.0,
+                )
+            except (ValueError, Exception):
+                validated_domain = "general"
             opt.domain = validated_domain
             opt.domain_raw = domain or opt.domain_raw or "general"
             opt.intent_label = title_case_label((intent_label or opt.intent_label or "general")[:100])
@@ -223,6 +226,13 @@ async def handle_save_result(
             opt_id = opt.id
         else:
             opt_id = str(uuid.uuid4())
+            try:
+                _new_resolver = get_domain_resolver()
+                _new_domain = await _new_resolver.resolve(
+                    db, domain or "general", confidence=1.0,
+                )
+            except (ValueError, Exception):
+                _new_domain = "general"
             opt = Optimization(
                 id=opt_id,
                 raw_prompt="",
@@ -230,7 +240,7 @@ async def handle_save_result(
                 task_type=task_type or "general",
                 strategy_used=strategy_used or "auto",
                 changes_summary=changes_summary or "",
-                domain=domain if domain in VALID_DOMAINS else "general",
+                domain=_new_domain,
                 domain_raw=domain or "general",
                 intent_label=title_case_label((intent_label or "general")[:100]),
                 score_clarity=final_scores.get("clarity"),

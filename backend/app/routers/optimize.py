@@ -19,7 +19,6 @@ from app.services.heuristic_scorer import HeuristicScorer
 from app.services.heuristic_suggestions import generate_heuristic_suggestions
 from app.services.passthrough import assemble_passthrough_prompt
 from app.services.pipeline import PipelineOrchestrator
-from app.services.pipeline_constants import VALID_DOMAINS
 from app.services.preferences import PreferencesService
 from app.services.taxonomy import get_engine as get_taxonomy_engine
 from app.utils.sse import format_sse
@@ -273,6 +272,7 @@ async def optimize(
                 context_sources=enrichment.context_sources_dict,
                 applied_pattern_ids=body.applied_pattern_ids,
                 taxonomy_engine=get_taxonomy_engine(app=request.app),
+                domain_resolver=getattr(request.app.state, "domain_resolver", None),
             ):
                 yield format_sse(event.event, event.data)
         except Exception as exc:
@@ -463,6 +463,7 @@ async def passthrough_prepare(
 @router.post("/optimize/passthrough/save")
 async def passthrough_save(
     body: PassthroughSaveRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _rate: None = Depends(RateLimit(lambda: settings.OPTIMIZE_RATE_LIMIT)),
 ) -> OptimizationDetail:
@@ -582,10 +583,11 @@ async def passthrough_save(
     opt.changes_summary = effective_changes or ""
     opt.task_type = body.task_type or opt.task_type or "general"
     opt.strategy_used = effective_strategy
-    validated_domain = (
-        body.domain if body.domain in VALID_DOMAINS
-        else (opt.domain if opt.domain in VALID_DOMAINS else "general")
-    )
+    _domain_resolver = getattr(request.app.state, "domain_resolver", None)
+    if _domain_resolver is not None:
+        validated_domain = await _domain_resolver.resolve(db, body.domain, confidence=1.0)
+    else:
+        validated_domain = "general"
     opt.domain = validated_domain
     opt.domain_raw = body.domain or opt.domain_raw or "general"
     opt.intent_label = title_case_label((body.intent_label or opt.intent_label or "general")[:100])
