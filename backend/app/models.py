@@ -121,6 +121,7 @@ class PromptCluster(Base):
     color_hex = Column(String(7), nullable=True)
 
     preferred_strategy = Column(String(50), nullable=True)
+    cluster_metadata = Column(JSON, nullable=True)
     prune_flag_count = Column(Integer, nullable=False, default=0)
     last_used_at = Column(DateTime, nullable=True)
     promoted_at = Column(DateTime, nullable=True)
@@ -135,6 +136,7 @@ class PromptCluster(Base):
     __table_args__ = (
         Index("ix_prompt_cluster_state", "state"),
         Index("ix_prompt_cluster_domain_state", "domain", "state"),
+        Index("ix_prompt_cluster_state_label", "state", "label"),
         Index("ix_prompt_cluster_persistence", "persistence"),
         Index("ix_prompt_cluster_created_at", created_at.desc()),
     )
