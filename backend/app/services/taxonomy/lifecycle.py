@@ -32,6 +32,42 @@ from app.services.taxonomy.labeling import generate_label
 
 logger = logging.getLogger(__name__)
 
+
+class GuardrailViolationError(RuntimeError):
+    """Raised when a lifecycle operation violates domain stability guardrails.
+
+    This exception should never occur in production — it indicates a code
+    regression that bypassed the guardrail checks.
+    """
+    pass
+
+
+_GUARDRAIL_VIOLATIONS: dict[str, str] = {
+    "retire": "Domain nodes cannot be retired — use manual archival",
+    "merge": "Domain nodes cannot be auto-merged — requires approval event",
+    "color_assign": "Domain colors are pinned — cold path must skip",
+}
+
+
+def _assert_domain_guardrails(operation: str, node: PromptCluster) -> None:
+    """Runtime assertion that domain guardrails are enforced.
+
+    Called at the START of every lifecycle mutation. Raises
+    GuardrailViolationError if the operation would violate
+    domain stability.
+    """
+    if node.state != "domain":
+        return
+
+    if operation in _GUARDRAIL_VIOLATIONS:
+        msg = (
+            f"GUARDRAIL VIOLATION: {operation} attempted on domain node "
+            f"'{node.label}'. {_GUARDRAIL_VIOLATIONS[operation]}"
+        )
+        logger.critical(msg)
+        raise GuardrailViolationError(msg)
+
+
 # Priority order for operation scheduling (lower value = higher priority).
 _PRIORITY: dict[str, int] = {
     "split": 0,
@@ -164,6 +200,8 @@ async def attempt_merge(
     Returns:
         The survivor PromptCluster, or None on failure.
     """
+    _assert_domain_guardrails("merge", node_a)
+    _assert_domain_guardrails("merge", node_b)
     try:
         # Guard: self-merge is a no-op that would double member_count
         if node_a.id == node_b.id:
@@ -343,6 +381,7 @@ async def attempt_retire(
     Returns:
         True if the node was retired, False if skipped (no siblings).
     """
+    _assert_domain_guardrails("retire", node)
     try:
         # Guard: root nodes (parent_id=None) must never be retired
         if node.parent_id is None:
