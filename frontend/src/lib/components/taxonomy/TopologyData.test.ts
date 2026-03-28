@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { buildSceneData, assignLodVisibility, type SceneNode } from './TopologyData';
 import type { ClusterNode } from '$lib/api/clusters';
+import { domainStore } from '$lib/stores/domains.svelte';
 
 function makeNode(overrides: Partial<ClusterNode> = {}): ClusterNode {
   return {
@@ -29,6 +30,16 @@ function makeNode(overrides: Partial<ClusterNode> = {}): ClusterNode {
 }
 
 describe('buildSceneData', () => {
+  beforeEach(() => {
+    domainStore._reset();
+    // Populate domain store for tests that rely on domain color resolution
+    domainStore.domains = [
+      { id: 'd1', label: 'backend', color_hex: '#b44aff', member_count: 0, avg_score: null, source: 'seed' },
+      { id: 'd2', label: 'frontend', color_hex: '#ff4895', member_count: 0, avg_score: null, source: 'seed' },
+      { id: 'd3', label: 'general', color_hex: '#7a7a9e', member_count: 0, avg_score: null, source: 'seed' },
+    ];
+  });
+
   it('creates SceneNode for each tree node', () => {
     const tree = [makeNode({ id: 'a' }), makeNode({ id: 'b' })];
     const result = buildSceneData(tree);

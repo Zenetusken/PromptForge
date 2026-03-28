@@ -289,7 +289,7 @@ async def test_run_sampling_pipeline_full():
     _test_resolver._domain_labels = {"backend", "frontend", "database", "devops", "security", "fullstack", "general"}
 
     with patch("app.services.sampling_pipeline.async_session_factory") as mock_factory, \
-         patch("app.tools._shared._domain_resolver", _test_resolver):
+         patch("app.services.domain_resolver._instance", _test_resolver):
         mock_db = AsyncMock()
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()

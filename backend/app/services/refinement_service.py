@@ -208,9 +208,18 @@ class RefinementService:
         system_prompt = self.prompt_loader.load("agent-guidance.md")
         available_strategies = self.strategy_loader.format_available()
 
+        # Resolve dynamic domain list for analyzer prompt
+        try:
+            from app.services.domain_resolver import get_domain_resolver
+            _resolver = get_domain_resolver()
+            _known_domains = ", ".join(sorted(_resolver.domain_labels))
+        except (ValueError, ImportError):
+            _known_domains = "backend, frontend, database, devops, security, fullstack, general"
+
         analyze_msg = self.prompt_loader.render("analyze.md", {
             "raw_prompt": current_prompt,
             "available_strategies": available_strategies,
+            "known_domains": _known_domains,
         })
 
         analysis: AnalysisResult = await self._call_provider(

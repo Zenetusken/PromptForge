@@ -20,6 +20,22 @@ from app.utils.text_cleanup import parse_domain
 
 logger = logging.getLogger(__name__)
 
+# Module-level singleton — set by main.py lifespan, read by pipeline/tools
+_instance: DomainResolver | None = None
+
+
+def get_domain_resolver() -> DomainResolver:
+    """Return the process-level DomainResolver or raise if not initialized."""
+    if _instance is None:
+        raise ValueError("DomainResolver not initialized")
+    return _instance
+
+
+def set_domain_resolver(resolver: DomainResolver | None) -> None:
+    """Set the process-level DomainResolver (called by lifespan)."""
+    global _instance
+    _instance = resolver
+
 
 class DomainResolver:
     """Resolve free-form domain strings to known domain node labels."""

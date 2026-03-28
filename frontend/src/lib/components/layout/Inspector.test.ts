@@ -17,6 +17,7 @@ vi.mock('$lib/components/refinement/ScoreSparkline.svelte', () => ({
 import Inspector from './Inspector.svelte';
 import { forgeStore } from '$lib/stores/forge.svelte';
 import { clustersStore } from '$lib/stores/clusters.svelte';
+import { domainStore } from '$lib/stores/domains.svelte';
 import { editorStore } from '$lib/stores/editor.svelte';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,6 +82,17 @@ describe('Inspector', () => {
   beforeEach(() => {
     forgeStore._reset();
     clustersStore._reset();
+    domainStore._reset();
+    // Populate domain store with seed domains for domain picker tests
+    domainStore.domains = [
+      { id: 'd1', label: 'backend', color_hex: '#b44aff', member_count: 0, avg_score: null, source: 'seed' },
+      { id: 'd2', label: 'frontend', color_hex: '#ff4895', member_count: 0, avg_score: null, source: 'seed' },
+      { id: 'd3', label: 'database', color_hex: '#36b5ff', member_count: 0, avg_score: null, source: 'seed' },
+      { id: 'd4', label: 'security', color_hex: '#ff2255', member_count: 0, avg_score: null, source: 'seed' },
+      { id: 'd5', label: 'devops', color_hex: '#6366f1', member_count: 0, avg_score: null, source: 'seed' },
+      { id: 'd6', label: 'fullstack', color_hex: '#d946ef', member_count: 0, avg_score: null, source: 'seed' },
+      { id: 'd7', label: 'general', color_hex: '#7a7a9e', member_count: 0, avg_score: null, source: 'seed' },
+    ];
     editorStore._reset();
     vi.clearAllMocks();
   });

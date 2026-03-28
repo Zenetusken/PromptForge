@@ -84,21 +84,22 @@ def get_context_service() -> ContextEnrichmentService:
     return _context_service
 
 
-_domain_resolver = None  # DomainResolver | None
 _signal_loader = None    # DomainSignalLoader | None
 
 
-def set_domain_resolver(resolver) -> None:
-    """Set the module-level domain resolver (called by lifespan)."""
-    global _domain_resolver
-    _domain_resolver = resolver
-
-
 def get_domain_resolver():
-    """Return domain resolver or raise if not initialized."""
-    if _domain_resolver is None:
-        raise ValueError("DomainResolver not initialized")
-    return _domain_resolver
+    """Return domain resolver or raise if not initialized.
+
+    Delegates to the service module's process-level singleton.
+    """
+    from app.services.domain_resolver import get_domain_resolver as _get
+    return _get()
+
+
+def set_domain_resolver(resolver) -> None:
+    """Set the domain resolver (delegates to service module singleton)."""
+    from app.services.domain_resolver import set_domain_resolver as _set
+    _set(resolver)
 
 
 def set_signal_loader(loader) -> None:

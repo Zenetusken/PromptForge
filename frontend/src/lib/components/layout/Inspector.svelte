@@ -2,11 +2,9 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { refinementStore } from '$lib/stores/refinement.svelte';
   import { clustersStore } from '$lib/stores/clusters.svelte';
+  import { domainStore } from '$lib/stores/domains.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { taxonomyColor, scoreColor, qHealthColor, stateColor } from '$lib/utils/colors';
-
-  /** Known domains for the domain picker (legacy compat). */
-  const KNOWN_DOMAINS = ['backend', 'frontend', 'database', 'security', 'devops', 'fullstack', 'general'];
 
   /** Deduplicate array by `id` field (prevents Svelte keyed each errors). */
   function dedupe<T extends { id: string }>(items: T[]): T[] {
@@ -224,7 +222,7 @@
             >{family.state}</span>
             {#if domainPickerOpen}
               <div class="domain-picker" role="listbox" aria-label="Select domain">
-                {#each KNOWN_DOMAINS as d (d)}
+                {#each domainStore.labels as d (d)}
                   <button
                     class="domain-option"
                     class:domain-option--active={d === family.domain}

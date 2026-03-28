@@ -24,7 +24,7 @@ from app.services.routing import RoutingContext
 from app.services.sampling_pipeline import run_sampling_analyze
 from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
-from app.tools._shared import DATA_DIR, get_routing, get_taxonomy_engine
+from app.tools._shared import DATA_DIR, get_domain_resolver, get_routing, get_taxonomy_engine
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +76,18 @@ async def handle_analyze(
 
     # --- Phase 1: Analyze ---
     system_prompt = loader.load("agent-guidance.md")
+
+    # Resolve dynamic domain list for analyzer prompt
+    try:
+        resolver = get_domain_resolver()
+        known_domains = ", ".join(sorted(resolver.domain_labels))
+    except ValueError:
+        known_domains = "backend, frontend, database, devops, security, fullstack, general"
+
     analyze_msg = loader.render("analyze.md", {
         "raw_prompt": prompt,
         "available_strategies": strategy_loader.format_available(),
+        "known_domains": known_domains,
     })
 
     try:

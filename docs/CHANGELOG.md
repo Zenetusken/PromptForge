@@ -4,6 +4,31 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Added
+- Unified domain taxonomy -- domains are now first-class taxonomy nodes discovered organically from user behavior (ADR-004)
+- `GET /api/domains` endpoint for dynamic domain palette
+- `POST /api/domains/{id}/promote` for manual cluster-to-domain promotion
+- Warm-path domain discovery with configurable thresholds
+- Domain stability guardrails (color pinning, retire exemption, merge approval, coherence floor, split isolation)
+- Tree integrity verification and auto-repair
+- Domain count and ceiling in health endpoint
+- Frontend domain store with SSE-driven invalidation
+
+### Changed
+- Analyzer prompt template now uses dynamic `{{known_domains}}` variable
+- `taxonomyColor()` resolves from API-driven domain store instead of hardcoded map
+- Inspector domain picker loads available domains from API
+- StatusBar shows domain count with amber warning at 80% ceiling
+- Topology renders domain nodes at 2x size
+- Heuristic analyzer domain classification driven by `DomainSignalLoader` (database-backed keywords)
+
+### Removed
+- `VALID_DOMAINS` constant from `pipeline_constants.py`
+- `apply_domain_gate()` function from `pipeline_constants.py`
+- `_DOMAIN_SIGNALS` hardcoded dict from `heuristic_analyzer.py`
+- `DOMAIN_COLORS` hardcoded map from `colors.ts`
+- `KNOWN_DOMAINS` hardcoded array from `Inspector.svelte`
+
 ## v0.3.7-dev — 2026-03-28
 
 ### Added
