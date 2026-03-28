@@ -4,13 +4,16 @@ import logging
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app._version import __version__
 from app.config import settings
 from app.database import get_db
 from app.dependencies.rate_limit import RateLimit
+from app.models import PromptCluster
 from app.services.optimization_service import OptimizationService
+from app.services.pipeline_constants import DOMAIN_COUNT_CEILING
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,14 @@ class HealthResponse(BaseModel):
         default_factory=lambda: ["passthrough"],
         description="Currently reachable routing tiers.",
     )
+    domain_count: int = Field(
+        default=0,
+        description="Number of active domain nodes in the taxonomy.",
+    )
+    domain_ceiling: int = Field(
+        default=DOMAIN_COUNT_CEILING,
+        description="Maximum allowed domain nodes before new domain creation is suppressed.",
+    )
 
 
 @router.get("/health")
@@ -90,6 +101,15 @@ async def health_check(
         sampling_capable = None
         mcp_disconnected = False
         available_tiers = ["passthrough"]
+
+    # Domain proliferation metrics
+    domain_count = 0
+    try:
+        domain_count = await db.scalar(
+            select(func.count()).where(PromptCluster.state == "domain")
+        ) or 0
+    except Exception:
+        logger.debug("Health check domain_count query failed", exc_info=True)
 
     # Pipeline metrics
     score_health: ScoreHealth | None = None
@@ -139,4 +159,6 @@ async def health_check(
         sampling_capable=sampling_capable,
         mcp_disconnected=mcp_disconnected,
         available_tiers=available_tiers,
+        domain_count=domain_count,
+        domain_ceiling=DOMAIN_COUNT_CEILING,
     )
