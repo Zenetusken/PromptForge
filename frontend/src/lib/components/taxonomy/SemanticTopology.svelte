@@ -98,22 +98,41 @@
       renderer.scene.remove(renderer.scene.children[0]);
     }
 
-    // Build nodes as individual meshes (shared geometry, per-node material)
-    const geometry = new THREE.IcosahedronGeometry(1, 1);
+    // Build nodes — neon glow aesthetic: bright core + additive glow halo
+    const coreGeo = new THREE.IcosahedronGeometry(1, 2);
+    const glowGeo = new THREE.IcosahedronGeometry(1, 1);
     for (const node of data.nodes) {
       if (!node.visible) continue;
 
-      const material = new THREE.MeshBasicMaterial({
+      const group = new THREE.Group();
+      group.position.set(...node.position);
+
+      // Core: bright solid node
+      const coreMat = new THREE.MeshBasicMaterial({
         color: node.color,
-        transparent: node.opacity < 1,
-        opacity: node.opacity,
+        transparent: true,
+        opacity: node.opacity * 0.95,
       });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(...node.position);
-      mesh.scale.setScalar(node.size);
-      renderer.scene.add(mesh);
-      nodeMeshes.set(node.id, mesh);
-      interaction?.registerNode(node.id, mesh, node);
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.scale.setScalar(node.size);
+      group.add(core);
+
+      // Glow halo: larger, additive-blended, low opacity
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: node.color,
+        transparent: true,
+        opacity: node.opacity * 0.25,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const glow = new THREE.Mesh(glowGeo, glowMat);
+      glow.scale.setScalar(node.size * 1.8);
+      group.add(glow);
+
+      renderer.scene.add(group);
+      // Register core mesh for raycasting (not the glow)
+      nodeMeshes.set(node.id, core);
+      interaction?.registerNode(node.id, core, node);
     }
 
     // Build edges
