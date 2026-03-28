@@ -1534,6 +1534,120 @@ class TaxonomyEngine:
             cluster.usage_count,
         )
 
+    # ------------------------------------------------------------------
+    # Tree integrity verification and auto-repair
+    # ------------------------------------------------------------------
+
+    async def verify_domain_tree_integrity(self, db: AsyncSession) -> list[str]:
+        """Post-migration and periodic integrity check.
+
+        Returns a list of violation descriptions. Empty = healthy.
+        """
+        from sqlalchemy import text
+
+        violations = []
+
+        # 1. Check for duplicate domain labels
+        result = await db.execute(
+            select(PromptCluster.label, func.count()).where(
+                PromptCluster.state == "domain"
+            ).group_by(PromptCluster.label)
+        )
+        for label, count in result:
+            if count > 1:
+                violations.append(
+                    f"Duplicate domain label: '{label}' appears {count} times"
+                )
+
+        # 2. Check for orphaned clusters (parent_id points to non-existent node)
+        orphans = await db.execute(text("""
+            SELECT c.id, c.label, c.parent_id
+            FROM prompt_cluster c
+            LEFT JOIN prompt_cluster p ON c.parent_id = p.id
+            WHERE c.parent_id IS NOT NULL AND p.id IS NULL
+        """))
+        for row in orphans:
+            violations.append(
+                f"Orphan cluster: '{row[1]}' (id={row[0]}) references missing parent {row[2]}"
+            )
+
+        # 3. Check domain nodes have persistence=1.0
+        weak = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.persistence < 1.0,
+            )
+        )
+        for d in weak.scalars():
+            violations.append(
+                f"Domain node '{d.label}' has persistence={d.persistence} (expected 1.0)"
+            )
+
+        # 4. Check for self-referencing parents
+        self_refs = await db.execute(
+            text("SELECT id, label FROM prompt_cluster WHERE parent_id = id")
+        )
+        for row in self_refs:
+            violations.append(
+                f"Self-referencing parent: '{row[1]}' (id={row[0]})"
+            )
+
+        if violations:
+            for v in violations:
+                logger.error("Tree integrity violation: %s", v)
+        else:
+            logger.info("Domain tree integrity check passed")
+
+        return violations
+
+    async def _repair_tree_violations(
+        self, db: AsyncSession, violations: list[str]
+    ) -> int:
+        """Auto-repair detected violations. Returns count of repairs."""
+        from sqlalchemy import text, update
+
+        repaired = 0
+
+        # Repair weak domain persistence
+        result = await db.execute(
+            update(PromptCluster)
+            .where(PromptCluster.state == "domain", PromptCluster.persistence < 1.0)
+            .values(persistence=1.0)
+        )
+        if result.rowcount > 0:
+            logger.info(
+                "Auto-repaired %d domain nodes with weak persistence", result.rowcount
+            )
+            repaired += result.rowcount
+
+        # Repair orphaned clusters → re-parent under "general"
+        general_result = await db.execute(
+            select(PromptCluster.id).where(
+                PromptCluster.state == "domain", PromptCluster.label == "general"
+            )
+        )
+        general_row = general_result.first()
+        if general_row:
+            orphan_result = await db.execute(
+                text("""
+                    UPDATE prompt_cluster
+                    SET parent_id = :general_id, domain = 'general'
+                    WHERE parent_id IS NOT NULL
+                      AND parent_id NOT IN (SELECT id FROM prompt_cluster)
+                      AND state != 'domain'
+                """),
+                {"general_id": general_row[0]},
+            )
+            if orphan_result.rowcount > 0:
+                logger.info(
+                    "Auto-repaired %d orphaned clusters → 'general'",
+                    orphan_result.rowcount,
+                )
+                repaired += orphan_result.rowcount
+
+        await db.commit()
+        return repaired
+
     @staticmethod
     def _node_to_dict(node: PromptCluster) -> dict:
         return {
