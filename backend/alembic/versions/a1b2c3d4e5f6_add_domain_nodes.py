@@ -144,7 +144,7 @@ def upgrade() -> None:
         sa.text("SELECT COUNT(*) FROM prompt_cluster WHERE state = 'domain'")
     ).scalar()
 
-    if existing_count >= 7:
+    if existing_count >= len(SEED_DOMAINS):
         logger.info(
             "Domain nodes already exist (%d) — skipping seed", existing_count
         )
@@ -224,9 +224,9 @@ def upgrade() -> None:
     final_count = conn.execute(
         sa.text("SELECT COUNT(*) FROM prompt_cluster WHERE state = 'domain'")
     ).scalar()
-    if final_count < 7:
+    if final_count < len(SEED_DOMAINS):
         raise RuntimeError(
-            f"Migration validation failed: expected ≥7 domain nodes, found {final_count}"
+            f"Migration validation failed: expected ≥{len(SEED_DOMAINS)} domain nodes, found {final_count}"
         )
     logger.info(
         "Migration complete: %d domain nodes, %d clusters re-parented",
