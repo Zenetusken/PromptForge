@@ -350,7 +350,9 @@ class PipelineResult(BaseModel):
         default=None, description="3-6 word intent label.",
     )
     domain: str | None = Field(
-        default=None, description="Domain category.",
+        default=None,
+        description="Domain from known domain nodes (e.g., 'backend', 'database'). "
+        "Use 'primary: qualifier' format for cross-cutting concerns.",
     )
 
     model_config = {"extra": "allow"}

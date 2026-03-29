@@ -46,7 +46,7 @@ class HeuristicAnalysis:
     """Result of heuristic prompt analysis."""
 
     task_type: str       # coding | writing | analysis | creative | data | system | general
-    domain: str          # backend | frontend | database | devops | security | fullstack | general
+    domain: str          # from domain nodes: backend | frontend | database | devops | security | general | discovered
     intent_label: str    # 3-6 word phrase
     weaknesses: list[str] = field(default_factory=list)
     strengths: list[str] = field(default_factory=list)

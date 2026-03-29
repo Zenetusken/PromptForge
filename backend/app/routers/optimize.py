@@ -372,8 +372,8 @@ class PassthroughSaveRequest(BaseModel):
     domain: str | None = Field(
         None,
         description=(
-            "Domain category: 'backend', 'frontend', 'database',"
-            " 'devops', 'security', 'fullstack', or 'general'."
+            "Domain from known domain nodes (e.g., 'backend', 'frontend',"
+            " 'database', 'devops', 'security'). Use 'primary: qualifier' for cross-cutting."
         ),
     )
     intent_label: str | None = Field(

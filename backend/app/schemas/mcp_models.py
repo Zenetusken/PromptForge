@@ -103,8 +103,8 @@ class OptimizeOutput(BaseModel):
     )
     domain: str | None = Field(
         default=None,
-        description="Domain category: 'backend', 'frontend', 'database', "
-        "'devops', 'security', 'fullstack', or 'general'.",
+        description="Domain from known domain nodes (e.g., 'backend', 'frontend', "
+        "'database', 'devops', 'security'). Use 'primary: qualifier' for cross-cutting.",
     )
     trace_id: str | None = Field(
         default=None,
@@ -172,8 +172,8 @@ class AnalyzeOutput(BaseModel):
     )
     domain: str = Field(
         default="general",
-        description="Domain category: 'backend', 'frontend', 'database', "
-        "'devops', 'security', 'fullstack', or 'general'.",
+        description="Domain from known domain nodes (e.g., 'backend', 'frontend', "
+        "'database', 'devops', 'security'). Use 'primary: qualifier' for cross-cutting.",
     )
 
 
@@ -257,8 +257,8 @@ class SaveResultInput(BaseModel):
     )
     domain: str | None = Field(
         default=None,
-        description="Domain category: 'backend', 'frontend', 'database', "
-        "'devops', 'security', 'fullstack', or 'general'.",
+        description="Domain from known domain nodes (e.g., 'backend', 'frontend', "
+        "'database', 'devops', 'security'). Use 'primary: qualifier' for cross-cutting.",
     )
     intent_label: str | None = Field(
         default=None,

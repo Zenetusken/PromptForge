@@ -884,8 +884,8 @@ async def synthesis_save_result(
     )] = None,
     domain: Annotated[str | None, Field(
         default=None,
-        description="Domain category: 'backend', 'frontend', 'database', 'devops', "
-        "'security', 'fullstack', or 'general'. Defaults to 'general' if not provided.",
+        description="Domain from known domain nodes (e.g., 'backend', 'frontend', "
+        "'database', 'devops', 'security'). Defaults to 'general' if not provided.",
     )] = None,
     intent_label: Annotated[str | None, Field(
         default=None, description="Short 3-6 word intent classification label. Defaults to 'general'.",
