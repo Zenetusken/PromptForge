@@ -19,7 +19,11 @@ from app.schemas.pipeline_contracts import DimensionScores
 from app.services.event_notification import notify_event_bus
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.heuristic_suggestions import generate_heuristic_suggestions
-from app.services.pipeline_constants import MAX_DOMAIN_RAW_LENGTH
+from app.services.pipeline_constants import (
+    MAX_DOMAIN_RAW_LENGTH,
+    MAX_INTENT_LABEL_LENGTH,
+    VALID_TASK_TYPES,
+)
 from app.services.preferences import PreferencesService
 from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
@@ -197,7 +201,8 @@ async def handle_save_result(
 
         if opt:
             opt.optimized_prompt = optimized_prompt
-            opt.task_type = task_type or opt.task_type or "general"
+            _raw_tt = task_type or opt.task_type or "general"
+            opt.task_type = _raw_tt if _raw_tt in VALID_TASK_TYPES else "general"
             opt.strategy_used = strategy_used or opt.strategy_used or "auto"
             opt.changes_summary = changes_summary or ""
             try:
@@ -211,7 +216,8 @@ async def handle_save_result(
             opt.domain = validated_domain
             # cluster_id is set asynchronously via optimization_created event → taxonomy hot path
             opt.domain_raw = (domain or opt.domain_raw or "general")[:MAX_DOMAIN_RAW_LENGTH]
-            opt.intent_label = title_case_label((intent_label or opt.intent_label or "general")[:100])
+            _raw_il = (intent_label or opt.intent_label or "general")[:MAX_INTENT_LABEL_LENGTH]
+            opt.intent_label = title_case_label(_raw_il)
             opt.score_clarity = final_scores.get("clarity")
             opt.score_specificity = final_scores.get("specificity")
             opt.score_structure = final_scores.get("structure")
@@ -242,12 +248,12 @@ async def handle_save_result(
                 id=opt_id,
                 raw_prompt="",
                 optimized_prompt=optimized_prompt,
-                task_type=task_type or "general",
+                task_type=(task_type or "general") if (task_type or "general") in VALID_TASK_TYPES else "general",
                 strategy_used=strategy_used or "auto",
                 changes_summary=changes_summary or "",
                 domain=_new_domain,
                 domain_raw=(domain or "general")[:MAX_DOMAIN_RAW_LENGTH],
-                intent_label=title_case_label((intent_label or "general")[:100]),
+                intent_label=title_case_label((intent_label or "general")[:MAX_INTENT_LABEL_LENGTH]),
                 score_clarity=final_scores.get("clarity"),
                 score_specificity=final_scores.get("specificity"),
                 score_structure=final_scores.get("structure"),

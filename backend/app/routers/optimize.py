@@ -19,7 +19,11 @@ from app.services.heuristic_scorer import HeuristicScorer
 from app.services.heuristic_suggestions import generate_heuristic_suggestions
 from app.services.passthrough import assemble_passthrough_prompt
 from app.services.pipeline import PipelineOrchestrator
-from app.services.pipeline_constants import MAX_DOMAIN_RAW_LENGTH
+from app.services.pipeline_constants import (
+    MAX_DOMAIN_RAW_LENGTH,
+    MAX_INTENT_LABEL_LENGTH,
+    VALID_TASK_TYPES,
+)
 from app.services.preferences import PreferencesService
 from app.services.taxonomy import get_engine as get_taxonomy_engine
 from app.utils.sse import format_sse
@@ -582,7 +586,8 @@ async def passthrough_save(
     # Update record
     opt.optimized_prompt = cleaned_prompt
     opt.changes_summary = effective_changes or ""
-    opt.task_type = body.task_type or opt.task_type or "general"
+    _raw_task_type = body.task_type or opt.task_type or "general"
+    opt.task_type = _raw_task_type if _raw_task_type in VALID_TASK_TYPES else "general"
     opt.strategy_used = effective_strategy
     _domain_resolver = getattr(request.app.state, "domain_resolver", None)
     if _domain_resolver is not None:
@@ -593,7 +598,7 @@ async def passthrough_save(
     opt.domain = validated_domain
     # cluster_id is set asynchronously via optimization_created event → taxonomy hot path
     opt.domain_raw = (body.domain or opt.domain_raw or "general")[:MAX_DOMAIN_RAW_LENGTH]
-    opt.intent_label = title_case_label((body.intent_label or opt.intent_label or "general")[:100])
+    opt.intent_label = title_case_label((body.intent_label or opt.intent_label or "general")[:MAX_INTENT_LABEL_LENGTH])
     if optimized_scores:
         opt.score_clarity = optimized_scores["clarity"]
         opt.score_specificity = optimized_scores["specificity"]

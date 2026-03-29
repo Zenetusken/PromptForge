@@ -20,7 +20,7 @@ class RefinementStore {
       .map(t => {
         const s = t.scores!;
         const vals = Object.values(s);
-        return vals.reduce((a, b) => a + b, 0) / vals.length;
+        return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
       });
   }
 

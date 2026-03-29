@@ -2,9 +2,9 @@
  * Shared formatting utilities for scores, numbers, and text display.
  */
 
-/** Format a numeric score for display (e.g. 7.3). Returns '--' for null/undefined. */
+/** Format a numeric score for display (e.g. 7.3). Returns '--' for null/undefined/NaN/Infinity. */
 export function formatScore(score: number | null | undefined, decimals = 1): string {
-  if (score === null || score === undefined) return '--';
+  if (score == null || !isFinite(score)) return '--';
   return score.toFixed(decimals);
 }
 
@@ -13,8 +13,9 @@ export function formatDelta(delta: number, decimals = 1): string {
   return (delta > 0 ? '+' : '') + delta.toFixed(decimals);
 }
 
-/** Truncate text to maxLen characters, appending '...' if truncated. */
-export function truncateText(text: string, maxLen = 80): string {
+/** Truncate text to maxLen characters, appending '...' if truncated. Returns '' for null/undefined. */
+export function truncateText(text: string | null | undefined, maxLen = 80): string {
+  if (!text) return '';
   if (text.length <= maxLen) return text;
   return text.slice(0, maxLen).trimEnd() + '...';
 }

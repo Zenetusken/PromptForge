@@ -11,6 +11,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from app.providers.base import LLMProvider, call_provider_with_retry
+from app.services.pipeline_constants import MAX_CLUSTER_LABEL_LENGTH
 from app.utils.text_cleanup import title_case_label
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ async def generate_label(
         )
         label = result.label.strip()
         if label:
-            return title_case_label(label)
+            return title_case_label(label)[:MAX_CLUSTER_LABEL_LENGTH]
         return _FALLBACK_LABEL
     except Exception as exc:
         logger.warning("Label generation failed (non-fatal): %s", exc)
