@@ -18,6 +18,7 @@ Analyze the prompt above and determine:
 
    **Decision rules (apply in order — first match wins):**
    - SQL, schema, ORM, queries, migrations, indexes, tables, database optimization → **database**
+   - Data science, machine learning, pandas, sklearn, datasets, analytics, ETL, predictions, model training → **data**
    - React, Svelte, Vue, CSS, components, layout, UI, responsive, accessibility → **frontend**
    - API endpoints, server, middleware, FastAPI, Django, Flask, routes, authentication → **backend**
    - Docker, CI/CD, Kubernetes, Terraform, deployment, monitoring, nginx → **devops**

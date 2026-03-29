@@ -521,6 +521,12 @@ class TaxonomyEngine:
                 len(new_domains), new_domains,
             )
 
+        # --- Candidate domain detection (near-threshold clusters) ---
+        try:
+            await self._detect_domain_candidates(db)
+        except Exception as cand_exc:
+            logger.warning("Candidate detection failed (non-fatal): %s", cand_exc)
+
         # --- Risk monitoring (ADR-004 Section 8B) ---
         try:
             await self._monitor_general_health(db)
@@ -1249,6 +1255,50 @@ class TaxonomyEngine:
                 continue
 
         return created
+
+    async def _detect_domain_candidates(self, db: AsyncSession) -> None:
+        """Detect near-threshold clusters that may become domains soon."""
+        from app.services.pipeline_constants import (
+            DOMAIN_DISCOVERY_CANDIDATE_MIN_COHERENCE,
+            DOMAIN_DISCOVERY_CANDIDATE_MIN_MEMBERS,
+            DOMAIN_DISCOVERY_MIN_MEMBERS,
+        )
+
+        general_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.label == "general",
+            )
+        )
+        general = general_q.scalar_one_or_none()
+        if not general:
+            return
+
+        near_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.parent_id == general.id,
+                PromptCluster.state.in_(["active", "mature"]),
+                PromptCluster.member_count >= DOMAIN_DISCOVERY_CANDIDATE_MIN_MEMBERS,
+                PromptCluster.member_count < DOMAIN_DISCOVERY_MIN_MEMBERS,
+                PromptCluster.coherence >= DOMAIN_DISCOVERY_CANDIDATE_MIN_COHERENCE,
+            )
+        )
+        for candidate in near_q.scalars():
+            logger.info(
+                "Domain candidate detected: '%s' (members=%d/%d, coherence=%.2f)",
+                candidate.label, candidate.member_count or 0,
+                DOMAIN_DISCOVERY_MIN_MEMBERS, candidate.coherence or 0,
+            )
+            try:
+                from app.services.event_bus import event_bus
+                event_bus.publish("domain_candidate_detected", {
+                    "label": candidate.label,
+                    "member_count": candidate.member_count or 0,
+                    "threshold": DOMAIN_DISCOVERY_MIN_MEMBERS,
+                    "coherence": candidate.coherence or 0,
+                })
+            except Exception:
+                pass
 
     async def _extract_domain_keywords(
         self, db: AsyncSession, cluster: PromptCluster, top_k: int = 15,

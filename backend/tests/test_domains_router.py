@@ -31,7 +31,7 @@ class TestListDomains:
         assert resp.status_code == 200
         data = resp.json()
         # conftest seeds 6 domain nodes (fullstack is discovered, not seeded)
-        assert len(data) == 7
+        assert len(data) == 8
         labels = {d["label"] for d in data}
         assert "backend" in labels
         assert "frontend" in labels
@@ -242,4 +242,4 @@ class TestPromoteToDomain:
         assert resp.status_code == 200
         color = resp.json()["color_hex"]
         assert color.startswith("#")
-        assert len(color) == 7
+        assert len(color) == 7  # #rrggbb format

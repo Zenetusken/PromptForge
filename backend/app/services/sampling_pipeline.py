@@ -414,6 +414,9 @@ def _build_analysis_from_text(
                     "terraform", "ansible", "monitoring", "observability", "nginx"],
         "fullstack": ["fullstack", "full-stack", "full stack", "end-to-end",
                       "system-wide"],
+        "data": ["data science", "machine learning", "pandas", "numpy", "sklearn",
+                 "dataset", "prediction", "classification", "analytics", "etl",
+                 "jupyter", "notebook", "visualization", "statistics", "regression"],
     }
     # Score-based domain selection (not first-match) to handle overlapping keywords
     best_domain_count = 0
@@ -605,10 +608,10 @@ async def run_sampling_pipeline(
         known_domains = (
             ", ".join(sorted(_early_resolver.domain_labels))
             if _early_resolver.domain_labels
-            else "backend, frontend, database, devops, security, fullstack, general"
+            else "backend, frontend, database, data, devops, security, fullstack, general"
         )
     except Exception:
-        known_domains = "backend, frontend, database, devops, security, fullstack, general"
+        known_domains = "backend, frontend, database, data, devops, security, fullstack, general"
     analyze_msg = loader.render("analyze.md", {
         "raw_prompt": prompt,
         "available_strategies": available_strategies,
@@ -651,7 +654,7 @@ async def run_sampling_pipeline(
     try:
         from app.tools._shared import get_domain_resolver
         _resolver = get_domain_resolver()
-        effective_domain = await _resolver.resolve(_raw_domain, confidence)
+        effective_domain = await _resolver.resolve(_raw_domain, confidence, raw_prompt=prompt)
         logger.info(
             "Domain resolved (sampling): raw='%s' confidence=%.2f → '%s'",
             _raw_domain, confidence, effective_domain,
@@ -1108,10 +1111,10 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
         _analyze_known_domains = (
             ", ".join(sorted(_analyze_resolver.domain_labels))
             if _analyze_resolver.domain_labels
-            else "backend, frontend, database, devops, security, fullstack, general"
+            else "backend, frontend, database, data, devops, security, fullstack, general"
         )
     except Exception:
-        _analyze_known_domains = "backend, frontend, database, devops, security, fullstack, general"
+        _analyze_known_domains = "backend, frontend, database, data, devops, security, fullstack, general"
     analyze_msg = loader.render("analyze.md", {
         "raw_prompt": prompt,
         "available_strategies": strategy_loader.format_available(),
@@ -1158,7 +1161,7 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
     try:
         from app.tools._shared import get_domain_resolver
         _analyze_resolver = get_domain_resolver()
-        effective_domain = await _analyze_resolver.resolve(_analyze_domain_raw, _analyze_confidence)
+        effective_domain = await _analyze_resolver.resolve(_analyze_domain_raw, _analyze_confidence, raw_prompt=prompt)
     except (ValueError, Exception):
         effective_domain = "general"
 

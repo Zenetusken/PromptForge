@@ -271,7 +271,7 @@ class PipelineOrchestrator:
             known_domains = (
                 ", ".join(sorted(domain_resolver.domain_labels))
                 if domain_resolver is not None and domain_resolver.domain_labels
-                else "backend, frontend, database, devops, security, fullstack, general"
+                else "backend, frontend, database, data, devops, security, fullstack, general"
             )
             analyze_msg = self.prompt_loader.render("analyze.md", {
                 "raw_prompt": raw_prompt,
@@ -319,7 +319,7 @@ class PipelineOrchestrator:
             # Resolve domain via domain nodes (replaces hardcoded VALID_DOMAINS whitelist)
             if domain_resolver is not None:
                 effective_domain = await domain_resolver.resolve(
-                    analysis.domain or "general", confidence,
+                    analysis.domain or "general", confidence, raw_prompt=raw_prompt,
                 )
                 logger.info(
                     "Domain resolved: '%s' → '%s' trace_id=%s",

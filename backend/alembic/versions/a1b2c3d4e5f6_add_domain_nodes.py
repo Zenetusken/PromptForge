@@ -98,6 +98,18 @@ SEED_DOMAINS: list[dict] = [
         ],
     },
     {
+        "label": "data",
+        "color_hex": "#06b6d4",
+        "signal_keywords": [
+            ["data science", 1.0], ["machine learning", 1.0], ["dataset", 1.0],
+            ["pandas", 0.9], ["numpy", 0.9], ["sklearn", 0.9], ["jupyter", 0.9],
+            ["model training", 0.9], ["prediction", 0.8], ["classification", 0.8],
+            ["visualization", 0.7], ["analytics", 0.7], ["etl", 0.8],
+            ["statistics", 0.7], ["regression", 0.8], ["notebook", 0.7],
+            ["feature engineering", 0.9], ["churn", 0.6], ["sentiment", 0.6],
+        ],
+    },
+    {
         "label": "general",
         "color_hex": "#7a7a9e",
         "signal_keywords": [],
