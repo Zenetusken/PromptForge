@@ -236,9 +236,9 @@ def compute_max_distance_color(existing_hex: list[str]) -> str:
         Hex color string like ``#rrggbb``.
     """
     try:
-        from app.services.pipeline_constants import TIER_ACCENTS  # avoid circular import
+        from app.services.pipeline_constants import BRAND_RESERVED_COLORS
 
-        all_hex = [h for h in existing_hex + TIER_ACCENTS if h and h.startswith("#")]
+        all_hex = [h for h in existing_hex + BRAND_RESERVED_COLORS if h and h.startswith("#")]
         if not all_hex:
             return "#a855f7"  # Default purple when no reference colors exist
 

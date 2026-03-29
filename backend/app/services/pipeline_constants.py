@@ -30,8 +30,21 @@ SIGNAL_REFRESH_MEMBER_RATIO = 2.0
 DOMAIN_ARCHIVAL_IDLE_DAYS = 90
 DOMAIN_ARCHIVAL_MIN_USAGE = 3
 
-# Color constraints — domain colors must avoid perceptual proximity to tier accents
-TIER_ACCENTS = ["#00e5ff", "#22ff88", "#fbbf24"]  # internal, sampling, passthrough
+# Color constraints — domain colors must avoid perceptual proximity to:
+# 1. Tier accents (internal=#00e5ff, sampling=#22ff88, passthrough=#fbbf24)
+# 2. Brand neon palette (fixed semantic assignments per brand guidelines)
+BRAND_RESERVED_COLORS = [
+    "#00e5ff",  # neon-cyan (internal tier / primary identity)
+    "#22ff88",  # neon-green (sampling tier / success)
+    "#fbbf24",  # neon-yellow (passthrough tier / warnings)
+    "#a855f7",  # neon-purple (processed / elevated)
+    "#ff3366",  # neon-red (danger)
+    "#ff8c00",  # neon-orange (attention)
+    "#4d8eff",  # neon-blue (information)
+    "#ff6eb4",  # neon-pink (creativity)
+    "#00d4aa",  # neon-teal (extraction)
+    "#7b61ff",  # neon-indigo (reasoning)
+]
 
 # Domain raw field truncation — caps Optimization.domain_raw at persistence sites
 MAX_DOMAIN_RAW_LENGTH = 200
