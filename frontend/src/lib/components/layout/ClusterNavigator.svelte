@@ -21,7 +21,7 @@
   // Derive families directly from the store's taxonomy tree (already in memory)
   const allFamilies = $derived(clustersStore.taxonomyTree);
   const families = $derived(allFamilies.slice(0, pageLimit));
-  const totalFamilies = $derived(allFamilies.length);
+  const totalFamilies = $derived(allFamilies.filter(f => f.state !== 'domain').length);
   const hasMore = $derived(pageLimit < allFamilies.length);
   const loaded = $derived(!clustersStore.taxonomyLoading || allFamilies.length > 0);
   const error = $derived(clustersStore.taxonomyError);
@@ -34,7 +34,7 @@
     const q = searchQuery.trim().toLowerCase();
     if (!q) return [];
     return allFamilies
-      .filter(node => (node.label ?? '').toLowerCase().includes(q))
+      .filter(node => node.state !== 'domain' && (node.label ?? '').toLowerCase().includes(q))
       .slice(0, 10)
       .map(node => ({
         id: node.id,
@@ -66,10 +66,11 @@
   );
 
   // Filter families by active state tab.
-  // Templates have their own dedicated section — exclude them from the main
-  // domain-grouped list whenever that section is visible to prevent duplicates.
+  // - Domain nodes are excluded: they serve as group headers, not child items
+  // - Templates have their own dedicated section — exclude from main list
   let filteredFamilies = $derived(
     families.filter(f => {
+      if (f.state === 'domain') return false;
       if (showTemplates && f.state === 'template') return false;
       return !stateFilter || f.state === stateFilter;
     })
@@ -218,7 +219,7 @@
       <p class="empty-note" style="color: var(--color-neon-red);">{error}</p>
     {:else if !loaded}
       <p class="empty-note">Loading...</p>
-    {:else if families.length === 0}
+    {:else if totalFamilies === 0}
       <p class="empty-note">Optimize your first prompt to start building your pattern library.</p>
     {:else}
       <!-- Proven Templates section -->
