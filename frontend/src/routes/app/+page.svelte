@@ -146,7 +146,8 @@
         // Only toast on disconnect when no local provider (true degradation).
         // When CLI/API is available, the auto-fallback is silent.
         if (delta.disconnected && !forgeStore.provider) addToast('deleted', 'MCP client disconnected');
-        // Trigger onboarding guide for the new tier (dedup guard prevents redundant opens)
+        // Trigger onboarding guide for the new tier.
+        // triggerTierGuide handles startup settle + dedup internally.
         queueMicrotask(() => triggerTierGuide(routing.tier));
       }
       if (type === 'preferences_changed') {
@@ -232,9 +233,11 @@
         reconcileToggles(pendingHealthDelta.health, pendingHealthDelta.delta);
         pendingHealthDelta = null;
       }
-      // Then: trigger guide for the (now correct) tier
+      // Then: trigger guide. triggerTierGuide handles startup settle
+      // internally (2s delay for MCP capability negotiation, cancelled
+      // if a routing_state_changed SSE arrives first).
       pendingGuide = false;
-      queueMicrotask(() => triggerTierGuide(routing.tier));
+      triggerTierGuide(routing.tier);
     }
   });
 
