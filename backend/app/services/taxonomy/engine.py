@@ -52,6 +52,7 @@ from app.services.taxonomy.matching import (
     match_prompt as _match_prompt,
 )
 from app.services.taxonomy.sparkline import compute_sparkline_data
+from app.utils.text_cleanup import parse_domain
 
 logger = logging.getLogger(__name__)
 
@@ -205,8 +206,7 @@ class TaxonomyEngine:
             # Extract lowercase primary domain for cluster assignment.
             # domain_raw is the full analyzer output (e.g., "Backend: Security");
             # parse_domain() extracts and lowercases the primary ("backend").
-            from app.utils.text_cleanup import parse_domain as _parse_domain
-            domain_primary, _ = _parse_domain(opt.domain_raw or opt.domain or "general")
+            domain_primary, _ = parse_domain(opt.domain_raw or opt.domain or "general")
             async with self._lock:
                 cluster = await assign_cluster(
                     db=db,
@@ -1136,8 +1136,6 @@ class TaxonomyEngine:
             DOMAIN_DISCOVERY_MIN_COHERENCE,
             DOMAIN_DISCOVERY_MIN_MEMBERS,
         )
-        from app.utils.text_cleanup import parse_domain
-
         # --- Step a: Check domain ceiling ---
         ceiling_q = await db.execute(
             select(func.count()).select_from(PromptCluster).where(
@@ -1379,8 +1377,6 @@ class TaxonomyEngine:
         general_id: str,
     ) -> int:
         """Re-parent clusters from 'general' to the new domain."""
-        from app.utils.text_cleanup import parse_domain
-
         candidates = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.parent_id == general_id,

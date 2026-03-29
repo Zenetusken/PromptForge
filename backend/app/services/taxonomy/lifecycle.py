@@ -30,6 +30,7 @@ from app.providers.base import LLMProvider
 from app.services.taxonomy.clustering import compute_pairwise_coherence, l2_normalize_1d
 from app.services.taxonomy.coloring import generate_color
 from app.services.taxonomy.labeling import generate_label
+from app.utils.text_cleanup import parse_domain
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,6 @@ async def attempt_emerge(
 
         # Inherit domain from the majority of member clusters.
         # parse_domain() lowercases to match domain node labels.
-        from app.utils.text_cleanup import parse_domain
         member_domains = [parse_domain(f.domain)[0] for f in families if f.domain]
         domain_counts = Counter(member_domains)
         inherited_domain = domain_counts.most_common(1)[0][0] if domain_counts else "general"
