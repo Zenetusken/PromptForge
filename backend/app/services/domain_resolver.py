@@ -66,18 +66,31 @@ class DomainResolver:
         try:
             if not domain_raw or not domain_raw.strip():
                 return "general"
-            if confidence < DOMAIN_CONFIDENCE_GATE:
-                logger.debug(
-                    "Domain confidence gate: %.2f < %.2f, defaulting to 'general'",
-                    confidence, DOMAIN_CONFIDENCE_GATE,
-                )
-                return "general"
             primary, _ = parse_domain(domain_raw)
+
+            # Cache hit
             if primary in self._cache:
                 return self._cache[primary]
+
+            # Known domain label — accept regardless of confidence.
+            # The confidence gate only applies to UNKNOWN domains to prevent
+            # low-confidence free-form strings from creating noise.
             if primary in self._domain_labels:
                 self._cache[primary] = primary
                 return primary
+
+            # Unknown domain: apply confidence gate before defaulting.
+            # Low confidence + unknown domain → "general" (safe fallback).
+            if confidence < DOMAIN_CONFIDENCE_GATE:
+                logger.debug(
+                    "Domain confidence gate: unknown domain '%s' at %.2f < %.2f → 'general'",
+                    primary, confidence, DOMAIN_CONFIDENCE_GATE,
+                )
+                self._cache[primary] = "general"
+                return "general"
+
+            # High confidence but unknown domain — still "general" since
+            # no matching domain node exists.
             self._cache[primary] = "general"
             return "general"
         except Exception:

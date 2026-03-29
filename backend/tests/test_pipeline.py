@@ -177,8 +177,8 @@ class TestPipelineOrchestrator:
             pass
         assert mock_provider.complete_parsed.call_count == 3
 
-    async def test_low_confidence_overrides_domain_to_general(self, orchestrator, mock_provider, db_session):
-        """Domain confidence gate: confidence < 0.6 forces domain='general'."""
+    async def test_known_domain_accepted_at_low_confidence(self, orchestrator, mock_provider, db_session):
+        """Known domain labels are accepted regardless of confidence."""
         from app.models import PromptCluster
         from app.services.domain_resolver import DomainResolver
 
@@ -201,7 +201,8 @@ class TestPipelineOrchestrator:
         ):
             events.append(event)
         complete = next(e for e in events if e.event == "optimization_complete")
-        assert complete.data["domain"] == "general"
+        # Known domain "backend" accepted despite low confidence (0.5 < 0.6 gate)
+        assert complete.data["domain"] == "backend"
 
     async def test_high_confidence_preserves_domain(self, orchestrator, mock_provider, db_session):
         """Domain preserved when confidence >= 0.6."""

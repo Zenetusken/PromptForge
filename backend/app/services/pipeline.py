@@ -311,11 +311,19 @@ class PipelineOrchestrator:
 
             # Semantic check + domain confidence gate (shared with sampling pipeline)
             confidence = semantic_check(analysis.task_type, raw_prompt, analysis.confidence)
+            logger.info(
+                "Domain resolution: raw='%s' confidence=%.2f (analyzer=%.2f) trace_id=%s",
+                analysis.domain, confidence, analysis.confidence, trace_id,
+            )
 
             # Resolve domain via domain nodes (replaces hardcoded VALID_DOMAINS whitelist)
             if domain_resolver is not None:
                 effective_domain = await domain_resolver.resolve(
                     analysis.domain or "general", confidence,
+                )
+                logger.info(
+                    "Domain resolved: '%s' → '%s' trace_id=%s",
+                    analysis.domain, effective_domain, trace_id,
                 )
             else:
                 # Startup race or no domain_resolver — default to "general"

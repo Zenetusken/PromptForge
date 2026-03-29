@@ -56,11 +56,22 @@ async def test_resolve_with_qualifier(db):
 
 
 @pytest.mark.asyncio
-async def test_resolve_low_confidence_returns_general(db):
+async def test_resolve_known_domain_ignores_confidence(db):
+    """Known domain labels are accepted regardless of confidence score."""
     await _seed_domains(db)
     resolver = DomainResolver()
     await resolver.load(db)
     result = await resolver.resolve("backend", confidence=0.3)
+    assert result == "backend"
+
+
+@pytest.mark.asyncio
+async def test_resolve_unknown_domain_low_confidence_returns_general(db):
+    """Unknown domains with low confidence fall back to general."""
+    await _seed_domains(db)
+    resolver = DomainResolver()
+    await resolver.load(db)
+    result = await resolver.resolve("marketing", confidence=0.3)
     assert result == "general"
 
 
