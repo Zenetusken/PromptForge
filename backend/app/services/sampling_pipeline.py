@@ -645,13 +645,20 @@ async def run_sampling_pipeline(
     confidence = semantic_check(analysis.task_type, prompt, analysis.confidence)
 
     # Resolve domain via domain nodes (replaces hardcoded VALID_DOMAINS whitelist)
+    _raw_domain = getattr(analysis, "domain", None) or "general"
     try:
         from app.tools._shared import get_domain_resolver
         _resolver = get_domain_resolver()
-        effective_domain = await _resolver.resolve(
-            getattr(analysis, "domain", None) or "general", confidence,
+        effective_domain = await _resolver.resolve(_raw_domain, confidence)
+        logger.info(
+            "Domain resolved (sampling): raw='%s' confidence=%.2f → '%s'",
+            _raw_domain, confidence, effective_domain,
         )
-    except (ValueError, Exception):
+    except (ValueError, Exception) as _dr_exc:
+        logger.warning(
+            "Domain resolution failed (sampling): raw='%s' error=%s → 'general'",
+            _raw_domain, _dr_exc,
+        )
         effective_domain = "general"
 
     # Domain mapping (Spec Section 4.2, 4.4)
