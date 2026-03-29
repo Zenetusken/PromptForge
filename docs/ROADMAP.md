@@ -46,6 +46,20 @@ Living document tracking planned improvements. Items are prioritized but not sch
 
 **Prerequisite:** Refactor `tier-onboarding.svelte.ts`, merge 3 guide components into 1, new `onboarding-dismissed` preference field, update `triggerTierGuide()` to emit toast instead of modal after initial onboarding, update `+page.svelte` startup gate.
 
+### Project workspaces
+**Status:** Exploring
+**Context:** All optimizations, clusters, taxonomy, and history share a single flat namespace. Users working on multiple projects (e.g., a backend API and a marketing site) see everything mixed together. There's no way to start fresh without manual database cleanup.
+
+A project workspace model would provide isolated contexts:
+- Each project owns its own optimizations, clusters, taxonomy tree, strategy affinities, and session state
+- Switching projects loads a clean UI scoped to that project's data
+- Default project ("Personal") for users who don't need multi-project isolation
+- Project selector in the ActivityBar or top-level navigation
+
+**Data model impact:** `project_id` FK on Optimization, PromptCluster, StrategyAffinity, TaxonomySnapshot. All list/filter queries scoped by active project. Taxonomy engine runs per-project (separate embedding indexes, warm/cold paths). Session persistence stores active project ID alongside trace_id.
+
+**Prerequisite:** Project CRUD endpoints, frontend project switcher, scoped query layer, per-project taxonomy engine instances.
+
 ### Pipeline progress visualization
 **Status:** Planned
 **Context:** During optimization (2+ minutes for Opus), the web UI shows only a 3-step phase indicator (Analyzing → Optimizing → Scoring) with step counters. The internal tier streams SSE phase events correctly, but there's no rich progress experience — no estimated time remaining, no streaming preview, no per-phase timing. The sampling and passthrough tiers have different progress patterns that should also be visualized distinctly. A unified pipeline progress component would adapt to the active tier and show meaningful real-time feedback.
