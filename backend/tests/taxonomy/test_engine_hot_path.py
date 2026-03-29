@@ -87,8 +87,8 @@ async def test_process_optimization_creates_family(db, mock_embedding, mock_prov
     result = await db.execute(select(PromptCluster))
     families = result.scalars().all()
     assert len(families) == 1
-    # domain_raw takes precedence over hardcoded domain field
-    assert families[0].domain == "test automation"
+    # Cluster uses the resolved domain (opt.domain), not the raw analyzer output
+    assert families[0].domain == "backend"
 
 
 @pytest.mark.asyncio

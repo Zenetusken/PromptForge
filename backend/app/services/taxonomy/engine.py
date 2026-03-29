@@ -203,10 +203,10 @@ class TaxonomyEngine:
             opt.embedding = embedding.astype(np.float32).tobytes()
 
             # 2. Find or create PromptCluster
-            # Extract lowercase primary domain for cluster assignment.
-            # domain_raw is the full analyzer output (e.g., "Backend: Security");
-            # parse_domain() extracts and lowercases the primary ("backend").
-            domain_primary, _ = parse_domain(opt.domain_raw or opt.domain or "general")
+            # Use the RESOLVED domain (opt.domain) for cluster assignment — this
+            # maps to a known domain node label. The raw analyzer output (domain_raw)
+            # is preserved on the Optimization record for warm-path discovery.
+            domain_primary, _ = parse_domain(opt.domain or "general")
             async with self._lock:
                 cluster = await assign_cluster(
                     db=db,
