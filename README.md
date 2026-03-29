@@ -216,7 +216,6 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md) for planned improvements. Key upcoming 
 
 - **Unified scoring service** — consolidate duplicated scoring orchestration across all pipeline tiers
 - **Conciseness heuristic calibration** — domain-aware TTR adjustment for technical specification prompts
-- **Alembic migration** — production migration for domain node seeding and cluster re-parenting
 
 ## License
 

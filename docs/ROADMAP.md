@@ -12,11 +12,6 @@ Living document tracking planned improvements. Items are prioritized but not sch
 
 ## Planned
 
-### Alembic migration for domain node seeding
-**Status:** Planned
-**Context:** The unified domain taxonomy (ADR-004) added `cluster_metadata` column and domain node support at the model layer. Production databases need an Alembic migration to: (1) add the `cluster_metadata` JSON column, (2) create the partial unique index, (3) insert 7 seed domain nodes with centroid embeddings and keyword metadata, (4) re-parent existing clusters under matching domain nodes, (5) backfill `Optimization.domain` for resolvable `domain_raw` values. Migration must be idempotent and reversible.
-**Spec:** `docs/superpowers/specs/2026-03-28-unified-domain-taxonomy-design.md` Section 12
-
 ### Unified scoring service
 **Status:** Planned
 **Context:** The scoring orchestration (heuristic compute → historical stats fetch → hybrid blend → delta compute) is repeated across `pipeline.py`, `sampling_pipeline.py`, `save_result.py`, and `optimize.py` with divergent error handling. A shared `ScoringService` would eliminate duplication and ensure consistent behavior across all tiers.
@@ -44,6 +39,9 @@ Living document tracking planned improvements. Items are prioritized but not sch
 ---
 
 ## Completed (recent)
+
+### Alembic migration for domain nodes (v0.3.8-dev)
+Idempotent migration `a1b2c3d4e5f6`: adds `cluster_metadata` column, `ix_prompt_cluster_state_label` index, `uq_prompt_cluster_domain_label` partial unique index, seeds 7 domain nodes with keyword metadata, re-parents existing clusters, backfills `Optimization.domain`. Also fixed async env.py commit for DML persistence.
 
 ### Unified domain taxonomy (v0.3.8-dev)
 Domains are `PromptCluster` nodes with `state="domain"`. Replaces all hardcoded domain constants (`VALID_DOMAINS`, `DOMAIN_COLORS`, `KNOWN_DOMAINS`, `_DOMAIN_SIGNALS`). `DomainResolver` and `DomainSignalLoader` provide cached DB-driven resolution. Warm path discovers new domains organically from coherent "general" sub-populations. Five stability guardrails, tree integrity with auto-repair, stats cache with trend tracking. Supersedes the planned "Multi-label domain classification" item — ADR-004 chose a different architectural approach. See `docs/adr/ADR-004-unified-domain-taxonomy.md`.
