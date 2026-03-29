@@ -502,6 +502,39 @@ class TaxonomyEngine:
                     operations_log.append({"type": "retire", "node_id": node.id})
                     await self._embedding_index.remove(node.id)
 
+        # --- Domain discovery (ADR-004) ---
+        # After lifecycle mutations, before quality gate.  Domain nodes have
+        # state="domain" so they don't affect Q_system (computed from active
+        # nodes only).  Safe to run even if lifecycle ops are later rolled back.
+        new_domains = await self._propose_domains(db)
+        if new_domains:
+            logger.info(
+                "Warm path discovered %d new domains: %s",
+                len(new_domains), new_domains,
+            )
+
+        # --- Risk monitoring (ADR-004 Section 8B) ---
+        try:
+            await self._monitor_general_health(db)
+            stale_domains = await self._check_signal_staleness(db)
+            for stale_domain in stale_domains:
+                await self._refresh_domain_signals(db, stale_domain)
+            await self._suggest_domain_archival(db)
+        except Exception as risk_exc:
+            logger.warning("Risk monitoring failed (non-fatal): %s", risk_exc)
+
+        # --- Tree integrity check + auto-repair (ADR-004 Risk 5) ---
+        try:
+            violations = await self.verify_domain_tree_integrity(db)
+            if violations:
+                repaired = await self._repair_tree_violations(db, violations)
+                logger.warning(
+                    "Tree integrity: %d violations, %d repaired",
+                    len(violations), repaired,
+                )
+        except Exception as integrity_exc:
+            logger.warning("Tree integrity check failed (non-fatal): %s", integrity_exc)
+
         # 4. Update per-node separation and compute Q_after
         result = await db.execute(
             select(PromptCluster).where(PromptCluster.state == "active")
@@ -835,6 +868,8 @@ class TaxonomyEngine:
         # 5. Regenerate OKLab colors from UMAP positions
         color_pairs: list[tuple[str, str]] = []
         for node in all_nodes:
+            if node.state == "domain":
+                continue  # Domain colors are pinned at creation time (ADR-004 Guardrail #1)
             if node.umap_x is not None and node.umap_y is not None and node.umap_z is not None:
                 new_color = generate_color(node.umap_x, node.umap_y, node.umap_z)
                 color_pairs.append((node.id, new_color))
@@ -1066,6 +1101,481 @@ class TaxonomyEngine:
 
         return operations
 
+    # ------------------------------------------------------------------
+    # Domain discovery (ADR-004)
+    # ------------------------------------------------------------------
+
+    async def _propose_domains(self, db: AsyncSession) -> list[str]:
+        """Inspect 'general' domain children and propose new domains.
+
+        Scans active clusters parented under the "general" domain node.
+        For each candidate with sufficient members and coherence, inspects
+        the ``domain_raw`` field of linked optimizations.  When a single
+        parsed primary domain reaches the consistency threshold and no
+        domain node with that label already exists, a new domain node is
+        created.
+
+        Returns:
+            List of newly created domain labels.
+        """
+        from collections import Counter
+
+        from app.services.pipeline_constants import (
+            DOMAIN_COUNT_CEILING,
+            DOMAIN_DISCOVERY_CONSISTENCY,
+            DOMAIN_DISCOVERY_MIN_COHERENCE,
+            DOMAIN_DISCOVERY_MIN_MEMBERS,
+        )
+        from app.utils.text_cleanup import parse_domain
+
+        # --- Step a: Check domain ceiling ---
+        ceiling_q = await db.execute(
+            select(func.count()).select_from(PromptCluster).where(
+                PromptCluster.state == "domain",
+            )
+        )
+        domain_count = ceiling_q.scalar() or 0
+
+        if domain_count >= DOMAIN_COUNT_CEILING:
+            logger.warning(
+                "Domain ceiling reached (%d >= %d) — skipping discovery",
+                domain_count, DOMAIN_COUNT_CEILING,
+            )
+            try:
+                from app.services.event_bus import event_bus
+                event_bus.publish("domain_ceiling_reached", {
+                    "domain_count": domain_count,
+                    "ceiling": DOMAIN_COUNT_CEILING,
+                })
+            except Exception:
+                pass
+            return []
+
+        # --- Step b: Find "general" domain node ---
+        gen_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.label == "general",
+            )
+        )
+        general_node = gen_q.scalar_one_or_none()
+        if general_node is None:
+            logger.debug("No 'general' domain node — skipping discovery")
+            return []
+
+        # --- Step c: Query eligible children ---
+        children_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.parent_id == general_node.id,
+                PromptCluster.state.in_(["active", "mature"]),
+                PromptCluster.member_count >= DOMAIN_DISCOVERY_MIN_MEMBERS,
+                PromptCluster.coherence >= DOMAIN_DISCOVERY_MIN_COHERENCE,
+            )
+        )
+        candidates = list(children_q.scalars().all())
+        if not candidates:
+            return []
+
+        # --- Step d-f: Gather existing domain labels for dedup ---
+        existing_q = await db.execute(
+            select(PromptCluster.label).where(
+                PromptCluster.state == "domain",
+            )
+        )
+        existing_domains: set[str] = {
+            row[0] for row in existing_q.all() if row[0]
+        }
+
+        created: list[str] = []
+
+        for candidate in candidates:
+            try:
+                # Query domain_raw from linked optimizations
+                opt_q = await db.execute(
+                    select(Optimization.domain_raw).where(
+                        Optimization.cluster_id == candidate.id,
+                        Optimization.domain_raw.isnot(None),
+                    )
+                )
+                domain_raws = [row[0] for row in opt_q.all() if row[0]]
+                if not domain_raws:
+                    continue
+
+                # Parse primaries and count
+                primaries: Counter[str] = Counter()
+                for raw in domain_raws:
+                    primary, _ = parse_domain(raw)
+                    primaries[primary] += 1
+
+                total = len(domain_raws)
+                top_primary, top_count = primaries.most_common(1)[0]
+
+                # Skip "general" — it's not a discovery target
+                if top_primary == "general":
+                    continue
+
+                # Check consistency threshold
+                if top_count / total < DOMAIN_DISCOVERY_CONSISTENCY:
+                    continue
+
+                # Skip if domain already exists
+                if top_primary in existing_domains:
+                    continue
+
+                # Check ceiling again (may have created domains in this loop)
+                if (domain_count + len(created)) >= DOMAIN_COUNT_CEILING:
+                    break
+
+                # Create the domain node
+                await self._create_domain_node(
+                    db, top_primary, existing_domains, candidate,
+                    general_node_id=general_node.id,
+                )
+                created.append(top_primary)
+                existing_domains.add(top_primary)
+            except Exception:
+                logger.error(
+                    "Domain discovery failed for cluster %s — skipping",
+                    candidate.id, exc_info=True,
+                )
+                continue
+
+        return created
+
+    async def _extract_domain_keywords(
+        self, db: AsyncSession, cluster: PromptCluster, top_k: int = 15,
+    ) -> list:
+        """Extract top TF-IDF keywords from cluster member prompts."""
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        result = await db.execute(
+            select(Optimization.raw_prompt).where(
+                Optimization.cluster_id == cluster.id,
+            )
+        )
+        texts = [row[0] for row in result if row[0]]
+        if not texts:
+            return []
+
+        try:
+            vectorizer = TfidfVectorizer(
+                max_features=top_k, stop_words="english", ngram_range=(1, 2),
+            )
+            tfidf = vectorizer.fit_transform(texts)
+            feature_names = vectorizer.get_feature_names_out()
+            scores = tfidf.mean(axis=0).A1
+            ranked = sorted(
+                zip(feature_names, scores), key=lambda x: x[1], reverse=True,
+            )
+            return [[kw, round(float(score), 2)] for kw, score in ranked[:top_k]]
+        except Exception:
+            logger.warning(
+                "TF-IDF extraction failed for cluster %s", cluster.id,
+                exc_info=True,
+            )
+            return []
+
+    async def _create_domain_node(
+        self,
+        db: AsyncSession,
+        label: str,
+        existing_domains: set[str],
+        seed_cluster: PromptCluster | None = None,
+        general_node_id: str | None = None,
+    ) -> PromptCluster:
+        """Create a new domain node with a maximally distant color.
+
+        Args:
+            db: Async DB session.
+            label: Domain label (e.g. "marketing").
+            existing_domains: Set of existing domain labels (for color computation).
+            seed_cluster: The cluster that triggered this domain discovery.
+            general_node_id: ID of the "general" domain node (avoids re-query).
+
+        Returns:
+            The newly created PromptCluster domain node.
+        """
+        from datetime import datetime, timezone
+
+        from app.services.taxonomy.coloring import compute_max_distance_color
+
+        # Gather existing domain colors for max-distance computation
+        color_q = await db.execute(
+            select(PromptCluster.color_hex).where(
+                PromptCluster.state == "domain",
+                PromptCluster.color_hex.isnot(None),
+            )
+        )
+        existing_colors = [row[0] for row in color_q.all() if row[0]]
+        color_hex = compute_max_distance_color(existing_colors)
+
+        # Extract TF-IDF keywords from seed cluster
+        keywords: list = []
+        signal_member_count = 0
+        if seed_cluster is not None:
+            keywords = await self._extract_domain_keywords(db, seed_cluster)
+            signal_member_count = seed_cluster.member_count or 0
+
+        node = PromptCluster(
+            label=label,
+            state="domain",
+            domain=label,
+            task_type="general",
+            persistence=1.0,
+            color_hex=color_hex,
+            centroid_embedding=seed_cluster.centroid_embedding if seed_cluster else None,
+            cluster_metadata={
+                "source": "discovered",
+                "signal_keywords": keywords,
+                "discovered_at": datetime.now(timezone.utc).isoformat(),
+                "proposed_by_snapshot": None,
+                "signal_member_count_at_generation": signal_member_count,
+            },
+        )
+        db.add(node)
+        await db.flush()
+
+        logger.info(
+            "Created discovered domain node: label=%s color=%s id=%s keywords=%d",
+            label, color_hex, node.id, len(keywords),
+        )
+
+        # Re-parent matching clusters from "general" to the new domain
+        if general_node_id:
+            reparented = await self._reparent_to_domain(
+                db, node, label, general_node_id,
+            )
+            if reparented:
+                await self._backfill_optimization_domain(db, node)
+
+        try:
+            from app.services.event_bus import event_bus
+            event_bus.publish("domain_created", {
+                "label": label,
+                "color_hex": color_hex,
+                "node_id": node.id,
+                "source": "discovered",
+            })
+        except Exception:
+            pass
+
+        return node
+
+    async def _reparent_to_domain(
+        self,
+        db: AsyncSession,
+        domain_node: PromptCluster,
+        label: str,
+        general_id: str,
+    ) -> int:
+        """Re-parent clusters from 'general' to the new domain."""
+        from app.utils.text_cleanup import parse_domain
+
+        candidates = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.parent_id == general_id,
+                PromptCluster.state.in_(["active", "mature", "candidate"]),
+                PromptCluster.domain == "general",
+            )
+        )
+        reparented = 0
+        for cluster in candidates.scalars():
+            opts = await db.execute(
+                select(Optimization.domain_raw).where(
+                    Optimization.cluster_id == cluster.id,
+                )
+            )
+            raw_domains = [row[0] for row in opts if row[0]]
+            if not raw_domains:
+                continue
+            primaries = [parse_domain(d)[0] for d in raw_domains]
+            match_count = sum(1 for p in primaries if p == label)
+            if match_count / len(primaries) >= 0.6:
+                cluster.parent_id = domain_node.id
+                cluster.domain = label
+                reparented += 1
+
+        if reparented:
+            logger.info(
+                "Re-parented %d clusters from 'general' to '%s'",
+                reparented, label,
+            )
+        return reparented
+
+    async def _backfill_optimization_domain(
+        self, db: AsyncSession, domain_node: PromptCluster,
+    ) -> int:
+        """Update Optimization.domain for re-parented clusters."""
+        from sqlalchemy import update
+
+        result = await db.execute(
+            update(Optimization)
+            .where(
+                Optimization.cluster_id.in_(
+                    select(PromptCluster.id).where(
+                        PromptCluster.parent_id == domain_node.id,
+                    )
+                ),
+                Optimization.domain == "general",
+            )
+            .values(domain=domain_node.label)
+        )
+        if result.rowcount:
+            logger.info(
+                "Backfilled %d optimizations from 'general' to '%s'",
+                result.rowcount, domain_node.label,
+            )
+        return result.rowcount
+
+    # ------------------------------------------------------------------
+    # Risk detection (ADR-004 Section 8B)
+    # ------------------------------------------------------------------
+
+    async def _suggest_domain_archival(self, db: AsyncSession) -> list[str]:
+        """Identify low-activity discovered domains for potential archival."""
+        from datetime import datetime, timedelta, timezone
+
+        from sqlalchemy import and_, or_
+
+        from app.services.pipeline_constants import (
+            DOMAIN_ARCHIVAL_IDLE_DAYS,
+            DOMAIN_ARCHIVAL_MIN_USAGE,
+        )
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=DOMAIN_ARCHIVAL_IDLE_DAYS)
+        stale = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                or_(
+                    PromptCluster.member_count == 0,
+                    and_(
+                        or_(
+                            PromptCluster.last_used_at < cutoff,
+                            PromptCluster.last_used_at.is_(None),
+                        ),
+                        PromptCluster.usage_count < DOMAIN_ARCHIVAL_MIN_USAGE,
+                    ),
+                ),
+            )
+        )
+        suggestions = []
+        for domain in stale.scalars():
+            meta = domain.cluster_metadata or {}
+            if meta.get("source") == "seed":
+                continue
+            suggestions.append(domain.label)
+            logger.info(
+                "Domain archival suggested: '%s' (members=%d, usage=%d)",
+                domain.label, domain.member_count or 0, domain.usage_count or 0,
+            )
+        if suggestions:
+            try:
+                from app.services.event_bus import event_bus
+                event_bus.publish("domain_archival_suggested", {"labels": suggestions})
+            except Exception:
+                pass
+        return suggestions
+
+    async def _check_signal_staleness(self, db: AsyncSession) -> list[PromptCluster]:
+        """Identify domains whose TF-IDF signals need regeneration."""
+        from app.services.pipeline_constants import SIGNAL_REFRESH_MEMBER_RATIO
+
+        stale = []
+        domains = await db.execute(
+            select(PromptCluster).where(PromptCluster.state == "domain")
+        )
+        for domain in domains.scalars():
+            meta = domain.cluster_metadata or {}
+            if meta.get("source") == "seed":
+                continue
+            gen_count = meta.get("signal_member_count_at_generation", 0)
+            if gen_count == 0:
+                continue
+            if (domain.member_count or 0) >= gen_count * SIGNAL_REFRESH_MEMBER_RATIO:
+                stale.append(domain)
+                logger.info(
+                    "Signal staleness detected: domain '%s' generated at %d members, now has %d",
+                    domain.label, gen_count, domain.member_count or 0,
+                )
+        return stale
+
+    async def _refresh_domain_signals(
+        self, db: AsyncSession, domain: PromptCluster,
+    ) -> None:
+        """Regenerate TF-IDF keywords for a domain with stale signals."""
+        from datetime import datetime, timezone
+
+        keywords = await self._extract_domain_keywords(db, domain)
+        meta = dict(domain.cluster_metadata or {})
+        meta["signal_keywords"] = keywords
+        meta["signal_generated_at"] = datetime.now(timezone.utc).isoformat()
+        meta["signal_member_count_at_generation"] = domain.member_count or 0
+        domain.cluster_metadata = meta
+        logger.info(
+            "Signals refreshed for domain '%s': %d keywords from %d members",
+            domain.label, len(keywords), domain.member_count or 0,
+        )
+        try:
+            from app.services.event_bus import event_bus
+            event_bus.publish("domain_signals_refreshed", {
+                "label": domain.label,
+                "keyword_count": len(keywords),
+            })
+        except Exception:
+            pass
+
+    async def _monitor_general_health(self, db: AsyncSession) -> None:
+        """Log diagnostic metrics for the 'general' domain."""
+        from app.services.pipeline_constants import (
+            DOMAIN_DISCOVERY_MIN_COHERENCE,
+            DOMAIN_DISCOVERY_MIN_MEMBERS,
+        )
+
+        general = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.label == "general",
+            )
+        )
+        general_node = general.scalar_one_or_none()
+        if not general_node:
+            return
+
+        child_count = await db.scalar(
+            select(func.count()).where(
+                PromptCluster.parent_id == general_node.id,
+                PromptCluster.state.in_(["active", "mature"]),
+            )
+        ) or 0
+
+        near_threshold = await db.scalar(
+            select(func.count()).where(
+                PromptCluster.parent_id == general_node.id,
+                PromptCluster.state.in_(["active", "mature"]),
+                PromptCluster.member_count >= DOMAIN_DISCOVERY_MIN_MEMBERS - 2,
+                PromptCluster.coherence >= DOMAIN_DISCOVERY_MIN_COHERENCE - 0.1,
+            )
+        ) or 0
+
+        opt_count = await db.scalar(
+            select(func.count()).where(Optimization.domain == "general"),
+        ) or 0
+
+        logger.info(
+            "General domain health: %d child clusters, %d near discovery threshold, "
+            "%d total optimizations",
+            child_count, near_threshold, opt_count,
+        )
+        if opt_count > 50 and child_count > 5 and near_threshold == 0:
+            logger.warning(
+                "General domain stagnation: %d optimizations across %d clusters "
+                "but none near threshold. Consider lowering "
+                "DOMAIN_DISCOVERY_MIN_MEMBERS (current=%d) or "
+                "DOMAIN_DISCOVERY_MIN_COHERENCE (current=%.2f).",
+                opt_count, child_count,
+                DOMAIN_DISCOVERY_MIN_MEMBERS, DOMAIN_DISCOVERY_MIN_COHERENCE,
+            )
+
     async def _create_warm_snapshot(
         self,
         db: AsyncSession,
@@ -1149,7 +1659,7 @@ class TaxonomyEngine:
         # Mature and template nodes are valid topology members — excluding
         # them would create inconsistency with stats panel node counts.
         query = select(PromptCluster).where(
-            PromptCluster.state.in_(["active", "candidate", "mature", "template"])
+            PromptCluster.state.in_(["active", "candidate", "mature", "template", "domain"])
         )
         if min_persistence > 0:
             query = query.where(PromptCluster.persistence >= min_persistence)
@@ -1304,12 +1814,16 @@ class TaxonomyEngine:
             cluster_id: ID of the PromptCluster whose patterns were applied.
             db: Async SQLAlchemy session.
         """
+        from datetime import datetime, timezone
+
         cluster = await db.get(PromptCluster, cluster_id)
         if not cluster:
             logger.warning("increment_usage: cluster %s not found", cluster_id)
             return
 
+        now = datetime.now(timezone.utc)
         cluster.usage_count = (cluster.usage_count or 0) + 1
+        cluster.last_used_at = now
 
         # Walk up the taxonomy tree (with cycle guard)
         parent_id = cluster.parent_id
@@ -1323,6 +1837,7 @@ class TaxonomyEngine:
             if not parent:
                 break
             parent.usage_count = (parent.usage_count or 0) + 1
+            parent.last_used_at = now
             parent_id = parent.parent_id
 
         await db.flush()
@@ -1331,6 +1846,152 @@ class TaxonomyEngine:
             cluster_id,
             cluster.usage_count,
         )
+
+    # ------------------------------------------------------------------
+    # Tree integrity verification and auto-repair
+    # ------------------------------------------------------------------
+
+    async def verify_domain_tree_integrity(self, db: AsyncSession) -> list[str]:
+        """Post-migration and periodic integrity check.
+
+        Returns a list of violation descriptions. Empty = healthy.
+        """
+        from sqlalchemy import text
+
+        violations = []
+
+        # 1. Check for duplicate domain labels
+        result = await db.execute(
+            select(PromptCluster.label, func.count()).where(
+                PromptCluster.state == "domain"
+            ).group_by(PromptCluster.label)
+        )
+        for label, count in result:
+            if count > 1:
+                violations.append(
+                    f"Duplicate domain label: '{label}' appears {count} times"
+                )
+
+        # 2. Check for orphaned clusters (parent_id points to non-existent node)
+        orphans = await db.execute(text("""
+            SELECT c.id, c.label, c.parent_id
+            FROM prompt_cluster c
+            LEFT JOIN prompt_cluster p ON c.parent_id = p.id
+            WHERE c.parent_id IS NOT NULL AND p.id IS NULL
+        """))
+        for row in orphans:
+            violations.append(
+                f"Orphan cluster: '{row[1]}' (id={row[0]}) references missing parent {row[2]}"
+            )
+
+        # 3. Check domain nodes have persistence=1.0
+        weak = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.persistence < 1.0,
+            )
+        )
+        for d in weak.scalars():
+            violations.append(
+                f"Domain node '{d.label}' has persistence={d.persistence} (expected 1.0)"
+            )
+
+        # 4. Check for self-referencing parents
+        self_refs = await db.execute(
+            text("SELECT id, label FROM prompt_cluster WHERE parent_id = id")
+        )
+        for row in self_refs:
+            violations.append(
+                f"Self-referencing parent: '{row[1]}' (id={row[0]})"
+            )
+
+        # 5. Every non-domain cluster's domain field must match a domain node label
+        #    Case-insensitive: analyzer may emit "Backend" while domain label is "backend"
+        mismatch_result = await db.execute(text("""
+            SELECT c.id, c.label, c.domain
+            FROM prompt_cluster c
+            WHERE c.state != 'domain'
+              AND LOWER(c.domain) NOT IN (SELECT LOWER(label) FROM prompt_cluster WHERE state = 'domain')
+              AND c.domain IS NOT NULL
+        """))
+        for row in mismatch_result:
+            violations.append(
+                f"Domain mismatch: cluster '{row[1]}' has domain='{row[2]}' "
+                f"which is not a domain node"
+            )
+
+        if violations:
+            for v in violations:
+                logger.error("Tree integrity violation: %s", v)
+        else:
+            logger.info("Domain tree integrity check passed")
+
+        return violations
+
+    async def _repair_tree_violations(
+        self, db: AsyncSession, violations: list[str]
+    ) -> int:
+        """Auto-repair detected violations. Returns count of repairs."""
+        from sqlalchemy import text, update
+
+        repaired = 0
+
+        # Repair weak domain persistence
+        result = await db.execute(
+            update(PromptCluster)
+            .where(PromptCluster.state == "domain", PromptCluster.persistence < 1.0)
+            .values(persistence=1.0)
+        )
+        if result.rowcount > 0:
+            logger.info(
+                "Auto-repaired %d domain nodes with weak persistence", result.rowcount
+            )
+            repaired += result.rowcount
+
+        # Repair orphaned clusters → re-parent under "general"
+        general_result = await db.execute(
+            select(PromptCluster.id).where(
+                PromptCluster.state == "domain", PromptCluster.label == "general"
+            )
+        )
+        general_row = general_result.first()
+        if general_row:
+            orphan_result = await db.execute(
+                text("""
+                    UPDATE prompt_cluster
+                    SET parent_id = :general_id, domain = 'general'
+                    WHERE parent_id IS NOT NULL
+                      AND parent_id NOT IN (SELECT id FROM prompt_cluster)
+                      AND state != 'domain'
+                """),
+                {"general_id": general_row[0]},
+            )
+            if orphan_result.rowcount > 0:
+                logger.info(
+                    "Auto-repaired %d orphaned clusters → 'general'",
+                    orphan_result.rowcount,
+                )
+                repaired += orphan_result.rowcount
+
+        # Repair domain mismatches → reset to "general" (case-insensitive)
+        mismatch_result = await db.execute(text("""
+            UPDATE prompt_cluster
+            SET domain = 'general'
+            WHERE state != 'domain'
+              AND LOWER(domain) NOT IN (SELECT LOWER(label) FROM prompt_cluster WHERE state = 'domain')
+              AND domain IS NOT NULL
+        """))
+        if mismatch_result.rowcount > 0:
+            logger.info(
+                "Auto-repaired %d domain mismatches → 'general'",
+                mismatch_result.rowcount,
+            )
+            repaired += mismatch_result.rowcount
+
+        # NOTE: do NOT commit here — the warm path handles commit/rollback
+        # after the Q_system non-regression gate.  Committing prematurely
+        # would bypass the quality gate rollback mechanism.
+        return repaired
 
     @staticmethod
     def _node_to_dict(node: PromptCluster) -> dict:

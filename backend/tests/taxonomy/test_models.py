@@ -223,3 +223,48 @@ def test_taxonomy_snapshot_has_legacy_flag(tmp_engine):
     insp = inspect(tmp_engine)
     columns = {c["name"] for c in insp.get_columns("taxonomy_snapshots")}
     assert "legacy" in columns
+
+
+@pytest.mark.asyncio
+async def test_prompt_cluster_metadata_column(db):
+    """PromptCluster has a nullable JSON cluster_metadata column."""
+    cluster = PromptCluster(
+        label="test",
+        state="domain",
+        domain="test",
+        cluster_metadata={"source": "seed", "signal_keywords": [["api", 0.8]]},
+    )
+    db.add(cluster)
+    await db.commit()
+
+    result = await db.execute(select(PromptCluster).where(PromptCluster.id == cluster.id))
+    loaded = result.scalar_one()
+    assert loaded.cluster_metadata["source"] == "seed"
+    assert loaded.cluster_metadata["signal_keywords"] == [["api", 0.8]]
+
+
+@pytest.mark.asyncio
+async def test_prompt_cluster_domain_state(db):
+    """PromptCluster accepts state='domain'."""
+    node = PromptCluster(label="backend", state="domain", domain="backend", persistence=1.0)
+    db.add(node)
+    await db.commit()
+
+    result = await db.execute(
+        select(PromptCluster).where(PromptCluster.state == "domain")
+    )
+    loaded = result.scalar_one()
+    assert loaded.label == "backend"
+    assert loaded.persistence == 1.0
+
+
+@pytest.mark.asyncio
+async def test_prompt_cluster_metadata_null_by_default(db):
+    """Non-domain clusters have cluster_metadata=None."""
+    cluster = PromptCluster(label="test-cluster", state="active", domain="general")
+    db.add(cluster)
+    await db.commit()
+
+    result = await db.execute(select(PromptCluster).where(PromptCluster.id == cluster.id))
+    loaded = result.scalar_one()
+    assert loaded.cluster_metadata is None

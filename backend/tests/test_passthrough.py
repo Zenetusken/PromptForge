@@ -1188,7 +1188,7 @@ class TestEnrichedPassthrough:
 
 
 class TestDomainValidation:
-    """Verify that domain is validated against the VALID_DOMAINS whitelist."""
+    """Verify that domain is validated against known domain nodes."""
 
     async def _prepare(self, app_client, prompt=VALID_PROMPT):
         resp = await app_client.post(
@@ -1444,23 +1444,16 @@ class TestHeuristicScorerClamping:
 
 
 # ---------------------------------------------------------------------------
-# VALID_DOMAINS shared constant
+# DomainResolver integration
 # ---------------------------------------------------------------------------
 
 
-class TestValidDomainsConstant:
-    """Verify VALID_DOMAINS is consistent across all consumers."""
+class TestDomainResolverIntegration:
+    """Verify DomainResolver is used for domain validation across pipelines."""
 
-    def test_pipeline_constants_exports_valid_domains(self):
-        from app.services.pipeline_constants import VALID_DOMAINS
-        assert isinstance(VALID_DOMAINS, set)
-        assert "backend" in VALID_DOMAINS
-        assert "general" in VALID_DOMAINS
-
-    def test_router_and_tools_use_same_constant(self):
-        """Both optimize router and save_result tool import from pipeline_constants."""
-        from app.routers.optimize import VALID_DOMAINS as ROUTER_DOMAINS
-        from app.services.pipeline_constants import VALID_DOMAINS as CANONICAL
-        from app.tools.save_result import VALID_DOMAINS as TOOL_DOMAINS
-        assert ROUTER_DOMAINS is CANONICAL
-        assert TOOL_DOMAINS is CANONICAL
+    def test_domain_resolver_loaded_in_app_state(self, app_client):
+        """DomainResolver is available on app.state."""
+        resolver = app_client._transport.app.state.domain_resolver
+        assert resolver is not None
+        assert "backend" in resolver.domain_labels
+        assert "general" in resolver.domain_labels

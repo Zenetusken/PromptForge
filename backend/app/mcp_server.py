@@ -294,6 +294,56 @@ async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
                 "and pattern resolution will be unavailable: %s", exc,
             )
 
+        # Initialize domain services
+        try:
+            from app.services.domain_resolver import DomainResolver
+            from app.services.domain_signal_loader import DomainSignalLoader
+            from app.tools._shared import set_domain_resolver, set_signal_loader
+
+            _domain_resolver = DomainResolver()
+            _signal_loader = DomainSignalLoader()
+            async with _shared.async_session_factory() as _init_db:
+                await _domain_resolver.load(_init_db)
+                await _signal_loader.load(_init_db)
+            set_domain_resolver(_domain_resolver)
+            set_signal_loader(_signal_loader)
+
+            # Wire signal loader into heuristic analyzer
+            from app.services.heuristic_analyzer import set_signal_loader as set_analyzer_signal_loader
+            set_analyzer_signal_loader(_signal_loader)
+
+            logger.info("MCP domain services initialized")
+        except Exception as exc:
+            logger.warning(
+                "MCP server: domain services init failed (non-fatal): %s", exc,
+            )
+
+        # Subscribe to domain events for cache invalidation
+        async def _reload_domain_caches() -> None:
+            try:
+                from app.tools._shared import get_domain_resolver, get_signal_loader
+                async with _shared.async_session_factory() as _reload_db:
+                    resolver = get_domain_resolver()
+                    await resolver.load(_reload_db)
+                    loader = get_signal_loader()
+                    if loader:
+                        await loader.load(_reload_db)
+                logger.info("MCP domain caches reloaded")
+            except Exception:
+                logger.error("MCP domain cache reload failed", exc_info=True)
+
+        async def _domain_event_listener() -> None:
+            """Background task: reload domain caches on taxonomy_changed / domain_created."""
+            try:
+                async for event in _mcp_event_bus.subscribe():
+                    event_type = event.get("event", "")
+                    if event_type in ("domain_created", "taxonomy_changed"):
+                        asyncio.create_task(_reload_domain_caches())
+            except Exception:
+                logger.debug("MCP domain event listener exited", exc_info=True)
+
+        asyncio.create_task(_domain_event_listener())
+
     yield {}
     # No per-session cleanup — singletons are process-level.
     # The disconnect checker task is cancelled when the event loop shuts down.

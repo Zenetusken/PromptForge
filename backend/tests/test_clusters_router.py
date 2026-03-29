@@ -11,12 +11,14 @@ from app.models import MetaPattern, PromptCluster
 class TestClusterTree:
     @pytest.mark.asyncio
     async def test_get_cluster_tree_empty(self, app_client, db_session):
-        """GET /api/clusters/tree returns empty list on fresh DB."""
+        """GET /api/clusters/tree returns domain nodes from seed + no others."""
         resp = await app_client.get("/api/clusters/tree")
         assert resp.status_code == 200
         data = resp.json()
         assert "nodes" in data
-        assert data["nodes"] == []
+        # Only seed domain nodes should be present (no non-domain clusters)
+        non_domain = [n for n in data["nodes"] if n.get("state") != "domain"]
+        assert non_domain == []
 
     @pytest.mark.asyncio
     async def test_get_cluster_tree_with_data(self, app_client, db_session):
@@ -32,9 +34,13 @@ class TestClusterTree:
         resp = await app_client.get("/api/clusters/tree")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["nodes"]) == 1
-        assert data["nodes"][0]["id"] == "c1"
-        assert data["nodes"][0]["label"] == "Test"
+        non_domain = [n for n in data["nodes"] if n.get("state") != "domain"]
+        assert len(non_domain) == 1
+        assert non_domain[0]["id"] == "c1"
+        assert non_domain[0]["label"] == "Test"
+        # Domain nodes should also be present in the tree (C2 fix)
+        domain_nodes = [n for n in data["nodes"] if n.get("state") == "domain"]
+        assert len(domain_nodes) == 7
 
     @pytest.mark.asyncio
     async def test_get_cluster_tree_min_persistence(self, app_client, db_session):
@@ -53,8 +59,9 @@ class TestClusterTree:
         resp = await app_client.get("/api/clusters/tree?min_persistence=0.5")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["nodes"]) == 1
-        assert data["nodes"][0]["id"] == "c1"
+        non_domain = [n for n in data["nodes"] if n.get("state") != "domain"]
+        assert len(non_domain) == 1
+        assert non_domain[0]["id"] == "c1"
 
 
 class TestClusterStats:
@@ -140,6 +147,20 @@ class TestClusterUpdate:
         resp = await app_client.patch("/api/clusters/c2", json={"domain": "frontend"})
         assert resp.status_code == 200
         assert resp.json()["domain"] == "frontend"
+
+    @pytest.mark.asyncio
+    async def test_update_cluster_domain_invalid_422(self, app_client, db_session):
+        """PATCH /api/clusters/{id} returns 422 for an unknown domain."""
+        cluster = PromptCluster(
+            id="c2b", label="test", state="active", domain="backend",
+            task_type="coding", centroid_embedding=b'\x00' * 384,
+        )
+        db_session.add(cluster)
+        await db_session.commit()
+
+        resp = await app_client.patch("/api/clusters/c2b", json={"domain": "notadomain"})
+        assert resp.status_code == 422
+        assert "notadomain" in resp.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_update_cluster_state(self, app_client, db_session):

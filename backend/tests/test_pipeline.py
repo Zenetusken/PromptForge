@@ -13,7 +13,6 @@ from app.schemas.pipeline_contracts import (
 )
 from app.services.pipeline import PipelineOrchestrator
 from app.services.pipeline_constants import (
-    apply_domain_gate,
     resolve_effective_strategy,
     resolve_fallback_strategy,
     semantic_check,
@@ -180,6 +179,16 @@ class TestPipelineOrchestrator:
 
     async def test_low_confidence_overrides_domain_to_general(self, orchestrator, mock_provider, db_session):
         """Domain confidence gate: confidence < 0.6 forces domain='general'."""
+        from app.models import PromptCluster
+        from app.services.domain_resolver import DomainResolver
+
+        # Seed domain nodes
+        for label in ("backend", "general"):
+            db_session.add(PromptCluster(label=label, state="domain", domain=label))
+        await db_session.commit()
+        resolver = DomainResolver()
+        await resolver.load(db_session)
+
         mock_provider.complete_parsed.side_effect = [
             _make_analysis(confidence=0.5, domain="backend"),
             _make_optimization(),
@@ -188,6 +197,7 @@ class TestPipelineOrchestrator:
         events = []
         async for event in orchestrator.run(
             raw_prompt="test prompt", provider=mock_provider, db=db_session,
+            domain_resolver=resolver,
         ):
             events.append(event)
         complete = next(e for e in events if e.event == "optimization_complete")
@@ -195,6 +205,16 @@ class TestPipelineOrchestrator:
 
     async def test_high_confidence_preserves_domain(self, orchestrator, mock_provider, db_session):
         """Domain preserved when confidence >= 0.6."""
+        from app.models import PromptCluster
+        from app.services.domain_resolver import DomainResolver
+
+        # Seed domain nodes
+        for label in ("backend", "general"):
+            db_session.add(PromptCluster(label=label, state="domain", domain=label))
+        await db_session.commit()
+        resolver = DomainResolver()
+        await resolver.load(db_session)
+
         mock_provider.complete_parsed.side_effect = [
             _make_analysis(confidence=0.8, domain="backend"),
             _make_optimization(),
@@ -203,6 +223,7 @@ class TestPipelineOrchestrator:
         events = []
         async for event in orchestrator.run(
             raw_prompt="test prompt", provider=mock_provider, db=db_session,
+            domain_resolver=resolver,
         ):
             events.append(event)
         complete = next(e for e in events if e.event == "optimization_complete")
@@ -294,21 +315,6 @@ class TestSemanticCheck:
     def test_floor_at_zero(self):
         result = semantic_check("coding", "Help me organize my day", 0.1)
         assert result == 0.0
-
-
-class TestApplyDomainGate:
-    def test_preserves_domain_when_confident(self):
-        assert apply_domain_gate("backend", 0.8) == "backend"
-
-    def test_overrides_to_general_when_low_confidence(self):
-        assert apply_domain_gate("backend", 0.5) == "general"
-
-    def test_null_domain_defaults_to_general(self):
-        assert apply_domain_gate(None, 0.9) == "general"
-
-    def test_boundary_at_0_6(self):
-        assert apply_domain_gate("frontend", 0.6) == "frontend"
-        assert apply_domain_gate("frontend", 0.59) == "general"
 
 
 class TestResolveEffectiveStrategy:

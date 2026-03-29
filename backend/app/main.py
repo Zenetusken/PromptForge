@@ -98,6 +98,28 @@ async def lifespan(app: FastAPI):
             app.state.taxonomy_engine = engine
             set_engine(engine)
 
+            # Initialize domain services
+            from app.services.domain_resolver import (
+                DomainResolver,
+                set_domain_resolver,
+            )
+            from app.services.domain_signal_loader import DomainSignalLoader
+
+            domain_resolver = DomainResolver()
+            signal_loader = DomainSignalLoader()
+            async with async_session_factory() as _init_db:
+                await domain_resolver.load(_init_db)
+                await signal_loader.load(_init_db)
+            app.state.domain_resolver = domain_resolver
+            app.state.signal_loader = signal_loader
+            set_domain_resolver(domain_resolver)
+
+            # Wire signal loader into heuristic analyzer for dynamic domain signals
+            from app.services.heuristic_analyzer import set_signal_loader as set_analyzer_signal_loader
+            set_analyzer_signal_loader(signal_loader)
+
+            logger.info("Domain services initialized")
+
             # Warm-load embedding index from active cluster centroids
             try:
                 import numpy as _np
@@ -206,6 +228,18 @@ async def lifespan(app: FastAPI):
                             "optimization_created event missing 'id' in data: %s",
                             event.get("data"),
                         )
+                # Reload domain caches when taxonomy or domain events fire
+                elif event.get("event") in ("domain_created", "taxonomy_changed"):
+                    try:
+                        async with async_session_factory() as _reload_db:
+                            await app.state.domain_resolver.load(_reload_db)
+                            await app.state.signal_loader.load(_reload_db)
+                        logger.info(
+                            "Domain caches reloaded on %s event",
+                            event.get("event"),
+                        )
+                    except Exception:
+                        logger.error("Domain cache reload failed", exc_info=True)
         except asyncio.CancelledError:
             logger.info("Taxonomy extraction listener shutting down")
         except Exception as exc:
@@ -451,6 +485,12 @@ except ImportError:
 try:
     from app.routers.clusters import router as clusters_router
     app.include_router(clusters_router)
+except ImportError:
+    pass
+
+try:
+    from app.routers.domains import router as domains_router
+    app.include_router(domains_router)
 except ImportError:
     pass
 

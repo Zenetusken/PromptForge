@@ -21,10 +21,14 @@ __all__ = [
     "async_session_factory",
     "build_scores_dict",
     "get_context_service",
+    "get_domain_resolver",
     "get_routing",
+    "get_signal_loader",
     "get_taxonomy_engine",
     "set_context_service",
+    "set_domain_resolver",
     "set_routing",
+    "set_signal_loader",
     "set_taxonomy_engine",
 ]
 
@@ -78,6 +82,33 @@ def get_context_service() -> ContextEnrichmentService:
     if _context_service is None:
         raise ValueError("Context enrichment service not initialized")
     return _context_service
+
+
+def get_domain_resolver():
+    """Return domain resolver or raise if not initialized.
+
+    Delegates to the service module's process-level singleton.
+    """
+    from app.services.domain_resolver import get_domain_resolver as _get
+    return _get()
+
+
+def set_domain_resolver(resolver) -> None:
+    """Set the domain resolver (delegates to service module singleton)."""
+    from app.services.domain_resolver import set_domain_resolver as _set
+    _set(resolver)
+
+
+def get_signal_loader():
+    """Return signal loader (delegates to service module singleton)."""
+    from app.services.domain_signal_loader import get_signal_loader as _get
+    return _get()
+
+
+def set_signal_loader(loader) -> None:
+    """Set the signal loader (delegates to service module singleton)."""
+    from app.services.domain_signal_loader import set_signal_loader as _set
+    _set(loader)
 
 
 # ---------------------------------------------------------------------------

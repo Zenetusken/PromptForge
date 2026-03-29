@@ -17,6 +17,7 @@ Reference: Spec Sections 3.1–3.5.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
@@ -31,6 +32,42 @@ from app.services.taxonomy.coloring import generate_color
 from app.services.taxonomy.labeling import generate_label
 
 logger = logging.getLogger(__name__)
+
+
+class GuardrailViolationError(RuntimeError):
+    """Raised when a lifecycle operation violates domain stability guardrails.
+
+    This exception should never occur in production — it indicates a code
+    regression that bypassed the guardrail checks.
+    """
+    pass
+
+
+_GUARDRAIL_VIOLATIONS: dict[str, str] = {
+    "retire": "Domain nodes cannot be retired — use manual archival",
+    "merge": "Domain nodes cannot be auto-merged — requires approval event",
+    "color_assign": "Domain colors are pinned — cold path must skip",
+}
+
+
+def _assert_domain_guardrails(operation: str, node: PromptCluster) -> None:
+    """Runtime assertion that domain guardrails are enforced.
+
+    Called at the START of every lifecycle mutation. Raises
+    GuardrailViolationError if the operation would violate
+    domain stability.
+    """
+    if node.state != "domain":
+        return
+
+    if operation in _GUARDRAIL_VIOLATIONS:
+        msg = (
+            f"GUARDRAIL VIOLATION: {operation} attempted on domain node "
+            f"'{node.label}'. {_GUARDRAIL_VIOLATIONS[operation]}"
+        )
+        logger.critical(msg)
+        raise GuardrailViolationError(msg)
+
 
 # Priority order for operation scheduling (lower value = higher priority).
 _PRIORITY: dict[str, int] = {
@@ -108,6 +145,11 @@ async def attempt_emerge(
             model=model,
         )
 
+        # Inherit domain from the majority of member clusters.
+        member_domains = [f.domain for f in families if f.domain]
+        domain_counts = Counter(member_domains)
+        inherited_domain = domain_counts.most_common(1)[0][0] if domain_counts else "general"
+
         # Placeholder color — UMAP projection not yet available for new nodes.
         color_hex = generate_color(0.0, 0.0, 0.0)
 
@@ -118,6 +160,7 @@ async def attempt_emerge(
             coherence=coherence,
             state="candidate",
             color_hex=color_hex,
+            domain=inherited_domain,
         )
         db.add(node)
         await db.flush()  # obtain node.id before linking families
@@ -164,6 +207,8 @@ async def attempt_merge(
     Returns:
         The survivor PromptCluster, or None on failure.
     """
+    _assert_domain_guardrails("merge", node_a)
+    _assert_domain_guardrails("merge", node_b)
     try:
         # Guard: self-merge is a no-op that would double member_count
         if node_a.id == node_b.id:
@@ -285,6 +330,14 @@ async def attempt_split(
             )
             color_hex = generate_color(0.0, 0.0, 0.0)
 
+            # Inherit domain from the parent: domain-state nodes use their
+            # label as the domain value; all other nodes pass the domain field.
+            child_domain = (
+                parent_node.label
+                if parent_node.state == "domain"
+                else parent_node.domain
+            )
+
             child = PromptCluster(
                 label=label,
                 parent_id=parent_node.id,
@@ -293,6 +346,7 @@ async def attempt_split(
                 coherence=coherence,
                 state="candidate",
                 color_hex=color_hex,
+                domain=child_domain,
             )
             db.add(child)
             await db.flush()
@@ -343,6 +397,7 @@ async def attempt_retire(
     Returns:
         True if the node was retired, False if skipped (no siblings).
     """
+    _assert_domain_guardrails("retire", node)
     try:
         # Guard: root nodes (parent_id=None) must never be retired
         if node.parent_id is None:

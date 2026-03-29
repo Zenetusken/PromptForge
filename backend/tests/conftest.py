@@ -66,6 +66,22 @@ async def app_client(mock_provider, db_session, tmp_path):
     test_routing.set_provider(mock_provider)
     app.state.routing = test_routing
 
+    # Seed domain nodes and create a test DomainResolver
+    from app.models import PromptCluster
+    from app.services.domain_resolver import DomainResolver
+
+    for domain_label in ("backend", "frontend", "database", "devops", "security", "fullstack", "general"):
+        db_session.add(PromptCluster(
+            label=domain_label,
+            state="domain",
+            domain=domain_label,
+        ))
+    await db_session.commit()
+
+    domain_resolver = DomainResolver()
+    await domain_resolver.load(db_session)
+    app.state.domain_resolver = domain_resolver
+
     # Create a test ContextEnrichmentService
     app.state.context_service = ContextEnrichmentService(
         prompts_dir=PROMPTS_DIR,

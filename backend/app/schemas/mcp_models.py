@@ -602,3 +602,12 @@ class HealthOutput(BaseModel):
         default_factory=list,
         description="Names of loaded optimization strategies.",
     )
+    domain_count: int = Field(
+        default=0,
+        description="Number of active domain nodes in the taxonomy.",
+    )
+    domain_ceiling: int = Field(
+        default=30,
+        description="Maximum allowed domain nodes (DOMAIN_COUNT_CEILING=30). "
+        "When domain_count >= domain_ceiling, new domain creation is suppressed.",
+    )

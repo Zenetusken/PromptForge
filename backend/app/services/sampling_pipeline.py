@@ -58,7 +58,6 @@ from app.services.event_notification import notify_event_bus
 from app.services.heuristic_scorer import HeuristicScorer
 from app.services.pattern_injection import auto_inject_patterns
 from app.services.pipeline_constants import (
-    apply_domain_gate,
     compute_optimize_max_tokens,
     resolve_effective_strategy,
     semantic_check,
@@ -596,9 +595,20 @@ async def run_sampling_pipeline(
             logger.debug("Sampling adaptation pre-filter unavailable: %s", exc)
 
     available_strategies = strategy_loader.format_available(blocked=blocked_strategies)
+    try:
+        from app.tools._shared import get_domain_resolver as _get_dr_early
+        _early_resolver = _get_dr_early()
+        known_domains = (
+            ", ".join(sorted(_early_resolver.domain_labels))
+            if _early_resolver.domain_labels
+            else "backend, frontend, database, devops, security, fullstack, general"
+        )
+    except Exception:
+        known_domains = "backend, frontend, database, devops, security, fullstack, general"
     analyze_msg = loader.render("analyze.md", {
         "raw_prompt": prompt,
         "available_strategies": available_strategies,
+        "known_domains": known_domains,
     })
 
     try:
@@ -631,9 +641,16 @@ async def run_sampling_pipeline(
 
     # Semantic check + domain confidence gate (shared with internal pipeline)
     confidence = semantic_check(analysis.task_type, prompt, analysis.confidence)
-    effective_domain = apply_domain_gate(
-        getattr(analysis, "domain", None), confidence,
-    )
+
+    # Resolve domain via domain nodes (replaces hardcoded VALID_DOMAINS whitelist)
+    try:
+        from app.tools._shared import get_domain_resolver
+        _resolver = get_domain_resolver()
+        effective_domain = await _resolver.resolve(
+            getattr(analysis, "domain", None) or "general", confidence,
+        )
+    except (ValueError, Exception):
+        effective_domain = "general"
 
     # Domain mapping (Spec Section 4.2, 4.4)
     domain_raw = getattr(analysis, "domain", None) or "general"  # pre-gate
@@ -1074,9 +1091,20 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
     # --- Phase 1: Analyze ---
     phase_t0 = time.monotonic()
     system_prompt = loader.load("agent-guidance.md")
+    try:
+        from app.tools._shared import get_domain_resolver as _get_dr_analyze
+        _analyze_resolver = _get_dr_analyze()
+        _analyze_known_domains = (
+            ", ".join(sorted(_analyze_resolver.domain_labels))
+            if _analyze_resolver.domain_labels
+            else "backend, frontend, database, devops, security, fullstack, general"
+        )
+    except Exception:
+        _analyze_known_domains = "backend, frontend, database, devops, security, fullstack, general"
     analyze_msg = loader.render("analyze.md", {
         "raw_prompt": prompt,
         "available_strategies": strategy_loader.format_available(),
+        "known_domains": _analyze_known_domains,
     })
 
     try:

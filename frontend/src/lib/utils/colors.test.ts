@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { scoreColor, taxonomyColor, qHealthColor, stateColor } from './colors';
+import { domainStore } from '$lib/stores/domains.svelte';
 
 describe('scoreColor', () => {
   it('returns dim for null', () => {
@@ -40,6 +41,10 @@ describe('scoreColor', () => {
 });
 
 describe('taxonomyColor', () => {
+  beforeEach(() => {
+    domainStore._reset();
+  });
+
   it('returns hex color as-is', () => {
     expect(taxonomyColor('#a855f7')).toBe('#a855f7');
   });
@@ -49,34 +54,51 @@ describe('taxonomyColor', () => {
     expect(taxonomyColor(undefined)).toBe('#7a7a9e');
   });
 
-  it('resolves known domain names to hex colors', () => {
-    expect(taxonomyColor('backend')).toBe('#b44aff');
-    expect(taxonomyColor('frontend')).toBe('#ff4895');
-    expect(taxonomyColor('database')).toBe('#36b5ff');
-    expect(taxonomyColor('security')).toBe('#ff2255');
-    expect(taxonomyColor('devops')).toBe('#6366f1');
-    expect(taxonomyColor('fullstack')).toBe('#d946ef');
-    expect(taxonomyColor('general')).toBe('#7a7a9e');
-  });
-
-  it('resolves free-form domain strings via keyword matching', () => {
-    expect(taxonomyColor('frontend CSS architecture')).toBe('#ff4895');
-    expect(taxonomyColor('backend API service')).toBe('#b44aff');
-    expect(taxonomyColor('database optimization')).toBe('#36b5ff');
-  });
-
-  it('returns fallback for unknown domain name', () => {
-    expect(taxonomyColor('unknown-domain')).toBe('#7a7a9e');
-  });
-
   it('returns fallback for empty string', () => {
     expect(taxonomyColor('')).toBe('#7a7a9e');
   });
 
+  it('returns fallback for unknown domain when store is empty', () => {
+    expect(taxonomyColor('backend')).toBe('#7a7a9e');
+    expect(taxonomyColor('unknown-domain')).toBe('#7a7a9e');
+  });
+
+  it('resolves known domain names when store is populated', () => {
+    domainStore.domains = [
+      { id: '1', label: 'backend', color_hex: '#b44aff', member_count: 0, avg_score: null, source: 'seed' },
+      { id: '2', label: 'frontend', color_hex: '#ff4895', member_count: 0, avg_score: null, source: 'seed' },
+      { id: '3', label: 'database', color_hex: '#36b5ff', member_count: 0, avg_score: null, source: 'seed' },
+      { id: '4', label: 'general', color_hex: '#7a7a9e', member_count: 0, avg_score: null, source: 'seed' },
+    ];
+    expect(taxonomyColor('backend')).toBe('#b44aff');
+    expect(taxonomyColor('frontend')).toBe('#ff4895');
+    expect(taxonomyColor('database')).toBe('#36b5ff');
+    expect(taxonomyColor('general')).toBe('#7a7a9e');
+  });
+
+  it('resolves free-form domain strings via keyword matching when store is populated', () => {
+    domainStore.domains = [
+      { id: '1', label: 'backend', color_hex: '#b44aff', member_count: 0, avg_score: null, source: 'seed' },
+      { id: '2', label: 'frontend', color_hex: '#ff4895', member_count: 0, avg_score: null, source: 'seed' },
+    ];
+    expect(taxonomyColor('frontend CSS architecture')).toBe('#ff4895');
+    expect(taxonomyColor('backend API service')).toBe('#b44aff');
+  });
+
   it('resolves primary:qualifier format to primary domain color', () => {
+    domainStore.domains = [
+      { id: '1', label: 'backend', color_hex: '#b44aff', member_count: 0, avg_score: null, source: 'seed' },
+      { id: '2', label: 'frontend', color_hex: '#ff4895', member_count: 0, avg_score: null, source: 'seed' },
+    ];
     expect(taxonomyColor('backend: security')).toBe('#b44aff');
     expect(taxonomyColor('frontend: accessibility')).toBe('#ff4895');
-    expect(taxonomyColor('database: migration')).toBe('#36b5ff');
+  });
+
+  it('returns fallback for unrecognized domain even when store is populated', () => {
+    domainStore.domains = [
+      { id: '1', label: 'backend', color_hex: '#b44aff', member_count: 0, avg_score: null, source: 'seed' },
+    ];
+    expect(taxonomyColor('unknown-domain')).toBe('#7a7a9e');
   });
 });
 

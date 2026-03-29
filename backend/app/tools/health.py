@@ -12,9 +12,10 @@ from sqlalchemy import func, select
 
 from app.config import PROMPTS_DIR
 from app.database import async_session_factory
-from app.models import Optimization
+from app.models import Optimization, PromptCluster
 from app.schemas.mcp_models import HealthOutput
 from app.services.optimization_service import OptimizationService
+from app.services.pipeline_constants import DOMAIN_COUNT_CEILING
 from app.services.strategy_loader import StrategyLoader
 from app.tools._shared import get_routing
 
@@ -45,6 +46,7 @@ async def handle_health() -> HealthOutput:
     total_optimizations = 0
     avg_score: float | None = None
     recent_error_rate: float | None = None
+    domain_count = 0
 
     try:
         async with async_session_factory() as db:
@@ -77,6 +79,11 @@ async def handle_health() -> HealthOutput:
                 total_24h = total_24h_result.scalar() or 0
                 if total_24h > 0:
                     recent_error_rate = round(failed_24h / total_24h, 3)
+
+            # Domain proliferation metrics
+            domain_count = await db.scalar(
+                select(func.count()).where(PromptCluster.state == "domain")
+            ) or 0
     except Exception as exc:
         logger.warning("Could not fetch optimization stats for health: %s", exc)
 
@@ -89,4 +96,6 @@ async def handle_health() -> HealthOutput:
         avg_score=avg_score,
         recent_error_rate=recent_error_rate,
         available_strategies=strategies,
+        domain_count=domain_count,
+        domain_ceiling=DOMAIN_COUNT_CEILING,
     )

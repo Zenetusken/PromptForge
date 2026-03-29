@@ -36,7 +36,6 @@ from app.services.pattern_injection import auto_inject_patterns
 from app.services.pipeline_constants import (
     ANALYZE_MAX_TOKENS,
     SCORE_MAX_TOKENS,
-    apply_domain_gate,
     compute_optimize_max_tokens,
     resolve_effective_strategy,
     semantic_check,
@@ -156,6 +155,7 @@ class PipelineOrchestrator:
         github_token: str | None = None,
         applied_pattern_ids: list[str] | None = None,
         taxonomy_engine: Any | None = None,
+        domain_resolver: Any | None = None,
     ) -> AsyncGenerator[PipelineEvent, None]:
         """Execute the full pipeline, yielding SSE events."""
         trace_id = str(uuid.uuid4())
@@ -265,9 +265,15 @@ class PipelineOrchestrator:
                 blocked=blocked_strategies,
             )
 
+            known_domains = (
+                ", ".join(sorted(domain_resolver.domain_labels))
+                if domain_resolver is not None and domain_resolver.domain_labels
+                else "backend, frontend, database, devops, security, fullstack, general"
+            )
             analyze_msg = self.prompt_loader.render("analyze.md", {
                 "raw_prompt": raw_prompt,
                 "available_strategies": available_strategies,
+                "known_domains": known_domains,
             })
 
             phase_start = time.monotonic()
@@ -302,7 +308,15 @@ class PipelineOrchestrator:
 
             # Semantic check + domain confidence gate (shared with sampling pipeline)
             confidence = semantic_check(analysis.task_type, raw_prompt, analysis.confidence)
-            effective_domain = apply_domain_gate(analysis.domain, confidence)
+
+            # Resolve domain via domain nodes (replaces hardcoded VALID_DOMAINS whitelist)
+            if domain_resolver is not None:
+                effective_domain = await domain_resolver.resolve(
+                    analysis.domain or "general", confidence,
+                )
+            else:
+                # Startup race or no domain_resolver — default to "general"
+                effective_domain = "general"
 
             # ---------------------------------------------------------------
             # Phase 1.5: Domain Mapping (Spec Section 4.2)
