@@ -12,6 +12,19 @@ Living document tracking planned improvements. Items are prioritized but not sch
 
 ## Planned
 
+### MCP routing fallback — per-client capability awareness
+**Status:** Planned
+**Context:** MCP tool calls from non-sampling clients (e.g., Claude Code) are routed to the sampling tier when a sampling-capable client (VS Code bridge) is also connected. The call fails with "Method not found" because the calling client doesn't support `sampling/createMessage`. The internal provider (CLI/API) is available but bypassed because `caller="mcp"` + `sampling_capable=true` (global flag) routes to sampling.
+
+**Root cause:** The routing resolver checks global `sampling_capable` state, not per-client capabilities. It doesn't know whether the *specific client making the call* supports sampling.
+
+**Proposed approaches:**
+1. **Per-client capability tagging** — track each MCP session's declared capabilities from `initialize`. Route based on the calling session's sampling support, not the global flag.
+2. **Internal fallback for MCP** — if sampling fails for an MCP caller, retry on internal pipeline when a provider exists. Simpler but reactive (fails first).
+3. **Prefer internal for non-interactive MCP** — default MCP tool calls to internal pipeline when a provider exists. Only use sampling when explicitly requested. Preserves IDE LLM quota for interactive work.
+
+**Files:** `services/routing.py` (resolve_route), `mcp_server.py` (capability middleware), `tools/optimize.py` (context construction)
+
 ### Unified scoring service
 **Status:** Planned
 **Context:** The scoring orchestration (heuristic compute → historical stats fetch → hybrid blend → delta compute) is repeated across `pipeline.py`, `sampling_pipeline.py`, `save_result.py`, and `optimize.py` with divergent error handling. A shared `ScoringService` would eliminate duplication and ensure consistent behavior across all tiers.
