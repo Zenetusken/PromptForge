@@ -103,6 +103,14 @@ async def promote_to_domain(
 
     logger.info("Cluster %s promoted to domain: label='%s'", domain_id, cluster.label)
 
+    from app.services.event_bus import event_bus
+    event_bus.publish("domain_created", {
+        "label": cluster.label,
+        "color_hex": color_hex,
+        "node_id": cluster.id,
+        "source": "manual",
+    })
+
     return DomainInfo(
         id=cluster.id,
         label=cluster.label,

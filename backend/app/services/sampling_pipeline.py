@@ -646,10 +646,9 @@ async def run_sampling_pipeline(
     try:
         from app.tools._shared import get_domain_resolver
         _resolver = get_domain_resolver()
-        async with async_session_factory() as _domain_db:
-            effective_domain = await _resolver.resolve(
-                _domain_db, getattr(analysis, "domain", None) or "general", confidence,
-            )
+        effective_domain = await _resolver.resolve(
+            getattr(analysis, "domain", None) or "general", confidence,
+        )
     except (ValueError, Exception):
         effective_domain = "general"
 

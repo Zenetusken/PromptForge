@@ -199,7 +199,7 @@ async def handle_save_result(
             try:
                 _resolver = get_domain_resolver()
                 validated_domain = await _resolver.resolve(
-                    db, domain or opt.domain or "general", confidence=1.0,
+                    domain or opt.domain or "general", confidence=1.0,
                 )
             except (ValueError, Exception):
                 validated_domain = "general"
@@ -228,7 +228,7 @@ async def handle_save_result(
             try:
                 _new_resolver = get_domain_resolver()
                 _new_domain = await _new_resolver.resolve(
-                    db, domain or "general", confidence=1.0,
+                    domain or "general", confidence=1.0,
                 )
             except (ValueError, Exception):
                 _new_domain = "general"

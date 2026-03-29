@@ -856,6 +856,8 @@ class TaxonomyEngine:
         # 5. Regenerate OKLab colors from UMAP positions
         color_pairs: list[tuple[str, str]] = []
         for node in all_nodes:
+            if node.state == "domain":
+                continue  # Domain colors are pinned at creation time (ADR-004 Guardrail #1)
             if node.umap_x is not None and node.umap_y is not None and node.umap_z is not None:
                 new_color = generate_color(node.umap_x, node.umap_y, node.umap_z)
                 color_pairs.append((node.id, new_color))
@@ -1309,6 +1311,7 @@ class TaxonomyEngine:
             task_type="general",
             persistence=1.0,
             color_hex=color_hex,
+            centroid_embedding=seed_cluster.centroid_embedding if seed_cluster else None,
             cluster_metadata={
                 "source": "discovered",
                 "signal_keywords": keywords,
@@ -1644,7 +1647,7 @@ class TaxonomyEngine:
         # Mature and template nodes are valid topology members — excluding
         # them would create inconsistency with stats panel node counts.
         query = select(PromptCluster).where(
-            PromptCluster.state.in_(["active", "candidate", "mature", "template"])
+            PromptCluster.state.in_(["active", "candidate", "mature", "template", "domain"])
         )
         if min_persistence > 0:
             query = query.where(PromptCluster.persistence >= min_persistence)
@@ -1799,12 +1802,16 @@ class TaxonomyEngine:
             cluster_id: ID of the PromptCluster whose patterns were applied.
             db: Async SQLAlchemy session.
         """
+        from datetime import datetime, timezone
+
         cluster = await db.get(PromptCluster, cluster_id)
         if not cluster:
             logger.warning("increment_usage: cluster %s not found", cluster_id)
             return
 
+        now = datetime.now(timezone.utc)
         cluster.usage_count = (cluster.usage_count or 0) + 1
+        cluster.last_used_at = now
 
         # Walk up the taxonomy tree (with cycle guard)
         parent_id = cluster.parent_id
@@ -1818,6 +1825,7 @@ class TaxonomyEngine:
             if not parent:
                 break
             parent.usage_count = (parent.usage_count or 0) + 1
+            parent.last_used_at = now
             parent_id = parent.parent_id
 
         await db.flush()

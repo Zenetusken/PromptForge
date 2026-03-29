@@ -312,7 +312,7 @@ class PipelineOrchestrator:
             # Resolve domain via domain nodes (replaces hardcoded VALID_DOMAINS whitelist)
             if domain_resolver is not None:
                 effective_domain = await domain_resolver.resolve(
-                    db, analysis.domain or "general", confidence,
+                    analysis.domain or "general", confidence,
                 )
             else:
                 # Startup race or no domain_resolver — default to "general"

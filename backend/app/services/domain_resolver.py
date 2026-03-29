@@ -57,7 +57,7 @@ class DomainResolver:
         logger.info("DomainResolver loaded %d domain labels", len(self._domain_labels))
 
     async def resolve(
-        self, db: AsyncSession, domain_raw: str | None, confidence: float,
+        self, domain_raw: str | None, confidence: float,
     ) -> str:
         """Resolve a free-form domain string to a known domain label.
 

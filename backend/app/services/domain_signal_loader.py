@@ -90,7 +90,7 @@ class DomainSignalLoader:
             for cluster in clusters:
                 keywords = self._extract_keywords(cluster.cluster_metadata)
                 if keywords:
-                    new_signals[cluster.domain] = keywords
+                    new_signals[cluster.label] = keywords
 
             self._signals = new_signals
             self._precompile_patterns()

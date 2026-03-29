@@ -585,7 +585,7 @@ async def passthrough_save(
     opt.strategy_used = effective_strategy
     _domain_resolver = getattr(request.app.state, "domain_resolver", None)
     if _domain_resolver is not None:
-        validated_domain = await _domain_resolver.resolve(db, body.domain, confidence=1.0)
+        validated_domain = await _domain_resolver.resolve(body.domain, confidence=1.0)
     else:
         validated_domain = "general"
     opt.domain = validated_domain
