@@ -36,6 +36,27 @@ export function formatRelativeTime(isoString: string): string {
   return `${Math.floor(days / 365)}y`;
 }
 
+/** Trend threshold (absolute) below which the trend is considered stable. */
+const TREND_THRESHOLD = 0.1;
+
+/** Classify a trend value into label, color, and char for consistent display. */
+export function trendInfo(trend: number): { label: string; color: string; char: string } {
+  if (trend > TREND_THRESHOLD) {
+    return { label: 'improving', color: 'var(--color-neon-green)', char: '/' };
+  }
+  if (trend < -TREND_THRESHOLD) {
+    return { label: 'declining', color: 'var(--color-neon-red)', char: '\\' };
+  }
+  return { label: 'stable', color: 'var(--color-text-dim)', char: '-' };
+}
+
+/** Extract primary domain from "primary: qualifier" format, lowercased. */
+export function parsePrimaryDomain(domain: string | null | undefined): string {
+  if (!domain) return 'general';
+  const idx = domain.indexOf(':');
+  return (idx >= 0 ? domain.substring(0, idx).trim() : domain.trim()).toLowerCase() || 'general';
+}
+
 /** True when the result was produced via a passthrough flow (web or MCP). */
 export function isPassthroughResult(result: { provider?: string } | null | undefined): boolean {
   return result?.provider?.endsWith('_passthrough') === true;

@@ -5,7 +5,7 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
   import { scoreColor, taxonomyColor, stateColor } from '$lib/utils/colors';
-  import { formatScore } from '$lib/utils/formatting';
+  import { formatScore, parsePrimaryDomain } from '$lib/utils/formatting';
 
   const PAGE_SIZE = 50;
 
@@ -75,10 +75,10 @@
     })
   );
 
-  // Group filtered families by domain
+  // Group filtered families by primary domain (ignores qualifier from "primary: qualifier")
   let grouped = $derived(
     filteredFamilies.reduce<Record<string, ClusterNode[]>>((acc, f) => {
-      const d = f.domain || 'general';
+      const d = parsePrimaryDomain(f.domain);
       if (!acc[d]) acc[d] = [];
       acc[d].push(f);
       return acc;

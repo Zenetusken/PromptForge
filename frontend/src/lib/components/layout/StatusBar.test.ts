@@ -54,6 +54,11 @@ describe('StatusBar', () => {
       warm_path_age: null,
       q_history: [],
       q_sparkline: [],
+      q_trend: 0.15,
+      q_current: 0.8,
+      q_min: 0.5,
+      q_max: 0.9,
+      q_point_count: 10,
     };
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     render(StatusBar);
@@ -175,6 +180,11 @@ describe('StatusBar', () => {
       warm_path_age: null,
       q_history: [],
       q_sparkline: [],
+      q_trend: 0.15,
+      q_current: 0.82,
+      q_min: 0.5,
+      q_max: 0.9,
+      q_point_count: 10,
     };
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     render(StatusBar);
@@ -190,6 +200,90 @@ describe('StatusBar', () => {
     render(StatusBar);
     await vi.waitFor(() => {}, { timeout: 100 });
     expect(screen.queryByTitle('Taxonomy health (Q_system)')).not.toBeInTheDocument();
+  });
+
+  it('renders sparkline SVG when q_sparkline has sufficient data', async () => {
+    clustersStore.taxonomyStats = {
+      q_system: 0.8,
+      q_coherence: 0.7,
+      q_separation: 0.6,
+      q_coverage: 0.5,
+      q_dbcv: 0.4,
+      total_clusters: 5,
+      nodes: { active: 5, candidate: 1, mature: 0, template: 0, archived: 0, max_depth: 2, leaf_count: 4 },
+      last_warm_path: null,
+      last_cold_path: null,
+      warm_path_age: null,
+      q_history: [],
+      q_sparkline: [0.6, 0.7, 0.75, 0.8],
+      q_trend: 0.15,
+      q_current: 0.8,
+      q_min: 0.6,
+      q_max: 0.8,
+      q_point_count: 4,
+    };
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    render(StatusBar);
+    await vi.waitFor(() => {
+      expect(screen.getByRole('img', { name: 'Score progression sparkline' })).toBeInTheDocument();
+    });
+  });
+
+  it('shows improving trend indicator when q_trend > 0.1 and q_point_count >= 3', async () => {
+    clustersStore.taxonomyStats = {
+      q_system: 0.85,
+      q_coherence: 0.7,
+      q_separation: 0.6,
+      q_coverage: 0.5,
+      q_dbcv: 0.4,
+      total_clusters: 5,
+      nodes: { active: 5, candidate: 1, mature: 0, template: 0, archived: 0, max_depth: 2, leaf_count: 4 },
+      last_warm_path: null,
+      last_cold_path: null,
+      warm_path_age: null,
+      q_history: [],
+      q_sparkline: [0.6, 0.7, 0.85],
+      q_trend: 0.25,
+      q_current: 0.85,
+      q_min: 0.6,
+      q_max: 0.85,
+      q_point_count: 3,
+    };
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    render(StatusBar);
+    await vi.waitFor(() => {
+      const trendEl = screen.getByTitle(/Q trend: improving/);
+      expect(trendEl).toBeInTheDocument();
+      expect(trendEl.textContent).toBe('/');
+    });
+  });
+
+  it('does not show trend indicator when q_point_count < 3', async () => {
+    clustersStore.taxonomyStats = {
+      q_system: 0.8,
+      q_coherence: 0.7,
+      q_separation: 0.6,
+      q_coverage: 0.5,
+      q_dbcv: 0.4,
+      total_clusters: 5,
+      nodes: { active: 5, candidate: 1, mature: 0, template: 0, archived: 0, max_depth: 2, leaf_count: 4 },
+      last_warm_path: null,
+      last_cold_path: null,
+      warm_path_age: null,
+      q_history: [],
+      q_sparkline: [0.75, 0.8],
+      q_trend: 0.15,
+      q_current: 0.8,
+      q_min: 0.75,
+      q_max: 0.8,
+      q_point_count: 2,
+    };
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    render(StatusBar);
+    await vi.waitFor(() => {
+      expect(screen.getByTitle('Taxonomy health (Q_system)')).toBeInTheDocument();
+    });
+    expect(screen.queryByTitle(/Q trend/)).not.toBeInTheDocument();
   });
 
   it('cluster count updates when taxonomy stats change', async () => {
@@ -214,6 +308,11 @@ describe('StatusBar', () => {
       warm_path_age: null,
       q_history: [],
       q_sparkline: [],
+      q_trend: 0.15,
+      q_current: 0.8,
+      q_min: 0.5,
+      q_max: 0.9,
+      q_point_count: 10,
     };
 
     await vi.waitFor(() => {

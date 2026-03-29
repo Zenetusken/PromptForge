@@ -94,6 +94,11 @@ export interface ClusterStats {
     operations: number;
   }> | null;
   q_sparkline: number[] | null;
+  q_trend: number;
+  q_current: number | null;
+  q_min: number | null;
+  q_max: number | null;
+  q_point_count: number;
 }
 
 export interface ClusterMatchResponse {

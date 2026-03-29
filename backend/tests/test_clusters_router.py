@@ -75,6 +75,11 @@ class TestClusterStats:
         assert "q_system" in data
         assert "q_sparkline" in data
         assert "total_clusters" in data
+        assert "q_trend" in data
+        assert "q_current" in data
+        assert "q_min" in data
+        assert "q_max" in data
+        assert "q_point_count" in data
 
 
 class TestClusterDetail:

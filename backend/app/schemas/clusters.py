@@ -100,6 +100,11 @@ class ClusterStats(BaseModel):
     warm_path_age: float | None = None
     q_history: list[QHistoryEntry] = []
     q_sparkline: list[float] = []
+    q_trend: float = 0.0
+    q_current: float | None = None
+    q_min: float | None = None
+    q_max: float | None = None
+    q_point_count: int = 0
 
 
 class ClusterMatchResponse(BaseModel):

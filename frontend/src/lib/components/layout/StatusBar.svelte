@@ -6,8 +6,9 @@
   import { routing } from '$lib/stores/routing.svelte';
   import { taxonomyColor, qHealthColor } from '$lib/utils/colors';
   import { getPhaseLabel } from '$lib/utils/dimensions';
-  import { formatScore } from '$lib/utils/formatting';
+  import { formatScore, trendInfo } from '$lib/utils/formatting';
   import Logo from '$lib/components/shared/Logo.svelte';
+  import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
 
   // Tab-aware result: use per-tab cached data when available, fall back to global forge state
   const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
@@ -78,9 +79,22 @@
       <span class="status-patterns" title="{clusterCount} active clusters">{clusterCount} clusters</span>
     {/if}
     {#if clustersStore.taxonomyStats?.q_system != null}
+      {@const stats = clustersStore.taxonomyStats}
+      {@const qSystem = stats.q_system!}
+      {#if stats.q_sparkline && stats.q_sparkline.length >= 2}
+        <ScoreSparkline scores={stats.q_sparkline} width={60} height={14} />
+      {/if}
       <span class="statusbar-item" title="Taxonomy health (Q_system)">
-        Q: <span style="color: {qHealthColor(clustersStore.taxonomyStats.q_system)}">{clustersStore.taxonomyStats.q_system.toFixed(2)}</span>
+        Q: <span style="color: {qHealthColor(qSystem)}">{qSystem.toFixed(2)}</span>
       </span>
+      {#if stats.q_point_count >= 3}
+        {@const ti = trendInfo(stats.q_trend)}
+        <span
+          class="statusbar-trend"
+          title="Q trend: {ti.label}"
+          style="color: {ti.color}"
+        >{ti.char}</span>
+      {/if}
     {/if}
     <span class="status-kbd" aria-label="Open command palette with Ctrl+K">Ctrl+K</span>
   </div>
@@ -192,6 +206,14 @@
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--color-text-dim);
+    white-space: nowrap;
+  }
+
+  .statusbar-trend {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: bold;
+    margin-left: 1px;
     white-space: nowrap;
   }
 </style>

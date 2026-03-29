@@ -4,23 +4,38 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.8-dev — 2026-03-29
+
 ### Added
-- Unified domain taxonomy -- domains are now first-class taxonomy nodes discovered organically from user behavior (ADR-004)
+- Unified domain taxonomy — domains are now first-class taxonomy nodes discovered organically from user behavior (ADR-004)
 - `GET /api/domains` endpoint for dynamic domain palette
 - `POST /api/domains/{id}/promote` for manual cluster-to-domain promotion
-- Warm-path domain discovery with configurable thresholds
-- Domain stability guardrails (color pinning, retire exemption, merge approval, coherence floor, split isolation)
-- Tree integrity verification and auto-repair
-- Domain count and ceiling in health endpoint
-- Frontend domain store with SSE-driven invalidation
+- Warm-path domain discovery with configurable thresholds (5+ members, coherence ≥0.6, ≥60% consistency)
+- Domain stability guardrails: color pinning, retire exemption, merge approval gate, coherence floor (0.3), split creates candidates
+- Tree integrity verification with 5 checks and auto-repair (orphans, mismatches, persistence, self-refs, duplicates)
+- Domain count and ceiling (30) in health endpoint with frontend amber warning at 80%
+- Risk detection: signal staleness tracking, general domain stagnation monitor, domain archival suggestions
+- `DomainResolver` service — cached domain label lookup from DB, process-level singleton
+- `DomainSignalLoader` service — dynamic heuristic keyword signals from domain node metadata
+- `cluster_metadata` JSON column on `PromptCluster` for domain node configuration
+- Partial unique index `uq_prompt_cluster_domain_label` for DB-level domain label uniqueness
+- Frontend domain store (`domains.svelte.ts`) with SSE-driven invalidation
+- Stats endpoint extended with `q_trend`, `q_current`, `q_min`, `q_max`, `q_point_count`
+- Stats cache with 30s TTL, invalidated on warm/cold path completion
+- ScoreSparkline enhanced: configurable dimensions, baseline overlay, hover tooltips, per-dimension view
+- Inspector Q health sparkline with trend indicator (improving/stable/declining)
+- Inspector per-dimension score overlay (AVG/DIM toggle) for refinement sessions
+- `trendInfo()` and `parsePrimaryDomain()` formatting utilities
 
 ### Changed
-- Analyzer prompt template now uses dynamic `{{known_domains}}` variable
-- `taxonomyColor()` resolves from API-driven domain store instead of hardcoded map
-- Inspector domain picker loads available domains from API
+- Analyzer prompt template uses dynamic `{{known_domains}}` variable instead of hardcoded list
+- `taxonomyColor()` resolves from API-driven domain store instead of compile-time map
+- Inspector domain picker loads domains dynamically from API
 - StatusBar shows domain count with amber warning at 80% ceiling
-- Topology renders domain nodes at 2x size
+- Topology renders domain nodes at 2x size with warm amber state color
 - Heuristic analyzer domain classification driven by `DomainSignalLoader` (database-backed keywords)
+- Domain lifecycle: emerge inherits majority domain, split inherits parent domain
+- `DomainResolver.resolve()` signature simplified (removed unused `db` parameter)
 
 ### Removed
 - `VALID_DOMAINS` constant from `pipeline_constants.py`

@@ -23,7 +23,7 @@ from app.services.preferences import PreferencesService
 from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
 from app.tools._shared import DATA_DIR, get_domain_resolver
-from app.utils.text_cleanup import split_prompt_and_changes, title_case_label
+from app.utils.text_cleanup import parse_domain, split_prompt_and_changes, title_case_label
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,9 @@ async def handle_save_result(
         context_snapshot = None
         if codebase_context:
             context_snapshot = codebase_context[: settings.MAX_CODEBASE_CONTEXT_CHARS]
+
+        # Extract primary domain for whitelist validation; full string preserved in domain_raw
+        domain_primary, _ = parse_domain(domain)
 
         if opt:
             opt.optimized_prompt = optimized_prompt

@@ -95,7 +95,7 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 - `embedding_index.py` — in-memory numpy EmbeddingIndex (384-dim, `all-MiniLM-L6-v2`). O(1) upsert/remove, batch cosine search. Used by taxonomy engine hot/warm/cold paths.
 - `prompt_lifecycle.py` — auto-curation service: state promotion (active→mature→template), quality pruning (flag+archive), temporal usage decay (0.9× after 30d), strategy affinity tracking, orphan backfill. Called post-hot-path and post-warm-path.
 - `routing.py` — intelligent routing service: `RoutingState` (immutable capabilities snapshot), `RoutingContext` (per-request), `RoutingDecision` (tier + reason), `resolve_route()` (pure 5-tier decision function), `RoutingManager` (process-level singleton, state lifecycle, SSE events, dual disconnect signals, persistence recovery). See `backend/CLAUDE.md` for routing internals
-- `taxonomy/` — evolutionary taxonomy engine. Process-wide singleton via `get_engine()`/`set_engine()` with thread-safe double-checked locking. `engine.py` orchestrates 3 paths: hot (per-optimization embedding + nearest-node cosine search), warm (periodic HDBSCAN clustering + speculative lifecycle mutations gated by Q_system non-regression), cold (full refit + UMAP 3D projection + OKLab coloring + Haiku labeling). Sub-modules: `clustering.py` (HDBSCAN wrapper), `lifecycle.py` (emerge/merge/split/retire operations), `quality.py` (5-dimension Q_system with adaptive weights), `projection.py` (UMAP + Procrustes alignment + PCA fallback), `coloring.py` (OKLab from UMAP position), `labeling.py` (Haiku 2-4 word labels), `snapshot.py` (audit trail CRUD + retention), `sparkline.py` (LTTB downsampling + OLS trend), `family_ops.py` (family CRUD), `matching.py` (cascade search), `embedding_index.py` (numpy index). Key types: `TaxonomyMapping` (domain embed result), `PatternMatch` (cascade search result), `QWeights` (frozen constant-sum weights), `SparklineData`
+- `taxonomy/` — evolutionary taxonomy engine. Process-wide singleton via `get_engine()`/`set_engine()` with thread-safe double-checked locking. `engine.py` orchestrates 3 paths: hot (per-optimization embedding + nearest-node cosine search), warm (periodic HDBSCAN clustering + speculative lifecycle mutations gated by Q_system non-regression + domain discovery + risk monitoring + tree integrity), cold (full refit + UMAP 3D projection + OKLab coloring + Haiku labeling). Domain discovery: `_propose_domains()` creates domain nodes from coherent "general" sub-populations with TF-IDF keyword extraction, re-parenting, and optimization backfill. Risk detection: `_monitor_general_health()`, `_check_signal_staleness()`, `_refresh_domain_signals()`, `_suggest_domain_archival()`. Tree integrity: `verify_domain_tree_integrity()` (5 checks) + `_repair_tree_violations()` (auto-repair). Stats cache: `get_stats()` cached 30s TTL, invalidated on warm/cold completion. Sub-modules: `clustering.py` (HDBSCAN wrapper), `lifecycle.py` (emerge/merge/split/retire + `GuardrailViolationError` domain assertions + domain inheritance), `quality.py` (5-dimension Q_system with adaptive weights + `coherence_threshold()` domain floor), `projection.py` (UMAP + Procrustes alignment + PCA fallback), `coloring.py` (OKLab from UMAP position + `compute_max_distance_color()` for domains), `labeling.py` (Haiku 2-4 word labels), `snapshot.py` (audit trail CRUD + retention), `sparkline.py` (LTTB downsampling + OLS trend), `family_ops.py` (family CRUD), `matching.py` (cascade search), `embedding_index.py` (numpy index). Key types: `TaxonomyMapping` (domain embed result), `PatternMatch` (cascade search result), `QWeights` (frozen constant-sum weights), `SparklineData`
 
 ### Model configuration
 Model IDs are centralized in `config.py` as `MODEL_SONNET`, `MODEL_OPUS`, `MODEL_HAIKU` (default: `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`). Never hardcode model IDs in service code — use `PreferencesService.resolve_model(phase, snapshot)` which maps user preferences to full model IDs.
@@ -119,9 +119,10 @@ Provider is detected **once at startup** and stored on `app.state.routing` (a `R
 - `settings.py` — `GET /api/settings` (read-only server config)
 - `github_auth.py` — OAuth flow (login, callback, me, logout)
 - `github_repos.py` — repo management (list, link, linked, unlink)
-- `health.py` — `GET /api/health` (status, provider, score_health, recent_errors, avg_duration_ms, sampling_capable, mcp_disconnected, available_tiers)
+- `health.py` — `GET /api/health` (status, provider, score_health, recent_errors, avg_duration_ms, sampling_capable, mcp_disconnected, available_tiers, domain_count, domain_ceiling)
 - `events.py` — `GET /api/events` (SSE event stream), `POST /api/events/_publish` (internal cross-process)
-- `clusters.py` — `GET /api/clusters` (paginated list with state/domain filter), `GET /api/clusters/{id}` (detail with children/breadcrumb/optimizations), `POST /api/clusters/match` (paste-time similarity), `GET /api/clusters/tree` (flat node list for 3D viz), `GET /api/clusters/stats` (Q metrics + sparkline), `GET /api/clusters/templates` (proven templates), `POST /api/clusters/recluster` (cold-path trigger), `PATCH /api/clusters/{id}` (rename/state override). Legacy 301 redirects for `/api/patterns/*` and `/api/taxonomy/*`.
+- `domains.py` — `GET /api/domains` (list domain nodes with labels/colors/metadata), `POST /api/domains/{id}/promote` (promote cluster to domain with OKLab color + event emission)
+- `clusters.py` — `GET /api/clusters` (paginated list with state/domain filter), `GET /api/clusters/{id}` (detail with children/breadcrumb/optimizations), `POST /api/clusters/match` (paste-time similarity), `GET /api/clusters/tree` (flat node list for 3D viz, includes domain nodes), `GET /api/clusters/stats` (Q metrics + sparkline + trend), `GET /api/clusters/templates` (proven templates), `POST /api/clusters/recluster` (cold-path trigger), `PATCH /api/clusters/{id}` (rename/state override, domain validated against domain nodes). Legacy 301 redirects for `/api/patterns/*` and `/api/taxonomy/*`.
 
 ### Sort column whitelist
 `optimization_service.py` defines `VALID_SORT_COLUMNS`. Add new sortable columns there before using them.
@@ -131,7 +132,7 @@ Provider is detected **once at startup** and stored on `app.state.routing` (a `R
 - `app/dependencies/rate_limit.py` — in-memory rate limiting FastAPI dependency via `limits` library
 
 ### Cluster and snapshot models (`app/models.py`)
-- `PromptCluster` — unified cluster model. UUID PK, self-join `parent_id`, L2-normalized centroid embedding (384-dim), per-node metrics (coherence, separation, stability, persistence), lifecycle state (`candidate`|`active`|`mature`|`template`|`archived`), intent/domain/task_type, member/usage counts, avg_score, preferred_strategy, promoted_at/archived_at timestamps.
+- `PromptCluster` — unified cluster model. UUID PK, self-join `parent_id`, L2-normalized centroid embedding (384-dim), per-node metrics (coherence, separation, stability, persistence), lifecycle state (`candidate`|`active`|`mature`|`template`|`archived`|`domain`), intent/domain/task_type, member/usage counts, avg_score, preferred_strategy, `cluster_metadata` (JSON, nullable — domain node configuration: source, signal_keywords, discovered_at), promoted_at/archived_at timestamps. Partial unique index enforces domain label uniqueness.
 - `TaxonomySnapshot` — audit trail. UUID PK, trigger (`warm_path`|`cold_path`|`manual`), system metrics (q_system, q_coherence, q_separation, q_coverage, q_dbcv), operation log + tree_state (JSON), node creation/retirement/merge/split counts.
 - `MetaPattern` — reusable technique extracted from cluster members. `embedding` (bytes), `pattern_text`, `source_count`, `cluster_id` FK.
 - `OptimizationPattern` — join table linking `Optimization` → `PromptCluster` with similarity score and relationship type.
@@ -153,6 +154,7 @@ Provider is detected **once at startup** and stored on `app.state.routing` (a `R
 - `routing.svelte.ts` — unified derived routing state mirroring backend 5-tier priority chain (force_passthrough > force_sampling > internal > auto_sampling > passthrough). Reactive tier resolver for UI adaptation
 - `passthrough-guide.svelte.ts` — passthrough workflow guide modal state (visibility, "don't show again" preference)
 - `clusters.svelte.ts` — cluster state: paste detection (50-char delta, 300ms debounce), suggestion lifecycle (auto-dismiss 10s), cluster tree/stats for topology, cluster detail for Inspector, template spawning, graph invalidation via `taxonomy_changed` SSE
+- `domains.svelte.ts` — API-driven domain palette. Fetches from `GET /api/domains`, caches `colors` (label→hex) and `labels` (sorted). `colorFor()` resolves domain to color with keyword fallback. Invalidated on `domain_created` and `taxonomy_changed` SSE events
 
 ### Component layout
 ```
@@ -168,7 +170,7 @@ src/lib/components/
 ```
 
 ### Shared frontend utilities
-- `utils/colors.ts` — `scoreColor()`, `taxonomyColor()` (hex/domain/null → color), `qHealthColor()`, `stateColor()`. Used by Navigator, ClusterNavigator, Inspector, StatusBar, TopologyControls
+- `utils/colors.ts` — `scoreColor()`, `taxonomyColor()` (delegates to `domainStore.colorFor()`), `qHealthColor()`, `stateColor()` (includes `domain` state → amber). No hardcoded domain color maps — all resolved from API-driven domain store
 
 ## Prompt templates
 

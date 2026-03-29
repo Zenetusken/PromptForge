@@ -115,7 +115,8 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Workspace scanning** — automatically discovers CLAUDE.md, AGENTS.md, GEMINI.md, .cursorrules, .clinerules, CONVENTIONS.md for context injection. Monorepo-aware: `discover_project_dirs()` scans manifest-containing subdirectories with SHA256 deduplication
 - **Hybrid scoring** — LLM scores blended with heuristic analysis (structure, readability, constraint density) + z-score normalization against historical distribution. Dimension-specific weights prevent single-model bias. Divergence flags when LLM and heuristic disagree by >2.5 points
 - **Real-time events** — SSE-based event bus with toast notifications for file changes, MCP operations, and pipeline status
-- **Evolutionary taxonomy engine** — self-organizing hierarchical clustering that groups optimizations into a navigable taxonomy. Three execution paths: hot (per-optimization embedding + nearest-node search), warm (periodic HDBSCAN re-clustering with speculative lifecycle mutations), cold (full refit + UMAP 3D projection + OKLab coloring + Haiku labeling). Quality-gated: 5-dimension Q_system score (coherence, separation, coverage, DBCV, stability) prevents regressions. Snapshot audit trail for recovery
+- **Evolutionary taxonomy engine** — self-organizing hierarchical clustering that groups optimizations into a navigable taxonomy. Three execution paths: hot (per-optimization embedding + nearest-node search), warm (periodic HDBSCAN re-clustering with speculative lifecycle mutations + domain discovery), cold (full refit + UMAP 3D projection + OKLab coloring + Haiku labeling). Quality-gated: 5-dimension Q_system score (coherence, separation, coverage, DBCV, stability) prevents regressions. Snapshot audit trail for recovery
+- **Unified domain taxonomy** — domains are `PromptCluster` nodes with `state="domain"`, discovered organically from user behavior. No hardcoded domain constants — `DomainResolver` resolves from DB, `DomainSignalLoader` provides heuristic keyword signals from domain node metadata. Warm path proposes new domains when coherent sub-populations emerge under "general". Five stability guardrails prevent drift: color pinning, retire exemption, merge approval, separate coherence floor, split isolation. Stats cache with trend tracking
 - **3D taxonomy visualization** — Three.js interactive topology with LOD tiers (far/mid/near) based on persistence thresholds. Click-to-focus navigation, raycasting hover, billboard labels, force-directed collision resolution, Ctrl+F search, Q_system badge, and recluster controls
 - **Pattern suggestion on paste** — embeds pasted text, cosine-searches active clusters (≥0.72), suggests matching clusters with 1-click apply (50-char delta, 300ms debounce, 10s auto-dismiss). Applied patterns injected into optimizer context
 - **Bidirectional history–clusters navigation** — history items show intent labels and domain badges. Loading an optimization auto-selects its cluster in Inspector. Clicking a linked optimization in a cluster detail loads it in the editor. Live cluster link: background pattern extraction triggers automatic UI sync via SSE
@@ -164,13 +165,13 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (~90s, 1101 tests)
+# Backend tests (~90s, 1160+ tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
-# Frontend type check (935 files)
+# Frontend type check
 cd frontend && npx svelte-check
 
-# Frontend tests (876 tests)
+# Frontend tests (880+ tests)
 cd frontend && npm test
 
 # Frontend build
@@ -196,6 +197,8 @@ cd frontend && npm run build
 | `/api/settings` | GET | Read-only server config |
 | `/api/health` | GET | Health + pipeline metrics |
 | `/api/events` | GET (SSE) | Real-time event stream |
+| `/api/domains` | GET | List domain nodes (labels, colors, metadata) |
+| `/api/domains/{id}/promote` | POST | Promote cluster to domain status |
 | `/api/clusters` | GET | List clusters (paginated, state/domain filter) |
 | `/api/clusters/{id}` | GET | Cluster detail (children, breadcrumb, optimizations) |
 | `/api/clusters/{id}` | PATCH | Rename/state override |
@@ -211,9 +214,9 @@ cd frontend && npm run build
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) for planned improvements. Key upcoming items:
 
-- **Multi-label domain tags** — replace single domain field with `domain_tags` for multi-dimensional classification
 - **Unified scoring service** — consolidate duplicated scoring orchestration across all pipeline tiers
 - **Conciseness heuristic calibration** — domain-aware TTR adjustment for technical specification prompts
+- **Alembic migration** — production migration for domain node seeding and cluster re-parenting
 
 ## License
 

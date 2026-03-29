@@ -1252,6 +1252,29 @@ class TestDomainValidation:
         assert opt.domain == "general"
         assert opt.domain_raw == "custom_domain"
 
+    async def test_save_qualified_domain_extracts_primary(self, app_client, db_session):
+        """'backend: security' extracts 'backend' for domain, preserves full in domain_raw."""
+        prep = await self._prepare(app_client)
+        resp = await app_client.post(
+            "/api/optimize/passthrough/save",
+            json={
+                "trace_id": prep["trace_id"],
+                "optimized_prompt": LONG_OPTIMIZED,
+                "domain": "backend: security",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["domain"] == "backend"
+
+        # Verify DB stores primary in domain, full qualifier in domain_raw
+        result = await db_session.execute(
+            select(Optimization).where(Optimization.trace_id == prep["trace_id"])
+        )
+        opt = result.scalar_one()
+        assert opt.domain == "backend"
+        assert opt.domain_raw == "backend: security"
+
     async def test_save_all_valid_domains_accepted(self, app_client):
         """Every valid domain value is accepted without fallback."""
         from app.dependencies.rate_limit import _storage

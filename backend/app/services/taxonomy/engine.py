@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -105,6 +106,8 @@ class TaxonomyEngine:
             automatically.  Falls back to *provider* if not given.
     """
 
+    _STATS_CACHE_TTL: float = 30.0  # seconds — stats endpoint TTL
+
     def __init__(
         self,
         embedding_service: EmbeddingService | None = None,
@@ -126,6 +129,9 @@ class TaxonomyEngine:
         self._warm_path_age: int = 0
         # Set by deadlock breaker — caller should schedule cold path.
         self._cold_path_needed: bool = False
+        # Stats cache — monotonic TTL, invalidated on warm/cold path completion.
+        self._stats_cache: dict | None = None
+        self._stats_cache_time: float = 0.0
 
     @property
     def _provider(self) -> LLMProvider | None:
@@ -605,6 +611,7 @@ class TaxonomyEngine:
             )
 
         # 6. Create snapshot
+        self._invalidate_stats_cache()
         self._warm_path_age += 1
         snap = await self._create_warm_snapshot(
             db,
@@ -920,6 +927,7 @@ class TaxonomyEngine:
 
         # 9. Create snapshot — commits all pending node updates AND the
         # snapshot in a single transaction (matching the warm-path pattern).
+        self._invalidate_stats_cache()
         snap = await create_snapshot(
             db,
             trigger="cold_path",
@@ -1689,7 +1697,15 @@ class TaxonomyEngine:
         node_dict["breadcrumb"] = await build_breadcrumb(db, node)
         return node_dict
 
+    def _invalidate_stats_cache(self) -> None:
+        """Clear the stats cache after a warm or cold path mutation."""
+        self._stats_cache = None
+
     async def get_stats(self, db: AsyncSession) -> dict:
+        now = time.monotonic()
+        if self._stats_cache is not None and (now - self._stats_cache_time) < self._STATS_CACHE_TTL:
+            return self._stats_cache
+
         # Node state counts via GROUP BY (avoids loading full ORM objects + blobs)
         state_result = await db.execute(
             select(PromptCluster.state, func.count(PromptCluster.id)).group_by(
@@ -1781,7 +1797,7 @@ class TaxonomyEngine:
             if last_warm_path is not None and last_cold_path is not None:
                 break
 
-        return {
+        result = {
             "q_system": q_system,
             "q_coherence": q_coherence,
             "q_separation": q_separation,
@@ -1799,10 +1815,20 @@ class TaxonomyEngine:
             },
             "q_history": q_history,
             "q_sparkline": sparkline.normalized,
+            "q_trend": sparkline.trend,
+            "q_current": sparkline.current if sparkline.point_count > 0 else None,
+            "q_min": sparkline.min if sparkline.point_count > 0 else None,
+            "q_max": sparkline.max if sparkline.point_count > 0 else None,
+            "q_point_count": sparkline.point_count,
             "last_warm_path": last_warm_path,
             "last_cold_path": last_cold_path,
             "warm_path_age": self._warm_path_age,
         }
+
+        self._stats_cache = result
+        self._stats_cache_time = time.monotonic()
+
+        return result
 
     async def increment_usage(self, cluster_id: str, db: AsyncSession) -> None:
         """Increment usage on the cluster and propagate up the taxonomy tree.

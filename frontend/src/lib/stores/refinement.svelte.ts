@@ -24,6 +24,17 @@ class RefinementStore {
       });
   }
 
+  get dimensionProgressions(): Record<string, number[]> {
+    const dims: Record<string, number[]> = {};
+    for (const t of this.turns) {
+      if (!t.scores) continue;
+      for (const [key, value] of Object.entries(t.scores)) {
+        (dims[key] ??= []).push(value);
+      }
+    }
+    return dims;
+  }
+
   get currentVersion(): RefinementTurn | null {
     return this.turns.length > 0 ? this.turns[this.turns.length - 1] : null;
   }

@@ -4,7 +4,7 @@
   import { clustersStore } from '$lib/stores/clusters.svelte';
   import { domainStore } from '$lib/stores/domains.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
-  import { taxonomyColor, scoreColor, qHealthColor, stateColor } from '$lib/utils/colors';
+  import { taxonomyColor, scoreColor, qHealthColor, stateColor, DIMENSION_COLORS } from '$lib/utils/colors';
 
   /** Deduplicate array by `id` field (prevents Svelte keyed each errors). */
   function dedupe<T extends { id: string }>(items: T[]): T[] {
@@ -21,8 +21,8 @@
   import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
-  import { PHASE_LABELS } from '$lib/utils/dimensions';
-  import { formatScore, truncateText, isPassthroughResult } from '$lib/utils/formatting';
+  import { PHASE_LABELS, DIMENSION_LABELS } from '$lib/utils/dimensions';
+  import { formatScore, truncateText, isPassthroughResult, trendInfo, parsePrimaryDomain } from '$lib/utils/formatting';
 
   // Tab-aware result: use per-tab cached data when available, fall back to global forge state
   const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
@@ -95,6 +95,8 @@
   // Domain picker state
   let domainPickerOpen = $state(false);
   let domainSaving = $state(false);
+
+  let showDimensions = $state(false);
 
   function toggleDomainPicker(): void {
     domainPickerOpen = !domainPickerOpen;
@@ -225,7 +227,7 @@
                 {#each domainStore.labels as d (d)}
                   <button
                     class="domain-option"
-                    class:domain-option--active={d === family.domain}
+                    class:domain-option--active={d === parsePrimaryDomain(family.domain)}
                     style="background: {taxonomyColor(d)};"
                     onclick={() => selectDomain(d)}
                     disabled={domainSaving}
@@ -338,6 +340,15 @@
             <span class="metric-label">Separation</span>
             <span class="metric-value">{stats.q_separation?.toFixed(3) ?? '—'}</span>
           </div>
+          {#if stats.q_sparkline && stats.q_sparkline.length >= 2}
+            <div class="health-sparkline">
+              <ScoreSparkline scores={stats.q_sparkline} width={100} height={18} />
+              {#if stats.q_point_count >= 3}
+                {@const ti = trendInfo(stats.q_trend)}
+                <span class="health-trend" style="color: {ti.color}">{ti.label}</span>
+              {/if}
+            </div>
+          {/if}
           <div class="health-counts">
             <span>{stats.nodes?.active ?? 0} active</span>
             <span class="dot-sep">·</span>
@@ -488,8 +499,53 @@
 
         {#if refinementStore.scoreProgression.length >= 2}
           <div class="sparkline-section">
-            <div class="section-heading" style="margin-bottom: 4px;">Score Trend</div>
-            <ScoreSparkline scores={refinementStore.scoreProgression} />
+            <div class="section-heading" style="margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              Score Trend
+              <button
+                class="dim-toggle"
+                onclick={() => showDimensions = !showDimensions}
+                title={showDimensions ? 'Show average' : 'Show per-dimension'}
+              >{showDimensions ? 'AVG' : 'DIM'}</button>
+            </div>
+            {#if showDimensions}
+              {@const dimData = refinementStore.dimensionProgressions}
+              {@const allValues = Object.values(dimData).flat()}
+              {@const globalMin = allValues.length > 0 ? Math.min(...allValues) : 0}
+              {@const globalMax = allValues.length > 0 ? Math.max(...allValues) : 1}
+              {@const globalRange = globalMax - globalMin || 1}
+              <!-- Matches ScoreSparkline defaults: 120x24, padding=2 -->
+              <svg
+                width={120}
+                height={24}
+                viewBox="0 0 120 24"
+                class="sparkline"
+                aria-label="Per-dimension score progression"
+                role="img"
+              >
+                {#each Object.entries(dimData) as [dim, values]}
+                  {#if values.length >= 2}
+                    {@const step = 116 / (values.length - 1)}
+                    {@const pts = values.map((v, i) => `${2 + i * step},${22 - ((v - globalMin) / globalRange) * 20}`).join(' ')}
+                    <polyline
+                      points={pts}
+                      fill="none"
+                      stroke={DIMENSION_COLORS[dim] ?? 'var(--color-text-dim)'}
+                      stroke-width="1"
+                      stroke-linejoin="round"
+                      stroke-linecap="round"
+                      opacity="0.8"
+                    >
+                      <title>{DIMENSION_LABELS[dim] ?? dim}</title>
+                    </polyline>
+                  {/if}
+                {/each}
+              </svg>
+            {:else}
+              <ScoreSparkline
+                scores={refinementStore.scoreProgression}
+                baseline={refinementStore.scoreProgression.length > 0 ? refinementStore.scoreProgression[0] : null}
+              />
+            {/if}
             <span class="sparkline-label">{refinementStore.turns.length} versions</span>
           </div>
         {/if}
@@ -735,6 +791,36 @@
     font-size: 10px;
     font-family: var(--font-mono);
     color: var(--color-text-dim);
+  }
+
+  .dim-toggle {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--color-text-dim);
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    padding: 0 4px;
+    cursor: pointer;
+    line-height: 14px;
+    transition: color 200ms, border-color 200ms;
+  }
+
+  .dim-toggle:hover {
+    color: var(--color-text-primary);
+    border-color: var(--color-neon-cyan);
+  }
+
+  .health-sparkline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .health-trend {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    white-space: nowrap;
   }
 
   /* Pattern family detail */

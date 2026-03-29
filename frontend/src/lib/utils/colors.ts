@@ -51,3 +51,12 @@ export function stateColor(state: string): string {
   };
   return map[state] ?? '#7a7a9e';
 }
+
+/** Per-dimension colors for multi-line sparkline overlay. */
+export const DIMENSION_COLORS: Record<string, string> = {
+  clarity: 'var(--color-neon-cyan)',
+  specificity: 'var(--color-neon-purple)',
+  structure: 'var(--color-neon-blue)',
+  faithfulness: 'var(--color-neon-green)',
+  conciseness: 'var(--color-neon-orange)',
+};

@@ -7,13 +7,7 @@
 import type { ClusterNode } from '$lib/api/clusters';
 import type { LODTier } from './TopologyRenderer';
 import { taxonomyColor, stateColor } from '$lib/utils/colors';
-
-/** Extract primary domain from "primary: qualifier" format. */
-function parsePrimaryDomain(domain: string | null): string {
-  if (!domain) return 'general';
-  const idx = domain.indexOf(':');
-  return idx >= 0 ? domain.substring(0, idx).trim().toLowerCase() : domain.toLowerCase();
-}
+import { parsePrimaryDomain } from '$lib/utils/formatting';
 
 export interface SceneNode {
   id: string;

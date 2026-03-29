@@ -12,10 +12,10 @@ Living document tracking planned improvements. Items are prioritized but not sch
 
 ## Planned
 
-### Multi-label domain classification
+### Alembic migration for domain node seeding
 **Status:** Planned
-**Context:** Domain classification currently uses a single `domain` field with "primary: qualifier" convention in `domain_raw`. Cross-cutting concerns (e.g., backend + security) are expressed but the data model is single-valued. A proper `domain_tags: list[str]` column on Optimization and PromptCluster would enable multi-label classification, richer cluster grouping, and more accurate cross-domain edge generation in the Pattern Graph.
-**Prerequisite:** Alembic migration, schema change to both models, update all save paths
+**Context:** The unified domain taxonomy (ADR-004) added `cluster_metadata` column and domain node support at the model layer. Production databases need an Alembic migration to: (1) add the `cluster_metadata` JSON column, (2) create the partial unique index, (3) insert 7 seed domain nodes with centroid embeddings and keyword metadata, (4) re-parent existing clusters under matching domain nodes, (5) backfill `Optimization.domain` for resolvable `domain_raw` values. Migration must be idempotent and reversible.
+**Spec:** `docs/superpowers/specs/2026-03-28-unified-domain-taxonomy-design.md` Section 12
 
 ### Unified scoring service
 **Status:** Planned
@@ -45,7 +45,10 @@ Living document tracking planned improvements. Items are prioritized but not sch
 
 ## Completed (recent)
 
-### Multi-dimensional domain classification (v0.3.6-dev)
+### Unified domain taxonomy (v0.3.8-dev)
+Domains are `PromptCluster` nodes with `state="domain"`. Replaces all hardcoded domain constants (`VALID_DOMAINS`, `DOMAIN_COLORS`, `KNOWN_DOMAINS`, `_DOMAIN_SIGNALS`). `DomainResolver` and `DomainSignalLoader` provide cached DB-driven resolution. Warm path discovers new domains organically from coherent "general" sub-populations. Five stability guardrails, tree integrity with auto-repair, stats cache with trend tracking. Supersedes the planned "Multi-label domain classification" item — ADR-004 chose a different architectural approach. See `docs/adr/ADR-004-unified-domain-taxonomy.md`.
+
+### Multi-dimensional domain classification (v0.3.7-dev)
 LLM analyze prompt and heuristic analyzer now output "primary: qualifier" format (e.g., "backend: security"). Taxonomy clustering, Pattern Graph edges, and color resolution all parse the primary domain for comparison while preserving the full qualifier for display. Zero schema changes required.
 
 ### Zero-LLM heuristic suggestions (v0.3.6-dev)
