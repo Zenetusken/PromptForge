@@ -22,7 +22,7 @@
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
   import { PHASE_LABELS, DIMENSION_LABELS } from '$lib/utils/dimensions';
-  import { formatScore, truncateText, isPassthroughResult, trendInfo, parsePrimaryDomain } from '$lib/utils/formatting';
+  import { formatScore, truncateText, isPassthroughResult, trendInfo, parsePrimaryDomain, formatRelativeTime } from '$lib/utils/formatting';
 
   // Tab-aware result: use per-tab cached data when available, fall back to global forge state
   const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
@@ -247,7 +247,7 @@
 
           <!-- Stats row -->
           <div class="meta-section">
-            <div class="meta-row">
+            <div class="meta-row" title="Times this cluster's patterns were applied to new optimizations">
               <span class="meta-label">Usage</span>
               <span class="meta-value meta-value--cyan">{family.usage_count}</span>
             </div>
@@ -269,11 +269,12 @@
 
           <!-- State transition actions -->
           {#if family.state === 'active' || family.state === 'mature'}
+            {@const canPromote = family.member_count >= 3 || family.usage_count >= 1}
             <button
               class="action-btn action-btn--primary"
               onclick={() => promoteCluster('template')}
-              disabled={promoteSaving}
-              title="Promote this cluster to template state"
+              disabled={promoteSaving || !canPromote}
+              title={canPromote ? "Promote this cluster to template state" : "Needs 3+ members or 1+ pattern usage to promote"}
             >Promote to template</button>
           {/if}
           {#if family.state === 'archived'}
@@ -290,7 +291,7 @@
             <div class="family-section">
               <div class="section-heading" style="margin-bottom: 4px;">
                 {#if family.state === 'domain'}
-                  Top Patterns ({family.member_count} clusters)
+                  Top Patterns ({family.member_count} {family.member_count === 1 ? 'cluster' : 'clusters'})
                 {:else if family.state === 'archived'}
                   Meta-patterns (archived)
                 {:else}
@@ -336,6 +337,9 @@
                     title={opt.raw_prompt}
                   >
                     <span class="opt-prompt">{opt.intent_label || truncateText(opt.raw_prompt)}</span>
+                    {#if opt.created_at}
+                      <span class="opt-date font-mono">{formatRelativeTime(opt.created_at)}</span>
+                    {/if}
                     <span class="opt-score" class:opt-score--null={opt.overall_score === null}>
                       {formatScore(opt.overall_score)}
                     </span>
@@ -1169,6 +1173,12 @@
     text-overflow: ellipsis;
     flex: 1;
     min-width: 0;
+  }
+
+  .opt-date {
+    font-size: 8px;
+    color: var(--color-text-dim);
+    flex-shrink: 0;
   }
 
   .opt-score {
