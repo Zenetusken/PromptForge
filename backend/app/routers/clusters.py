@@ -178,13 +178,37 @@ async def get_cluster_detail(
         children_raw = node.get("children", [])
         breadcrumb_raw = node.get("breadcrumb", [])
 
-        # Meta-patterns from DB
-        meta_result = await db.execute(
-            select(MetaPattern)
-            .where(MetaPattern.cluster_id == cluster_id)
-            .order_by(MetaPattern.source_count.desc())
-        )
-        meta_patterns = meta_result.scalars().all()
+        # Meta-patterns: aggregate from child clusters for domain nodes,
+        # query own patterns for regular clusters
+        is_domain_node = node.get("state") == "domain"
+        if is_domain_node:
+            # Aggregate top patterns across all child clusters in this domain
+            meta_result = await db.execute(
+                select(MetaPattern)
+                .join(PromptCluster, MetaPattern.cluster_id == PromptCluster.id)
+                .where(
+                    PromptCluster.domain == node.get("label", ""),
+                    PromptCluster.state != "domain",
+                )
+                .order_by(MetaPattern.source_count.desc())
+            )
+            all_patterns = meta_result.scalars().all()
+            # Deduplicate by pattern_text, summing source_count
+            seen: dict[str, MetaPattern] = {}
+            for mp in all_patterns:
+                key = mp.pattern_text[:500]
+                if key in seen:
+                    seen[key].source_count += mp.source_count
+                else:
+                    seen[key] = mp
+            meta_patterns = sorted(seen.values(), key=lambda m: m.source_count, reverse=True)[:10]
+        else:
+            meta_result = await db.execute(
+                select(MetaPattern)
+                .where(MetaPattern.cluster_id == cluster_id)
+                .order_by(MetaPattern.source_count.desc())
+            )
+            meta_patterns = meta_result.scalars().all()
 
         # Linked optimizations (most recent 20)
         opt_result = await db.execute(

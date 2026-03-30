@@ -285,10 +285,18 @@
             >Unarchive</button>
           {/if}
 
-          <!-- Meta-patterns -->
+          <!-- Meta-patterns (context-aware by node state) -->
           {#if family.meta_patterns.length > 0}
             <div class="family-section">
-              <div class="section-heading" style="margin-bottom: 4px;">Meta-patterns</div>
+              <div class="section-heading" style="margin-bottom: 4px;">
+                {#if family.state === 'domain'}
+                  Top Patterns ({family.member_count} clusters)
+                {:else if family.state === 'archived'}
+                  Meta-patterns (archived)
+                {:else}
+                  Meta-patterns
+                {/if}
+              </div>
               <div class="pattern-list">
                 {#each dedupe(family.meta_patterns) as mp (mp.id)}
                   <div class="pattern-item">
@@ -297,6 +305,22 @@
                   </div>
                 {/each}
               </div>
+            </div>
+          {:else if family.state === 'domain' && family.member_count > 0}
+            <div class="family-section">
+              <p class="empty-note">Patterns emerge as optimizations accumulate</p>
+            </div>
+          {:else if family.state === 'domain' && family.member_count === 0}
+            <div class="family-section">
+              <p class="empty-note">No clusters in this domain yet</p>
+            </div>
+          {:else if family.state === 'candidate'}
+            <div class="family-section">
+              <p class="empty-note">Patterns extracted after promotion to active</p>
+            </div>
+          {:else if family.state === 'archived'}
+            <div class="family-section">
+              <p class="empty-note">No meta-patterns were extracted</p>
             </div>
           {/if}
 
