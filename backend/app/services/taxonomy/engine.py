@@ -469,10 +469,22 @@ class TaxonomyEngine:
                                         model=settings.MODEL_HAIKU,
                                     )
 
+                                    # Compute avg_score from member optimizations
+                                    score_q = await db.execute(
+                                        select(func.avg(Optimization.overall_score)).where(
+                                            Optimization.id.in_(group_opt_ids),
+                                            Optimization.overall_score.isnot(None),
+                                        )
+                                    )
+                                    child_avg_score = score_q.scalar()
+                                    if child_avg_score is not None:
+                                        child_avg_score = round(child_avg_score, 2)
+
                                     child_node = PromptCluster(
                                         label=label,
                                         centroid_embedding=centroid.astype(np.float32).tobytes(),
                                         member_count=len(group_opt_ids),
+                                        avg_score=child_avg_score,
                                         coherence=child_coherence,
                                         state="active",
                                         domain=parent_domain,
