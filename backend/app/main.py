@@ -4,10 +4,6 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-# Configure root logger so app.services.* INFO messages reach stderr/log file.
-# Uvicorn sets up its own loggers but doesn't propagate to third-party loggers.
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-
 import aiosqlite
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +12,11 @@ from app._version import __version__
 from app.config import DATA_DIR, PROMPTS_DIR, settings
 from app.services.event_bus import event_bus
 from app.services.file_watcher import watch_strategy_files
+
+# Configure root logger so app.services.* INFO messages reach stderr/log file.
+# Uvicorn sets up its own loggers but doesn't propagate to third-party loggers.
+# Must be called after imports but before any logger.getLogger() usage.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 logger = logging.getLogger(__name__)
 

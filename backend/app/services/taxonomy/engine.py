@@ -519,6 +519,7 @@ class TaxonomyEngine:
         # optimization embeddings, causing 0.0 values for catch-all clusters.
         try:
             from sqlalchemy import func as sa_func
+
             from app.services.taxonomy.clustering import compute_pairwise_coherence
 
             count_q = await db.execute(
