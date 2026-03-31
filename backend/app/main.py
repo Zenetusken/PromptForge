@@ -255,8 +255,10 @@ async def lifespan(app: FastAPI):
                         )
                     except Exception:
                         logger.error("Domain cache reload failed", exc_info=True)
-                    # Signal warm-path timer to run early (new clustering data)
-                    _warm_path_pending.set()
+                    # Only signal warm-path for user-driven events (new optimizations),
+                    # NOT for warm-path's own taxonomy_changed emissions (prevents cascade).
+                    if event.get("event") == "optimization_created":
+                        _warm_path_pending.set()
         except asyncio.CancelledError:
             logger.info("Taxonomy extraction listener shutting down")
         except Exception as exc:
@@ -334,27 +336,30 @@ async def lifespan(app: FastAPI):
                         # Auto-trigger cold path when active nodes lack UMAP coordinates.
                         # Hot-path creates clusters with NULL umap_x/y/z (hash fallback).
                         # Cold-path runs UMAP to give them semantic 3D positions.
-                        try:
-                            from sqlalchemy import func, select
+                        # Cooldown: only run once per process (cold path is expensive).
+                        if not getattr(app.state, "_cold_path_auto_ran", False):
+                            try:
+                                from sqlalchemy import func, select
 
-                            from app.models import PromptCluster
+                                from app.models import PromptCluster
 
-                            async with async_session_factory() as umap_db:
-                                no_umap = (await umap_db.execute(
-                                    select(func.count()).where(
-                                        PromptCluster.state == "active",
-                                        PromptCluster.umap_x.is_(None),
-                                    )
-                                )).scalar() or 0
-                                if no_umap >= 5:
-                                    logger.info(
-                                        "Auto cold-path: %d active nodes lack UMAP coordinates",
-                                        no_umap,
-                                    )
-                                    async with async_session_factory() as cold_db:
-                                        await engine.run_cold_path(cold_db)
-                        except Exception as cold_exc:
-                            logger.warning("Auto cold-path check failed: %s", cold_exc)
+                                async with async_session_factory() as umap_db:
+                                    no_umap = (await umap_db.execute(
+                                        select(func.count()).where(
+                                            PromptCluster.state == "active",
+                                            PromptCluster.umap_x.is_(None),
+                                        )
+                                    )).scalar() or 0
+                                    if no_umap >= 5:
+                                        logger.info(
+                                            "Auto cold-path: %d active nodes lack UMAP coordinates",
+                                            no_umap,
+                                        )
+                                        async with async_session_factory() as cold_db:
+                                            await engine.run_cold_path(cold_db)
+                                        app.state._cold_path_auto_ran = True
+                            except Exception as cold_exc:
+                                logger.warning("Auto cold-path check failed: %s", cold_exc)
                 except Exception as exc:
                     logger.error("Warm path timer failed: %s", exc, exc_info=True)
         except asyncio.CancelledError:
