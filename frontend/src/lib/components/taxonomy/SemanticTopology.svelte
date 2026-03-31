@@ -364,13 +364,45 @@
         // UMAP rest positions (copy before force modification)
         const restPositions = new Float32Array(positions);
 
-        const settled = settleForces({
-          positions, restPositions, sizes,
-          parentIndices, domainGroups,
-          iterations: 60,
-        });
+        // Cache key: hash of sorted node IDs (tree structure fingerprint)
+        const cacheKey = 'topology_settled_' + sceneData.nodes.map(n => n.id).sort().join(',').split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0).toString(36);
+
+        let settledPositions: Float32Array;
+        try {
+          const cached = localStorage.getItem(cacheKey);
+          if (cached) {
+            settledPositions = new Float32Array(JSON.parse(cached));
+          } else {
+            const settled = settleForces({
+              positions, restPositions, sizes,
+              parentIndices, domainGroups,
+              iterations: 60,
+            });
+            settledPositions = settled.positions;
+            // Cache for next load (cap at 200 entries to prevent localStorage bloat)
+            try {
+              // Clean old entries
+              for (let k = 0; k < localStorage.length; k++) {
+                const key = localStorage.key(k);
+                if (key?.startsWith('topology_settled_') && key !== cacheKey) {
+                  localStorage.removeItem(key);
+                }
+              }
+              localStorage.setItem(cacheKey, JSON.stringify(Array.from(settledPositions)));
+            } catch { /* quota exceeded — ignore */ }
+          }
+        } catch {
+          // Fallback: always compute
+          const settled = settleForces({
+            positions, restPositions, sizes,
+            parentIndices, domainGroups,
+            iterations: 60,
+          });
+          settledPositions = settled.positions;
+        }
+
         sceneData.nodes.forEach((n, i) => {
-          n.position = [settled.positions[i * 3], settled.positions[i * 3 + 1], settled.positions[i * 3 + 2]];
+          n.position = [settledPositions[i * 3], settledPositions[i * 3 + 1], settledPositions[i * 3 + 2]];
         });
 
         rebuildScene(sceneData);
