@@ -68,16 +68,16 @@ describe('buildSceneData', () => {
     expect(result.edges[0]).toEqual({ from: 'parent', to: 'child', type: 'hierarchical' });
   });
 
-  it('creates same-domain similarity edges', () => {
+  it('does not create same-domain similarity edges (removed for visual clarity)', () => {
     const flat = [
       makeNode({ id: 'a', domain: 'backend' }),
       makeNode({ id: 'b', domain: 'backend' }),
       makeNode({ id: 'c', domain: 'frontend' }),
     ];
     const result = buildSceneData(flat);
-    const simEdges = result.edges.filter(e => e.type === 'similarity');
-    expect(simEdges).toHaveLength(1);
-    expect(simEdges[0]).toEqual({ from: 'a', to: 'b', type: 'similarity' });
+    // Only hierarchical edges — similarity edges were removed to eliminate
+    // the O(n²) edge mesh that obscured the graph at scale.
+    expect(result.edges).toHaveLength(0);
   });
 
   it('defaults persistence to 0.5 when node has null persistence', () => {
