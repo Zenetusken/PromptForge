@@ -1443,6 +1443,59 @@ class TaxonomyEngine:
                 )
                 continue
 
+        # --- Post-discovery re-parenting sweep ---
+        # Check ALL general-parented clusters against existing domain nodes.
+        # Clusters created AFTER a domain was established may still be under
+        # general if their hot-path assignment didn't find the domain node.
+        try:
+            domain_nodes_q = await db.execute(
+                select(PromptCluster.id, PromptCluster.label).where(
+                    PromptCluster.state == "domain",
+                    PromptCluster.label != "general",
+                )
+            )
+            domain_lookup = {row[1].lower(): row[0] for row in domain_nodes_q}
+
+            general_children_q = await db.execute(
+                select(PromptCluster).where(
+                    PromptCluster.parent_id == general_node.id,
+                    PromptCluster.state.in_(["active", "mature"]),
+                )
+            )
+            sweep_reparented = 0
+            for cluster in general_children_q.scalars():
+                # Check domain_raw distribution of linked optimizations
+                opt_raws = await db.execute(
+                    select(Optimization.domain_raw).where(
+                        Optimization.cluster_id == cluster.id,
+                        Optimization.domain_raw.isnot(None),
+                    )
+                )
+                raws = [r[0] for r in opt_raws.all() if r[0] and r[0] != "general"]
+                if not raws:
+                    continue
+                from collections import Counter
+                raw_counts = Counter(raws)
+                top_raw, top_ct = raw_counts.most_common(1)[0]
+                total = len(raws) + len([r for r in (await db.execute(
+                    select(Optimization.domain_raw).where(
+                        Optimization.cluster_id == cluster.id,
+                        Optimization.domain_raw == "general",
+                    )
+                )).all()])
+                if top_raw in domain_lookup and top_ct / max(total, 1) >= DOMAIN_DISCOVERY_CONSISTENCY:
+                    target_id = domain_lookup[top_raw]
+                    cluster.parent_id = target_id
+                    cluster.domain = top_raw
+                    sweep_reparented += 1
+            if sweep_reparented:
+                logger.info(
+                    "Re-parenting sweep: moved %d clusters from general to their domain",
+                    sweep_reparented,
+                )
+        except Exception as sweep_exc:
+            logger.warning("Re-parenting sweep failed (non-fatal): %s", sweep_exc)
+
         return created
 
     async def _detect_domain_candidates(self, db: AsyncSession) -> None:
