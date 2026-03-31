@@ -63,6 +63,9 @@ class ClusterStore {
 
   setStateFilter(filter: StateFilter): void {
     this.stateFilter = filter;
+    // Clear cluster selection — the previous selection may not exist in
+    // the new filtered view (e.g., active cluster selected, switch to archived tab)
+    this.selectCluster(null);
   }
 
   toggleHighlightDomain(domain: string): void {

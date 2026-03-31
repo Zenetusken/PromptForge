@@ -19,6 +19,19 @@
   const qSystem = $derived(stats?.q_system ?? null);
   const qColor = $derived(qHealthColor(qSystem));
 
+  // Compute filtered counts from the visible tree (respects state filter)
+  const filteredCounts = $derived.by(() => {
+    const tree = clustersStore.filteredTaxonomyTree;
+    let active = 0, candidate = 0, template = 0, archived = 0;
+    for (const n of tree) {
+      if (n.state === 'active') active++;
+      else if (n.state === 'candidate') candidate++;
+      else if (n.state === 'template') template++;
+      else if (n.state === 'archived') archived++;
+    }
+    return { active, candidate, template, archived };
+  });
+
   function handleSearch(): void {
     if (searchQuery.trim()) {
       onSearch(searchQuery.trim());
@@ -90,16 +103,14 @@
     {reclustering ? 'Reclustering...' : 'Recluster'}
   </button>
 
-  <!-- Node counts -->
-  {#if stats?.nodes}
-    <div class="stats-row">
-      <span>{stats.nodes.active} active</span>
-      <span class="stats-sep">|</span>
-      <span>{stats.nodes.candidate} candidates</span>
-      <span class="stats-sep">|</span>
-      <span>{stats.nodes.template} templates</span>
-    </div>
-  {/if}
+  <!-- Node counts (reflects state filter) -->
+  <div class="stats-row">
+    <span>{filteredCounts.active} active</span>
+    <span class="stats-sep">|</span>
+    <span>{filteredCounts.candidate} candidates</span>
+    <span class="stats-sep">|</span>
+    <span>{filteredCounts.template} templates</span>
+  </div>
 </div>
 
 <style>

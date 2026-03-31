@@ -277,7 +277,7 @@
               title={canPromote ? "Promote this cluster to template state" : "Needs 3+ members or 1+ pattern usage to promote"}
             >Promote to template</button>
           {/if}
-          {#if family.state === 'archived'}
+          {#if family.state === 'archived' && family.member_count > 0}
             <button
               class="action-btn"
               onclick={() => promoteCluster('active')}
