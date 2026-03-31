@@ -2099,14 +2099,16 @@ class TaxonomyEngine:
                 PromptCluster.parent_id.isnot(None),
             )
         )
-        domain_ids = {n.id for n in (await db.execute(
-            select(PromptCluster.id).where(PromptCluster.state == "domain")
-        )).scalars()}
+        domain_ids: set[str] = set(
+            (await db.execute(
+                select(PromptCluster.id).where(PromptCluster.state == "domain")
+            )).scalars().all()
+        )
         for row in non_domain_parent_q:
-            if row.parent_id not in domain_ids:
+            if row[2] not in domain_ids:  # row[2] = parent_id
                 violations.append(
-                    f"Non-domain parent: '{row.label}' (id={row.id[:8]}) "
-                    f"has parent {row.parent_id[:8]} which is not a domain node"
+                    f"Non-domain parent: '{row[1]}' (id={row[0][:8]}) "
+                    f"has parent {row[2][:8]} which is not a domain node"
                 )
 
         # 7. Archived clusters should not have active usage
@@ -2118,8 +2120,8 @@ class TaxonomyEngine:
         )
         for row in archived_used_q:
             violations.append(
-                f"Archived with usage: '{row.label}' (id={row.id[:8]}) "
-                f"has usage_count={row.usage_count}"
+                f"Archived with usage: '{row[1]}' (id={row[0][:8]}) "
+                f"has usage_count={row[2]}"
             )
 
         if violations:
@@ -2211,10 +2213,10 @@ class TaxonomyEngine:
 
         # Repair non-domain clusters with non-domain parents
         domain_id_map: dict[str, str] = {}
-        for dn in (await db.execute(
+        for row in (await db.execute(
             select(PromptCluster.id, PromptCluster.label).where(PromptCluster.state == "domain")
         )):
-            domain_id_map[dn.label.lower()] = dn.id
+            domain_id_map[row[1].lower()] = row[0]
 
         non_domain_parent_q2 = await db.execute(
             select(PromptCluster).where(
