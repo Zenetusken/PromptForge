@@ -29,6 +29,34 @@ class InjectedPattern:
     similarity: float
 
 
+def format_injected_patterns(
+    auto_injected: list[InjectedPattern],
+    existing_text: str | None = None,
+) -> str | None:
+    """Format InjectedPattern objects into the applied_patterns template variable.
+
+    Merges with any existing applied_patterns_text from explicit pattern IDs.
+    """
+    if not auto_injected:
+        return existing_text
+
+    lines = []
+    for ip in auto_injected:
+        lines.append(
+            f"- [{ip.domain} | {ip.similarity:.2f}] {ip.pattern_text}\n"
+            f'  Source: "{ip.cluster_label}" cluster'
+        )
+
+    if existing_text:
+        return existing_text + "\n" + "\n".join(lines)
+
+    return (
+        "The following proven patterns from past optimizations "
+        "should be applied where relevant:\n"
+        + "\n".join(lines)
+    )
+
+
 async def auto_inject_patterns(
     raw_prompt: str,
     taxonomy_engine: Any,

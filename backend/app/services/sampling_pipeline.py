@@ -56,7 +56,11 @@ from app.schemas.pipeline_contracts import (
 )
 from app.services.event_notification import notify_event_bus
 from app.services.heuristic_scorer import HeuristicScorer
-from app.services.pattern_injection import InjectedPattern, auto_inject_patterns
+from app.services.pattern_injection import (
+    InjectedPattern,
+    auto_inject_patterns,
+    format_injected_patterns,
+)
 from app.services.pipeline_constants import (
     MAX_DOMAIN_RAW_LENGTH,
     MAX_INTENT_LABEL_LENGTH,
@@ -753,27 +757,11 @@ async def run_sampling_pipeline(
         context_sources["patterns"] = True
 
     # Merge auto-injected patterns (when no explicit applied_pattern_ids)
-    if auto_injected_patterns and not applied_patterns_text:
-        lines = []
-        for ip in auto_injected_patterns:
-            lines.append(
-                f"- [{ip.domain} | {ip.similarity:.2f}] {ip.pattern_text}\n"
-                f"  Source: \"{ip.cluster_label}\" cluster"
-            )
-        applied_patterns_text = (
-            "The following proven patterns from past optimizations "
-            "should be applied where relevant:\n"
-            + "\n".join(lines)
-        )
+    applied_patterns_text = format_injected_patterns(
+        auto_injected_patterns, applied_patterns_text,
+    )
+    if applied_patterns_text is not None:
         context_sources["patterns"] = True
-    elif auto_injected_patterns and applied_patterns_text:
-        lines = []
-        for ip in auto_injected_patterns:
-            lines.append(
-                f"- [{ip.domain} | {ip.similarity:.2f}] {ip.pattern_text}\n"
-                f"  Source: \"{ip.cluster_label}\" cluster"
-            )
-        applied_patterns_text += "\n" + "\n".join(lines)
 
     # Merge auto-injected cluster IDs for usage tracking
     applied_cluster_ids.update(auto_injected_cluster_ids)

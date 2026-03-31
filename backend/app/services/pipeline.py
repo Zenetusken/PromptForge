@@ -32,7 +32,11 @@ from app.schemas.pipeline_contracts import (
     SuggestionsOutput,
 )
 from app.services.heuristic_scorer import HeuristicScorer
-from app.services.pattern_injection import InjectedPattern, auto_inject_patterns
+from app.services.pattern_injection import (
+    InjectedPattern,
+    auto_inject_patterns,
+    format_injected_patterns,
+)
 from app.services.pipeline_constants import (
     ANALYZE_MAX_TOKENS,
     MAX_DOMAIN_RAW_LENGTH,
@@ -464,26 +468,9 @@ class PipelineOrchestrator:
                     logger.warning("Failed to resolve applied patterns: %s", exc)
 
             # Combine explicit applied_patterns_text with auto-injected patterns
-            if auto_injected_patterns and not applied_patterns_text:
-                lines = []
-                for ip in auto_injected_patterns:
-                    lines.append(
-                        f"- [{ip.domain} | {ip.similarity:.2f}] {ip.pattern_text}\n"
-                        f"  Source: \"{ip.cluster_label}\" cluster"
-                    )
-                applied_patterns_text = (
-                    "The following proven patterns from past optimizations "
-                    "should be applied where relevant:\n"
-                    + "\n".join(lines)
-                )
-            elif auto_injected_patterns and applied_patterns_text:
-                lines = []
-                for ip in auto_injected_patterns:
-                    lines.append(
-                        f"- [{ip.domain} | {ip.similarity:.2f}] {ip.pattern_text}\n"
-                        f"  Source: \"{ip.cluster_label}\" cluster"
-                    )
-                applied_patterns_text += "\n" + "\n".join(lines)
+            applied_patterns_text = format_injected_patterns(
+                auto_injected_patterns, applied_patterns_text,
+            )
 
             optimize_msg = self.prompt_loader.render("optimize.md", {
                 "raw_prompt": raw_prompt,
