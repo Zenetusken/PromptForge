@@ -72,6 +72,8 @@
     families.filter(f => {
       if (f.state === 'domain') return false;
       if (showTemplates && f.state === 'template') return false;
+      // Hide zombie clusters (no members AND no score data)
+      if (f.member_count === 0 && f.avg_score == null) return false;
       return !stateFilter || f.state === stateFilter;
     })
   );
@@ -197,6 +199,16 @@
     {/if}
   </div>
 
+  <!-- Column headers — OUTSIDE scrollable area, sticky at top -->
+  {#if !searchActive && loaded && totalFamilies > 0}
+    <div class="column-headers">
+      <span class="col-label col-label--name"></span>
+      <span class="col-label col-label--members">mbr</span>
+      <span class="col-label col-label--usage">use</span>
+      <span class="col-label col-label--score">score</span>
+    </div>
+  {/if}
+
   <div class="panel-body">
     {#if searchActive}
       <!-- Search results (local filtering from taxonomy tree) -->
@@ -251,14 +263,6 @@
           {/each}
         </div>
       {/if}
-
-      <!-- Column headers — widths match badge min-widths below -->
-      <div class="column-headers">
-        <span class="col-label col-label--name"></span>
-        <span class="col-label col-label--members">mbr</span>
-        <span class="col-label col-label--usage">use</span>
-        <span class="col-label col-label--score">score</span>
-      </div>
 
       <!-- Domain groups (filtered) -->
       {#each domains as domain (domain)}
@@ -608,7 +612,7 @@
     padding: 0 6px 0 16px;
     gap: 6px;
     border-bottom: 1px solid var(--color-border-subtle);
-    margin-bottom: 2px;
+    flex-shrink: 0;
   }
 
   .col-label {
@@ -682,9 +686,10 @@
   }
 
   .domain-dot {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
     flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
   }
 
   .domain-label {

@@ -341,7 +341,15 @@ input:focus, textarea:focus, select:focus {
   background: var(--color-bg-hover);
 }
 .action-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
-  pointer-events: none;
+  color: var(--color-text-dim);
+  border-color: transparent;
+  background: transparent;
+}
+
+.action-btn:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-dim);
 }

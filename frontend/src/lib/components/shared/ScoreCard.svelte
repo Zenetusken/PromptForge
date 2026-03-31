@@ -24,11 +24,15 @@
     </div>
   {/if}
 
+  {#if deltas || originalScores}
+    <div class="score-legend font-mono">score  &Delta;  orig</div>
+  {/if}
+
   <ul class="dimensions-list" aria-label="Dimension scores">
     {#each dimensionEntries as [dim, value]}
       {@const delta = deltas?.[dim] ?? null}
       {@const orig = (originalScores as Record<string, number> | null)?.[dim] ?? null}
-      <li class="dimension-row">
+      <li class="dimension-row" title="Optimized score / improvement / original score">
         <span class="dim-label">{DIMENSION_LABELS[dim] ?? dim}</span>
         <span class="dim-value">{formatScore(value)}</span>
         {#if delta !== null}
@@ -85,6 +89,14 @@
     font-family: var(--font-mono);
     color: var(--color-text-primary);
     line-height: 1;
+  }
+
+  .score-legend {
+    font-size: 8px;
+    color: var(--color-text-dim);
+    text-align: right;
+    padding: 0 6px;
+    letter-spacing: 0.05em;
   }
 
   .dimensions-list {
