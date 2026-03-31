@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.dependencies.rate_limit import RateLimit
-from app.models import MetaPattern, Optimization, OptimizationPattern, PromptCluster
+from app.models import MetaPattern, Optimization, PromptCluster
 from app.schemas.clusters import (
     ClusterDetail,
     ClusterMatchResponse,
@@ -210,11 +210,12 @@ async def get_cluster_detail(
             )
             meta_patterns = meta_result.scalars().all()
 
-        # Linked optimizations (most recent 20)
+        # Linked optimizations — query by direct cluster_id assignment (hot-path),
+        # not the OptimizationPattern join table (which only covers explicit pattern
+        # relationships, missing the majority of cluster members).
         opt_result = await db.execute(
             select(Optimization)
-            .join(OptimizationPattern, OptimizationPattern.optimization_id == Optimization.id)
-            .where(OptimizationPattern.cluster_id == cluster_id)
+            .where(Optimization.cluster_id == cluster_id)
             .order_by(Optimization.created_at.desc())
             .limit(20)
         )
