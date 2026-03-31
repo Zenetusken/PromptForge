@@ -34,21 +34,21 @@ export interface WorkerOutput {
 // Tuned for 20-200 nodes in UMAP-scaled space (~[-10, 10] per axis).
 
 /** Pull toward UMAP rest position. Preserves semantic meaning. */
-const ANCHOR = 0.005;
+const ANCHOR = 0.004;
 /** Parent-child spring strength. Creates solar-system groupings. */
-const PARENT_SPRING = 0.08;
+const PARENT_SPRING = 0.05;
 /** Desired parent-child distance. Children orbit at this radius. */
-const PARENT_REST_LEN = 4.0;
-/** Same-domain mutual attraction. Groups domain neighborhoods. */
-const DOMAIN_ATTRACT = 0.02;
-/** Max distance for domain attraction (performance + prevents cross-map pull). */
+const PARENT_REST_LEN = 7.0;
+/** Same-domain mutual attraction. Gentle — groups neighborhoods, not blobs. */
+const DOMAIN_ATTRACT = 0.008;
+/** Max distance for domain attraction. */
 const DOMAIN_RANGE = 25;
-/** Inverse-square repulsion strength. Creates spacing between all nodes. */
-const REPULSION = 0.5;
+/** Inverse-square repulsion. Dominant force — creates spatial spread. */
+const REPULSION = 0.7;
 /** Distance beyond which repulsion is negligible. */
-const REPULSION_RANGE = 40;
+const REPULSION_RANGE = 45;
 /** Collision repulsion (strong, short range). Prevents overlap. */
-const COLLISION_STRENGTH = 1.0;
+const COLLISION_STRENGTH = 1.2;
 /** Pull toward centroid. Very gentle — just prevents infinite drift. */
 const CENTERING = 0.001;
 /** Velocity decay per iteration. */
