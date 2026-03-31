@@ -26,19 +26,21 @@ export interface WorkerOutput {
 
 // --- Force constants ---
 // Tuned for 20-200 nodes in a UMAP-scaled space (~[-10, 10] per axis).
+// Equilibrium radius ≈ (N × REPULSION / CENTERING)^(1/3).
+// With N=20: r ≈ (20 × 0.5 / 0.002)^(1/3) ≈ 17 units — fills viewport.
 
 /** Inverse-square repulsion strength. Pushes all nodes apart. */
-const REPULSION = 0.15;
+const REPULSION = 0.5;
 /** Distance beyond which repulsion is negligible (performance cutoff). */
-const REPULSION_RANGE = 25;
+const REPULSION_RANGE = 40;
 /** Collision repulsion strength (much stronger, short range). */
-const COLLISION_STRENGTH = 0.8;
-/** Pull toward centroid. Prevents explosion and keeps the graph centered. */
-const CENTERING = 0.008;
+const COLLISION_STRENGTH = 1.0;
+/** Pull toward centroid. Very gentle — just prevents infinite drift. */
+const CENTERING = 0.002;
 /** Perpendicular spiral force. Breaks linear UMAP alignment into arcs. */
-const SPIRAL = 0.03;
+const SPIRAL = 0.015;
 /** Velocity decay per iteration. Lower = more damping = faster settling. */
-const DAMPING = 0.88;
+const DAMPING = 0.90;
 
 /**
  * Run the n-body simulation synchronously.
@@ -86,7 +88,7 @@ export function settleForces(input: WorkerInput): WorkerOutput {
         if (dist > REPULSION_RANGE) continue;
 
         // Long-range inverse-square repulsion (galaxy spread)
-        const repF = REPULSION / (distSq + 1); // +1 softens singularity
+        const repF = REPULSION / (distSq + 0.5); // +0.5 softens singularity
         const repNorm = repF / dist; // normalize direction
         force[ix] += dx * repNorm;
         force[iy] += dy * repNorm;
