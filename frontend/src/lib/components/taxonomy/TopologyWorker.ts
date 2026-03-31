@@ -1,21 +1,27 @@
 /**
- * N-body force simulation for taxonomy topology layout.
+ * Semantic gravity n-body simulation for taxonomy topology layout.
  *
- * Transforms UMAP positions into a galaxy-like spatial distribution:
- * - Long-range inverse-square repulsion spreads nodes apart
- * - Gentle centering prevents infinite drift
- * - Spiral perturbation breaks linear UMAP projections into organic arcs
- * - Collision resolution prevents overlap
+ * Five forces create a galaxy-like distribution where related nodes
+ * naturally cluster while maintaining overall spatial clarity:
  *
- * Respects semantic distances from UMAP while reshaping the distribution
- * from elongated lines into a more spatial, navigable galaxy form.
+ * 1. UMAP anchor spring — preserves semantic positioning from UMAP
+ * 2. Parent-child spring — domain hubs attract their children (solar systems)
+ * 3. Same-domain affinity — clusters in the same domain attract gently
+ * 4. Universal repulsion — inverse-square push creates spacing
+ * 5. Collision resolution — prevents node overlap
  *
- * Budget: <100ms for 500 nodes at 60 iterations.
+ * The result: domain groups form visible neighborhoods (galaxies),
+ * with related cross-domain nodes bridging between groups.
+ *
+ * Budget: <100ms for 200 nodes at 60 iterations.
  */
 
 export interface WorkerInput {
-  positions: Float32Array; // [x0,y0,z0, x1,y1,z1, ...]
-  sizes: Float32Array;     // [s0, s1, ...]
+  positions: Float32Array;      // [x0,y0,z0, x1,y1,z1, ...]
+  restPositions: Float32Array;  // UMAP positions — semantic anchor points
+  sizes: Float32Array;          // [s0, s1, ...]
+  parentIndices: Int32Array;    // parent index per node (-1 = root/no parent)
+  domainGroups: Int32Array;     // domain group ID (same domain = same int)
   iterations: number;
 }
 
@@ -25,38 +31,45 @@ export interface WorkerOutput {
 }
 
 // --- Force constants ---
-// Tuned for 20-200 nodes in a UMAP-scaled space (~[-10, 10] per axis).
-// Equilibrium radius ≈ (N × REPULSION / CENTERING)^(1/3).
-// With N=20: r ≈ (20 × 0.5 / 0.002)^(1/3) ≈ 17 units — fills viewport.
+// Tuned for 20-200 nodes in UMAP-scaled space (~[-10, 10] per axis).
 
-/** Inverse-square repulsion strength. Pushes all nodes apart. */
+/** Pull toward UMAP rest position. Preserves semantic meaning. */
+const ANCHOR = 0.005;
+/** Parent-child spring strength. Creates solar-system groupings. */
+const PARENT_SPRING = 0.08;
+/** Desired parent-child distance. Children orbit at this radius. */
+const PARENT_REST_LEN = 4.0;
+/** Same-domain mutual attraction. Groups domain neighborhoods. */
+const DOMAIN_ATTRACT = 0.02;
+/** Max distance for domain attraction (performance + prevents cross-map pull). */
+const DOMAIN_RANGE = 25;
+/** Inverse-square repulsion strength. Creates spacing between all nodes. */
 const REPULSION = 0.5;
-/** Distance beyond which repulsion is negligible (performance cutoff). */
+/** Distance beyond which repulsion is negligible. */
 const REPULSION_RANGE = 40;
-/** Collision repulsion strength (much stronger, short range). */
+/** Collision repulsion (strong, short range). Prevents overlap. */
 const COLLISION_STRENGTH = 1.0;
 /** Pull toward centroid. Very gentle — just prevents infinite drift. */
-const CENTERING = 0.002;
-/** Perpendicular spiral force. Breaks linear UMAP alignment into arcs. */
-const SPIRAL = 0.015;
-/** Velocity decay per iteration. Lower = more damping = faster settling. */
-const DAMPING = 0.90;
+const CENTERING = 0.001;
+/** Velocity decay per iteration. */
+const DAMPING = 0.88;
 
 /**
- * Run the n-body simulation synchronously.
+ * Run the semantic gravity simulation synchronously.
  */
 export function settleForces(input: WorkerInput): WorkerOutput {
-  const { positions, sizes, iterations } = input;
-  if (positions.length !== sizes.length * 3) {
-    throw new Error(
-      `settleForces: positions.length (${positions.length}) must equal sizes.length * 3 (${sizes.length * 3})`
-    );
-  }
+  const { positions, restPositions, sizes, parentIndices, domainGroups, iterations } = input;
   const n = sizes.length;
   if (n === 0) return { positions: new Float32Array(0), elapsed: 0 };
+  if (positions.length !== n * 3) {
+    throw new Error(
+      `settleForces: positions.length (${positions.length}) must equal sizes.length * 3 (${n * 3})`
+    );
+  }
   const start = performance.now();
 
   const pos = new Float32Array(positions);
+  const rest = restPositions;
   const vel = new Float32Array(n * 3);
   const force = new Float32Array(n * 3);
 
@@ -72,9 +85,10 @@ export function settleForces(input: WorkerInput): WorkerOutput {
     }
     cx /= n; cy /= n; cz /= n;
 
-    // --- 2. Pairwise forces (O(n²)) ---
+    // --- 2. Pairwise forces: repulsion + domain attraction ---
     for (let i = 0; i < n; i++) {
       const ix = i * 3, iy = ix + 1, iz = ix + 2;
+      const di = domainGroups[i];
       for (let j = i + 1; j < n; j++) {
         const jx = j * 3, jy = jx + 1, jz = jx + 2;
 
@@ -84,12 +98,11 @@ export function settleForces(input: WorkerInput): WorkerOutput {
         const distSq = dx * dx + dy * dy + dz * dz;
         const dist = Math.sqrt(distSq) || 0.001;
 
-        // Skip if far beyond repulsion range
         if (dist > REPULSION_RANGE) continue;
 
-        // Long-range inverse-square repulsion (galaxy spread)
-        const repF = REPULSION / (distSq + 0.5); // +0.5 softens singularity
-        const repNorm = repF / dist; // normalize direction
+        // Universal inverse-square repulsion
+        const repF = REPULSION / (distSq + 0.5);
+        const repNorm = repF / dist;
         force[ix] += dx * repNorm;
         force[iy] += dy * repNorm;
         force[iz] += dz * repNorm;
@@ -97,7 +110,18 @@ export function settleForces(input: WorkerInput): WorkerOutput {
         force[jy] -= dy * repNorm;
         force[jz] -= dz * repNorm;
 
-        // Short-range collision resolution (strong, prevents overlap)
+        // Same-domain attraction — pull related nodes together
+        if (di === domainGroups[j] && dist < DOMAIN_RANGE && dist > 1.0) {
+          const attrF = DOMAIN_ATTRACT / dist; // linear falloff
+          force[ix] -= dx * attrF;
+          force[iy] -= dy * attrF;
+          force[iz] -= dz * attrF;
+          force[jx] += dx * attrF;
+          force[jy] += dy * attrF;
+          force[jz] += dz * attrF;
+        }
+
+        // Collision resolution (strong, short range)
         const minDist = (sizes[i] + sizes[j]) * 0.6;
         if (dist < minDist) {
           const collF = COLLISION_STRENGTH * (minDist - dist) / dist;
@@ -115,27 +139,37 @@ export function settleForces(input: WorkerInput): WorkerOutput {
     for (let i = 0; i < n; i++) {
       const ix = i * 3, iy = ix + 1, iz = ix + 2;
 
-      // Centering: gentle pull toward centroid
+      // UMAP anchor spring — gentle pull toward semantic rest position
+      force[ix] -= (pos[ix] - rest[ix]) * ANCHOR;
+      force[iy] -= (pos[iy] - rest[iy]) * ANCHOR;
+      force[iz] -= (pos[iz] - rest[iz]) * ANCHOR;
+
+      // Centering — very gentle drift prevention
       force[ix] -= (pos[ix] - cx) * CENTERING;
       force[iy] -= (pos[iy] - cy) * CENTERING;
       force[iz] -= (pos[iz] - cz) * CENTERING;
 
-      // Spiral: perpendicular force breaks linearity into arcs.
-      // Compute vector from centroid to node, then cross with Y-axis
-      // to get a tangential push in the XZ plane.
-      const rx = pos[ix] - cx;
-      const rz = pos[iz] - cz;
-      const rLen = Math.sqrt(rx * rx + rz * rz) || 0.001;
-      // Tangential direction (perpendicular in XZ plane, clockwise)
-      const tx = -rz / rLen;
-      const tz = rx / rLen;
-      // Scale by distance from centroid (more force at edges → wider arcs)
-      const spiralMag = SPIRAL * Math.min(rLen, 8);
-      force[ix] += tx * spiralMag;
-      force[iz] += tz * spiralMag;
+      // Parent-child spring — attract toward parent at rest length
+      const pi = parentIndices[i];
+      if (pi >= 0 && pi < n) {
+        const px = pi * 3, py = px + 1, pz = px + 2;
+        const dx = pos[px] - pos[ix];
+        const dy = pos[py] - pos[iy];
+        const dz = pos[pz] - pos[iz];
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.001;
+        // Spring: pulls when far, pushes when too close
+        const springF = PARENT_SPRING * (dist - PARENT_REST_LEN) / dist;
+        force[ix] += dx * springF;
+        force[iy] += dy * springF;
+        force[iz] += dz * springF;
+        // Newton's 3rd law: parent feels the pull too (lighter)
+        force[px] -= dx * springF * 0.3;
+        force[py] -= dy * springF * 0.3;
+        force[pz] -= dz * springF * 0.3;
+      }
     }
 
-    // --- 4. Integrate: apply forces with velocity damping ---
+    // --- 4. Integrate with velocity damping ---
     for (let i = 0; i < n; i++) {
       const ix = i * 3, iy = ix + 1, iz = ix + 2;
       vel[ix] = (vel[ix] + force[ix]) * DAMPING;

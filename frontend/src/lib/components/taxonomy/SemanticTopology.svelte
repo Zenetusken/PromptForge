@@ -328,9 +328,10 @@
         sceneData = buildSceneData(tree);
         assignLodVisibility(sceneData.nodes, lodTier);
 
-        // Run force settling inline (Web Worker version for production)
-        const positions = new Float32Array(sceneData.nodes.length * 3);
-        const sizes = new Float32Array(sceneData.nodes.length);
+        // Build semantic relationship data for the force simulation
+        const nodeCount = sceneData.nodes.length;
+        const positions = new Float32Array(nodeCount * 3);
+        const sizes = new Float32Array(nodeCount);
         sceneData.nodes.forEach((n, i) => {
           positions[i * 3] = n.position[0];
           positions[i * 3 + 1] = n.position[1];
@@ -338,7 +339,35 @@
           sizes[i] = n.size;
         });
 
-        const settled = settleForces({ positions, sizes, iterations: 50 });
+        // Parent index array: maps each node to its parent's array index
+        const nodeIndexMap = new Map(sceneData.nodes.map((n, i) => [n.id, i]));
+        const parentIndices = new Int32Array(nodeCount);
+        parentIndices.fill(-1);
+        for (let i = 0; i < nodeCount; i++) {
+          const pid = sceneData.nodes[i].parentId;
+          if (pid) parentIndices[i] = nodeIndexMap.get(pid) ?? -1;
+        }
+
+        // Domain group array: same domain string → same integer ID
+        const domainToGroup = new Map<string, number>();
+        const domainGroups = new Int32Array(nodeCount);
+        let nextGroup = 0;
+        for (let i = 0; i < nodeCount; i++) {
+          const fn = flatNodeMap.get(sceneData.nodes[i].id);
+          const dom = fn?.domain ?? 'general';
+          const primary = dom.includes(':') ? dom.split(':')[0].trim().toLowerCase() : dom.toLowerCase();
+          if (!domainToGroup.has(primary)) domainToGroup.set(primary, nextGroup++);
+          domainGroups[i] = domainToGroup.get(primary)!;
+        }
+
+        // UMAP rest positions (copy before force modification)
+        const restPositions = new Float32Array(positions);
+
+        const settled = settleForces({
+          positions, restPositions, sizes,
+          parentIndices, domainGroups,
+          iterations: 60,
+        });
         sceneData.nodes.forEach((n, i) => {
           n.position = [settled.positions[i * 3], settled.positions[i * 3 + 1], settled.positions[i * 3 + 2]];
         });
