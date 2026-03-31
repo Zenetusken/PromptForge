@@ -163,6 +163,11 @@ class Settings(BaseSettings):
         default=90, description="Days to retain audit log entries before auto-pruning.",
     )
 
+    # --- Taxonomy ---
+    WARM_PATH_INTERVAL_SECONDS: int = Field(
+        default=300, description="Warm-path re-clustering interval in seconds (5 minutes default).",
+    )
+
     # --- Database ---
     DATABASE_URL: str = Field(
         default=f"sqlite+aiosqlite:///{DATA_DIR / 'synthesis.db'}",

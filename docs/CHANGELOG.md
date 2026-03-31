@@ -5,6 +5,8 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Added
+- Embedding index disk cache (`data/embedding_index.pkl`) with 1-hour TTL — skips DB rebuild on server restart when cache is fresh
+- Adaptive warm-path interval via `WARM_PATH_INTERVAL_SECONDS` setting — warm path runs early when `taxonomy_changed` fires instead of always waiting the full interval
 - Semantic gravity n-body force simulation with 5 forces: UMAP anchor, parent-child spring, same-domain affinity, universal repulsion, collision resolution
 - Domain node visual overhaul: dodecahedron geometry with EdgesGeometry pentagonal outlines, vertex anchor points, slow Y-axis rotation
 - Pattern graph reactive to navigator state filter tabs (clicking active/archived/template filters the 3D graph)
