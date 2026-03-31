@@ -510,6 +510,62 @@ class TaxonomyEngine:
                     operations_log.append({"type": "retire", "node_id": node.id})
                     await self._embedding_index.remove(node.id)
 
+        # --- Member count + coherence reconciliation ---
+        # Hot path increments member_count on assign, but cold path cluster
+        # reassignment can cause drift.  Reconcile by counting actual linked
+        # Optimization rows before domain discovery depends on the counts.
+        # Also recompute coherence from actual member embeddings — cold path
+        # computes coherence from cluster-level nodes, not individual
+        # optimization embeddings, causing 0.0 values for catch-all clusters.
+        try:
+            from sqlalchemy import func as sa_func
+            from app.services.taxonomy.clustering import compute_pairwise_coherence
+
+            count_q = await db.execute(
+                select(Optimization.cluster_id, sa_func.count().label("ct"))
+                .where(Optimization.cluster_id.isnot(None))
+                .group_by(Optimization.cluster_id)
+            )
+            actual_counts = dict(count_q.all())
+            reconciled = 0
+            coherence_updated = 0
+            for node in active_nodes:
+                expected = actual_counts.get(node.id, 0)
+                if node.member_count != expected:
+                    node.member_count = expected
+                    reconciled += 1
+
+                # Recompute coherence for clusters with 2+ members and
+                # stale coherence (0.0 or NULL — uncomputed by cold path)
+                if expected >= 2 and (node.coherence is None or node.coherence == 0.0):
+                    try:
+                        emb_q = await db.execute(
+                            select(Optimization.embedding).where(
+                                Optimization.cluster_id == node.id,
+                                Optimization.embedding.isnot(None),
+                            )
+                        )
+                        member_embs = [
+                            np.frombuffer(row[0], dtype=np.float32).copy()
+                            for row in emb_q.all()
+                            if row[0] is not None
+                        ]
+                        if len(member_embs) >= 2:
+                            node.coherence = compute_pairwise_coherence(member_embs)
+                            coherence_updated += 1
+                    except Exception:
+                        pass  # non-fatal, skip this node
+
+            if reconciled or coherence_updated:
+                logger.info(
+                    "Reconciled %d member_counts, recomputed %d coherence values",
+                    reconciled, coherence_updated,
+                )
+                # Flush so domain discovery query sees updated values
+                await db.flush()
+        except Exception as recon_exc:
+            logger.warning("Reconciliation failed (non-fatal): %s", recon_exc)
+
         # --- Domain discovery (ADR-004) ---
         # After lifecycle mutations, before quality gate.  Domain nodes have
         # state="domain" so they don't affect Q_system (computed from active
@@ -1182,6 +1238,8 @@ class TaxonomyEngine:
             return []
 
         # --- Step c: Query eligible children ---
+        # Coherence is now recomputed from actual member embeddings during
+        # the reconciliation step above, so 0.0 values should be rare.
         children_q = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.parent_id == general_node.id,

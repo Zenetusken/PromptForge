@@ -13,13 +13,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Domain discovery thresholds (ADR-004)
 # ---------------------------------------------------------------------------
-DOMAIN_DISCOVERY_MIN_MEMBERS = 5
-DOMAIN_DISCOVERY_MIN_COHERENCE = 0.6
+DOMAIN_DISCOVERY_MIN_MEMBERS = 3
+DOMAIN_DISCOVERY_MIN_COHERENCE = 0.3  # domain_raw consistency is the real quality gate
 DOMAIN_DISCOVERY_CONSISTENCY = 0.60  # 60% of members share the same domain_raw primary
 
 # Candidate domain detection — lower thresholds for early visibility
-DOMAIN_DISCOVERY_CANDIDATE_MIN_MEMBERS = 3
-DOMAIN_DISCOVERY_CANDIDATE_MIN_COHERENCE = 0.45
+DOMAIN_DISCOVERY_CANDIDATE_MIN_MEMBERS = 2
+DOMAIN_DISCOVERY_CANDIDATE_MIN_COHERENCE = 0.2
 
 # Domain quality
 DOMAIN_COHERENCE_FLOOR = 0.3
