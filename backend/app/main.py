@@ -20,6 +20,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 
 logger = logging.getLogger(__name__)
 
+# Module-level event: set to trigger an early warm-path run (e.g. after
+# a new optimization is clustered).  The warm-path timer awaits this event
+# with a timeout equal to the configured interval, so it runs either on
+# schedule or immediately when signaled.
+_warm_path_pending = asyncio.Event()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -125,37 +131,41 @@ async def lifespan(app: FastAPI):
 
             logger.info("Domain services initialized")
 
-            # Warm-load embedding index from active cluster centroids
+            # Warm-load embedding index from disk cache or active cluster centroids
+            _index_cache_path = DATA_DIR / "embedding_index.pkl"
             try:
-                import numpy as _np
-                from sqlalchemy import select as _select
+                _cache_loaded = await engine.embedding_index.load_cache(_index_cache_path)
+                if not _cache_loaded:
+                    import numpy as _np
+                    from sqlalchemy import select as _select
 
-                from app.models import PromptCluster
+                    from app.models import PromptCluster
 
-                async with async_session_factory() as _db:
-                    _clusters = (
-                        await _db.execute(
-                            _select(PromptCluster).where(
-                                PromptCluster.state != "archived"
-                            )
-                        )
-                    ).scalars().all()
-                    _centroids: dict[str, _np.ndarray] = {}
-                    for _c in _clusters:
-                        if _c.centroid_embedding:
-                            try:
-                                _emb = _np.frombuffer(
-                                    _c.centroid_embedding, dtype=_np.float32
+                    async with async_session_factory() as _db:
+                        _clusters = (
+                            await _db.execute(
+                                _select(PromptCluster).where(
+                                    PromptCluster.state != "archived"
                                 )
-                                if _emb.shape[0] == 384:
-                                    _centroids[_c.id] = _emb
-                            except (ValueError, TypeError):
-                                continue
-                    await engine.embedding_index.rebuild(_centroids)
-                    logger.info(
-                        "EmbeddingIndex warm-loaded: %d centroids",
-                        len(_centroids),
-                    )
+                            )
+                        ).scalars().all()
+                        _centroids: dict[str, _np.ndarray] = {}
+                        for _c in _clusters:
+                            if _c.centroid_embedding:
+                                try:
+                                    _emb = _np.frombuffer(
+                                        _c.centroid_embedding, dtype=_np.float32
+                                    )
+                                    if _emb.shape[0] == 384:
+                                        _centroids[_c.id] = _emb
+                                except (ValueError, TypeError):
+                                    continue
+                        await engine.embedding_index.rebuild(_centroids)
+                        await engine.embedding_index.save_cache(_index_cache_path)
+                        logger.info(
+                            "EmbeddingIndex warm-loaded: %d centroids",
+                            len(_centroids),
+                        )
             except Exception as idx_exc:
                 logger.warning(
                     "EmbeddingIndex warm-load failed (non-fatal): %s", idx_exc
@@ -245,6 +255,8 @@ async def lifespan(app: FastAPI):
                         )
                     except Exception:
                         logger.error("Domain cache reload failed", exc_info=True)
+                    # Signal warm-path timer to run early (new clustering data)
+                    _warm_path_pending.set()
         except asyncio.CancelledError:
             logger.info("Taxonomy extraction listener shutting down")
         except Exception as exc:
@@ -277,13 +289,25 @@ async def lifespan(app: FastAPI):
         )
         app.state.context_service = None
 
-    # Start warm-path periodic timer (Spec Section 6.4 — every 5 minutes)
+    # Start warm-path periodic timer (Spec Section 6.4 — adaptive interval)
     async def _warm_path_timer():
-        """Periodically trigger warm-path re-clustering."""
+        """Periodically trigger warm-path re-clustering.
+
+        Runs on a configurable interval (default 5 min) OR immediately when
+        ``_warm_path_pending`` is set (e.g. after a new optimization is
+        clustered), whichever comes first.
+        """
         try:
             await asyncio.sleep(60)  # Initial delay — let system stabilize
             while True:
-                await asyncio.sleep(300)  # 5-minute interval
+                try:
+                    await asyncio.wait_for(
+                        _warm_path_pending.wait(),
+                        timeout=settings.WARM_PATH_INTERVAL_SECONDS,
+                    )
+                    _warm_path_pending.clear()  # Reset for next cycle
+                except asyncio.TimeoutError:
+                    pass  # Normal timeout — run warm path on schedule
                 try:
                     engine = getattr(app.state, "taxonomy_engine", None)
                     if engine:
@@ -306,6 +330,31 @@ async def lifespan(app: FastAPI):
                             await lifecycle.curate(db)
                             await lifecycle.decay_usage(db)
                             await db.commit()
+
+                        # Auto-trigger cold path when active nodes lack UMAP coordinates.
+                        # Hot-path creates clusters with NULL umap_x/y/z (hash fallback).
+                        # Cold-path runs UMAP to give them semantic 3D positions.
+                        try:
+                            from sqlalchemy import func, select
+
+                            from app.models import PromptCluster
+
+                            async with async_session_factory() as umap_db:
+                                no_umap = (await umap_db.execute(
+                                    select(func.count()).where(
+                                        PromptCluster.state == "active",
+                                        PromptCluster.umap_x.is_(None),
+                                    )
+                                )).scalar() or 0
+                                if no_umap >= 5:
+                                    logger.info(
+                                        "Auto cold-path: %d active nodes lack UMAP coordinates",
+                                        no_umap,
+                                    )
+                                    async with async_session_factory() as cold_db:
+                                        await engine.run_cold_path(cold_db)
+                        except Exception as cold_exc:
+                            logger.warning("Auto cold-path check failed: %s", cold_exc)
                 except Exception as exc:
                     logger.error("Warm path timer failed: %s", exc, exc_info=True)
         except asyncio.CancelledError:

@@ -1435,6 +1435,13 @@ class TaxonomyEngine:
             self._embedding_index.size,
         )
 
+        # 8c. Persist embedding index cache to disk for fast startup recovery
+        try:
+            from app.config import DATA_DIR
+            await self._embedding_index.save_cache(DATA_DIR / "embedding_index.pkl")
+        except Exception as cache_exc:
+            logger.warning("EmbeddingIndex cache save failed (non-fatal): %s", cache_exc)
+
         # 9. Create snapshot — commits all pending node updates AND the
         # snapshot in a single transaction (matching the warm-path pattern).
         self._invalidate_stats_cache()

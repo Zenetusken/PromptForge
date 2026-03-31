@@ -18,5 +18,8 @@ mcp_session.json
 traces/
 *.log
 
+# Caches
+*.pkl
+
 # Process management
 pids/

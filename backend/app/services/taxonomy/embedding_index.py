@@ -6,6 +6,8 @@ snapshots (copy-on-write). At 2000 clusters (384-dim), search is ~3ms.
 
 import asyncio
 import logging
+import time
+from pathlib import Path
 
 import numpy as np
 
@@ -135,3 +137,38 @@ class EmbeddingIndex:
             self._ids = ids
 
         logger.info("EmbeddingIndex rebuilt: %d centroids", len(ids))
+
+    async def save_cache(self, cache_path: Path) -> None:
+        """Serialize index to disk for fast startup recovery."""
+        import pickle
+
+        async with self._lock:
+            data = {"matrix": self._matrix, "ids": list(self._ids)}
+        try:
+            with open(cache_path, "wb") as f:
+                pickle.dump(data, f)
+            logger.info("EmbeddingIndex cache saved: %d entries → %s", len(data["ids"]), cache_path)
+        except Exception as exc:
+            logger.warning("EmbeddingIndex cache save failed: %s", exc)
+
+    async def load_cache(self, cache_path: Path, max_age_seconds: int = 3600) -> bool:
+        """Load index from disk cache if fresh. Returns True if loaded."""
+        import pickle
+
+        if not cache_path.exists():
+            return False
+        age = time.time() - cache_path.stat().st_mtime
+        if age > max_age_seconds:
+            logger.info("EmbeddingIndex cache stale (%.0fs old, max %ds)", age, max_age_seconds)
+            return False
+        try:
+            with open(cache_path, "rb") as f:
+                data = pickle.load(f)  # noqa: S301
+            async with self._lock:
+                self._matrix = data["matrix"]
+                self._ids = data["ids"]
+            logger.info("EmbeddingIndex loaded from cache: %d entries (%.0fs old)", len(self._ids), age)
+            return True
+        except Exception as exc:
+            logger.warning("EmbeddingIndex cache load failed: %s", exc)
+            return False
