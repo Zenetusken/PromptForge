@@ -14,6 +14,8 @@
   let { scores, originalScores = null, deltas = null, overallScore = null, heuristicFlags = [] }: Props = $props();
 
   const dimensionEntries = $derived(Object.entries(scores) as [string, number][]);
+  const hasDelta = $derived(deltas != null);
+  const hasOrig = $derived(originalScores != null);
 </script>
 
 <div class="scorecard">
@@ -24,30 +26,36 @@
     </div>
   {/if}
 
-  {#if deltas || originalScores}
-    <div class="score-legend font-mono">score  &Delta;  orig</div>
-  {/if}
-
-  <ul class="dimensions-list" aria-label="Dimension scores">
+  <div
+    class="dimensions-grid"
+    class:dimensions-grid--3col={hasDelta && !hasOrig}
+    class:dimensions-grid--4col={hasDelta && hasOrig}
+    role="list"
+    aria-label="Dimension scores"
+  >
+    {#if hasDelta || hasOrig}
+      <span class="dim-label"></span>
+      <span class="dim-cell dim-header">score</span>
+      {#if hasDelta}<span class="dim-cell dim-header">&Delta;</span>{/if}
+      {#if hasOrig}<span class="dim-cell dim-header">orig</span>{/if}
+    {/if}
     {#each dimensionEntries as [dim, value]}
       {@const delta = deltas?.[dim] ?? null}
       {@const orig = (originalScores as Record<string, number> | null)?.[dim] ?? null}
-      <li class="dimension-row" title="Optimized score / improvement / original score">
-        <span class="dim-label">{DIMENSION_LABELS[dim] ?? dim}</span>
-        <span class="dim-value">{formatScore(value)}</span>
-        {#if delta !== null}
-          <span
-            class="dim-delta"
-            class:positive={delta > 0}
-            class:negative={delta < 0}
-          >{formatDelta(delta)}</span>
-        {/if}
-        {#if orig !== null}
-          <span class="dim-orig">{formatScore(orig)}</span>
-        {/if}
-      </li>
+      <span class="dim-label">{DIMENSION_LABELS[dim] ?? dim}</span>
+      <span class="dim-cell dim-value">{formatScore(value)}</span>
+      {#if hasDelta}
+        <span
+          class="dim-cell dim-delta"
+          class:positive={delta != null && delta > 0}
+          class:negative={delta != null && delta < 0}
+        >{delta != null ? formatDelta(delta) : ''}</span>
+      {/if}
+      {#if hasOrig}
+        <span class="dim-cell dim-orig">{orig != null ? formatScore(orig) : ''}</span>
+      {/if}
     {/each}
-  </ul>
+  </div>
 
   {#if heuristicFlags && heuristicFlags.length > 0}
     <div class="divergence-warning" role="alert">
@@ -91,48 +99,54 @@
     line-height: 1;
   }
 
-  .score-legend {
-    font-size: 8px;
-    color: var(--color-text-dim);
-    text-align: right;
+  /* Grid ensures header and data columns share the same track widths */
+  .dimensions-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: 6px;
+    row-gap: 0;
     padding: 0 6px;
-    letter-spacing: 0.05em;
   }
 
-  .dimensions-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+  .dimensions-grid--3col {
+    grid-template-columns: 1fr auto auto;
   }
 
-  .dimension-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 6px;
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border-subtle);
+  .dimensions-grid--4col {
+    grid-template-columns: 1fr auto auto auto;
   }
 
   .dim-label {
-    flex: 1;
     font-size: 10px;
     color: var(--color-text-secondary);
     font-family: var(--font-sans);
+    padding: 3px 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+
+  .dim-cell {
+    font-family: var(--font-mono);
+    text-align: right;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+
+  .dim-header {
+    font-size: 8px;
+    color: var(--color-text-dim);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 50%, transparent);
+    padding: 0 0 2px;
   }
 
   .dim-value {
     font-size: 11px;
-    font-family: var(--font-mono);
     color: var(--color-text-primary);
   }
 
   .dim-delta {
     font-size: 10px;
-    font-family: var(--font-mono);
     color: var(--color-text-dim);
   }
 
@@ -146,7 +160,6 @@
 
   .dim-orig {
     font-size: 10px;
-    font-family: var(--font-mono);
     color: var(--color-text-dim);
   }
 

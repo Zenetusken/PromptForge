@@ -65,12 +65,13 @@ describe('ScoreCard', () => {
     expect(screen.queryByText('+2.5')).not.toBeInTheDocument();
   });
 
-  it('renders the accessible dimension list', () => {
+  it('renders the accessible dimension grid', () => {
     render(ScoreCard, { props: { scores: defaultScores } });
-    const list = screen.getByRole('list', { name: 'Dimension scores' });
-    expect(list).toBeInTheDocument();
-    const items = screen.getAllByRole('listitem');
-    expect(items).toHaveLength(5);
+    const grid = screen.getByRole('list', { name: 'Dimension scores' });
+    expect(grid).toBeInTheDocument();
+    // 5 dimensions × 2 cells each (label + score) = 10 cells in the grid
+    // (no delta/orig columns when not provided)
+    expect(grid.querySelectorAll('.dim-label')).toHaveLength(5);
   });
 
   it('renders original scores when provided', () => {
