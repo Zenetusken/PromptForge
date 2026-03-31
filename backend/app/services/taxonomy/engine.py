@@ -18,7 +18,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 from sqlalchemy import func, select
@@ -601,7 +601,7 @@ class TaxonomyEngine:
                         node.usage_count = 0
                     node.avg_score = None
                     node.state = "archived"
-                    node.archived_at = datetime.utcnow()
+                    node.archived_at = datetime.now(timezone.utc)
                     zombie_count += 1
                     await self._embedding_index.remove(node.id)
             if zombie_count:
@@ -680,7 +680,7 @@ class TaxonomyEngine:
                 node.cluster_metadata = {
                     **(node.cluster_metadata or {}),
                     "pattern_member_count": node.member_count,
-                    "label_refreshed_at": datetime.utcnow().isoformat(),
+                    "label_refreshed_at": datetime.now(timezone.utc).isoformat(),
                 }
                 refreshed += 1
                 logger.info(
@@ -757,7 +757,10 @@ class TaxonomyEngine:
                 # (skip pairs already merged via Signal A)
                 remaining = [s for s in siblings if s.state == "active"]
                 if len(remaining) >= 2:
+                    merged_this_domain = False
                     for i in range(len(remaining)):
+                        if merged_this_domain:
+                            break
                         for j in range(i + 1, len(remaining)):
                             try:
                                 emb_i = np.frombuffer(
@@ -788,6 +791,8 @@ class TaxonomyEngine:
                                     winner_centroid = np.frombuffer(merged.centroid_embedding, dtype=np.float32)
                                     await self._embedding_index.upsert(merged.id, winner_centroid)
                                     await self._embedding_index.remove(small.id)
+                                    merged_this_domain = True
+                                    break  # only one merge per domain per cycle
 
             if domain_merges:
                 ops_accepted += domain_merges
@@ -2245,8 +2250,6 @@ class TaxonomyEngine:
             cluster_id: ID of the PromptCluster whose patterns were applied.
             db: Async SQLAlchemy session.
         """
-        from datetime import datetime, timezone
-
         cluster = await db.get(PromptCluster, cluster_id)
         if not cluster:
             logger.warning("increment_usage: cluster %s not found", cluster_id)
@@ -2275,11 +2278,6 @@ class TaxonomyEngine:
         logger.info(
             "Usage incremented: '%s' (usage=%d, domain=%s)",
             cluster.label, cluster.usage_count, cluster.domain,
-        )
-        logger.debug(
-            "Usage incremented: cluster=%s (usage=%d)",
-            cluster_id,
-            cluster.usage_count,
         )
 
     # ------------------------------------------------------------------
