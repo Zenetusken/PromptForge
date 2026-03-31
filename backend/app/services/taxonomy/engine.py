@@ -584,19 +584,28 @@ class TaxonomyEngine:
             logger.warning("Reconciliation failed (non-fatal): %s", recon_exc)
 
         # --- Zombie cluster cleanup ---
-        # After cold-path reassignment, clusters may have 0 linked optimizations
-        # and no score data. Archive these to reduce navigator/graph noise.
+        # After cold-path reassignment, clusters may have 0 linked optimizations.
+        # A cluster with 0 members is empty — its content was reassigned elsewhere.
+        # Any remaining usage_count or avg_score is stale (from before reassignment)
+        # and must be cleared so the cluster can be properly archived.
         try:
             zombie_count = 0
             for node in active_nodes:
-                if (node.member_count or 0) == 0 and node.avg_score is None and (node.usage_count or 0) == 0:
+                if (node.member_count or 0) == 0:
+                    # Clear stale data from before cold-path reassignment
+                    if node.usage_count and node.usage_count > 0:
+                        logger.info(
+                            "Clearing stale usage_count=%d on 0-member cluster '%s'",
+                            node.usage_count, node.label,
+                        )
+                        node.usage_count = 0
+                    node.avg_score = None
                     node.state = "archived"
                     node.archived_at = datetime.utcnow()
                     zombie_count += 1
-                    # Remove from embedding index
                     await self._embedding_index.remove(node.id)
             if zombie_count:
-                logger.info("Archived %d zombie clusters (0 members, no score)", zombie_count)
+                logger.info("Archived %d zombie clusters (0 members)", zombie_count)
                 await db.flush()
         except Exception as zombie_exc:
             logger.warning("Zombie cleanup failed (non-fatal): %s", zombie_exc)
@@ -2111,11 +2120,13 @@ class TaxonomyEngine:
                     f"has parent {row[2][:8]} which is not a domain node"
                 )
 
-        # 7. Archived clusters should not have active usage
+        # 7. Archived clusters with active usage AND actual members should not be archived
+        # (clusters with usage but 0 members are ghosts — stale usage from before reassignment)
         archived_used_q = await db.execute(
             select(PromptCluster.id, PromptCluster.label, PromptCluster.usage_count).where(
                 PromptCluster.state == "archived",
                 PromptCluster.usage_count > 0,
+                PromptCluster.member_count > 0,
             )
         )
         for row in archived_used_q:
@@ -2236,18 +2247,25 @@ class TaxonomyEngine:
             repaired += reparented
             logger.info("Repaired %d non-domain parent relationships", reparented)
 
-        # Unarchive clusters with active usage
+        # Unarchive clusters with active usage AND actual content.
+        # Clusters with usage_count > 0 but member_count == 0 are ghosts —
+        # their content was reassigned and the usage is stale. Only unarchive
+        # when members exist to back the usage data.
         archived_used = (await db.execute(
             select(PromptCluster).where(
                 PromptCluster.state == "archived",
                 PromptCluster.usage_count > 0,
+                PromptCluster.member_count > 0,
             )
         )).scalars().all()
         for node in archived_used:
             node.state = "active"
             node.archived_at = None
             repaired += 1
-            logger.info("Unarchived cluster with usage: '%s' (usage=%d)", node.label, node.usage_count)
+            logger.info(
+                "Unarchived cluster with usage: '%s' (usage=%d, members=%d)",
+                node.label, node.usage_count, node.member_count,
+            )
 
         # NOTE: do NOT commit here — the warm path handles commit/rollback
         # after the Q_system non-regression gate.  Committing prematurely
