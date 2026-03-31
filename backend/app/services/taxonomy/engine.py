@@ -1456,38 +1456,48 @@ class TaxonomyEngine:
             )
             domain_lookup = {row[1].lower(): row[0] for row in domain_nodes_q}
 
+            from collections import Counter as _Counter
+
             general_children_q = await db.execute(
                 select(PromptCluster).where(
                     PromptCluster.parent_id == general_node.id,
                     PromptCluster.state.in_(["active", "mature"]),
                 )
             )
+            general_children = list(general_children_q.scalars().all())
+            logger.info(
+                "Re-parenting sweep: checking %d general-parented clusters against %d domains",
+                len(general_children), len(domain_lookup),
+            )
             sweep_reparented = 0
-            for cluster in general_children_q.scalars():
-                # Check domain_raw distribution of linked optimizations
-                opt_raws = await db.execute(
+            for cluster in general_children:
+                # Get ALL domain_raw values for this cluster's optimizations
+                opt_raws_q = await db.execute(
                     select(Optimization.domain_raw).where(
                         Optimization.cluster_id == cluster.id,
                         Optimization.domain_raw.isnot(None),
                     )
                 )
-                raws = [r[0] for r in opt_raws.all() if r[0] and r[0] != "general"]
-                if not raws:
+                all_raws = [r[0] for r in opt_raws_q.all() if r[0]]
+                if not all_raws:
                     continue
-                from collections import Counter
-                raw_counts = Counter(raws)
-                top_raw, top_ct = raw_counts.most_common(1)[0]
-                total = len(raws) + len([r for r in (await db.execute(
-                    select(Optimization.domain_raw).where(
-                        Optimization.cluster_id == cluster.id,
-                        Optimization.domain_raw == "general",
-                    )
-                )).all()])
-                if top_raw in domain_lookup and top_ct / max(total, 1) >= DOMAIN_DISCOVERY_CONSISTENCY:
-                    target_id = domain_lookup[top_raw]
-                    cluster.parent_id = target_id
-                    cluster.domain = top_raw
-                    sweep_reparented += 1
+                raw_counts = _Counter(all_raws)
+                total = len(all_raws)
+                # Find the top non-general domain_raw
+                for top_raw, top_ct in raw_counts.most_common():
+                    if top_raw == "general":
+                        continue
+                    consistency = top_ct / total
+                    if top_raw in domain_lookup and consistency >= DOMAIN_DISCOVERY_CONSISTENCY:
+                        target_id = domain_lookup[top_raw]
+                        logger.info(
+                            "Re-parenting '%s' → '%s' (consistency=%.0f%%, %d/%d members)",
+                            cluster.label, top_raw, consistency * 100, top_ct, total,
+                        )
+                        cluster.parent_id = target_id
+                        cluster.domain = top_raw
+                        sweep_reparented += 1
+                    break  # only check the top non-general candidate
             if sweep_reparented:
                 logger.info(
                     "Re-parenting sweep: moved %d clusters from general to their domain",
