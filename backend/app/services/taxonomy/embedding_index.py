@@ -51,6 +51,11 @@ class EmbeddingIndex:
         # Filter by threshold
         mask = scores >= threshold
         if not mask.any():
+            top_idx = int(np.argmax(scores))
+            logger.info(
+                "Embedding search miss: top_score=%.3f (threshold=%.2f, index_size=%d, best_id=%s)",
+                float(scores[top_idx]), threshold, len(ids), ids[top_idx][:8],
+            )
             return []
 
         # Top-k via argpartition
