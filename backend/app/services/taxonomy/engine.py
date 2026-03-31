@@ -356,9 +356,17 @@ class TaxonomyEngine:
         # --- Priority 1: Split (Spec Section 3.5) ---
         # Detect split candidates: active nodes with low coherence and enough
         # members to produce viable child clusters.
+        # Dynamic threshold: larger clusters need higher coherence to stay unified.
+        # A 6-member cluster at 0.50 is fine; a 40-member cluster at 0.55 is
+        # almost certainly multiple topics compressed together.
+        import math
+
         for node in active_nodes:
             coherence = node.coherence if node.coherence is not None else 1.0
-            if coherence < SPLIT_COHERENCE_FLOOR and (node.member_count or 0) >= SPLIT_MIN_MEMBERS:
+            member_count = node.member_count or 0
+            # Scale: +0.05 per doubling above 6 members
+            dynamic_floor = SPLIT_COHERENCE_FLOOR + max(0, math.log2(max(member_count, 6) / 6)) * 0.05
+            if coherence < dynamic_floor and member_count >= SPLIT_MIN_MEMBERS:
                 ops_attempted += 1
                 # Gather families assigned to this node
                 fam_q = await db.execute(
