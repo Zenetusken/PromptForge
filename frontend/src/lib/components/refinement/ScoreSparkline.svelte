@@ -5,15 +5,36 @@
     height?: number;
     baseline?: number | null;
     labels?: string[] | null;
+    /** Minimum Y-axis range. Prevents tiny fluctuations (e.g., 0.80→0.82)
+     *  from looking like dramatic cliffs by ensuring the visual scale is
+     *  at least this wide. Default 0 (auto-scale, legacy behavior). */
+    minRange?: number;
   }
 
-  let { scores, width = 120, height = 24, baseline = null, labels = null }: Props = $props();
+  let { scores, width = 120, height = 24, baseline = null, labels = null, minRange = 0 }: Props = $props();
 
   const PADDING = 2;
 
-  // Shared scale: computed once, used by polyline, baseline, and tooltips
-  const scaleMin = $derived(scores.length >= 2 ? Math.min(...scores) : 0);
-  const scaleMax = $derived(scores.length >= 2 ? Math.max(...scores) : 1);
+  // Shared scale: auto-scale from data, then expand to minRange if needed.
+  // Expansion is symmetric around the midpoint so the line stays centered.
+  const scaleMin = $derived.by(() => {
+    if (scores.length < 2) return 0;
+    const dataMin = Math.min(...scores);
+    const dataMax = Math.max(...scores);
+    const dataRange = dataMax - dataMin;
+    if (dataRange >= minRange) return dataMin;
+    const mid = (dataMin + dataMax) / 2;
+    return mid - minRange / 2;
+  });
+  const scaleMax = $derived.by(() => {
+    if (scores.length < 2) return 1;
+    const dataMin = Math.min(...scores);
+    const dataMax = Math.max(...scores);
+    const dataRange = dataMax - dataMin;
+    if (dataRange >= minRange) return dataMax;
+    const mid = (dataMin + dataMax) / 2;
+    return mid + minRange / 2;
+  });
   const scaleRange = $derived(scaleMax - scaleMin || 1);
 
   function toY(value: number): number {

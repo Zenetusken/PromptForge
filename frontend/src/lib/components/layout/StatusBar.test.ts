@@ -189,8 +189,9 @@ describe('StatusBar', () => {
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     render(StatusBar);
     await vi.waitFor(() => {
-      expect(screen.getByTitle('Taxonomy health (Q_system)')).toBeInTheDocument();
       expect(screen.getByText('0.82')).toBeInTheDocument();
+      // Q: label is always present when stats exist
+      expect(screen.getByText(/^Q:$/)).toBeInTheDocument();
     });
   });
 
@@ -252,9 +253,9 @@ describe('StatusBar', () => {
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     render(StatusBar);
     await vi.waitFor(() => {
-      const trendEl = screen.getByTitle(/Q trend: improving/);
+      // Health assessment produces a headline based on Q + sub-metrics
+      const trendEl = screen.getByText(/getting better|well organized|looking great/i);
       expect(trendEl).toBeInTheDocument();
-      expect(trendEl.textContent).toBe('/');
     });
   });
 
@@ -281,9 +282,11 @@ describe('StatusBar', () => {
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     render(StatusBar);
     await vi.waitFor(() => {
-      expect(screen.getByTitle('Taxonomy health (Q_system)')).toBeInTheDocument();
+      // Q value renders (may appear in sparkline SVG title too, so use getAllByText)
+      expect(screen.getAllByText('0.80').length).toBeGreaterThanOrEqual(1);
     });
-    expect(screen.queryByTitle(/Q trend/)).not.toBeInTheDocument();
+    // With only 2 data points, no trend-based headline like "getting better"
+    expect(screen.queryByText(/getting better|looking great/i)).not.toBeInTheDocument();
   });
 
   it('cluster count updates when taxonomy stats change', async () => {

@@ -7,6 +7,8 @@
   import { taxonomyColor, qHealthColor } from '$lib/utils/colors';
   import { getPhaseLabel } from '$lib/utils/dimensions';
   import { formatScore, trendInfo } from '$lib/utils/formatting';
+  import { assessTaxonomyHealth } from '$lib/utils/taxonomy-health';
+  import { tooltip } from '$lib/actions/tooltip';
   import Logo from '$lib/components/shared/Logo.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
 
@@ -89,18 +91,21 @@
       {@const stats = clustersStore.taxonomyStats}
       {@const qSystem = stats.q_system!}
       {#if stats.q_sparkline && stats.q_sparkline.length >= 2}
-        <ScoreSparkline scores={stats.q_sparkline} width={60} height={14} />
+        <ScoreSparkline scores={stats.q_sparkline} width={60} height={14} minRange={0.2} />
       {/if}
-      <span class="statusbar-item" title="Taxonomy health (Q_system)">
+      {@const health = assessTaxonomyHealth(stats)}
+      <span class="statusbar-item" use:tooltip={health?.detail ?? 'Taxonomy health'}>
         Q: <span style="color: {qHealthColor(qSystem)}">{qSystem.toFixed(2)}</span>
       </span>
-      {#if stats.q_point_count >= 3}
-        {@const ti = trendInfo(stats.q_trend)}
+      {#if health}
         <span
           class="statusbar-trend"
-          title="Q trend: {ti.label}"
-          style="color: {ti.color}"
-        >{ti.char}</span>
+          use:tooltip={health.detail}
+          style="color: {health.color}"
+        >{health.headline}</span>
+      {:else if stats.q_point_count >= 3}
+        {@const ti = trendInfo(stats.q_trend)}
+        <span class="statusbar-trend" style="color: {ti.color}">{ti.char}</span>
       {/if}
     {/if}
     <span class="status-kbd" aria-label="Open command palette with Ctrl+K">Ctrl+K</span>

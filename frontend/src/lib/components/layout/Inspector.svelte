@@ -375,7 +375,7 @@
           </div>
           {#if stats.q_sparkline && stats.q_sparkline.length >= 2}
             <div class="health-sparkline">
-              <ScoreSparkline scores={stats.q_sparkline} width={100} height={18} />
+              <ScoreSparkline scores={stats.q_sparkline} width={100} height={18} minRange={0.2} />
               {#if health}
                 <span class="health-headline" style="color: {health.color}">{health.headline}</span>
               {/if}

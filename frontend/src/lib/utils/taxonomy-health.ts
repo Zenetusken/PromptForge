@@ -87,12 +87,33 @@ export function assessTaxonomyHealth(stats: ClusterStats | null): HealthAssessme
     issues.push('a few groups overlap and could be better separated');
   }
 
+  // -- Critical sub-metric override --
+  // A high Q_system can mask a critically low sub-metric. If separation or
+  // coherence is dangerously low, the headline must reflect that regardless
+  // of the composite score.
+  const hasCriticalSubMetric = sep < SEPARATION_LOW || coh < COHERENCE_LOW;
+
   // -- Headline --
   let headline: string;
   let severity: HealthAssessment['severity'];
   let color: string;
 
-  if (q >= Q_GOOD) {
+  if (hasCriticalSubMetric) {
+    // Sub-metric crisis overrides composite score
+    if (sep < SEPARATION_LOW && coh < COHERENCE_LOW) {
+      headline = 'Groups need reorganizing';
+      severity = 'warning';
+      color = 'var(--color-neon-orange)';
+    } else if (sep < SEPARATION_LOW) {
+      headline = 'Groups are too similar';
+      severity = 'warning';
+      color = 'var(--color-neon-yellow)';
+    } else {
+      headline = 'Groups are unfocused';
+      severity = 'warning';
+      color = 'var(--color-neon-yellow)';
+    }
+  } else if (q >= Q_GOOD) {
     if (improving) {
       headline = 'Looking great, getting better';
       severity = 'good';

@@ -3021,7 +3021,10 @@ class TaxonomyEngine:
                 "leaf_count": leaf_count,
             },
             "q_history": q_history,
-            "q_sparkline": sparkline.normalized,
+            # Raw values (0–1 scale) — frontend uses fixedRange=[0,1] for
+            # absolute rendering. Normalized values caused tiny fluctuations
+            # to look like catastrophic drops.
+            "q_sparkline": sparkline.raw_values,
             "q_trend": sparkline.trend,
             "q_current": sparkline.current if sparkline.point_count > 0 else None,
             "q_min": sparkline.min if sparkline.point_count > 0 else None,
