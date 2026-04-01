@@ -1028,6 +1028,23 @@ async def run_sampling_pipeline(
         if applied_pattern_ids:
             await _track_applied_patterns(db, opt_id, applied_pattern_ids)
 
+        # Record injection provenance (which clusters influenced this optimization)
+        if auto_injected_cluster_ids:
+            try:
+                from app.models import OptimizationPattern
+
+                for _cid in auto_injected_cluster_ids:
+                    db.add(OptimizationPattern(
+                        optimization_id=opt_id,
+                        cluster_id=_cid,
+                        relationship="injected",
+                    ))
+            except Exception as _inj_exc:
+                logger.warning(
+                    "Failed to record injection provenance (sampling): %s",
+                    _inj_exc,
+                )
+
         await db.commit()
 
     # Increment usage counts AFTER successful commit (Spec 7.8)

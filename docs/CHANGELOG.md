@@ -5,6 +5,9 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Added
+- Pattern injection provenance: `auto_inject_patterns()` now persists `OptimizationPattern` records with `relationship="injected"` recording which clusters influenced each optimization
+- `GET /api/clusters/injection-edges` endpoint returning directed weighted edges aggregated by (source cluster, target cluster) with archived-cluster filtering
+- Injection edge visualization in 3D topology: warm gold/amber directed edges with weight-proportional opacity (0.15-0.50), controlled by "Injection" toggle in TopologyControls
 - Similarity edge layer for 3D topology visualization: `GET /api/clusters/similarity-edges` endpoint + frontend toggle overlay with dashed neon-cyan lines (opacity proportional to cosine similarity)
 - `EmbeddingIndex.pairwise_similarities()` method for batch cosine similarity computation from the L2-normalized centroid matrix
 - `interpolate_position()` in `projection.py` — cosine-weighted sibling interpolation for UMAP coordinates between cold path runs

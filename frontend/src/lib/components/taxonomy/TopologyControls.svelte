@@ -103,6 +103,16 @@
     Similarity
   </button>
 
+  <!-- Injection toggle -->
+  <button
+    class="injection-btn"
+    class:injection-active={clustersStore.showInjectionEdges}
+    onclick={() => { clustersStore.showInjectionEdges = !clustersStore.showInjectionEdges; }}
+    title="Toggle injection provenance edges"
+  >
+    Injection
+  </button>
+
   <!-- Recluster button -->
   <button
     class="recluster-btn"
@@ -206,6 +216,26 @@
   .similarity-btn.similarity-active {
     border-color: var(--color-neon-cyan);
     color: var(--color-neon-cyan);
+  }
+
+  .injection-btn {
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .injection-btn:hover {
+    border-color: #ff9500;
+    color: #ff9500;
+  }
+
+  .injection-btn.injection-active {
+    border-color: #ff9500;
+    color: #ff9500;
   }
 
   .recluster-btn {

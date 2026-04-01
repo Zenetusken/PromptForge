@@ -124,6 +124,16 @@ export interface SimilarityEdgesResponse {
   edges: SimilarityEdge[];
 }
 
+export interface InjectionEdge {
+  source_id: string; // cluster that provided patterns
+  target_id: string; // cluster the optimization was assigned to
+  weight: number;    // number of injection events
+}
+
+export interface InjectionEdgesResponse {
+  edges: InjectionEdge[];
+}
+
 export interface ReclusterResult {
   status: 'completed' | 'skipped';
   reason?: string;
@@ -190,6 +200,11 @@ export async function getClusterSimilarityEdges(
   if (maxEdges != null) params.set('max_edges', String(maxEdges));
   const qs = params.toString();
   const resp = await apiFetch<SimilarityEdgesResponse>(`/clusters/similarity-edges${qs ? '?' + qs : ''}`);
+  return resp.edges;
+}
+
+export async function getClusterInjectionEdges(): Promise<InjectionEdge[]> {
+  const resp = await apiFetch<InjectionEdgesResponse>('/clusters/injection-edges');
   return resp.edges;
 }
 

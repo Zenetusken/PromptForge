@@ -135,3 +135,13 @@ class SimilarityEdge(BaseModel):
 
 class SimilarityEdgesResponse(BaseModel):
     edges: list[SimilarityEdge]
+
+
+class InjectionEdge(BaseModel):
+    source_id: str  # cluster that provided patterns
+    target_id: str  # cluster the optimization was assigned to
+    weight: int     # number of injection events
+
+
+class InjectionEdgesResponse(BaseModel):
+    edges: list[InjectionEdge]

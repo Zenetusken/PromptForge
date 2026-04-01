@@ -18,9 +18,13 @@
   const HIGHLIGHT_COLOR = parseInt(stateColor('template').replace('#', ''), 16);
   const EDGE_COLOR = parseInt(stateColor('archived').replace('#', ''), 16);
   const SIMILARITY_EDGE_COLOR = parseInt(stateColor('template').replace('#', ''), 16);
+  const INJECTION_EDGE_COLOR = 0xff9500; // warm gold/amber
 
   // Similarity edge group — persisted across rebuilds for visibility toggle
   let similarityEdgeGroup: THREE.Group | null = null;
+
+  // Injection edge group — persisted across rebuilds for visibility toggle
+  let injectionEdgeGroup: THREE.Group | null = null;
 
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
@@ -282,6 +286,47 @@
     }
     renderer.scene.add(similarityEdgeGroup);
 
+    // Injection provenance edges — directed, warm gold/amber, separate group
+    injectionEdgeGroup = new THREE.Group();
+    injectionEdgeGroup.userData = { isInjectionEdge: true };
+    injectionEdgeGroup.visible = clustersStore.showInjectionEdges;
+
+    // Build injection edge weight lookup from store data
+    const injEdgeWeights = new Map<string, number>();
+    let maxInjWeight = 1;
+    for (const ie of clustersStore.injectionEdges) {
+      const key = `${ie.source_id}:${ie.target_id}`;
+      injEdgeWeights.set(key, ie.weight);
+      if (ie.weight > maxInjWeight) maxInjWeight = ie.weight;
+    }
+
+    const injEdges = data.edges.filter(e => e.type === 'injection');
+    if (injEdges.length > 0) {
+      for (const edge of injEdges) {
+        const from = nodeMap.get(edge.from);
+        const to = nodeMap.get(edge.to);
+        if (!from || !to) continue;
+
+        const weight = injEdgeWeights.get(`${edge.from}:${edge.to}`) ?? 1;
+        // Opacity proportional to weight: min 0.15, max 0.5
+        const opacity = 0.15 + (weight / maxInjWeight) * 0.35;
+
+        const injGeo = new THREE.BufferGeometry();
+        injGeo.setAttribute('position', new THREE.Float32BufferAttribute(
+          [...from.position, ...to.position], 3,
+        ));
+        const injMat = new THREE.LineBasicMaterial({
+          color: INJECTION_EDGE_COLOR,
+          transparent: true,
+          opacity: Math.max(0.15, Math.min(0.5, opacity)),
+        });
+        const injLine = new THREE.LineSegments(injGeo, injMat);
+        injLine.userData = { isInjectionEdge: true, baseOpacity: opacity };
+        injectionEdgeGroup.add(injLine);
+      }
+    }
+    renderer.scene.add(injectionEdgeGroup);
+
     // Labels — always visible for small graphs (≤ 8 nodes), near = all, mid = large clusters
     if (labels) {
       const visibleNodes = data.nodes.filter(n => n.visible);
@@ -383,7 +428,7 @@
     if (tree.length > 0 && renderer) {
       untrack(() => {
         flatNodeMap = new Map(tree.map(n => [n.id, n]));
-        sceneData = buildSceneData(tree, clustersStore.similarityEdges);
+        sceneData = buildSceneData(tree, clustersStore.similarityEdges, clustersStore.injectionEdges);
         assignLodVisibility(sceneData.nodes, lodTier);
 
         // Build semantic relationship data for the force simulation
@@ -512,6 +557,14 @@
     }
   });
 
+  // Injection edge visibility toggle
+  $effect(() => {
+    const show = clustersStore.showInjectionEdges;
+    if (injectionEdgeGroup) {
+      injectionEdgeGroup.visible = show;
+    }
+  });
+
   // Domain highlight dimming — when a domain is highlighted in the navigator,
   // dim all non-matching nodes and edges. Restores original opacities on clear.
   $effect(() => {
@@ -559,6 +612,11 @@
       }
       if (obj instanceof THREE.LineSegments && obj.userData?.isSimilarityEdge) {
         const mat = obj.material as THREE.LineDashedMaterial;
+        const baseOpacity = obj.userData.baseOpacity as number;
+        mat.opacity = dimActive ? baseOpacity * 0.25 : baseOpacity;
+      }
+      if (obj instanceof THREE.LineSegments && obj.userData?.isInjectionEdge) {
+        const mat = obj.material as THREE.LineBasicMaterial;
         const baseOpacity = obj.userData.baseOpacity as number;
         mat.opacity = dimActive ? baseOpacity * 0.25 : baseOpacity;
       }
