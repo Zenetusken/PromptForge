@@ -6,6 +6,20 @@ import StatusBar from './StatusBar.svelte';
 import { forgeStore } from '$lib/stores/forge.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { clustersStore } from '$lib/stores/clusters.svelte';
+import type { ClusterNode } from '$lib/api/clusters';
+
+/** Create a minimal active ClusterNode for tree population. */
+function mockClusterNode(id: string, overrides: Partial<ClusterNode> = {}): ClusterNode {
+  return {
+    id, parent_id: null, label: `Cluster ${id}`, state: 'active',
+    domain: 'general', task_type: 'coding', persistence: null,
+    coherence: 0.8, separation: null, stability: null,
+    member_count: 3, usage_count: 1, avg_score: 7.0,
+    color_hex: null, umap_x: null, umap_y: null, umap_z: null,
+    preferred_strategy: null, created_at: null,
+    ...overrides,
+  };
+}
 
 describe('StatusBar', () => {
   beforeEach(() => {
@@ -39,27 +53,9 @@ describe('StatusBar', () => {
     expect(screen.getByText('PASSTHROUGH')).toBeInTheDocument();
   });
 
-  it('shows cluster count when taxonomyStats has active nodes > 0', async () => {
-    // Set taxonomy stats with active nodes
-    clustersStore.taxonomyStats = {
-      q_system: 0.8,
-      q_coherence: 0.7,
-      q_separation: 0.6,
-      q_coverage: 0.5,
-      q_dbcv: 0.4,
-      total_clusters: 7,
-      nodes: { active: 7, candidate: 2, mature: 0, template: 0, archived: 0, max_depth: 3, leaf_count: 5 },
-      last_warm_path: null,
-      last_cold_path: null,
-      warm_path_age: null,
-      q_history: [],
-      q_sparkline: [],
-      q_trend: 0.15,
-      q_current: 0.8,
-      q_min: 0.5,
-      q_max: 0.9,
-      q_point_count: 10,
-    };
+  it('shows cluster count when taxonomy tree has active nodes > 0', async () => {
+    // Populate taxonomy tree — liveClusterCount derives from this
+    clustersStore.taxonomyTree = Array.from({ length: 7 }, (_, i) => mockClusterNode(`c-${i}`));
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     render(StatusBar);
     await vi.waitFor(() => {
@@ -289,7 +285,7 @@ describe('StatusBar', () => {
     expect(screen.queryByText(/getting better|looking great/i)).not.toBeInTheDocument();
   });
 
-  it('cluster count updates when taxonomy stats change', async () => {
+  it('cluster count updates when taxonomy tree changes', async () => {
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     render(StatusBar);
 
@@ -297,26 +293,8 @@ describe('StatusBar', () => {
     await vi.waitFor(() => {}, { timeout: 100 });
     expect(screen.queryByText(/clusters/)).not.toBeInTheDocument();
 
-    // Set taxonomy stats
-    clustersStore.taxonomyStats = {
-      q_system: 0.8,
-      q_coherence: 0.7,
-      q_separation: 0.6,
-      q_coverage: 0.5,
-      q_dbcv: 0.4,
-      total_clusters: 5,
-      nodes: { active: 5, candidate: 1, mature: 0, template: 0, archived: 0, max_depth: 2, leaf_count: 4 },
-      last_warm_path: null,
-      last_cold_path: null,
-      warm_path_age: null,
-      q_history: [],
-      q_sparkline: [],
-      q_trend: 0.15,
-      q_current: 0.8,
-      q_min: 0.5,
-      q_max: 0.9,
-      q_point_count: 10,
-    };
+    // Populate taxonomy tree — liveClusterCount derives from this
+    clustersStore.taxonomyTree = Array.from({ length: 5 }, (_, i) => mockClusterNode(`c-${i}`));
 
     await vi.waitFor(() => {
       expect(screen.queryByText('5 clusters')).toBeInTheDocument();

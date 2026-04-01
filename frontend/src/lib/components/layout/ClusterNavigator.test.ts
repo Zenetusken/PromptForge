@@ -534,7 +534,7 @@ describe('ClusterNavigator', () => {
     defaultHandlers([]);
     render(ClusterNavigator);
 
-    const mindmapBtn = screen.getByTitle('Open pattern mindmap');
+    const mindmapBtn = screen.getByRole('button', { name: 'Open pattern mindmap' });
     await user.click(mindmapBtn);
 
     expect(openMindmapSpy).toHaveBeenCalled();
@@ -794,7 +794,7 @@ describe('ClusterNavigator', () => {
       expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
     });
 
-    const useButtons = screen.getAllByTitle('Use this template');
+    const useButtons = screen.getAllByRole('button', { name: 'Use this template' });
     expect(useButtons.length).toBe(2);
   });
 
@@ -816,7 +816,7 @@ describe('ClusterNavigator', () => {
       expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByTitle('Use this template'));
+    await user.click(screen.getByRole('button', { name: 'Use this template' }));
 
     expect(spawnSpy).toHaveBeenCalledWith('tmpl-42');
   });

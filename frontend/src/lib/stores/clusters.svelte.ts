@@ -12,6 +12,12 @@ import {
   type SimilarityEdge, type InjectionEdge,
 } from '$lib/api/clusters';
 
+/** A node is orphaned when it has no members and no usage — its optimizations
+ *  were reassigned by cold-path but the cluster wasn't retired yet. */
+export function isOrphanNode(node: { member_count: number; usage_count: number }): boolean {
+  return node.member_count === 0 && node.usage_count === 0;
+}
+
 const PASTE_CHAR_DELTA = 50;
 const PASTE_DEBOUNCE_MS = 300;
 const SUGGESTION_AUTO_DISMISS_MS = 10_000;
@@ -64,7 +70,7 @@ class ClusterStore {
     // First pass: collect non-domain nodes that pass the filter
     const childNodes = tree.filter(node => {
       if (node.state === 'domain') return false;
-      if (node.state === 'archived' && node.member_count === 0 && node.usage_count === 0) return false;
+      if (isOrphanNode(node)) return false;
       return filter === null || node.state === filter;
     });
 
@@ -77,6 +83,26 @@ class ClusterStore {
     );
 
     return [...domainNodes, ...childNodes];
+  });
+
+  /** Global count of non-orphan active clusters — independent of state filter tab.
+   *  Used by StatusBar as the canonical cluster indicator. */
+  liveClusterCount = $derived(
+    this.taxonomyTree.filter(n =>
+      n.state === 'active' && !isOrphanNode(n)
+    ).length
+  );
+
+  /** Canonical state breakdown from the filtered tree — excludes orphans and domains.
+   *  Shared by TopologyControls footer, Inspector health counts, and any future consumer. */
+  clusterCounts = $derived.by(() => {
+    let active = 0, candidate = 0, template = 0;
+    for (const n of this.filteredTaxonomyTree) {
+      if (n.state === 'active') active++;
+      else if (n.state === 'candidate') candidate++;
+      else if (n.state === 'template') template++;
+    }
+    return { active, candidate, template };
   });
 
   // Internal

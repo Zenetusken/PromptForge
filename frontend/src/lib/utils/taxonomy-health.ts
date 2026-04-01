@@ -82,7 +82,7 @@ export function assessTaxonomyHealth(stats: ClusterStats | null): HealthAssessme
   }
 
   if (sep < SEPARATION_LOW) {
-    issues.push('groups are too similar to each other \u2014 try running a recluster');
+    issues.push('some groups are quite similar to each other');
   } else if (sep < SEPARATION_GOOD) {
     issues.push('a few groups overlap and could be better separated');
   }
@@ -109,6 +109,7 @@ export function assessTaxonomyHealth(stats: ClusterStats | null): HealthAssessme
       severity = 'warning';
       color = 'var(--color-neon-yellow)';
     } else {
+      // coh < COHERENCE_LOW (guaranteed by hasCriticalSubMetric guard)
       headline = 'Groups are unfocused';
       severity = 'warning';
       color = 'var(--color-neon-yellow)';
@@ -172,7 +173,7 @@ export function assessTaxonomyHealth(stats: ClusterStats | null): HealthAssessme
 
   // What to do next
   if (sep < SEPARATION_LOW && active >= 5) {
-    parts.push('hit Recluster to reorganize the groups');
+    parts.push('adding more prompts will help differentiate the groups');
   } else if (candidate > active && candidate >= 3) {
     parts.push('new groups are forming \u2014 they\'ll be confirmed automatically');
   } else if (template === 0 && active >= 5 && q >= Q_GOOD) {

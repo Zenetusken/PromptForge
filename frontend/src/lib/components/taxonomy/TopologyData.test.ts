@@ -188,7 +188,7 @@ describe('assignLodVisibility', () => {
 });
 
 describe('buildSceneData — state-based visual encoding', () => {
-  it('template state nodes get size multiplied by 1.5', () => {
+  it('template state nodes get size multiplied by 1.3', () => {
     const baseNode = makeNode({ id: 'base', state: 'active', member_count: 4, usage_count: 2 });
     const templateNode = makeNode({ id: 'tmpl', state: 'template', member_count: 4, usage_count: 2 });
 
@@ -196,10 +196,10 @@ describe('buildSceneData — state-based visual encoding', () => {
     const base = nodes.find(n => n.id === 'base')!;
     const template = nodes.find(n => n.id === 'tmpl')!;
 
-    expect(template.size).toBeCloseTo(base.size * 1.5, 5);
+    expect(template.size).toBeCloseTo(base.size * 1.3, 5);
   });
 
-  it('mature state nodes get size multiplied by 1.2', () => {
+  it('mature state nodes get size multiplied by 1.15', () => {
     const baseNode = makeNode({ id: 'base', state: 'active', member_count: 4, usage_count: 2 });
     const matureNode = makeNode({ id: 'mat', state: 'mature', member_count: 4, usage_count: 2 });
 
@@ -207,7 +207,7 @@ describe('buildSceneData — state-based visual encoding', () => {
     const base = nodes.find(n => n.id === 'base')!;
     const mature = nodes.find(n => n.id === 'mat')!;
 
-    expect(mature.size).toBeCloseTo(base.size * 1.2, 5);
+    expect(mature.size).toBeCloseTo(base.size * 1.15, 5);
   });
 
   it('candidate state nodes get opacity 0.4', () => {

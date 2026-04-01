@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { ClusterNode } from '$lib/api/clusters';
-  import { clustersStore, type StateFilter } from '$lib/stores/clusters.svelte';
+  import { clustersStore, isOrphanNode, type StateFilter } from '$lib/stores/clusters.svelte';
   import { editorStore, PROMPT_TAB_ID } from '$lib/stores/editor.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
   import { scoreColor, taxonomyColor, stateColor } from '$lib/utils/colors';
   import { formatScore, parsePrimaryDomain } from '$lib/utils/formatting';
   import { tooltip } from '$lib/actions/tooltip';
+  import { CLUSTER_NAV_TOOLTIPS } from '$lib/utils/ui-tooltips';
 
   const PAGE_SIZE = 50;
 
@@ -18,8 +19,8 @@
   // not yet promoted to user-visible states by the lifecycle service.
   const stateFilter = $derived(clustersStore.stateFilter);
 
-  // Derive families directly from the store's taxonomy tree (already in memory)
-  const allFamilies = $derived(clustersStore.taxonomyTree);
+  // Derive families from the store's filtered tree (orphans + state filter already applied)
+  const allFamilies = $derived(clustersStore.filteredTaxonomyTree);
   const families = $derived(allFamilies.slice(0, pageLimit));
   const hasMore = $derived(pageLimit < allFamilies.length);
   const loaded = $derived(!clustersStore.taxonomyLoading || allFamilies.length > 0);
@@ -56,26 +57,25 @@
 
   // Proven Templates section — pinned regardless of state filter.
   // Templates are a curated showcase, always visible when they exist.
+  // Source from raw taxonomyTree so templates appear even when state filter is 'active'.
   let showTemplates = $derived(stateFilter === null || stateFilter === 'active' || stateFilter === 'template');
   let templateClusters = $derived(
     showTemplates
-      ? families
-          .filter(f => f.state === 'template')
+      ? clustersStore.taxonomyTree
+          .filter(f => f.state === 'template' && !isOrphanNode(f))
           .sort((a, b) => (b.avg_score ?? 0) - (a.avg_score ?? 0))
       : []
   );
 
-  // Filter families by active state tab.
-  // - Domain nodes are excluded: they serve as group headers, not child items
+  // Filter families for display.
+  // - Domain nodes excluded: they serve as group headers, not child items
   // - Templates have their own dedicated section — exclude from main list
+  // - Orphan + state filtering already applied by store's filteredTaxonomyTree
   let filteredFamilies = $derived(
     families.filter(f => {
       if (f.state === 'domain') return false;
       if (showTemplates && f.state === 'template') return false;
-      // Hide orphaned clusters — 0 members means all optimizations were
-      // reassigned by cold-path. Keep only if patterns are actively used.
-      if (f.member_count === 0 && f.usage_count === 0) return false;
-      return !stateFilter || f.state === stateFilter;
+      return true;
     })
   );
 
@@ -97,12 +97,14 @@
     Object.keys(grouped).sort((a, b) => grouped[b].length - grouped[a].length)
   );
 
-  // Ensure tree is loaded on mount (idempotent — store uses generation counter)
+  // Ensure tree is loaded on mount (idempotent — store uses generation counter).
+  // Check raw taxonomyTree (not filtered) to avoid re-fetching when the tree
+  // is loaded but the current state filter yields zero visible nodes.
   let _mountLoaded = $state(false);
   $effect(() => {
     if (!_mountLoaded) {
       _mountLoaded = true;
-      if (allFamilies.length === 0) {
+      if (clustersStore.taxonomyTree.length === 0) {
         clustersStore.loadTree();
       }
     }
@@ -162,11 +164,12 @@
 <div class="panel">
   <header class="panel-header">
     <span class="section-heading">Clusters</span>
-    <span class="badge-solid" title="Total clusters">{totalFamilies}</span>
+    <span class="badge-solid" use:tooltip={CLUSTER_NAV_TOOLTIPS.total_clusters}>{totalFamilies}</span>
     <button
       class="mindmap-btn"
       onclick={openMindmap}
-      title="Open pattern mindmap"
+      use:tooltip={CLUSTER_NAV_TOOLTIPS.open_mindmap}
+      aria-label="Open pattern mindmap"
     >
       <svg width="12" height="12" viewBox="0 0 18 18" aria-hidden="true">
         <circle cx="9" cy="9" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
@@ -230,7 +233,7 @@
           >
             <span class="domain-dot" style="background: {taxonomyColor(result.domain)};"></span>
             <span class="search-label">{result.label}</span>
-            <span class="search-score font-mono" use:tooltip={'Centroid cosine similarity to search text'}>{(result.score * 100).toFixed(0)}%</span>
+            <span class="search-score font-mono" use:tooltip={CLUSTER_NAV_TOOLTIPS.similarity_score}>{(result.score * 100).toFixed(0)}%</span>
           </button>
         {/each}
       {/if}
@@ -255,7 +258,7 @@
                   {#if cluster.avg_score != null}
                     <span class="badge-score font-mono" style="color: {scoreColor(cluster.avg_score)};">{formatScore(cluster.avg_score)}</span>
                   {/if}
-                  <span class="badge-neon" title="Members">{cluster.member_count}</span>
+                  <span class="badge-neon" use:tooltip={CLUSTER_NAV_TOOLTIPS.members_badge}>{cluster.member_count}</span>
                   {#if cluster.preferred_strategy}
                     <span class="template-strategy">{cluster.preferred_strategy}</span>
                   {/if}
@@ -264,7 +267,8 @@
               <button
                 class="use-template-btn"
                 onclick={() => useTemplate(cluster.id)}
-                title="Use this template"
+                use:tooltip={CLUSTER_NAV_TOOLTIPS.use_template}
+                aria-label="Use this template"
               >Use</button>
             </div>
           {/each}
@@ -278,7 +282,7 @@
             class="domain-header"
             class:domain-header--highlighted={clustersStore.highlightedDomain === domain}
             onclick={() => clustersStore.toggleHighlightDomain(domain)}
-            title="Click to highlight in graph"
+            use:tooltip={CLUSTER_NAV_TOOLTIPS.highlight_graph}
           >
             <span class="domain-dot" style="background: {taxonomyColor(domain)};"></span>
             <span class="domain-label">{domain}</span>
@@ -293,16 +297,16 @@
             >
               <span class="family-label">{family.label}</span>
               <span class="family-badges">
-                <span class="member-count font-mono" title="{family.member_count} {family.member_count === 1 ? 'member' : 'members'}">{family.member_count}m</span>
+                <span class="member-count font-mono" use:tooltip={`${family.member_count} ${family.member_count === 1 ? 'member' : 'members'}`}>{family.member_count}m</span>
                 <span
                   class="badge-usage font-mono"
                   class:badge-usage--active={family.usage_count > 0}
-                  title="Pattern usage count"
+                  use:tooltip={CLUSTER_NAV_TOOLTIPS.usage_count}
                 >{family.usage_count}</span>
                 <span
                   class="badge-score font-mono"
                   style="color: {scoreColor(family.avg_score)};"
-                  title="Average score"
+                  use:tooltip={CLUSTER_NAV_TOOLTIPS.avg_score}
                 >
                   {formatScore(family.avg_score)}
                 </span>

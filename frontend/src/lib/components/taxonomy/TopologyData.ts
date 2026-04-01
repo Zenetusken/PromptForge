@@ -31,14 +31,24 @@ function stateOpacity(state: string): number {
 
 /** Size multiplier by lifecycle state.
  * Domain nodes already aggregate children's members for their base size,
- * so the multiplier is modest (1.6x) — just enough to be visually dominant
- * without overwhelming the graph at scale. */
+ * so the multiplier is moderate — enough to be visually dominant
+ * without overwhelming the graph at scale.
+ *
+ * Note: the final size is clamped to MAX_NODE_SIZE after applying
+ * this multiplier, so domains can't blow past the visual budget. */
 function stateSizeMultiplier(state: string): number {
-  if (state === 'domain') return 1.6;
-  if (state === 'template') return 1.5;
-  if (state === 'mature') return 1.2;
+  if (state === 'domain') return 1.3;
+  if (state === 'template') return 1.3;
+  if (state === 'mature') return 1.15;
   return 1.0;
 }
+
+/** Hard ceiling on final node size (radius in scene units).
+ * Without this, domain nodes with many children can exceed the base
+ * 3.0 clamp via the state multiplier, creating spheres that dwarf
+ * everything else (cubic volume scaling makes even small radius
+ * differences visually extreme). */
+const MAX_NODE_SIZE = 3.0;
 
 /** Color by lifecycle state — templates use neon-cyan override. */
 function stateNodeColor(state: string, oklabColor: string | null): string {
@@ -109,11 +119,15 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
       size = Math.max(0.6, Math.min(3.0, size + scoreBonus));
     }
 
+    // Final size: apply state multiplier then clamp to prevent domain
+    // nodes from overwhelming the scene (volume scales as r³).
+    const finalSize = Math.min(MAX_NODE_SIZE, size * stateSizeMultiplier(node.state));
+
     nodes.push({
       id: node.id,
       position: [x, y, z],
       color: stateNodeColor(node.state, node.domain ?? node.color_hex),
-      size: size * stateSizeMultiplier(node.state),
+      size: finalSize,
       opacity: stateOpacity(node.state),
       persistence: node.persistence ?? 0.5,
       state: node.state,

@@ -15,6 +15,9 @@ class DomainStore {
   domains = $state<DomainInfo[]>([]);
   loaded = $state(false);
 
+  /** Generation counter — prevents stale responses from overwriting fresh data. */
+  private _loadGeneration = 0;
+
   /** label → color_hex lookup (derived from domains). */
   colors = $derived(
     this.domains.reduce<Record<string, string>>((acc, d) => {
@@ -28,10 +31,14 @@ class DomainStore {
 
   /** Fetch domains from the backend. */
   async load(): Promise<void> {
+    const gen = ++this._loadGeneration;
     try {
-      this.domains = await getDomains();
+      const result = await getDomains();
+      if (gen !== this._loadGeneration) return; // stale response
+      this.domains = result;
       this.loaded = true;
     } catch (err) {
+      if (gen !== this._loadGeneration) return;
       console.warn('Domain store load failed:', err);
       // Keep stale data if we had a previous load
     }
@@ -72,6 +79,7 @@ class DomainStore {
   _reset(): void {
     this.domains = [];
     this.loaded = false;
+    this._loadGeneration = 0;
   }
 }
 

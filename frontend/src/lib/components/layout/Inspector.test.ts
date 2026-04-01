@@ -297,7 +297,7 @@ describe('Inspector', () => {
     });
 
     // The intent label is a button with title "Click to rename"
-    await user.click(screen.getByTitle('Click to rename'));
+    await user.click(screen.getByRole('button', { name: 'Click to rename' }));
 
     // Rename input should now be visible with the current label as value
     const input = screen.getByRole('textbox', { name: 'Family name' }) as HTMLInputElement;
@@ -318,7 +318,7 @@ describe('Inspector', () => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByTitle('Click to rename'));
+    await user.click(screen.getByRole('button', { name: 'Click to rename' }));
     const input = screen.getByRole('textbox', { name: 'Family name' });
     // Fire keydown directly on the input to trigger the Svelte onkeydown handler
     fireEvent.keyDown(input, { key: 'Escape', code: 'Escape' });
@@ -327,7 +327,7 @@ describe('Inspector', () => {
       // Rename form gone, original intent label visible again
       expect(screen.queryByRole('textbox', { name: 'Family name' })).not.toBeInTheDocument();
     });
-    expect(screen.getByTitle('Click to rename')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Click to rename' })).toBeInTheDocument();
   });
 
   it('clicking cancel button in rename form reverts to display mode', async () => {
@@ -343,12 +343,12 @@ describe('Inspector', () => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByTitle('Click to rename'));
+    await user.click(screen.getByRole('button', { name: 'Click to rename' }));
     // Cancel button has title="Cancel"
-    await user.click(screen.getByTitle('Cancel'));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByRole('textbox', { name: 'Family name' })).not.toBeInTheDocument();
-    expect(screen.getByTitle('Click to rename')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Click to rename' })).toBeInTheDocument();
   });
 
   it('submitting rename form calls renameFamily API and refreshes family', async () => {
@@ -390,13 +390,13 @@ describe('Inspector', () => {
       expect(screen.getByText('API patterns')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByTitle('Click to rename'));
+    await user.click(screen.getByRole('button', { name: 'Click to rename' }));
     const input = screen.getByRole('textbox', { name: 'Family name' });
     await user.clear(input);
     await user.type(input, 'Renamed Family');
 
     // Click save (checkmark button with title="Save")
-    await user.click(screen.getByTitle('Save'));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
       // PATCH should have been called

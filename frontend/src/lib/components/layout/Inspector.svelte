@@ -6,6 +6,7 @@
   import { editorStore } from '$lib/stores/editor.svelte';
   import { taxonomyColor, scoreColor, qHealthColor, stateColor, DIMENSION_COLORS } from '$lib/utils/colors';
   import { TAXONOMY_TOOLTIPS, CLUSTER_TOOLTIPS, STAT_TOOLTIPS } from '$lib/utils/metric-tooltips';
+  import { INSPECTOR_TOOLTIPS } from '$lib/utils/ui-tooltips';
   import { assessTaxonomyHealth } from '$lib/utils/taxonomy-health';
   import { tooltip } from '$lib/actions/tooltip';
 
@@ -198,27 +199,30 @@
                   class="rename-save"
                   type="submit"
                   disabled={renameSaving || !renameValue.trim()}
-                  title="Save"
+                  use:tooltip={INSPECTOR_TOOLTIPS.save}
+                aria-label="Save"
                 >&#x2713;</button>
                 <button
                   class="rename-cancel"
                   type="button"
                   onclick={cancelRename}
-                  title="Cancel"
+                  use:tooltip={INSPECTOR_TOOLTIPS.cancel}
+                  aria-label="Cancel"
                 >×</button>
               </form>
             {:else}
               <button
                 class="family-intent"
                 onclick={startRename}
-                title="Click to rename"
+                use:tooltip={INSPECTOR_TOOLTIPS.rename}
+                aria-label="Click to rename"
               >{family.label}</button>
             {/if}
             <button
               class="domain-badge"
               style="background: {taxonomyColor(family.domain)};"
               onclick={toggleDomainPicker}
-              title="Click to change domain"
+              use:tooltip={INSPECTOR_TOOLTIPS.change_domain}
               aria-label="Change domain"
             >{family.domain}</button>
             <span
@@ -243,7 +247,7 @@
             <button
               class="dismiss-btn"
               onclick={dismissFamily}
-              title="Close family detail"
+              use:tooltip={INSPECTOR_TOOLTIPS.close_detail}
               aria-label="Close family detail"
             >×</button>
           </div>
@@ -277,7 +281,7 @@
               class="action-btn action-btn--primary"
               onclick={() => promoteCluster('template')}
               disabled={promoteSaving || !canPromote}
-              title={canPromote ? "Promote this cluster to template state" : "Needs 3+ members or 1+ pattern usage to promote"}
+              use:tooltip={canPromote ? INSPECTOR_TOOLTIPS.promote : INSPECTOR_TOOLTIPS.promote_blocked}
             >Promote to template</button>
           {/if}
           {#if family.state === 'archived' && family.member_count > 0}
@@ -285,7 +289,7 @@
               class="action-btn"
               onclick={() => promoteCluster('active')}
               disabled={promoteSaving}
-              title="Restore this cluster to active state"
+              use:tooltip={INSPECTOR_TOOLTIPS.unarchive}
             >Unarchive</button>
           {/if}
 
@@ -338,7 +342,7 @@
                   <button
                     class="opt-item"
                     onclick={() => openOptimization(opt.trace_id, opt.id)}
-                    title={opt.raw_prompt}
+                    use:tooltip={opt.raw_prompt}
                   >
                     <span class="opt-prompt">{opt.intent_label || truncateText(opt.raw_prompt)}</span>
                     {#if opt.created_at}
@@ -385,11 +389,11 @@
             <div class="health-detail">{health.detail}</div>
           {/if}
           <div class="health-counts">
-            <span use:tooltip={TAXONOMY_TOOLTIPS.active}>{stats.nodes?.active ?? 0} active</span>
+            <span use:tooltip={TAXONOMY_TOOLTIPS.active}>{clustersStore.clusterCounts.active} active</span>
             <span class="dot-sep">·</span>
-            <span use:tooltip={TAXONOMY_TOOLTIPS.candidate}>{stats.nodes?.candidate ?? 0} candidate</span>
+            <span use:tooltip={TAXONOMY_TOOLTIPS.candidate}>{clustersStore.clusterCounts.candidate} candidate</span>
             <span class="dot-sep">·</span>
-            <span use:tooltip={TAXONOMY_TOOLTIPS.template}>{stats.nodes?.template ?? 0} template</span>
+            <span use:tooltip={TAXONOMY_TOOLTIPS.template}>{clustersStore.clusterCounts.template} template</span>
           </div>
         </div>
       {:else}
@@ -554,7 +558,7 @@
               <button
                 class="dim-toggle"
                 onclick={() => showDimensions = !showDimensions}
-                title={showDimensions ? 'Show average' : 'Show per-dimension'}
+                use:tooltip={showDimensions ? INSPECTOR_TOOLTIPS.score_toggle_avg : INSPECTOR_TOOLTIPS.score_toggle_dim}
               >{showDimensions ? 'AVG' : 'DIM'}</button>
             </div>
             {#if showDimensions}

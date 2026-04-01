@@ -9,6 +9,7 @@
   import { formatScore, trendInfo } from '$lib/utils/formatting';
   import { assessTaxonomyHealth } from '$lib/utils/taxonomy-health';
   import { tooltip } from '$lib/actions/tooltip';
+  import { STATUS_TOOLTIPS } from '$lib/utils/ui-tooltips';
   import Logo from '$lib/components/shared/Logo.svelte';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
 
@@ -16,8 +17,8 @@
   const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
 
 
-  // Cluster count derived from taxonomy stats (loaded by clustersStore.loadTree)
-  const clusterCount = $derived(clustersStore.taxonomyStats?.nodes?.active ?? null);
+  // Cluster count derived from taxonomy tree — excludes orphaned clusters (0 members + 0 usage)
+  const clusterCount = $derived(clustersStore.liveClusterCount > 0 ? clustersStore.liveClusterCount : null);
 
   const PIPELINE_PHASES = ['analyzing', 'optimizing', 'scoring'];
   const phaseDisplay = $derived(getPhaseLabel(forgeStore.status)?.toLowerCase() ?? null);
@@ -54,7 +55,7 @@
     </div>
     <TierBadge tier={routing.tier} provider={forgeStore.provider} degradedFrom={routing.isDegraded ? routing.requestedTier : null} />
     {#if forgeStore.mcpDisconnected && !routing.isDegraded && !routing.isAutoFallback}
-      <span class="status-disconnected" title="MCP client disconnected">disconnected</span>
+      <span class="status-disconnected" use:tooltip={STATUS_TOOLTIPS.mcp_disconnected}>disconnected</span>
     {/if}
     {#if phaseProgress}
       <span class="status-phase" class:status-phase-passthrough={phaseDisplay === 'passthrough'} class:status-phase-sampling={routing.isSampling}>{phaseProgress}</span>
@@ -80,12 +81,12 @@
     {#if forgeStore.domainCount != null}
       <span
         class="statusbar-item"
-        title="{forgeStore.domainCount} active domain nodes (ceiling: {forgeStore.domainCeiling ?? 30})"
+        use:tooltip={`${forgeStore.domainCount} active domain nodes (ceiling: ${forgeStore.domainCeiling ?? 30})`}
         style="color: {forgeStore.domainCount >= (forgeStore.domainCeiling ?? 30) * 0.8 ? 'var(--color-neon-yellow)' : 'var(--color-text-dim)'};"
       >{forgeStore.domainCount} domains</span>
     {/if}
     {#if clusterCount !== null && clusterCount > 0}
-      <span class="status-patterns" title="{clusterCount} active clusters">{clusterCount} clusters</span>
+      <span class="status-patterns" use:tooltip={`${clusterCount} active clusters`}>{clusterCount} clusters</span>
     {/if}
     {#if clustersStore.taxonomyStats?.q_system != null}
       {@const stats = clustersStore.taxonomyStats}

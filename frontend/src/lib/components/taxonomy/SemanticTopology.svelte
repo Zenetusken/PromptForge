@@ -656,8 +656,8 @@
     renderer.onLodChange(handleLodChange);
     renderer.start();
 
-    // Load taxonomy data
-    clustersStore.loadTree();
+    // Taxonomy data loaded by +layout.svelte on app mount — no need to re-fetch here.
+    // The $effect watching filteredTaxonomyTree (line 432) rebuilds the scene reactively.
 
     // Resize observer
     const ro = new ResizeObserver(entries => {

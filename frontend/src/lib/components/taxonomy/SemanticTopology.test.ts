@@ -122,10 +122,11 @@ describe('SemanticTopology', () => {
   });
 
   it('displays error when taxonomy load fails', async () => {
-    const clusters = await import('$lib/api/clusters');
-    vi.mocked(clusters.getClusterTree).mockRejectedValueOnce(new Error('Connection failed'));
+    // Taxonomy loading is handled by +layout.svelte — simulate a failed load
+    // by setting the store's error state directly.
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    clustersStore.taxonomyError = 'Connection failed';
     const { container } = render(SemanticTopology);
-    // Wait for the async loadTree() to settle
     await vi.waitFor(() => {
       const errorEl = container.querySelector('.topology-error');
       expect(errorEl).toBeTruthy();
