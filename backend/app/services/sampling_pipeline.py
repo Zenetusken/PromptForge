@@ -1033,11 +1033,17 @@ async def run_sampling_pipeline(
             try:
                 from app.models import OptimizationPattern
 
+                _inj_sim_map = {
+                    ip.cluster_id: ip.similarity
+                    for ip in auto_injected_patterns
+                    if ip.cluster_id
+                }
                 for _cid in auto_injected_cluster_ids:
                     db.add(OptimizationPattern(
                         optimization_id=opt_id,
                         cluster_id=_cid,
                         relationship="injected",
+                        similarity=_inj_sim_map.get(_cid),
                     ))
             except Exception as _inj_exc:
                 logger.warning(

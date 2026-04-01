@@ -27,6 +27,7 @@ class InjectedPattern:
     cluster_label: str
     domain: str
     similarity: float
+    cluster_id: str = ""
 
 
 def format_injected_patterns(
@@ -138,6 +139,7 @@ async def auto_inject_patterns(
             cluster_label=label,
             domain=domain,
             similarity=round(sim, 2),
+            cluster_id=p.cluster_id,
         ))
 
     # Persist injection provenance when optimization_id is available
