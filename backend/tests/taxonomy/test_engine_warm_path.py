@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 
-from app.models import PromptCluster
+from app.models import Optimization, PromptCluster
 from app.services.taxonomy.engine import TaxonomyEngine
 from tests.taxonomy.conftest import EMBEDDING_DIM, make_cluster_distribution
 
@@ -150,3 +150,189 @@ async def test_warm_path_lock_released_on_error(db, mock_embedding, mock_provide
     # Should not raise, and lock should be released
     await engine.run_warm_path(db)
     assert not engine._warm_path_lock.locked()
+
+
+# ---------------------------------------------------------------------------
+# Stale coherence tests
+# ---------------------------------------------------------------------------
+
+
+def _make_diverse_embeddings(n_topics: int, per_topic: int, rng: np.random.RandomState) -> list[np.ndarray]:
+    """Generate embeddings for n_topics distinct clusters.
+
+    Each topic gets a random center with tight samples (spread=0.02).
+    Inter-topic similarity is low because random 384-dim vectors are
+    nearly orthogonal.
+    """
+    all_embs: list[np.ndarray] = []
+    for _ in range(n_topics):
+        center = rng.randn(EMBEDDING_DIM).astype(np.float32)
+        center /= np.linalg.norm(center) + 1e-9
+        for _ in range(per_topic):
+            noise = rng.randn(EMBEDDING_DIM).astype(np.float32) * 0.02
+            vec = center + noise
+            vec /= np.linalg.norm(vec) + 1e-9
+            all_embs.append(vec)
+    return all_embs
+
+
+@pytest.mark.asyncio
+async def test_warm_path_recomputes_stale_coherence(db, mock_embedding, mock_provider):
+    """Clusters with stale high coherence should be corrected by warm path.
+
+    The hot path never updates coherence, so a cluster that grew from 2 to 10
+    members can still show coherence=0.95 when actual pairwise mean is ~0.4.
+    The reconciliation phase must always recompute, not just when NULL/0.0.
+    """
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+    rng = np.random.RandomState(42)
+
+    # Create a cluster with falsely high coherence
+    center = rng.randn(EMBEDDING_DIM).astype(np.float32)
+    center /= np.linalg.norm(center) + 1e-9
+
+    cluster = PromptCluster(
+        label="Stale Coherence Cluster",
+        state="active",
+        domain="general",
+        centroid_embedding=center.tobytes(),
+        member_count=10,
+        coherence=0.95,  # stale — will not match actual pairwise
+        color_hex="#a855f7",
+    )
+    db.add(cluster)
+    await db.flush()
+
+    # Add 10 diverse optimizations (5 topics × 2) — actual coherence will be low
+    diverse_embs = _make_diverse_embeddings(5, 2, rng)
+    for i, emb in enumerate(diverse_embs):
+        opt = Optimization(
+            raw_prompt=f"diverse prompt topic {i}",
+            cluster_id=cluster.id,
+            embedding=emb.astype(np.float32).tobytes(),
+        )
+        db.add(opt)
+    await db.commit()
+
+    await engine.run_warm_path(db)
+
+    # Refresh from DB
+    await db.refresh(cluster)
+    # Coherence should now reflect actual pairwise similarity, not the stale 0.95
+    assert cluster.coherence is not None
+    assert cluster.coherence < 0.6, (
+        f"Expected coherence to drop from stale 0.95 to actual pairwise (~0.4), "
+        f"got {cluster.coherence:.3f}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_warm_path_recomputes_nonzero_coherence(db, mock_embedding, mock_provider):
+    """Reconciliation must recompute coherence even when it's nonzero and non-null.
+
+    Previously, the guard `node.coherence is None or node.coherence == 0.0`
+    skipped clusters with any positive coherence value.
+    """
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+    rng = np.random.RandomState(99)
+
+    # Create a tight 5-member cluster — actual coherence should be high
+    tight_embs = make_cluster_distribution("tight cluster test", 5, spread=0.03, rng=rng)
+
+    center = np.mean(tight_embs, axis=0).astype(np.float32)
+    center /= np.linalg.norm(center) + 1e-9
+
+    cluster = PromptCluster(
+        label="Nonzero Coherence Cluster",
+        state="active",
+        domain="general",
+        centroid_embedding=center.tobytes(),
+        member_count=5,
+        coherence=0.42,  # intentionally wrong — should be corrected upward
+        color_hex="#a855f7",
+    )
+    db.add(cluster)
+    await db.flush()
+
+    for i, emb in enumerate(tight_embs):
+        opt = Optimization(
+            raw_prompt=f"tight prompt {i}",
+            cluster_id=cluster.id,
+            embedding=emb.astype(np.float32).tobytes(),
+        )
+        db.add(opt)
+    await db.commit()
+
+    await engine.run_warm_path(db)
+
+    await db.refresh(cluster)
+    # Coherence should be recomputed to the tight cluster's actual pairwise value.
+    # With spread=0.03 this is ~0.73.  The key assertion: it was recomputed
+    # from the stale 0.42 to something significantly higher.
+    assert cluster.coherence is not None
+    assert cluster.coherence > 0.65, (
+        f"Expected tight cluster coherence >0.65, got {cluster.coherence:.3f} "
+        f"(old guard would have left it at 0.42)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_split_triggers_on_stale_coherence_cluster(db, mock_embedding, mock_provider):
+    """A 14-member mega-cluster with stale coherence should be split.
+
+    With actual pairwise coherence well below the dynamic split floor,
+    inline recomputation in split detection should trigger the split
+    in a single warm cycle — not require two cycles.
+    """
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+    rng = np.random.RandomState(77)
+
+    # Create a domain node for the cluster to be parented under
+    domain_node = PromptCluster(
+        label="general",
+        state="domain",
+        domain="general",
+        centroid_embedding=rng.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+        member_count=14,
+        color_hex="#6366f1",
+    )
+    db.add(domain_node)
+    await db.flush()
+
+    # Create a mega-cluster with stale high coherence
+    center = rng.randn(EMBEDDING_DIM).astype(np.float32)
+    center /= np.linalg.norm(center) + 1e-9
+
+    mega = PromptCluster(
+        label="Mega Cluster",
+        state="active",
+        domain="general",
+        parent_id=domain_node.id,
+        centroid_embedding=center.tobytes(),
+        member_count=14,
+        coherence=0.95,  # stale — actual will be ~0.2
+        color_hex="#a855f7",
+    )
+    db.add(mega)
+    await db.flush()
+
+    # Add 14 diverse optimizations (7 topics × 2) — low actual coherence
+    diverse_embs = _make_diverse_embeddings(7, 2, rng)
+    for i, emb in enumerate(diverse_embs):
+        opt = Optimization(
+            raw_prompt=f"mega topic {i}",
+            domain="general",
+            cluster_id=mega.id,
+            embedding=emb.astype(np.float32).tobytes(),
+        )
+        db.add(opt)
+    await db.commit()
+
+    result = await engine.run_warm_path(db)
+    assert result is not None
+
+    # The split should have been attempted
+    assert result.operations_attempted >= 1, (
+        "Expected at least 1 operation attempted (split), "
+        f"got {result.operations_attempted}"
+    )

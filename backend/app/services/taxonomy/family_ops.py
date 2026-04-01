@@ -290,6 +290,9 @@ async def assign_cluster(
                             np.float32
                         ).tobytes()
                         matched.member_count += 1
+                        # NOTE: coherence is intentionally NOT recomputed here.
+                        # The warm path reconciliation recomputes it from all
+                        # member embeddings.  See engine.py _run_warm_path_inner().
 
                         # avg_score tracks the running mean over SCORED members
                         # only.  scored_count is the denominator — not

@@ -374,6 +374,9 @@ class TaxonomyEngine:
         ops_accepted = 0
         operations_log: list[dict] = []
         deadlock_breaker_used = False
+        # Track node IDs involved in splits — these must be excluded from
+        # same-domain merge in the same cycle to prevent immediate recombination.
+        split_protected_ids: set[str] = set()
 
         # --- Priority 1: Split (Spec Section 3.5) ---
         # Detect split candidates: active nodes with low coherence and enough
@@ -383,12 +386,70 @@ class TaxonomyEngine:
         # almost certainly multiple topics compressed together.
         import math
 
+        from app.services.taxonomy.clustering import (
+            compute_pairwise_coherence as _split_cpc,
+        )
+
+        # Pre-fetch all optimization embeddings for split candidates in a
+        # single batch query.  This avoids per-node queries AND prevents
+        # autoflush errors (writing node.coherence before querying again
+        # triggers SQLAlchemy autoflush on dirty ORM objects).
+        _split_candidate_ids = [
+            n.id for n in active_nodes
+            if (n.member_count or 0) >= SPLIT_MIN_MEMBERS
+        ]
+        _split_emb_cache: dict[str, list[tuple[str, bytes]]] = {}
+        if _split_candidate_ids:
+            _split_emb_q = await db.execute(
+                select(Optimization.id, Optimization.cluster_id, Optimization.embedding).where(
+                    Optimization.cluster_id.in_(_split_candidate_ids),
+                    Optimization.embedding.isnot(None),
+                )
+            )
+            for opt_id, cid, emb_bytes in _split_emb_q.all():
+                if emb_bytes is not None:
+                    _split_emb_cache.setdefault(cid, []).append((opt_id, emb_bytes))
+
         for node in active_nodes:
-            coherence = node.coherence if node.coherence is not None else 1.0
             member_count = node.member_count or 0
+            if member_count < SPLIT_MIN_MEMBERS:
+                continue
+
+            # Recompute coherence from actual member embeddings.
+            # The hot path never updates coherence, so stored values can be
+            # stale (e.g. 0.95 when actual pairwise mean is 0.45).
+            # Reconciliation runs AFTER split detection, so we must recompute
+            # inline to trigger splits in the same warm cycle.
+            #
+            # Uses pre-fetched embeddings to avoid per-node queries and
+            # autoflush errors.
+            _cached_opt_rows = _split_emb_cache.get(node.id, [])
+            try:
+                _coh_embs = [
+                    np.frombuffer(row[1], dtype=np.float32).copy()
+                    for row in _cached_opt_rows
+                    if row[1] is not None
+                ]
+                if len(_coh_embs) >= 2:
+                    coherence = _split_cpc(_coh_embs)
+                    node.coherence = coherence  # persist for Q_system
+                    node.cluster_metadata = {
+                        **(node.cluster_metadata or {}),
+                        "coherence_member_count": len(_coh_embs),
+                    }
+                else:
+                    coherence = 1.0
+            except Exception:
+                logger.debug(
+                    "Coherence recomputation failed for '%s', using stored value",
+                    node.label,
+                    exc_info=True,
+                )
+                coherence = node.coherence if node.coherence is not None else 1.0
+
             # Scale: +0.05 per doubling above 6 members
             dynamic_floor = SPLIT_COHERENCE_FLOOR + max(0, math.log2(max(member_count, 6) / 6)) * 0.05
-            if coherence < dynamic_floor and member_count >= SPLIT_MIN_MEMBERS:
+            if coherence < dynamic_floor:
                 # Cooldown: skip if this cluster already failed to split 3+ times
                 node_meta = node.cluster_metadata or {}
                 split_failures = node_meta.get("split_failures", 0)
@@ -399,25 +460,22 @@ class TaxonomyEngine:
                     "Split candidate: '%s' (members=%d, coherence=%.3f, threshold=%.3f)",
                     node.label, member_count, coherence, dynamic_floor,
                 )
-                # Gather families assigned to this node
+                # Gather ACTIVE families assigned to this node (exclude
+                # archived children — they're dead and shouldn't prevent
+                # the leaf split path from running).
                 fam_q = await db.execute(
                     select(PromptCluster).where(
                         PromptCluster.parent_id == node.id,
-                        PromptCluster.state != "domain",
+                        PromptCluster.state.notin_(["domain", "archived"]),
                     )
                 )
                 node_families = list(fam_q.scalars().all())
 
-                # For leaf clusters (no child clusters), gather member
+                # For leaf clusters (no active child clusters), gather member
                 # Optimization embeddings directly for HDBSCAN splitting.
+                # Reuse the pre-fetched embeddings from the batch query above.
                 if len(node_families) < SPLIT_MIN_MEMBERS and member_count >= SPLIT_MIN_MEMBERS:
-                    opt_emb_q = await db.execute(
-                        select(Optimization.id, Optimization.embedding).where(
-                            Optimization.cluster_id == node.id,
-                            Optimization.embedding.isnot(None),
-                        )
-                    )
-                    opt_rows = opt_emb_q.all()
+                    opt_rows = _cached_opt_rows
                     if len(opt_rows) >= SPLIT_MIN_MEMBERS:
                         child_embs = []
                         child_fam_ids = []
@@ -433,6 +491,40 @@ class TaxonomyEngine:
                             split_clusters = batch_cluster(
                                 child_embs, min_cluster_size=3
                             )
+                            # Fallback: when HDBSCAN fails to find structure
+                            # (common with semantically related but topically
+                            # diverse embeddings), use k-means bisection.
+                            if split_clusters.n_clusters < 2 and len(child_embs) >= 2 * SPLIT_MIN_MEMBERS:
+                                try:
+                                    from sklearn.cluster import KMeans
+
+                                    from app.services.taxonomy.clustering import l2_normalize_1d
+
+                                    emb_stack = np.stack(child_embs, axis=0)
+                                    km = KMeans(n_clusters=2, n_init=10, random_state=42)
+                                    km_labels = km.fit_predict(emb_stack)
+
+                                    # Only accept if both halves are large enough
+                                    sizes = [int((km_labels == c).sum()) for c in range(2)]
+                                    if all(s >= 3 for s in sizes):
+                                        centroids = [
+                                            l2_normalize_1d(km.cluster_centers_[c].astype(np.float32))
+                                            for c in range(2)
+                                        ]
+                                        split_clusters = type(split_clusters)(
+                                            labels=km_labels,
+                                            centroids=centroids,
+                                            n_clusters=2,
+                                            persistences=[0.5, 0.5],
+                                            noise_count=0,
+                                        )
+                                        logger.info(
+                                            "HDBSCAN failed, k-means bisection succeeded: %s members",
+                                            sizes,
+                                        )
+                                except Exception as km_exc:
+                                    logger.debug("k-means fallback failed: %s", km_exc)
+
                             if split_clusters.n_clusters < 2:
                                 # Track failed attempt for cooldown
                                 node.cluster_metadata = {
@@ -595,6 +687,12 @@ class TaxonomyEngine:
                                             reassigned,
                                         )
 
+                                    # Protect split children and parent from
+                                    # same-domain merge in the same cycle.
+                                    split_protected_ids.add(node.id)
+                                    for ch in new_children:
+                                        split_protected_ids.add(ch.id)
+
                                     # Commit leaf split independently of Q_system gate.
                                     # The dynamic threshold IS the quality gate for splits.
                                     await db.commit()
@@ -658,7 +756,9 @@ class TaxonomyEngine:
                                 )
                                 if children:
                                     ops_accepted += len(children)
+                                    split_protected_ids.add(node.id)
                                     for child in children:
+                                        split_protected_ids.add(child.id)
                                         operations_log.append(
                                             {
                                                 "type": "split",
@@ -759,9 +859,10 @@ class TaxonomyEngine:
         # Hot path increments member_count on assign, but cold path cluster
         # reassignment can cause drift.  Reconcile by counting actual linked
         # Optimization rows before domain discovery depends on the counts.
-        # Also recompute coherence from actual member embeddings — cold path
-        # computes coherence from cluster-level nodes, not individual
-        # optimization embeddings, causing 0.0 values for catch-all clusters.
+        # Also recompute coherence from actual member embeddings — the hot
+        # path never updates coherence, so stored values drift as clusters
+        # grow (e.g. a 14-member cluster may show 0.95 when actual pairwise
+        # mean is 0.45).  Always recompute for clusters with 2+ members.
         try:
             from sqlalchemy import func as sa_func
 
@@ -775,32 +876,46 @@ class TaxonomyEngine:
             actual_counts = dict(count_q.all())
             reconciled = 0
             coherence_updated = 0
+
+            # Batch-load all optimization embeddings grouped by cluster_id.
+            # Single query instead of per-cluster queries — matches the
+            # pattern used for count_q and score_q.
+            all_emb_q = await db.execute(
+                select(Optimization.cluster_id, Optimization.embedding).where(
+                    Optimization.cluster_id.isnot(None),
+                    Optimization.embedding.isnot(None),
+                )
+            )
+            emb_by_cluster: dict[str, list[np.ndarray]] = {}
+            for cid, emb_bytes in all_emb_q.all():
+                if emb_bytes is not None:
+                    try:
+                        emb_by_cluster.setdefault(cid, []).append(
+                            np.frombuffer(emb_bytes, dtype=np.float32).copy()
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
             for node in active_nodes:
                 expected = actual_counts.get(node.id, 0)
                 if node.member_count != expected:
                     node.member_count = expected
                     reconciled += 1
 
-                # Recompute coherence for clusters with 2+ members and
-                # stale coherence (0.0 or NULL — uncomputed by cold path)
-                if expected >= 2 and (node.coherence is None or node.coherence == 0.0):
-                    try:
-                        emb_q = await db.execute(
-                            select(Optimization.embedding).where(
-                                Optimization.cluster_id == node.id,
-                                Optimization.embedding.isnot(None),
-                            )
-                        )
-                        member_embs = [
-                            np.frombuffer(row[0], dtype=np.float32).copy()
-                            for row in emb_q.all()
-                            if row[0] is not None
-                        ]
-                        if len(member_embs) >= 2:
-                            node.coherence = compute_pairwise_coherence(member_embs)
-                            coherence_updated += 1
-                    except Exception:
-                        pass  # non-fatal, skip this node
+                # Always recompute coherence from actual member embeddings.
+                if expected >= 2:
+                    member_embs = emb_by_cluster.get(node.id, [])
+                    if len(member_embs) >= 2:
+                        node.coherence = compute_pairwise_coherence(member_embs)
+                        node.cluster_metadata = {
+                            **(node.cluster_metadata or {}),
+                            "coherence_member_count": expected,
+                        }
+                        coherence_updated += 1
+                elif expected == 1:
+                    node.coherence = 1.0
+                elif expected == 0:
+                    node.coherence = 0.0
 
             # Reconcile avg_score and scored_count from actual member data.
             # A single grouped query regardless of cluster count.
@@ -1025,11 +1140,13 @@ class TaxonomyEngine:
             logger.warning("Stale label/pattern refresh failed (non-fatal): %s", refresh_exc)
 
         # --- Same-domain duplicate merge ---
-        # Two signals: (A) identical labels within a domain + centroid sanity >0.40,
-        # (B) same-domain centroid similarity >= 0.65 (lower than global 0.78 because
+        # Two signals: (A) identical labels within a domain + centroid sanity,
+        # (B) same-domain centroid similarity (lower than global 0.78 because
         # siblings are semantically related by definition).
-        same_domain_merge_threshold = 0.65
-        label_merge_sanity = 0.40
+        # Both signals use adaptive thresholds that grow with cluster size
+        # to prevent mega-cluster snowball from label collisions or centroid drift.
+        same_domain_merge_base = 0.65
+        label_merge_sanity_base = 0.40
         try:
             from app.services.taxonomy.lifecycle import attempt_merge
             from app.utils.text_cleanup import parse_domain
@@ -1042,9 +1159,12 @@ class TaxonomyEngine:
             )
             current_active = list(active_q.scalars().all())
 
-            # Group by primary domain
+            # Group by primary domain, excluding nodes involved in splits
+            # this cycle (they'd be immediately recombined via label collision).
             domain_groups: dict[str, list[PromptCluster]] = {}
             for node in current_active:
+                if node.id in split_protected_ids:
+                    continue
                 primary, _ = parse_domain(node.domain or "general")
                 domain_groups.setdefault(primary, []).append(node)
 
@@ -1064,13 +1184,16 @@ class TaxonomyEngine:
                     group.sort(key=lambda n: n.member_count or 0, reverse=True)
                     survivor = group[0]
                     for loser in group[1:]:
-                        # Centroid sanity check
+                        # Centroid sanity check — adaptive threshold prevents
+                        # mega-cluster snowball from Haiku label collisions.
                         try:
                             emb_a = np.frombuffer(survivor.centroid_embedding, dtype=np.float32)
                             emb_b = np.frombuffer(loser.centroid_embedding, dtype=np.float32)
                             sim = float(np.dot(emb_a, emb_b) / (np.linalg.norm(emb_a) * np.linalg.norm(emb_b) + 1e-9))
                         except (ValueError, TypeError):
                             sim = 0.0
+                        combined_mc = max(survivor.member_count or 0, loser.member_count or 0)
+                        label_merge_sanity = max(label_merge_sanity_base, adaptive_merge_threshold(combined_mc))
                         if sim >= label_merge_sanity:
                             merged = await attempt_merge(db, survivor, loser, self._warm_path_age)
                             if merged:
@@ -1108,7 +1231,9 @@ class TaxonomyEngine:
                                 remaining[i].state == "active"
                                 and remaining[j].state == "active"
                             )
-                            if sim >= same_domain_merge_threshold and both_active:
+                            combined_mc = max(remaining[i].member_count or 0, remaining[j].member_count or 0)
+                            same_domain_threshold = max(same_domain_merge_base, adaptive_merge_threshold(combined_mc))
+                            if sim >= same_domain_threshold and both_active:
                                 ni, nj = remaining[i], remaining[j]
                                 big = ni if (ni.member_count or 0) >= (nj.member_count or 0) else nj
                                 small = nj if big is ni else ni
@@ -1241,34 +1366,54 @@ class TaxonomyEngine:
                 "run_cold_path() with a fresh session"
             )
 
-        # 6. Create snapshot
+        # 6. Create snapshot (skip on idle cycles with no changes)
+        #    Idle snapshots pollute the sparkline with repeated values and,
+        #    when combined with DBCV ramp, create artificial downtrends.
         self._invalidate_stats_cache()
-        self._warm_path_age += 1
-        snap = await self._create_warm_snapshot(
-            db,
-            q_system=q_after,
-            operations=operations_log,
-            ops_attempted=ops_attempted,
-            ops_accepted=ops_accepted,
-        )
+
+        if ops_accepted > 0 or ops_attempted > 0 or self._warm_path_age == 0:
+            self._warm_path_age += 1
+            snap = await self._create_warm_snapshot(
+                db,
+                q_system=q_after,
+                operations=operations_log,
+                ops_attempted=ops_attempted,
+                ops_accepted=ops_accepted,
+            )
+            snapshot_id = snap.id
+        else:
+            # No operations — reuse the latest snapshot ID for the result
+            from app.services.taxonomy.snapshot import get_latest_snapshot
+            latest = await get_latest_snapshot(db)
+            snapshot_id = latest.id if latest else "no-snapshot"
 
         result = WarmPathResult(
-            snapshot_id=snap.id,
+            snapshot_id=snapshot_id,
             q_system=q_after,
             operations_attempted=ops_attempted,
             operations_accepted=ops_accepted,
             deadlock_breaker_used=deadlock_breaker_used,
         )
 
-        try:
-            from app.services.event_bus import event_bus
-            event_bus.publish("taxonomy_changed", {
-                "trigger": "warm_path",
-                "operations_accepted": result.operations_accepted,
-                "q_system": result.q_system,
-            })
-        except Exception as evt_exc:
-            logger.warning("Failed to publish taxonomy_changed (warm): %s", evt_exc)
+        # Publish taxonomy_changed when a snapshot was created — aligns with
+        # the snapshot gating logic so the frontend always knows about new
+        # snapshots.  Idle cycles (no snapshot) skip the event to prevent
+        # unnecessary frontend refetches.
+        snapshot_created = snapshot_id != "no-snapshot" and (
+            result.operations_attempted > 0
+            or result.deadlock_breaker_used
+            or self._warm_path_age == 1  # first-ever snapshot
+        )
+        if snapshot_created:
+            try:
+                from app.services.event_bus import event_bus
+                event_bus.publish("taxonomy_changed", {
+                    "trigger": "warm_path",
+                    "operations_accepted": result.operations_accepted,
+                    "q_system": result.q_system,
+                })
+            except Exception as evt_exc:
+                logger.warning("Failed to publish taxonomy_changed (warm): %s", evt_exc)
 
         return result
 
@@ -1580,7 +1725,6 @@ class TaxonomyEngine:
         from app.services.taxonomy.clustering import (
             batch_cluster,
             compute_pairwise_coherence,
-            compute_separation,
             cosine_similarity,
         )
         from app.services.taxonomy.coloring import (
@@ -1707,7 +1851,7 @@ class TaxonomyEngine:
                 # HDBSCAN groups PromptCluster nodes, not Optimizations.
                 # member_count is reconciled from Optimization rows below.
                 matched_node.coherence = coherence
-                if matched_node.state in ("candidate",):
+                if matched_node.state == "candidate":
                     matched_node.state = "active"
                 # mature, template, active — keep as-is
                 nodes_updated += 1
@@ -1856,6 +2000,42 @@ class TaxonomyEngine:
                 "Cold path: reconciled %d member_counts from Optimization rows",
                 mc_repairs,
             )
+
+        # 3.7 Recompute per-member coherence from optimization embeddings.
+        # The HDBSCAN coherence computed above (line ~1755) measures
+        # centroid-to-centroid similarity within HDBSCAN groups — NOT
+        # the pairwise similarity among individual optimization embeddings
+        # within each cluster.  Overwrite with the correct per-member value.
+        all_opt_emb_q = await db.execute(
+            select(Optimization.cluster_id, Optimization.embedding).where(
+                Optimization.cluster_id.isnot(None),
+                Optimization.embedding.isnot(None),
+            )
+        )
+        cold_emb_by_cluster: dict[str, list[np.ndarray]] = {}
+        for cid, emb_bytes in all_opt_emb_q.all():
+            if emb_bytes is not None:
+                try:
+                    cold_emb_by_cluster.setdefault(cid, []).append(
+                        np.frombuffer(emb_bytes, dtype=np.float32).copy()
+                    )
+                except (ValueError, TypeError):
+                    pass
+
+        coherence_repairs = 0
+        for node in all_nodes:
+            member_embs = cold_emb_by_cluster.get(node.id, [])
+            if len(member_embs) >= 2:
+                node.coherence = compute_pairwise_coherence(member_embs)
+                coherence_repairs += 1
+            elif len(member_embs) == 1:
+                node.coherence = 1.0
+            # 0 members: keep HDBSCAN centroid-level coherence as fallback
+
+        if coherence_repairs:
+            logger.info(
+                "Cold path: recomputed %d per-member coherence values", coherence_repairs
+            )
         await db.flush()
 
         # 4. UMAP 3D projection
@@ -1930,17 +2110,7 @@ class TaxonomyEngine:
         q_system = self._compute_q_from_nodes(active_after)
 
         # 8. Aggregate metrics for snapshot
-        node_centroids = []
-        for n in active_after:
-            try:
-                c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
-                node_centroids.append(c)
-            except (ValueError, TypeError):
-                continue
-
-        separation = compute_separation(node_centroids) if len(node_centroids) >= 2 else 1.0
-        coherences = [n.coherence for n in active_after if n.coherence is not None]
-        mean_coherence = float(np.mean(coherences)) if coherences else 0.0
+        mean_coherence, separation = self._snapshot_metrics(active_after)
 
         # 8b. Rebuild embedding index from active centroids (in-memory, no
         # commit needed — reads ORM objects still in the session).
@@ -1952,11 +2122,14 @@ class TaxonomyEngine:
                     index_centroids[n.id] = emb
             except (ValueError, TypeError):
                 continue
-        await self._embedding_index.rebuild(index_centroids)
-        logger.info(
-            "Taxonomy embedding index loaded with %d vectors",
-            self._embedding_index.size,
-        )
+        try:
+            await self._embedding_index.rebuild(index_centroids)
+            logger.info(
+                "Taxonomy embedding index loaded with %d vectors",
+                self._embedding_index.size,
+            )
+        except Exception as rebuild_exc:
+            logger.warning("EmbeddingIndex rebuild failed (non-fatal): %s", rebuild_exc)
 
         # 8c. Persist embedding index cache to disk for fast startup recovery
         try:
@@ -2028,13 +2201,12 @@ class TaxonomyEngine:
                 )
             )
 
-        # DBCV ramp: gate = >=5 active nodes, then ramp linearly over
-        # warm_path_age / 20 observations (Spec Section 2.5).
-        active_count = sum(1 for m in metrics if m.state == "active")
-        if active_count >= 5:
-            ramp = min(1.0, max(0.0, self._warm_path_age / 20.0))
-        else:
-            ramp = 0.0
+        # DBCV ramp disabled: DBCV is not yet computed (always 0.0 in
+        # compute_q_system).  Ramping its weight adds dead weight that
+        # degrades Q_system over time — at age 20+ the ceiling drops to
+        # 0.85 even with perfect metrics.  Restore the ramp logic from
+        # Spec Section 2.5 when DBCV computation is implemented.
+        ramp = 0.0
         weights = QWeights.from_ramp(ramp)
 
         return compute_q_system(metrics, weights)
@@ -2801,7 +2973,6 @@ class TaxonomyEngine:
         ops_accepted: int,
     ) -> TaxonomySnapshot:
         """Create a warm-path snapshot with current metrics."""
-        from app.services.taxonomy.clustering import compute_separation
         from app.services.taxonomy.snapshot import create_snapshot
 
         # Load active nodes for metrics
@@ -2810,19 +2981,7 @@ class TaxonomyEngine:
         )
         active_nodes = list(result.scalars().all())
 
-        # Compute coherence and separation
-        coherences = [n.coherence for n in active_nodes if n.coherence is not None]
-        mean_coherence = float(np.mean(coherences)) if coherences else 0.0
-
-        centroids = []
-        for n in active_nodes:
-            try:
-                c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
-                centroids.append(c)
-            except (ValueError, TypeError):
-                continue
-
-        separation = compute_separation(centroids) if len(centroids) >= 2 else 1.0
+        mean_coherence, separation = self._snapshot_metrics(active_nodes)
 
         nodes_created = sum(1 for op in operations if op.get("type") == "emerge")
         nodes_merged = sum(1 for op in operations if op.get("type") == "merge")
@@ -2903,6 +3062,34 @@ class TaxonomyEngine:
         # Add breadcrumb
         node_dict["breadcrumb"] = await build_breadcrumb(db, node)
         return node_dict
+
+    @staticmethod
+    def _snapshot_metrics(
+        active_nodes: list[PromptCluster],
+    ) -> tuple[float, float]:
+        """Compute mean coherence and mean separation for snapshot creation.
+
+        Shared by warm-path and cold-path snapshot callers to avoid
+        duplicated centroid-extraction and metric-computation logic.
+
+        Returns:
+            (mean_coherence, mean_separation)
+        """
+        from app.services.taxonomy.clustering import compute_mean_separation
+
+        coherences = [n.coherence for n in active_nodes if n.coherence is not None]
+        mean_coherence = float(np.mean(coherences)) if coherences else 0.0
+
+        centroids: list[np.ndarray] = []
+        for n in active_nodes:
+            try:
+                c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
+                centroids.append(c)
+            except (ValueError, TypeError):
+                continue
+
+        separation = compute_mean_separation(centroids) if len(centroids) >= 2 else 1.0
+        return mean_coherence, separation
 
     def _invalidate_stats_cache(self) -> None:
         """Clear the stats cache after a warm or cold path mutation."""
