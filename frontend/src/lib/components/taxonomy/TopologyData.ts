@@ -4,7 +4,7 @@
  * Pure functions — no Three.js dependency (just typed arrays and interfaces).
  * The renderer consumes SceneData to build Three.js objects.
  */
-import type { ClusterNode } from '$lib/api/clusters';
+import type { ClusterNode, SimilarityEdge } from '$lib/api/clusters';
 import type { LODTier } from './TopologyRenderer';
 import { taxonomyColor, stateColor } from '$lib/utils/colors';
 import { parsePrimaryDomain } from '$lib/utils/formatting';
@@ -68,7 +68,7 @@ const LOD_THRESHOLDS: Record<LODTier, number> = {
  * Convert flat taxonomy node list into scene-ready nodes and edges.
  * Backend `get_tree` returns a flat list — we build edges from `parent_id`.
  */
-export function buildSceneData(flatNodes: ClusterNode[]): SceneData {
+export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: SimilarityEdge[]): SceneData {
   const nodes: SceneNode[] = [];
   const edges: SceneEdge[] = [];
 
@@ -123,6 +123,16 @@ export function buildSceneData(flatNodes: ClusterNode[]): SceneData {
     // Hierarchical edges from parent_id
     if (node.parent_id) {
       edges.push({ from: node.parent_id, to: node.id, type: 'hierarchical' });
+    }
+  }
+
+  // Similarity edges from embedding index pairwise similarities
+  if (similarityEdges) {
+    const nodeIdSet = new Set(nodes.map(n => n.id));
+    for (const edge of similarityEdges) {
+      if (nodeIdSet.has(edge.from_id) && nodeIdSet.has(edge.to_id)) {
+        edges.push({ from: edge.from_id, to: edge.to_id, type: 'similarity' });
+      }
     }
   }
 

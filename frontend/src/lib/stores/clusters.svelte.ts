@@ -7,8 +7,9 @@
 
 import {
   matchPattern, getClusterDetail, getClusterTree, getClusterStats,
-  getClusterTemplates,
+  getClusterTemplates, getClusterSimilarityEdges,
   type ClusterMatchResponse, type ClusterDetail, type ClusterNode, type ClusterStats,
+  type SimilarityEdge,
 } from '$lib/api/clusters';
 
 const PASTE_CHAR_DELTA = 50;
@@ -42,6 +43,10 @@ class ClusterStore {
 
   // Domain highlighting for cross-component filtering
   highlightedDomain = $state<string | null>(null);
+
+  // Similarity edges for topology overlay
+  similarityEdges = $state<SimilarityEdge[]>([]);
+  showSimilarityEdges = $state(false);
 
   // State filter — shared between ClusterNavigator tabs and SemanticTopology.
   // Default to 'active' so the working set is visible on load.
@@ -144,10 +149,15 @@ class ClusterStore {
     this.taxonomyLoading = true;
     this.taxonomyError = null;
     try {
-      const [tree, stats] = await Promise.all([getClusterTree(), getClusterStats()]);
+      const [tree, stats, simEdges] = await Promise.all([
+        getClusterTree(),
+        getClusterStats(),
+        getClusterSimilarityEdges().catch(() => [] as SimilarityEdge[]),
+      ]);
       if (gen !== this._loadGeneration) return; // stale response
       this.taxonomyTree = tree;
       this.taxonomyStats = stats;
+      this.similarityEdges = simEdges;
     } catch (err) {
       if (gen !== this._loadGeneration) return;
       this.taxonomyError = (err instanceof Error && err.message) ? err.message : 'Failed to load clusters';
@@ -259,6 +269,8 @@ class ClusterStore {
     this.taxonomyLoading = false;
     this.taxonomyError = null;
     this.templates = [];
+    this.similarityEdges = [];
+    this.showSimilarityEdges = false;
     this.highlightedDomain = null;
     this.stateFilter = 'active';
     if (this._debounceTimer) clearTimeout(this._debounceTimer);

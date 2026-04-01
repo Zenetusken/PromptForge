@@ -26,6 +26,8 @@ from app.schemas.clusters import (
     LinkedOptimization,
     MetaPatternItem,
     ReclusterResponse,
+    SimilarityEdge,
+    SimilarityEdgesResponse,
 )
 from app.services.taxonomy import TaxonomyEngine
 from app.services.taxonomy import get_engine as get_taxonomy_engine
@@ -105,6 +107,27 @@ async def get_cluster_stats(
     except Exception as exc:
         logger.error("GET /api/clusters/stats failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Failed to load cluster stats") from exc
+
+
+@router.get("/api/clusters/similarity-edges")
+async def get_similarity_edges(
+    request: Request,
+    threshold: float = Query(0.50, ge=0.0, le=1.0),
+    max_edges: int = Query(100, ge=1, le=1000),
+) -> SimilarityEdgesResponse:
+    """Pairwise cosine similarity edges above threshold for topology overlay."""
+    try:
+        engine = _get_engine(request)
+        pairs = engine.embedding_index.pairwise_similarities(threshold, max_edges)
+        return SimilarityEdgesResponse(
+            edges=[
+                SimilarityEdge(from_id=a, to_id=b, similarity=s)
+                for a, b, s in pairs
+            ]
+        )
+    except Exception as exc:
+        logger.error("GET /api/clusters/similarity-edges failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to compute similarity edges") from exc
 
 
 @router.get("/api/clusters/templates")

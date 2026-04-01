@@ -114,6 +114,16 @@ export interface ClusterMatchResponse {
   } | null;
 }
 
+export interface SimilarityEdge {
+  from_id: string;
+  to_id: string;
+  similarity: number;
+}
+
+export interface SimilarityEdgesResponse {
+  edges: SimilarityEdge[];
+}
+
 export interface ReclusterResult {
   status: 'completed' | 'skipped';
   reason?: string;
@@ -170,4 +180,16 @@ export const triggerRecluster = () =>
     method: 'POST',
     body: JSON.stringify({}),
   });
+
+export async function getClusterSimilarityEdges(
+  threshold?: number,
+  maxEdges?: number,
+): Promise<SimilarityEdge[]> {
+  const params = new URLSearchParams();
+  if (threshold != null) params.set('threshold', String(threshold));
+  if (maxEdges != null) params.set('max_edges', String(maxEdges));
+  const qs = params.toString();
+  const resp = await apiFetch<SimilarityEdgesResponse>(`/clusters/similarity-edges${qs ? '?' + qs : ''}`);
+  return resp.edges;
+}
 

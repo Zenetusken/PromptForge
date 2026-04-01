@@ -93,6 +93,16 @@
     </div>
   {/if}
 
+  <!-- Similarity toggle -->
+  <button
+    class="similarity-btn"
+    class:similarity-active={clustersStore.showSimilarityEdges}
+    onclick={() => { clustersStore.showSimilarityEdges = !clustersStore.showSimilarityEdges; }}
+    title="Toggle similarity edges"
+  >
+    Similarity
+  </button>
+
   <!-- Recluster button -->
   <button
     class="recluster-btn"
@@ -170,6 +180,26 @@
 
   .search-input:focus {
     border-color: var(--tier-accent, var(--color-neon-cyan));
+  }
+
+  .similarity-btn {
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--color-border-subtle);
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .similarity-btn:hover {
+    border-color: var(--color-neon-cyan);
+    color: var(--color-neon-cyan);
+  }
+
+  .similarity-btn.similarity-active {
+    border-color: var(--color-neon-cyan);
+    color: var(--color-neon-cyan);
   }
 
   .recluster-btn {

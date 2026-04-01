@@ -407,6 +407,64 @@ class TestLegacyRedirects:
         assert "min_persistence=0.5" in location
 
 
+class TestSimilarityEdges:
+    @pytest.mark.asyncio
+    async def test_similarity_edges_empty(self, app_client, db_session):
+        """GET /api/clusters/similarity-edges returns empty list when no clusters."""
+        resp = await app_client.get("/api/clusters/similarity-edges")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "edges" in data
+        assert data["edges"] == []
+
+    @pytest.mark.asyncio
+    async def test_similarity_edges_with_similar_clusters(self, app_client, db_session):
+        """GET /api/clusters/similarity-edges returns edges for similar clusters."""
+        import numpy as np
+
+        from app.services.taxonomy.embedding_index import EmbeddingIndex
+
+        # Build a small index with near-identical embeddings
+        idx = EmbeddingIndex(dim=384)
+        emb = np.random.randn(384).astype(np.float32)
+        emb /= np.linalg.norm(emb)
+        await idx.upsert("c1", emb)
+        await idx.upsert("c2", emb + np.random.randn(384).astype(np.float32) * 0.01)
+
+        mock_engine = MagicMock()
+        mock_engine.embedding_index = idx
+
+        with patch("app.routers.clusters._get_engine", return_value=mock_engine):
+            resp = await app_client.get("/api/clusters/similarity-edges?threshold=0.5&max_edges=10")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["edges"]) == 1
+        edge = data["edges"][0]
+        assert "from_id" in edge
+        assert "to_id" in edge
+        assert "similarity" in edge
+        assert edge["similarity"] > 0.9
+
+    @pytest.mark.asyncio
+    async def test_similarity_edges_query_params(self, app_client, db_session):
+        """GET /api/clusters/similarity-edges validates query params."""
+        # Threshold out of range
+        resp = await app_client.get("/api/clusters/similarity-edges?threshold=1.5")
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_similarity_edges_error_500(self, app_client, db_session):
+        """GET /api/clusters/similarity-edges returns 500 on engine error."""
+        mock_engine = MagicMock()
+        mock_engine.embedding_index.pairwise_similarities.side_effect = RuntimeError("boom")
+
+        with patch("app.routers.clusters._get_engine", return_value=mock_engine):
+            resp = await app_client.get("/api/clusters/similarity-edges")
+
+        assert resp.status_code == 500
+
+
 class TestClusterErrorHandling:
     """Error handling tests for cluster endpoints (via both direct and legacy paths)."""
 

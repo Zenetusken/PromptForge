@@ -125,3 +125,13 @@ class ClusterUpdateRequest(BaseModel):
     intent_label: str | None = None
     domain: str | None = None
     state: str | None = None
+
+
+class SimilarityEdge(BaseModel):
+    from_id: str
+    to_id: str
+    similarity: float
+
+
+class SimilarityEdgesResponse(BaseModel):
+    edges: list[SimilarityEdge]

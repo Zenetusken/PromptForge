@@ -17,6 +17,10 @@
   // Resolved at module level to avoid per-frame allocations
   const HIGHLIGHT_COLOR = parseInt(stateColor('template').replace('#', ''), 16);
   const EDGE_COLOR = parseInt(stateColor('archived').replace('#', ''), 16);
+  const SIMILARITY_EDGE_COLOR = parseInt(stateColor('template').replace('#', ''), 16);
+
+  // Similarity edge group — persisted across rebuilds for visibility toggle
+  let similarityEdgeGroup: THREE.Group | null = null;
 
   let canvas: HTMLCanvasElement;
   let container: HTMLDivElement;
@@ -230,6 +234,48 @@
       renderer.scene.add(lines);
     }
 
+    // Similarity edges — separate group controlled by toggle
+    similarityEdgeGroup = new THREE.Group();
+    similarityEdgeGroup.userData = { isSimilarityEdge: true };
+    similarityEdgeGroup.visible = clustersStore.showSimilarityEdges;
+
+    const simEdges = data.edges.filter(e => e.type === 'similarity');
+    if (simEdges.length > 0) {
+      // Build a lookup from similarity edge data to get the score
+      const simEdgeScores = new Map<string, number>();
+      for (const se of clustersStore.similarityEdges) {
+        simEdgeScores.set(`${se.from_id}:${se.to_id}`, se.similarity);
+        simEdgeScores.set(`${se.to_id}:${se.from_id}`, se.similarity);
+      }
+
+      for (const edge of simEdges) {
+        const from = nodeMap.get(edge.from);
+        const to = nodeMap.get(edge.to);
+        if (!from || !to) continue;
+
+        const similarity = simEdgeScores.get(`${edge.from}:${edge.to}`) ?? 0.5;
+        // Opacity proportional to similarity: 0.1 at threshold (0.5) to 0.4 at 1.0
+        const opacity = 0.1 + (similarity - 0.5) * 0.6;
+
+        const simGeo = new THREE.BufferGeometry();
+        simGeo.setAttribute('position', new THREE.Float32BufferAttribute(
+          [...from.position, ...to.position], 3,
+        ));
+        const simMat = new THREE.LineDashedMaterial({
+          color: SIMILARITY_EDGE_COLOR,
+          transparent: true,
+          opacity: Math.max(0.1, Math.min(0.4, opacity)),
+          dashSize: 0.3,
+          gapSize: 0.2,
+        });
+        const simLine = new THREE.LineSegments(simGeo, simMat);
+        simLine.computeLineDistances();
+        simLine.userData = { isSimilarityEdge: true };
+        similarityEdgeGroup.add(simLine);
+      }
+    }
+    renderer.scene.add(similarityEdgeGroup);
+
     // Labels — always visible for small graphs (≤ 8 nodes), near = all, mid = large clusters
     if (labels) {
       const visibleNodes = data.nodes.filter(n => n.visible);
@@ -331,7 +377,7 @@
     if (tree.length > 0 && renderer) {
       untrack(() => {
         flatNodeMap = new Map(tree.map(n => [n.id, n]));
-        sceneData = buildSceneData(tree);
+        sceneData = buildSceneData(tree, clustersStore.similarityEdges);
         assignLodVisibility(sceneData.nodes, lodTier);
 
         // Build semantic relationship data for the force simulation
@@ -452,6 +498,14 @@
     }
   });
 
+  // Similarity edge visibility toggle
+  $effect(() => {
+    const show = clustersStore.showSimilarityEdges;
+    if (similarityEdgeGroup) {
+      similarityEdgeGroup.visible = show;
+    }
+  });
+
   // Domain highlight dimming — when a domain is highlighted in the navigator,
   // dim all non-matching nodes and edges. Restores original opacities on clear.
   $effect(() => {
@@ -490,11 +544,18 @@
       }
     }
 
-    // Dim inter-cluster edges only (preserve domain node EdgesGeometry outlines)
+    // Dim inter-cluster edges and similarity edges (preserve domain node EdgesGeometry outlines)
+    const dimActive = highlightDomain != null;
     renderer.scene.traverse((obj) => {
       if (obj instanceof THREE.LineSegments && obj.userData?.isInterClusterEdge) {
         const mat = obj.material as THREE.LineBasicMaterial;
-        mat.opacity = highlightDomain != null ? 0.1 : 0.4;
+        mat.opacity = dimActive ? 0.1 : 0.4;
+      }
+      if (obj instanceof THREE.LineSegments && obj.userData?.isSimilarityEdge) {
+        const mat = obj.material as THREE.LineDashedMaterial;
+        const baseOpacity = obj.userData.baseOpacity ?? mat.opacity;
+        if (!obj.userData.baseOpacity) obj.userData.baseOpacity = mat.opacity;
+        mat.opacity = dimActive ? baseOpacity * 0.25 : baseOpacity;
       }
     });
   });
