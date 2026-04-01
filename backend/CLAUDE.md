@@ -10,8 +10,8 @@ Everything backend developers need. For project overview, see root `CLAUDE.md`. 
 
 ## Key services (`app/services/`)
 
-**Pipeline**: `pipeline.py` (3-phase orchestrator), `sampling_pipeline.py` (MCP sampling — full parity), `passthrough.py` (shared passthrough assembly), `pipeline_constants.py` (shared constants: `CONFIDENCE_GATE=0.7`, `FALLBACK_STRATEGY="auto"`)
-**Analysis**: `heuristic_analyzer.py` (zero-LLM classifier, 6-layer), `context_enrichment.py` (unified `enrich()` for all tiers → frozen `EnrichedContext`), `context_resolver.py` (per-source char caps, untrusted wrapping)
+**Pipeline**: `pipeline.py` (3-phase orchestrator), `sampling_pipeline.py` (MCP sampling — full parity), `passthrough.py` (shared passthrough assembly), `pipeline_constants.py` (shared constants: `CONFIDENCE_GATE=0.7`, `FALLBACK_STRATEGY="auto"`, `semantic_upgrade_general()` post-LLM classification gate)
+**Analysis**: `heuristic_analyzer.py` (zero-LLM classifier, 6-layer, adaptive keyword weights), `context_enrichment.py` (unified `enrich()` for all tiers → frozen `EnrichedContext`), `context_resolver.py` (per-source char caps, untrusted wrapping)
 **Scoring**: `heuristic_scorer.py` (5-dimension heuristics, `score_prompt()` facade, clamped [1.0, 10.0]), `score_blender.py` (hybrid LLM+heuristic, z-score normalization, divergence detection)
 **Optimization**: `optimization_service.py` (CRUD, sort/filter, `VALID_SORT_COLUMNS`), `refinement_service.py` (sessions, branching, rollback, suggestions)
 **Prompts & Strategies**: `prompt_loader.py` (template loading, startup validation), `strategy_loader.py` (file discovery, YAML frontmatter, hot-reload), `file_watcher.py` (watchfiles.awatch, publishes `strategy_changed`)
@@ -54,7 +54,7 @@ Model IDs centralized in `config.py`: `MODEL_SONNET` (`claude-sonnet-4-6`), `MOD
 | `health.py` | `GET /api/health` (provider, tiers, scores, errors, domain_count) |
 | `events.py` | `GET /api/events` (SSE), `POST /api/events/_publish` (cross-process) |
 | `domains.py` | `GET /api/domains`, `POST /api/domains/{id}/promote` |
-| `clusters.py` | CRUD, match, tree, stats, templates, recluster. Legacy 301 for `/api/patterns/*`, `/api/taxonomy/*` |
+| `clusters.py` | CRUD, match, tree, stats, templates, recluster, reassign, repair. Read endpoints use `db.autoflush=False`. Legacy 301 for `/api/patterns/*`, `/api/taxonomy/*` |
 
 Shared: `app/utils/sse.py` (`format_sse()`), `app/dependencies/rate_limit.py` (in-memory via `limits`).
 
@@ -120,7 +120,13 @@ Two SDK bug fixes in `mcp_server.py`:
 
 ## Taxonomy engine (`services/taxonomy/`)
 
-Process singleton (`get_engine()`/`set_engine()`). Three paths: **hot** (per-optimization embed + cosine nearest-node), **warm** (periodic HDBSCAN + speculative lifecycle mutations gated by Q_system non-regression + domain discovery + reconciliation + zombie cleanup), **cold** (full refit + UMAP 3D + OKLab coloring + Haiku labeling).
+Process singleton (`get_engine()`/`set_engine()`). Three paths: **hot** (per-optimization embed + adaptive cosine nearest-node), **warm** (periodic HDBSCAN + speculative lifecycle mutations gated by Q_system non-regression + domain discovery + reconciliation + zombie cleanup), **cold** (full refit + UMAP 3D + OKLab coloring + Haiku labeling + domain-link restoration + member_count reconciliation).
+
+**Merge threshold**: adaptive `0.55 + 0.04 * log2(1 + member_count)` — grows with cluster size to prevent centroid-drift mega-clusters. Task_type mismatch penalty (-0.05) for cross-type merges. Used by hot, warm, and cold paths.
+
+**Bookkeeping invariants**: `cluster.member_count == COUNT(optimizations WHERE cluster_id = cluster.id)`. Hot path decrements old cluster on reassignment. Merge zeros loser. Retire increments target. Cold path reconciles from Optimization rows.
+
+**Cold path safety**: Domain nodes excluded from HDBSCAN. Self-referencing parent_ids prevented. Post-HDBSCAN domain-link restoration ensures all active clusters parent to their domain node.
 
 **Quality**: 5-dimension Q_system (coherence, separation, coverage, DBCV, stability) with adaptive weights. Domain floor: coherence ≥0.3.
 

@@ -70,7 +70,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 | Frontend | SvelteKit 2 (Svelte 5 runes), Tailwind CSS 4 |
 | Database | SQLite (WAL mode) |
 | Visualization | Three.js (3D taxonomy topology with LOD, raycasting, force layout) |
-| Clustering | HDBSCAN + UMAP 3D projection + OKLab coloring |
+| Clustering | HDBSCAN + adaptive cosine threshold + UMAP 3D + OKLab coloring |
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2, 384-dim, CPU) |
 | LLM | Configurable per phase — Opus, Sonnet, Haiku (via Settings) |
 | Scoring | Hybrid: LLM scores blended with model-independent heuristics + z-score normalization |
@@ -206,7 +206,10 @@ cd frontend && npm run build
 | `/api/clusters/tree` | GET | Flat node list for 3D viz |
 | `/api/clusters/stats` | GET | Q metrics + sparkline |
 | `/api/clusters/templates` | GET | Proven templates |
-| `/api/clusters/recluster` | POST | Cold-path trigger |
+| `/api/clusters/recluster` | POST | Cold-path HDBSCAN + UMAP refit |
+| `/api/clusters/reassign` | POST | Replay hot-path with current adaptive threshold |
+| `/api/clusters/repair` | POST | Rebuild join records, meta-patterns, coherence |
+| `/api/clusters/backfill-scores` | POST | Recompute cluster avg_score/scored_count |
 | `/api/github/auth/*` | GET/POST | GitHub OAuth flow |
 | `/api/github/repos/*` | GET/POST/DELETE | Repo management |
 

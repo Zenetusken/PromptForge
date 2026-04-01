@@ -52,7 +52,8 @@ PIDs: `data/pids/backend.pid`, `data/pids/mcp.pid`, `data/pids/frontend.pid`
 - **Routing**: 5-tier priority chain — force_passthrough > force_sampling > internal > auto_sampling > passthrough. See `backend/CLAUDE.md` for internals, `docs/routing-architecture.md` for diagrams
 - **Scoring**: hybrid LLM + heuristic with z-score normalization and divergence detection
 - **Providers**: Claude CLI or Anthropic API, auto-detected once at startup, stored on `app.state.routing`
-- **Taxonomy**: evolutionary hierarchical clustering (`services/taxonomy/`). Hot/warm/cold paths. Domain discovery
+- **Classification**: `semantic_upgrade_general()` gate catches LLM returning "general" when strong keywords present. Heuristic analyzer for zero-LLM passthrough classification
+- **Taxonomy**: evolutionary hierarchical clustering (`services/taxonomy/`). Hot/warm/cold paths. Domain discovery. Adaptive merge threshold `0.55 + 0.04 * log2(1 + member_count)` with task_type mismatch penalty (-0.05)
 - **Layer rules**: `routers/` → `services/` → `models/` only. Services must never import from routers
 - **Model IDs**: centralized in `config.py` (`MODEL_SONNET/OPUS/HAIKU`). Use `PreferencesService.resolve_model()`, never hardcode
 - **Env vars**: `ANTHROPIC_API_KEY` (optional), `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `SECRET_KEY` (auto-generated)

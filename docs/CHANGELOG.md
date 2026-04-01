@@ -2,9 +2,19 @@
 
 All notable changes to Project Synthesis. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## Unreleased
+## v0.3.10-dev — 2026-04-01
 
 ### Added
+- Adaptive merge threshold for cluster assignment: `BASE_MERGE_THRESHOLD=0.55 + 0.04 * log2(1 + member_count)` — replaces static 0.78 that blocked all legitimate merges while allowing centroid-drift mega-clusters
+- Task-type mismatch penalty (-0.05 cosine) during cluster merge — soft signal that prevents mixed-type clusters without hard-blocking
+- `semantic_upgrade_general()` post-LLM classification gate — upgrades `task_type="general"` when strong keywords are present (e.g., "implement"→coding, "analyze"→analysis)
+- `POST /api/clusters/reassign` endpoint — replays hot-path cluster assignment for all optimizations with current adaptive threshold
+- `POST /api/clusters/repair` endpoint — rebuilds orphaned join records, meta-patterns, coherence, and member_count in one operation
+- `repair_data_integrity()` engine method covering 4 repair tasks: join table, meta-patterns, coherence computation, member_count reconciliation
+- Cluster task_type auto-recomputation as statistical mode of members after each merge (>50% majority required)
+- Hot-path old-cluster decrement — when optimization is reassigned, old cluster's member_count/scored_count is decremented
+- Cold path: domain nodes excluded from HDBSCAN input, self-reference prevention, post-HDBSCAN domain-link restoration, member_count reconciliation from Optimization rows
+- Autoflush disabled on read-only cluster endpoints (tree, stats, detail) — prevents 500 during concurrent recluster
 - Embedding index disk cache (`data/embedding_index.pkl`) with 1-hour TTL — skips DB rebuild on server restart when cache is fresh
 - Adaptive warm-path interval via `WARM_PATH_INTERVAL_SECONDS` setting — warm path runs early when `taxonomy_changed` fires instead of always waiting the full interval
 - Semantic gravity n-body force simulation with 5 forces: UMAP anchor, parent-child spring, same-domain affinity, universal repulsion, collision resolution
@@ -27,6 +37,15 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Domain dots enlarged 6px to 8px with inset box-shadow contrast ring
 
 ### Changed
+- Cluster merge threshold: static 0.78 replaced with adaptive formula that grows with cluster size (0.59 at 1 member → 0.71 at 14 members) — empirical analysis showed only 4/1711 prompt pairs exceeded 0.78
+- Heuristic analyzer: `build` keyword weight raised 0.5→0.7, `calculate` (0.6) added to coding signals
+- Warm-path merge uses adaptive threshold (was static 0.78)
+- Cold-path cluster matching uses adaptive threshold (was static 0.78)
+- Cold-path no longer overwrites member_count with HDBSCAN group size — reconciles from Optimization rows
+- `attempt_merge()` zeros loser's member_count/scored_count/avg_score on archival (matches `attempt_retire()`)
+- `attempt_retire()` increments target_sibling.member_count by reassigned optimization count
+- Data domain seed color changed from #06b6d4 (teal) to #b49982 (warm taupe) — was perceptually identical to database #36b5ff (ΔE=0.068→0.200)
+- PROVEN TEMPLATES section visible in active tab (was only visible in "all" tab)
 - Auto-inject threshold lowered 0.72 to 0.45 for broad post-merge centroids
 - Domain discovery thresholds: MIN_MEMBERS 5 to 3, MIN_COHERENCE 0.6 to 0.3
 - Domain node size multiplier 2.5x to 1.6x (aggregate child-member sizing makes 2.5x overkill)
@@ -43,6 +62,12 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Inspector clears selection on state filter tab change
 
 ### Fixed
+- Cold path HDBSCAN destroyed domain→cluster parent links (32 self-references, 7 missing parents per recluster) — domain nodes now excluded from HDBSCAN, self-references prevented, domain links restored post-HDBSCAN
+- Cold path set member_count from HDBSCAN group size instead of actual Optimization count — inspector showed "Members: 10" but only 4 linked optimizations
+- SQLAlchemy autoflush race condition: concurrent recluster + cluster detail GET caused 500 errors
+- 4 of 6 "general" task_type prompts were misclassified — LLM returned "general" for prompts with explicit coding/analysis keywords
+- Hierarchical topology edges invisible when parent domain node was at LOD visibility boundary
+- ClusterNavigator default tab test failures (5 pre-existing) — tests expected "all" default but implementation uses "active"
 - Auto-injected cluster IDs now included in usage_count increment (was missing from internal pipeline)
 - Coherence recomputation from actual member embeddings (cold path left values at 0.0)
 - Organic domain discovery blocked by uncomputed coherence
