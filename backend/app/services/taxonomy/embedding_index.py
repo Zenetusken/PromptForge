@@ -41,6 +41,9 @@ class EmbeddingIndex:
         n = len(ids)
         if n < 2:
             return []
+        if n > 2000:
+            logger.warning("pairwise_similarities skipped: index too large (%d)", n)
+            return []
 
         # (n, n) cosine similarity — rows are L2-normalized
         scores = matrix @ matrix.T

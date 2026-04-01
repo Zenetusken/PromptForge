@@ -270,7 +270,7 @@
         });
         const simLine = new THREE.LineSegments(simGeo, simMat);
         simLine.computeLineDistances();
-        simLine.userData = { isSimilarityEdge: true };
+        simLine.userData = { isSimilarityEdge: true, baseOpacity: opacity };
         similarityEdgeGroup.add(simLine);
       }
     }
@@ -553,8 +553,7 @@
       }
       if (obj instanceof THREE.LineSegments && obj.userData?.isSimilarityEdge) {
         const mat = obj.material as THREE.LineDashedMaterial;
-        const baseOpacity = obj.userData.baseOpacity ?? mat.opacity;
-        if (!obj.userData.baseOpacity) obj.userData.baseOpacity = mat.opacity;
+        const baseOpacity = obj.userData.baseOpacity as number;
         mat.opacity = dimActive ? baseOpacity * 0.25 : baseOpacity;
       }
     });
