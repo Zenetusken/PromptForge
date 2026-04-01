@@ -46,7 +46,11 @@ from app.services.taxonomy.family_ops import (
 from app.services.taxonomy.matching import (
     PatternMatch,
     TaxonomyMapping,
+)
+from app.services.taxonomy.matching import (
     map_domain as _map_domain,
+)
+from app.services.taxonomy.matching import (
     match_prompt as _match_prompt,
 )
 from app.services.taxonomy.sparkline import compute_sparkline_data
@@ -1396,7 +1400,6 @@ class TaxonomyEngine:
         Safe to call multiple times (idempotent).
         """
         from sqlalchemy import delete as sa_delete
-        from sqlalchemy import func as sa_func
 
         from app.services.taxonomy.clustering import compute_pairwise_coherence
         from app.services.taxonomy.family_ops import (

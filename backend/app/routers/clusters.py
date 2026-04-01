@@ -417,7 +417,7 @@ async def backfill_scores(
     One-time fix for clusters whose running mean drifted due to the
     member_count/scored_count mismatch or warm-path score clearing.
     """
-    engine = _get_engine(request)
+    _get_engine(request)  # validate engine is available
     try:
         # Reuse the same grouped-query pattern as warm path reconciliation
         from sqlalchemy import func as sa_func
