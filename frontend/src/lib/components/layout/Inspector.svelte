@@ -6,6 +6,7 @@
   import { editorStore } from '$lib/stores/editor.svelte';
   import { taxonomyColor, scoreColor, qHealthColor, stateColor, DIMENSION_COLORS } from '$lib/utils/colors';
   import { TAXONOMY_TOOLTIPS, CLUSTER_TOOLTIPS, STAT_TOOLTIPS } from '$lib/utils/metric-tooltips';
+  import { assessTaxonomyHealth } from '$lib/utils/taxonomy-health';
   import { tooltip } from '$lib/actions/tooltip';
 
   /** Deduplicate array by `id` field (prevents Svelte keyed each errors). */
@@ -357,6 +358,7 @@
     {:else if !viewingCachedTab && forgeStore.status === 'idle'}
       {#if clustersStore.taxonomyStats}
         {@const stats = clustersStore.taxonomyStats}
+        {@const health = assessTaxonomyHealth(stats)}
         <div class="health-panel">
           <div class="health-title">TAXONOMY HEALTH</div>
           <div class="health-metric" use:tooltip={TAXONOMY_TOOLTIPS.q_system}>
@@ -374,11 +376,13 @@
           {#if stats.q_sparkline && stats.q_sparkline.length >= 2}
             <div class="health-sparkline">
               <ScoreSparkline scores={stats.q_sparkline} width={100} height={18} />
-              {#if stats.q_point_count >= 3}
-                {@const ti = trendInfo(stats.q_trend)}
-                <span class="health-trend" style="color: {ti.color}">{ti.label}</span>
+              {#if health}
+                <span class="health-headline" style="color: {health.color}">{health.headline}</span>
               {/if}
             </div>
+          {/if}
+          {#if health}
+            <div class="health-detail">{health.detail}</div>
           {/if}
           <div class="health-counts">
             <span use:tooltip={TAXONOMY_TOOLTIPS.active}>{stats.nodes?.active ?? 0} active</span>
@@ -926,10 +930,19 @@
     margin-top: 2px;
   }
 
-  .health-trend {
+  .health-headline {
     font-family: var(--font-mono);
     font-size: 9px;
     white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .health-detail {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+    margin-top: 2px;
   }
 
   /* Pattern family detail */
