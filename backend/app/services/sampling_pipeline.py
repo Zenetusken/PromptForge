@@ -712,6 +712,10 @@ async def run_sampling_pipeline(
             _inject_engine = _get_inject_engine()
             if _inject_engine is not None:
                 async with async_session_factory() as _inject_db:
+                    # NOTE: optimization_id is intentionally NOT passed here.
+                    # Injection provenance records are written explicitly in the
+                    # persist block below (~line 1031) using the same DB session
+                    # as the Optimization record, avoiding FK violations.
                     auto_injected_patterns, auto_injected_cluster_ids = (
                         await auto_inject_patterns(
                             raw_prompt=prompt,

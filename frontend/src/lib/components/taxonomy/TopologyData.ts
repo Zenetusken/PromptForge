@@ -130,9 +130,13 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
     }
   }
 
+  // Optional edge layers — build node lookup once for both
+  const nodeIdSet = (similarityEdges || injectionEdges)
+    ? new Set(nodes.map(n => n.id))
+    : null;
+
   // Similarity edges from embedding index pairwise similarities
-  if (similarityEdges) {
-    const nodeIdSet = new Set(nodes.map(n => n.id));
+  if (similarityEdges && nodeIdSet) {
     for (const edge of similarityEdges) {
       if (nodeIdSet.has(edge.from_id) && nodeIdSet.has(edge.to_id)) {
         edges.push({ from: edge.from_id, to: edge.to_id, type: 'similarity' });
@@ -141,8 +145,7 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
   }
 
   // Injection provenance edges (directed: source cluster → target cluster)
-  if (injectionEdges) {
-    const nodeIdSet = new Set(nodes.map(n => n.id));
+  if (injectionEdges && nodeIdSet) {
     for (const edge of injectionEdges) {
       if (nodeIdSet.has(edge.source_id) && nodeIdSet.has(edge.target_id)) {
         edges.push({ from: edge.source_id, to: edge.target_id, type: 'injection' });
