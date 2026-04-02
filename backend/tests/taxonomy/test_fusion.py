@@ -716,7 +716,9 @@ class TestFixedPointBreak:
 
         # Target's w_transform should be closer to coding's (high scorer)
         # than to writing's (low scorer)
-        assert abs(target_opt.w_transform - coding_opt.w_transform) < abs(target_opt.w_transform - writing_opt.w_transform)
+        delta_coding = abs(target_opt.w_transform - coding_opt.w_transform)
+        delta_writing = abs(target_opt.w_transform - writing_opt.w_transform)
+        assert delta_coding < delta_writing
 
     def test_adapt_weights_moves_when_target_differs(self):
         """adapt_weights(A, B) should produce C != A when A != B."""
