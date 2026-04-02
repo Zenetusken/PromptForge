@@ -1218,6 +1218,68 @@ async def phase_refresh(
             refresh_exc,
         )
 
+    # --- Cross-cluster global_source_count computation ---
+    # For each MetaPattern, count how many DISTINCT clusters contain a
+    # semantically similar pattern (cosine >= 0.82). This enables
+    # cross-cluster injection: patterns with high global_source_count
+    # are universal techniques that benefit all prompts.
+    try:
+        all_patterns_q = await db.execute(
+            select(MetaPattern).where(
+                MetaPattern.embedding.isnot(None),
+            )
+        )
+        all_patterns = list(all_patterns_q.scalars().all())
+
+        if len(all_patterns) >= 2:
+            # Build embedding matrix + cluster_id mapping
+            pattern_embs: list[np.ndarray] = []
+            pattern_cluster_ids: list[str] = []
+            valid_patterns: list[MetaPattern] = []
+            for mp in all_patterns:
+                try:
+                    emb = np.frombuffer(mp.embedding, dtype=np.float32).copy()
+                    if emb.shape[0] == 384:
+                        pattern_embs.append(emb)
+                        pattern_cluster_ids.append(mp.cluster_id)
+                        valid_patterns.append(mp)
+                except (ValueError, TypeError):
+                    continue
+
+            if len(pattern_embs) >= 2:
+                # Pairwise cosine similarity matrix
+                mat = np.stack(pattern_embs, axis=0).astype(np.float32)
+                norms = np.linalg.norm(mat, axis=1, keepdims=True)
+                norms = np.where(norms == 0, 1.0, norms)
+                mat_norm = mat / norms
+                sim_matrix = mat_norm @ mat_norm.T
+
+                from app.services.pipeline_constants import (
+                    CROSS_CLUSTER_SIMILARITY_THRESHOLD,
+                )
+
+                for i, mp in enumerate(valid_patterns):
+                    similar_mask = sim_matrix[i] >= CROSS_CLUSTER_SIMILARITY_THRESHOLD
+                    similar_cluster_ids = {
+                        pattern_cluster_ids[j]
+                        for j in range(len(valid_patterns))
+                        if similar_mask[j]
+                    }
+                    mp.global_source_count = len(similar_cluster_ids)
+
+                await db.flush()
+                logger.info(
+                    "Computed global_source_count for %d meta-patterns",
+                    len(valid_patterns),
+                )
+        elif len(all_patterns) == 1:
+            all_patterns[0].global_source_count = 1
+            await db.flush()
+    except Exception as gsc_exc:
+        logger.warning(
+            "Global source count computation failed (non-fatal): %s", gsc_exc
+        )
+
     return result
 
 
