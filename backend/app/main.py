@@ -195,6 +195,38 @@ async def lifespan(app: FastAPI):
                     "EmbeddingIndex warm-load failed (non-fatal): %s", idx_exc
                 )
 
+            # Warm-load TransformationIndex from disk cache
+            _ti_cache_path = DATA_DIR / "transformation_index.pkl"
+            try:
+                _ti_loaded = await engine._transformation_index.load_cache(_ti_cache_path)
+                if _ti_loaded:
+                    logger.info(
+                        "TransformationIndex warm-loaded from cache: %d vectors",
+                        engine._transformation_index.size,
+                    )
+                else:
+                    logger.info("TransformationIndex cache not available — will populate via hot path")
+            except Exception as ti_exc:
+                logger.warning(
+                    "TransformationIndex warm-load failed (non-fatal): %s", ti_exc
+                )
+
+            # Warm-load OptimizedEmbeddingIndex from disk cache
+            _oi_cache_path = DATA_DIR / "optimized_index.pkl"
+            try:
+                _oi_loaded = await engine._optimized_index.load_cache(_oi_cache_path)
+                if _oi_loaded:
+                    logger.info(
+                        "OptimizedEmbeddingIndex warm-loaded from cache: %d vectors",
+                        engine._optimized_index.size,
+                    )
+                else:
+                    logger.info("OptimizedEmbeddingIndex cache not available — will populate via hot path")
+            except Exception as oi_exc:
+                logger.warning(
+                    "OptimizedEmbeddingIndex warm-load failed (non-fatal): %s", oi_exc
+                )
+
             # Startup: ensure routing_tier column exists (SQLite ALTER TABLE)
             # SQLAlchemy create_all() only creates new tables, not new columns
             # on existing tables. This is idempotent — duplicate ADD COLUMN
