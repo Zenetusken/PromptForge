@@ -128,10 +128,12 @@ class OptimizationResult(BaseModel):
     model_config = {"extra": "forbid"}
 
     optimized_prompt: str = Field(
-        description="The optimized prompt text.",
+        description="The rewritten prompt text only. Do NOT include ## Changes, "
+        "## Applied Patterns, or any metadata sections in this field.",
     )
     changes_summary: str = Field(
-        description="Brief summary of changes made during optimization.",
+        description="Summary of what changed and why. Include all rationale "
+        "and applied pattern notes here — never in optimized_prompt.",
     )
     strategy_used: str = Field(
         description="Strategy name that was applied.",

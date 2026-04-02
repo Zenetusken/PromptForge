@@ -1,6 +1,11 @@
 """Tests for app.utils.text_cleanup — LLM output normalization utilities."""
 
-from app.utils.text_cleanup import parse_domain, split_prompt_and_changes, strip_meta_header
+from app.utils.text_cleanup import (
+    parse_domain,
+    sanitize_optimization_result,
+    split_prompt_and_changes,
+    strip_meta_header,
+)
 
 # ---------------------------------------------------------------------------
 # strip_meta_header
@@ -106,6 +111,100 @@ class TestSplitPromptAndChanges:
         prompt, changes = split_prompt_and_changes(text)
         assert not prompt.startswith("#")
         assert "Content" in prompt
+
+    # --- Regex-based heading level coverage ---
+
+    def test_splits_on_h1_changes(self) -> None:
+        text = "Prompt.\n\n# Changes\n- Item"
+        prompt, changes = split_prompt_and_changes(text)
+        assert "Prompt" in prompt
+        assert "Item" in changes
+
+    def test_splits_on_h3_changes(self) -> None:
+        text = "Prompt.\n\n### Changes\n- Item"
+        prompt, changes = split_prompt_and_changes(text)
+        assert "Prompt" in prompt
+        assert "Item" in changes
+
+    def test_splits_on_h4_changes_made(self) -> None:
+        text = "Prompt.\n\n#### Changes Made\nDetails"
+        prompt, changes = split_prompt_and_changes(text)
+        assert "Prompt" in prompt
+        assert "Details" in changes
+
+    def test_splits_on_hr_prefixed_changes(self) -> None:
+        text = "Prompt.\n\n---\n## Changes\n- Item"
+        prompt, changes = split_prompt_and_changes(text)
+        assert "Prompt" in prompt
+        assert "Item" in changes
+
+    def test_case_insensitive_allcaps(self) -> None:
+        text = "Prompt.\n\n## CHANGES\n- Item"
+        prompt, changes = split_prompt_and_changes(text)
+        assert "Prompt" in prompt
+        assert "Item" in changes
+
+    # --- Applied Patterns handling ---
+
+    def test_strips_applied_patterns_before_changes(self) -> None:
+        text = "Prompt.\n\n## Applied Patterns\n- Pattern A\n\n## Changes\n- Item"
+        prompt, changes = split_prompt_and_changes(text)
+        assert "Prompt" in prompt
+        assert "Applied Patterns" not in prompt
+        assert "Item" in changes
+
+    def test_strips_applied_patterns_only(self) -> None:
+        text = "Prompt.\n\n## Applied Patterns\n- Pattern A used"
+        prompt, changes = split_prompt_and_changes(text)
+        assert "Prompt" in prompt
+        assert "Applied Patterns" not in prompt
+
+    # --- False positive guards ---
+
+    def test_does_not_match_changelog_heading(self) -> None:
+        text = "Prompt.\n\n## Changelog\nSome log content."
+        prompt, changes = split_prompt_and_changes(text)
+        assert "Changelog" in prompt
+        assert "Restructured" in changes  # default, no split happened
+
+
+# ---------------------------------------------------------------------------
+# sanitize_optimization_result
+# ---------------------------------------------------------------------------
+
+
+class TestSanitizeOptimizationResult:
+    def test_strips_leaked_changes(self) -> None:
+        prompt = "Clean prompt.\n\n## Changes\n- Added structure"
+        cleaned, changes = sanitize_optimization_result(prompt, "")
+        assert "## Changes" not in cleaned
+        assert "Added structure" in changes
+
+    def test_preserves_explicit_changes_summary(self) -> None:
+        prompt = "Clean prompt.\n\n## Changes\n- Added structure"
+        cleaned, changes = sanitize_optimization_result(prompt, "Explicit summary")
+        assert "## Changes" not in cleaned
+        assert changes == "Explicit summary"
+
+    def test_no_op_on_clean_prompt(self) -> None:
+        prompt = "Already clean prompt with no leakage."
+        cleaned, changes = sanitize_optimization_result(prompt, "Summary here")
+        assert cleaned == "Already clean prompt with no leakage."
+        assert changes == "Summary here"
+
+    def test_strips_applied_patterns_from_prompt(self) -> None:
+        prompt = "Prompt.\n\n## Applied Patterns\n- Used X"
+        cleaned, changes = sanitize_optimization_result(prompt, "Summary")
+        assert "Applied Patterns" not in cleaned
+        assert changes == "Summary"
+
+    def test_uses_extracted_when_summary_is_default(self) -> None:
+        prompt = "Prompt.\n\n## Changes\n1. **Added framing** — clearer intent"
+        cleaned, changes = sanitize_optimization_result(
+            prompt, "Restructured with added specificity and constraints"
+        )
+        assert "## Changes" not in cleaned
+        assert "Added framing" in changes
 
 
 class TestParseDomain:

@@ -815,6 +815,19 @@ async def run_sampling_pipeline(
                 changes_summary=summary,
                 strategy_used=effective_strategy,
             )
+    # Post-cleanup: strip leaked ## Changes / ## Applied Patterns
+    # from optimized_prompt on both structured and text-fallback paths.
+    from app.utils.text_cleanup import sanitize_optimization_result
+
+    _clean_prompt, _clean_changes = sanitize_optimization_result(
+        optimization.optimized_prompt, optimization.changes_summary,
+    )
+    optimization = OptimizationResult(
+        optimized_prompt=_clean_prompt,
+        changes_summary=_clean_changes,
+        strategy_used=optimization.strategy_used,
+    )
+
     model_ids["optimize"] = optimize_model
     phase_durations["optimize_ms"] = int((time.monotonic() - phase_t0) * 1000)
     if trace_logger:

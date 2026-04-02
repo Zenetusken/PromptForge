@@ -11,7 +11,13 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["strip_meta_header", "split_prompt_and_changes", "title_case_label", "parse_domain"]
+__all__ = [
+    "strip_meta_header",
+    "split_prompt_and_changes",
+    "sanitize_optimization_result",
+    "title_case_label",
+    "parse_domain",
+]
 
 # Words that should stay uppercase (acronyms, initialisms)
 _UPPERCASE_WORDS = frozenset({
@@ -92,49 +98,112 @@ def strip_meta_header(text: str) -> str:
     return result
 
 
+_DEFAULT_CHANGES = "Restructured with added specificity and constraints"
+
+# Regex catches markdown headings at any level (#–####), bold markers,
+# and plain label variants for changes sections.  Case-insensitive,
+# multiline so ^ anchors to line starts.  Optional HR (---) prefix.
+_CHANGES_RE = re.compile(
+    r"^(?:---\s*\n)?"
+    r"(?:"
+    # Heading variants: # Changes, ## Changes Made, ### Summary of Changes, etc.
+    # Word boundary (?:\s|$) prevents matching "Changelog", "Changed config", etc.
+    r"#{1,4}\s+(?:Summary\s+of\s+)?(?:Changes?\s*(?:Made|Summary)?|What\s+Changed(?:\s+and\s+Why)?)(?:\s*$)"
+    r"|"
+    # Bold variants: **Changes**, **Changes Made**, etc.
+    r"\*{2}(?:Summary\s+of\s+)?(?:Changes?\s*(?:Made|Summary)?|What\s+Changed(?:\s+and\s+Why)?)\*{2}"
+    r"|"
+    # Plain label: "Changes:" or "What changed:"
+    r"(?:Changes|What\s+changed)\s*:"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Secondary metadata section the LLM may append after the prompt.
+_APPLIED_PATTERNS_RE = re.compile(
+    r"^(?:---\s*\n)?#{1,4}\s+Applied\s+Patterns",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
 def split_prompt_and_changes(text: str) -> tuple[str, str]:
     """Split an LLM response into optimized prompt and changes summary.
 
-    LLMs in sampling/passthrough mode often merge their rationale (what
-    changed and why) into the optimized prompt text.  This function detects
-    common section markers and splits them out so ``changes_summary`` is
-    separate from ``optimized_prompt``.
+    LLMs often merge their rationale (what changed and why) or
+    ``## Applied Patterns`` notes into the optimized prompt text.
+    This function detects section markers via regex and splits them
+    out so ``changes_summary`` is separate from ``optimized_prompt``.
 
     Also strips meta-headers like '# Optimized Prompt'.
 
     Returns:
         (prompt_text, changes_summary) tuple.
     """
-    # Markers ordered from most specific to least — first match wins.
-    # Case-insensitive search, split on the line containing the marker.
-    change_markers = [
-        "## Summary of Changes",
-        "## What Changed and Why",
-        "## What Changed",
-        "## Change Summary",
-        "## Changes Made",
-        "## Changes",
-        "**Summary of Changes**",
-        "**What Changed and Why**",
-        "**What Changed**",
-        "**Changes Made**",
-        "**Changes**",
-        "**Change Summary**",
-        "Changes:",
-        "What changed:",
-    ]
+    changes_match = _CHANGES_RE.search(text)
+    patterns_match = _APPLIED_PATTERNS_RE.search(text)
 
-    for marker in change_markers:
-        idx = text.lower().find(marker.lower())
-        if idx != -1:
-            prompt_part = text[:idx].rstrip()
-            changes_part = text[idx + len(marker):].strip()
-            # Remove leading markdown decoration from changes
-            changes_part = changes_part.lstrip("#").lstrip("*").strip()
-            if changes_part:
-                return strip_meta_header(prompt_part), changes_part[:500]
+    # Determine the earliest metadata section — split there.
+    split_pos: int | None = None
+    changes_text = ""
 
-    return strip_meta_header(text), "Restructured with added specificity and constraints"
+    if changes_match and patterns_match:
+        # Both present — split at whichever comes first
+        if changes_match.start() <= patterns_match.start():
+            split_pos = changes_match.start()
+            changes_text = text[changes_match.end():].strip()
+            # Trim Applied Patterns from the tail of changes_text
+            ap_tail = _APPLIED_PATTERNS_RE.search(changes_text)
+            if ap_tail:
+                changes_text = changes_text[:ap_tail.start()].strip()
+        else:
+            split_pos = patterns_match.start()
+            # Changes section is after Applied Patterns
+            changes_text = text[changes_match.end():].strip()
+    elif changes_match:
+        split_pos = changes_match.start()
+        changes_text = text[changes_match.end():].strip()
+    elif patterns_match:
+        split_pos = patterns_match.start()
+        # No explicit changes section — just strip the Applied Patterns
+
+    if split_pos is not None:
+        prompt_part = text[:split_pos].rstrip()
+        # Remove leading markdown decoration from changes
+        changes_text = changes_text.lstrip("#").lstrip("*").strip()
+        if changes_text:
+            return strip_meta_header(prompt_part), changes_text[:500]
+        if prompt_part.strip():
+            return strip_meta_header(prompt_part), _DEFAULT_CHANGES
+
+    return strip_meta_header(text), _DEFAULT_CHANGES
+
+
+def sanitize_optimization_result(
+    optimized_prompt: str,
+    changes_summary: str,
+) -> tuple[str, str]:
+    """Post-process LLM output to separate leaked metadata sections.
+
+    Even when the LLM returns structured JSON with separate fields, the
+    ``optimized_prompt`` value may contain embedded ``## Changes`` or
+    ``## Applied Patterns`` sections.  This function strips them and
+    merges any extracted changes with the existing ``changes_summary``.
+
+    Applied on ALL pipeline paths (internal, sampling, passthrough) as
+    a defense-in-depth measure.
+
+    Returns:
+        (cleaned_prompt, changes_summary) tuple.
+    """
+    cleaned_prompt, extracted_changes = split_prompt_and_changes(optimized_prompt)
+
+    # If we extracted real changes AND the existing summary is
+    # empty or just the default placeholder, use the extracted text.
+    if extracted_changes and extracted_changes != _DEFAULT_CHANGES:
+        if not changes_summary or changes_summary == _DEFAULT_CHANGES:
+            changes_summary = extracted_changes
+
+    return cleaned_prompt, changes_summary
 
 
 def parse_domain(raw: str | None) -> tuple[str, str | None]:

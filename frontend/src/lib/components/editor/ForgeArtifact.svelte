@@ -31,6 +31,12 @@
     // 4. Strip trailing closing fence + orphaned # from truncated LLM output
     text = text.replace(/\n```\s*$/, '');
     text = text.replace(/\n#{1,3}\s*$/, '');
+    // 5. Strip leaked ## Changes / ## Applied Patterns sections (last-resort defense —
+    //    backend sanitize_optimization_result() should catch these, but this guards
+    //    against stale DB records or edge cases in passthrough mode)
+    text = text.replace(/\n(?:---\s*\n)?#{1,4}\s+(?:(?:Summary\s+of\s+)?Changes?(?:\s+(?:Made|Summary))?|What\s+Changed(?:\s+and\s+Why)?|Applied\s+Patterns)\s*\n[\s\S]*$/i, '');
+    text = text.replace(/\n\*{2}(?:(?:Summary\s+of\s+)?Changes?(?:\s+(?:Made|Summary))?|What\s+Changed(?:\s+and\s+Why)?)\*{2}\s*\n[\s\S]*$/i, '');
+    text = text.replace(/\n(?:Changes|What\s+changed)\s*:\s*\n[\s\S]*$/i, '');
     return text.trim();
   });
 

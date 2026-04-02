@@ -18,7 +18,7 @@
 <applied-meta-patterns>
 {{applied_patterns}}
 
-For each pattern above, evaluate whether its UNDERLYING PRINCIPLE applies to the current prompt's domain and intent. Apply the technique — not the literal text — where it genuinely improves the prompt. Skip patterns that don't logically fit the user's context. After the optimized prompt, include a brief `## Applied Patterns` section noting which patterns you applied and which you skipped (with reason).
+For each pattern above, evaluate whether its UNDERLYING PRINCIPLE applies to the current prompt's domain and intent. Apply the technique — not the literal text — where it genuinely improves the prompt. Skip patterns that don't logically fit the user's context. In the `changes_summary` output field, include a brief "Applied Patterns" note listing which patterns you applied and which you skipped (with reason). Do NOT append this to the optimized prompt text.
 </applied-meta-patterns>
 
 <strategy>
@@ -40,7 +40,9 @@ You are an expert prompt engineer. Rewrite the user's prompt using the strategy 
 
 **Context anchoring:** Always anchor the optimized prompt to the technologies, frameworks, and architecture patterns found in the `<codebase-context>` block above, even if the user's original request is generic. Ground abstract requirements in the concrete stack, naming conventions, and design patterns from the workspace. Reference specific services, file paths, and patterns from the context — not generic best practices. If the codebase context is thin or empty, state explicit technology assumptions based on the workspace profile (languages, frameworks) and mark them as assumptions the user can override.
 
-After the optimized prompt, add a `## Changes` section summarizing what you changed and why. Use rich markdown formatting — choose the format that best fits the changes:
+Provide a changes summary in the `changes_summary` output field — NOT appended to the optimized prompt text. The `optimized_prompt` field must contain ONLY the rewritten prompt with no trailing `## Changes`, `## Applied Patterns`, or any other metadata sections.
+
+For the changes summary, use rich markdown formatting — choose the format that best fits:
 - **Table** (`| Change | Reason |`) for many small, discrete changes
 - **Numbered list** with **bold lead** (e.g., `1. **Added task framing** — removes ambiguity...`) for sequential or prioritized changes
 - **Nested bullets** with categories for complex structural rewrites

@@ -508,6 +508,20 @@ class PipelineOrchestrator:
                 streaming=True,
             )
 
+            # Post-cleanup: strip leaked ## Changes / ## Applied Patterns
+            # from optimized_prompt — LLMs frequently embed change narratives
+            # in the prompt field despite structured output schema separation.
+            from app.utils.text_cleanup import sanitize_optimization_result
+
+            _clean_prompt, _clean_changes = sanitize_optimization_result(
+                optimization.optimized_prompt, optimization.changes_summary,
+            )
+            optimization = OptimizationResult(
+                optimized_prompt=_clean_prompt,
+                changes_summary=_clean_changes,
+                strategy_used=optimization.strategy_used,
+            )
+
             yield PipelineEvent(
                 event="status",
                 data={"stage": "optimize", "state": "complete", "model": optimizer_model},
@@ -810,6 +824,21 @@ class PipelineOrchestrator:
                                 await taxonomy_engine.increment_usage(fid, usage_db)
                             except Exception as usage_exc:
                                 logger.warning("Usage propagation failed for %s: %s", fid, usage_exc)
+                                # Fallback: atomic SQL increment (no tree walk)
+                                # Matches sampling_pipeline.py robustness pattern
+                                try:
+                                    from sqlalchemy import update as sa_upd
+
+                                    from app.models import PromptCluster
+                                    await usage_db.execute(
+                                        sa_upd(PromptCluster)
+                                        .where(PromptCluster.id == fid)
+                                        .values(
+                                            usage_count=PromptCluster.usage_count + 1,
+                                        )
+                                    )
+                                except Exception:
+                                    pass  # truly non-fatal
                         await usage_db.commit()
                 except Exception as exc:
                     logger.warning("Post-commit usage propagation failed: %s", exc)
