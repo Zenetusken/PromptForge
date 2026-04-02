@@ -5,6 +5,17 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Fixed
+- Re-parenting sweep in domain discovery now parses `domain_raw` values via `parse_domain()` before counting — qualified strings like `"Backend: Security"` now correctly match lowercased domain node labels instead of silently failing to reparent
+- `attempt_merge` now reconciles survivor's `scored_count` and `avg_score` immediately from both nodes' weighted contributions instead of deferring to warm-path reconciliation
+- `attempt_retire` now reconciles target sibling's `scored_count` and `avg_score` when optimizations are reassigned, matching the merge hardening pattern
+- Leaf split noise reassignment now updates sub-cluster `avg_score` with running mean instead of only incrementing `scored_count`
+- Removed redundant `get_engine()` call in `attempt_retire` — embedding index removal is already handled by the engine caller, and the inline call broke dependency injection
+- Unified archival field clearing across all 5 archival paths (merge loser, retire, leaf split, zombie cleanup, reassign_all) — `usage_count` and `scored_count` were missing from some paths, causing phantom data in archived clusters
+- Added missing `archived_at` timestamp in `reassign_all_clusters()` archival — was the only path that didn't set the timestamp
+- Unified naive UTC timestamps across `lifecycle.py` and `engine.py` via `_utcnow()` — SQLAlchemy `DateTime()` strips tzinfo on round-trip, so aware datetimes caused comparison safety issues with `prompt_lifecycle.py` curation
+- Pipeline usage increment now has atomic SQL fallback matching sampling_pipeline robustness — prevents silent usage loss when `increment_usage()` fails
+- Removed 3 redundant inline imports in `engine.py` (`parse_domain`, `extract_meta_patterns`, `merge_meta_pattern`) already present at top-level
+- Removed unused `datetime`/`timezone` imports in `_suggest_domain_archival` after `_utcnow()` migration
 - Domain promotion (`POST /api/domains/{id}/promote`) now sets `promoted_at` timestamp and clears `parent_id` (domain nodes are roots)
 - Retire lifecycle operation no longer double-counts `member_count` on the target sibling — child cluster re-parenting now correctly avoids inflating the Optimization-based member_count
 - `usage_count` increment is now atomic via SQL `UPDATE ... SET usage_count = usage_count + 1`, preventing lost writes under concurrent optimization completions (including sampling pipeline fallback path)
@@ -17,6 +28,8 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Frontend `HealthResponse` interface updated with `injection_stats` field for contract parity
 
 ### Changed
+- Extracted `merge_score_into_cluster()` and `combine_cluster_scores()` helpers in `family_ops.py` — replaces 4 duplicated score reconciliation patterns across assign_cluster, attempt_merge, attempt_retire, and noise reassignment
+- `attempt_merge` accepts `embedding_svc` parameter for dependency injection instead of instantiating `EmbeddingService()` per merge; all 3 engine call sites now pass the singleton
 - Removed dead `tree_state` parameter from `create_snapshot()` — column was serialized but never deserialized for recovery
 - Consolidated 9 scattered inline `cluster_meta` imports in `engine.py` to single top-level import
 - Pattern injection provenance: `auto_inject_patterns()` now persists `OptimizationPattern` records with `relationship="injected"` recording which clusters influenced each optimization

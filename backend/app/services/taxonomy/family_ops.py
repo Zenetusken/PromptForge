@@ -75,6 +75,64 @@ def adaptive_merge_threshold(member_count: int) -> float:
         1 + max(member_count, 1)
     )
 
+# ---------------------------------------------------------------------------
+# Score reconciliation helpers
+# ---------------------------------------------------------------------------
+#
+# These functions centralise the running-mean arithmetic for avg_score /
+# scored_count so that every mutation path (hot-path assign, merge, retire,
+# noise reassignment, leaf split) uses exactly the same formula.
+
+
+def merge_score_into_cluster(
+    cluster: object,
+    incoming_score: float | None,
+) -> None:
+    """Incorporate a single optimization's score into a cluster's running mean.
+
+    Updates ``cluster.avg_score`` and ``cluster.scored_count`` in place.
+    No-op if *incoming_score* is None (unscored optimization).
+
+    Used by: ``assign_cluster()`` (hot path) and noise reassignment
+    (leaf split).
+    """
+    if incoming_score is None:
+        return
+    old_scored: int = cluster.scored_count or 0
+    if cluster.avg_score is not None and old_scored > 0:
+        cluster.avg_score = round(
+            (cluster.avg_score * old_scored + incoming_score) / (old_scored + 1),
+            2,
+        )
+    else:
+        cluster.avg_score = round(incoming_score, 2)
+    cluster.scored_count = old_scored + 1
+
+
+def combine_cluster_scores(
+    scored_a: int,
+    avg_a: float | None,
+    scored_b: int,
+    avg_b: float | None,
+) -> tuple[int, float | None]:
+    """Combine scored_count / avg_score from two clusters.
+
+    Returns ``(merged_scored_count, merged_avg_score)``.  Used by
+    ``attempt_merge()`` and ``attempt_retire()`` to reconcile scores
+    on the survivor / target sibling.
+    """
+    total_scored = scored_a + scored_b
+    if total_scored == 0:
+        return (0, None)
+    safe_a = avg_a if avg_a is not None else 0.0
+    safe_b = avg_b if avg_b is not None else 0.0
+    merged_avg = round(
+        (safe_a * scored_a + safe_b * scored_b) / total_scored,
+        2,
+    )
+    return (total_scored, merged_avg)
+
+
 # Warm path operational limits
 MAX_META_PATTERNS_PER_EXTRACTION = 5
 PROMPT_TRUNCATION_LIMIT = 2000
@@ -298,17 +356,7 @@ async def assign_cluster(
                         # only.  scored_count is the denominator — not
                         # member_count (which includes unscored members and
                         # would dilute the average).
-                        if overall_score is not None:
-                            old_scored = matched.scored_count or 0
-                            if matched.avg_score is not None and old_scored > 0:
-                                matched.avg_score = round(
-                                    (matched.avg_score * old_scored + overall_score)
-                                    / (old_scored + 1),
-                                    2,
-                                )
-                            else:
-                                matched.avg_score = overall_score
-                            matched.scored_count = old_scored + 1
+                        merge_score_into_cluster(matched, overall_score)
 
                         # Update embedding index with new centroid
                         if embedding_index is not None:

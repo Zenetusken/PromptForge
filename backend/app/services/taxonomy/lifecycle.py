@@ -37,6 +37,17 @@ from app.utils.text_cleanup import parse_domain
 logger = logging.getLogger(__name__)
 
 
+def _utcnow() -> datetime:
+    """Naive UTC timestamp — matches SQLAlchemy DateTime() round-trip on SQLite.
+
+    SQLAlchemy's ``DateTime()`` (without ``timezone=True``) strips tzinfo on
+    storage and returns naive datetimes on read.  Using naive UTC ensures
+    in-memory comparisons (e.g. in prompt_lifecycle.py curation) never hit
+    ``TypeError: can't compare offset-naive and offset-aware datetimes``.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class GuardrailViolationError(RuntimeError):
     """Raised when a lifecycle operation violates domain stability guardrails.
 
@@ -193,6 +204,7 @@ async def attempt_merge(
     node_a: PromptCluster,
     node_b: PromptCluster,
     warm_path_age: int,
+    embedding_svc: object | None = None,
 ) -> PromptCluster | None:
     """Combine two sibling PromptClusters into a single survivor.
 
@@ -201,12 +213,16 @@ async def attempt_merge(
 
     Merged centroid: weighted mean of the two centroids, re-normalised.
     Merged coherence: weighted average of individual coherences.
+    Merged scored_count/avg_score: combined from both nodes immediately
+    (not deferred to warm-path reconciliation).
 
     Args:
         db: Async DB session.
         node_a: First candidate for merging.
         node_b: Second candidate for merging.
         warm_path_age: Warm-path age (unused directly; reserved for gate).
+        embedding_svc: EmbeddingService instance for meta-pattern dedup.
+            Falls back to a new instance if not provided.
 
     Returns:
         The survivor PromptCluster, or None on failure.
@@ -247,17 +263,31 @@ async def attempt_merge(
         else:
             merged_coherence = (coh_a + coh_b) / 2.0
 
+        # Reconcile scored_count and avg_score from both nodes.
+        # Without this, the survivor retains only its own pre-merge
+        # scores and the loser's contribution is lost until the next
+        # warm-path reconciliation cycle.
+        from app.services.taxonomy.family_ops import combine_cluster_scores
+        merged_scored, merged_avg = combine_cluster_scores(
+            node_a.scored_count or 0, node_a.avg_score,
+            node_b.scored_count or 0, node_b.avg_score,
+        )
+
         # Update survivor.
         survivor.centroid_embedding = merged_centroid.tobytes()
         survivor.member_count = total
         survivor.coherence = merged_coherence
+        survivor.scored_count = merged_scored
+        survivor.avg_score = merged_avg
 
-        # Retire the loser — zero out counters to match attempt_retire().
+        # Retire the loser — zero out ALL counters to prevent phantom data.
+        # Must match the fields cleared by _archive_cluster() and attempt_retire().
         loser.state = "archived"
-        loser.archived_at = datetime.now(timezone.utc)
+        loser.archived_at = _utcnow()
         loser.member_count = 0
         loser.scored_count = 0
         loser.avg_score = None
+        loser.usage_count = 0
 
         # Reassign loser's families to survivor.
         result = await db.execute(
@@ -290,10 +320,11 @@ async def attempt_merge(
             select(MetaPattern).where(MetaPattern.cluster_id == loser.id)
         )).scalars().all()
         if loser_patterns:
-            from app.services.embedding_service import EmbeddingService
             from app.services.taxonomy.family_ops import merge_meta_pattern
 
-            embedding_svc = EmbeddingService()
+            if embedding_svc is None:
+                from app.services.embedding_service import EmbeddingService
+                embedding_svc = EmbeddingService()
             moved = 0
             for mp in loser_patterns:
                 try:
@@ -527,6 +558,15 @@ async def attempt_retire(
             target_sibling.member_count = (
                 (target_sibling.member_count or 0) + opt_result.rowcount
             )
+            # Reconcile scored_count and avg_score on the target sibling
+            # immediately — don't defer to warm-path reconciliation.
+            from app.services.taxonomy.family_ops import combine_cluster_scores
+            merged_scored, merged_avg = combine_cluster_scores(
+                target_sibling.scored_count or 0, target_sibling.avg_score,
+                node.scored_count or 0, node.avg_score,
+            )
+            target_sibling.scored_count = merged_scored
+            target_sibling.avg_score = merged_avg
             logger.info(
                 "retire: reassigned %d optimizations to '%s' (member_count now %d)",
                 opt_result.rowcount, target_sibling.label,
@@ -537,21 +577,16 @@ async def attempt_retire(
         # Without clearing, archived clusters show phantom member counts
         # and scores in the "all" filter, confusing the UI.
         node.state = "archived"
-        node.archived_at = datetime.now(timezone.utc)
+        node.archived_at = _utcnow()
         node.member_count = 0
         node.usage_count = 0
         node.avg_score = None
         node.scored_count = 0
 
-        # Remove from embedding index so hot-path assign_cluster doesn't
-        # merge new prompts into this archived cluster.
-        try:
-            from app.services.taxonomy import get_engine
-            _engine = get_engine()
-            if _engine and _engine.embedding_index:
-                _engine.embedding_index.remove(node.id)
-        except Exception:
-            pass  # non-fatal — index rebuilt on cold path
+        # NOTE: Embedding index removal is handled by the caller
+        # (engine.py _run_warm_path_inner) after this function returns
+        # True.  Removing here via get_engine() would be a redundant
+        # double-removal and breaks the dependency injection pattern.
 
         await db.flush()
         logger.info(

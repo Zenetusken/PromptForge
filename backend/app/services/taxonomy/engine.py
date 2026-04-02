@@ -43,6 +43,7 @@ from app.services.taxonomy.family_ops import (
     build_breadcrumb,
     extract_meta_patterns,
     merge_meta_pattern,
+    merge_score_into_cluster,
 )
 from app.services.taxonomy.matching import (
     PatternMatch,
@@ -58,6 +59,11 @@ from app.services.taxonomy.sparkline import compute_sparkline_data
 from app.utils.text_cleanup import parse_domain
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    """Naive UTC timestamp — matches SQLAlchemy DateTime() round-trip on SQLite."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 # ---------------------------------------------------------------------------
 # Constants — warm path operational limits
@@ -630,11 +636,13 @@ class TaxonomyEngine:
                                     )
 
                                 if len(new_children) >= 2:
-                                    # Archive the original mega-cluster
-                                    # Clear usage — it's stale from before the split
+                                    # Archive the original mega-cluster.
+                                    # Clear ALL counters — stale from before the split.
+                                    # Must match _archive_cluster() field set.
                                     node.state = "archived"
-                                    node.archived_at = datetime.now(timezone.utc)
+                                    node.archived_at = _utcnow()
                                     node.member_count = 0
+                                    node.scored_count = 0
                                     node.usage_count = 0
                                     node.avg_score = None
                                     await self._embedding_index.remove(node.id)
@@ -675,14 +683,15 @@ class TaxonomyEngine:
                                                     .values(cluster_id=best_c.id)
                                                 )
                                                 best_c.member_count = (best_c.member_count or 0) + 1
-                                                # Check if this noise optimization has a score
+                                                # Incorporate noise optimization's score into
+                                                # the sub-cluster's avg_score immediately —
+                                                # don't defer to warm-path reconciliation.
                                                 n_score_q = await db.execute(
                                                     select(Optimization.overall_score).where(
                                                         Optimization.id == nid,
                                                     )
                                                 )
-                                                if n_score_q.scalar() is not None:
-                                                    best_c.scored_count = (best_c.scored_count or 0) + 1
+                                                merge_score_into_cluster(best_c, n_score_q.scalar())
                                                 reassigned += 1
                                         logger.info(
                                             "Reassigned %d noise optimizations to nearest sub-clusters",
@@ -821,6 +830,7 @@ class TaxonomyEngine:
                         node_a=merge_node_a,
                         node_b=merge_node_b,
                         warm_path_age=self._warm_path_age,
+                        embedding_svc=self._embedding,
                     )
                     if merged:
                         ops_accepted += 1
@@ -1031,16 +1041,17 @@ class TaxonomyEngine:
                         )
                         continue  # Don't archive — has real members
 
-                    # Clear stale data from before cold-path reassignment
+                    # Clear ALL stale data — must match _archive_cluster() field set.
                     if node.usage_count and node.usage_count > 0:
                         logger.info(
                             "Clearing stale usage_count=%d on 0-member cluster '%s'",
                             node.usage_count, node.label,
                         )
-                        node.usage_count = 0
+                    node.usage_count = 0
                     node.avg_score = None
+                    node.scored_count = 0
                     node.state = "archived"
-                    node.archived_at = datetime.now(timezone.utc)
+                    node.archived_at = _utcnow()
                     zombie_count += 1
                     await self._embedding_index.remove(node.id)
             if zombie_count:
@@ -1059,7 +1070,6 @@ class TaxonomyEngine:
         refresh_sample_size = 8   # representative sample for re-extraction
         try:
             from app.models import MetaPattern as MetaPatternModel
-            from app.services.taxonomy.family_ops import extract_meta_patterns, merge_meta_pattern
             from app.services.taxonomy.labeling import generate_label
 
             refreshed = 0
@@ -1151,7 +1161,6 @@ class TaxonomyEngine:
         label_merge_sanity_base = 0.40
         try:
             from app.services.taxonomy.lifecycle import attempt_merge
-            from app.utils.text_cleanup import parse_domain
 
             # Reload active nodes (may have changed from stale refresh)
             active_q = await db.execute(
@@ -1197,7 +1206,10 @@ class TaxonomyEngine:
                         combined_mc = max(survivor.member_count or 0, loser.member_count or 0)
                         label_merge_sanity = max(label_merge_sanity_base, adaptive_merge_threshold(combined_mc))
                         if sim >= label_merge_sanity:
-                            merged = await attempt_merge(db, survivor, loser, self._warm_path_age)
+                            merged = await attempt_merge(
+                                db, survivor, loser, self._warm_path_age,
+                                embedding_svc=self._embedding,
+                            )
                             if merged:
                                 domain_merges += 1
                                 logger.info(
@@ -1239,7 +1251,10 @@ class TaxonomyEngine:
                                 ni, nj = remaining[i], remaining[j]
                                 big = ni if (ni.member_count or 0) >= (nj.member_count or 0) else nj
                                 small = nj if big is ni else ni
-                                merged = await attempt_merge(db, big, small, self._warm_path_age)
+                                merged = await attempt_merge(
+                                    db, big, small, self._warm_path_age,
+                                    embedding_svc=self._embedding,
+                                )
                                 if merged:
                                     domain_merges += 1
                                     logger.info(
@@ -1464,10 +1479,13 @@ class TaxonomyEngine:
                 PromptCluster.state.notin_(["domain", "archived"]),
             )
         )
+        now = _utcnow()
         for cluster in active_q.scalars().all():
             cluster.state = "archived"
+            cluster.archived_at = now
             cluster.member_count = 0
             cluster.scored_count = 0
+            cluster.usage_count = 0
             cluster.avg_score = None
 
         # Reset embedding index by replacing internal arrays
@@ -1551,7 +1569,6 @@ class TaxonomyEngine:
         from app.services.taxonomy.clustering import compute_pairwise_coherence
         from app.services.taxonomy.family_ops import (
             extract_structural_patterns,
-            merge_meta_pattern,
         )
 
         stats: dict[str, int] = {}
@@ -2500,21 +2517,27 @@ class TaxonomyEngine:
                 all_raws = [r[0] for r in opt_raws_q.all() if r[0]]
                 if not all_raws:
                     continue
-                raw_counts = _Counter(all_raws)
+                # Parse domain_raw values to extract lowercase primaries
+                # before counting — raw values like "Backend: Security" must
+                # become "backend" to match domain_lookup keys.
+                parsed_counts: _Counter[str] = _Counter()
+                for raw in all_raws:
+                    primary, _ = parse_domain(raw)
+                    parsed_counts[primary] += 1
                 total = len(all_raws)
-                # Find the top non-general domain_raw
-                for top_raw, top_ct in raw_counts.most_common():
-                    if top_raw == "general":
+                # Find the top non-general parsed domain
+                for top_primary, top_ct in parsed_counts.most_common():
+                    if top_primary == "general":
                         continue
                     consistency = top_ct / total
-                    if top_raw in domain_lookup and consistency >= DOMAIN_DISCOVERY_CONSISTENCY:
-                        target_id = domain_lookup[top_raw]
+                    if top_primary in domain_lookup and consistency >= DOMAIN_DISCOVERY_CONSISTENCY:
+                        target_id = domain_lookup[top_primary]
                         logger.info(
                             "Re-parenting '%s' → '%s' (consistency=%.0f%%, %d/%d members)",
-                            cluster.label, top_raw, consistency * 100, top_ct, total,
+                            cluster.label, top_primary, consistency * 100, top_ct, total,
                         )
                         cluster.parent_id = target_id
-                        cluster.domain = top_raw
+                        cluster.domain = top_primary
                         sweep_reparented += 1
                     break  # only check the top non-general candidate
             if sweep_reparented:
@@ -2823,7 +2846,7 @@ class TaxonomyEngine:
 
     async def _suggest_domain_archival(self, db: AsyncSession) -> list[str]:
         """Identify low-activity discovered domains for potential archival."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import timedelta
 
         from sqlalchemy import and_, or_
 
@@ -2832,7 +2855,7 @@ class TaxonomyEngine:
             DOMAIN_ARCHIVAL_MIN_USAGE,
         )
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=DOMAIN_ARCHIVAL_IDLE_DAYS)
+        cutoff = _utcnow() - timedelta(days=DOMAIN_ARCHIVAL_IDLE_DAYS)
         stale = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.state == "domain",
@@ -3252,7 +3275,7 @@ class TaxonomyEngine:
             logger.warning("increment_usage: cluster %s not found", cluster_id)
             return
 
-        now = datetime.now(timezone.utc)
+        now = _utcnow()
 
         # Atomic increment on the target cluster
         await db.execute(
