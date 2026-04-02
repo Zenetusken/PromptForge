@@ -193,11 +193,6 @@ def _update_phase_rejection_counters(
     Returns:
         Tuple of (deadlock_breaker_used, deadlock_breaker_phase).
     """
-    # Initialize counters dict if it doesn't exist yet on the engine
-    # (engine.py adds this attribute in Step 7; until then, create lazily)
-    if not hasattr(engine, "_phase_rejection_counters"):
-        engine._phase_rejection_counters = {}
-
     deadlock_used = False
     deadlock_phase = None
 

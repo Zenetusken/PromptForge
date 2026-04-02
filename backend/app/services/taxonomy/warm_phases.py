@@ -23,7 +23,6 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -1199,7 +1198,7 @@ async def phase_refresh(
             node.cluster_metadata = write_meta(
                 node.cluster_metadata,
                 pattern_member_count=node.member_count,
-                label_refreshed_at=datetime.now(timezone.utc).isoformat(),
+                label_refreshed_at=_utcnow().isoformat(),
             )
             result.clusters_refreshed += 1
             logger.info(
