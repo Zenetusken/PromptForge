@@ -142,19 +142,27 @@ async def phase_reconcile(
         )
         actual_counts = dict(count_q.all())
 
-        # Batch-load all optimization embeddings grouped by cluster_id.
+        # Batch-load all optimization embeddings + scores grouped by cluster_id.
         all_emb_q = await db.execute(
-            select(Optimization.cluster_id, Optimization.embedding).where(
+            select(
+                Optimization.cluster_id,
+                Optimization.embedding,
+                Optimization.overall_score,
+            ).where(
                 Optimization.cluster_id.isnot(None),
                 Optimization.embedding.isnot(None),
             )
         )
         emb_by_cluster: dict[str, list[np.ndarray]] = {}
-        for cid, emb_bytes in all_emb_q.all():
+        score_by_cluster: dict[str, list[float]] = {}
+        for cid, emb_bytes, opt_score in all_emb_q.all():
             if emb_bytes is not None:
                 try:
                     emb_by_cluster.setdefault(cid, []).append(
                         np.frombuffer(emb_bytes, dtype=np.float32).copy()
+                    )
+                    score_by_cluster.setdefault(cid, []).append(
+                        max(0.1, (opt_score or 5.0) / 10.0)
                     )
                 except (ValueError, TypeError):
                     pass
@@ -213,16 +221,27 @@ async def phase_reconcile(
 
         # Recompute weighted_member_sum and centroid from member data.
         # The hot-path running mean can drift; this corrects from ground truth.
+        # Uses score-weighted mean: each member's influence is proportional
+        # to max(0.1, score / 10.0), matching the hot-path formula.
         for node in live_nodes:
-            score_data = score_map.get(node.id)
-            if score_data:
-                avg, scored = score_data
-                if scored and avg:
-                    node.weighted_member_sum = scored * max(0.1, avg / 10.0)
-
-            # Recompute centroid from actual member embeddings
             member_embs = emb_by_cluster.get(node.id, [])
-            if len(member_embs) >= 2:
+            member_scores = score_by_cluster.get(node.id, [])
+
+            # Recompute true weighted_member_sum from per-member scores
+            if member_scores:
+                node.weighted_member_sum = sum(member_scores)
+
+            # Score-weighted centroid recomputation
+            if len(member_embs) >= 2 and len(member_scores) == len(member_embs):
+                stacked = np.stack(member_embs, axis=0)
+                weights = np.array(member_scores, dtype=np.float32).reshape(-1, 1)
+                recomputed = (stacked * weights).sum(axis=0) / weights.sum()
+                recomputed = recomputed.astype(np.float32)
+                c_norm = np.linalg.norm(recomputed)
+                if c_norm > 1e-9:
+                    node.centroid_embedding = (recomputed / c_norm).tobytes()
+            elif len(member_embs) >= 2:
+                # Fallback: no per-member scores, use unweighted mean
                 stacked = np.stack(member_embs, axis=0)
                 recomputed = np.mean(stacked, axis=0).astype(np.float32)
                 c_norm = np.linalg.norm(recomputed)
@@ -326,6 +345,7 @@ async def phase_reconcile(
                 node.archived_at = _utcnow()
                 result.zombies_archived += 1
                 await engine._embedding_index.remove(node.id)
+                await engine._transformation_index.remove(node.id)
 
         if result.zombies_archived:
             logger.info(
@@ -625,6 +645,7 @@ async def phase_split_emerge(
                             node.usage_count = 0
                             node.avg_score = None
                             await engine._embedding_index.remove(node.id)
+                            await engine._transformation_index.remove(node.id)
                             embedding_index_mutations += 1
                             for child in new_children:
                                 centroid_emb = np.frombuffer(
@@ -899,6 +920,7 @@ async def phase_merge(
                         else merge_node_a
                     )
                     await engine._embedding_index.remove(loser.id)
+                    await engine._transformation_index.remove(loser.id)
                     embedding_index_mutations += 2
 
     # --- Same-domain duplicate merge ---
@@ -982,6 +1004,7 @@ async def phase_merge(
                                 merged.id, winner_centroid
                             )
                             await engine._embedding_index.remove(loser.id)
+                            await engine._transformation_index.remove(loser.id)
                             embedding_index_mutations += 2
                             label_merged = True
                             break  # one merge per domain per cycle
@@ -1049,6 +1072,7 @@ async def phase_merge(
                                     merged.id, winner_centroid
                                 )
                                 await engine._embedding_index.remove(small.id)
+                                await engine._transformation_index.remove(small.id)
                                 embedding_index_mutations += 2
                                 merged_this_domain = True
                                 break  # one merge per domain per cycle
@@ -1110,6 +1134,7 @@ async def phase_retire(
                 ops_accepted += 1
                 operations_log.append({"type": "retire", "node_id": node.id})
                 await engine._embedding_index.remove(node.id)
+                await engine._transformation_index.remove(node.id)
                 embedding_index_mutations += 1
 
     return PhaseResult(
@@ -1254,8 +1279,8 @@ async def phase_refresh(
                     decayed = True
         if decayed:
             prefs_svc.patch({"phase_weights": phase_weights})
-    except Exception:
-        pass  # non-fatal
+    except Exception as decay_exc:
+        logger.debug("Phase weight decay failed (non-fatal): %s", decay_exc)
 
     # --- Cross-cluster global_source_count computation ---
     # For each MetaPattern, count how many DISTINCT clusters contain a

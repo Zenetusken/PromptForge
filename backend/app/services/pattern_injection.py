@@ -125,21 +125,11 @@ async def auto_inject_patterns(
         prompt_embedding = await embedding_svc.aembed_single(raw_prompt)
 
         # Phase 2: Composite fusion for cluster search
-        search_embedding = prompt_embedding
-        try:
-            from app.services.taxonomy.fusion import PhaseWeights, build_composite_query
-            composite = await build_composite_query(
-                raw_prompt, embedding_svc, taxonomy_engine, db,
-                topic_embedding=prompt_embedding,  # avoid double embed (E2-2)
-            )
-            # Load adapted weights from preferences if available, else defaults
-            from app.services.preferences import PreferencesService
-            prefs = PreferencesService().load()
-            pw_dict = prefs.get("phase_weights", {}).get("pattern_injection", {})
-            weights = PhaseWeights.from_dict(pw_dict) if pw_dict else PhaseWeights.for_phase("pattern_injection")
-            search_embedding = composite.fuse(weights)
-        except Exception:
-            pass  # fallback to topic-only
+        from app.services.taxonomy.fusion import resolve_fused_embedding
+        search_embedding = await resolve_fused_embedding(
+            raw_prompt, prompt_embedding, embedding_svc, taxonomy_engine, db,
+            phase="pattern_injection",
+        )
 
         # Threshold 0.45: broad clusters (post-cold-path merge) have averaged
         # centroids that score ~0.45-0.55 against specific prompts. The

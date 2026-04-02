@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 WEIGHT_FLOOR = 0.05
 ADAPTATION_ALPHA = 0.05
 DECAY_RATE = 0.01
+FUSION_CLUSTER_LOOKUP_THRESHOLD = 0.3
+FUSION_PATTERN_TOP_K = 3
 
 # Default weight profiles: (w_topic, w_transform, w_output, w_pattern)
 _DEFAULT_PROFILES: dict[str, tuple[float, float, float, float]] = {
@@ -328,46 +330,51 @@ async def build_composite_query(
             logger.warning("build_composite_query: failed to embed raw_prompt")
             topic = np.zeros(dim, dtype=np.float32)
 
-    # Signal 2: Transformation (from nearest cluster) — Errata E2-1
+    # Signal 2 + 3 share a cluster lookup — deduplicate the search
     transformation = np.zeros(dim, dtype=np.float32)
+    output = np.zeros(dim, dtype=np.float32)
+    matched_cluster_id: str | None = None
     try:
         emb_idx = getattr(taxonomy_engine, "embedding_index", None)
-        t_idx = getattr(taxonomy_engine, "_transformation_index", None)
-        if emb_idx and t_idx and emb_idx.size > 0:
-            topic_matches = emb_idx.search(topic, k=1, threshold=0.3)
+        if emb_idx and emb_idx.size > 0:
+            topic_matches = emb_idx.search(topic, k=1, threshold=FUSION_CLUSTER_LOOKUP_THRESHOLD)
             if topic_matches:
-                vec = t_idx.get_vector(topic_matches[0][0])
+                matched_cluster_id = topic_matches[0][0]
+    except Exception:
+        logger.debug("build_composite_query: cluster lookup failed")
+
+    # Signal 2: Transformation (from nearest cluster's mean transformation vector)
+    try:
+        if matched_cluster_id is not None:
+            t_idx = getattr(taxonomy_engine, "_transformation_index", None)
+            if t_idx:
+                vec = t_idx.get_vector(matched_cluster_id)
                 if vec is not None:
                     transformation = vec.astype(np.float32)
     except Exception:
         logger.debug("build_composite_query: transformation signal unavailable")
 
-    # Signal 3: Output (embed optimized_prompt from best prior in matched cluster)
-    output = np.zeros(dim, dtype=np.float32)
+    # Signal 3: Output (best-scoring optimized_prompt embedding from matched cluster)
     try:
-        emb_idx = getattr(taxonomy_engine, "embedding_index", None)
-        if emb_idx and emb_idx.size > 0:
-            matches = emb_idx.search(topic, k=1, threshold=0.3)
-            if matches:
-                cluster_id = matches[0][0]
-                from app.models import Optimization
+        if matched_cluster_id is not None:
+            from app.models import Optimization
 
-                result = await db.execute(
-                    select(Optimization.optimized_embedding)
-                    .where(
-                        Optimization.cluster_id == cluster_id,
-                        Optimization.optimized_embedding.isnot(None),
-                        Optimization.status == "completed",
-                    )
-                    .order_by(
-                        Optimization.overall_score.desc().nullslast(),
-                        Optimization.created_at.desc(),
-                    )
-                    .limit(1)
+            result = await db.execute(
+                select(Optimization.optimized_embedding)
+                .where(
+                    Optimization.cluster_id == matched_cluster_id,
+                    Optimization.optimized_embedding.isnot(None),
+                    Optimization.status == "completed",
                 )
-                row = result.scalar_one_or_none()
-                if row is not None:
-                    output = np.frombuffer(row, dtype=np.float32).copy()
+                .order_by(
+                    Optimization.overall_score.desc().nullslast(),
+                    Optimization.created_at.desc(),
+                )
+                .limit(1)
+            )
+            row = result.scalar_one_or_none()
+            if row is not None:
+                output = np.frombuffer(row, dtype=np.float32).copy()
     except Exception:
         logger.debug("build_composite_query: output signal unavailable")
 
@@ -376,15 +383,16 @@ async def build_composite_query(
     pattern = np.zeros(dim, dtype=np.float32)
     try:
         from app.models import MetaPattern
+        from app.services.pipeline_constants import CROSS_CLUSTER_MIN_SOURCE_COUNT
 
         result = await db.execute(
             select(MetaPattern.embedding)
             .where(
-                MetaPattern.global_source_count >= 3,
+                MetaPattern.global_source_count >= CROSS_CLUSTER_MIN_SOURCE_COUNT,
                 MetaPattern.embedding.isnot(None),
             )
             .order_by(MetaPattern.global_source_count.desc())
-            .limit(3)
+            .limit(FUSION_PATTERN_TOP_K)
         )
         embeddings = []
         for row in result.scalars().all():
@@ -406,3 +414,45 @@ async def build_composite_query(
         output=output,
         pattern=pattern,
     )
+
+
+async def resolve_fused_embedding(
+    raw_prompt: str,
+    topic_embedding: np.ndarray,
+    embedding_service,
+    taxonomy_engine,
+    db: AsyncSession,
+    phase: str = "pattern_injection",
+) -> np.ndarray:
+    """Build CompositeQuery, load adapted weights, fuse into single search vector.
+
+    Shared helper that consolidates the identical pattern used by both
+    ``pattern_injection.auto_inject_patterns()`` and ``matching.match_prompt()``.
+    Falls back to ``topic_embedding`` on any failure.
+
+    Args:
+        raw_prompt: Raw prompt text.
+        topic_embedding: Pre-computed topic embedding (avoids double-embed).
+        embedding_service: EmbeddingService instance.
+        taxonomy_engine: TaxonomyEngine (may be None for graceful fallback).
+        db: Active async DB session.
+        phase: Pipeline phase name for weight lookup.
+
+    Returns:
+        Fused embedding vector (unit-norm float32).
+    """
+    try:
+        composite = await build_composite_query(
+            raw_prompt, embedding_service, taxonomy_engine, db,
+            topic_embedding=topic_embedding,
+        )
+        # Load adapted weights from preferences if available, else defaults
+        from app.services.preferences import PreferencesService
+
+        prefs = PreferencesService().load()
+        pw_dict = prefs.get("phase_weights", {}).get(phase, {})
+        weights = PhaseWeights.from_dict(pw_dict) if pw_dict else PhaseWeights.for_phase(phase)
+        return composite.fuse(weights)
+    except Exception:
+        logger.debug("resolve_fused_embedding: falling back to topic-only for phase=%s", phase)
+        return topic_embedding

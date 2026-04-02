@@ -29,6 +29,7 @@ from app.services.taxonomy.fusion import (
     adapt_weights,
     build_composite_query,
     decay_toward_defaults,
+    resolve_fused_embedding,
 )
 from app.services.taxonomy.matching import (
     PatternMatch,
@@ -57,6 +58,7 @@ __all__ = [
     "build_composite_query",
     "compute_sparkline_data",
     "decay_toward_defaults",
+    "resolve_fused_embedding",
     "get_engine",
     "read_meta",
     "reset_engine",

@@ -192,6 +192,19 @@ class TaxonomyEngine:
                     transform = transform / t_norm
                 opt.transformation_embedding = transform.astype(np.float32).tobytes()
 
+            # Snapshot current phase_weights for feedback adaptation loop.
+            # Stored on the Optimization record so AdaptationTracker can credit
+            # the exact weight profile that produced this result.
+            if opt.phase_weights_json is None:
+                try:
+                    from app.services.preferences import PreferencesService
+
+                    pw_snap = PreferencesService().load().get("phase_weights")
+                    if pw_snap:
+                        opt.phase_weights_json = pw_snap
+                except Exception as pw_exc:
+                    logger.debug("Phase weights snapshot failed for opt %s: %s", opt.id, pw_exc)
+
             # 2. Find or create PromptCluster
             # Use the RESOLVED domain (opt.domain) for cluster assignment — this
             # maps to a known domain node label. The raw analyzer output (domain_raw)
@@ -229,13 +242,28 @@ class TaxonomyEngine:
                     )
             opt.cluster_id = cluster.id
 
-            # Update TransformationIndex with this optimization's transformation
-            if opt.transformation_embedding and hasattr(self, '_transformation_index'):
+            # Update TransformationIndex with running mean of cluster transformations
+            if opt.transformation_embedding:
                 try:
-                    transform_vec = np.frombuffer(opt.transformation_embedding, dtype=np.float32)
-                    await self._transformation_index.upsert(cluster.id, transform_vec)
+                    transform_vec = np.frombuffer(
+                        opt.transformation_embedding, dtype=np.float32
+                    )
+                    existing = self._transformation_index.get_vector(cluster.id)
+                    if existing is not None:
+                        # Weighted running mean: blend existing mean with new sample
+                        # L2 normalization is handled by upsert()
+                        member_ct = max(1, (cluster.member_count or 1) - 1)
+                        blended = (existing * member_ct + transform_vec) / (member_ct + 1)
+                        await self._transformation_index.upsert(cluster.id, blended)
+                    else:
+                        await self._transformation_index.upsert(
+                            cluster.id, transform_vec
+                        )
                 except Exception:
-                    pass  # non-fatal
+                    logger.debug(
+                        "TransformationIndex upsert failed for cluster %s — ignoring",
+                        cluster.id,
+                    )
 
             # 3. Extract meta-patterns
             meta_texts = await extract_meta_patterns(

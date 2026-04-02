@@ -98,24 +98,14 @@ async def match_prompt(
     query_emb = await embedding_service.aembed_single(prompt_text)
 
     # Phase 2: Composite fusion for similarity search
-    search_emb = query_emb
-    try:
-        from app.services.taxonomy import get_engine
-        from app.services.taxonomy.fusion import PhaseWeights, build_composite_query
+    from app.services.taxonomy import get_engine
+    from app.services.taxonomy.fusion import resolve_fused_embedding
 
-        engine = get_engine()
-        composite = await build_composite_query(
-            prompt_text, embedding_service, engine, db,
-            topic_embedding=query_emb,
-        )
-        # Load adapted weights from preferences if available, else defaults
-        from app.services.preferences import PreferencesService
-        prefs = PreferencesService().load()
-        pw_dict = prefs.get("phase_weights", {}).get("pattern_injection", {})
-        weights = PhaseWeights.from_dict(pw_dict) if pw_dict else PhaseWeights.for_phase("pattern_injection")
-        search_emb = composite.fuse(weights)
-    except Exception:
-        pass  # fallback to topic-only
+    engine = get_engine()
+    search_emb = await resolve_fused_embedding(
+        prompt_text, query_emb, embedding_service, engine, db,
+        phase="pattern_injection",
+    )
 
     # ------------------------------------------------------------------
     # Level 1: Family-level search
@@ -338,35 +328,56 @@ async def match_prompt(
 
     # ------------------------------------------------------------------
     # Cross-cluster patterns: fetch high global_source_count patterns
-    # from ANY cluster, regardless of topic match.
+    # from ANY cluster, ranked by relevance to the prompt.
     # ------------------------------------------------------------------
     cross_cluster: list[MetaPattern] = []
     try:
+        import math
+
         from app.services.pipeline_constants import (
             CROSS_CLUSTER_MAX_PATTERNS,
             CROSS_CLUSTER_MIN_SOURCE_COUNT,
+            CROSS_CLUSTER_RELEVANCE_FLOOR,
         )
 
         cc_q = await db.execute(
-            select(MetaPattern)
+            select(MetaPattern, PromptCluster.avg_score)
+            .join(PromptCluster, MetaPattern.cluster_id == PromptCluster.id)
             .where(
                 MetaPattern.global_source_count >= CROSS_CLUSTER_MIN_SOURCE_COUNT,
                 MetaPattern.embedding.isnot(None),
             )
             .order_by(MetaPattern.global_source_count.desc())
-            .limit(CROSS_CLUSTER_MAX_PATTERNS * 2)  # fetch extra for dedup
+            .limit(CROSS_CLUSTER_MAX_PATTERNS * 3)  # fetch extra for filtering
         )
-        cc_candidates = list(cc_q.scalars().all())
 
         # Deduplicate against patterns already collected for the matched cluster
         existing_ids: set[str] = set()
         if result and result.meta_patterns:
             existing_ids = {p.id for p in result.meta_patterns}
 
-        for cp in cc_candidates:
-            if cp.id not in existing_ids and len(cross_cluster) < CROSS_CLUSTER_MAX_PATTERNS:
-                cross_cluster.append(cp)
-                existing_ids.add(cp.id)
+        # Score and rank by relevance (same formula as pattern_injection.py)
+        scored_candidates: list[tuple[MetaPattern, float]] = []
+        for cp, cluster_avg_score in cc_q.all():
+            if cp.id in existing_ids:
+                continue
+            try:
+                pat_emb = np.frombuffer(cp.embedding, dtype=np.float32)
+                sim = float(
+                    np.dot(query_emb, pat_emb)
+                    / (np.linalg.norm(query_emb) * np.linalg.norm(pat_emb) + 1e-9)
+                )
+                cluster_score_factor = max(0.1, (cluster_avg_score or 5.0) / 10.0)
+                relevance = sim * math.log2(1 + cp.global_source_count) * cluster_score_factor
+                if relevance >= CROSS_CLUSTER_RELEVANCE_FLOOR:
+                    scored_candidates.append((cp, relevance))
+            except (ValueError, TypeError):
+                continue
+
+        # Sort by relevance descending, take top-N
+        scored_candidates.sort(key=lambda x: x[1], reverse=True)
+        for cp, _ in scored_candidates[:CROSS_CLUSTER_MAX_PATTERNS]:
+            cross_cluster.append(cp)
     except Exception as cc_exc:
         logger.warning("Cross-cluster pattern lookup failed (non-fatal): %s", cc_exc)
 

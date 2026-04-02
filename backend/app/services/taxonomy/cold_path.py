@@ -398,13 +398,23 @@ async def execute_cold_path(
             )).scalar() or 0
             dn.member_count = child_count
 
-    # Recompute weighted_member_sum from score data
+    # Recompute weighted_member_sum from per-member scores (true sum, not avg approx)
+    wms_q = await db.execute(
+        select(
+            Optimization.cluster_id,
+            Optimization.overall_score,
+        ).where(
+            Optimization.cluster_id.isnot(None),
+        )
+    )
+    wms_by_cluster: dict[str, float] = {}
+    for cid, opt_score in wms_q.all():
+        wms_by_cluster[cid] = wms_by_cluster.get(cid, 0.0) + max(
+            0.1, (opt_score or 5.0) / 10.0
+        )
     for node in all_nodes:
-        score_data = score_map.get(node.id)
-        if score_data:
-            avg, scored = score_data
-            if scored and avg:
-                node.weighted_member_sum = scored * max(0.1, avg / 10.0)
+        if node.id in wms_by_cluster:
+            node.weighted_member_sum = wms_by_cluster[node.id]
 
     if mc_repairs:
         logger.info(
@@ -608,6 +618,45 @@ async def execute_cold_path(
     except Exception as cache_exc:
         logger.warning(
             "EmbeddingIndex cache save failed (non-fatal): %s", cache_exc
+        )
+
+    # Rebuild TransformationIndex from cluster mean transformation vectors
+    try:
+        ti_q = await db.execute(
+            select(
+                Optimization.cluster_id,
+                Optimization.transformation_embedding,
+            ).where(
+                Optimization.cluster_id.isnot(None),
+                Optimization.transformation_embedding.isnot(None),
+            )
+        )
+        cluster_transforms: dict[str, list[np.ndarray]] = {}
+        for cid, t_bytes in ti_q.all():
+            try:
+                cluster_transforms.setdefault(cid, []).append(
+                    np.frombuffer(t_bytes, dtype=np.float32).copy()
+                )
+            except (ValueError, TypeError):
+                continue
+
+        # Only include clusters that survived the cold path (still active)
+        active_ids = {n.id for n in active_after}
+        transform_vectors: dict[str, np.ndarray] = {}
+        for cid, vecs in cluster_transforms.items():
+            if cid in active_ids and vecs:
+                mean_vec = np.mean(np.stack(vecs), axis=0)
+                norm = np.linalg.norm(mean_vec)
+                if norm > 1e-9:
+                    transform_vectors[cid] = (mean_vec / norm).astype(np.float32)
+        await engine._transformation_index.rebuild(transform_vectors)
+        logger.info(
+            "TransformationIndex rebuilt with %d vectors after cold path",
+            len(transform_vectors),
+        )
+    except Exception as ti_exc:
+        logger.warning(
+            "TransformationIndex rebuild failed (non-fatal): %s", ti_exc
         )
 
     # Create snapshot — commits all pending node updates AND the
