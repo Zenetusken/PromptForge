@@ -17,6 +17,12 @@
   import { getSettings, getProviders, getHistory, getOptimization, getApiKey, setApiKey, deleteApiKey, getStrategies, getStrategy, updateStrategy } from '$lib/api/client';
   import type { SettingsResponse, ProvidersResponse, HistoryItem, ApiKeyStatus, StrategyInfo } from '$lib/api/client';
 
+  // Tab-aware active result for showing per-optimization models in Settings
+  const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
+  // When viewing a completed optimization, show its persisted models instead of live phaseModels
+  const settingsModels = $derived(activeResult?.models_by_phase ?? null);
+  const settingsModelHeading = $derived(settingsModels ? 'Models' : 'IDE Model');
+
   const TASK_TYPE_ABBREV: Record<string, string> = {
     coding: 'COD', writing: 'WRT', analysis: 'ANL',
     creative: 'CRE', data: 'DAT', system: 'SYS',
@@ -489,7 +495,7 @@
         </div>
         {:else if routing.isSampling}
         <div class="sub-section">
-          <span class="sub-heading sub-heading--tier">IDE Model</span>
+          <span class="sub-heading sub-heading--tier">{settingsModelHeading}</span>
           <div class="card-terminal">
             {#each [
               { label: 'Analyzer', key: 'analyze' },
@@ -498,8 +504,8 @@
             ] as { label, key }}
               <div class="data-row">
                 <span class="data-label">{label}</span>
-                <span class="data-value neon-green" class:data-value--dim={!forgeStore.phaseModels[key]}>
-                  {forgeStore.phaseModels[key] || 'pending'}
+                <span class="data-value neon-green" class:data-value--dim={!(settingsModels?.[key] ?? forgeStore.phaseModels[key])}>
+                  {settingsModels?.[key] ?? forgeStore.phaseModels[key] ?? 'pending'}
                 </span>
               </div>
             {/each}

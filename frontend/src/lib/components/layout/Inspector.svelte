@@ -480,6 +480,17 @@
               <span class="meta-value" style={activeResult.domain === 'general' ? 'opacity: 0.5' : ''}>{activeResult.domain}</span>
             </div>
           {/if}
+          {#if activeResult?.routing_tier}
+            <div class="meta-row">
+              <span class="meta-label">Tier</span>
+              <span class="meta-value"
+                class:meta-value--green={activeResult.routing_tier === 'sampling'}
+                class:neon-yellow={activeResult.routing_tier === 'passthrough'}
+                class:meta-value--cyan={activeResult.routing_tier === 'internal'}>
+                {activeResult.routing_tier}
+              </span>
+            </div>
+          {/if}
           {#if activeResult?.provider}
             <div class="meta-row">
               <span class="meta-label">Provider</span>
@@ -501,7 +512,7 @@
           {#if activeResult?.model_used}
             <div class="meta-row">
               <span class="meta-label">Model</span>
-              <span class="meta-value" class:neon-yellow={isPassthroughResult_} class:meta-value--green={activeResult.provider === 'mcp_sampling'}>
+              <span class="meta-value" class:neon-yellow={isPassthroughResult_} class:meta-value--green={activeResult.routing_tier === 'sampling'}>
                 {activeResult.model_used}
               </span>
             </div>
@@ -515,7 +526,7 @@
               {#if activeResult.models_by_phase[key]}
                 <div class="meta-row">
                   <span class="meta-label">{label}</span>
-                  <span class="meta-value" class:meta-value--green={activeResult.provider === 'mcp_sampling'} class:meta-value--cyan={activeResult.provider !== 'mcp_sampling'}>
+                  <span class="meta-value" class:meta-value--green={activeResult.routing_tier === 'sampling'} class:meta-value--cyan={activeResult.routing_tier !== 'sampling'}>
                     {activeResult.models_by_phase[key]}
                   </span>
                 </div>

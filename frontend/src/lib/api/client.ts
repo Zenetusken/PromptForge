@@ -49,6 +49,7 @@ export interface OptimizationResult {
   score_deltas: Record<string, number>;
   overall_score: number;
   provider: string;
+  routing_tier: string | null;
   scoring_mode: string;
   duration_ms: number;
   status: string;
@@ -78,6 +79,7 @@ export interface HistoryItem {
   status: string;
   duration_ms: number;
   provider: string;
+  routing_tier: string | null;
   raw_prompt: string;
   optimized_prompt: string | null;
   model_used?: string;

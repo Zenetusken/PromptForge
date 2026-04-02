@@ -16,6 +16,12 @@
   // Tab-aware result: use per-tab cached data when available, fall back to global forge state
   const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
 
+  // When viewing a completed optimization, show its persisted tier.
+  // When idle or running, show the live routing tier.
+  const displayTier = $derived(
+    (activeResult?.routing_tier as typeof routing.tier) ?? routing.tier,
+  );
+
 
   // Cluster count derived from taxonomy tree — excludes orphaned clusters (0 members + 0 usage)
   const clusterCount = $derived(clustersStore.liveClusterCount > 0 ? clustersStore.liveClusterCount : null);
@@ -53,7 +59,7 @@
     <div style="opacity: 0.8; margin-right: 2px;">
       <Logo size={14} variant="mark" />
     </div>
-    <TierBadge tier={routing.tier} provider={forgeStore.provider} degradedFrom={routing.isDegraded ? routing.requestedTier : null} />
+    <TierBadge tier={displayTier} provider={forgeStore.provider} degradedFrom={routing.isDegraded ? routing.requestedTier : null} />
     {#if forgeStore.mcpDisconnected && !routing.isDegraded && !routing.isAutoFallback}
       <span class="status-disconnected" use:tooltip={STATUS_TOOLTIPS.mcp_disconnected}>disconnected</span>
     {/if}

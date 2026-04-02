@@ -61,7 +61,8 @@
         // 2. IDE-triggered optimization via MCP bridge — the web UI was idle but
         //    should show the result (forgeStore.status = idle)
         if (type === 'optimization_created' && data.trace_id && data.status === 'completed') {
-          const shouldLoad = forgeStore.status !== 'complete';
+          const alreadyLoaded = forgeStore.result?.trace_id === data.trace_id;
+          const shouldLoad = forgeStore.status !== 'complete' && !alreadyLoaded;
           if (shouldLoad) {
             import('$lib/api/client').then(({ getOptimization }) => {
               getOptimization(data.trace_id as string).then(opt => {

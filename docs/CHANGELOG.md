@@ -4,7 +4,17 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Added
+- `routing_tier` column on Optimization model — persists which tier (internal/sampling/passthrough) processed each optimization, with startup backfill for legacy records
+- `routing_tier` field in `OptimizationDetail`, `PipelineResult`, and `HistoryItem` API responses
+- Inspector Tier row showing persisted routing tier with color coding (green=sampling, cyan=internal, yellow=passthrough)
+- `last_model` attribute on `LLMProvider` base class — providers now report the actual model ID from each LLM response
+- Status bar tier badge now derives from the active optimization's persisted tier when viewing history
+
 ### Fixed
+- Inspector panel now shows correct provider, model, and per-phase model IDs for sampling-originated optimizations — previously displayed internal pipeline defaults
+- Internal pipeline now captures actual model IDs from provider responses instead of using preference aliases for `models_by_phase`
+- Event bus race guard prevents duplicate `loadFromRecord()` when both SSE proxy and event bus deliver the same sampling result
 - Re-parenting sweep in domain discovery now parses `domain_raw` values via `parse_domain()` before counting — qualified strings like `"Backend: Security"` now correctly match lowercased domain node labels instead of silently failing to reparent
 - `attempt_merge` now reconciles survivor's `scored_count` and `avg_score` immediately from both nodes' weighted contributions instead of deferring to warm-path reconciliation
 - `attempt_retire` now reconciles target sibling's `scored_count` and `avg_score` when optimizations are reassigned, matching the merge hardening pattern
