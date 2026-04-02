@@ -350,9 +350,10 @@ async def execute_warm_path(
         )
 
     # ------------------------------------------------------------------
-    # Finalize: increment warm_path_age, invalidate cache
+    # Finalize: invalidate cache (warm_path_age already incremented
+    # by phase_audit; _invalidate_stats_cache also called there but
+    # we call again defensively in case audit was skipped on error).
     # ------------------------------------------------------------------
-    engine._warm_path_age += 1
     engine._invalidate_stats_cache()
 
     # Merge audit-level deadlock info with per-phase deadlock info
