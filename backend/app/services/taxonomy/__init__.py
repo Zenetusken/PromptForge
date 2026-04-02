@@ -23,6 +23,13 @@ from app.services.taxonomy.cluster_meta import ClusterMeta, read_meta, write_met
 from app.services.taxonomy.cold_path import ColdPathResult
 from app.services.taxonomy.embedding_index import EmbeddingIndex, IndexSnapshot
 from app.services.taxonomy.engine import TaxonomyEngine
+from app.services.taxonomy.fusion import (
+    CompositeQuery,
+    PhaseWeights,
+    adapt_weights,
+    build_composite_query,
+    decay_toward_defaults,
+)
 from app.services.taxonomy.matching import (
     PatternMatch,
     TaxonomyMapping,
@@ -35,16 +42,21 @@ from app.services.taxonomy.warm_path import WarmPathResult
 __all__ = [
     "ClusterMeta",
     "ColdPathResult",
+    "CompositeQuery",
     "EmbeddingIndex",
     "IndexSnapshot",
     "PatternMatch",
+    "PhaseWeights",
     "QWeights",
     "SparklineData",
     "TaxonomyEngine",
     "TaxonomyMapping",
     "TransformationIndex",
     "WarmPathResult",
+    "adapt_weights",
+    "build_composite_query",
     "compute_sparkline_data",
+    "decay_toward_defaults",
     "get_engine",
     "read_meta",
     "reset_engine",

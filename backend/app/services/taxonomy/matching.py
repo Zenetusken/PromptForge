@@ -97,6 +97,22 @@ async def match_prompt(
     # 1. Embed the prompt text
     query_emb = await embedding_service.aembed_single(prompt_text)
 
+    # Phase 2: Composite fusion for similarity search
+    search_emb = query_emb
+    try:
+        from app.services.taxonomy import get_engine
+        from app.services.taxonomy.fusion import PhaseWeights, build_composite_query
+
+        engine = get_engine()
+        composite = await build_composite_query(
+            prompt_text, embedding_service, engine, db,
+            topic_embedding=query_emb,
+        )
+        weights = PhaseWeights.for_phase("pattern_injection")
+        search_emb = composite.fuse(weights)
+    except Exception:
+        pass  # fallback to topic-only
+
     # ------------------------------------------------------------------
     # Level 1: Family-level search
     # ------------------------------------------------------------------
@@ -146,7 +162,7 @@ async def match_prompt(
         if centroids:
             # Search all family centroids
             matches = EmbeddingService.cosine_search(
-                query_emb, centroids, top_k=len(centroids)
+                search_emb, centroids, top_k=len(centroids)
             )
 
             for idx, score in matches:
@@ -218,7 +234,7 @@ async def match_prompt(
 
             if node_centroids:
                 matches = EmbeddingService.cosine_search(
-                    query_emb, node_centroids, top_k=len(node_centroids)
+                    search_emb, node_centroids, top_k=len(node_centroids)
                 )
 
                 for idx, score in matches:
@@ -264,13 +280,13 @@ async def match_prompt(
                                 fc = np.frombuffer(
                                     fam.centroid_embedding, dtype=np.float32
                                 )
-                                if fc.shape[0] != query_emb.shape[0]:
+                                if fc.shape[0] != search_emb.shape[0]:
                                     continue
                                 norm_fc = np.linalg.norm(fc)
-                                norm_q = np.linalg.norm(query_emb)
+                                norm_q = np.linalg.norm(search_emb)
                                 if norm_fc > 0 and norm_q > 0:
                                     sim = float(
-                                        np.dot(query_emb, fc) / (norm_q * norm_fc)
+                                        np.dot(search_emb, fc) / (norm_q * norm_fc)
                                     )
                                     scored_families.append((fam, sim))
                             except (ValueError, TypeError):

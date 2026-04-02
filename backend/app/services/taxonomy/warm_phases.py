@@ -1236,6 +1236,27 @@ async def phase_refresh(
             refresh_exc,
         )
 
+    # Decay phase weights toward defaults (prevents overfitting)
+    try:
+        from app.services.preferences import PreferencesService
+        from app.services.taxonomy.fusion import PhaseWeights, decay_toward_defaults
+
+        prefs_svc = PreferencesService()
+        prefs = prefs_svc.load()
+        phase_weights = prefs.get("phase_weights", {})
+        decayed = False
+        for phase_name in ["analysis", "optimization", "pattern_injection", "scoring"]:
+            if phase_name in phase_weights:
+                current = PhaseWeights.from_dict(phase_weights[phase_name])
+                updated = decay_toward_defaults(current, phase_name)
+                if updated.to_dict() != phase_weights[phase_name]:
+                    phase_weights[phase_name] = updated.to_dict()
+                    decayed = True
+        if decayed:
+            prefs_svc.patch({"phase_weights": phase_weights})
+    except Exception:
+        pass  # non-fatal
+
     # --- Cross-cluster global_source_count computation ---
     # For each MetaPattern, count how many DISTINCT clusters contain a
     # semantically similar pattern (cosine >= 0.82). This enables

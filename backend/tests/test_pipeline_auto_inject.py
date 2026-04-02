@@ -78,7 +78,12 @@ class TestAutoInjectPatterns:
 
         fake_embedding = _rand_emb()
 
-        # First execute call: PromptCluster metadata query
+        # Fusion signals (output + pattern) each call db.execute once
+        mock_fusion_result = MagicMock()
+        mock_fusion_result.scalar_one_or_none.return_value = None
+        mock_fusion_result.all.return_value = []
+
+        # Topic-match execute call: PromptCluster metadata query
         cluster_row = MagicMock()
         cluster_row.id = cluster_id
         cluster_row.label = "Verb Patterns"
@@ -86,12 +91,12 @@ class TestAutoInjectPatterns:
         mock_cluster_result = MagicMock()
         mock_cluster_result.__iter__ = MagicMock(return_value=iter([cluster_row]))
 
-        # Second execute call: MetaPattern query
+        # Topic-match execute call: MetaPattern query
         mock_pattern_result = MagicMock()
         mock_pattern_result.scalars.return_value.all.return_value = [mp]
 
         db_session.execute = AsyncMock(
-            side_effect=[mock_cluster_result, mock_pattern_result]
+            side_effect=[mock_fusion_result, mock_fusion_result, mock_cluster_result, mock_pattern_result]
         )
 
         with patch(
@@ -152,7 +157,12 @@ class TestAutoInjectPatterns:
         cluster_id = "cluster-xyz"
         engine = _make_taxonomy_engine(size=1, matches=[(cluster_id, 0.80)])
 
-        # First execute call: PromptCluster metadata query
+        # Fusion signals (output + pattern) each call db.execute once
+        mock_fusion_result = MagicMock()
+        mock_fusion_result.scalar_one_or_none.return_value = None
+        mock_fusion_result.all.return_value = []
+
+        # Topic-match execute call: PromptCluster metadata query
         cluster_row = MagicMock()
         cluster_row.id = cluster_id
         cluster_row.label = "Some Cluster"
@@ -160,12 +170,12 @@ class TestAutoInjectPatterns:
         mock_cluster_result = MagicMock()
         mock_cluster_result.__iter__ = MagicMock(return_value=iter([cluster_row]))
 
-        # Second execute call: MetaPattern query — no patterns
+        # Topic-match execute call: MetaPattern query — no patterns
         mock_pattern_result = MagicMock()
         mock_pattern_result.scalars.return_value.all.return_value = []
 
         db_session.execute = AsyncMock(
-            side_effect=[mock_cluster_result, mock_pattern_result]
+            side_effect=[mock_fusion_result, mock_fusion_result, mock_cluster_result, mock_pattern_result]
         )
 
         with patch(

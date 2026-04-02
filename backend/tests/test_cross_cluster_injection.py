@@ -171,6 +171,11 @@ class TestCrossClusterInjection:
             matches=[(cluster_id, 0.85)],
         )
 
+        # Fusion signals (output + pattern) each call db.execute once
+        mock_fusion_result = MagicMock()
+        mock_fusion_result.scalar_one_or_none.return_value = None
+        mock_fusion_result.all.return_value = []
+
         # Topic-match query mocks
         cluster_row = MagicMock()
         cluster_row.id = cluster_id
@@ -200,10 +205,11 @@ class TestCrossClusterInjection:
         mock_cc_result = MagicMock()
         mock_cc_result.all.return_value = [cc_row]
 
-        # Order: cluster metadata, meta-patterns (topic), cross-cluster
-        db_session.execute = AsyncMock(
-            side_effect=[mock_cluster_result, mock_pattern_result, mock_cc_result]
-        )
+        # Order: fusion output, fusion pattern, cluster metadata, meta-patterns (topic), cross-cluster
+        db_session.execute = AsyncMock(side_effect=[
+            mock_fusion_result, mock_fusion_result,
+            mock_cluster_result, mock_pattern_result, mock_cc_result,
+        ])
 
         with patch(
             "app.services.embedding_service.EmbeddingService.aembed_single",
@@ -374,6 +380,11 @@ class TestCrossClusterInjection:
             matches=[(cluster_id, 0.9)],
         )
 
+        # Fusion signals return empty results
+        mock_fusion_result = MagicMock()
+        mock_fusion_result.scalar_one_or_none.return_value = None
+        mock_fusion_result.all.return_value = []
+
         # Topic-match queries succeed
         cluster_row = MagicMock()
         cluster_row.id = cluster_id
@@ -394,11 +405,14 @@ class TestCrossClusterInjection:
         async def _side_effect(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            if call_count == 1:
+            # Calls 1-2: fusion output + pattern signals
+            if call_count <= 2:
+                return mock_fusion_result
+            if call_count == 3:
                 return mock_cluster_result
-            if call_count == 2:
+            if call_count == 4:
                 return mock_pattern_result
-            # Third call (cross-cluster) raises
+            # Fifth call (cross-cluster) raises
             raise RuntimeError("DB connection lost")
 
         db_session.execute = AsyncMock(side_effect=_side_effect)

@@ -12,6 +12,14 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - New constants: `CROSS_CLUSTER_MIN_SOURCE_COUNT`, `CROSS_CLUSTER_MAX_PATTERNS`, `CROSS_CLUSTER_RELEVANCE_FLOOR`, `CROSS_CLUSTER_SIMILARITY_THRESHOLD`
 - `CROSS_CLUSTER_RELEVANCE_FLOOR` (0.35) gates low-relevance cross-cluster candidates; deduplication prevents double-injection of patterns already found via topic match
 
+### Added (Phase 2 — Composite Embedding Fusion)
+- `PhaseWeights` dataclass with per-phase default profiles (analysis, optimization, pattern_injection, scoring), floor enforcement (min 0.05), and dict serialization
+- `CompositeQuery` dataclass fusing four signals (topic, transformation, output, pattern) into a single L2-normalized embedding via weighted blend with zero-signal graceful degradation
+- `adapt_weights()` EMA convergence toward successful weight profiles
+- `decay_toward_defaults()` drift back to phase defaults when adaptation is not reinforced
+- `build_composite_query()` async builder assembling all four signals from taxonomy engine, embedding index, transformation index, and DB queries
+- Exported `CompositeQuery`, `PhaseWeights`, `adapt_weights`, `build_composite_query`, `decay_toward_defaults` from taxonomy package
+
 ### Added (Phase 1 — Multi-Embedding Foundation)
 - `Optimization.optimized_embedding` and `Optimization.transformation_embedding` columns — embed optimized prompts and compute L2-normalized improvement direction vectors in the hot path
 - `PromptCluster.weighted_member_sum` column — score-weighted centroid computation where high-scoring prompts have proportionally more influence on the cluster center
