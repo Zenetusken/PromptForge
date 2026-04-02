@@ -7,14 +7,13 @@ respected, and that deduplication prevents double-injection.
 Copyright 2025-2026 Project Synthesis contributors.
 """
 
+import math
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import math
 import numpy as np
 import pytest
 
-from app.services.pattern_injection import InjectedPattern, auto_inject_patterns
-
+from app.services.pattern_injection import auto_inject_patterns
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -121,8 +120,7 @@ class TestCrossClusterInjection:
 
     async def test_relevance_floor_filters_low_relevance(self, db_session):
         """Patterns with relevance below CROSS_CLUSTER_RELEVANCE_FLOOR are excluded."""
-        prompt_emb = _rand_emb()
-        # Create an embedding that's orthogonal -> low similarity
+        # Create an embedding that's orthogonal to the query -> low similarity
         orthogonal_emb = np.zeros(384, dtype=np.float32)
         orthogonal_emb[0] = 1.0  # unit vector in one dimension
         # Make prompt_emb orthogonal to it
@@ -494,8 +492,12 @@ class TestCrossClusterIntegration:
 
         # Reload from DB
         from sqlalchemy import select as sa_select
-        from app.models import MetaPattern as MP
-        result = await db_session.execute(sa_select(MP).where(MP.cluster_id.in_([cluster_a.id, cluster_b.id])))
+
+        from app.models import MetaPattern as MetaPat
+        cids = [cluster_a.id, cluster_b.id]
+        result = await db_session.execute(
+            sa_select(MetaPat).where(MetaPat.cluster_id.in_(cids))
+        )
         refreshed = {mp.pattern_text: mp for mp in result.scalars().all()}
 
         # Both patterns are similar across 2 different clusters → global_source_count >= 2
@@ -552,9 +554,10 @@ class TestCrossClusterIntegration:
 
         # --- Phase 2: verify global_source_count was raised to 3 ---
         from sqlalchemy import select as sa_select
-        from app.models import MetaPattern as MP
+
+        from app.models import MetaPattern as MetaPat
         mp_rows = (await db_session.execute(
-            sa_select(MP).where(MP.cluster_id.in_([c.id for c in clusters]))
+            sa_select(MetaPat).where(MetaPat.cluster_id.in_([c.id for c in clusters]))
         )).scalars().all()
         # All 3 patterns are similar → each should have global_source_count == 3
         for mp_row in mp_rows:
