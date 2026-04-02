@@ -35,6 +35,7 @@ from app.models import (
 from app.providers.base import LLMProvider
 from app.services.embedding_service import EmbeddingService
 from app.services.prompt_loader import PromptLoader
+from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.embedding_index import EmbeddingIndex
 from app.services.taxonomy.family_ops import (
     adaptive_merge_threshold,
@@ -433,10 +434,10 @@ class TaxonomyEngine:
                 if len(_coh_embs) >= 2:
                     coherence = _split_cpc(_coh_embs)
                     node.coherence = coherence  # persist for Q_system
-                    node.cluster_metadata = {
-                        **(node.cluster_metadata or {}),
-                        "coherence_member_count": len(_coh_embs),
-                    }
+                    node.cluster_metadata = write_meta(
+                        node.cluster_metadata,
+                        coherence_member_count=len(_coh_embs),
+                    )
                 else:
                     coherence = 1.0
             except Exception:
@@ -451,8 +452,8 @@ class TaxonomyEngine:
             dynamic_floor = SPLIT_COHERENCE_FLOOR + max(0, math.log2(max(member_count, 6) / 6)) * 0.05
             if coherence < dynamic_floor:
                 # Cooldown: skip if this cluster already failed to split 3+ times
-                node_meta = node.cluster_metadata or {}
-                split_failures = node_meta.get("split_failures", 0)
+                node_meta = read_meta(node.cluster_metadata)
+                split_failures = node_meta["split_failures"]
                 if split_failures >= 3:
                     continue
                 ops_attempted += 1
@@ -525,22 +526,23 @@ class TaxonomyEngine:
                                 except Exception as km_exc:
                                     logger.debug("k-means fallback failed: %s", km_exc)
 
+
                             if split_clusters.n_clusters < 2:
                                 # Track failed attempt for cooldown
-                                node.cluster_metadata = {
-                                    **(node.cluster_metadata or {}),
-                                    "split_failures": split_failures + 1,
-                                }
+                                node.cluster_metadata = write_meta(
+                                    node.cluster_metadata,
+                                    split_failures=split_failures + 1,
+                                )
                                 logger.info(
                                     "Leaf split failed: HDBSCAN found %d clusters (need 2+), attempt %d/3",
                                     split_clusters.n_clusters, split_failures + 1,
                                 )
                             else:
                                 # Reset failure counter on success
-                                node.cluster_metadata = {
-                                    **(node.cluster_metadata or {}),
-                                    "split_failures": 0,
-                                }
+                                node.cluster_metadata = write_meta(
+                                    node.cluster_metadata,
+                                    split_failures=0,
+                                )
                                 logger.info(
                                     "Leaf split: HDBSCAN found %d sub-clusters from %d optimizations",
                                     split_clusters.n_clusters, len(child_embs),
@@ -907,10 +909,10 @@ class TaxonomyEngine:
                     member_embs = emb_by_cluster.get(node.id, [])
                     if len(member_embs) >= 2:
                         node.coherence = compute_pairwise_coherence(member_embs)
-                        node.cluster_metadata = {
-                            **(node.cluster_metadata or {}),
-                            "coherence_member_count": expected,
-                        }
+                        node.cluster_metadata = write_meta(
+                            node.cluster_metadata,
+                            coherence_member_count=expected,
+                        )
                         coherence_updated += 1
                 elif expected == 1:
                     node.coherence = 1.0
@@ -1064,8 +1066,8 @@ class TaxonomyEngine:
             for node in active_nodes:
                 if node.state == "domain" or (node.member_count or 0) < refresh_min_members:
                     continue
-                meta = node.cluster_metadata or {}
-                last_count = meta.get("pattern_member_count", 0)
+                meta = read_meta(node.cluster_metadata)
+                last_count = meta["pattern_member_count"]
                 if last_count > 0 and node.member_count < last_count * refresh_growth_factor:
                     continue  # not stale enough
 
@@ -1114,11 +1116,11 @@ class TaxonomyEngine:
                         pass  # non-fatal per-optimization
 
                 # Track extraction state
-                node.cluster_metadata = {
-                    **(node.cluster_metadata or {}),
-                    "pattern_member_count": node.member_count,
-                    "label_refreshed_at": datetime.now(timezone.utc).isoformat(),
-                }
+                node.cluster_metadata = write_meta(
+                    node.cluster_metadata,
+                    pattern_member_count=node.member_count,
+                    label_refreshed_at=datetime.now(timezone.utc).isoformat(),
+                )
                 refreshed += 1
                 logger.info(
                     "Refreshed label+patterns for '%s' (members: %d→%d, old_count=%d)",
@@ -2652,13 +2654,14 @@ class TaxonomyEngine:
             persistence=1.0,
             color_hex=color_hex,
             centroid_embedding=seed_cluster.centroid_embedding if seed_cluster else None,
-            cluster_metadata={
-                "source": "discovered",
-                "signal_keywords": keywords,
-                "discovered_at": datetime.now(timezone.utc).isoformat(),
-                "proposed_by_snapshot": None,
-                "signal_member_count_at_generation": signal_member_count,
-            },
+            cluster_metadata=write_meta(
+                None,
+                source="discovered",
+                signal_keywords=keywords,
+                discovered_at=datetime.now(timezone.utc).isoformat(),
+                proposed_by_snapshot=None,
+                signal_member_count_at_generation=signal_member_count,
+            ),
         )
         db.add(node)
         await db.flush()
@@ -2847,8 +2850,8 @@ class TaxonomyEngine:
         )
         suggestions = []
         for domain in stale.scalars():
-            meta = domain.cluster_metadata or {}
-            if meta.get("source") == "seed":
+            meta = read_meta(domain.cluster_metadata)
+            if meta["source"] == "seed":
                 continue
             suggestions.append(domain.label)
             logger.info(
@@ -2872,10 +2875,10 @@ class TaxonomyEngine:
             select(PromptCluster).where(PromptCluster.state == "domain")
         )
         for domain in domains.scalars():
-            meta = domain.cluster_metadata or {}
-            if meta.get("source") == "seed":
+            meta = read_meta(domain.cluster_metadata)
+            if meta["source"] == "seed":
                 continue
-            gen_count = meta.get("signal_member_count_at_generation", 0)
+            gen_count = meta["signal_member_count_at_generation"]
             if gen_count == 0:
                 continue
             if (domain.member_count or 0) >= gen_count * SIGNAL_REFRESH_MEMBER_RATIO:
@@ -2893,11 +2896,12 @@ class TaxonomyEngine:
         from datetime import datetime, timezone
 
         keywords = await self._extract_domain_keywords(db, domain)
-        meta = dict(domain.cluster_metadata or {})
-        meta["signal_keywords"] = keywords
-        meta["signal_generated_at"] = datetime.now(timezone.utc).isoformat()
-        meta["signal_member_count_at_generation"] = domain.member_count or 0
-        domain.cluster_metadata = meta
+        domain.cluster_metadata = write_meta(
+            domain.cluster_metadata,
+            signal_keywords=keywords,
+            signal_generated_at=datetime.now(timezone.utc).isoformat(),
+            signal_member_count_at_generation=domain.member_count or 0,
+        )
         logger.info(
             "Signals refreshed for domain '%s': %d keywords from %d members",
             domain.label, len(keywords), domain.member_count or 0,
@@ -3233,20 +3237,34 @@ class TaxonomyEngine:
         Spec Section 7.8 — usage count flows upward so that ancestor
         clusters reflect aggregate activity from their subtree.
 
+        Uses atomic SQL UPDATE (``usage_count = usage_count + 1``) instead of
+        Python field mutation to prevent lost writes when multiple optimizations
+        complete concurrently and increment the same cluster.
+
         Args:
             cluster_id: ID of the PromptCluster whose patterns were applied.
             db: Async SQLAlchemy session.
         """
+        from sqlalchemy import update as sa_update
+
         cluster = await db.get(PromptCluster, cluster_id)
         if not cluster:
             logger.warning("increment_usage: cluster %s not found", cluster_id)
             return
 
         now = datetime.now(timezone.utc)
-        cluster.usage_count = (cluster.usage_count or 0) + 1
-        cluster.last_used_at = now
 
-        # Walk up the taxonomy tree (with cycle guard)
+        # Atomic increment on the target cluster
+        await db.execute(
+            sa_update(PromptCluster)
+            .where(PromptCluster.id == cluster_id)
+            .values(
+                usage_count=PromptCluster.usage_count + 1,
+                last_used_at=now,
+            )
+        )
+
+        # Walk up the taxonomy tree with atomic increments (cycle guard)
         parent_id = cluster.parent_id
         visited: set[str] = set()
         while parent_id:
@@ -3257,11 +3275,20 @@ class TaxonomyEngine:
             parent = await db.get(PromptCluster, parent_id)
             if not parent:
                 break
-            parent.usage_count = (parent.usage_count or 0) + 1
-            parent.last_used_at = now
+            await db.execute(
+                sa_update(PromptCluster)
+                .where(PromptCluster.id == parent_id)
+                .values(
+                    usage_count=PromptCluster.usage_count + 1,
+                    last_used_at=now,
+                )
+            )
             parent_id = parent.parent_id
 
         await db.flush()
+
+        # Refresh to get the updated value for logging
+        await db.refresh(cluster)
         logger.info(
             "Usage incremented: '%s' (usage=%d, domain=%s)",
             cluster.label, cluster.usage_count, cluster.domain,

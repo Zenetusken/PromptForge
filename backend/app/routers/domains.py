@@ -30,6 +30,8 @@ async def list_domains(db: AsyncSession = Depends(get_db)) -> list[DomainInfo]:
         .where(PromptCluster.state == "domain")
         .order_by(PromptCluster.label)
     )
+    from app.services.taxonomy.cluster_meta import read_meta
+
     return [
         DomainInfo(
             id=d.id,
@@ -37,7 +39,7 @@ async def list_domains(db: AsyncSession = Depends(get_db)) -> list[DomainInfo]:
             color_hex=d.color_hex or "#7a7a9e",
             member_count=d.member_count,
             avg_score=d.avg_score,
-            source=(d.cluster_metadata or {}).get("source", "seed"),
+            source=read_meta(d.cluster_metadata)["source"],
         )
         for d in result.scalars()
     ]
@@ -96,17 +98,24 @@ async def promote_to_domain(
         )
 
     # Promote
+    from datetime import datetime, timezone
+
+    from app.services.taxonomy.cluster_meta import write_meta
+
     cluster.state = "domain"
     cluster.domain = cluster.label
     cluster.color_hex = color_hex
     cluster.persistence = 1.0
-    cluster.cluster_metadata = {
-        "source": "manual",
-        "signal_keywords": [],
-        "discovered_at": None,
-        "proposed_by_snapshot": None,
-        "signal_member_count_at_generation": 0,
-    }
+    cluster.promoted_at = datetime.now(timezone.utc)
+    cluster.parent_id = None  # Domain nodes are roots
+    cluster.cluster_metadata = write_meta(
+        None,
+        source="manual",
+        signal_keywords=[],
+        discovered_at=None,
+        proposed_by_snapshot=None,
+        signal_member_count_at_generation=0,
+    )
     await db.commit()
 
     logger.info("Cluster %s promoted to domain: label='%s'", domain_id, cluster.label)

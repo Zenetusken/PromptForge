@@ -1490,13 +1490,13 @@ async def _increment_pattern_usage(cluster_ids: set[str]) -> None:
                     await engine.increment_usage(fid, db)
                 except Exception as usage_exc:
                     logger.warning("Usage propagation failed for %s: %s", fid, usage_exc)
-                    # Fallback: at least increment the family directly
-                    fam_result = await db.execute(
-                        select(PromptCluster).where(PromptCluster.id == fid)
+                    # Fallback: atomic SQL increment (no tree walk)
+                    from sqlalchemy import update as sa_update
+                    await db.execute(
+                        sa_update(PromptCluster)
+                        .where(PromptCluster.id == fid)
+                        .values(usage_count=PromptCluster.usage_count + 1)
                     )
-                    fam = fam_result.scalar_one_or_none()
-                    if fam:
-                        fam.usage_count = (fam.usage_count or 0) + 1
             await db.commit()
     except Exception as exc:
         logger.warning("Sampling usage increment failed: %s", exc)

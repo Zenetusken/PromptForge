@@ -411,7 +411,8 @@ async def attempt_split(
                 child.umap_x = parent_node.umap_x + radius * np.sin(phi) * np.cos(theta)
                 child.umap_y = parent_node.umap_y + radius * np.sin(phi) * np.sin(theta)
                 child.umap_z = parent_node.umap_z + radius * np.cos(phi)
-                child.cluster_metadata = {**(child.cluster_metadata or {}), "position_source": "interpolated"}
+                from app.services.taxonomy.cluster_meta import write_meta
+                child.cluster_metadata = write_meta(child.cluster_metadata, position_source="interpolated")
 
             db.add(child)
             await db.flush()
@@ -491,15 +492,24 @@ async def attempt_retire(
             )
             return False
 
-        # Redistribute families to the first sibling.
+        # Redistribute child clusters (families) to the first sibling.
+        # NOTE: Do NOT increment target_sibling.member_count here — member_count
+        # tracks Optimization rows (not child clusters).  Only the optimization
+        # reassignment below should update member_count.
         target_sibling = siblings[0]
         families_result = await db.execute(
             select(PromptCluster).where(PromptCluster.parent_id == node.id)
         )
         families = families_result.scalars().all()
+        families_moved = 0
         for family in families:
             family.parent_id = target_sibling.id
-            target_sibling.member_count = (target_sibling.member_count or 0) + 1
+            families_moved += 1
+        if families_moved:
+            logger.info(
+                "retire: re-parented %d child clusters to '%s'",
+                families_moved, target_sibling.label,
+            )
 
         # Reassign optimizations that still reference the retiring node.
         # Without this, Optimization.cluster_id becomes a stale pointer
