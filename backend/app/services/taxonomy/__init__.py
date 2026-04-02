@@ -29,6 +29,7 @@ from app.services.taxonomy.matching import (
 )
 from app.services.taxonomy.quality import QWeights
 from app.services.taxonomy.sparkline import SparklineData, compute_sparkline_data
+from app.services.taxonomy.transformation_index import TransformationIndex
 from app.services.taxonomy.warm_path import WarmPathResult
 
 __all__ = [
@@ -41,6 +42,7 @@ __all__ = [
     "SparklineData",
     "TaxonomyEngine",
     "TaxonomyMapping",
+    "TransformationIndex",
     "WarmPathResult",
     "compute_sparkline_data",
     "get_engine",
