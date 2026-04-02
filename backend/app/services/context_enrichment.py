@@ -271,12 +271,17 @@ class ContextEnrichmentService:
                     match = await match_prompt(
                         raw_prompt, db, self._embedding_service,
                     )
-                    if match and match.meta_patterns:
-                        return "\n".join(
+                    if match and (match.meta_patterns or match.cross_cluster_patterns):
+                        lines = [
                             f"- {p.pattern_text}"
-                            for p in match.meta_patterns[:3]
+                            for p in (match.meta_patterns or [])[:3]
                             if p.pattern_text
-                        )
+                        ]
+                        # Include cross-cluster universal patterns
+                        for cp in (match.cross_cluster_patterns or [])[:3]:
+                            if cp.pattern_text:
+                                lines.append(f"- {cp.pattern_text} (cross-cluster)")
+                        return "\n".join(lines) if lines else None
                 except Exception:
                     logger.debug("Taxonomy pattern search failed", exc_info=True)
         except Exception:

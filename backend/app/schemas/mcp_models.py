@@ -468,6 +468,12 @@ class MatchOutput(BaseModel):
         description="Reusable patterns from this cluster. Pass their IDs to "
         "synthesis_optimize.applied_pattern_ids.",
     )
+    cross_cluster_patterns: list[MetaPatternSummary] = Field(
+        default_factory=list,
+        description="Universal patterns from other clusters with high cross-cluster "
+        "presence (global_source_count >= 3). These techniques are effective "
+        "across domains.",
+    )
     recommended_strategy: str | None = Field(
         default=None,
         description="Preferred strategy for this cluster based on feedback history.",

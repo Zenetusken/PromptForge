@@ -52,6 +52,15 @@ async def handle_match(prompt_text: str) -> MatchOutput:
             source_count=mp.source_count or 0,
         ))
 
+    # Cross-cluster patterns: universal techniques from other clusters
+    cross_cluster_patterns = []
+    for cp in (result.cross_cluster_patterns or []):
+        cross_cluster_patterns.append(MetaPatternSummary(
+            id=cp.id,
+            pattern_text=cp.pattern_text or "",
+            source_count=cp.source_count or 0,
+        ))
+
     cluster = result.cluster
     cluster_id = cluster.id if cluster else None
     cluster_label = cluster.label if cluster else None
@@ -64,5 +73,6 @@ async def handle_match(prompt_text: str) -> MatchOutput:
         cluster_label=cluster_label,
         taxonomy_breadcrumb=result.taxonomy_breadcrumb or [],
         meta_patterns=meta_patterns,
+        cross_cluster_patterns=cross_cluster_patterns,
         recommended_strategy=recommended_strategy,
     )
