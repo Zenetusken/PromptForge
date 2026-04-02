@@ -266,6 +266,15 @@ async def lifespan(app: FastAPI):
                     await _emb_db2.commit()
             except Exception:
                 pass
+            # Startup: ensure phase_weights_json column exists on optimizations
+            try:
+                async with async_session_factory() as _pw_db:
+                    await _pw_db.execute(
+                        _text_gsc("ALTER TABLE optimizations ADD COLUMN phase_weights_json TEXT")
+                    )
+                    await _pw_db.commit()
+            except Exception:
+                pass
             # Startup: ensure weighted_member_sum column exists on prompt_cluster
             try:
                 async with async_session_factory() as _wms_db:
