@@ -308,8 +308,7 @@ class TestDecayTowardDefaults:
     """decay_toward_defaults drifts weights back to phase defaults."""
 
     def test_single_step_moves_toward_defaults(self):
-        defaults = PhaseWeights.for_phase("analysis")
-        current = PhaseWeights(0.25, 0.25, 0.25, 0.25)  # uniform, not default
+        current = PhaseWeights(0.25, 0.25, 0.25, 0.25)  # uniform, not default (analysis default is 0.60/0.15/0.10/0.15)
         decayed = decay_toward_defaults(current, "analysis")
 
         # w_topic should increase toward 0.60

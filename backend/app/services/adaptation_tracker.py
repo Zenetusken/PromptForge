@@ -183,8 +183,8 @@ class AdaptationTracker:
         if rating != "thumbs_up":
             return
 
-        from app.services.taxonomy.fusion import PhaseWeights, adapt_weights
         from app.services.preferences import PreferencesService
+        from app.services.taxonomy.fusion import PhaseWeights, adapt_weights
 
         prefs_svc = PreferencesService()
         current_prefs = prefs_svc.load()

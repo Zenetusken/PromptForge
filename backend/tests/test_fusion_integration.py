@@ -1,10 +1,14 @@
 """Integration tests for composite embedding fusion."""
 from __future__ import annotations
-import pytest
-from app.services.taxonomy.fusion import (
-    CompositeQuery, PhaseWeights, adapt_weights, decay_toward_defaults,
-)
+
 import numpy as np
+
+from app.services.taxonomy.fusion import (
+    CompositeQuery,
+    PhaseWeights,
+    adapt_weights,
+    decay_toward_defaults,
+)
 
 DIM = 384
 

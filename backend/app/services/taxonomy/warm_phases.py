@@ -1238,8 +1238,8 @@ async def phase_refresh(
 
     # Decay phase weights toward defaults (prevents overfitting)
     try:
-        from app.services.taxonomy.fusion import PhaseWeights, decay_toward_defaults
         from app.services.preferences import PreferencesService
+        from app.services.taxonomy.fusion import PhaseWeights, decay_toward_defaults
 
         prefs_svc = PreferencesService()
         prefs = prefs_svc.load()

@@ -206,9 +206,10 @@ class TestCrossClusterInjection:
         mock_cc_result.all.return_value = [cc_row]
 
         # Order: fusion output, fusion pattern, cluster metadata, meta-patterns (topic), cross-cluster
-        db_session.execute = AsyncMock(
-            side_effect=[mock_fusion_result, mock_fusion_result, mock_cluster_result, mock_pattern_result, mock_cc_result]
-        )
+        db_session.execute = AsyncMock(side_effect=[
+            mock_fusion_result, mock_fusion_result,
+            mock_cluster_result, mock_pattern_result, mock_cc_result,
+        ])
 
         with patch(
             "app.services.embedding_service.EmbeddingService.aembed_single",
