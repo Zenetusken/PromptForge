@@ -12,6 +12,12 @@ from dataclasses import dataclass, field
 import numpy as np
 from sklearn.cluster import HDBSCAN
 
+from app.services.taxonomy._constants import (
+    CLUSTERING_BLEND_W_OPTIMIZED,
+    CLUSTERING_BLEND_W_RAW,
+    CLUSTERING_BLEND_W_TRANSFORM,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -73,6 +79,96 @@ def l2_normalize_1d(vec: np.ndarray) -> np.ndarray:
     if norm < 1e-9:
         return vec.astype(np.float32)
     return (vec / norm).astype(np.float32)
+
+
+def weighted_blend(
+    signals: list[np.ndarray],
+    weights: list[float],
+) -> np.ndarray:
+    """Core weighted blend of embedding signals with zero-vector redistribution.
+
+    Shared by ``blend_embeddings()`` (HDBSCAN clustering) and
+    ``CompositeQuery.fuse()`` (composite fusion queries).  Centralizes
+    the zero-detection threshold (1e-9), weight redistribution, and
+    L2-normalization to prevent algorithmic drift between the two paths.
+
+    Args:
+        signals: List of 1-D float32 embedding vectors.  Zero-norm vectors
+            are filtered out and their weight redistributed proportionally.
+        weights: Corresponding weight per signal (same length as *signals*).
+
+    Returns:
+        L2-normalized float32 blended vector. Returns a zero vector if
+        all signals are zero-norm or *signals* is empty.
+    """
+    # Filter to non-zero signals
+    active: list[tuple[np.ndarray, float]] = []
+    for sig, w in zip(signals, weights):
+        s = sig.astype(np.float32)
+        if float(np.linalg.norm(s)) > 1e-9:
+            active.append((s, w))
+
+    if not active:
+        dim = signals[0].shape[-1] if signals else 0
+        return np.zeros(dim, dtype=np.float32)
+
+    # Re-normalize weights to sum to 1
+    total_w = sum(w for _, w in active)
+    if total_w < 1e-9:
+        normed = [1.0 / len(active)] * len(active)
+    else:
+        normed = [w / total_w for _, w in active]
+
+    # Weighted sum + L2-normalize
+    blended = np.zeros_like(active[0][0], dtype=np.float32)
+    for (sig, _), nw in zip(active, normed):
+        blended += nw * sig
+    return l2_normalize_1d(blended)
+
+
+def blend_embeddings(
+    raw: np.ndarray,
+    optimized: np.ndarray | None = None,
+    transformation: np.ndarray | None = None,
+    w_raw: float = CLUSTERING_BLEND_W_RAW,
+    w_optimized: float = CLUSTERING_BLEND_W_OPTIMIZED,
+    w_transform: float = CLUSTERING_BLEND_W_TRANSFORM,
+) -> np.ndarray:
+    """Blend raw + optimized + transformation embeddings for HDBSCAN clustering.
+
+    Produces a single 384-dim L2-normalized vector that captures topic (raw),
+    output quality (optimized), and technique direction (transformation).
+    When a signal is missing (None or near-zero norm), its weight is
+    redistributed proportionally to the remaining non-zero signals.
+
+    Delegates to :func:`weighted_blend` for the core algorithm shared with
+    ``CompositeQuery.fuse()``.
+
+    Args:
+        raw: 1-D float32 raw prompt embedding (required, always present).
+        optimized: 1-D float32 optimized prompt embedding, or None.
+        transformation: 1-D float32 transformation vector, or None.
+        w_raw: Weight for the raw signal.
+        w_optimized: Weight for the optimized signal.
+        w_transform: Weight for the transformation signal.
+
+    Returns:
+        L2-normalized 384-dim float32 blended embedding.
+        Falls back to L2-normalized raw if all other signals are absent.
+    """
+    raw_vec = raw.astype(np.float32).ravel()
+    signals = [raw_vec]
+    weights = [w_raw]
+
+    if optimized is not None:
+        signals.append(optimized.astype(np.float32).ravel())
+        weights.append(w_optimized)
+
+    if transformation is not None:
+        signals.append(transformation.astype(np.float32).ravel())
+        weights.append(w_transform)
+
+    return weighted_blend(signals, weights)
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:

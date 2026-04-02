@@ -44,6 +44,7 @@ from app.services.taxonomy._constants import (
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.clustering import (
     batch_cluster,
+    blend_embeddings,
     compute_pairwise_coherence,
     cosine_similarity,
     l2_normalize_1d,
@@ -369,6 +370,7 @@ async def phase_reconcile(
                 result.zombies_archived += 1
                 await engine._embedding_index.remove(node.id)
                 await engine._transformation_index.remove(node.id)
+                await engine._optimized_index.remove(node.id)
 
         if result.zombies_archived:
             logger.info(
@@ -422,21 +424,26 @@ async def phase_split_emerge(
         n.id for n in active_nodes
         if (n.member_count or 0) >= SPLIT_MIN_MEMBERS
     ]
-    _split_emb_cache: dict[str, list[tuple[str, bytes]]] = {}
+    # Cache: (opt_id, raw_bytes, optimized_bytes | None, transformation_bytes | None)
+    _split_emb_cache: dict[str, list[tuple[str, bytes, bytes | None, bytes | None]]] = {}
     if _split_candidate_ids:
         _split_emb_q = await db.execute(
             select(
                 Optimization.id,
                 Optimization.cluster_id,
                 Optimization.embedding,
+                Optimization.optimized_embedding,
+                Optimization.transformation_embedding,
             ).where(
                 Optimization.cluster_id.in_(_split_candidate_ids),
                 Optimization.embedding.isnot(None),
             )
         )
-        for opt_id, cid, emb_bytes in _split_emb_q.all():
+        for opt_id, cid, emb_bytes, opt_bytes, trans_bytes in _split_emb_q.all():
             if emb_bytes is not None:
-                _split_emb_cache.setdefault(cid, []).append((opt_id, emb_bytes))
+                _split_emb_cache.setdefault(cid, []).append(
+                    (opt_id, emb_bytes, opt_bytes, trans_bytes)
+                )
 
     for node in active_nodes:
         member_count = node.member_count or 0
@@ -515,26 +522,40 @@ async def phase_split_emerge(
         if len(node_families) < SPLIT_MIN_MEMBERS and member_count >= SPLIT_MIN_MEMBERS:
             opt_rows = _cached_opt_rows
             if len(opt_rows) >= SPLIT_MIN_MEMBERS:
-                child_embs = []
+                child_embs = []        # raw embeddings (for centroid storage)
+                child_blended = []     # blended embeddings (for HDBSCAN)
                 child_fam_ids = []
-                for opt_id, emb_bytes in opt_rows:
+                for opt_id, emb_bytes, opt_bytes, trans_bytes in opt_rows:
                     try:
                         emb = np.frombuffer(emb_bytes, dtype=np.float32).copy()
+                        opt_emb = (
+                            np.frombuffer(opt_bytes, dtype=np.float32).copy()
+                            if opt_bytes else None
+                        )
+                        trans_emb = (
+                            np.frombuffer(trans_bytes, dtype=np.float32).copy()
+                            if trans_bytes else None
+                        )
                         child_embs.append(emb)
+                        child_blended.append(blend_embeddings(
+                            raw=emb,
+                            optimized=opt_emb,
+                            transformation=trans_emb,
+                        ))
                         child_fam_ids.append(opt_id)
                     except (ValueError, TypeError):
                         continue
 
-                if len(child_embs) >= SPLIT_MIN_MEMBERS:
-                    split_clusters = batch_cluster(child_embs, min_cluster_size=3)
+                if len(child_blended) >= SPLIT_MIN_MEMBERS:
+                    split_clusters = batch_cluster(child_blended, min_cluster_size=3)
 
                     # Fallback: k-means bisection when HDBSCAN fails
                     if (split_clusters.n_clusters < 2
-                            and len(child_embs) >= 2 * SPLIT_MIN_MEMBERS):
+                            and len(child_blended) >= 2 * SPLIT_MIN_MEMBERS):
                         try:
                             from sklearn.cluster import KMeans
 
-                            emb_stack = np.stack(child_embs, axis=0)
+                            emb_stack = np.stack(child_blended, axis=0)
                             km = KMeans(n_clusters=2, n_init=10, random_state=42)
                             km_labels = km.fit_predict(emb_stack)
 
@@ -601,17 +622,13 @@ async def phase_split_emerge(
                             if not group_embs:
                                 continue
 
-                            centroid = (
-                                split_clusters.centroids[cid]
-                                if cid < len(split_clusters.centroids)
-                                else None
+                            # Compute RAW centroid for storage — split_clusters.centroids
+                            # are blended, so recompute from raw group_embs.
+                            centroid = l2_normalize_1d(
+                                np.mean(
+                                    np.stack(group_embs), axis=0
+                                ).astype(np.float32)
                             )
-                            if centroid is None:
-                                centroid = l2_normalize_1d(
-                                    np.mean(
-                                        np.stack(group_embs), axis=0
-                                    ).astype(np.float32)
-                                )
                             child_coherence = compute_pairwise_coherence(group_embs)
 
                             # Generate label from member intent labels
@@ -684,6 +701,7 @@ async def phase_split_emerge(
                             node.avg_score = None
                             await engine._embedding_index.remove(node.id)
                             await engine._transformation_index.remove(node.id)
+                            await engine._optimized_index.remove(node.id)
                             embedding_index_mutations += 1
                             for child in new_children:
                                 centroid_emb = np.frombuffer(
@@ -707,7 +725,7 @@ async def phase_split_emerge(
                                 # (Fix #11: batch both embeddings AND scores)
                                 noise_id_set = set(noise_ids)
                                 noise_emb_lookup: dict[str, bytes] = {}
-                                for oid, emb_bytes in _cached_opt_rows:
+                                for oid, emb_bytes, *_ in _cached_opt_rows:
                                     if oid in noise_id_set:
                                         noise_emb_lookup[oid] = emb_bytes
 
@@ -787,20 +805,30 @@ async def phase_split_emerge(
         # --- Family-based split path ---
         if len(node_families) >= SPLIT_MIN_MEMBERS:
             child_embs_fam = []
+            child_blended_fam = []
             child_fam_ids_fam = []
+            opt_idx = getattr(engine, "_optimized_index", None)
+            trans_idx = getattr(engine, "_transformation_index", None)
             for f in node_families:
                 try:
                     emb = np.frombuffer(
                         f.centroid_embedding, dtype=np.float32
                     )
+                    opt_vec = opt_idx.get_vector(f.id) if opt_idx else None
+                    trans_vec = trans_idx.get_vector(f.id) if trans_idx else None
                     child_embs_fam.append(emb)
+                    child_blended_fam.append(blend_embeddings(
+                        raw=emb,
+                        optimized=opt_vec,
+                        transformation=trans_vec,
+                    ))
                     child_fam_ids_fam.append(f.id)
                 except (ValueError, TypeError):
                     continue
 
-            if len(child_embs_fam) >= 6:
+            if len(child_blended_fam) >= 6:
                 split_clusters_fam = batch_cluster(
-                    child_embs_fam, min_cluster_size=3
+                    child_blended_fam, min_cluster_size=3
                 )
                 if split_clusters_fam.n_clusters >= 2:
                     from app.services.taxonomy.lifecycle import attempt_split
@@ -897,21 +925,32 @@ async def phase_merge(
     active_nodes = list(active_q.scalars().all())
 
     # --- Global best-pair merge ---
-    # KEEP the matrix-based mat_norm @ mat_norm.T -- it's an optimized batch
-    # operation for finding the closest pair across all nodes.
+    # Use blended centroids (raw + optimized + transformation) for the
+    # pairwise similarity matrix so merge candidates reflect topic,
+    # output quality, and technique direction — not just topic similarity.
+    opt_idx = getattr(engine, "_optimized_index", None)
+    trans_idx = getattr(engine, "_transformation_index", None)
     if len(active_nodes) >= 2:
         centroids = []
+        blended_centroids = []
         valid_nodes: list[PromptCluster] = []
         for n in active_nodes:
             try:
                 c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
+                opt_vec = opt_idx.get_vector(n.id) if opt_idx else None
+                trans_vec = trans_idx.get_vector(n.id) if trans_idx else None
                 centroids.append(c)
+                blended_centroids.append(blend_embeddings(
+                    raw=c,
+                    optimized=opt_vec,
+                    transformation=trans_vec,
+                ))
                 valid_nodes.append(n)
             except (ValueError, TypeError):
                 continue
 
-        if len(centroids) >= 2:
-            mat = np.stack(centroids, axis=0).astype(np.float32)
+        if len(blended_centroids) >= 2:
+            mat = np.stack(blended_centroids, axis=0).astype(np.float32)
             norms = np.linalg.norm(mat, axis=1, keepdims=True)
             norms = np.where(norms == 0, 1.0, norms)
             mat_norm = mat / norms
@@ -978,6 +1017,7 @@ async def phase_merge(
                     )
                     await engine._embedding_index.remove(loser.id)
                     await engine._transformation_index.remove(loser.id)
+                    await engine._optimized_index.remove(loser.id)
                     embedding_index_mutations += 2
 
     # --- Same-domain duplicate merge ---
@@ -1021,6 +1061,7 @@ async def phase_merge(
                 survivor = group[0]
                 for loser in group[1:]:
                     # Fix #12: use cosine_similarity() from clustering.py
+                    # Use blended centroids for consistency with global merge.
                     try:
                         emb_a = np.frombuffer(
                             survivor.centroid_embedding, dtype=np.float32
@@ -1028,7 +1069,17 @@ async def phase_merge(
                         emb_b = np.frombuffer(
                             loser.centroid_embedding, dtype=np.float32
                         )
-                        sim = cosine_similarity(emb_a, emb_b)
+                        blend_a = blend_embeddings(
+                            raw=emb_a,
+                            optimized=opt_idx.get_vector(survivor.id) if opt_idx else None,
+                            transformation=trans_idx.get_vector(survivor.id) if trans_idx else None,
+                        )
+                        blend_b = blend_embeddings(
+                            raw=emb_b,
+                            optimized=opt_idx.get_vector(loser.id) if opt_idx else None,
+                            transformation=trans_idx.get_vector(loser.id) if trans_idx else None,
+                        )
+                        sim = cosine_similarity(blend_a, blend_b)
                     except (ValueError, TypeError):
                         sim = 0.0
                     combined_mc = max(
@@ -1062,6 +1113,7 @@ async def phase_merge(
                             )
                             await engine._embedding_index.remove(loser.id)
                             await engine._transformation_index.remove(loser.id)
+                            await engine._optimized_index.remove(loser.id)
                             embedding_index_mutations += 2
                             label_merged = True
                             break  # one merge per domain per cycle
@@ -1075,6 +1127,7 @@ async def phase_merge(
                         break
                     for j in range(i + 1, len(remaining)):
                         # Fix #12: use cosine_similarity() from clustering.py
+                        # Use blended centroids for consistency with global merge.
                         try:
                             emb_i = np.frombuffer(
                                 remaining[i].centroid_embedding,
@@ -1084,7 +1137,17 @@ async def phase_merge(
                                 remaining[j].centroid_embedding,
                                 dtype=np.float32,
                             )
-                            sim = cosine_similarity(emb_i, emb_j)
+                            blend_i = blend_embeddings(
+                                raw=emb_i,
+                                optimized=opt_idx.get_vector(remaining[i].id) if opt_idx else None,
+                                transformation=trans_idx.get_vector(remaining[i].id) if trans_idx else None,
+                            )
+                            blend_j = blend_embeddings(
+                                raw=emb_j,
+                                optimized=opt_idx.get_vector(remaining[j].id) if opt_idx else None,
+                                transformation=trans_idx.get_vector(remaining[j].id) if trans_idx else None,
+                            )
+                            sim = cosine_similarity(blend_i, blend_j)
                         except (ValueError, TypeError):
                             continue
                         both_active = (
@@ -1130,6 +1193,7 @@ async def phase_merge(
                                 )
                                 await engine._embedding_index.remove(small.id)
                                 await engine._transformation_index.remove(small.id)
+                                await engine._optimized_index.remove(small.id)
                                 embedding_index_mutations += 2
                                 merged_this_domain = True
                                 break  # one merge per domain per cycle
@@ -1192,6 +1256,7 @@ async def phase_retire(
                 operations_log.append({"type": "retire", "node_id": node.id})
                 await engine._embedding_index.remove(node.id)
                 await engine._transformation_index.remove(node.id)
+                await engine._optimized_index.remove(node.id)
                 embedding_index_mutations += 1
 
     return PhaseResult(

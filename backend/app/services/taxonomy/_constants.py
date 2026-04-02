@@ -17,6 +17,17 @@ SPLIT_COHERENCE_FLOOR = 0.5    # below this coherence, node is a split candidate
 SPLIT_MIN_MEMBERS = 6          # minimum members before a node can be split
 
 
+# ---------------------------------------------------------------------------
+# Multi-embedding HDBSCAN blend weights
+# ---------------------------------------------------------------------------
+# Raw dominates (topic signal), optimized adds output-quality signal,
+# transformation adds technique-direction signal.  When a signal is missing
+# (None or zero vector), its weight is redistributed proportionally.
+CLUSTERING_BLEND_W_RAW = 0.65
+CLUSTERING_BLEND_W_OPTIMIZED = 0.20
+CLUSTERING_BLEND_W_TRANSFORM = 0.15
+
+
 def _utcnow() -> datetime:
     """Naive UTC timestamp — matches SQLAlchemy DateTime() round-trip on SQLite.
 

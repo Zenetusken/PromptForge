@@ -38,6 +38,7 @@ from app.models import Optimization, PromptCluster
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.clustering import (
     batch_cluster,
+    blend_embeddings,
     compute_pairwise_coherence,
     cosine_similarity,
     l2_normalize_1d,
@@ -167,9 +168,32 @@ async def execute_cold_path(
         )
 
     # ------------------------------------------------------------------
-    # Step 5: Run HDBSCAN clustering
+    # Step 4b: Blend embeddings for multi-signal HDBSCAN
+    # Look up per-cluster mean optimized + transformation vectors from the
+    # engine's in-memory indices (populated by prior hot/warm paths).
+    # If indices are empty (first cold path), blend_embeddings degrades
+    # gracefully to raw-only — exactly the previous behavior.
     # ------------------------------------------------------------------
-    cluster_result = batch_cluster(embeddings, min_cluster_size=3)
+    blended_embeddings: list[np.ndarray] = []
+    opt_idx = getattr(engine, "_optimized_index", None)
+    trans_idx = getattr(engine, "_transformation_index", None)
+    for i, f in enumerate(valid_families):
+        opt_vec = opt_idx.get_vector(f.id) if opt_idx else None
+        trans_vec = trans_idx.get_vector(f.id) if trans_idx else None
+        blended_embeddings.append(
+            blend_embeddings(
+                raw=embeddings[i],
+                optimized=opt_vec,
+                transformation=trans_vec,
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Step 5: Run HDBSCAN clustering (on blended embeddings)
+    # Raw centroids (embeddings) are kept for storage and matching —
+    # only HDBSCAN sees the blended signal.
+    # ------------------------------------------------------------------
+    cluster_result = batch_cluster(blended_embeddings, min_cluster_size=3)
 
     # ------------------------------------------------------------------
     # Step 6: Load existing nodes for matching
@@ -202,16 +226,12 @@ async def execute_cold_path(
         if not cluster_embs:
             continue
 
-        # Compute centroid for this HDBSCAN cluster
-        centroid = (
-            cluster_result.centroids[cid]
-            if cid < len(cluster_result.centroids)
-            else None
+        # Compute RAW centroid for storage and matching.
+        # cluster_result.centroids are blended — recompute from raw embeddings
+        # so stored centroid_embedding remains in raw-topic space.
+        centroid = l2_normalize_1d(
+            np.mean(np.stack(cluster_embs, axis=0), axis=0).astype(np.float32)
         )
-        if centroid is None:
-            centroid = l2_normalize_1d(
-                np.mean(np.stack(cluster_embs, axis=0), axis=0).astype(np.float32)
-            )
 
         coherence = compute_pairwise_coherence(cluster_embs)
 

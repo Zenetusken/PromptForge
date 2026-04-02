@@ -5,6 +5,8 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Changed
+- **Multi-embedding HDBSCAN** — warm-path split, cold-path refit, and all merge paths (global + same-domain label + same-domain embedding) now operate on blended embeddings (0.65 raw + 0.20 optimized + 0.15 transformation) instead of raw-only — clusters reflect topic, output quality, and technique direction simultaneously. Hot-path assignment stays raw-only by design
+- `CompositeQuery.fuse()` refactored to delegate to shared `weighted_blend()` helper in `clustering.py` — eliminates algorithmic duplication with `blend_embeddings()`
 - Replaced per-feedback phase weight adaptation with score-correlated batch adaptation in the warm path — weights now adapt toward profiles that correlate with the highest `overall_score` values using z-score weighting (above-median optimizations only)
 - Phase weight adaptation moved from `FeedbackService.create_feedback()` (per-thumbs_up) to `phase_refresh()` (periodic warm cycle) — feedback still drives strategy affinity, warm path drives embedding fusion weights
 - Removed `AdaptationTracker.update_phase_weights()` — replaced by `compute_score_correlated_target()` pure function in `fusion.py`
@@ -27,6 +29,12 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Per-cluster learned weight profiles stored in `cluster_metadata["learned_phase_weights"]`, computed by warm-path per-cluster adaptation
 - Output coherence (`cluster_metadata["output_coherence"]`) computed during warm-path reconciliation as mean pairwise cosine of optimized_embeddings within each cluster
 - `FEW_SHOT_OUTPUT_SIMILARITY_THRESHOLD` constant (0.40) for the output-similarity retrieval path
+- `weighted_blend()` in `clustering.py` — shared core for zero-vector detection, weight redistribution, and L2-normalization used by both HDBSCAN blending and composite fusion
+- `blend_embeddings()` in `clustering.py` — weighted average of raw + optimized + transformation embeddings with graceful degradation for missing signals
+- `CLUSTERING_BLEND_W_RAW/OPTIMIZED/TRANSFORM` configurable constants in `_constants.py` for HDBSCAN blend weights
+
+### Fixed
+- `OptimizedEmbeddingIndex` entries were never removed during lifecycle operations (merge, retire, split archive, zombie cleanup) — stale vectors accumulated for dead clusters. Added `_optimized_index.remove()` at all 6 lifecycle paths, matching the existing `_transformation_index.remove()` calls
 
 ## v0.3.11-dev — 2026-04-02
 

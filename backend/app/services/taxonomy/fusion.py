@@ -271,43 +271,19 @@ class CompositeQuery:
         dominated by available information rather than pulled toward
         the origin.
 
+        Delegates to :func:`~app.services.taxonomy.clustering.weighted_blend`
+        which centralizes the zero-detection threshold, weight redistribution,
+        and L2-normalization shared with ``blend_embeddings()``.
+
         Returns a unit-norm float32 vector, or a zero vector if all
         signals are zero.
         """
-        signals = [self.topic, self.transformation, self.output, self.pattern]
-        raw_weights = [weights.w_topic, weights.w_transform, weights.w_output, weights.w_pattern]
+        from app.services.taxonomy.clustering import weighted_blend
 
-        # Detect which signals are non-zero
-        active_weights = []
-        active_signals = []
-        for sig, w in zip(signals, raw_weights):
-            norm = float(np.linalg.norm(sig))
-            if norm > 1e-9:
-                active_weights.append(w)
-                active_signals.append(sig)
-
-        if not active_signals:
-            # All signals are zero — return zero vector
-            return np.zeros_like(self.topic, dtype=np.float32)
-
-        # Re-normalize active weights to sum to 1
-        total_w = sum(active_weights)
-        if total_w < 1e-9:
-            # Degenerate weights — equal split
-            normed_weights = [1.0 / len(active_weights)] * len(active_weights)
-        else:
-            normed_weights = [w / total_w for w in active_weights]
-
-        # Weighted sum
-        fused = np.zeros_like(self.topic, dtype=np.float32)
-        for sig, w in zip(active_signals, normed_weights):
-            fused += w * sig.astype(np.float32)
-
-        # L2 normalize
-        norm = float(np.linalg.norm(fused))
-        if norm < 1e-9:
-            return np.zeros_like(self.topic, dtype=np.float32)
-        return (fused / norm).astype(np.float32)
+        return weighted_blend(
+            signals=[self.topic, self.transformation, self.output, self.pattern],
+            weights=[weights.w_topic, weights.w_transform, weights.w_output, weights.w_pattern],
+        )
 
 
 # ---------------------------------------------------------------------------
