@@ -180,11 +180,7 @@ async def auto_inject_patterns(
         if prompt_embedding is None:
             prompt_embedding = await embedding_svc.aembed_single(raw_prompt)
 
-        remaining_slots = max(0, CROSS_CLUSTER_MAX_PATTERNS - len(
-            [p for p in injected if "(cross-cluster)" in (p.cluster_label or "")]
-        ))
-
-        if remaining_slots > 0 and prompt_embedding is not None:
+        if prompt_embedding is not None:
             cc_q = await db.execute(
                 select(
                     MetaPattern,
@@ -198,11 +194,12 @@ async def auto_inject_patterns(
                     MetaPattern.embedding.isnot(None),
                 )
                 .order_by(MetaPattern.global_source_count.desc())
-                .limit(remaining_slots * 3)  # fetch extra for filtering
+                .limit(CROSS_CLUSTER_MAX_PATTERNS * 3)  # fetch extra for filtering
             )
 
+            cc_count = 0
             for mp, cluster_label, cluster_domain, cluster_avg_score in cc_q.all():
-                if len([p for p in injected if "(cross-cluster)" in (p.cluster_label or "")]) >= CROSS_CLUSTER_MAX_PATTERNS:
+                if cc_count >= CROSS_CLUSTER_MAX_PATTERNS:
                     break
                 # Skip if already injected via topic match
                 if mp.id in topic_pattern_ids:
@@ -224,10 +221,10 @@ async def auto_inject_patterns(
                             similarity=round(relevance, 2),
                             cluster_id=mp.cluster_id,
                         ))
+                        cc_count += 1
                 except (ValueError, TypeError):
                     continue
 
-            cc_count = len([p for p in injected if "(cross-cluster)" in (p.cluster_label or "")])
             if cc_count:
                 logger.info("Cross-cluster injection: added %d universal patterns. trace_id=%s", cc_count, trace_id)
     except Exception as cc_exc:
