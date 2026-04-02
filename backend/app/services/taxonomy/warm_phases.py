@@ -349,13 +349,13 @@ async def phase_split_emerge(
     operations_log: list[dict] = []
     embedding_index_mutations = 0
 
-    # Load active nodes
+    # Load active nodes for lifecycle operations.
+    # Q_before/Q_after are computed by the orchestrator (_run_speculative_phase),
+    # not here — phases focus on mutations, orchestrator handles quality gating.
     active_q = await db.execute(
         select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
     )
     active_nodes = list(active_q.scalars().all())
-
-    q_before = engine._compute_q_from_nodes(active_nodes)
 
     # --- Priority 1: Split ---
     # Pre-fetch all optimization embeddings for split candidates in a
@@ -629,12 +629,25 @@ async def phase_split_emerge(
                                 if split_clusters.labels[i] == -1
                             ]
                             if noise_ids:
-                                # Build a lookup from the pre-fetched cache
+                                # Build lookups from the pre-fetched cache
+                                # (Fix #11: batch both embeddings AND scores)
                                 noise_id_set = set(noise_ids)
                                 noise_emb_lookup: dict[str, bytes] = {}
                                 for oid, emb_bytes in _cached_opt_rows:
                                     if oid in noise_id_set:
                                         noise_emb_lookup[oid] = emb_bytes
+
+                                # Batch-fetch scores for noise optimizations
+                                noise_score_q = await db.execute(
+                                    select(
+                                        Optimization.id,
+                                        Optimization.overall_score,
+                                    ).where(Optimization.id.in_(noise_ids))
+                                )
+                                noise_score_lookup = {
+                                    row[0]: row[1]
+                                    for row in noise_score_q.all()
+                                }
 
                                 reassigned = 0
                                 for nid in noise_ids:
@@ -650,9 +663,6 @@ async def phase_split_emerge(
                                             ch.centroid_embedding,
                                             dtype=np.float32,
                                         )
-                                        # Fix #12: use cosine_similarity()
-                                        # from clustering.py instead of
-                                        # manual np.dot / np.linalg.norm.
                                         s = cosine_similarity(n_emb, c_emb)
                                         if s > best_s:
                                             best_s, best_c = s, ch
@@ -665,16 +675,9 @@ async def phase_split_emerge(
                                         best_c.member_count = (
                                             best_c.member_count or 0
                                         ) + 1
-                                        # Incorporate noise optimization's
-                                        # score into the sub-cluster's
-                                        # avg_score immediately.
-                                        n_score_q = await db.execute(
-                                            select(
-                                                Optimization.overall_score
-                                            ).where(Optimization.id == nid)
-                                        )
                                         merge_score_into_cluster(
-                                            best_c, n_score_q.scalar()
+                                            best_c,
+                                            noise_score_lookup.get(nid),
                                         )
                                         reassigned += 1
                                 logger.info(
@@ -693,8 +696,9 @@ async def phase_split_emerge(
                             # incremented).
                             ops_accepted += len(new_children)
 
-                            # Commit leaf split independently of Q_system gate.
-                            await db.commit()
+                            # Flush (not commit) — the orchestrator decides
+                            # whether to commit or rollback via the Q gate.
+                            await db.flush()
                             operations_log.append({
                                 "type": "leaf_split",
                                 "parent_id": node.id,
@@ -780,18 +784,11 @@ async def phase_split_emerge(
         ops_accepted += len(emerged)
         operations_log.extend(emerged)
 
-    # Compute Q_after for the phase result
-    after_q_result = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
-    )
-    active_after = list(after_q_result.scalars().all())
-    q_after = engine._compute_q_from_nodes(active_after)
-
     return PhaseResult(
         phase="split_emerge",
-        q_before=q_before,
-        q_after=q_after,
-        accepted=ops_accepted > 0,
+        q_before=0.0,  # Overwritten by orchestrator
+        q_after=0.0,   # Overwritten by orchestrator
+        accepted=False, # Set by orchestrator Q gate
         ops_attempted=ops_attempted,
         ops_accepted=ops_accepted,
         operations=operations_log,
@@ -824,8 +821,6 @@ async def phase_merge(
         select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
     )
     active_nodes = list(active_q.scalars().all())
-
-    q_before = engine._compute_q_from_nodes(active_nodes)
 
     # --- Global best-pair merge ---
     # KEEP the matrix-based mat_norm @ mat_norm.T -- it's an optimized batch
@@ -916,11 +911,14 @@ async def phase_merge(
             if len(siblings) < 2:
                 continue
 
-            # Signal A: identical labels
+            # Signal A: identical labels (one merge per domain per cycle)
+            label_merged = False
             label_groups: dict[str, list[PromptCluster]] = {}
             for s in siblings:
                 label_groups.setdefault(s.label, []).append(s)
             for label, group in label_groups.items():
+                if label_merged:
+                    break
                 if len(group) < 2:
                     continue
                 group.sort(
@@ -970,6 +968,8 @@ async def phase_merge(
                             )
                             await engine._embedding_index.remove(loser.id)
                             embedding_index_mutations += 2
+                            label_merged = True
+                            break  # one merge per domain per cycle
 
             # Signal B: high centroid similarity within domain
             remaining = [s for s in siblings if s.state not in ("domain", "archived")]
@@ -1048,18 +1048,11 @@ async def phase_merge(
     except Exception as merge_exc:
         logger.warning("Same-domain merge failed (non-fatal): %s", merge_exc)
 
-    # Compute Q_after
-    after_q_result = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
-    )
-    active_after = list(after_q_result.scalars().all())
-    q_after = engine._compute_q_from_nodes(active_after)
-
     return PhaseResult(
         phase="merge",
-        q_before=q_before,
-        q_after=q_after,
-        accepted=ops_accepted > 0,
+        q_before=0.0,  # Overwritten by orchestrator
+        q_after=0.0,   # Overwritten by orchestrator
+        accepted=False, # Set by orchestrator Q gate
         ops_attempted=ops_attempted,
         ops_accepted=ops_accepted,
         operations=operations_log,
@@ -1088,8 +1081,6 @@ async def phase_retire(
     )
     active_nodes = list(active_q.scalars().all())
 
-    q_before = engine._compute_q_from_nodes(active_nodes)
-
     for node in active_nodes:
         if (node.member_count or 0) == 0:
             ops_attempted += 1
@@ -1106,18 +1097,11 @@ async def phase_retire(
                 await engine._embedding_index.remove(node.id)
                 embedding_index_mutations += 1
 
-    # Compute Q_after
-    after_q_result = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
-    )
-    active_after = list(after_q_result.scalars().all())
-    q_after = engine._compute_q_from_nodes(active_after)
-
     return PhaseResult(
         phase="retire",
-        q_before=q_before,
-        q_after=q_after,
-        accepted=ops_accepted > 0,
+        q_before=0.0,  # Overwritten by orchestrator
+        q_after=0.0,   # Overwritten by orchestrator
+        accepted=False, # Set by orchestrator Q gate
         ops_attempted=ops_attempted,
         ops_accepted=ops_accepted,
         operations=operations_log,
