@@ -1289,6 +1289,7 @@ async def phase_refresh(
     # decay (rate=0.01) when there is strong quality signal.
     try:
         from app.services.taxonomy.fusion import (
+            SCORE_ADAPTATION_LOOKBACK,
             SCORE_ADAPTATION_MIN_SAMPLES,
             adapt_weights,
             compute_score_correlated_target,
@@ -1304,7 +1305,7 @@ async def phase_refresh(
                 Optimization.status == "completed",
             ).order_by(
                 Optimization.created_at.desc(),
-            ).limit(200)
+            ).limit(SCORE_ADAPTATION_LOOKBACK)
         )
         scored_rows = scored_q.all()
 

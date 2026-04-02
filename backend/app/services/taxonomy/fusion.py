@@ -32,6 +32,7 @@ DECAY_RATE = 0.01
 FUSION_CLUSTER_LOOKUP_THRESHOLD = 0.3
 FUSION_PATTERN_TOP_K = 3
 SCORE_ADAPTATION_MIN_SAMPLES = 10
+SCORE_ADAPTATION_LOOKBACK = 200
 
 # Default weight profiles: (w_topic, w_transform, w_output, w_pattern)
 _DEFAULT_PROFILES: dict[str, tuple[float, float, float, float]] = {
