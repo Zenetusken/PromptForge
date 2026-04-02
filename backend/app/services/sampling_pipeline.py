@@ -729,6 +729,21 @@ async def run_sampling_pipeline(
         except Exception as exc:
             logger.warning("Sampling auto-injection failed (non-fatal): %s", exc)
 
+    # Score-informed strategy recommendation from historical data
+    data_recommendation = None
+    try:
+        from app.services.pipeline_constants import recommend_strategy_from_history
+
+        async with async_session_factory() as _rec_db:
+            data_recommendation = await recommend_strategy_from_history(
+                raw_prompt=prompt,
+                db=_rec_db,
+                available_strategies=strategy_loader.list_strategies(),
+                trace_id=trace_id,
+            )
+    except Exception:
+        logger.debug("Sampling strategy recommendation unavailable. trace_id=%s", trace_id)
+
     # Strategy resolution chain (shared with internal pipeline)
     effective_strategy = resolve_effective_strategy(
         selected_strategy=analysis.selected_strategy,
@@ -737,6 +752,7 @@ async def run_sampling_pipeline(
         confidence=confidence,
         strategy_override=strategy_override,
         trace_id=trace_id,
+        data_recommendation=data_recommendation,
     )
 
     # ------------------------------------------------------------------
@@ -784,6 +800,24 @@ async def run_sampling_pipeline(
     if adaptation_state is not None:
         context_sources["adaptation"] = True
 
+    # Few-shot example retrieval (show, don't tell)
+    few_shot_text: str | None = None
+    try:
+        from app.services.pattern_injection import (
+            format_few_shot_examples,
+            retrieve_few_shot_examples,
+        )
+
+        async with async_session_factory() as _fs_db:
+            few_shot_examples = await retrieve_few_shot_examples(
+                raw_prompt=prompt, db=_fs_db, trace_id=trace_id,
+            )
+        few_shot_text = format_few_shot_examples(few_shot_examples)
+        if few_shot_text:
+            context_sources["few_shot_examples"] = True
+    except Exception:
+        logger.debug("Sampling few-shot retrieval failed. trace_id=%s", trace_id)
+
     optimize_msg = loader.render("optimize.md", {
         "raw_prompt": prompt,
         "analysis_summary": analysis_summary,
@@ -792,6 +826,7 @@ async def run_sampling_pipeline(
         "codebase_context": codebase_context,
         "adaptation_state": adaptation_state,
         "applied_patterns": applied_patterns_text,
+        "few_shot_examples": few_shot_text,
     })
 
     dynamic_max_tokens = compute_optimize_max_tokens(len(prompt))

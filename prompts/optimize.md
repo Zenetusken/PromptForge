@@ -21,6 +21,12 @@
 For each pattern above, evaluate whether its UNDERLYING PRINCIPLE applies to the current prompt's domain and intent. Apply the technique — not the literal text — where it genuinely improves the prompt. Skip patterns that don't logically fit the user's context. In the `changes_summary` output field, include a brief "Applied Patterns" note listing which patterns you applied and which you skipped (with reason). Do NOT append this to the optimized prompt text.
 </applied-meta-patterns>
 
+<few-shot-examples>
+{{few_shot_examples}}
+
+These are real examples of prompts similar to yours that were optimized with high scores. Study the transformation pattern — how the "before" prompt was restructured and enriched to become the "after" prompt — and apply similar techniques to the current prompt. Do NOT copy the content; adapt the transformation approach.
+</few-shot-examples>
+
 <strategy>
 {{strategy_instructions}}
 </strategy>

@@ -390,6 +390,20 @@ class PipelineOrchestrator:
                     exc, trace_id,
                 )
 
+            # Score-informed strategy recommendation from historical data
+            data_recommendation = None
+            try:
+                from app.services.pipeline_constants import recommend_strategy_from_history
+
+                data_recommendation = await recommend_strategy_from_history(
+                    raw_prompt=raw_prompt,
+                    db=db,
+                    available_strategies=self.strategy_loader.list_strategies(),
+                    trace_id=trace_id,
+                )
+            except Exception:
+                logger.debug("Strategy recommendation unavailable. trace_id=%s", trace_id)
+
             # Strategy resolution chain (shared with sampling pipeline)
             effective_strategy = resolve_effective_strategy(
                 selected_strategy=analysis.selected_strategy,
@@ -398,6 +412,7 @@ class PipelineOrchestrator:
                 confidence=confidence,
                 strategy_override=strategy_override,
                 trace_id=trace_id,
+                data_recommendation=data_recommendation,
             )
 
             # ---------------------------------------------------------------
@@ -490,6 +505,21 @@ class PipelineOrchestrator:
                 auto_injected_patterns, applied_patterns_text,
             )
 
+            # Few-shot example retrieval (show, don't tell)
+            few_shot_text: str | None = None
+            try:
+                from app.services.pattern_injection import (
+                    format_few_shot_examples,
+                    retrieve_few_shot_examples,
+                )
+
+                few_shot_examples = await retrieve_few_shot_examples(
+                    raw_prompt=raw_prompt, db=db, trace_id=trace_id,
+                )
+                few_shot_text = format_few_shot_examples(few_shot_examples)
+            except Exception:
+                logger.debug("Few-shot retrieval failed. trace_id=%s", trace_id)
+
             optimize_msg = self.prompt_loader.render("optimize.md", {
                 "raw_prompt": raw_prompt,
                 "analysis_summary": analysis_summary,
@@ -498,6 +528,7 @@ class PipelineOrchestrator:
                 "codebase_context": codebase_context,
                 "adaptation_state": adaptation_state,
                 "applied_patterns": applied_patterns_text,
+                "few_shot_examples": few_shot_text,
             })
 
             dynamic_max_tokens = compute_optimize_max_tokens(len(raw_prompt))

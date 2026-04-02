@@ -46,6 +46,29 @@ class InjectedPattern:
     cluster_id: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Few-shot example retrieval
+# ---------------------------------------------------------------------------
+
+FEW_SHOT_MIN_SCORE = 7.5
+FEW_SHOT_SIMILARITY_THRESHOLD = 0.50
+FEW_SHOT_MAX_EXAMPLES = 2
+FEW_SHOT_MAX_CHARS_PER_EXAMPLE = 2000
+FEW_SHOT_CANDIDATE_POOL = 20
+
+
+@dataclass
+class FewShotExample:
+    """A high-scoring past optimization used as a concrete example."""
+
+    raw_prompt: str
+    optimized_prompt: str
+    strategy_used: str
+    overall_score: float
+    similarity: float
+    task_type: str
+
+
 def format_injected_patterns(
     auto_injected: list[InjectedPattern],
     existing_text: str | None = None,
@@ -301,3 +324,138 @@ async def auto_inject_patterns(
         )
 
     return injected, cluster_ids
+
+
+# ---------------------------------------------------------------------------
+# Few-shot example retrieval
+# ---------------------------------------------------------------------------
+
+
+def _truncate_example(raw: str, optimized: str, max_chars: int) -> tuple[str, str]:
+    """Truncate raw+optimized to fit within max_chars combined budget.
+
+    Allocates 40% to raw, 60% to optimized (the optimized version is
+    the more instructive part for the optimizer).
+    """
+    raw_budget = int(max_chars * 0.4)
+    opt_budget = max_chars - raw_budget
+
+    if len(raw) > raw_budget:
+        raw = raw[: raw_budget - 15] + "\n...[truncated]"
+    if len(optimized) > opt_budget:
+        optimized = optimized[: opt_budget - 15] + "\n...[truncated]"
+    return raw, optimized
+
+
+async def retrieve_few_shot_examples(
+    raw_prompt: str,
+    db: AsyncSession,
+    trace_id: str,
+    *,
+    prompt_embedding=None,
+    min_score: float = FEW_SHOT_MIN_SCORE,
+    max_examples: int = FEW_SHOT_MAX_EXAMPLES,
+) -> list[FewShotExample]:
+    """Retrieve high-scoring past optimizations similar to the current prompt.
+
+    Embeds the raw prompt, queries the most recent completed optimizations
+    with high scores, computes cosine similarity in-process, and returns
+    the top-k most similar examples.
+
+    Args:
+        raw_prompt: The user's raw prompt text.
+        db: Active async DB session.
+        trace_id: Pipeline trace ID for log correlation.
+        prompt_embedding: Pre-computed embedding to avoid double-embedding.
+        min_score: Minimum overall_score threshold (default 7.5).
+        max_examples: Maximum number of examples to return (default 2).
+
+    Returns:
+        List of FewShotExample sorted by similarity descending.
+        Empty list on cold start or no qualifying matches.
+    """
+    from app.models import Optimization
+    from app.services.embedding_service import EmbeddingService
+
+    try:
+        if prompt_embedding is None:
+            embedding_svc = EmbeddingService()
+            prompt_embedding = await embedding_svc.aembed_single(raw_prompt)
+
+        result = await db.execute(
+            select(
+                Optimization.raw_prompt,
+                Optimization.optimized_prompt,
+                Optimization.strategy_used,
+                Optimization.overall_score,
+                Optimization.task_type,
+                Optimization.embedding,
+            ).where(
+                Optimization.embedding.isnot(None),
+                Optimization.overall_score >= min_score,
+                Optimization.status == "completed",
+                Optimization.optimized_prompt.isnot(None),
+            ).order_by(
+                Optimization.created_at.desc(),
+            ).limit(FEW_SHOT_CANDIDATE_POOL)
+        )
+
+        candidates: list[tuple[float, FewShotExample]] = []
+        for row in result.all():
+            try:
+                emb = np.frombuffer(row.embedding, dtype=np.float32)
+                sim = float(
+                    np.dot(prompt_embedding, emb)
+                    / (np.linalg.norm(prompt_embedding) * np.linalg.norm(emb) + 1e-9)
+                )
+                if sim >= FEW_SHOT_SIMILARITY_THRESHOLD:
+                    raw_trunc, opt_trunc = _truncate_example(
+                        row.raw_prompt or "",
+                        row.optimized_prompt or "",
+                        FEW_SHOT_MAX_CHARS_PER_EXAMPLE,
+                    )
+                    candidates.append((sim, FewShotExample(
+                        raw_prompt=raw_trunc,
+                        optimized_prompt=opt_trunc,
+                        strategy_used=row.strategy_used or "auto",
+                        overall_score=float(row.overall_score),
+                        similarity=round(sim, 2),
+                        task_type=row.task_type or "general",
+                    )))
+            except (ValueError, TypeError):
+                continue
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        examples = [ex for _, ex in candidates[:max_examples]]
+
+        if examples:
+            logger.info(
+                "Few-shot retrieval: %d examples (max_sim=%.2f). trace_id=%s",
+                len(examples), examples[0].similarity, trace_id,
+            )
+
+        return examples
+    except Exception as exc:
+        logger.warning("Few-shot retrieval failed (non-fatal): %s trace_id=%s", exc, trace_id)
+        return []
+
+
+def format_few_shot_examples(examples: list[FewShotExample]) -> str | None:
+    """Format FewShotExample list into the few_shot_examples template variable.
+
+    Returns None if no examples available (cold start graceful degradation).
+    """
+    if not examples:
+        return None
+
+    parts = []
+    for i, ex in enumerate(examples, 1):
+        parts.append(
+            f'<example-{i} score="{ex.overall_score:.1f}" '
+            f'strategy="{ex.strategy_used}" similarity="{ex.similarity:.2f}">\n'
+            f"<before>\n{ex.raw_prompt}\n</before>\n"
+            f"<after>\n{ex.optimized_prompt}\n</after>\n"
+            f"</example-{i}>"
+        )
+
+    return "\n\n".join(parts)

@@ -11,6 +11,10 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ### Added
 - `compute_score_correlated_target()` — computes score-weighted optimal weight profile from recent optimization history with z-score contribution weighting and configurable maturity gate (`SCORE_ADAPTATION_MIN_SAMPLES=10`)
+- **Few-shot example retrieval** — optimizer prompt now includes 1-2 concrete before/after examples from high-scoring past optimizations similar to the current prompt (cosine >= 0.50, score >= 7.5), teaching by example rather than abstract patterns alone
+- **Score-informed strategy recommendation** — `recommend_strategy_from_history()` identifies which strategy produced the highest scores for similar prompts, overrides the "auto" fallback when analyzer confidence is below the gate and data has strong signal
+- `StrategyRecommendation` dataclass with dominance margin and confidence boost for the strategy resolution chain
+- `{{few_shot_examples}}` template variable in `optimize.md` with auto-stripped XML tags on cold start
 
 ## v0.3.11-dev — 2026-04-02
 
