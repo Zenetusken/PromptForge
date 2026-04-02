@@ -237,6 +237,18 @@ async def lifespan(app: FastAPI):
             except Exception as rt_exc:
                 logger.warning("Routing tier backfill failed (non-fatal): %s", rt_exc)
 
+            # Startup: ensure global_source_count column exists on meta_patterns
+            try:
+                async with async_session_factory() as _gsc_db:
+                    from sqlalchemy import text as _text_gsc
+                    await _gsc_db.execute(
+                        _text_gsc("ALTER TABLE meta_patterns ADD COLUMN global_source_count INTEGER NOT NULL DEFAULT 0")
+                    )
+                    await _gsc_db.commit()
+                    logger.info("Added global_source_count column to meta_patterns table")
+            except Exception:
+                pass  # Column already exists
+
             # Startup: backfill orphan optimizations with null cluster_id
             try:
                 from app.services.prompt_lifecycle import PromptLifecycleService

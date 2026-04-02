@@ -5,6 +5,17 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Added
+- Cross-cluster pattern injection: universal meta-patterns (high `global_source_count`) are now injected regardless of topic cluster match
+- `MetaPattern.global_source_count` field tracks how many distinct clusters contain semantically similar patterns (computed during warm path refresh)
+- Cross-cluster patterns ranked by composite relevance: `cosine_similarity × log2(1 + global_source_count) × cluster_avg_score_factor`
+- `PatternMatch.cross_cluster_patterns` field returns universal patterns alongside topic-matched patterns
+- New constants: `CROSS_CLUSTER_MIN_SOURCE_COUNT`, `CROSS_CLUSTER_MAX_PATTERNS`, `CROSS_CLUSTER_RELEVANCE_FLOOR`, `CROSS_CLUSTER_SIMILARITY_THRESHOLD`
+- `CROSS_CLUSTER_RELEVANCE_FLOOR` (0.35) gates low-relevance cross-cluster candidates; deduplication prevents double-injection of patterns already found via topic match
+
+### Changed
+- `auto_inject_patterns()` restructured to eliminate early returns that blocked cross-cluster injection — topic-based search now produces an empty list instead of short-circuiting
+
+### Added
 - `cold_path.py` module with `execute_cold_path()` and `ColdPathResult` — extracted cold path from engine.py with quality gate via `is_cold_path_non_regressive()` to reject regressive HDBSCAN refits instead of committing unconditionally
 - `warm_path.py` orchestrator module with `execute_warm_path()` — sequential 7-phase warm path with per-phase Q gates, embedding index snapshot/restore on speculative rollback, per-phase deadlock breaker counters, and `WarmPathResult` aggregated dataclass
 - `warm_phases.py` module extracting 7 warm-path phase functions from engine.py monolith — reconcile, split_emerge, merge, retire, refresh, discover, audit — each independently callable with dependency-injected engine and fresh AsyncSession
