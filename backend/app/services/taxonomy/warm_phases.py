@@ -641,9 +641,10 @@ async def phase_split_emerge(
                             ]
                             if noise_ids:
                                 # Build a lookup from the pre-fetched cache
+                                noise_id_set = set(noise_ids)
                                 noise_emb_lookup: dict[str, bytes] = {}
                                 for oid, emb_bytes in _cached_opt_rows:
-                                    if oid in set(noise_ids):
+                                    if oid in noise_id_set:
                                         noise_emb_lookup[oid] = emb_bytes
 
                                 reassigned = 0
