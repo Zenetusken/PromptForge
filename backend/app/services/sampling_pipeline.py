@@ -729,6 +729,15 @@ async def run_sampling_pipeline(
         except Exception as exc:
             logger.warning("Sampling auto-injection failed (non-fatal): %s", exc)
 
+    # Pre-compute prompt embedding once for strategy recommendation + few-shot
+    _prompt_embedding = None
+    try:
+        from app.services.embedding_service import EmbeddingService as _EmbSvc
+
+        _prompt_embedding = await _EmbSvc().aembed_single(prompt)
+    except Exception:
+        pass  # consumers will embed independently as fallback
+
     # Score-informed strategy recommendation from historical data
     data_recommendation = None
     try:
@@ -740,6 +749,7 @@ async def run_sampling_pipeline(
                 db=_rec_db,
                 available_strategies=strategy_loader.list_strategies(),
                 trace_id=trace_id,
+                prompt_embedding=_prompt_embedding,
             )
     except Exception:
         logger.debug("Sampling strategy recommendation unavailable. trace_id=%s", trace_id)
@@ -811,6 +821,7 @@ async def run_sampling_pipeline(
         async with async_session_factory() as _fs_db:
             few_shot_examples = await retrieve_few_shot_examples(
                 raw_prompt=prompt, db=_fs_db, trace_id=trace_id,
+                prompt_embedding=_prompt_embedding,
             )
         few_shot_text = format_few_shot_examples(few_shot_examples)
         if few_shot_text:

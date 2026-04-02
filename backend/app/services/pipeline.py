@@ -390,6 +390,16 @@ class PipelineOrchestrator:
                     exc, trace_id,
                 )
 
+            # Pre-compute prompt embedding once for all downstream consumers
+            # (strategy recommendation, pattern injection, few-shot retrieval)
+            _prompt_embedding = None
+            try:
+                from app.services.embedding_service import EmbeddingService as _EmbSvc
+
+                _prompt_embedding = await _EmbSvc().aembed_single(raw_prompt)
+            except Exception:
+                pass  # consumers will embed independently as fallback
+
             # Score-informed strategy recommendation from historical data
             data_recommendation = None
             try:
@@ -400,6 +410,7 @@ class PipelineOrchestrator:
                     db=db,
                     available_strategies=self.strategy_loader.list_strategies(),
                     trace_id=trace_id,
+                    prompt_embedding=_prompt_embedding,
                 )
             except Exception:
                 logger.debug("Strategy recommendation unavailable. trace_id=%s", trace_id)
@@ -515,8 +526,13 @@ class PipelineOrchestrator:
 
                 few_shot_examples = await retrieve_few_shot_examples(
                     raw_prompt=raw_prompt, db=db, trace_id=trace_id,
+                    prompt_embedding=_prompt_embedding,
                 )
                 few_shot_text = format_few_shot_examples(few_shot_examples)
+                if few_shot_text:
+                    if context_sources is None:
+                        context_sources = {}
+                    context_sources["few_shot_examples"] = True
             except Exception:
                 logger.debug("Few-shot retrieval failed. trace_id=%s", trace_id)
 

@@ -23,8 +23,6 @@ For each pattern above, evaluate whether its UNDERLYING PRINCIPLE applies to the
 
 <few-shot-examples>
 {{few_shot_examples}}
-
-These are real examples of prompts similar to yours that were optimized with high scores. Study the transformation pattern — how the "before" prompt was restructured and enriched to become the "after" prompt — and apply similar techniques to the current prompt. Do NOT copy the content; adapt the transformation approach.
 </few-shot-examples>
 
 <strategy>

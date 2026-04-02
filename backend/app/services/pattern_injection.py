@@ -458,4 +458,10 @@ def format_few_shot_examples(examples: list[FewShotExample]) -> str | None:
             f"</example-{i}>"
         )
 
-    return "\n\n".join(parts)
+    return (
+        "\n\n".join(parts)
+        + "\n\nStudy the transformation pattern — how the \"before\" prompt was "
+        "restructured and enriched to become the \"after\" prompt — and apply "
+        "similar techniques to the current prompt. Do NOT copy the content; "
+        "adapt the transformation approach."
+    )
