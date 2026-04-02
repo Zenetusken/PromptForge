@@ -78,10 +78,12 @@ class TestAutoInjectPatterns:
 
         fake_embedding = _rand_emb()
 
-        # Fusion signals (output + pattern) each call db.execute once
+        # Fusion signal: pattern query (1 DB call — output signal now uses
+        # OptimizedEmbeddingIndex instead of a DB query)
         mock_fusion_result = MagicMock()
         mock_fusion_result.scalar_one_or_none.return_value = None
         mock_fusion_result.all.return_value = []
+        mock_fusion_result.scalars.return_value.all.return_value = []
 
         # Topic-match execute call: PromptCluster metadata query
         cluster_row = MagicMock()
@@ -96,7 +98,7 @@ class TestAutoInjectPatterns:
         mock_pattern_result.scalars.return_value.all.return_value = [mp]
 
         db_session.execute = AsyncMock(
-            side_effect=[mock_fusion_result, mock_fusion_result, mock_cluster_result, mock_pattern_result]
+            side_effect=[mock_fusion_result, mock_cluster_result, mock_pattern_result]
         )
 
         with patch(
@@ -157,10 +159,11 @@ class TestAutoInjectPatterns:
         cluster_id = "cluster-xyz"
         engine = _make_taxonomy_engine(size=1, matches=[(cluster_id, 0.80)])
 
-        # Fusion signals (output + pattern) each call db.execute once
+        # Fusion signal: pattern query only (output signal uses index, not DB)
         mock_fusion_result = MagicMock()
         mock_fusion_result.scalar_one_or_none.return_value = None
         mock_fusion_result.all.return_value = []
+        mock_fusion_result.scalars.return_value.all.return_value = []
 
         # Topic-match execute call: PromptCluster metadata query
         cluster_row = MagicMock()
@@ -175,7 +178,7 @@ class TestAutoInjectPatterns:
         mock_pattern_result.scalars.return_value.all.return_value = []
 
         db_session.execute = AsyncMock(
-            side_effect=[mock_fusion_result, mock_fusion_result, mock_cluster_result, mock_pattern_result]
+            side_effect=[mock_fusion_result, mock_cluster_result, mock_pattern_result]
         )
 
         with patch(

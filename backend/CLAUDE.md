@@ -132,7 +132,9 @@ Process singleton (`get_engine()`/`set_engine()`). Three paths: **hot** (per-opt
 
 **Domain discovery**: `_propose_domains()` from coherent "general" sub-populations (≥3 members, ≥0.3 coherence, ≥60% consistent `domain_raw`). Five guardrails: color pinning, retire exemption, merge gate, coherence floor, split→candidates. Ceiling at 30.
 
-**Multi-embedding**: hot path embeds `optimized_prompt` + computes transformation vector (`L2_norm(embed(optimized) - embed(raw))`). Score-weighted centroids: `max(0.1, score / 10.0)`. `TransformationIndex` for technique-space search. Composite fusion (`fusion.py`): blends topic + transformation + output + pattern signals with per-phase adaptive weights via `resolve_fused_embedding()`. Cross-cluster injection: patterns with `global_source_count >= 3` injected across topic boundaries.
+**Multi-embedding**: hot path embeds `optimized_prompt` + computes transformation vector (`L2_norm(embed(optimized) - embed(raw))`). Score-weighted centroids: `max(0.1, score / 10.0)`. `TransformationIndex` for technique-space search. `OptimizedEmbeddingIndex` for output-space search. Composite fusion (`fusion.py`): blends topic + transformation + output + pattern signals with per-phase adaptive weights via `resolve_fused_embedding()`. Cross-cluster injection: patterns with `global_source_count >= 3` injected across topic boundaries. Output coherence (pairwise cosine of optimized_embeddings) informs split/merge lifecycle decisions.
+
+**Adaptive weight learning**: `resolve_contextual_weights()` derives per-optimization weight profiles from task type bias + cluster learned weights, breaking the bootstrap fixed point. `compute_score_correlated_target()` discovers which profiles correlate with high scores per cluster. Per-cluster learned weights stored in `cluster_metadata["learned_phase_weights"]`.
 
 **Modules**: `engine.py`, `clustering.py`, `lifecycle.py`, `quality.py`, `projection.py`, `coloring.py`, `labeling.py`, `snapshot.py`, `sparkline.py`, `family_ops.py`, `matching.py`, `embedding_index.py`, `transformation_index.py`, `fusion.py`, `warm_phases.py`, `warm_path.py`, `cold_path.py`.
 

@@ -555,3 +555,233 @@ class TestScoreCorrelatedTarget:
         # analysis target should blend both full and partial contributions
         # (full has w_topic=0.60, partial has w_topic=0.30)
         assert result["analysis"].w_topic < 0.55  # pulled down by partial
+
+
+# ---------------------------------------------------------------------------
+# Contextual weight resolution
+# ---------------------------------------------------------------------------
+
+
+class TestResolveContextualWeights:
+    """resolve_contextual_weights: task-type bias + cluster learning."""
+
+    def test_different_task_types_produce_different_profiles(self):
+        """Core fixed-point breaker: coding != writing != analysis."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        coding = resolve_contextual_weights("coding")
+        writing = resolve_contextual_weights("writing")
+        analysis = resolve_contextual_weights("analysis")
+
+        # Each pair must differ in at least one phase
+        assert coding != writing
+        assert coding != analysis
+        assert writing != analysis
+
+    def test_general_matches_defaults(self):
+        """general task type should produce profiles very close to defaults."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        general = resolve_contextual_weights("general")
+        for phase in ("analysis", "optimization", "pattern_injection", "scoring"):
+            default = PhaseWeights.for_phase(phase)
+            resolved = PhaseWeights.from_dict(general[phase])
+            assert abs(resolved.w_topic - default.w_topic) < 0.01
+            assert abs(resolved.w_transform - default.w_transform) < 0.01
+            assert abs(resolved.w_output - default.w_output) < 0.01
+            assert abs(resolved.w_pattern - default.w_pattern) < 0.01
+
+    def test_unknown_task_type_uses_general(self):
+        """Unknown task types should fall back to general (zero bias)."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        unknown = resolve_contextual_weights("nonexistent_type")
+        general = resolve_contextual_weights("general")
+        assert unknown == general
+
+    def test_all_phases_present(self):
+        """Output must contain all 4 known phases."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        result = resolve_contextual_weights("coding")
+        assert set(result.keys()) == {"analysis", "optimization", "pattern_injection", "scoring"}
+
+    def test_all_weights_sum_to_one(self):
+        """Every phase's weights must sum to 1.0 after enforce_floor."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        for task_type in ("coding", "writing", "analysis", "creative", "data", "system", "general"):
+            result = resolve_contextual_weights(task_type)
+            for phase, wd in result.items():
+                pw = PhaseWeights.from_dict(wd)
+                assert abs(pw.total - 1.0) < 1e-6, f"{task_type}/{phase}: total={pw.total}"
+
+    def test_all_weights_respect_floor(self):
+        """No weight should fall below WEIGHT_FLOOR."""
+        from app.services.taxonomy.fusion import WEIGHT_FLOOR, resolve_contextual_weights
+
+        for task_type in ("coding", "writing", "analysis", "creative", "data", "system"):
+            result = resolve_contextual_weights(task_type)
+            for phase, wd in result.items():
+                pw = PhaseWeights.from_dict(wd)
+                for w in (pw.w_topic, pw.w_transform, pw.w_output, pw.w_pattern):
+                    assert w >= WEIGHT_FLOOR - 1e-9, f"{task_type}/{phase}: w={w}"
+
+    def test_coding_emphasizes_transformation(self):
+        """Coding prompts should have higher transformation weight than default."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        coding = resolve_contextual_weights("coding")
+        default_opt = PhaseWeights.for_phase("optimization")
+        coding_opt = PhaseWeights.from_dict(coding["optimization"])
+        assert coding_opt.w_transform > default_opt.w_transform
+
+    def test_writing_emphasizes_output(self):
+        """Writing prompts should have higher output weight than default."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        writing = resolve_contextual_weights("writing")
+        default_opt = PhaseWeights.for_phase("optimization")
+        writing_opt = PhaseWeights.from_dict(writing["optimization"])
+        assert writing_opt.w_output > default_opt.w_output
+
+    def test_cluster_learned_weights_blend(self):
+        """Cluster learned weights should pull contextual result toward them."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        # Extreme learned weights — very high topic
+        learned = {
+            "optimization": {"w_topic": 0.70, "w_transform": 0.10, "w_output": 0.10, "w_pattern": 0.10},
+        }
+        without = resolve_contextual_weights("coding", cluster_learned_weights=None)
+        with_learned = resolve_contextual_weights("coding", cluster_learned_weights=learned)
+
+        without_opt = PhaseWeights.from_dict(without["optimization"])
+        with_opt = PhaseWeights.from_dict(with_learned["optimization"])
+
+        # w_topic should be pulled toward 0.70
+        assert with_opt.w_topic > without_opt.w_topic
+
+    def test_cluster_learned_weights_partial_phases(self):
+        """Cluster learned weights for some phases should not affect other phases."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        learned = {
+            "analysis": {"w_topic": 0.30, "w_transform": 0.30, "w_output": 0.20, "w_pattern": 0.20},
+        }
+        without = resolve_contextual_weights("coding")
+        with_learned = resolve_contextual_weights("coding", cluster_learned_weights=learned)
+
+        # optimization phase should be unaffected
+        assert without["optimization"] == with_learned["optimization"]
+        # analysis phase should be different
+        assert without["analysis"] != with_learned["analysis"]
+
+
+class TestFixedPointBreak:
+    """Prove that contextual weights break the bootstrap fixed point.
+
+    The old system: all optimizations snapshot identical defaults ->
+    compute_score_correlated_target(identical vectors) -> same vector ->
+    adapt_weights(V, V) = V -> stuck forever.
+
+    The new system: different task types snapshot different weights ->
+    compute_score_correlated_target(varied vectors) -> discovers which
+    profiles correlate with high scores -> genuine adaptation.
+    """
+
+    def test_mixed_profiles_produce_nontrivial_target(self):
+        """Mixed coding+writing profiles should produce a target different from either."""
+        from app.services.taxonomy.fusion import (
+            compute_score_correlated_target,
+            resolve_contextual_weights,
+        )
+
+        coding_pw = resolve_contextual_weights("coding")
+        writing_pw = resolve_contextual_weights("writing")
+
+        # High-scoring coding optimizations + mediocre writing
+        profiles = (
+            [(9.0, coding_pw)] * 6 +
+            [(4.0, writing_pw)] * 6
+        )
+        target = compute_score_correlated_target(profiles)
+        assert target is not None
+
+        # Target should be pulled toward coding profile (higher scores)
+        # but NOT identical to either input
+        coding_opt = PhaseWeights.from_dict(coding_pw["optimization"])
+        writing_opt = PhaseWeights.from_dict(writing_pw["optimization"])
+        target_opt = target["optimization"]
+
+        # Target's w_transform should be closer to coding's (high scorer)
+        # than to writing's (low scorer)
+        assert abs(target_opt.w_transform - coding_opt.w_transform) < abs(target_opt.w_transform - writing_opt.w_transform)
+
+    def test_adapt_weights_moves_when_target_differs(self):
+        """adapt_weights(A, B) should produce C != A when A != B."""
+        from app.services.taxonomy.fusion import resolve_contextual_weights
+
+        coding_pw = resolve_contextual_weights("coding")
+        writing_pw = resolve_contextual_weights("writing")
+
+        current = PhaseWeights.from_dict(coding_pw["optimization"])
+        target = PhaseWeights.from_dict(writing_pw["optimization"])
+        adapted = adapt_weights(current, target)
+
+        # Should have moved toward writing
+        assert adapted.to_dict() != current.to_dict()
+        # Should be between current and target
+        assert current.w_output < adapted.w_output < target.w_output or \
+               current.w_output > adapted.w_output > target.w_output
+
+    def test_identical_profiles_still_trapped(self):
+        """Sanity: identical profiles SHOULD produce identity (that's the old bug)."""
+        from app.services.taxonomy.fusion import (
+            compute_score_correlated_target,
+            resolve_contextual_weights,
+        )
+
+        general_pw = resolve_contextual_weights("general")
+        profiles = [(7.0, general_pw)] * 15
+        target = compute_score_correlated_target(profiles)
+        assert target is not None
+
+        # With identical inputs, target should match input (fixed point)
+        for phase in ("analysis", "optimization"):
+            target_pw = target[phase]
+            input_pw = PhaseWeights.from_dict(general_pw[phase])
+            assert abs(target_pw.w_topic - input_pw.w_topic) < 0.02
+            assert abs(target_pw.w_transform - input_pw.w_transform) < 0.02
+
+
+class TestDecayTowardTarget:
+    """decay_toward_target: drift toward provided target or defaults."""
+
+    def test_decay_toward_custom_target(self):
+        """With explicit target, should drift toward that target."""
+        from app.services.taxonomy.fusion import decay_toward_target
+
+        current = PhaseWeights(0.10, 0.50, 0.20, 0.20)
+        target = PhaseWeights(0.40, 0.20, 0.20, 0.20)
+        result = decay_toward_target(current, "optimization", target=target, rate=0.5)
+        # Should move w_topic toward 0.40
+        assert result.w_topic > current.w_topic
+        # Should move w_transform toward 0.20
+        assert result.w_transform < current.w_transform
+
+    def test_decay_without_target_uses_defaults(self):
+        """Without explicit target, should drift toward phase defaults."""
+        from app.services.taxonomy.fusion import decay_toward_target
+
+        current = PhaseWeights(0.10, 0.50, 0.20, 0.20)
+        defaults = PhaseWeights.for_phase("optimization")
+        result = decay_toward_target(current, "optimization")
+        # Should move toward defaults
+        assert abs(result.w_topic - defaults.w_topic) < abs(current.w_topic - defaults.w_topic)
+
+    def test_backward_compat_alias(self):
+        """decay_toward_defaults should be an alias for decay_toward_target."""
+        from app.services.taxonomy.fusion import decay_toward_defaults, decay_toward_target
+
+        assert decay_toward_defaults is decay_toward_target

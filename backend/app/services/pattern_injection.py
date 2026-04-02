@@ -52,6 +52,7 @@ class InjectedPattern:
 
 FEW_SHOT_MIN_SCORE = 7.5
 FEW_SHOT_SIMILARITY_THRESHOLD = 0.50
+FEW_SHOT_OUTPUT_SIMILARITY_THRESHOLD = 0.40  # lower: cross-space comparison is noisier
 FEW_SHOT_MAX_EXAMPLES = 2
 FEW_SHOT_MAX_CHARS_PER_EXAMPLE = 2000
 FEW_SHOT_CANDIDATE_POOL = 20
@@ -356,11 +357,19 @@ async def retrieve_few_shot_examples(
     min_score: float = FEW_SHOT_MIN_SCORE,
     max_examples: int = FEW_SHOT_MAX_EXAMPLES,
 ) -> list[FewShotExample]:
-    """Retrieve high-scoring past optimizations similar to the current prompt.
+    """Retrieve high-scoring past optimizations using dual-retrieval.
 
-    Embeds the raw prompt, queries the most recent completed optimizations
-    with high scores, computes cosine similarity in-process, and returns
-    the top-k most similar examples.
+    Two retrieval paths are merged for richer example selection:
+
+    1. **Input-similar** (existing): cosine similarity between raw embeddings.
+       Finds past optimizations of similar prompts.
+    2. **Output-similar** (new): cosine similarity between the current prompt
+       embedding and past optimized_embeddings. Finds past optimizations
+       whose *output* matches what we're trying to produce — a stronger
+       signal for the optimizer.
+
+    Both pools are merged, deduplicated, and re-ranked by
+    ``max(input_sim, output_sim) * overall_score``.
 
     Args:
         raw_prompt: The user's raw prompt text.
@@ -371,7 +380,7 @@ async def retrieve_few_shot_examples(
         max_examples: Maximum number of examples to return (default 2).
 
     Returns:
-        List of FewShotExample sorted by similarity descending.
+        List of FewShotExample sorted by combined relevance descending.
         Empty list on cold start or no qualifying matches.
     """
     from app.models import Optimization
@@ -382,14 +391,21 @@ async def retrieve_few_shot_examples(
             embedding_svc = EmbeddingService()
             prompt_embedding = await embedding_svc.aembed_single(raw_prompt)
 
+        prompt_norm = float(np.linalg.norm(prompt_embedding))
+        if prompt_norm < 1e-9:
+            return []
+
+        # Single query fetches both embedding types — avoids double round-trip
         result = await db.execute(
             select(
+                Optimization.id,
                 Optimization.raw_prompt,
                 Optimization.optimized_prompt,
                 Optimization.strategy_used,
                 Optimization.overall_score,
                 Optimization.task_type,
                 Optimization.embedding,
+                Optimization.optimized_embedding,
             ).where(
                 Optimization.embedding.isnot(None),
                 Optimization.overall_score >= min_score,
@@ -400,33 +416,68 @@ async def retrieve_few_shot_examples(
             ).limit(FEW_SHOT_CANDIDATE_POOL)
         )
 
-        candidates: list[tuple[float, FewShotExample]] = []
+        # Collect candidates from both retrieval paths, keyed by opt ID
+        # to deduplicate.  Store (input_sim, output_sim, FewShotExample).
+        seen: dict[str, tuple[float, float, FewShotExample]] = {}
+
         for row in result.all():
             try:
-                emb = np.frombuffer(row.embedding, dtype=np.float32)
-                sim = float(
-                    np.dot(prompt_embedding, emb)
-                    / (np.linalg.norm(prompt_embedding) * np.linalg.norm(emb) + 1e-9)
+                opt_id = row.id
+
+                # Input similarity (raw embedding)
+                input_sim = 0.0
+                if row.embedding is not None:
+                    emb = np.frombuffer(row.embedding, dtype=np.float32)
+                    emb_norm = float(np.linalg.norm(emb))
+                    if emb_norm > 1e-9:
+                        input_sim = float(np.dot(prompt_embedding, emb) / (prompt_norm * emb_norm))
+
+                # Output similarity (optimized embedding)
+                output_sim = 0.0
+                if row.optimized_embedding is not None:
+                    opt_emb = np.frombuffer(row.optimized_embedding, dtype=np.float32)
+                    opt_norm = float(np.linalg.norm(opt_emb))
+                    if opt_norm > 1e-9:
+                        output_sim = float(np.dot(prompt_embedding, opt_emb) / (prompt_norm * opt_norm))
+
+                # Qualify via either threshold
+                input_pass = input_sim >= FEW_SHOT_SIMILARITY_THRESHOLD
+                output_pass = output_sim >= FEW_SHOT_OUTPUT_SIMILARITY_THRESHOLD
+                if not (input_pass or output_pass):
+                    continue
+
+                raw_trunc, opt_trunc = _truncate_example(
+                    row.raw_prompt or "",
+                    row.optimized_prompt or "",
+                    FEW_SHOT_MAX_CHARS_PER_EXAMPLE,
                 )
-                if sim >= FEW_SHOT_SIMILARITY_THRESHOLD:
-                    raw_trunc, opt_trunc = _truncate_example(
-                        row.raw_prompt or "",
-                        row.optimized_prompt or "",
-                        FEW_SHOT_MAX_CHARS_PER_EXAMPLE,
-                    )
-                    candidates.append((sim, FewShotExample(
-                        raw_prompt=raw_trunc,
-                        optimized_prompt=opt_trunc,
-                        strategy_used=row.strategy_used or "auto",
-                        overall_score=float(row.overall_score),
-                        similarity=round(sim, 2),
-                        task_type=row.task_type or "general",
-                    )))
+
+                best_sim = max(input_sim, output_sim)
+                example = FewShotExample(
+                    raw_prompt=raw_trunc,
+                    optimized_prompt=opt_trunc,
+                    strategy_used=row.strategy_used or "auto",
+                    overall_score=float(row.overall_score),
+                    similarity=round(best_sim, 2),
+                    task_type=row.task_type or "general",
+                )
+
+                # Dedup: keep whichever has higher combined score
+                if opt_id in seen:
+                    prev_input, prev_output, _ = seen[opt_id]
+                    if max(input_sim, output_sim) <= max(prev_input, prev_output):
+                        continue
+                seen[opt_id] = (input_sim, output_sim, example)
             except (ValueError, TypeError):
                 continue
 
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        examples = [ex for _, ex in candidates[:max_examples]]
+        # Rank by max(input_sim, output_sim) * overall_score
+        ranked = sorted(
+            seen.values(),
+            key=lambda t: max(t[0], t[1]) * t[2].overall_score,
+            reverse=True,
+        )
+        examples = [ex for _, _, ex in ranked[:max_examples]]
 
         if examples:
             logger.info(

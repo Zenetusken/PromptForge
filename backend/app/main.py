@@ -381,6 +381,50 @@ async def lifespan(app: FastAPI):
             except Exception as ti_exc:
                 logger.warning("TransformationIndex build failed (non-fatal): %s", ti_exc)
 
+            # Startup: rebuild OptimizedEmbeddingIndex from stored optimized_embeddings
+            try:
+                async with async_session_factory() as _oi_db:
+                    from sqlalchemy import func as _oi_func
+                    oi_q = await _oi_db.execute(
+                        _bf_select(
+                            _bf_Opt.cluster_id,
+                            _oi_func.count().label("ct"),
+                        ).where(
+                            _bf_Opt.cluster_id.isnot(None),
+                            _bf_Opt.optimized_embedding.isnot(None),
+                        ).group_by(_bf_Opt.cluster_id)
+                    )
+                    cluster_ids_with_opt_embs = [row[0] for row in oi_q.all() if row[1] >= 1]
+
+                    optimized_vectors: dict[str, np.ndarray] = {}
+                    for cid in cluster_ids_with_opt_embs:
+                        emb_q = await _oi_db.execute(
+                            _bf_select(_bf_Opt.optimized_embedding).where(
+                                _bf_Opt.cluster_id == cid,
+                                _bf_Opt.optimized_embedding.isnot(None),
+                            )
+                        )
+                        embs = []
+                        for row in emb_q.scalars().all():
+                            try:
+                                embs.append(np.frombuffer(row, dtype=np.float32))
+                            except (ValueError, TypeError):
+                                continue
+                        if embs:
+                            mean_vec = np.mean(np.stack(embs), axis=0).astype(np.float32)
+                            norm = np.linalg.norm(mean_vec)
+                            if norm > 1e-9:
+                                optimized_vectors[cid] = mean_vec / norm
+
+                    if optimized_vectors:
+                        await engine._optimized_index.rebuild(optimized_vectors)
+                        logger.info(
+                            "OptimizedEmbeddingIndex loaded with %d vectors",
+                            len(optimized_vectors),
+                        )
+            except Exception as oi_exc:
+                logger.warning("OptimizedEmbeddingIndex build failed (non-fatal): %s", oi_exc)
+
             # Startup: backfill orphan optimizations with null cluster_id
             try:
                 from app.services.prompt_lifecycle import PromptLifecycleService

@@ -8,6 +8,12 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Replaced per-feedback phase weight adaptation with score-correlated batch adaptation in the warm path — weights now adapt toward profiles that correlate with the highest `overall_score` values using z-score weighting (above-median optimizations only)
 - Phase weight adaptation moved from `FeedbackService.create_feedback()` (per-thumbs_up) to `phase_refresh()` (periodic warm cycle) — feedback still drives strategy affinity, warm path drives embedding fusion weights
 - Removed `AdaptationTracker.update_phase_weights()` — replaced by `compute_score_correlated_target()` pure function in `fusion.py`
+- **Broke the weight bootstrap fixed point** — `phase_weights_json` snapshots now use context-derived weights (task-type bias + cluster learned profiles) instead of global preferences, giving `compute_score_correlated_target()` genuine variance to learn from
+- `decay_toward_defaults()` renamed to `decay_toward_target()` with optional explicit target parameter; backward-compatible alias preserved
+- Composite fusion Signal 3 (output) upgraded from single-best DB query to `OptimizedEmbeddingIndex` lookup (cluster mean optimized embedding) — more representative and eliminates a DB round-trip
+- Few-shot retrieval upgraded to dual-retrieval: input-similar (raw embedding) + output-similar (optimized embedding), merged and re-ranked by `max(input_sim, output_sim) * overall_score`
+- Split heuristic now considers output coherence — clusters with high raw coherence but low output coherence (<0.25) trigger splits (similar inputs → divergent outputs)
+- Merge heuristic uses output coherence boost — clusters where both have output coherence >0.5 get a 0.03 threshold reduction
 
 ### Added
 - `compute_score_correlated_target()` — computes score-weighted optimal weight profile from recent optimization history with z-score contribution weighting and configurable maturity gate (`SCORE_ADAPTATION_MIN_SAMPLES=10`)
@@ -15,6 +21,12 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - **Score-informed strategy recommendation** — `recommend_strategy_from_history()` identifies which strategy produced the highest scores for similar prompts, overrides the "auto" fallback when analyzer confidence is below the gate and data has strong signal
 - `StrategyRecommendation` dataclass with dominance margin and confidence boost for the strategy resolution chain
 - `{{few_shot_examples}}` template variable in `optimize.md` with auto-stripped XML tags on cold start
+- `OptimizedEmbeddingIndex` — in-memory cosine search index for per-cluster mean optimized-prompt embeddings, with hot/warm/cold path lifecycle matching `TransformationIndex`
+- `resolve_contextual_weights()` — derives per-phase weight profiles from task type + cluster learned weights, creating organic diversity for the adaptation loop
+- `_TASK_TYPE_WEIGHT_BIAS` — 7 task-type directional offsets (coding, writing, analysis, creative, data, system, general) seeding meaningful weight variation
+- Per-cluster learned weight profiles stored in `cluster_metadata["learned_phase_weights"]`, computed by warm-path per-cluster adaptation
+- Output coherence (`cluster_metadata["output_coherence"]`) computed during warm-path reconciliation as mean pairwise cosine of optimized_embeddings within each cluster
+- `FEW_SHOT_OUTPUT_SIMILARITY_THRESHOLD` constant (0.40) for the output-similarity retrieval path
 
 ## v0.3.11-dev — 2026-04-02
 

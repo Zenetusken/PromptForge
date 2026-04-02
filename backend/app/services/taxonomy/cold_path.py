@@ -659,6 +659,44 @@ async def execute_cold_path(
             "TransformationIndex rebuild failed (non-fatal): %s", ti_exc
         )
 
+    # Rebuild OptimizedEmbeddingIndex from cluster mean optimized embeddings
+    try:
+        oi_q = await db.execute(
+            select(
+                Optimization.cluster_id,
+                Optimization.optimized_embedding,
+            ).where(
+                Optimization.cluster_id.isnot(None),
+                Optimization.optimized_embedding.isnot(None),
+            )
+        )
+        cluster_opt_embs: dict[str, list[np.ndarray]] = {}
+        for cid, o_bytes in oi_q.all():
+            try:
+                cluster_opt_embs.setdefault(cid, []).append(
+                    np.frombuffer(o_bytes, dtype=np.float32).copy()
+                )
+            except (ValueError, TypeError):
+                continue
+
+        active_ids_oi = {n.id for n in active_after}
+        optimized_vectors: dict[str, np.ndarray] = {}
+        for cid, vecs in cluster_opt_embs.items():
+            if cid in active_ids_oi and vecs:
+                mean_vec = np.mean(np.stack(vecs), axis=0)
+                norm = np.linalg.norm(mean_vec)
+                if norm > 1e-9:
+                    optimized_vectors[cid] = (mean_vec / norm).astype(np.float32)
+        await engine._optimized_index.rebuild(optimized_vectors)
+        logger.info(
+            "OptimizedEmbeddingIndex rebuilt with %d vectors after cold path",
+            len(optimized_vectors),
+        )
+    except Exception as oi_exc:
+        logger.warning(
+            "OptimizedEmbeddingIndex rebuild failed (non-fatal): %s", oi_exc
+        )
+
     # Create snapshot — commits all pending node updates AND the
     # snapshot in a single transaction
     engine._invalidate_stats_cache()

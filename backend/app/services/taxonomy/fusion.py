@@ -42,6 +42,25 @@ _DEFAULT_PROFILES: dict[str, tuple[float, float, float, float]] = {
     "scoring": (0.15, 0.20, 0.45, 0.20),
 }
 
+# Task-type weight biases — small directional offsets from phase defaults.
+# These create organic diversity in phase_weights_json snapshots so that
+# compute_score_correlated_target() has genuine variance to learn from.
+# Each bias reflects a meaningful hypothesis about which signals matter
+# for that task type. The learning loop validates or overrides these.
+_TASK_TYPE_WEIGHT_BIAS: dict[str, dict[str, float]] = {
+    "coding":   {"w_topic": -0.10, "w_transform": +0.15, "w_output": -0.05, "w_pattern": 0.00},
+    "writing":  {"w_topic": -0.05, "w_transform": -0.05, "w_output": +0.15, "w_pattern": -0.05},
+    "analysis": {"w_topic": +0.10, "w_transform": -0.05, "w_output": -0.10, "w_pattern": +0.05},
+    "creative": {"w_topic": -0.10, "w_transform": +0.05, "w_output": +0.10, "w_pattern": -0.05},
+    "data":     {"w_topic": +0.05, "w_transform": +0.10, "w_output": -0.10, "w_pattern": -0.05},
+    "system":   {"w_topic": +0.05, "w_transform": -0.05, "w_output": -0.05, "w_pattern": +0.05},
+    "general":  {"w_topic": 0.00,  "w_transform": 0.00,  "w_output": 0.00,  "w_pattern": 0.00},
+}
+
+# Blend ratio when cluster learned weights are available.
+# 0.3 = 70% contextual prior + 30% cluster learned profile.
+CLUSTER_LEARNED_BLEND_ALPHA = 0.3
+
 
 # ---------------------------------------------------------------------------
 # PhaseWeights
@@ -160,6 +179,70 @@ class PhaseWeights:
 
 
 # ---------------------------------------------------------------------------
+# Contextual weight resolution
+# ---------------------------------------------------------------------------
+
+_KNOWN_PHASES = ("analysis", "optimization", "pattern_injection", "scoring")
+
+
+def resolve_contextual_weights(
+    task_type: str,
+    cluster_learned_weights: dict[str, dict[str, float]] | None = None,
+) -> dict[str, dict[str, float]]:
+    """Compute a full per-phase weight profile from task-type context and cluster learning.
+
+    This is the primary mechanism that breaks the weight bootstrap fixed point.
+    Instead of every optimization snapshotting identical global defaults, each
+    optimization gets a weight profile derived from its natural context:
+
+    1. Start from the phase default profile (``PhaseWeights.for_phase()``)
+    2. Apply the task-type bias vector (``_TASK_TYPE_WEIGHT_BIAS``)
+    3. If the cluster has learned weights, blend toward them (alpha=0.3)
+
+    Different task types produce genuinely different profiles, giving
+    ``compute_score_correlated_target()`` the variance it needs to learn.
+
+    Args:
+        task_type: Optimization task type (coding, writing, analysis, etc.).
+        cluster_learned_weights: Per-phase learned profiles from the cluster's
+            ``cluster_metadata["learned_phase_weights"]``, or None if no
+            cluster learning has occurred yet.
+
+    Returns:
+        Dict mapping phase name to weight dict suitable for
+        ``Optimization.phase_weights_json``.
+    """
+    bias = _TASK_TYPE_WEIGHT_BIAS.get(task_type, _TASK_TYPE_WEIGHT_BIAS["general"])
+    result: dict[str, dict[str, float]] = {}
+
+    for phase in _KNOWN_PHASES:
+        base = PhaseWeights.for_phase(phase)
+
+        # Apply task-type bias
+        biased = PhaseWeights(
+            w_topic=base.w_topic + bias.get("w_topic", 0.0),
+            w_transform=base.w_transform + bias.get("w_transform", 0.0),
+            w_output=base.w_output + bias.get("w_output", 0.0),
+            w_pattern=base.w_pattern + bias.get("w_pattern", 0.0),
+        ).enforce_floor()
+
+        # Blend toward cluster learned weights if available
+        if cluster_learned_weights and phase in cluster_learned_weights:
+            learned = PhaseWeights.from_dict(cluster_learned_weights[phase])
+            alpha = CLUSTER_LEARNED_BLEND_ALPHA
+            biased = PhaseWeights(
+                w_topic=biased.w_topic + alpha * (learned.w_topic - biased.w_topic),
+                w_transform=biased.w_transform + alpha * (learned.w_transform - biased.w_transform),
+                w_output=biased.w_output + alpha * (learned.w_output - biased.w_output),
+                w_pattern=biased.w_pattern + alpha * (learned.w_pattern - biased.w_pattern),
+            ).enforce_floor()
+
+        result[phase] = biased.to_dict()
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # CompositeQuery
 # ---------------------------------------------------------------------------
 
@@ -260,33 +343,40 @@ def adapt_weights(
     return new.enforce_floor()
 
 
-def decay_toward_defaults(
+def decay_toward_target(
     current: PhaseWeights,
     phase: str,
+    target: PhaseWeights | None = None,
     rate: float = DECAY_RATE,
 ) -> PhaseWeights:
-    """Drift weights back toward their phase defaults.
+    """Drift weights toward a target profile (or phase defaults if no target).
 
-    Each weight is moved ``rate`` fraction of the way toward the
-    default value for ``phase``. Prevents runaway drift when
-    adaptation is not regularly reinforced by successful outcomes.
+    Each weight is moved ``rate`` fraction of the way toward the target.
+    When ``target`` is provided (e.g. cluster learned weights), the system
+    decays toward what works rather than toward an arbitrary starting point.
 
     Args:
         current: The current weight profile.
-        phase: Pipeline phase name (determines default target).
+        phase: Pipeline phase name (determines fallback target).
+        target: Explicit decay target. If None, falls back to
+            ``PhaseWeights.for_phase(phase)`` (the hardcoded default).
         rate: Decay rate (0..1). Default ``DECAY_RATE``.
 
     Returns:
         New PhaseWeights after decay.
     """
-    defaults = PhaseWeights.for_phase(phase)
+    anchor = target if target is not None else PhaseWeights.for_phase(phase)
     new = PhaseWeights(
-        w_topic=current.w_topic + rate * (defaults.w_topic - current.w_topic),
-        w_transform=current.w_transform + rate * (defaults.w_transform - current.w_transform),
-        w_output=current.w_output + rate * (defaults.w_output - current.w_output),
-        w_pattern=current.w_pattern + rate * (defaults.w_pattern - current.w_pattern),
+        w_topic=current.w_topic + rate * (anchor.w_topic - current.w_topic),
+        w_transform=current.w_transform + rate * (anchor.w_transform - current.w_transform),
+        w_output=current.w_output + rate * (anchor.w_output - current.w_output),
+        w_pattern=current.w_pattern + rate * (anchor.w_pattern - current.w_pattern),
     )
     return new.enforce_floor()
+
+
+# Backward-compatible alias for existing call sites
+decay_toward_defaults = decay_toward_target
 
 
 # ---------------------------------------------------------------------------
@@ -469,27 +559,16 @@ async def build_composite_query(
     except Exception:
         logger.debug("build_composite_query: transformation signal unavailable")
 
-    # Signal 3: Output (best-scoring optimized_prompt embedding from matched cluster)
+    # Signal 3: Output (cluster mean optimized embedding from OptimizedEmbeddingIndex)
+    # Uses the in-memory index (mean of all member optimized_embeddings) rather than
+    # a DB query for the single best-scoring member.  More representative and faster.
     try:
         if matched_cluster_id is not None:
-            from app.models import Optimization
-
-            result = await db.execute(
-                select(Optimization.optimized_embedding)
-                .where(
-                    Optimization.cluster_id == matched_cluster_id,
-                    Optimization.optimized_embedding.isnot(None),
-                    Optimization.status == "completed",
-                )
-                .order_by(
-                    Optimization.overall_score.desc().nullslast(),
-                    Optimization.created_at.desc(),
-                )
-                .limit(1)
-            )
-            row = result.scalar_one_or_none()
-            if row is not None:
-                output = np.frombuffer(row, dtype=np.float32).copy()
+            opt_idx = getattr(taxonomy_engine, "_optimized_index", None)
+            if opt_idx:
+                vec = opt_idx.get_vector(matched_cluster_id)
+                if vec is not None:
+                    output = vec.astype(np.float32)
     except Exception:
         logger.debug("build_composite_query: output signal unavailable")
 

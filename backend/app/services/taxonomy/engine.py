@@ -93,6 +93,8 @@ class TaxonomyEngine:
         self._embedding_index = EmbeddingIndex(dim=384)
         from app.services.taxonomy.transformation_index import TransformationIndex
         self._transformation_index = TransformationIndex(dim=384)
+        from app.services.taxonomy.optimized_index import OptimizedEmbeddingIndex
+        self._optimized_index = OptimizedEmbeddingIndex(dim=384)
         # Lock gates concurrent hot-path writes to shared centroid state.
         self._lock: asyncio.Lock = asyncio.Lock()
         # Separate lock for warm/cold path deduplication (Spec Section 2.6).
@@ -192,19 +194,6 @@ class TaxonomyEngine:
                     transform = transform / t_norm
                 opt.transformation_embedding = transform.astype(np.float32).tobytes()
 
-            # Snapshot current phase_weights for feedback adaptation loop.
-            # Stored on the Optimization record so AdaptationTracker can credit
-            # the exact weight profile that produced this result.
-            if opt.phase_weights_json is None:
-                try:
-                    from app.services.preferences import PreferencesService
-
-                    pw_snap = PreferencesService().load().get("phase_weights")
-                    if pw_snap:
-                        opt.phase_weights_json = pw_snap
-                except Exception as pw_exc:
-                    logger.debug("Phase weights snapshot failed for opt %s: %s", opt.id, pw_exc)
-
             # 2. Find or create PromptCluster
             # Use the RESOLVED domain (opt.domain) for cluster assignment — this
             # maps to a known domain node label. The raw analyzer output (domain_raw)
@@ -242,6 +231,22 @@ class TaxonomyEngine:
                     )
             opt.cluster_id = cluster.id
 
+            # Snapshot contextual phase weights — derived from task type + cluster
+            # learning, NOT global preferences.  Different task types produce
+            # different profiles, breaking the bootstrap fixed point so that
+            # compute_score_correlated_target() has real variance to learn from.
+            if opt.phase_weights_json is None:
+                try:
+                    from app.services.taxonomy.fusion import resolve_contextual_weights
+
+                    cluster_meta = read_meta(cluster.cluster_metadata)
+                    opt.phase_weights_json = resolve_contextual_weights(
+                        task_type=opt.task_type or "general",
+                        cluster_learned_weights=cluster_meta.get("learned_phase_weights"),
+                    )
+                except Exception as pw_exc:
+                    logger.debug("Phase weights snapshot failed for opt %s: %s", opt.id, pw_exc)
+
             # Update TransformationIndex with running mean of cluster transformations
             if opt.transformation_embedding:
                 try:
@@ -262,6 +267,27 @@ class TaxonomyEngine:
                 except Exception:
                     logger.debug(
                         "TransformationIndex upsert failed for cluster %s — ignoring",
+                        cluster.id,
+                    )
+
+            # Update OptimizedEmbeddingIndex with running mean of cluster output embeddings
+            if opt.optimized_embedding:
+                try:
+                    optimized_vec = np.frombuffer(
+                        opt.optimized_embedding, dtype=np.float32
+                    )
+                    existing_opt = self._optimized_index.get_vector(cluster.id)
+                    if existing_opt is not None:
+                        member_ct = max(1, (cluster.member_count or 1) - 1)
+                        blended = (existing_opt * member_ct + optimized_vec) / (member_ct + 1)
+                        await self._optimized_index.upsert(cluster.id, blended)
+                    else:
+                        await self._optimized_index.upsert(
+                            cluster.id, optimized_vec
+                        )
+                except Exception:
+                    logger.debug(
+                        "OptimizedEmbeddingIndex upsert failed for cluster %s — ignoring",
                         cluster.id,
                     )
 

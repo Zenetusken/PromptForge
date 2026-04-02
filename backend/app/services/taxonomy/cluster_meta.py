@@ -40,6 +40,10 @@ class ClusterMeta(TypedDict, total=False):
     pattern_member_count: int            # member_count at last meta-pattern extraction
     label_refreshed_at: str              # ISO8601 timestamp of last label refresh
 
+    # --- Adaptive learning ---
+    learned_phase_weights: dict[str, dict[str, float]] | None  # per-phase learned weight profiles (set by warm-path)
+    output_coherence: float | None       # mean pairwise cosine of optimized_embeddings within cluster
+
     # --- Positional metadata ---
     position_source: str                 # "interpolated" when UMAP position was interpolated
 
@@ -59,6 +63,8 @@ _DEFAULTS: dict[str, Any] = {
     "coherence_member_count": 0,
     "pattern_member_count": 0,
     "label_refreshed_at": "",
+    "learned_phase_weights": None,
+    "output_coherence": None,
     "position_source": "",
 }
 

@@ -148,6 +148,7 @@ async def phase_reconcile(
                 Optimization.cluster_id,
                 Optimization.embedding,
                 Optimization.overall_score,
+                Optimization.optimized_embedding,
             ).where(
                 Optimization.cluster_id.isnot(None),
                 Optimization.embedding.isnot(None),
@@ -155,7 +156,8 @@ async def phase_reconcile(
         )
         emb_by_cluster: dict[str, list[np.ndarray]] = {}
         score_by_cluster: dict[str, list[float]] = {}
-        for cid, emb_bytes, opt_score in all_emb_q.all():
+        opt_emb_by_cluster: dict[str, list[np.ndarray]] = {}
+        for cid, emb_bytes, opt_score, opt_emb_bytes in all_emb_q.all():
             if emb_bytes is not None:
                 try:
                     emb_by_cluster.setdefault(cid, []).append(
@@ -163,6 +165,13 @@ async def phase_reconcile(
                     )
                     score_by_cluster.setdefault(cid, []).append(
                         max(0.1, (opt_score or 5.0) / 10.0)
+                    )
+                except (ValueError, TypeError):
+                    pass
+            if opt_emb_bytes is not None:
+                try:
+                    opt_emb_by_cluster.setdefault(cid, []).append(
+                        np.frombuffer(opt_emb_bytes, dtype=np.float32).copy()
                     )
                 except (ValueError, TypeError):
                     pass
@@ -196,6 +205,20 @@ async def phase_reconcile(
                 node.coherence = 1.0
             elif expected == 0:
                 node.coherence = 0.0
+
+            # Output coherence: pairwise cosine of optimized_embeddings.
+            # A cluster with high raw coherence but low output coherence
+            # produces divergent outputs from similar inputs — a split signal.
+            opt_embs = opt_emb_by_cluster.get(node.id, [])
+            if len(opt_embs) >= 2:
+                output_coh = compute_pairwise_coherence(opt_embs)
+                node.cluster_metadata = write_meta(
+                    node.cluster_metadata, output_coherence=round(output_coh, 4),
+                )
+            elif len(opt_embs) == 1:
+                node.cluster_metadata = write_meta(
+                    node.cluster_metadata, output_coherence=1.0,
+                )
 
         # Reconcile avg_score and scored_count from actual member data.
         score_q = await db.execute(
@@ -449,6 +472,21 @@ async def phase_split_emerge(
         dynamic_floor = SPLIT_COHERENCE_FLOOR + max(
             0, math.log2(max(member_count, 6) / 6)
         ) * 0.05
+
+        # Output coherence split signal: even if raw coherence is acceptable,
+        # low output coherence (similar inputs → divergent outputs) suggests
+        # the cluster conflates different optimization goals and should split.
+        output_coh = read_meta(node.cluster_metadata).get("output_coherence")
+        if output_coh is not None and coherence >= dynamic_floor:
+            if output_coh >= 0.25:
+                continue  # both coherences are healthy — skip
+            # Low output coherence: lower the split threshold to trigger a split
+            dynamic_floor = max(dynamic_floor - 0.10, 0.20)
+            logger.info(
+                "Output coherence split signal for '%s': raw=%.3f, output=%.3f — lowered threshold to %.3f",
+                node.label, coherence, output_coh, dynamic_floor,
+            )
+
         if coherence >= dynamic_floor:
             continue
 
@@ -891,6 +929,25 @@ async def phase_merge(
                     merge_node_b.member_count or 1,
                 ),
             )
+
+            # Output coherence merge boost: if both clusters have high
+            # output coherence (>0.5), they produce similar outputs and
+            # are good merge candidates even if raw centroids are further
+            # apart. Reduce threshold by 0.03 to ease the merge gate.
+            a_meta = read_meta(merge_node_a.cluster_metadata)
+            b_meta = read_meta(merge_node_b.cluster_metadata)
+            a_out_coh = a_meta.get("output_coherence")
+            b_out_coh = b_meta.get("output_coherence")
+            if (
+                a_out_coh is not None and b_out_coh is not None
+                and a_out_coh > 0.5 and b_out_coh > 0.5
+            ):
+                merge_threshold = max(merge_threshold - 0.03, 0.45)
+                logger.debug(
+                    "Output coherence merge boost for '%s'+'%s': out_coh=%.2f/%.2f, threshold lowered to %.3f",
+                    merge_node_a.label, merge_node_b.label, a_out_coh, b_out_coh, merge_threshold,
+                )
+
             if best_score >= merge_threshold:
                 ops_attempted += 1
                 from app.services.taxonomy.lifecycle import attempt_merge
@@ -1282,11 +1339,15 @@ async def phase_refresh(
     except Exception as decay_exc:
         logger.debug("Phase weight decay failed (non-fatal): %s", decay_exc)
 
-    # Score-correlated phase weight adaptation (Option 3)
+    # Score-correlated phase weight adaptation
     # Queries recent scored optimizations, computes score-weighted optimal
     # profile from above-median results, adapts current weights toward it.
     # Runs AFTER decay so that adaptation (alpha=0.05) dominates over
     # decay (rate=0.01) when there is strong quality signal.
+    #
+    # Two levels: (1) global adaptation updates preferences as a cross-task
+    # regularizer, (2) per-cluster adaptation stores learned_phase_weights on
+    # each cluster so future members inherit a proven profile.
     try:
         from app.services.taxonomy.fusion import (
             SCORE_ADAPTATION_LOOKBACK,
@@ -1299,6 +1360,7 @@ async def phase_refresh(
             select(
                 Optimization.overall_score,
                 Optimization.phase_weights_json,
+                Optimization.cluster_id,
             ).where(
                 Optimization.overall_score.isnot(None),
                 Optimization.phase_weights_json.isnot(None),
@@ -1309,6 +1371,7 @@ async def phase_refresh(
         )
         scored_rows = scored_q.all()
 
+        # --- Global adaptation (existing) ---
         if len(scored_rows) >= SCORE_ADAPTATION_MIN_SAMPLES:
             scored_profiles = [
                 (float(row[0]), row[1])
@@ -1337,6 +1400,46 @@ async def phase_refresh(
                         "Score-correlated adaptation applied from %d scored optimizations",
                         len(scored_rows),
                     )
+
+        # --- Per-cluster adaptation (new) ---
+        # Group scored profiles by cluster, compute per-cluster target,
+        # and store as learned_phase_weights in cluster_metadata.
+        # This closes the learning loop: cluster members snapshot contextual
+        # weights -> warm path discovers which profiles correlate with high
+        # scores for THAT cluster -> cluster stores learned weights -> new
+        # members inherit the cluster's proven profile.
+        cluster_groups: dict[str, list[tuple[float, dict]]] = {}
+        for row in scored_rows:
+            cid = row[2]
+            if cid:
+                cluster_groups.setdefault(cid, []).append((float(row[0]), row[1]))
+
+        clusters_adapted = 0
+        for cid, members in cluster_groups.items():
+            if len(members) < SCORE_ADAPTATION_MIN_SAMPLES:
+                continue
+            cluster_target = compute_score_correlated_target(members)
+            if not cluster_target:
+                continue
+            cluster_q = await db.execute(
+                select(PromptCluster).where(PromptCluster.id == cid)
+            )
+            cluster_node = cluster_q.scalar_one_or_none()
+            if cluster_node:
+                cluster_node.cluster_metadata = write_meta(
+                    cluster_node.cluster_metadata,
+                    learned_phase_weights={
+                        phase: pw.to_dict() for phase, pw in cluster_target.items()
+                    },
+                )
+                clusters_adapted += 1
+
+        if clusters_adapted:
+            await db.flush()
+            logger.info(
+                "Per-cluster weight adaptation applied to %d clusters",
+                clusters_adapted,
+            )
     except Exception as sc_exc:
         logger.debug("Score-correlated adaptation failed (non-fatal): %s", sc_exc)
 
