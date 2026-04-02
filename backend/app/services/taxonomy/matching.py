@@ -100,9 +100,12 @@ async def match_prompt(
     # Phase 2: Composite fusion for similarity search
     search_emb = query_emb
     try:
+        from app.services.taxonomy import get_engine
         from app.services.taxonomy.fusion import PhaseWeights, build_composite_query
+
+        engine = get_engine()
         composite = await build_composite_query(
-            prompt_text, embedding_service, None, db,
+            prompt_text, embedding_service, engine, db,
             topic_embedding=query_emb,
         )
         weights = PhaseWeights.for_phase("pattern_injection")

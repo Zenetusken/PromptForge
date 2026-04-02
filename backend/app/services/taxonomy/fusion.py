@@ -368,27 +368,32 @@ async def build_composite_query(
     except Exception:
         logger.debug("build_composite_query: output signal unavailable")
 
-    # Signal 4: Pattern (embed top meta-patterns from matched cluster)
+    # Signal 4: Pattern (average pre-computed embeddings of top global patterns)
+    # Uses global_source_count (cross-cluster presence) not source_count (per-cluster).
     pattern = np.zeros(dim, dtype=np.float32)
     try:
-        emb_idx = getattr(taxonomy_engine, "embedding_index", None)
-        if emb_idx and emb_idx.size > 0:
-            matches = emb_idx.search(topic, k=1, threshold=0.3)
-            if matches:
-                cluster_id = matches[0][0]
-                from app.models import MetaPattern
+        from app.models import MetaPattern
 
-                result = await db.execute(
-                    select(MetaPattern.pattern_text)
-                    .where(MetaPattern.cluster_id == cluster_id)
-                    .order_by(MetaPattern.source_count.desc())
-                    .limit(3)
-                )
-                pattern_texts = [row[0] for row in result.all()]
-                if pattern_texts:
-                    combined = " ".join(pattern_texts)
-                    pattern_emb = await embedding_service.aembed_single(combined)
-                    pattern = pattern_emb.astype(np.float32)
+        result = await db.execute(
+            select(MetaPattern.embedding)
+            .where(
+                MetaPattern.global_source_count >= 3,
+                MetaPattern.embedding.isnot(None),
+            )
+            .order_by(MetaPattern.global_source_count.desc())
+            .limit(3)
+        )
+        embeddings = []
+        for row in result.scalars().all():
+            try:
+                embeddings.append(np.frombuffer(row, dtype=np.float32).copy())
+            except (ValueError, TypeError):
+                continue
+        if embeddings:
+            pattern = np.mean(np.stack(embeddings), axis=0).astype(np.float32)
+            p_norm = np.linalg.norm(pattern)
+            if p_norm > 1e-9:
+                pattern = pattern / p_norm
     except Exception:
         logger.debug("build_composite_query: pattern signal unavailable")
 

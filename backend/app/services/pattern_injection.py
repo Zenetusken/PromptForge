@@ -129,7 +129,7 @@ async def auto_inject_patterns(
         try:
             from app.services.taxonomy.fusion import PhaseWeights, build_composite_query
             composite = await build_composite_query(
-                raw_prompt, None, taxonomy_engine, db,
+                raw_prompt, embedding_svc, taxonomy_engine, db,
                 topic_embedding=prompt_embedding,  # avoid double embed (E2-2)
             )
             weights = PhaseWeights.for_phase("pattern_injection")
