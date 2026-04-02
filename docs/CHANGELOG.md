@@ -4,7 +4,21 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Fixed
+- Domain promotion (`POST /api/domains/{id}/promote`) now sets `promoted_at` timestamp and clears `parent_id` (domain nodes are roots)
+- Retire lifecycle operation no longer double-counts `member_count` on the target sibling — child cluster re-parenting now correctly avoids inflating the Optimization-based member_count
+- `usage_count` increment is now atomic via SQL `UPDATE ... SET usage_count = usage_count + 1`, preventing lost writes under concurrent optimization completions (including sampling pipeline fallback path)
+- Fixed mutable default aliasing in `read_meta()` — `signal_keywords` list default is now shallow-copied to prevent cross-call contamination
+- Fixed tooltip timer race condition — `setTimeout` callback now guards against firing after `destroy()`, eliminating the `ActivityBar.test.ts` error
+
 ### Added
+- `ClusterMeta` TypedDict and `read_meta()`/`write_meta()` helpers for type-safe `cluster_metadata` access — replaces scattered `node.cluster_metadata or {}` pattern with coerced defaults
+- `get_injection_stats()` function and `injection_stats` field on health endpoint — surfaces pattern injection provenance success/failure counts for operational monitoring
+- Frontend `HealthResponse` interface updated with `injection_stats` field for contract parity
+
+### Changed
+- Removed dead `tree_state` parameter from `create_snapshot()` — column was serialized but never deserialized for recovery
+- Consolidated 9 scattered inline `cluster_meta` imports in `engine.py` to single top-level import
 - Pattern injection provenance: `auto_inject_patterns()` now persists `OptimizationPattern` records with `relationship="injected"` recording which clusters influenced each optimization
 - `GET /api/clusters/injection-edges` endpoint returning directed weighted edges aggregated by (source cluster, target cluster) with archived-cluster filtering
 - Injection edge visualization in 3D topology: warm gold/amber directed edges with weight-proportional opacity (0.15-0.50), controlled by "Injection" toggle in TopologyControls
