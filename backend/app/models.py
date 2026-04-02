@@ -160,6 +160,7 @@ class MetaPattern(Base):
     pattern_text = Column(Text, nullable=False)
     embedding = Column(LargeBinary, nullable=True)
     source_count = Column(Integer, default=1, nullable=False)
+    global_source_count = Column(Integer, default=0, nullable=False, server_default="0")
     created_at = Column(DateTime, default=_utcnow, nullable=False)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
 

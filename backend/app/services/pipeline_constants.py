@@ -282,3 +282,9 @@ def compute_optimize_max_tokens(prompt_len: int) -> int:
 # while cutting the prior 16384 default that wasted model compute.
 ANALYZE_MAX_TOKENS = 4096
 SCORE_MAX_TOKENS = 4096
+
+# Cross-cluster pattern injection (Phase 0 — unified embedding architecture)
+CROSS_CLUSTER_MIN_SOURCE_COUNT = 3     # min global_source_count to qualify
+CROSS_CLUSTER_MAX_PATTERNS = 5         # max cross-cluster patterns per injection
+CROSS_CLUSTER_RELEVANCE_FLOOR = 0.35   # min composite relevance score
+CROSS_CLUSTER_SIMILARITY_THRESHOLD = 0.82  # cosine threshold for pattern dedup
