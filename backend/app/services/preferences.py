@@ -54,6 +54,12 @@ DEFAULTS: dict[str, Any] = {
     "defaults": {
         "strategy": "auto",
     },
+    "phase_weights": {
+        "analysis": {"w_topic": 0.60, "w_transform": 0.15, "w_output": 0.10, "w_pattern": 0.15},
+        "optimization": {"w_topic": 0.20, "w_transform": 0.35, "w_output": 0.25, "w_pattern": 0.20},
+        "pattern_injection": {"w_topic": 0.25, "w_transform": 0.25, "w_output": 0.20, "w_pattern": 0.30},
+        "scoring": {"w_topic": 0.15, "w_transform": 0.20, "w_output": 0.45, "w_pattern": 0.20},
+    },
 }
 
 _PIPELINE_TOGGLES = (
