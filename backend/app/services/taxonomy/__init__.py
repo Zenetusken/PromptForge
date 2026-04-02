@@ -22,6 +22,7 @@ from typing import Any
 from app.services.taxonomy.cluster_meta import ClusterMeta, read_meta, write_meta
 from app.services.taxonomy.cold_path import ColdPathResult
 from app.services.taxonomy.embedding_index import EmbeddingIndex, IndexSnapshot
+from app.services.taxonomy.transformation_index import TransformationIndex
 from app.services.taxonomy.engine import TaxonomyEngine
 from app.services.taxonomy.matching import (
     PatternMatch,
@@ -41,6 +42,7 @@ __all__ = [
     "SparklineData",
     "TaxonomyEngine",
     "TaxonomyMapping",
+    "TransformationIndex",
     "WarmPathResult",
     "compute_sparkline_data",
     "get_engine",
