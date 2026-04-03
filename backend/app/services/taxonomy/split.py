@@ -148,7 +148,10 @@ async def split_cluster(
                 context={
                     "source": "split_cluster",
                     "error_type": "insufficient_clusters",
-                    "error_message": f"HDBSCAN produced {split_result.n_clusters} clusters from {len(child_blended)} members",
+                    "error_message": (
+                        f"HDBSCAN produced {split_result.n_clusters} clusters"
+                        f" from {len(child_blended)} members"
+                    ),
                     "recovery": "skipped",
                     "stack_trace": "",
                 },
@@ -294,7 +297,9 @@ async def split_cluster(
         # All comparisons use _utcnow() which is also naive UTC.
         # Do NOT compare with timezone-aware datetimes.
         from app.services.taxonomy._constants import SPLIT_MERGE_PROTECTION_MINUTES
-        merge_until = (datetime.now(timezone.utc) + timedelta(minutes=SPLIT_MERGE_PROTECTION_MINUTES)).replace(tzinfo=None)
+        merge_until = (
+            datetime.now(timezone.utc) + timedelta(minutes=SPLIT_MERGE_PROTECTION_MINUTES)
+        ).replace(tzinfo=None)
         child_node.cluster_metadata = write_meta(
             child_node.cluster_metadata,
             position_source="interpolated",
