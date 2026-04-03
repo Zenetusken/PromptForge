@@ -369,6 +369,7 @@ def test_cold_path_saves_all_three_caches():
 def test_cold_path_has_mega_cluster_split_pass():
     """Verify cold_path.py implements mega-cluster split pass."""
     import inspect
+
     from app.services.taxonomy import cold_path
 
     source = inspect.getsource(cold_path)

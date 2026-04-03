@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from sqlalchemy import func, select
-from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -47,13 +46,11 @@ from app.services.taxonomy.clustering import (
     blend_embeddings,
     compute_pairwise_coherence,
     cosine_similarity,
-    l2_normalize_1d,
 )
 from app.services.taxonomy.family_ops import (
     adaptive_merge_threshold,
     extract_meta_patterns,
     merge_meta_pattern,
-    merge_score_into_cluster,
 )
 from app.utils.text_cleanup import parse_domain
 
