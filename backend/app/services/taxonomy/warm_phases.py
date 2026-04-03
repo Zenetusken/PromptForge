@@ -498,10 +498,23 @@ async def phase_split_emerge(
             continue
 
         # Cooldown: skip if this cluster already failed to split 3+ times
+        # Growth-based reset: if member_count grew 25%+ since last attempt,
+        # new data may create sub-structure that wasn't there before.
         node_meta = read_meta(node.cluster_metadata)
         split_failures = node_meta["split_failures"]
         if split_failures >= 3:
-            continue
+            split_attempt_mc = node_meta.get("split_attempt_member_count", 0)
+            if split_attempt_mc > 0 and member_count >= split_attempt_mc * 1.25:
+                split_failures = 0
+                node.cluster_metadata = write_meta(
+                    node.cluster_metadata, split_failures=0,
+                )
+                logger.info(
+                    "Split cooldown reset: '%s' grew from %d to %d members",
+                    node.label, split_attempt_mc, member_count,
+                )
+            else:
+                continue
 
         ops_attempted += 1
         logger.info(
@@ -522,285 +535,45 @@ async def phase_split_emerge(
         if len(node_families) < SPLIT_MIN_MEMBERS and member_count >= SPLIT_MIN_MEMBERS:
             opt_rows = _cached_opt_rows
             if len(opt_rows) >= SPLIT_MIN_MEMBERS:
-                child_embs = []        # raw embeddings (for centroid storage)
-                child_blended = []     # blended embeddings (for HDBSCAN)
-                child_fam_ids = []
-                for opt_id, emb_bytes, opt_bytes, trans_bytes in opt_rows:
-                    try:
-                        emb = np.frombuffer(emb_bytes, dtype=np.float32).copy()
-                        opt_emb = (
-                            np.frombuffer(opt_bytes, dtype=np.float32).copy()
-                            if opt_bytes else None
-                        )
-                        trans_emb = (
-                            np.frombuffer(trans_bytes, dtype=np.float32).copy()
-                            if trans_bytes else None
-                        )
-                        child_embs.append(emb)
-                        child_blended.append(blend_embeddings(
-                            raw=emb,
-                            optimized=opt_emb,
-                            transformation=trans_emb,
-                        ))
-                        child_fam_ids.append(opt_id)
-                    except (ValueError, TypeError):
-                        continue
+                from app.services.taxonomy.split import split_cluster
 
-                if len(child_blended) >= SPLIT_MIN_MEMBERS:
-                    split_clusters = batch_cluster(child_blended, min_cluster_size=3)
+                result = await split_cluster(node, engine, db, opt_rows)
 
-                    # Fallback: k-means bisection when HDBSCAN fails
-                    if (split_clusters.n_clusters < 2
-                            and len(child_blended) >= 2 * SPLIT_MIN_MEMBERS):
-                        try:
-                            from sklearn.cluster import KMeans
+                if not result.success:
+                    # Track failed attempt for cooldown
+                    node.cluster_metadata = write_meta(
+                        node.cluster_metadata,
+                        split_failures=split_failures + 1,
+                        split_attempt_member_count=member_count,
+                    )
+                    logger.info(
+                        "Leaf split failed for '%s' (attempt %d/3)",
+                        node.label, split_failures + 1,
+                    )
+                else:
+                    # Reset failure counter on success
+                    node.cluster_metadata = write_meta(
+                        node.cluster_metadata,
+                        split_failures=0,
+                        split_attempt_member_count=0,
+                    )
+                    embedding_index_mutations += len(result.children) + 1
 
-                            emb_stack = np.stack(child_blended, axis=0)
-                            km = KMeans(n_clusters=2, n_init=10, random_state=42)
-                            km_labels = km.fit_predict(emb_stack)
+                    # Protect split children and parent from merge in same cycle
+                    split_protected_ids.add(node.id)
+                    for ch in result.children:
+                        split_protected_ids.add(ch.id)
 
-                            sizes = [int((km_labels == c).sum()) for c in range(2)]
-                            if all(s >= 3 for s in sizes):
-                                centroids = [
-                                    l2_normalize_1d(
-                                        km.cluster_centers_[c].astype(np.float32)
-                                    )
-                                    for c in range(2)
-                                ]
-                                split_clusters = type(split_clusters)(
-                                    labels=km_labels,
-                                    centroids=centroids,
-                                    n_clusters=2,
-                                    persistences=[0.5, 0.5],
-                                    noise_count=0,
-                                )
-                                logger.info(
-                                    "HDBSCAN failed, k-means bisection succeeded: %s members",
-                                    sizes,
-                                )
-                        except Exception as km_exc:
-                            logger.debug("k-means fallback failed: %s", km_exc)
-
-                    if split_clusters.n_clusters < 2:
-                        # Track failed attempt for cooldown
-                        node.cluster_metadata = write_meta(
-                            node.cluster_metadata,
-                            split_failures=split_failures + 1,
-                        )
-                        logger.info(
-                            "Leaf split failed: HDBSCAN found %d clusters (need 2+), attempt %d/3",
-                            split_clusters.n_clusters, split_failures + 1,
-                        )
-                    else:
-                        # Reset failure counter on success
-                        node.cluster_metadata = write_meta(
-                            node.cluster_metadata,
-                            split_failures=0,
-                        )
-                        logger.info(
-                            "Leaf split: HDBSCAN found %d sub-clusters from %d optimizations",
-                            split_clusters.n_clusters, len(child_embs),
-                        )
-                        from app.services.taxonomy.coloring import generate_color
-                        from app.services.taxonomy.labeling import generate_label
-
-                        parent_domain = node.domain or "general"
-                        parent_id_for_children = node.parent_id or node.id
-                        new_children = []
-                        for cid in range(split_clusters.n_clusters):
-                            mask = split_clusters.labels == cid
-                            group_opt_ids = [
-                                child_fam_ids[i]
-                                for i in range(len(child_fam_ids))
-                                if mask[i]
-                            ]
-                            group_embs = [
-                                child_embs[i]
-                                for i in range(len(child_embs))
-                                if mask[i]
-                            ]
-                            if not group_embs:
-                                continue
-
-                            # Compute RAW centroid for storage — split_clusters.centroids
-                            # are blended, so recompute from raw group_embs.
-                            centroid = l2_normalize_1d(
-                                np.mean(
-                                    np.stack(group_embs), axis=0
-                                ).astype(np.float32)
-                            )
-                            child_coherence = compute_pairwise_coherence(group_embs)
-
-                            # Generate label from member intent labels
-                            opt_labels_q = await db.execute(
-                                select(Optimization.intent_label)
-                                .where(Optimization.id.in_(group_opt_ids))
-                                .limit(10)
-                            )
-                            member_texts = [
-                                r[0] for r in opt_labels_q.all() if r[0]
-                            ]
-                            label = await generate_label(
-                                provider=engine._provider,
-                                member_texts=member_texts,
-                                model=settings.MODEL_HAIKU,
-                            )
-
-                            # Compute avg_score and scored_count from members
-                            score_q = await db.execute(
-                                select(
-                                    func.avg(Optimization.overall_score),
-                                    func.count(Optimization.overall_score),
-                                ).where(
-                                    Optimization.id.in_(group_opt_ids),
-                                    Optimization.overall_score.isnot(None),
-                                )
-                            )
-                            score_row = score_q.one()
-                            child_avg_score = score_row[0]
-                            child_scored_count = score_row[1] or 0
-                            if child_avg_score is not None:
-                                child_avg_score = round(child_avg_score, 2)
-
-                            child_node = PromptCluster(
-                                label=label,
-                                centroid_embedding=centroid.astype(
-                                    np.float32
-                                ).tobytes(),
-                                member_count=len(group_opt_ids),
-                                scored_count=child_scored_count,
-                                avg_score=child_avg_score,
-                                coherence=child_coherence,
-                                state="active",
-                                domain=parent_domain,
-                                parent_id=parent_id_for_children,
-                                color_hex=generate_color(0.0, 0.0, 0.0),
-                            )
-                            db.add(child_node)
-                            await db.flush()
-
-                            # Reassign optimizations to the new child cluster
-                            await db.execute(
-                                sa_update(Optimization)
-                                .where(Optimization.id.in_(group_opt_ids))
-                                .values(cluster_id=child_node.id)
-                            )
-                            new_children.append(child_node)
-                            logger.info(
-                                "  Created sub-cluster '%s' (%d members, coherence=%.3f)",
-                                label, len(group_opt_ids), child_coherence,
-                            )
-
-                        if len(new_children) >= 2:
-                            # Archive the original mega-cluster.
-                            node.state = "archived"
-                            node.archived_at = _utcnow()
-                            node.member_count = 0
-                            node.scored_count = 0
-                            node.usage_count = 0
-                            node.avg_score = None
-                            await engine._embedding_index.remove(node.id)
-                            await engine._transformation_index.remove(node.id)
-                            await engine._optimized_index.remove(node.id)
-                            embedding_index_mutations += 1
-                            for child in new_children:
-                                centroid_emb = np.frombuffer(
-                                    child.centroid_embedding, dtype=np.float32
-                                )
-                                await engine._embedding_index.upsert(
-                                    child.id, centroid_emb
-                                )
-                                embedding_index_mutations += 1
-
-                            # Fix #11: use pre-fetched _split_emb_cache for
-                            # noise reassignment instead of per-noise-point
-                            # DB queries.
-                            noise_ids = [
-                                child_fam_ids[i]
-                                for i in range(len(child_fam_ids))
-                                if split_clusters.labels[i] == -1
-                            ]
-                            if noise_ids:
-                                # Build lookups from the pre-fetched cache
-                                # (Fix #11: batch both embeddings AND scores)
-                                noise_id_set = set(noise_ids)
-                                noise_emb_lookup: dict[str, bytes] = {}
-                                for oid, emb_bytes, *_ in _cached_opt_rows:
-                                    if oid in noise_id_set:
-                                        noise_emb_lookup[oid] = emb_bytes
-
-                                # Batch-fetch scores for noise optimizations
-                                noise_score_q = await db.execute(
-                                    select(
-                                        Optimization.id,
-                                        Optimization.overall_score,
-                                    ).where(Optimization.id.in_(noise_ids))
-                                )
-                                noise_score_lookup = {
-                                    row[0]: row[1]
-                                    for row in noise_score_q.all()
-                                }
-
-                                reassigned = 0
-                                for nid in noise_ids:
-                                    n_bytes = noise_emb_lookup.get(nid)
-                                    if not n_bytes:
-                                        continue
-                                    n_emb = np.frombuffer(
-                                        n_bytes, dtype=np.float32
-                                    )
-                                    best_c, best_s = None, -1.0
-                                    for ch in new_children:
-                                        c_emb = np.frombuffer(
-                                            ch.centroid_embedding,
-                                            dtype=np.float32,
-                                        )
-                                        s = cosine_similarity(n_emb, c_emb)
-                                        if s > best_s:
-                                            best_s, best_c = s, ch
-                                    if best_c:
-                                        await db.execute(
-                                            sa_update(Optimization)
-                                            .where(Optimization.id == nid)
-                                            .values(cluster_id=best_c.id)
-                                        )
-                                        best_c.member_count = (
-                                            best_c.member_count or 0
-                                        ) + 1
-                                        merge_score_into_cluster(
-                                            best_c,
-                                            noise_score_lookup.get(nid),
-                                        )
-                                        reassigned += 1
-                                logger.info(
-                                    "Reassigned %d noise optimizations to nearest sub-clusters",
-                                    reassigned,
-                                )
-
-                            # Protect split children and parent from
-                            # same-domain merge in the same cycle.
-                            split_protected_ids.add(node.id)
-                            for ch in new_children:
-                                split_protected_ids.add(ch.id)
-
-                            # Fix #9: increment ops_accepted for successful
-                            # leaf splits (previously only ops_attempted was
-                            # incremented).
-                            ops_accepted += len(new_children)
-
-                            # Flush (not commit) — the orchestrator decides
-                            # whether to commit or rollback via the Q gate.
-                            await db.flush()
-                            operations_log.append({
-                                "type": "leaf_split",
-                                "parent_id": node.id,
-                                "children": [c.id for c in new_children],
-                            })
-                            logger.info(
-                                "Leaf split complete: '%s' -> %d sub-clusters",
-                                node.label, len(new_children),
-                            )
-                            continue  # skip the family-based split below
+                    ops_accepted += result.children_created
+                    operations_log.append({
+                        "type": "leaf_split",
+                        "parent_id": node.id,
+                        "children": [c.id for c in result.children],
+                    })
+                    logger.info(
+                        "Leaf split complete: '%s' -> %d sub-clusters",
+                        node.label, result.children_created,
+                    )
 
         # --- Family-based split path ---
         if len(node_families) >= SPLIT_MIN_MEMBERS:
