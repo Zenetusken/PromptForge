@@ -20,6 +20,7 @@ Copyright 2025-2026 Project Synthesis contributors.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from dataclasses import dataclass, field
@@ -1248,7 +1249,9 @@ async def phase_refresh(
         )
         active_nodes = list(nodes_q.scalars().all())
 
+        # --- Phase A: Collect stale cluster data (sequential DB queries) ---
         now = _utcnow()
+        stale_clusters: list[tuple[PromptCluster, list[str], list]] = []  # (node, member_texts, sample_opts)
         for node in active_nodes:
             if node.state == "domain" or (node.member_count or 0) < refresh_min_members:
                 continue
@@ -1278,62 +1281,78 @@ async def phase_refresh(
                 .order_by(Optimization.created_at.desc())
                 .limit(refresh_sample_size)
             )
-            sample_opts = sample_q.scalars().all()
+            sample_opts = list(sample_q.scalars().all())
             if len(sample_opts) < 3:
                 continue
 
-            # Regenerate label from member intent labels
             member_texts = [
                 o.intent_label or (o.raw_prompt or "")[:200]
                 for o in sample_opts
             ]
-            new_label = await generate_label(
-                provider=engine._provider,
-                member_texts=member_texts,
-                model=settings.MODEL_HAIKU,
-            )
-            if new_label and new_label != "Unnamed Cluster":
-                node.label = new_label
+            stale_clusters.append((node, member_texts, sample_opts))
 
-            # Fix #15: extract new patterns FIRST, only delete old ones if
-            # extraction succeeds.
-            new_pattern_texts: list[str] = []
-            for opt in sample_opts[:5]:
-                try:
-                    texts = await extract_meta_patterns(
-                        opt, db, engine._provider, engine._prompt_loader,
-                    )
-                    new_pattern_texts.extend(texts)
-                except Exception:
-                    pass  # non-fatal per-optimization
-
-            # Only delete old patterns if we successfully extracted new ones
-            if new_pattern_texts:
-                old_patterns = await db.execute(
-                    select(MetaPattern).where(
-                        MetaPattern.cluster_id == node.id
-                    )
+        if not stale_clusters:
+            # Nothing to refresh — skip flush and event
+            pass
+        else:
+            # --- Phase B: Parallel label generation (LLM calls, no DB) ---
+            label_tasks = [
+                generate_label(
+                    provider=engine._provider,
+                    member_texts=sc[1],
+                    model=settings.MODEL_HAIKU,
                 )
-                for old_mp in old_patterns.scalars():
-                    await db.delete(old_mp)
+                for sc in stale_clusters
+            ]
+            labels = await asyncio.gather(*label_tasks, return_exceptions=True)
 
-                for text in new_pattern_texts:
-                    await merge_meta_pattern(
-                        db, node.id, text, engine._embedding,
+            # --- Phase C: Apply labels + sequential pattern extraction ---
+            for i, (node, member_texts, sample_opts) in enumerate(stale_clusters):
+                new_label = labels[i]
+                if isinstance(new_label, BaseException):
+                    new_label = None
+                if new_label and new_label != "Unnamed Cluster":
+                    node.label = new_label
+
+                # Fix #15: extract new patterns FIRST, only delete old ones if
+                # extraction succeeds. Pattern extraction uses db, so stays sequential.
+                new_pattern_texts: list[str] = []
+                for opt in sample_opts[:5]:
+                    try:
+                        texts = await extract_meta_patterns(
+                            opt, db, engine._provider, engine._prompt_loader,
+                        )
+                        new_pattern_texts.extend(texts)
+                    except Exception:
+                        pass  # non-fatal per-optimization
+
+                # Only delete old patterns if we successfully extracted new ones
+                if new_pattern_texts:
+                    old_patterns = await db.execute(
+                        select(MetaPattern).where(
+                            MetaPattern.cluster_id == node.id
+                        )
                     )
+                    for old_mp in old_patterns.scalars():
+                        await db.delete(old_mp)
 
-            # Track extraction state
-            node.cluster_metadata = write_meta(
-                node.cluster_metadata,
-                pattern_member_count=node.member_count,
-                pattern_stale=False,
-                label_refreshed_at=_utcnow().isoformat(),
-            )
-            result.clusters_refreshed += 1
-            logger.info(
-                "Refreshed label+patterns for '%s' (members=%d, prev_pmc=%d)",
-                node.label, node.member_count, last_pmc,
-            )
+                    for text in new_pattern_texts:
+                        await merge_meta_pattern(
+                            db, node.id, text, engine._embedding,
+                        )
+
+                # Track extraction state
+                node.cluster_metadata = write_meta(
+                    node.cluster_metadata,
+                    pattern_member_count=node.member_count,
+                    pattern_stale=False,
+                    label_refreshed_at=_utcnow().isoformat(),
+                )
+                result.clusters_refreshed += 1
+                logger.info(
+                    "Refreshed label+patterns for '%s' (members=%d)",
+                    node.label, node.member_count,
+                )
 
         if result.clusters_refreshed:
             await db.flush()

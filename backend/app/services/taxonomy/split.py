@@ -16,8 +16,10 @@ Copyright 2025-2026 Project Synthesis contributors.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -170,14 +172,20 @@ async def split_cluster(
     except RuntimeError:
         pass
 
-    # Create child clusters
+    # Create child clusters — 3-phase approach for parallel label generation.
+    # Phase 1: Collect per-cluster data (sequential DB queries, fast).
+    # Phase 2: Parallel label generation via asyncio.gather (LLM calls, no DB).
+    # Phase 3: Create PromptCluster objects with resolved labels (sequential).
     from app.services.taxonomy.coloring import generate_color
     from app.services.taxonomy.labeling import generate_label
 
     parent_domain = node.domain or "general"
     parent_id_for_children = node.parent_id or node.id
     new_children: list[PromptCluster] = []
+    t0_split = time.monotonic()
 
+    # --- Phase 1: Collect per-cluster data (sequential, fast) ---
+    cluster_data: list[dict] = []
     for cid in range(split_result.n_clusters):
         mask = split_result.labels == cid
         group_opt_ids = [
@@ -194,20 +202,14 @@ async def split_cluster(
         )
         child_coherence = compute_pairwise_coherence(group_embs)
 
-        # Generate label from member intent labels
+        # DB queries for member texts and scores (fast, local)
         opt_labels_q = await db.execute(
             select(Optimization.intent_label)
             .where(Optimization.id.in_(group_opt_ids))
             .limit(10)
         )
         member_texts = [r[0] for r in opt_labels_q.all() if r[0]]
-        label = await generate_label(
-            provider=engine._provider,
-            member_texts=member_texts,
-            model=settings.MODEL_HAIKU,
-        )
 
-        # Compute avg_score from members
         score_q = await db.execute(
             select(
                 func.avg(Optimization.overall_score),
@@ -218,16 +220,49 @@ async def split_cluster(
             )
         )
         score_row = score_q.one()
-        child_avg_score = round(score_row[0], 2) if score_row[0] is not None else None
-        child_scored_count = score_row[1] or 0
+
+        cluster_data.append({
+            "group_opt_ids": group_opt_ids,
+            "centroid": centroid,
+            "coherence": child_coherence,
+            "member_texts": member_texts,
+            "avg_score": round(score_row[0], 2) if score_row[0] is not None else None,
+            "scored_count": score_row[1] or 0,
+        })
+
+    if len(cluster_data) < 2:
+        return SplitResult(success=False, children_created=0, noise_reassigned=0)
+
+    # --- Phase 2: Parallel label generation (LLM calls, no DB session) ---
+    t0_labels = time.monotonic()
+    label_tasks = [
+        generate_label(
+            provider=engine._provider,
+            member_texts=cd["member_texts"],
+            model=settings.MODEL_HAIKU,
+        )
+        for cd in cluster_data
+    ]
+    labels = await asyncio.gather(*label_tasks, return_exceptions=True)
+    for i, lbl in enumerate(labels):
+        if isinstance(lbl, BaseException):
+            labels[i] = "Unnamed Cluster"
+    label_duration_ms = int((time.monotonic() - t0_labels) * 1000)
+
+    # --- Phase 3: Create PromptCluster objects with resolved labels ---
+    from datetime import datetime, timedelta, timezone
+
+    for i, cd in enumerate(cluster_data):
+        label = labels[i]
+        centroid = cd["centroid"]
 
         child_node = PromptCluster(
             label=label,
             centroid_embedding=centroid.astype(np.float32).tobytes(),
-            member_count=len(group_opt_ids),
-            scored_count=child_scored_count,
-            avg_score=child_avg_score,
-            coherence=child_coherence,
+            member_count=len(cd["group_opt_ids"]),
+            scored_count=cd["scored_count"],
+            avg_score=cd["avg_score"],
+            coherence=cd["coherence"],
             state="active",
             domain=parent_domain,
             parent_id=parent_id_for_children,
@@ -251,17 +286,13 @@ async def split_cluster(
             if pos:
                 child_node.umap_x, child_node.umap_y, child_node.umap_z = pos
         elif node.umap_x is not None:
-            # Fallback: position near parent with jitter
             child_node.umap_x = node.umap_x + random.uniform(-0.5, 0.5)
             child_node.umap_y = node.umap_y + random.uniform(-0.5, 0.5)
             child_node.umap_z = node.umap_z + random.uniform(-0.5, 0.5)
-        # Protect from merge for 30 minutes — split children have similar
-        # centroids to their parent and siblings, so the warm-path merge
-        # phase would immediately re-merge them without this cooldown.
+        # Protect from merge for 30 minutes.
         # INVARIANT: merge_protected_until is stored as naive UTC (no tzinfo).
         # All comparisons use _utcnow() which is also naive UTC.
         # Do NOT compare with timezone-aware datetimes.
-        from datetime import datetime, timedelta, timezone
         merge_until = (datetime.now(timezone.utc) + timedelta(minutes=30)).replace(tzinfo=None)
         child_node.cluster_metadata = write_meta(
             child_node.cluster_metadata,
@@ -272,13 +303,13 @@ async def split_cluster(
         # Reassign optimizations
         await db.execute(
             sa_update(Optimization)
-            .where(Optimization.id.in_(group_opt_ids))
+            .where(Optimization.id.in_(cd["group_opt_ids"]))
             .values(cluster_id=child_node.id)
         )
         new_children.append(child_node)
         logger.info(
             "  Split child '%s' (%d members, coherence=%.3f)",
-            label, len(group_opt_ids), child_coherence,
+            label, len(cd["group_opt_ids"]), cd["coherence"],
         )
         try:
             get_event_logger().log_decision(
@@ -288,8 +319,8 @@ async def split_cluster(
                     "parent_id": node.id,
                     "parent_label": node.label,
                     "child_label": label,
-                    "members": len(group_opt_ids),
-                    "coherence": round(child_coherence, 4),
+                    "members": len(cd["group_opt_ids"]),
+                    "coherence": round(cd["coherence"], 4),
                 },
             )
         except RuntimeError:
@@ -413,51 +444,15 @@ async def split_cluster(
         except Exception:
             pass  # Non-fatal
 
-    # Extract meta-patterns for each child (LLM call — expensive but optional).
-    # Uses BaseException to catch asyncio.CancelledError (timeout) which is NOT
-    # a subclass of Exception in Python 3.9+. A failed extraction must never
-    # crash the split — the structural changes are already committed above.
+    # Defer meta-pattern extraction to warm-path Phase 4 (Refresh).
+    # Mark all children as pattern_stale=True so Phase 4 picks them up.
+    # This removes 15+ sequential Haiku LLM calls from the critical split path.
     for ch in new_children:
-        try:
-            from app.services.taxonomy.family_ops import (
-                extract_meta_patterns,
-                merge_meta_pattern,
-            )
-
-            ch_opts_q = await db.execute(
-                select(Optimization)
-                .where(Optimization.cluster_id == ch.id)
-                .order_by(Optimization.created_at.desc())
-                .limit(5)
-            )
-            ch_opts = ch_opts_q.scalars().all()
-            pattern_texts: list[str] = []
-            for opt in ch_opts:
-                try:
-                    texts = await extract_meta_patterns(
-                        opt, db, engine._provider, engine._prompt_loader,
-                    )
-                    pattern_texts.extend(texts)
-                except BaseException:
-                    pass  # non-fatal per-optimization (catches CancelledError too)
-            for text in pattern_texts:
-                await merge_meta_pattern(db, ch.id, text, engine._embedding)
-            ch.cluster_metadata = write_meta(
-                ch.cluster_metadata,
-                pattern_member_count=ch.member_count,
-                pattern_stale=len(pattern_texts) == 0,  # stale if extraction failed
-            )
-            if pattern_texts:
-                logger.info(
-                    "  Extracted %d meta-patterns for '%s'",
-                    len(pattern_texts), ch.label,
-                )
-        except BaseException as mp_exc:
-            # Mark stale so Phase 4 retries later
-            ch.cluster_metadata = write_meta(
-                ch.cluster_metadata, pattern_stale=True,
-            )
-            logger.warning("Meta-pattern extraction failed for '%s': %s", ch.label, mp_exc)
+        ch.cluster_metadata = write_meta(
+            ch.cluster_metadata,
+            pattern_member_count=ch.member_count,
+            pattern_stale=True,
+        )
 
     await db.flush()
     logger.info(
@@ -465,15 +460,18 @@ async def split_cluster(
         node.label, len(new_children), noise_reassigned,
     )
 
+    split_duration_ms = int((time.monotonic() - t0_split) * 1000)
     try:
         get_event_logger().log_decision(
             path=log_path, op="split", decision="split_complete",
             cluster_id=node.id,
+            duration_ms=split_duration_ms,
             context={
                 "parent_label": node.label,
                 "hdbscan_clusters": len(new_children),
                 "noise_count": noise_reassigned,
                 "silhouette": getattr(split_result, 'silhouette', None),
+                "label_generation_ms": label_duration_ms,
                 "children": [
                     {
                         "id": c.id,
