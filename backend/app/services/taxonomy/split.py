@@ -258,6 +258,9 @@ async def split_cluster(
         # Protect from merge for 30 minutes — split children have similar
         # centroids to their parent and siblings, so the warm-path merge
         # phase would immediately re-merge them without this cooldown.
+        # INVARIANT: merge_protected_until is stored as naive UTC (no tzinfo).
+        # All comparisons use _utcnow() which is also naive UTC.
+        # Do NOT compare with timezone-aware datetimes.
         from datetime import datetime, timedelta, timezone
         merge_until = (datetime.now(timezone.utc) + timedelta(minutes=30)).replace(tzinfo=None)
         child_node.cluster_metadata = write_meta(

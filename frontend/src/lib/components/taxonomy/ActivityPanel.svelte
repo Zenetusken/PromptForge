@@ -5,7 +5,7 @@
 
   // -- State --
 
-  let totalInBuffer = $state(0);
+  const totalInBuffer = $derived(clustersStore.activityEvents.length);
   let filterPath = $state<string>('');
   let filterOp = $state<string | null>(null);
   let errorsOnly = $state(false);
@@ -19,7 +19,7 @@
     clustersStore.activityEvents.filter(e => {
       if (filterPath && e.path !== filterPath) return false;
       if (filterOp && e.op !== filterOp) return false;
-      if (errorsOnly && !(e.op === 'error' || e.decision === 'rejected' || e.decision === 'failed')) return false;
+      if (errorsOnly && !(e.op === 'error' || e.decision === 'rejected' || e.decision === 'failed' || e.decision === 'split_failed')) return false;
       return true;
     }),
   );
@@ -46,17 +46,29 @@
   function keyMetric(e: TaxonomyActivityEvent): string {
     const c = e.context;
     if (!c) return '';
-    if (e.op === 'assign' && typeof c.winner_label === 'string') {
-      const candidates = c.candidates as any[] | undefined;
-      const score = Array.isArray(candidates) && candidates.length > 0 && typeof candidates[0].effective_score === 'number'
-        ? ` s=${(candidates[0].effective_score as number).toFixed(3)}`
-        : '';
-      return c.winner_label + score;
+    if (e.op === 'assign') {
+      if (e.decision === 'merge_into' && typeof c.winner_label === 'string') {
+        const candidates = c.candidates as any[] | undefined;
+        const score = Array.isArray(candidates) && candidates.length > 0 && typeof candidates[0].effective_score === 'number'
+          ? ` (${(candidates[0].effective_score as number).toFixed(3)})`
+          : '';
+        return `→ ${c.winner_label}${score}`;
+      }
+      if (e.decision === 'create_new' && typeof c.new_label === 'string') {
+        return `new: ${c.new_label}`;
+      }
+      if (typeof c.winner_label === 'string') {
+        return c.winner_label;
+      }
+      return '';
     }
     if (e.op === 'phase') {
-      const qb = typeof c.q_before === 'number' ? c.q_before.toFixed(3) : '?';
-      const qa = typeof c.q_after === 'number' ? c.q_after.toFixed(3) : '?';
-      return `Q ${qb}→${qa}`;
+      if (typeof c.q_before === 'number' || typeof c.q_after === 'number') {
+        const qb = typeof c.q_before === 'number' ? c.q_before.toFixed(3) : '?';
+        const qa = typeof c.q_after === 'number' ? c.q_after.toFixed(3) : '?';
+        return `Q ${qb}→${qa}`;
+      }
+      return '';
     }
     if (e.op === 'refit') {
       return `Q ${(c.q_before as number)?.toFixed(3) ?? '?'}→${(c.q_after as number)?.toFixed(3) ?? '?'}`;
@@ -88,34 +100,29 @@
     window.dispatchEvent(new CustomEvent('select-cluster', { detail: { id } }));
   }
 
-  // -- Initial seed + SSE --
+  // -- Initial seed --
 
   async function loadInitial(): Promise<void> {
     try {
       await clustersStore.loadActivity();
-      totalInBuffer = clustersStore.activityEvents.length;
     } catch {
       // non-fatal
     }
   }
 
+  // Auto-scroll to top (newest) when new events arrive
+  $effect(() => {
+    // Track event count to trigger on new pushes
+    const _count = clustersStore.activityEvents.length;
+    if (pinToBottom && scrollEl) {
+      requestAnimationFrame(() => {
+        scrollEl.scrollTop = 0; // newest at top
+      });
+    }
+  });
+
   onMount(() => {
     loadInitial();
-
-    // Listen for taxonomy_activity SSE events dispatched by parent
-    function onActivity(e: Event): void {
-      const ev = (e as CustomEvent).detail as TaxonomyActivityEvent;
-      clustersStore.pushActivityEvent(ev);
-      totalInBuffer++;
-      if (pinToBottom && scrollEl) {
-        requestAnimationFrame(() => {
-          scrollEl.scrollTop = 0; // newest at top
-        });
-      }
-    }
-
-    window.addEventListener('taxonomy-activity', onActivity);
-    return () => window.removeEventListener('taxonomy-activity', onActivity);
   });
 </script>
 
@@ -167,7 +174,7 @@
 
   <!-- Event list -->
   <div class="ap-list" bind:this={scrollEl}>
-    {#each filtered as ev (ev.ts + ev.op + ev.decision)}
+    {#each filtered as ev, i (ev.ts + ev.op + ev.decision + (ev.cluster_id ?? '') + i)}
       <div class="ap-row">
         <!-- Summary line -->
         <button

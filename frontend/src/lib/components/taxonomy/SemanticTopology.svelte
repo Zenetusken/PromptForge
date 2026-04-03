@@ -82,7 +82,6 @@
   let lodTier = $state<LODTier>('far');
   let focusedNodeId = $state<string | null>(null);
   let hoveredNodeId = $state<string | null>(null);
-  let showActivity = $state(false);
 
   // Node meshes for raycasting
   let nodeMeshes: Map<string, THREE.Mesh> = new Map();
@@ -678,7 +677,7 @@
   });
 </script>
 
-<div class="topology-outer" class:topology-has-activity={showActivity}>
+<div class="topology-outer" class:topology-has-activity={clustersStore.activityOpen}>
 <div class="topology-container" bind:this={container}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <canvas
@@ -688,10 +687,10 @@
   ></canvas>
   <TopologyControls
     {lodTier}
-    {showActivity}
+    showActivity={clustersStore.activityOpen}
     onSearch={handleSearch}
     onRecluster={handleRecluster}
-    onToggleActivity={() => { showActivity = !showActivity; }}
+    onToggleActivity={() => clustersStore.toggleActivity()}
   />
   {#if hoveredNodeId}
     <div class="topology-tooltip" role="tooltip">
@@ -705,7 +704,7 @@
     <div class="topology-error" role="alert" aria-live="polite">{clustersStore.taxonomyError}</div>
   {/if}
 </div>
-{#if showActivity}
+{#if clustersStore.activityOpen}
   <div class="topology-activity">
     <ActivityPanel />
   </div>

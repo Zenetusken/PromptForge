@@ -118,7 +118,7 @@
         addToast('created', 'Taxonomy updated');
       }
       if (type === 'taxonomy_activity') {
-        window.dispatchEvent(new CustomEvent('taxonomy-activity', { detail: data }));
+        clustersStore.pushActivityEvent(data as unknown as import('$lib/api/clusters').TaxonomyActivityEvent);
       }
       if (type === 'domain_created') {
         domainStore.invalidate();

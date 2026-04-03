@@ -766,6 +766,9 @@ async def phase_merge(
             merge_until_m = meta_m.get("merge_protected_until", "")
             if merge_until_m:
                 try:
+                    # INVARIANT: merge_protected_until is stored as naive UTC (no tzinfo).
+                    # All comparisons use _utcnow() which is also naive UTC.
+                    # Do NOT compare with timezone-aware datetimes.
                     if now_merge < datetime.fromisoformat(merge_until_m):
                         _global_mc_count += 1
                         continue
@@ -948,6 +951,9 @@ async def phase_merge(
             merge_until = meta.get("merge_protected_until", "")
             if merge_until:
                 try:
+                    # INVARIANT: merge_protected_until is stored as naive UTC (no tzinfo).
+                    # All comparisons use _utcnow() which is also naive UTC.
+                    # Do NOT compare with timezone-aware datetimes.
                     protected_until = datetime.fromisoformat(merge_until)
                     if now < protected_until:
                         _domain_mc_count += 1
