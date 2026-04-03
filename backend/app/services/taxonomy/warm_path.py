@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PromptCluster
 from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD
+from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.quality import is_non_regressive
 from app.services.taxonomy.warm_phases import (
@@ -189,11 +190,44 @@ async def _run_speculative_phase(
                         "ops_attempted": phase_result.ops_attempted,
                         "rejection_count": engine._phase_rejection_counters.get(phase_name, 0),
                         "accepted": False,
+                        "rolled_back_splits": phase_result.split_attempted_ids,
                     },
                 )
             except RuntimeError:
                 pass
-            return phase_result
+
+    # Persist split attempt metadata OUTSIDE the rolled-back transaction.
+    # Without this, the split_failures cooldown counter resets to 0 on every
+    # Q-gate rejection, causing the same cluster to be split and rolled back
+    # indefinitely (the "Groundhog Day" loop).
+    if (
+        not phase_result.accepted
+        and phase_name == "split_emerge"
+        and phase_result.split_attempted_ids
+    ):
+        try:
+            async with session_factory() as meta_db:
+                for cid in phase_result.split_attempted_ids:
+                    cluster = await meta_db.get(PromptCluster, cid)
+                    if cluster:
+                        meta = read_meta(cluster.cluster_metadata)
+                        cluster.cluster_metadata = write_meta(
+                            cluster.cluster_metadata,
+                            split_failures=meta["split_failures"] + 1,
+                            split_attempt_member_count=cluster.member_count or 0,
+                        )
+                await meta_db.commit()
+                logger.info(
+                    "Persisted split_failures for %d clusters after Q-gate rejection",
+                    len(phase_result.split_attempted_ids),
+                )
+        except Exception as meta_exc:
+            logger.warning(
+                "Failed to persist split failure metadata (non-fatal): %s",
+                meta_exc,
+            )
+
+    return phase_result
 
 
 def _extract_split_protected_ids(phase_result: PhaseResult) -> set[str]:

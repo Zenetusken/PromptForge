@@ -79,6 +79,10 @@ class PhaseResult:
     ops_accepted: int = 0
     operations: list[dict] = field(default_factory=list)
     embedding_index_mutations: int = 0
+    # Cluster IDs that had split attempts (populated by phase_split_emerge).
+    # Used by warm_path to persist split_failures metadata outside the
+    # speculative transaction on Q-gate rejection (prevents Groundhog Day loop).
+    split_attempted_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -419,6 +423,7 @@ async def phase_split_emerge(
     ops_accepted = 0
     operations_log: list[dict] = []
     embedding_index_mutations = 0
+    split_attempted_ids: list[str] = []
 
     # Load active nodes for lifecycle operations.
     # Q_before/Q_after are computed by the orchestrator (_run_speculative_phase),
@@ -528,6 +533,7 @@ async def phase_split_emerge(
                 continue
 
         ops_attempted += 1
+        split_attempted_ids.append(node.id)
         logger.info(
             "Split candidate: '%s' (members=%d, coherence=%.3f, threshold=%.3f)",
             node.label, member_count, coherence, dynamic_floor,
@@ -716,6 +722,7 @@ async def phase_split_emerge(
         ops_accepted=ops_accepted,
         operations=operations_log,
         embedding_index_mutations=embedding_index_mutations,
+        split_attempted_ids=split_attempted_ids,
     )
 
 
