@@ -573,16 +573,20 @@ async def get_cluster_activity(
     except RuntimeError:
         return ActivityResponse(events=[], total_in_buffer=0, oldest_ts=None)
 
-    raw = tel.get_recent(limit=limit, path=path, op=op)
-    if errors_only:
-        raw = [e for e in raw if e.get("decision") in ("rejected", "error", "failed")]
+    try:
+        raw = tel.get_recent(limit=limit, path=path, op=op)
+        if errors_only:
+            raw = [e for e in raw if e.get("decision") in ("rejected", "error", "failed")]
 
-    events = [TaxonomyActivityEvent(**e) for e in raw]
-    return ActivityResponse(
-        events=events,
-        total_in_buffer=tel.buffer_size,
-        oldest_ts=tel.oldest_ts,
-    )
+        events = [TaxonomyActivityEvent(**e) for e in raw]
+        return ActivityResponse(
+            events=events,
+            total_in_buffer=tel.buffer_size,
+            oldest_ts=tel.oldest_ts,
+        )
+    except Exception as exc:
+        logger.error("GET /api/clusters/activity failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to load activity events") from exc
 
 
 @router.get("/api/clusters/activity/history", response_model=ActivityHistoryResponse)
@@ -597,16 +601,20 @@ async def get_cluster_activity_history(
     except RuntimeError:
         return ActivityHistoryResponse(events=[], total=0, has_more=False)
 
-    raw = tel.get_history(date=date, limit=limit + 1, offset=offset)
-    has_more = len(raw) > limit
-    raw = raw[:limit]
+    try:
+        raw = tel.get_history(date=date, limit=limit + 1, offset=offset)
+        has_more = len(raw) > limit
+        raw = raw[:limit]
 
-    events = [TaxonomyActivityEvent(**e) for e in raw]
-    return ActivityHistoryResponse(
-        events=events,
-        total=offset + len(events) + (1 if has_more else 0),
-        has_more=has_more,
-    )
+        events = [TaxonomyActivityEvent(**e) for e in raw]
+        return ActivityHistoryResponse(
+            events=events,
+            total=offset + len(events) + (1 if has_more else 0),
+            has_more=has_more,
+        )
+    except Exception as exc:
+        logger.error("GET /api/clusters/activity/history failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to load activity history") from exc
 
 
 # ---------------------------------------------------------------------------
