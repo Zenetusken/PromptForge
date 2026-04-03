@@ -30,7 +30,6 @@ from app.config import settings
 from app.models import Optimization, PromptCluster
 from app.services.taxonomy._constants import SPLIT_MIN_MEMBERS, _utcnow
 from app.services.taxonomy.cluster_meta import write_meta
-from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.clustering import (
     batch_cluster,
     blend_embeddings,
@@ -38,6 +37,7 @@ from app.services.taxonomy.clustering import (
     cosine_similarity,
     l2_normalize_1d,
 )
+from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.family_ops import merge_score_into_cluster
 from app.services.taxonomy.projection import interpolate_position
 
@@ -247,8 +247,7 @@ async def split_cluster(
         )
         try:
             get_event_logger().log_decision(
-                path="cold" if len(node.label) > 0 else "warm",
-                op="split", decision="child_created",
+                path="cold", op="split", decision="child_created",
                 cluster_id=child_node.id,
                 context={
                     "parent_id": node.id,
@@ -430,10 +429,20 @@ async def split_cluster(
                 "hdbscan_clusters": len(new_children),
                 "noise_count": noise_reassigned,
                 "children": [
-                    {"id": c.id, "label": c.label, "members": c.member_count or 0, "coherence": round(c.coherence or 0.0, 4)}
+                    {
+                        "id": c.id,
+                        "label": c.label,
+                        "members": c.member_count or 0,
+                        "coherence": round(c.coherence or 0.0, 4),
+                    }
                     for c in new_children
                 ],
-                "fallback": "kmeans" if split_result.n_clusters >= 2 and getattr(split_result, "persistences", [0.5]) == [0.5, 0.5] else "none",
+                "fallback": (
+                    "kmeans"
+                    if split_result.n_clusters >= 2
+                    and getattr(split_result, "persistences", None) == [0.5, 0.5]
+                    else "none"
+                ),
             },
         )
     except RuntimeError:

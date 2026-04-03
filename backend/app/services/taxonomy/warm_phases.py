@@ -41,13 +41,13 @@ from app.services.taxonomy._constants import (
     _utcnow,
 )
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
-from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.clustering import (
     batch_cluster,
     blend_embeddings,
     compute_pairwise_coherence,
     cosine_similarity,
 )
+from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.family_ops import (
     adaptive_merge_threshold,
     extract_meta_patterns,
@@ -594,7 +594,12 @@ async def phase_split_emerge(
                                 "hdbscan_clusters": result.children_created,
                                 "noise_count": result.noise_reassigned,
                                 "children": [
-                                    {"id": c.id, "label": c.label, "members": c.member_count or 0, "coherence": round(c.coherence or 0.0, 4)}
+                                    {
+                                        "id": c.id,
+                                        "label": c.label,
+                                        "members": c.member_count or 0,
+                                        "coherence": round(c.coherence or 0.0, 4),
+                                    }
                                     for c in result.children
                                 ],
                                 "fallback": "none",

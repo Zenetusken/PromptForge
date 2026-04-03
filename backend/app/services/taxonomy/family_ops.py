@@ -338,6 +338,21 @@ async def assign_cluster(
                 if task_type and matched.task_type and task_type != matched.task_type:
                     effective_score *= 0.88
 
+                _coh_pen = (
+                    round((0.4 - (matched.coherence or 1.0)) * 0.3, 4)
+                    if matched.coherence is not None and matched.coherence < 0.4
+                    else 0.0
+                )
+                _out_pen = (
+                    round((0.35 - (_out_coh or 1.0)) * 0.4, 4)
+                    if _out_coh is not None and _out_coh < 0.35
+                    else 0.0
+                )
+                _type_pen = (
+                    0.12
+                    if (task_type and matched.task_type and task_type != matched.task_type)
+                    else 0.0
+                )
                 _candidates_log.append({
                     "id": matched.id,
                     "label": matched.label,
@@ -346,9 +361,9 @@ async def assign_cluster(
                     "effective_score": round(effective_score, 4),
                     "member_count": matched.member_count or 0,
                     "penalties": {
-                        "coherence": round((0.4 - (matched.coherence or 1.0)) * 0.3, 4) if matched.coherence is not None and matched.coherence < 0.4 else 0.0,
-                        "output_coh": round((0.35 - (_out_coh or 1.0)) * 0.4, 4) if _out_coh is not None and _out_coh < 0.35 else 0.0,
-                        "task_type": 0.12 if (task_type and matched.task_type and task_type != matched.task_type) else 0.0,
+                        "coherence": _coh_pen,
+                        "output_coh": _out_pen,
+                        "task_type": _type_pen,
                     },
                 })
 

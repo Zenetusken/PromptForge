@@ -39,6 +39,7 @@ from app.services.taxonomy._constants import _utcnow
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.cold_path import ColdPathResult, execute_cold_path
 from app.services.taxonomy.embedding_index import EmbeddingIndex
+from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.family_ops import (
     assign_cluster,
     build_breadcrumb,
@@ -55,7 +56,6 @@ from app.services.taxonomy.matching import (
 from app.services.taxonomy.matching import (
     match_prompt as _match_prompt,
 )
-from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.sparkline import compute_sparkline_data
 from app.services.taxonomy.warm_path import WarmPathResult, execute_warm_path
 from app.utils.text_cleanup import parse_domain

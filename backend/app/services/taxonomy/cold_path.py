@@ -50,10 +50,10 @@ from app.services.taxonomy.clustering import (
     l2_normalize_1d,
 )
 from app.services.taxonomy.coloring import enforce_minimum_delta_e, generate_color
+from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.family_ops import adaptive_merge_threshold
 from app.services.taxonomy.labeling import generate_label
 from app.services.taxonomy.projection import UMAPProjector, procrustes_align
-from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.quality import is_cold_path_non_regressive
 from app.services.taxonomy.snapshot import create_snapshot
 
