@@ -346,6 +346,45 @@ async def split_cluster(
         except Exception:
             pass  # Non-fatal
 
+    # Extract meta-patterns for each child (LLM call — expensive but necessary,
+    # because the warm path Phase 4 may never reach split children in time)
+    for ch in new_children:
+        try:
+            from app.services.taxonomy.family_ops import (
+                extract_meta_patterns,
+                merge_meta_pattern,
+            )
+
+            ch_opts_q = await db.execute(
+                select(Optimization)
+                .where(Optimization.cluster_id == ch.id)
+                .order_by(Optimization.created_at.desc())
+                .limit(5)
+            )
+            ch_opts = ch_opts_q.scalars().all()
+            pattern_texts: list[str] = []
+            for opt in ch_opts:
+                try:
+                    texts = await extract_meta_patterns(
+                        opt, db, engine._provider, engine._prompt_loader,
+                    )
+                    pattern_texts.extend(texts)
+                except Exception:
+                    pass  # non-fatal per-optimization
+            for text in pattern_texts:
+                await merge_meta_pattern(db, ch.id, text, engine._embedding)
+            ch.cluster_metadata = write_meta(
+                ch.cluster_metadata,
+                pattern_member_count=ch.member_count,
+            )
+            if pattern_texts:
+                logger.info(
+                    "  Extracted %d meta-patterns for '%s'",
+                    len(pattern_texts), ch.label,
+                )
+        except Exception as mp_exc:
+            logger.debug("Meta-pattern extraction failed for '%s': %s", ch.label, mp_exc)
+
     await db.flush()
     logger.info(
         "Split '%s' -> %d sub-clusters (%d noise reassigned)",
