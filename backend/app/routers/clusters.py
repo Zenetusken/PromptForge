@@ -251,6 +251,76 @@ async def get_cluster_templates(
     )
 
 
+# ---------------------------------------------------------------------------
+# Taxonomy activity log — MUST be before {cluster_id} dynamic route
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/clusters/activity", response_model=ActivityResponse)
+async def get_cluster_activity(
+    limit: int = Query(50, ge=1, le=200),
+    path: str | None = Query(None, pattern="^(hot|warm|cold)$"),
+    op: str | None = Query(None),
+    errors_only: bool = Query(False),
+) -> ActivityResponse:
+    """Return recent taxonomy decision events from the in-memory ring buffer."""
+    try:
+        tel = get_event_logger()
+    except RuntimeError:
+        return ActivityResponse(events=[], total_in_buffer=0, oldest_ts=None)
+
+    try:
+        raw = tel.get_recent(limit=limit, path=path, op=op)
+        if errors_only:
+            raw = [
+                e for e in raw
+                if e.get("op") == "error" or e.get("decision") in ("rejected", "failed", "split_failed")
+            ]
+
+        events = [TaxonomyActivityEvent(**e) for e in raw]
+        return ActivityResponse(
+            events=events,
+            total_in_buffer=tel.buffer_size,
+            oldest_ts=tel.oldest_ts,
+        )
+    except Exception as exc:
+        logger.error("GET /api/clusters/activity failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to load activity events") from exc
+
+
+@router.get("/api/clusters/activity/history", response_model=ActivityHistoryResponse)
+async def get_cluster_activity_history(
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+) -> ActivityHistoryResponse:
+    """Return taxonomy decision events for a specific date from JSONL storage."""
+    try:
+        tel = get_event_logger()
+    except RuntimeError:
+        return ActivityHistoryResponse(events=[], total=0, has_more=False)
+
+    try:
+        raw = tel.get_history(date=date, limit=limit + 1, offset=offset)
+        has_more = len(raw) > limit
+        raw = raw[:limit]
+
+        events = [TaxonomyActivityEvent(**e) for e in raw]
+        return ActivityHistoryResponse(
+            events=events,
+            total=offset + len(events) + (1 if has_more else 0),
+            has_more=has_more,
+        )
+    except Exception as exc:
+        logger.error("GET /api/clusters/activity/history failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to load activity history") from exc
+
+
+# ---------------------------------------------------------------------------
+# Cluster detail (dynamic {cluster_id} — must come after static routes)
+# ---------------------------------------------------------------------------
+
+
 @router.get("/api/clusters/{cluster_id}")
 async def get_cluster_detail(
     request: Request,
@@ -553,71 +623,6 @@ async def backfill_scores(
     except Exception as exc:
         logger.error("Score backfill failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Score backfill failed") from exc
-
-
-# ---------------------------------------------------------------------------
-# Taxonomy activity log
-# ---------------------------------------------------------------------------
-
-
-@router.get("/api/clusters/activity", response_model=ActivityResponse)
-async def get_cluster_activity(
-    limit: int = Query(50, ge=1, le=200),
-    path: str | None = Query(None, pattern="^(hot|warm|cold)$"),
-    op: str | None = Query(None),
-    errors_only: bool = Query(False),
-) -> ActivityResponse:
-    """Return recent taxonomy decision events from the in-memory ring buffer."""
-    try:
-        tel = get_event_logger()
-    except RuntimeError:
-        return ActivityResponse(events=[], total_in_buffer=0, oldest_ts=None)
-
-    try:
-        raw = tel.get_recent(limit=limit, path=path, op=op)
-        if errors_only:
-            raw = [
-                e for e in raw
-                if e.get("op") == "error" or e.get("decision") in ("rejected", "failed", "split_failed")
-            ]
-
-        events = [TaxonomyActivityEvent(**e) for e in raw]
-        return ActivityResponse(
-            events=events,
-            total_in_buffer=tel.buffer_size,
-            oldest_ts=tel.oldest_ts,
-        )
-    except Exception as exc:
-        logger.error("GET /api/clusters/activity failed: %s", exc, exc_info=True)
-        raise HTTPException(500, "Failed to load activity events") from exc
-
-
-@router.get("/api/clusters/activity/history", response_model=ActivityHistoryResponse)
-async def get_cluster_activity_history(
-    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
-) -> ActivityHistoryResponse:
-    """Return taxonomy decision events for a specific date from JSONL storage."""
-    try:
-        tel = get_event_logger()
-    except RuntimeError:
-        return ActivityHistoryResponse(events=[], total=0, has_more=False)
-
-    try:
-        raw = tel.get_history(date=date, limit=limit + 1, offset=offset)
-        has_more = len(raw) > limit
-        raw = raw[:limit]
-
-        events = [TaxonomyActivityEvent(**e) for e in raw]
-        return ActivityHistoryResponse(
-            events=events,
-            total=offset + len(events) + (1 if has_more else 0),
-            has_more=has_more,
-        )
-    except Exception as exc:
-        logger.error("GET /api/clusters/activity/history failed: %s", exc, exc_info=True)
-        raise HTTPException(500, "Failed to load activity history") from exc
 
 
 # ---------------------------------------------------------------------------
