@@ -846,6 +846,10 @@ async def execute_cold_path(
 
                 if mc_result.success:
                     mega_split_created += mc_result.children_created
+                    # Commit EACH successful split immediately so structural
+                    # changes persist even if a subsequent LLM call or server
+                    # reload cancels the task mid-loop.
+                    await db.commit()
                     logger.info(
                         "Mega-cluster split: '%s' -> %d sub-clusters (%d noise)",
                         mc.label,
@@ -859,7 +863,6 @@ async def execute_cold_path(
                     )
 
             if mega_split_created > 0:
-                await db.commit()
                 engine._invalidate_stats_cache()
                 nodes_created += mega_split_created
                 logger.info(
