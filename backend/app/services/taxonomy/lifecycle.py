@@ -20,6 +20,7 @@ import logging
 import math
 import random
 from collections import Counter
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -473,11 +474,22 @@ async def attempt_split(
     return created_children
 
 
+@dataclass
+class RetireResult:
+    """Result of an attempt_retire() call with full context for observability."""
+
+    success: bool
+    sibling_target_id: str | None = None
+    sibling_label: str | None = None
+    families_reparented: int = 0
+    optimizations_reassigned: int = 0
+
+
 async def attempt_retire(
     db: AsyncSession,
     node: PromptCluster,
     warm_path_age: int,
-) -> bool:
+) -> RetireResult:
     """Retire an idle PromptCluster and redistribute its families.
 
     Families belonging to *node* are reassigned to the first available
@@ -490,7 +502,7 @@ async def attempt_retire(
         warm_path_age: Warm-path age (reserved for quality gates).
 
     Returns:
-        True if the node was retired, False if skipped (no siblings).
+        RetireResult with success flag and context for observability.
     """
     _assert_domain_guardrails("retire", node)
     try:
@@ -501,7 +513,7 @@ async def attempt_retire(
                 node.label,
                 node.id,
             )
-            return False
+            return RetireResult(success=False)
 
         # Find active siblings.
         result = await db.execute(
@@ -519,7 +531,7 @@ async def attempt_retire(
                 node.label,
                 node.id,
             )
-            return False
+            return RetireResult(success=False)
 
         # Redistribute child clusters (families) to the first sibling.
         # NOTE: Do NOT increment target_sibling.member_count here — member_count
@@ -615,11 +627,17 @@ async def attempt_retire(
             target_sibling.label,
             target_sibling.id,
         )
-        return True
+        return RetireResult(
+            success=True,
+            sibling_target_id=target_sibling.id,
+            sibling_label=target_sibling.label,
+            families_reparented=families_moved,
+            optimizations_reassigned=opt_result.rowcount,
+        )
 
     except Exception:
         logger.exception("attempt_retire: unexpected error — skipping retire")
-        return False
+        return RetireResult(success=False)
 
 
 def prioritize_operations(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -1167,12 +1167,12 @@ async def phase_retire(
             ops_attempted += 1
             from app.services.taxonomy.lifecycle import attempt_retire
 
-            retired = await attempt_retire(
+            retire_result = await attempt_retire(
                 db=db,
                 node=node,
                 warm_path_age=engine._warm_path_age,
             )
-            if retired:
+            if retire_result.success:
                 ops_accepted += 1
                 operations_log.append({"type": "retire", "node_id": node.id})
                 await engine._embedding_index.remove(node.id)
@@ -1186,10 +1186,10 @@ async def phase_retire(
                         context={
                             "node_label": node.label,
                             "member_count_before": node.member_count or 0,
-                            "sibling_target_id": None,
-                            "sibling_label": None,
-                            "families_reparented": 0,
-                            "optimizations_reassigned": 0,
+                            "sibling_target_id": retire_result.sibling_target_id,
+                            "sibling_label": retire_result.sibling_label,
+                            "families_reparented": retire_result.families_reparented,
+                            "optimizations_reassigned": retire_result.optimizations_reassigned,
                         },
                     )
                 except RuntimeError:
