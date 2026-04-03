@@ -26,6 +26,12 @@ from app.services.taxonomy.cluster_meta import ClusterMeta, read_meta, write_met
 from app.services.taxonomy.cold_path import ColdPathResult
 from app.services.taxonomy.embedding_index import EmbeddingIndex, IndexSnapshot
 from app.services.taxonomy.engine import TaxonomyEngine
+from app.services.taxonomy.event_logger import (
+    TaxonomyEventLogger,
+    get_event_logger,
+    reset_event_logger,
+    set_event_logger,
+)
 from app.services.taxonomy.fusion import (
     CompositeQuery,
     PhaseWeights,
@@ -41,12 +47,6 @@ from app.services.taxonomy.matching import (
 from app.services.taxonomy.quality import QWeights
 from app.services.taxonomy.sparkline import SparklineData, compute_sparkline_data
 from app.services.taxonomy.transformation_index import TransformationIndex
-from app.services.taxonomy.event_logger import (
-    TaxonomyEventLogger,
-    get_event_logger,
-    reset_event_logger,
-    set_event_logger,
-)
 from app.services.taxonomy.warm_path import WarmPathResult
 
 __all__ = [

@@ -1526,17 +1526,6 @@ async def phase_discover(
             "Warm path discovered %d new domains: %s",
             len(new_domains), new_domains,
         )
-        for domain_label in new_domains:
-            try:
-                get_event_logger().log_decision(
-                    path="warm", op="discover", decision="domain_created",
-                    context={
-                        "domain_label": domain_label,
-                        "total_domains_after": result.domains_created,
-                    },
-                )
-            except RuntimeError:
-                pass
 
     # --- Candidate domain detection (near-threshold clusters) ---
     try:

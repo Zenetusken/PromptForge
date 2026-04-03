@@ -157,6 +157,8 @@ async def _run_speculative_phase(
                         "delta": round(q_after - q_before, 4),
                         "ops_accepted": phase_result.ops_accepted,
                         "ops_attempted": phase_result.ops_attempted,
+                        "rejection_count": engine._phase_rejection_counters.get(phase_name, 0),
+                        "operations": phase_result.operations[:10],
                     },
                 )
             except RuntimeError:
@@ -180,6 +182,7 @@ async def _run_speculative_phase(
                         "q_after": round(q_after, 4),
                         "delta": round(q_after - q_before, 4),
                         "ops_attempted": phase_result.ops_attempted,
+                        "rejection_count": engine._phase_rejection_counters.get(phase_name, 0),
                     },
                 )
             except RuntimeError:

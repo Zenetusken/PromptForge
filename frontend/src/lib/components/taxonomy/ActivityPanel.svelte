@@ -20,7 +20,7 @@
     events.filter(e => {
       if (filterPath && e.path !== filterPath) return false;
       if (filterOp && e.op !== filterOp) return false;
-      if (errorsOnly && e.op !== 'error') return false;
+      if (errorsOnly && !(e.op === 'error' || e.decision === 'rejected' || e.decision === 'failed')) return false;
       return true;
     }),
   );

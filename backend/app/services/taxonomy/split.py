@@ -136,6 +136,19 @@ async def split_cluster(
             logger.debug("k-means fallback failed: %s", km_exc)
 
     if split_result.n_clusters < 2:
+        try:
+            get_event_logger().log_decision(
+                path="warm", op="error", decision="split_failed",
+                cluster_id=node.id,
+                context={
+                    "source": "split_cluster",
+                    "error_type": "insufficient_clusters",
+                    "error_message": f"HDBSCAN produced {split_result.n_clusters} clusters from {len(child_blended)} members",
+                    "recovery": "skipped",
+                },
+            )
+        except RuntimeError:
+            pass
         return SplitResult(success=False, children_created=0, noise_reassigned=0)
 
     # Create child clusters

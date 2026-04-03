@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import time
+import traceback
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -417,6 +418,7 @@ class TaxonomyEngine:
                         "error_type": type(exc).__name__,
                         "error_message": str(exc)[:500],
                         "recovery": "skipped",
+                        "stack_trace": traceback.format_exc()[:500],
                     },
                 )
             except RuntimeError:
@@ -949,6 +951,19 @@ class TaxonomyEngine:
             )
             if node is not None:
                 operations.append({"type": "emerge", "node_id": node.id})
+                try:
+                    get_event_logger().log_decision(
+                        path="warm", op="emerge", decision="created",
+                        cluster_id=node.id,
+                        context={
+                            "member_count": node.member_count or 0,
+                            "coherence": round(node.coherence or 0, 4),
+                            "domain": node.domain or "general",
+                            "parent_id": node.parent_id,
+                        },
+                    )
+                except RuntimeError:
+                    pass
 
         return operations
 
@@ -1078,12 +1093,25 @@ class TaxonomyEngine:
                     break
 
                 # Create the domain node
-                await self._create_domain_node(
+                _domain_node, _members_reparented = await self._create_domain_node(
                     db, top_primary, existing_domains, candidate,
                     general_node_id=general_node.id,
                 )
                 created.append(top_primary)
                 existing_domains.add(top_primary)
+                try:
+                    get_event_logger().log_decision(
+                        path="warm", op="discover", decision="domain_created",
+                        cluster_id=_domain_node.id,
+                        context={
+                            "domain_label": top_primary,
+                            "seed_cluster_id": candidate.id,
+                            "consistency_pct": round(top_count / total, 4),
+                            "members_reparented": _members_reparented,
+                        },
+                    )
+                except RuntimeError:
+                    pass
             except Exception:
                 logger.error(
                     "Domain discovery failed for cluster %s — skipping",
@@ -1306,6 +1334,7 @@ class TaxonomyEngine:
         )
 
         # Re-parent matching clusters from "general" to the new domain
+        reparented = 0
         if general_node_id:
             reparented = await self._reparent_to_domain(
                 db, node, label, general_node_id,
@@ -1328,7 +1357,7 @@ class TaxonomyEngine:
         except Exception:
             pass
 
-        return node
+        return node, reparented
 
     async def _reparent_to_domain(
         self,
