@@ -68,12 +68,18 @@ def adaptive_merge_threshold(member_count: int) -> float:
     """Compute merge threshold that grows with cluster size.
 
     Small clusters accept new members easily (base=0.55), while large
-    clusters require increasingly similar prompts — preventing the
-    centroid-drift mega-cluster snowball effect.
+    clusters require increasingly similar prompts. Above 15 members,
+    quadratic pressure makes merges progressively harder — creating a
+    natural equilibrium that prevents centroid-drift mega-clusters.
     """
-    return BASE_MERGE_THRESHOLD + MERGE_GROWTH_PENALTY * math.log2(
+    base = BASE_MERGE_THRESHOLD + MERGE_GROWTH_PENALTY * math.log2(
         1 + max(member_count, 1)
     )
+    # Quadratic size pressure above 15 members
+    if member_count > 15:
+        size_pressure = 0.02 * ((member_count - 15) / 10) ** 2
+        base = min(0.92, base + size_pressure)
+    return base
 
 # ---------------------------------------------------------------------------
 # Score reconciliation helpers
@@ -311,10 +317,24 @@ async def assign_cluster(
                 matched = valid_clusters[idx]
                 threshold = adaptive_merge_threshold(matched.member_count or 1)
 
-                # Penalize cross-task_type merges — soft signal, not hard block
+                # Multi-signal assignment score — penalize merges into
+                # unhealthy, oversized, or task-mismatched clusters.
                 effective_score = score
+
+                # Signal 1: Coherence gate — incoherent clusters shouldn't absorb more
+                if matched.coherence is not None and matched.coherence < 0.4:
+                    effective_score -= (0.4 - matched.coherence) * 0.3  # max 0.12
+
+                # Signal 2: Output coherence — divergent outputs mean mixed styles
+                from app.services.taxonomy.cluster_meta import read_meta as _rm_assign
+                _assign_meta = _rm_assign(matched.cluster_metadata)
+                _out_coh = _assign_meta.get("output_coherence")
+                if _out_coh is not None and _out_coh < 0.35:
+                    effective_score -= (0.35 - _out_coh) * 0.4  # max 0.14
+
+                # Signal 3: Task-type mismatch — multiplicative (12% reduction)
                 if task_type and matched.task_type and task_type != matched.task_type:
-                    effective_score -= TASK_TYPE_MISMATCH_PENALTY
+                    effective_score *= 0.88
 
                 if effective_score >= threshold:
                     # Cross-domain merge prevention

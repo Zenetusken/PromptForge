@@ -752,25 +752,44 @@ async def phase_merge(
                 ),
             )
 
-            # Output coherence merge boost: if both clusters have high
-            # output coherence (>0.5), they produce similar outputs and
-            # are good merge candidates even if raw centroids are further
-            # apart. Reduce threshold by 0.03 to ease the merge gate.
+            # Quality gates: block merge if either cluster is unhealthy.
+            # Gate 1: Coherence floor — merging two fragmented clusters
+            # creates a worse fragmented cluster.
+            merge_blocked = False
+            if (
+                (merge_node_a.coherence is not None and merge_node_a.coherence < 0.35)
+                or (merge_node_b.coherence is not None and merge_node_b.coherence < 0.35)
+            ):
+                merge_blocked = True
+                logger.debug(
+                    "Merge blocked: coherence floor — '%s' (%.2f) + '%s' (%.2f)",
+                    merge_node_a.label, merge_node_a.coherence or 0,
+                    merge_node_b.label, merge_node_b.coherence or 0,
+                )
+
+            # Gate 2: Output coherence — block if either has divergent outputs.
+            # Ease threshold only when both are high (similar outputs, safe merge).
             a_meta = read_meta(merge_node_a.cluster_metadata)
             b_meta = read_meta(merge_node_b.cluster_metadata)
             a_out_coh = a_meta.get("output_coherence")
             b_out_coh = b_meta.get("output_coherence")
-            if (
+            if not merge_blocked and (
+                (a_out_coh is not None and a_out_coh < 0.30)
+                or (b_out_coh is not None and b_out_coh < 0.30)
+            ):
+                merge_blocked = True
+                logger.debug(
+                    "Merge blocked: low output coherence — '%s' (%.2f) + '%s' (%.2f)",
+                    merge_node_a.label, a_out_coh or 0,
+                    merge_node_b.label, b_out_coh or 0,
+                )
+            elif not merge_blocked and (
                 a_out_coh is not None and b_out_coh is not None
                 and a_out_coh > 0.5 and b_out_coh > 0.5
             ):
                 merge_threshold = max(merge_threshold - 0.03, 0.45)
-                logger.debug(
-                    "Output coherence merge boost for '%s'+'%s': out_coh=%.2f/%.2f, threshold lowered to %.3f",
-                    merge_node_a.label, merge_node_b.label, a_out_coh, b_out_coh, merge_threshold,
-                )
 
-            if best_score >= merge_threshold:
+            if not merge_blocked and best_score >= merge_threshold:
                 ops_attempted += 1
                 from app.services.taxonomy.lifecycle import attempt_merge
 
