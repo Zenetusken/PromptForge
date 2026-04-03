@@ -16,7 +16,10 @@ function mockClusterNode(id: string, overrides: Partial<ClusterNode> = {}): Clus
     coherence: 0.8, separation: null, stability: null,
     member_count: 3, usage_count: 1, avg_score: 7.0,
     color_hex: null, umap_x: null, umap_y: null, umap_z: null,
-    preferred_strategy: null, created_at: null,
+    preferred_strategy: null,
+    output_coherence: null, blend_w_raw: null, blend_w_optimized: null,
+    blend_w_transform: null, split_failures: 0,
+    created_at: null,
     ...overrides,
   };
 }

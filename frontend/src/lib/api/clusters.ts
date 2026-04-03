@@ -27,6 +27,11 @@ export interface ClusterNode {
   umap_y: number | null;
   umap_z: number | null;
   preferred_strategy: string | null;
+  output_coherence: number | null;
+  blend_w_raw: number | null;
+  blend_w_optimized: number | null;
+  blend_w_transform: number | null;
+  split_failures: number;
   created_at: string | null;
   // Only populated by getClusterDetail
   children?: ClusterNode[];
@@ -61,6 +66,11 @@ export interface ClusterDetail {
   avg_score: number | null;
   coherence: number | null;
   separation: number | null;
+  output_coherence: number | null;
+  blend_w_raw: number | null;
+  blend_w_optimized: number | null;
+  blend_w_transform: number | null;
+  split_failures: number;
   preferred_strategy: string | null;
   promoted_at: string | null;
   meta_patterns: MetaPatternItem[];

@@ -23,6 +23,8 @@ function makeNode(overrides: Partial<ClusterNode> = {}): ClusterNode {
     umap_y: 2.0,
     umap_z: 3.0,
     preferred_strategy: null,
+    output_coherence: null, blend_w_raw: null, blend_w_optimized: null,
+    blend_w_transform: null, split_failures: 0,
     created_at: null,
     children: [],
     ...overrides,
