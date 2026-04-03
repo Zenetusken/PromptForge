@@ -389,7 +389,9 @@ async def assign_cluster(
                     else:
                         # Score-weighted centroid: higher-scoring prompts
                         # shift the centroid more than low-scoring ones.
-                        score_weight = max(0.1, (overall_score or 5.0) / 10.0)
+                        # Power-law weight for better score differentiation (4.25x range vs 1.37x).
+                        # score 3.0 → 0.20, score 5.0 → 0.35, score 7.0 → 0.59, score 9.0 → 0.85
+                        score_weight = max(0.2, ((overall_score or 5.0) / 10.0) ** 1.5)
                         old_centroid = np.frombuffer(
                             matched.centroid_embedding, dtype=np.float32
                         )
