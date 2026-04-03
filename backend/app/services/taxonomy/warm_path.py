@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PromptCluster
 from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD
+from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.quality import is_non_regressive
 from app.services.taxonomy.warm_phases import (
     PhaseResult,
@@ -146,6 +147,20 @@ async def _run_speculative_phase(
                 "Phase %s accepted: Q %.4f -> %.4f (ops=%d)",
                 phase_name, q_before, q_after, phase_result.ops_accepted,
             )
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="phase", decision="accepted",
+                    context={
+                        "phase_name": phase_name,
+                        "q_before": round(q_before, 4),
+                        "q_after": round(q_after, 4),
+                        "delta": round(q_after - q_before, 4),
+                        "ops_accepted": phase_result.ops_accepted,
+                        "ops_attempted": phase_result.ops_attempted,
+                    },
+                )
+            except RuntimeError:
+                pass
             return phase_result
         else:
             await db.rollback()
@@ -156,6 +171,19 @@ async def _run_speculative_phase(
                 "Phase %s rejected (Q regression): Q %.4f -> %.4f",
                 phase_name, q_before, q_after,
             )
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="phase", decision="rejected",
+                    context={
+                        "phase_name": phase_name,
+                        "q_before": round(q_before, 4),
+                        "q_after": round(q_after, 4),
+                        "delta": round(q_after - q_before, 4),
+                        "ops_attempted": phase_result.ops_attempted,
+                    },
+                )
+            except RuntimeError:
+                pass
             return phase_result
 
 

@@ -41,6 +41,7 @@ from app.services.taxonomy._constants import (
     _utcnow,
 )
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
+from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.clustering import (
     batch_cluster,
     blend_embeddings,
@@ -368,6 +369,17 @@ async def phase_reconcile(
                 await engine._embedding_index.remove(node.id)
                 await engine._transformation_index.remove(node.id)
                 await engine._optimized_index.remove(node.id)
+                try:
+                    get_event_logger().log_decision(
+                        path="warm", op="retire", decision="zombie_archived",
+                        cluster_id=node.id,
+                        context={
+                            "node_label": node.label,
+                            "member_count_before": 0,
+                        },
+                    )
+                except RuntimeError:
+                    pass
 
         if result.zombies_archived:
             logger.info(
@@ -571,6 +583,25 @@ async def phase_split_emerge(
                         "Leaf split complete: '%s' -> %d sub-clusters",
                         node.label, result.children_created,
                     )
+                    try:
+                        get_event_logger().log_decision(
+                            path="warm", op="split", decision="leaf_split",
+                            cluster_id=node.id,
+                            context={
+                                "trigger": "coherence_floor",
+                                "coherence": round(coherence, 4),
+                                "floor": round(dynamic_floor, 4),
+                                "hdbscan_clusters": result.children_created,
+                                "noise_count": result.noise_reassigned,
+                                "children": [
+                                    {"id": c.id, "label": c.label, "members": c.member_count or 0, "coherence": round(c.coherence or 0.0, 4)}
+                                    for c in result.children
+                                ],
+                                "fallback": "none",
+                            },
+                        )
+                    except RuntimeError:
+                        pass
 
         # --- Family-based split path ---
         if len(node_families) >= SPLIT_MIN_MEMBERS:
@@ -789,6 +820,28 @@ async def phase_merge(
             ):
                 merge_threshold = max(merge_threshold - 0.03, 0.45)
 
+            if merge_blocked:
+                # Determine which gate blocked the merge for observability
+                _gate = "coherence_floor"
+                if (
+                    (a_out_coh is not None and a_out_coh < 0.30)
+                    or (b_out_coh is not None and b_out_coh < 0.30)
+                ):
+                    _gate = "output_floor"
+                try:
+                    get_event_logger().log_decision(
+                        path="warm", op="merge", decision="blocked",
+                        context={
+                            "pair": [merge_node_a.id, merge_node_b.id],
+                            "labels": [merge_node_a.label, merge_node_b.label],
+                            "similarity": round(best_score, 4),
+                            "threshold": round(merge_threshold, 4),
+                            "gate": _gate,
+                        },
+                    )
+                except RuntimeError:
+                    pass
+
             if not merge_blocked and best_score >= merge_threshold:
                 ops_attempted += 1
                 from app.services.taxonomy.lifecycle import attempt_merge
@@ -805,17 +858,33 @@ async def phase_merge(
                     operations_log.append(
                         {"type": "merge", "node_id": merged.id}
                     )
+                    loser = (
+                        merge_node_b
+                        if merged.id == merge_node_a.id
+                        else merge_node_a
+                    )
+                    try:
+                        get_event_logger().log_decision(
+                            path="warm", op="merge", decision="merged",
+                            cluster_id=merged.id,
+                            context={
+                                "pair": [merge_node_a.id, merge_node_b.id],
+                                "labels": [merge_node_a.label, merge_node_b.label],
+                                "similarity": round(best_score, 4),
+                                "threshold": round(merge_threshold, 4),
+                                "gate": "passed",
+                                "survivor_id": merged.id,
+                                "combined_members": merged.member_count or 0,
+                            },
+                        )
+                    except RuntimeError:
+                        pass
                     # Update embedding index: upsert winner, remove loser
                     winner_centroid = np.frombuffer(
                         merged.centroid_embedding, dtype=np.float32
                     )
                     await engine._embedding_index.upsert(
                         merged.id, winner_centroid
-                    )
-                    loser = (
-                        merge_node_b
-                        if merged.id == merge_node_a.id
-                        else merge_node_a
                     )
                     await engine._embedding_index.remove(loser.id)
                     await engine._transformation_index.remove(loser.id)
@@ -1072,6 +1141,17 @@ async def phase_retire(
                 await engine._transformation_index.remove(node.id)
                 await engine._optimized_index.remove(node.id)
                 embedding_index_mutations += 1
+                try:
+                    get_event_logger().log_decision(
+                        path="warm", op="retire", decision="archived",
+                        cluster_id=node.id,
+                        context={
+                            "node_label": node.label,
+                            "member_count_before": node.member_count or 0,
+                        },
+                    )
+                except RuntimeError:
+                    pass
 
     return PhaseResult(
         phase="retire",
@@ -1202,6 +1282,18 @@ async def phase_refresh(
                 "Refreshed label+patterns for '%s' (members=%d, prev_pmc=%d)",
                 node.label, node.member_count, last_pmc,
             )
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="phase", decision="refresh",
+                    cluster_id=node.id,
+                    context={
+                        "cluster_label": node.label,
+                        "members": node.member_count or 0,
+                        "new_patterns": len(new_pattern_texts),
+                    },
+                )
+            except RuntimeError:
+                pass
 
         if result.clusters_refreshed:
             await db.flush()
@@ -1429,6 +1521,17 @@ async def phase_discover(
             "Warm path discovered %d new domains: %s",
             len(new_domains), new_domains,
         )
+        for domain_label in new_domains:
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="discover", decision="domain_created",
+                    context={
+                        "domain_label": domain_label,
+                        "total_domains_after": result.domains_created,
+                    },
+                )
+            except RuntimeError:
+                pass
 
     # --- Candidate domain detection (near-threshold clusters) ---
     try:
