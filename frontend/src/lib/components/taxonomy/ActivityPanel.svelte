@@ -43,7 +43,7 @@
       return 'var(--color-neon-yellow)';
     // Informational — algorithm results, noise
     if (d === 'algorithm_result' || d === 'noise_reassigned' || d === 'mega_clusters_detected'
-        || d === 'no_sub_structure')
+        || d === 'no_sub_structure' || d === 'scored')
       return 'var(--color-text-secondary)';
     return 'var(--color-text-dim)';
   }
@@ -94,6 +94,11 @@
       const sim = typeof c.similarity === 'number' ? `sim=${c.similarity.toFixed(3)}` : '';
       const gate = typeof c.gate === 'string' ? ` [${c.gate}]` : '';
       return sim + gate;
+    }
+    if (e.op === 'score') {
+      const overall = typeof c.overall === 'number' ? c.overall.toFixed(1) : '?';
+      const divs = Array.isArray(c.divergence) && c.divergence.length > 0 ? ` [${c.divergence.join(',')}]` : '';
+      return `${overall}${divs}`;
     }
     if (e.op === 'extract') {
       return typeof c.meta_patterns_added === 'number' ? `${c.meta_patterns_added} patterns` : '';
@@ -194,7 +199,7 @@
     </div>
     <!-- Operation type filter chips -->
     <div class="ap-filter-row">
-      {#each ['assign','extract','split','merge','retire','phase','refit','emerge','discover','reconcile','refresh','error'] as opVal}
+      {#each ['assign','extract','score','split','merge','retire','phase','refit','emerge','discover','reconcile','refresh','error'] as opVal}
         <button
           class="ap-chip"
           class:ap-chip-active={filterOp === opVal}

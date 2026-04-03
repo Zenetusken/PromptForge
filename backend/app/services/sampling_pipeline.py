@@ -962,6 +962,28 @@ async def run_sampling_pipeline(
             deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
             scoring_mode = "hybrid"
 
+            # Log scoring trace for observability
+            try:
+                from app.services.taxonomy.event_logger import get_event_logger
+                get_event_logger().log_decision(
+                    path="hot", op="score", decision="scored",
+                    optimization_id=trace_id,
+                    context={
+                        "scoring_mode": "hybrid",
+                        "overall": optimized_scores.overall,
+                        "blended": blended_optimized.as_dict(),
+                        "raw_llm": blended_optimized.raw_llm,
+                        "raw_heuristic": blended_optimized.raw_heuristic,
+                        "deltas": deltas,
+                        "divergence": blended_optimized.divergence_flags,
+                        "normalization": blended_optimized.normalization_applied,
+                        "strategy": effective_strategy,
+                        "task_type": analysis.task_type,
+                    },
+                )
+            except RuntimeError:
+                pass
+
             _divergence_flags = blended_optimized.divergence_flags or []
             if _divergence_flags:
                 warnings.append(
@@ -976,6 +998,21 @@ async def run_sampling_pipeline(
             deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
             scoring_mode = "heuristic"
             logger.info("Using heuristic-only scores (LLM scorer unavailable)")
+
+            # Log fallback event
+            try:
+                from app.services.taxonomy.event_logger import get_event_logger
+                get_event_logger().log_decision(
+                    path="hot", op="score", decision="fallback",
+                    optimization_id=trace_id,
+                    context={
+                        "scoring_mode": "heuristic",
+                        "reason": "LLM scorer unavailable",
+                        "heuristic_scores": heur_optimized,
+                    },
+                )
+            except RuntimeError:
+                pass
 
         phase_durations["score_ms"] = int((time.monotonic() - phase_t0) * 1000)
         if trace_logger:

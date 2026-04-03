@@ -718,6 +718,28 @@ class PipelineOrchestrator:
 
                 deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
 
+                # Log scoring trace for observability
+                try:
+                    from app.services.taxonomy.event_logger import get_event_logger
+                    get_event_logger().log_decision(
+                        path="hot", op="score", decision="scored",
+                        optimization_id=trace_id,
+                        context={
+                            "scoring_mode": "hybrid",
+                            "overall": optimized_scores.overall,
+                            "blended": blended_optimized.as_dict(),
+                            "raw_llm": blended_optimized.raw_llm,
+                            "raw_heuristic": blended_optimized.raw_heuristic,
+                            "deltas": deltas,
+                            "divergence": blended_optimized.divergence_flags,
+                            "normalization": blended_optimized.normalization_applied,
+                            "strategy": effective_strategy,
+                            "task_type": analysis.task_type,
+                        },
+                    )
+                except RuntimeError:
+                    pass
+
                 if optimized_scores.faithfulness < 6.0:
                     logger.warning(
                         "Low faithfulness score (%.1f) — optimization may have altered intent. trace_id=%s",
