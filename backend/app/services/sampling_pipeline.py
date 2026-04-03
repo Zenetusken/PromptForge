@@ -1086,7 +1086,8 @@ async def run_sampling_pipeline(
             heuristic_flags=_divergence_flags or None,
             suggestions=suggestions,
         )
-        # Compute weighted improvement score from deltas
+        # Compute weighted improvement score from deltas.
+        # Weights match DIMENSION_WEIGHTS in score_blender.py.
         if deltas:
             _imp = (
                 deltas.get("clarity", 0) * 0.25

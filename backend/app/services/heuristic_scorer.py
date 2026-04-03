@@ -150,7 +150,7 @@ class HeuristicScorer:
     def heuristic_specificity(prompt: str) -> float:
         """Score how specific and constrained the prompt is.
 
-        Constraint indicators (each unique hit adds 1.3 to base 2.0):
+        Constraint indicators (each unique hit adds 1.5 to base 2.0):
         - Modal obligations: must / shall / should
         - Outcome verbs: return / raise / output / yield
         - Type hints (e.g. ``str``, ``int``, ``list``, ``dict``, ``bool``, ``float``)
