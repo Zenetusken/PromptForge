@@ -193,3 +193,111 @@ export function assessTaxonomyHealth(stats: ClusterStats | null): HealthAssessme
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+// ---------------------------------------------------------------------------
+// Context-aware insight text for the topology info panel
+// ---------------------------------------------------------------------------
+
+export type PanelMode = 'system' | 'cluster' | 'domain';
+
+export interface PanelInsightInput {
+  mode: PanelMode;
+  stats: ClusterStats | null;
+  detail: {
+    coherence: number | null;
+    separation: number | null;
+    output_coherence: number | null;
+    blend_w_optimized: number | null;
+    member_count: number;
+    split_failures: number;
+    label: string;
+    state: string;
+  } | null;
+  domainChildCount?: number;
+  domainBelowFloor?: number;
+  topPattern?: string;
+  topPatternCount?: number;
+}
+
+export function generatePanelInsight(input: PanelInsightInput): string {
+  const { mode, stats, detail } = input;
+
+  if (mode === 'system') {
+    const parts: string[] = [];
+    const active = stats?.nodes?.active ?? 0;
+    if (active > 0) parts.push(`${active} active clusters`);
+
+    const dbcv = stats?.q_dbcv ?? 0;
+    if (dbcv > 0) {
+      parts.push(`silhouette ${dbcv.toFixed(2)}`);
+    } else {
+      parts.push('silhouette pending (run recluster)');
+    }
+
+    const lastCold = stats?.last_cold_path;
+    if (lastCold) {
+      const ago = formatTimeAgo(lastCold);
+      parts.push(`last recluster ${ago}`);
+    }
+    return capitalize(parts.join('. ')) + '.';
+  }
+
+  if (mode === 'cluster' && detail) {
+    const parts: string[] = [];
+    const outCoh = detail.output_coherence;
+    const coh = detail.coherence ?? 1.0;
+    const blendOpt = detail.blend_w_optimized;
+
+    if (coh >= 0.7 && (outCoh == null || outCoh >= 0.5)) {
+      parts.push('Well-focused group');
+      if (blendOpt != null && blendOpt >= 0.15) {
+        parts.push('all embedding signals contribute');
+      }
+    } else if (outCoh != null && outCoh < 0.25) {
+      parts.push('Members produce divergent outputs');
+      if (blendOpt != null) {
+        parts.push(`optimized signal reduced to ${Math.round(blendOpt * 100)}%`);
+      }
+    } else if (coh < 0.5) {
+      parts.push('Low coherence — prompts in this group are quite different');
+      if (detail.split_failures >= 3) {
+        parts.push('split attempts exhausted');
+      }
+    } else {
+      parts.push(`${detail.member_count} members`);
+      if (outCoh != null && outCoh < 0.5) {
+        parts.push('moderate output diversity');
+      }
+    }
+    return capitalize(parts.join('. ')) + '.';
+  }
+
+  if (mode === 'domain') {
+    const parts: string[] = [];
+    const childCount = input.domainChildCount ?? 0;
+    if (childCount > 0) parts.push(`${childCount} clusters`);
+    const belowFloor = input.domainBelowFloor ?? 0;
+    if (belowFloor > 0) {
+      parts.push(`${belowFloor} below coherence floor`);
+    }
+    if (input.topPattern && input.topPatternCount) {
+      const shortPattern = input.topPattern.length > 40
+        ? input.topPattern.slice(0, 37) + '...'
+        : input.topPattern;
+      parts.push(`top pattern: ${shortPattern} (x${input.topPatternCount})`);
+    }
+    return capitalize(parts.join('. ')) + '.';
+  }
+
+  return '';
+}
+
+function formatTimeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
