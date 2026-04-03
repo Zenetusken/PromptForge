@@ -53,6 +53,7 @@ from app.services.taxonomy.coloring import enforce_minimum_delta_e, generate_col
 from app.services.taxonomy.family_ops import adaptive_merge_threshold
 from app.services.taxonomy.labeling import generate_label
 from app.services.taxonomy.projection import UMAPProjector, procrustes_align
+from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.quality import is_cold_path_non_regressive
 from app.services.taxonomy.snapshot import create_snapshot
 
@@ -631,6 +632,19 @@ async def execute_cold_path(
             q_coverage=0.0,
             nodes_created=0,
         )
+        try:
+            get_event_logger().log_decision(
+                path="cold", op="refit", decision="rejected",
+                context={
+                    "q_before": round(q_before, 4),
+                    "q_after": round(q_after, 4),
+                    "clusters_input": len(families),
+                    "hdbscan_clusters": cluster_result.n_clusters,
+                    "accepted": False,
+                },
+            )
+        except RuntimeError:
+            pass
         return ColdPathResult(
             snapshot_id=snap.id,
             q_before=q_before,
@@ -789,6 +803,27 @@ async def execute_cold_path(
         nodes_created=nodes_created,
     )
 
+    try:
+        get_event_logger().log_decision(
+            path="cold", op="refit", decision="accepted",
+            context={
+                "q_before": round(q_before, 4),
+                "q_after": round(q_after, 4),
+                "clusters_input": len(families),
+                "hdbscan_clusters": cluster_result.n_clusters,
+                "nodes_created": nodes_created,
+                "nodes_updated": nodes_updated,
+                "blended_weights": {
+                    "raw": round(1.0 - CLUSTERING_BLEND_W_OPTIMIZED - CLUSTERING_BLEND_W_TRANSFORM, 3),
+                    "optimized": round(CLUSTERING_BLEND_W_OPTIMIZED, 3),
+                    "transform": round(CLUSTERING_BLEND_W_TRANSFORM, 3),
+                },
+                "accepted": True,
+            },
+        )
+    except RuntimeError:
+        pass
+
     # ------------------------------------------------------------------
     # Step 25: Mega-cluster split pass
     # Identify clusters with high member count + low coherence and split
@@ -814,6 +849,17 @@ async def execute_cold_path(
                 "Mega-cluster split pass: %d candidates detected",
                 len(mega_clusters),
             )
+            try:
+                get_event_logger().log_decision(
+                    path="cold", op="split", decision="mega_clusters_detected",
+                    context={
+                        "mega_cluster_ids": [mc.id for mc in mega_clusters],
+                        "member_counts": [mc.member_count or 0 for mc in mega_clusters],
+                        "coherences": [round(mc.coherence or 0.0, 4) for mc in mega_clusters],
+                    },
+                )
+            except RuntimeError:
+                pass
 
             for mc in mega_clusters:
                 # Load member embeddings

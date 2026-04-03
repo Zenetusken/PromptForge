@@ -30,6 +30,7 @@ from app.config import settings
 from app.models import Optimization, PromptCluster
 from app.services.taxonomy._constants import SPLIT_MIN_MEMBERS, _utcnow
 from app.services.taxonomy.cluster_meta import write_meta
+from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.clustering import (
     batch_cluster,
     blend_embeddings,
@@ -244,6 +245,21 @@ async def split_cluster(
             "  Split child '%s' (%d members, coherence=%.3f)",
             label, len(group_opt_ids), child_coherence,
         )
+        try:
+            get_event_logger().log_decision(
+                path="cold" if len(node.label) > 0 else "warm",
+                op="split", decision="child_created",
+                cluster_id=child_node.id,
+                context={
+                    "parent_id": node.id,
+                    "parent_label": node.label,
+                    "child_label": label,
+                    "members": len(group_opt_ids),
+                    "coherence": round(child_coherence, 4),
+                },
+            )
+        except RuntimeError:
+            pass
 
     if len(new_children) < 2:
         return SplitResult(success=False, children_created=0, noise_reassigned=0)
@@ -404,6 +420,24 @@ async def split_cluster(
         "Split '%s' -> %d sub-clusters (%d noise reassigned)",
         node.label, len(new_children), noise_reassigned,
     )
+
+    try:
+        get_event_logger().log_decision(
+            path="cold", op="split", decision="split_complete",
+            cluster_id=node.id,
+            context={
+                "parent_label": node.label,
+                "hdbscan_clusters": len(new_children),
+                "noise_count": noise_reassigned,
+                "children": [
+                    {"id": c.id, "label": c.label, "members": c.member_count or 0, "coherence": round(c.coherence or 0.0, 4)}
+                    for c in new_children
+                ],
+                "fallback": "kmeans" if split_result.n_clusters >= 2 and getattr(split_result, "persistences", [0.5]) == [0.5, 0.5] else "none",
+            },
+        )
+    except RuntimeError:
+        pass
 
     return SplitResult(
         success=True,
