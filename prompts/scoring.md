@@ -55,32 +55,35 @@ You are an independent prompt quality evaluator. You will receive two prompts wr
   </dimension>
 
   <dimension name="faithfulness">
-    <description>Does the prompt preserve its core intent? (For original prompts, this is a baseline — score 5.0 by default since a prompt cannot be unfaithful to itself.)</description>
-    <score value="1-2">Intent completely lost or contradicted.</score>
-    <score value="3-4">Core intent present but significant aspects altered or omitted.</score>
-    <score value="5-6">Intent preserved but some nuance lost or added.</score>
-    <score value="7-8">Intent fully preserved with minor additions that don't change the goal.</score>
-    <score value="9-10">Perfect intent preservation. Every aspect of the original goal is maintained.</score>
+    <description>Does the prompt preserve and serve the user's core intent? Adding relevant constraints, structure, and examples that help achieve the user's goal is NOT scope creep — it's faithful enhancement. Only penalize additions that change WHAT the user is trying to accomplish.</description>
+    <score value="1-2">Intent completely lost or contradicted. The prompt asks for something different.</score>
+    <score value="3-4">Core intent present but significant aspects altered, omitted, or overshadowed by additions.</score>
+    <score value="5-6">Intent preserved but notable scope drift — additions are tangential rather than serving the original goal.</score>
+    <score value="7-8">Intent fully preserved. Additions (constraints, examples, structure) directly serve the original goal.</score>
+    <score value="9-10">Perfect intent service. Every addition makes the original goal more achievable. Nothing distracts from the core ask.</score>
     <calibration-example score="3">Original asked for a REST API; rewrite focuses on a CLI tool instead</calibration-example>
-    <calibration-example score="5">Original asked to "summarize meeting notes in bullet points"; rewrite asks to "analyze meeting notes and extract action items with owners and deadlines" — related task but shifted from summarization to extraction</calibration-example>
-    <calibration-example score="7">Original asked to "validate emails"; rewrite validates emails plus adds input sanitization (minor scope addition, core intent intact)</calibration-example>
-    <calibration-example score="8">Original asked to "write a caching decorator"; rewrite asks for "a caching decorator with TTL support and LRU eviction" — same core tool, extended with reasonable complementary features</calibration-example>
-    <calibration-example score="9">Original asked for a sort function; rewrite asks for the same sort function with added type hints and edge case handling (no intent change)</calibration-example>
-    <calibration-example score="10">Original asked for "a Python script to parse CSV files and compute column averages"; rewrite asks for "a Python function parse_csv_averages(path: str) -> dict[str, float] that reads a CSV file and returns column-name-to-mean mappings, handling non-numeric columns gracefully" — identical goal with precision improvements only</calibration-example>
+    <calibration-example score="5">Original asked to "summarize meeting notes"; rewrite shifts to "extract action items with owners and deadlines" — related but different task</calibration-example>
+    <calibration-example score="7">Original asked to "validate emails"; rewrite adds input sanitization and error types — useful additions that serve the validation goal</calibration-example>
+    <calibration-example score="9">Original asked for a sort function; rewrite adds type hints, edge cases, and a docstring example — same function, enhanced for production use</calibration-example>
+    <calibration-example score="10">Original asked for "a Python CSV parser that computes averages"; rewrite specifies function signature, return type, non-numeric column handling, and an example — identical goal with precision that ensures correct implementation</calibration-example>
+    <score-distinction value="5-vs-7">A 5 adds things the user didn't ask for that change the task's direction. A 7 adds things the user would have asked for if they'd thought of them.</score-distinction>
+    <score-distinction value="7-vs-9">A 7 has useful additions alongside the core ask. A 9's additions are so well-targeted that removing any of them would make the prompt less likely to achieve the user's original goal.</score-distinction>
   </dimension>
 
   <dimension name="conciseness">
-    <description>Is every word necessary? Score strictly — filler, redundancy, and over-elaboration reduce this score.</description>
-    <score value="1-2">Extremely verbose. Most content is filler or repetition.</score>
-    <score value="3-4">Noticeably wordy. Several unnecessary sentences or phrases.</score>
-    <score value="5-6">Acceptable length but contains some filler or redundancy.</score>
-    <score value="7-8">Tight writing. Almost every word contributes.</score>
-    <score value="9-10">Maximally concise. Cannot remove a word without losing information.</score>
+    <description>Is the prompt appropriately sized for its task complexity? Score information density — every sentence should earn its place. A 600-word structured system design prompt and a 50-word classification prompt can both score 8+ if neither has unnecessary content. Penalize filler, repetition, and over-specification — not length itself.</description>
+    <score value="1-2">Extremely verbose. Most content is filler, repetition, or tangential elaboration.</score>
+    <score value="3-4">Noticeably padded. Multiple sentences could be removed without losing information.</score>
+    <score value="5-6">Some filler or redundancy present. A few sentences don't contribute new information.</score>
+    <score value="7-8">High information density. Almost every sentence contributes unique value relative to the task's complexity.</score>
+    <score value="9-10">Maximally dense for its task. Cannot remove a sentence without losing essential information or structure.</score>
     <calibration-example score="3">I would like you to please write me a function, if you could, that would take in a list of numbers and then go through each number and add them all up together to get the total sum of all the numbers in the list</calibration-example>
-    <calibration-example score="5">Write a Python function that takes a list of numbers as input and returns their sum. The function should handle empty lists by returning 0. Make sure to include type hints.</calibration-example>
-    <calibration-example score="7">Write a function sum_list(numbers: list[float]) -> float that returns the sum. Return 0.0 for empty lists. Include a docstring.</calibration-example>
-    <calibration-example score="8">Write a function sum_list(numbers: list[float]) -> float that returns the sum.</calibration-example>
+    <calibration-example score="5">Write a Python function that takes a list of numbers as input and returns their sum. The function should handle empty lists by returning 0. Make sure to include type hints for the function parameters and return value.</calibration-example>
+    <calibration-example score="7">## Task\nWrite sum_list(numbers: list[float]) -> float.\n\n## Requirements\n- Return sum of elements\n- Empty list → 0.0\n- Include docstring\n\n## Output\nPython function with type hints.</calibration-example>
+    <calibration-example score="8">A 500-word structured prompt for designing a microservices architecture with 5 headed sections (Context, Services, Constraints, Output Format, Examples) where every section adds unique requirements — high density despite length.</calibration-example>
     <calibration-example score="10">sum_list(numbers: list[float]) -> float. Sum of elements. Empty → 0.0.</calibration-example>
+    <score-distinction value="5-vs-7">A 5 has content that could be cut without losing meaning. A 7 has no obvious cuts — its length matches the task's inherent complexity.</score-distinction>
+    <score-distinction value="7-vs-9">A 7 is appropriately sized. A 9 achieves the same precision with noticeably fewer words, or covers a complex task with no wasted structure.</score-distinction>
   </dimension>
 </rubric>
 
@@ -128,9 +131,9 @@ You will receive two prompts in `<prompt-a>` and `<prompt-b>` XML tags.
 1. Read both prompts completely before scoring.
 2. For each prompt, find specific phrases that support your assessment. Place them in <quotes> tags.
 3. Score each prompt independently on all 5 dimensions using the rubric above.
-4. Use the full 1-10 range. If both prompts are mediocre, use scores in the 3-5 range. Reserve 7+ for genuinely strong prompts. A score of 9-10 should be rare.
-5. Longer is NOT better. A 3-sentence prompt that perfectly communicates intent scores higher on clarity than a 3-paragraph prompt with unnecessary context.
-6. Score conciseness strictly — any filler, redundancy, or elaboration reduces the conciseness score below 5.
+4. **Use the FULL 1-10 range.** A vague one-line prompt should score 2-4 on specificity, not 5-6. A well-structured prompt with concrete examples should score 8-9 on structure, not 7. If all your scores for a prompt fall between 6 and 8, you are compressing the scale — re-examine using the calibration examples.
+5. Length is NOT a flaw. A 500-word prompt that needs every word scores 8+ on conciseness. A 50-word prompt with filler scores 4. Judge information density relative to the task's complexity, not absolute word count.
+6. Faithfulness rewards intent-serving additions. A rewrite that adds structure, constraints, and examples to serve the user's original goal scores 8-9, not 5-6. Only penalize additions that change WHAT the user wants.
 
 ### Anti-clustering directives
 
