@@ -117,6 +117,9 @@
         domainStore.invalidate();
         addToast('created', 'Taxonomy updated');
       }
+      if (type === 'taxonomy_activity') {
+        window.dispatchEvent(new CustomEvent('taxonomy-activity', { detail: data }));
+      }
       if (type === 'domain_created') {
         domainStore.invalidate();
       }

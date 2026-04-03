@@ -218,3 +218,54 @@ export async function getClusterInjectionEdges(): Promise<InjectionEdge[]> {
   return resp.edges;
 }
 
+// -- Activity API --
+
+export interface TaxonomyActivityEvent {
+  ts: string;
+  path: string;
+  op: string;
+  decision: string;
+  cluster_id: string | null;
+  optimization_id: string | null;
+  duration_ms: number | null;
+  context: Record<string, unknown>;
+}
+
+export interface ActivityResponse {
+  events: TaxonomyActivityEvent[];
+  total_in_buffer: number;
+  oldest_ts: string | null;
+}
+
+export interface ActivityHistoryResponse {
+  events: TaxonomyActivityEvent[];
+  total: number;
+  has_more: boolean;
+}
+
+export async function getClusterActivity(params?: {
+  limit?: number;
+  path?: string;
+  op?: string;
+  errors_only?: boolean;
+}): Promise<ActivityResponse> {
+  const search = new URLSearchParams();
+  if (params?.limit != null) search.set('limit', String(params.limit));
+  if (params?.path) search.set('path', params.path);
+  if (params?.op) search.set('op', params.op);
+  if (params?.errors_only) search.set('errors_only', 'true');
+  const qs = search.toString();
+  return apiFetch<ActivityResponse>(`/clusters/activity${qs ? '?' + qs : ''}`);
+}
+
+export async function getClusterActivityHistory(params: {
+  date: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ActivityHistoryResponse> {
+  const search = new URLSearchParams({ date: params.date });
+  if (params.limit != null) search.set('limit', String(params.limit));
+  if (params.offset != null) search.set('offset', String(params.offset));
+  return apiFetch<ActivityHistoryResponse>(`/clusters/activity/history?${search.toString()}`);
+}
+

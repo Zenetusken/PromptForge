@@ -7,8 +7,10 @@
   import { TopologyLabels } from './TopologyLabels';
   import { settleForces } from './TopologyWorker';
   import TopologyControls from './TopologyControls.svelte';
+  import ActivityPanel from './ActivityPanel.svelte';
   import * as THREE from 'three';
   import { triggerRecluster } from '$lib/api/clusters';
+  import type { TaxonomyActivityEvent } from '$lib/api/clusters';
   import { addToast } from '$lib/stores/toast.svelte';
   import { stateColor } from '$lib/utils/colors';
   import { parsePrimaryDomain } from '$lib/utils/formatting';
@@ -80,6 +82,7 @@
   let lodTier = $state<LODTier>('far');
   let focusedNodeId = $state<string | null>(null);
   let hoveredNodeId = $state<string | null>(null);
+  let showActivity = $state(false);
 
   // Node meshes for raycasting
   let nodeMeshes: Map<string, THREE.Mesh> = new Map();
@@ -675,6 +678,7 @@
   });
 </script>
 
+<div class="topology-outer" class:topology-has-activity={showActivity}>
 <div class="topology-container" bind:this={container}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <canvas
@@ -684,8 +688,10 @@
   ></canvas>
   <TopologyControls
     {lodTier}
+    {showActivity}
     onSearch={handleSearch}
     onRecluster={handleRecluster}
+    onToggleActivity={() => { showActivity = !showActivity; }}
   />
   {#if hoveredNodeId}
     <div class="topology-tooltip" role="tooltip">
@@ -699,13 +705,38 @@
     <div class="topology-error" role="alert" aria-live="polite">{clustersStore.taxonomyError}</div>
   {/if}
 </div>
+{#if showActivity}
+  <div class="topology-activity">
+    <ActivityPanel />
+  </div>
+{/if}
+</div>
 
 <style>
-  .topology-container {
-    position: relative;
+  .topology-outer {
+    display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
+  }
+
+  .topology-container {
+    position: relative;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
+  }
+
+  .topology-has-activity .topology-container {
+    /* When activity panel is open, give canvas 65% of space */
+    flex: 0 0 65%;
+  }
+
+  .topology-activity {
+    flex: 0 0 35%;
+    min-height: 0;
+    overflow: hidden;
+    border-top: 1px solid var(--color-border-subtle);
   }
 
   canvas {

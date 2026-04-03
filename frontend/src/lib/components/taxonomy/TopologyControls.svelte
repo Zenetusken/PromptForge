@@ -8,11 +8,13 @@
 
   interface Props {
     lodTier: LODTier;
+    showActivity: boolean;
     onSearch: (query: string) => void;
     onRecluster: () => Promise<void>;
+    onToggleActivity: () => void;
   }
 
-  let { lodTier, onSearch, onRecluster }: Props = $props();
+  let { lodTier, showActivity, onSearch, onRecluster, onToggleActivity }: Props = $props();
 
   let searchQuery = $state('');
   let searchOpen = $state(false);
@@ -99,6 +101,17 @@
         {reclustering ? 'Reclustering...' : 'Recluster'}
       </button>
       <span class="tc-lod">{lodTier.toUpperCase()}</span>
+    </div>
+    <div class="tc-action-row" style="margin-top: 3px;">
+      <button
+        class="tc-toggle"
+        class:tc-toggle-active={showActivity}
+        style="--toggle-color: var(--color-neon-purple); flex: 1;"
+        onclick={onToggleActivity}
+      >
+        <span class="tc-toggle-dot"></span>
+        Activity
+      </button>
     </div>
   </div>
 
