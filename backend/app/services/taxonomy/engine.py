@@ -1196,6 +1196,293 @@ class TaxonomyEngine:
 
         return created
 
+    async def _propose_sub_domains(self, db: AsyncSession) -> list[str]:
+        """Discover sub-domains within oversized domains using HDBSCAN.
+
+        When a domain has many members but low mean coherence across its
+        children, the domain is too broad. This method clusters the domain's
+        member embeddings to find semantic sub-groups, then promotes qualifying
+        groups to sub-domain nodes (state="domain", parent_id=parent_domain).
+
+        Returns:
+            List of newly created sub-domain labels.
+        """
+        import asyncio
+
+        import numpy as np
+
+        from app.services.pipeline_constants import DOMAIN_COUNT_CEILING
+        from app.services.taxonomy._constants import (
+            SUB_DOMAIN_COHERENCE_CEILING,
+            SUB_DOMAIN_HDBSCAN_MIN_CLUSTER,
+            SUB_DOMAIN_MIN_GROUP_MEMBERS,
+            SUB_DOMAIN_MIN_MEMBERS,
+        )
+        from app.services.taxonomy.clustering import (
+            batch_cluster,
+            blend_embeddings,
+            compute_pairwise_coherence,
+            l2_normalize_1d,
+        )
+        from app.services.taxonomy.labeling import generate_label
+
+        created: list[str] = []
+
+        # Check domain ceiling
+        domain_count_q = await db.execute(
+            select(func.count()).where(PromptCluster.state == "domain")
+        )
+        current_domain_count = int(domain_count_q.scalar() or 0)
+        if current_domain_count >= DOMAIN_COUNT_CEILING:
+            return created
+
+        # Gather existing domain labels for dedup
+        existing_q = await db.execute(
+            select(PromptCluster.label).where(PromptCluster.state == "domain")
+        )
+        existing_labels = {r[0].lower() for r in existing_q.all() if r[0]}
+
+        # Find oversized domains
+        domain_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.label != "general",
+            )
+        )
+        domains = list(domain_q.scalars().all())
+
+        for domain_node in domains:
+            # Get active children
+            children_q = await db.execute(
+                select(PromptCluster).where(
+                    PromptCluster.parent_id == domain_node.id,
+                    PromptCluster.state.notin_(["domain", "archived"]),
+                )
+            )
+            children = list(children_q.scalars().all())
+
+            # Check total member count across children
+            total_members = sum(c.member_count or 0 for c in children)
+            if total_members < SUB_DOMAIN_MIN_MEMBERS:
+                continue
+
+            # Check mean coherence — if already coherent, no subdivision needed
+            coherences = [c.coherence for c in children if c.coherence is not None]
+            if not coherences:
+                continue
+            mean_coh = float(np.mean(coherences))
+            if mean_coh >= SUB_DOMAIN_COHERENCE_CEILING:
+                continue
+
+            logger.info(
+                "Sub-domain candidate: '%s' (%d members, %d clusters, mean_coh=%.3f)",
+                domain_node.label, total_members, len(children), mean_coh,
+            )
+
+            # Collect ALL member embeddings from this domain's clusters
+            child_ids = [c.id for c in children]
+            opt_q = await db.execute(
+                select(
+                    Optimization.id,
+                    Optimization.embedding,
+                    Optimization.optimized_embedding,
+                    Optimization.transformation_embedding,
+                    Optimization.intent_label,
+                    Optimization.cluster_id,
+                ).where(
+                    Optimization.cluster_id.in_(child_ids),
+                    Optimization.embedding.isnot(None),
+                )
+            )
+            opt_rows = opt_q.all()
+
+            if len(opt_rows) < SUB_DOMAIN_MIN_MEMBERS:
+                continue
+
+            # Build blended embeddings
+            embs_raw: list[np.ndarray] = []
+            embs_blended: list[np.ndarray] = []
+            opt_data: list[dict] = []
+            for row in opt_rows:
+                try:
+                    raw = np.frombuffer(row.embedding, dtype=np.float32).copy()
+                    opt_emb = (
+                        np.frombuffer(row.optimized_embedding, dtype=np.float32).copy()
+                        if row.optimized_embedding else None
+                    )
+                    trans_emb = (
+                        np.frombuffer(row.transformation_embedding, dtype=np.float32).copy()
+                        if row.transformation_embedding else None
+                    )
+                    embs_raw.append(raw)
+                    embs_blended.append(blend_embeddings(raw=raw, optimized=opt_emb, transformation=trans_emb))
+                    opt_data.append({
+                        "id": row.id,
+                        "cluster_id": row.cluster_id,
+                        "intent_label": row.intent_label,
+                        "raw": raw,
+                    })
+                except (ValueError, TypeError):
+                    continue
+
+            if len(embs_blended) < SUB_DOMAIN_MIN_MEMBERS:
+                continue
+
+            # Run HDBSCAN
+            cluster_result = batch_cluster(embs_blended, min_cluster_size=SUB_DOMAIN_HDBSCAN_MIN_CLUSTER)
+            if cluster_result.n_clusters < 2:
+                logger.info(
+                    "Sub-domain HDBSCAN found no sub-structure in '%s'",
+                    domain_node.label,
+                )
+                continue
+
+            # Evaluate each group
+            groups: list[dict] = []
+            for gid in range(cluster_result.n_clusters):
+                mask = cluster_result.labels == gid
+                group_indices = [i for i in range(len(opt_data)) if mask[i]]
+                if len(group_indices) < SUB_DOMAIN_MIN_GROUP_MEMBERS:
+                    continue
+
+                group_embs = [embs_raw[i] for i in group_indices]
+                group_coherence = compute_pairwise_coherence(group_embs)
+
+                # Group must be more coherent than the parent domain's mean
+                if group_coherence <= mean_coh:
+                    continue
+
+                # Compute centroid
+                centroid = l2_normalize_1d(
+                    np.mean(np.stack(group_embs), axis=0).astype(np.float32)
+                )
+
+                # Collect intent labels for Haiku labeling
+                member_texts = [
+                    opt_data[i]["intent_label"] or ""
+                    for i in group_indices
+                    if opt_data[i]["intent_label"]
+                ][:10]
+
+                groups.append({
+                    "indices": group_indices,
+                    "coherence": group_coherence,
+                    "centroid": centroid,
+                    "member_texts": member_texts,
+                    "member_count": len(group_indices),
+                    "cluster_ids": list({opt_data[i]["cluster_id"] for i in group_indices}),
+                })
+
+            if len(groups) < 2:
+                continue
+
+            # Parallel label generation for all groups
+            label_tasks = [
+                generate_label(
+                    provider=self._provider,
+                    member_texts=g["member_texts"],
+                    model=settings.MODEL_HAIKU,
+                )
+                for g in groups
+            ]
+            labels = await asyncio.gather(*label_tasks, return_exceptions=True)
+
+            # Create sub-domain nodes
+            for i, group in enumerate(groups):
+                raw_label = labels[i]
+                if isinstance(raw_label, BaseException) or not raw_label or raw_label == "Unnamed Cluster":
+                    continue
+
+                # Format: parent-qualifier (e.g., "saas-pricing")
+                qualifier = raw_label.lower().replace(" ", "-")[:30]
+                sub_label = f"{domain_node.label}-{qualifier}"
+
+                if sub_label in existing_labels:
+                    continue
+                if current_domain_count >= DOMAIN_COUNT_CEILING:
+                    break
+
+                try:
+                    # Create a temporary seed cluster for the sub-domain
+                    # (needed for _create_domain_node's centroid + keywords)
+                    seed = PromptCluster(
+                        label=sub_label,
+                        centroid_embedding=group["centroid"].astype(np.float32).tobytes(),
+                        member_count=group["member_count"],
+                        coherence=group["coherence"],
+                    )
+
+                    sub_node, _ = await self._create_domain_node(
+                        db, sub_label, existing_labels,
+                        seed_cluster=seed,
+                        parent_domain_id=domain_node.id,
+                    )
+                    # Override centroid from seed (flush may have cleared it)
+                    sub_node.centroid_embedding = group["centroid"].astype(np.float32).tobytes()
+
+                    # Re-parent clusters whose members predominantly belong to this group
+                    reparented = 0
+                    for cid in group["cluster_ids"]:
+                        cluster = await db.get(PromptCluster, cid)
+                        if cluster and cluster.state not in ("domain", "archived"):
+                            cluster.parent_id = sub_node.id
+                            cluster.domain = sub_label
+                            reparented += 1
+
+                    # Update optimization domain for reparented clusters
+                    if reparented:
+                        from sqlalchemy import update as sa_update
+                        await db.execute(
+                            sa_update(Optimization)
+                            .where(Optimization.cluster_id.in_(group["cluster_ids"]))
+                            .values(domain=sub_label)
+                        )
+
+                    # Position sub-domain near its children
+                    await self._set_domain_umap_from_children(db, sub_node)
+
+                    created.append(sub_label)
+                    existing_labels.add(sub_label)
+                    current_domain_count += 1
+
+                    # Update resolver cache so hot-path can use sub-domain immediately
+                    try:
+                        from app.services.domain_resolver import get_domain_resolver
+                        get_domain_resolver().add_label(sub_label)
+                    except (ValueError, Exception):
+                        pass  # Resolver not initialized (unlikely during warm path)
+
+                    logger.info(
+                        "Created sub-domain '%s' under '%s': %d clusters, coherence=%.3f",
+                        sub_label, domain_node.label, reparented, group["coherence"],
+                    )
+
+                    try:
+                        get_event_logger().log_decision(
+                            path="warm", op="discover", decision="sub_domain_created",
+                            cluster_id=sub_node.id,
+                            context={
+                                "domain_label": sub_label,
+                                "parent_domain": domain_node.label,
+                                "member_count": group["member_count"],
+                                "coherence": round(group["coherence"], 4),
+                                "clusters_reparented": reparented,
+                                "total_domains_after": current_domain_count,
+                            },
+                        )
+                    except RuntimeError:
+                        pass
+
+                except Exception as exc:
+                    logger.warning(
+                        "Sub-domain creation failed for '%s' under '%s': %s",
+                        sub_label, domain_node.label, exc,
+                        exc_info=True,
+                    )
+                    continue
+
+        return created
+
     async def _detect_domain_candidates(self, db: AsyncSession) -> None:
         """Detect near-threshold clusters that may become domains soon."""
         from app.services.pipeline_constants import (
@@ -1280,15 +1567,17 @@ class TaxonomyEngine:
         existing_domains: set[str],
         seed_cluster: PromptCluster | None = None,
         general_node_id: str | None = None,
+        parent_domain_id: str | None = None,
     ) -> PromptCluster:
         """Create a new domain node with a maximally distant color.
 
         Args:
             db: Async DB session.
-            label: Domain label (e.g. "marketing").
+            label: Domain label (e.g. "marketing" or "saas-pricing").
             existing_domains: Set of existing domain labels (for color computation).
             seed_cluster: The cluster that triggered this domain discovery.
-            general_node_id: ID of the "general" domain node (avoids re-query).
+            general_node_id: ID of the "general" domain node (for top-level reparenting).
+            parent_domain_id: If set, creates a sub-domain parented to this domain.
 
         Returns:
             The newly created PromptCluster domain node.
@@ -1319,6 +1608,7 @@ class TaxonomyEngine:
             state="domain",
             domain=label,
             task_type="general",
+            parent_id=parent_domain_id,  # None for top-level, domain ID for sub-domains
             persistence=1.0,
             color_hex=color_hex,
             centroid_embedding=seed_cluster.centroid_embedding if seed_cluster else None,

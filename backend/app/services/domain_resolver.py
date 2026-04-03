@@ -55,6 +55,11 @@ class DomainResolver:
     def domain_labels(self) -> set[str]:
         return set(self._domain_labels)
 
+    def add_label(self, label: str) -> None:
+        """Register a new domain label at runtime (e.g., after sub-domain discovery)."""
+        self._domain_labels.add(label.lower())
+        self._cache.pop(label.lower(), None)  # Evict stale cache entry
+
     async def load(self, db: AsyncSession) -> None:
         result = await db.execute(
             select(PromptCluster.label).where(PromptCluster.state == "domain")

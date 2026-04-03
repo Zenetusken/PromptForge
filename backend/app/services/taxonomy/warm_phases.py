@@ -1595,6 +1595,20 @@ async def phase_discover(
             len(new_domains), new_domains,
         )
 
+    # --- Sub-domain discovery (intra-domain HDBSCAN) ---
+    try:
+        new_sub_domains = await engine._propose_sub_domains(db)
+        if new_sub_domains:
+            result.domains_created += len(new_sub_domains)
+            logger.info(
+                "Warm path discovered %d sub-domains: %s",
+                len(new_sub_domains), new_sub_domains,
+            )
+    except Exception as sub_exc:
+        logger.warning(
+            "Sub-domain discovery failed (non-fatal): %s", sub_exc
+        )
+
     # --- Candidate domain detection (near-threshold clusters) ---
     try:
         await engine._detect_domain_candidates(db)

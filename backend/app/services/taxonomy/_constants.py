@@ -29,6 +29,18 @@ CLUSTERING_BLEND_W_OPTIMIZED = 0.20
 CLUSTERING_BLEND_W_TRANSFORM = 0.15
 
 
+# ---------------------------------------------------------------------------
+# Sub-domain discovery
+# ---------------------------------------------------------------------------
+# When a domain's total member count exceeds this AND its mean child coherence
+# is below the ceiling, HDBSCAN is used to discover semantic sub-groups that
+# can be promoted to sub-domain nodes.
+SUB_DOMAIN_MIN_MEMBERS = 20         # domain must have ≥20 total members
+SUB_DOMAIN_COHERENCE_CEILING = 0.50 # mean child coherence must be below this
+SUB_DOMAIN_MIN_GROUP_MEMBERS = 5    # each HDBSCAN group needs ≥5 members
+SUB_DOMAIN_HDBSCAN_MIN_CLUSTER = 5  # HDBSCAN min_cluster_size parameter
+
+
 def _utcnow() -> datetime:
     """Naive UTC timestamp — matches SQLAlchemy DateTime() round-trip on SQLite.
 
