@@ -25,6 +25,11 @@ class ClusterNode(BaseModel):
     umap_y: float | None = None
     umap_z: float | None = None
     preferred_strategy: str | None = None
+    output_coherence: float | None = None
+    blend_w_raw: float | None = None
+    blend_w_optimized: float | None = None
+    blend_w_transform: float | None = None
+    split_failures: int = 0
     created_at: datetime | None = None
 
 
@@ -62,6 +67,11 @@ class ClusterDetail(BaseModel):
     coherence: float | None = None
     separation: float | None = None
     preferred_strategy: str | None = None
+    output_coherence: float | None = None
+    blend_w_raw: float | None = None
+    blend_w_optimized: float | None = None
+    blend_w_transform: float | None = None
+    split_failures: int = 0
     promoted_at: datetime | None = None
     meta_patterns: list[MetaPatternItem]
     optimizations: list[LinkedOptimization]

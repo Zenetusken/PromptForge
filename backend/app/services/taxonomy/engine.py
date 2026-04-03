@@ -2134,6 +2134,22 @@ class TaxonomyEngine:
 
     @staticmethod
     def _node_to_dict(node: PromptCluster) -> dict:
+        from app.services.taxonomy._constants import (
+            CLUSTERING_BLEND_W_OPTIMIZED,
+            CLUSTERING_BLEND_W_RAW,
+            CLUSTERING_BLEND_W_TRANSFORM,
+        )
+        from app.services.taxonomy.cluster_meta import read_meta
+
+        meta = read_meta(node.cluster_metadata)
+        out_coh = meta.get("output_coherence")
+
+        # Compute effective blend weights for this cluster
+        w_opt = CLUSTERING_BLEND_W_OPTIMIZED
+        if out_coh is not None and out_coh < 0.5:
+            w_opt = CLUSTERING_BLEND_W_OPTIMIZED * max(0.25, out_coh / 0.5)
+        w_raw = 1.0 - w_opt - CLUSTERING_BLEND_W_TRANSFORM
+
         return {
             "id": node.id,
             "label": node.label,
@@ -2155,4 +2171,9 @@ class TaxonomyEngine:
             "preferred_strategy": node.preferred_strategy,
             "promoted_at": node.promoted_at.isoformat() if node.promoted_at else None,
             "created_at": node.created_at.isoformat() if node.created_at else None,
+            "output_coherence": out_coh,
+            "blend_w_raw": round(w_raw, 4),
+            "blend_w_optimized": round(w_opt, 4),
+            "blend_w_transform": CLUSTERING_BLEND_W_TRANSFORM,
+            "split_failures": meta.get("split_failures", 0),
         }
