@@ -22,6 +22,31 @@ export const TAXONOMY_TOOLTIPS = {
 };
 
 // ---------------------------------------------------------------------------
+// Topology info panel (context-aware metrics overlay)
+// ---------------------------------------------------------------------------
+
+export const TOPOLOGY_PANEL_TOOLTIPS = {
+  silhouette:
+    'How well-defined the clusters are overall — higher means each cluster is internally tight and clearly separate from neighbors',
+  output_coherence:
+    'Do similar prompts in this group produce similar optimizations? Low means the group mixes different optimization styles',
+  blend_raw:
+    'How much the raw topic signal influences this cluster — increases when output coherence is low',
+  blend_optimized:
+    'How much the optimization output signal influences this cluster — reduced when outputs diverge',
+  blend_transform:
+    'How much the improvement-technique signal influences this cluster',
+  coverage:
+    'What fraction of all optimizations belong to an active cluster. 1.0 = everything is organized',
+  avg_score_domain:
+    'Average quality score across all prompts in this domain',
+  members_domain:
+    'Total prompt count across all clusters in this domain',
+  split_failures:
+    'How many times the system tried and failed to split this cluster. Resets on growth or recluster',
+};
+
+// ---------------------------------------------------------------------------
 // Score dimensions (ScoreCard, RefinementTurnCard)
 // ---------------------------------------------------------------------------
 
