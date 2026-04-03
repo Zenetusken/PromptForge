@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -673,6 +674,18 @@ async def phase_split_emerge(
                                 operations_log.append(
                                     {"type": "split", "node_id": child.id}
                                 )
+                                try:
+                                    get_event_logger().log_decision(
+                                        path="warm", op="split", decision="family_split",
+                                        cluster_id=child.id,
+                                        context={
+                                            "parent_id": node.id,
+                                            "parent_label": node.label,
+                                            "children_created": len(children),
+                                        },
+                                    )
+                                except RuntimeError:
+                                    pass
 
     # --- Priority 2: Emerge ---
     # Fix #7: exclude domain/archived from emerge query (parent_id IS NULL
@@ -743,31 +756,18 @@ async def phase_merge(
         centroids = []
         blended_centroids = []
         valid_nodes: list[PromptCluster] = []
+        _global_sp_count = 0
+        _global_mc_count = 0
         for n in active_nodes:
             if n.id in split_protected_ids:
-                try:
-                    get_event_logger().log_decision(
-                        path="warm", op="merge", decision="skipped",
-                        cluster_id=n.id,
-                        context={"gate": "split_protected", "node_label": n.label},
-                    )
-                except RuntimeError:
-                    pass
+                _global_sp_count += 1
                 continue
             meta_m = read_meta(n.cluster_metadata)
             merge_until_m = meta_m.get("merge_protected_until", "")
             if merge_until_m:
                 try:
-                    from datetime import datetime as _dt_m
-                    if now_merge < _dt_m.fromisoformat(merge_until_m):
-                        try:
-                            get_event_logger().log_decision(
-                                path="warm", op="merge", decision="skipped",
-                                cluster_id=n.id,
-                                context={"gate": "merge_protected", "node_label": n.label},
-                            )
-                        except RuntimeError:
-                            pass
+                    if now_merge < datetime.fromisoformat(merge_until_m):
+                        _global_mc_count += 1
                         continue
                 except (ValueError, TypeError):
                     pass
@@ -784,6 +784,15 @@ async def phase_merge(
                 valid_nodes.append(n)
             except (ValueError, TypeError):
                 continue
+
+        if _global_sp_count or _global_mc_count:
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="merge", decision="candidates_filtered",
+                    context={"split_protected": _global_sp_count, "merge_cooled": _global_mc_count},
+                )
+            except RuntimeError:
+                pass
 
         if len(blended_centroids) >= 2:
             mat = np.stack(blended_centroids, axis=0).astype(np.float32)
@@ -928,38 +937,34 @@ async def phase_merge(
         # Group by primary domain, excluding split-protected and merge-cooled nodes
         now = _utcnow()
         domain_groups: dict[str, list[PromptCluster]] = {}
+        _domain_sp_count = 0
+        _domain_mc_count = 0
         for node in current_active:
             if node.id in split_protected_ids:
-                try:
-                    get_event_logger().log_decision(
-                        path="warm", op="merge", decision="skipped",
-                        cluster_id=node.id,
-                        context={"gate": "split_protected", "node_label": node.label},
-                    )
-                except RuntimeError:
-                    pass
+                _domain_sp_count += 1
                 continue
             # Merge cooldown: split children are protected for 30 minutes
             meta = read_meta(node.cluster_metadata)
             merge_until = meta.get("merge_protected_until", "")
             if merge_until:
                 try:
-                    from datetime import datetime
                     protected_until = datetime.fromisoformat(merge_until)
                     if now < protected_until:
-                        try:
-                            get_event_logger().log_decision(
-                                path="warm", op="merge", decision="skipped",
-                                cluster_id=node.id,
-                                context={"gate": "merge_protected", "node_label": node.label},
-                            )
-                        except RuntimeError:
-                            pass
+                        _domain_mc_count += 1
                         continue  # still protected
                 except (ValueError, TypeError):
                     pass
             primary, _ = parse_domain(node.domain or "general")
             domain_groups.setdefault(primary, []).append(node)
+
+        if _domain_sp_count or _domain_mc_count:
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="merge", decision="candidates_filtered",
+                    context={"split_protected": _domain_sp_count, "merge_cooled": _domain_mc_count},
+                )
+            except RuntimeError:
+                pass
 
         domain_merges = 0
         for domain, siblings in domain_groups.items():
@@ -1252,7 +1257,6 @@ async def phase_refresh(
             last_pmc = meta.get("pattern_member_count", 0)
             if last_refresh:
                 try:
-                    from datetime import datetime
                     refresh_time = datetime.fromisoformat(last_refresh)
                     age_minutes = (now - refresh_time).total_seconds() / 60
                     member_delta = abs((node.member_count or 0) - last_pmc)

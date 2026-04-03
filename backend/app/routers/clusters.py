@@ -576,7 +576,10 @@ async def get_cluster_activity(
     try:
         raw = tel.get_recent(limit=limit, path=path, op=op)
         if errors_only:
-            raw = [e for e in raw if e.get("decision") in ("rejected", "error", "failed")]
+            raw = [
+                e for e in raw
+                if e.get("op") == "error" or e.get("decision") in ("rejected", "failed", "split_failed")
+            ]
 
         events = [TaxonomyActivityEvent(**e) for e in raw]
         return ActivityResponse(

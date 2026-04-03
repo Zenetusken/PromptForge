@@ -62,6 +62,7 @@ async def split_cluster(
     engine: TaxonomyEngine,
     db: AsyncSession,
     opt_rows: list[tuple[str, bytes, bytes | None, bytes | None]],
+    log_path: str = "warm",
 ) -> SplitResult:
     """Split a cluster into sub-clusters using member-level HDBSCAN.
 
@@ -140,7 +141,7 @@ async def split_cluster(
     if split_result.n_clusters < 2:
         try:
             get_event_logger().log_decision(
-                path="warm", op="error", decision="split_failed",
+                path=log_path, op="error", decision="split_failed",
                 cluster_id=node.id,
                 context={
                     "source": "split_cluster",
@@ -157,7 +158,7 @@ async def split_cluster(
     # Log algorithm result before child creation
     try:
         get_event_logger().log_decision(
-            path="warm", op="split", decision="algorithm_result",
+            path=log_path, op="split", decision="algorithm_result",
             cluster_id=node.id,
             context={
                 "hdbscan_clusters": int(split_result.n_clusters),
@@ -278,7 +279,7 @@ async def split_cluster(
         )
         try:
             get_event_logger().log_decision(
-                path="cold", op="split", decision="child_created",
+                path=log_path, op="split", decision="child_created",
                 cluster_id=child_node.id,
                 context={
                     "parent_id": node.id,
@@ -353,7 +354,7 @@ async def split_cluster(
     if noise_reassigned > 0:
         try:
             get_event_logger().log_decision(
-                path="warm", op="split", decision="noise_reassigned",
+                path=log_path, op="split", decision="noise_reassigned",
                 cluster_id=node.id,
                 context={"noise_reassigned": noise_reassigned, "total_noise": len(noise_ids)},
             )
@@ -463,7 +464,7 @@ async def split_cluster(
 
     try:
         get_event_logger().log_decision(
-            path="cold", op="split", decision="split_complete",
+            path=log_path, op="split", decision="split_complete",
             cluster_id=node.id,
             context={
                 "parent_label": node.label,

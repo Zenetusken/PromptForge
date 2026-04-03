@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ClusterNode(BaseModel):
@@ -169,7 +169,7 @@ class TaxonomyActivityEvent(BaseModel):
     cluster_id: str | None = None
     optimization_id: str | None = None
     duration_ms: int | None = None
-    context: dict = {}
+    context: dict = Field(default_factory=dict)
 
 
 class ActivityResponse(BaseModel):

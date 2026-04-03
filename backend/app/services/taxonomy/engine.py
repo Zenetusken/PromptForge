@@ -271,8 +271,7 @@ class TaxonomyEngine:
                     if opt.overall_score is not None and (old_cluster.scored_count or 0) > 0:
                         old_cluster.scored_count = max(0, old_cluster.scored_count - 1)
                     # Mark old cluster pattern-stale — it lost a member
-                    from app.services.taxonomy.cluster_meta import write_meta as _wm_reassign
-                    old_cluster.cluster_metadata = _wm_reassign(
+                    old_cluster.cluster_metadata = write_meta(
                         old_cluster.cluster_metadata, pattern_stale=True,
                     )
                     logger.info(
@@ -353,9 +352,7 @@ class TaxonomyEngine:
                 await merge_meta_pattern(db, cluster.id, text, self._embedding)
             # If extraction produced results, patterns are fresh for this member.
             # If empty (provider unavailable), mark stale so Phase 4 catches it.
-            from app.services.taxonomy.cluster_meta import write_meta as _wm_hot
-
-            cluster.cluster_metadata = _wm_hot(
+            cluster.cluster_metadata = write_meta(
                 cluster.cluster_metadata,
                 pattern_stale=len(meta_texts) == 0,
             )
@@ -390,7 +387,7 @@ class TaxonomyEngine:
 
             try:
                 get_event_logger().log_decision(
-                    path="hot", op="assign", decision="extraction_complete",
+                    path="hot", op="extract", decision="complete",
                     cluster_id=cluster.id,
                     optimization_id=optimization_id,
                     context={

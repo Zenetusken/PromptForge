@@ -54,7 +54,7 @@ from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.family_ops import adaptive_merge_threshold
 from app.services.taxonomy.labeling import generate_label
 from app.services.taxonomy.projection import UMAPProjector, procrustes_align
-from app.services.taxonomy.quality import is_cold_path_non_regressive
+from app.services.taxonomy.quality import COLD_PATH_EPSILON, is_cold_path_non_regressive
 from app.services.taxonomy.snapshot import create_snapshot
 
 if TYPE_CHECKING:
@@ -617,7 +617,7 @@ async def execute_cold_path(
             "(epsilon=%.2f) -- rolling back refit",
             q_before,
             q_after,
-            0.08,
+            COLD_PATH_EPSILON,
         )
         await db.rollback()
 
@@ -808,28 +808,6 @@ async def execute_cold_path(
         nodes_created=nodes_created,
     )
 
-    try:
-        get_event_logger().log_decision(
-            path="cold", op="refit", decision="accepted",
-            context={
-                "q_before": round(q_before, 4),
-                "q_after": round(q_after, 4),
-                "clusters_input": len(families),
-                "hdbscan_clusters": cluster_result.n_clusters,
-                "nodes_created": nodes_created,
-                "nodes_updated": nodes_updated,
-                "mega_splits": 0,
-                "blended_weights": {
-                    "raw": round(1.0 - CLUSTERING_BLEND_W_OPTIMIZED - CLUSTERING_BLEND_W_TRANSFORM, 3),
-                    "optimized": round(CLUSTERING_BLEND_W_OPTIMIZED, 3),
-                    "transform": round(CLUSTERING_BLEND_W_TRANSFORM, 3),
-                },
-                "accepted": True,
-            },
-        )
-    except RuntimeError:
-        pass
-
     # ------------------------------------------------------------------
     # Step 25: Mega-cluster split pass
     # Identify clusters with high member count + low coherence and split
@@ -887,7 +865,7 @@ async def execute_cold_path(
                 if len(mc_opt_rows) < MEGA_CLUSTER_MEMBER_FLOOR:
                     continue
 
-                mc_result = await split_cluster(mc, engine, db, mc_opt_rows)
+                mc_result = await split_cluster(mc, engine, db, mc_opt_rows, log_path="cold")
 
                 # Always reset split_failures — cold path tried
                 mc.cluster_metadata = write_meta(
@@ -926,6 +904,29 @@ async def execute_cold_path(
             "Mega-cluster split pass failed (non-fatal): %s", mega_exc,
             exc_info=True,
         )
+
+    # Log accepted refit AFTER mega-cluster pass so mega_splits count is accurate
+    try:
+        get_event_logger().log_decision(
+            path="cold", op="refit", decision="accepted",
+            context={
+                "q_before": round(q_before, 4),
+                "q_after": round(q_after, 4),
+                "clusters_input": len(families),
+                "hdbscan_clusters": cluster_result.n_clusters,
+                "nodes_created": nodes_created,
+                "nodes_updated": nodes_updated,
+                "mega_splits": mega_split_created,
+                "blended_weights": {
+                    "raw": round(1.0 - CLUSTERING_BLEND_W_OPTIMIZED - CLUSTERING_BLEND_W_TRANSFORM, 3),
+                    "optimized": round(CLUSTERING_BLEND_W_OPTIMIZED, 3),
+                    "transform": round(CLUSTERING_BLEND_W_TRANSFORM, 3),
+                },
+                "accepted": True,
+            },
+        )
+    except RuntimeError:
+        pass
 
     # Step 26: Reset cold_path_needed flag  (renumbered from Step 25)
     engine._cold_path_needed = False
