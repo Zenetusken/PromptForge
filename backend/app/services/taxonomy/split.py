@@ -346,8 +346,10 @@ async def split_cluster(
         except Exception:
             pass  # Non-fatal
 
-    # Extract meta-patterns for each child (LLM call — expensive but necessary,
-    # because the warm path Phase 4 may never reach split children in time)
+    # Extract meta-patterns for each child (LLM call — expensive but optional).
+    # Uses BaseException to catch asyncio.CancelledError (timeout) which is NOT
+    # a subclass of Exception in Python 3.9+. A failed extraction must never
+    # crash the split — the structural changes are already committed above.
     for ch in new_children:
         try:
             from app.services.taxonomy.family_ops import (
@@ -369,22 +371,26 @@ async def split_cluster(
                         opt, db, engine._provider, engine._prompt_loader,
                     )
                     pattern_texts.extend(texts)
-                except Exception:
-                    pass  # non-fatal per-optimization
+                except BaseException:
+                    pass  # non-fatal per-optimization (catches CancelledError too)
             for text in pattern_texts:
                 await merge_meta_pattern(db, ch.id, text, engine._embedding)
             ch.cluster_metadata = write_meta(
                 ch.cluster_metadata,
                 pattern_member_count=ch.member_count,
-                pattern_stale=False,
+                pattern_stale=len(pattern_texts) == 0,  # stale if extraction failed
             )
             if pattern_texts:
                 logger.info(
                     "  Extracted %d meta-patterns for '%s'",
                     len(pattern_texts), ch.label,
                 )
-        except Exception as mp_exc:
-            logger.debug("Meta-pattern extraction failed for '%s': %s", ch.label, mp_exc)
+        except BaseException as mp_exc:
+            # Mark stale so Phase 4 retries later
+            ch.cluster_metadata = write_meta(
+                ch.cluster_metadata, pattern_stale=True,
+            )
+            logger.warning("Meta-pattern extraction failed for '%s': %s", ch.label, mp_exc)
 
     await db.flush()
     logger.info(
