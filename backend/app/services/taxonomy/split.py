@@ -141,19 +141,17 @@ async def split_cluster(
             logger.debug("k-means fallback failed: %s", km_exc)
 
     if split_result.n_clusters < 2:
+        # Not an error — HDBSCAN correctly determined this cluster has no
+        # internal sub-structure. Log as a split decision, not an error.
+        # The 3-strike cooldown in warm_phases will stop retrying.
         try:
             get_event_logger().log_decision(
-                path=log_path, op="error", decision="split_failed",
+                path=log_path, op="split", decision="no_sub_structure",
                 cluster_id=node.id,
                 context={
-                    "source": "split_cluster",
-                    "error_type": "insufficient_clusters",
-                    "error_message": (
-                        f"HDBSCAN produced {split_result.n_clusters} clusters"
-                        f" from {len(child_blended)} members"
-                    ),
-                    "recovery": "skipped",
-                    "stack_trace": "",
+                    "hdbscan_clusters": int(split_result.n_clusters),
+                    "total_members": len(child_blended),
+                    "reason": "HDBSCAN found no separable sub-groups",
                 },
             )
         except RuntimeError:

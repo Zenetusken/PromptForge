@@ -19,7 +19,7 @@
     clustersStore.activityEvents.filter(e => {
       if (filterPath && e.path !== filterPath) return false;
       if (filterOp && e.op !== filterOp) return false;
-      if (errorsOnly && !(e.op === 'error' || e.decision === 'rejected' || e.decision === 'failed' || e.decision === 'split_failed')) return false;
+      if (errorsOnly && !(e.op === 'error' || e.decision === 'rejected' || e.decision === 'failed')) return false;
       return true;
     }),
   );
@@ -38,11 +38,12 @@
     if (d === 'create_new' || d === 'child_created' || d === 'family_split')
       return 'var(--color-neon-cyan)';
     // Amber — rejections, blocks, skips
-    if (d === 'rejected' || d === 'blocked' || d === 'skipped' || d === 'split_failed'
+    if (d === 'rejected' || d === 'blocked' || d === 'skipped'
         || d === 'candidates_filtered')
       return 'var(--color-neon-yellow)';
     // Informational — algorithm results, noise
-    if (d === 'algorithm_result' || d === 'noise_reassigned' || d === 'mega_clusters_detected')
+    if (d === 'algorithm_result' || d === 'noise_reassigned' || d === 'mega_clusters_detected'
+        || d === 'no_sub_structure')
       return 'var(--color-text-secondary)';
     return 'var(--color-text-dim)';
   }

@@ -274,7 +274,7 @@ async def get_cluster_activity(
         if errors_only:
             raw = [
                 e for e in raw
-                if e.get("op") == "error" or e.get("decision") in ("rejected", "failed", "split_failed")
+                if e.get("op") == "error" or e.get("decision") in ("rejected", "failed")
             ]
 
         events = [TaxonomyActivityEvent(**e) for e in raw]

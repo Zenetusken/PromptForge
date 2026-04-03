@@ -976,7 +976,11 @@ async def phase_merge(
             try:
                 get_event_logger().log_decision(
                     path="warm", op="merge", decision="candidates_filtered",
-                    context={"pass": "same_domain", "split_protected": _domain_sp_count, "merge_cooled": _domain_mc_count},
+                    context={
+                        "pass": "same_domain",
+                        "split_protected": _domain_sp_count,
+                        "merge_cooled": _domain_mc_count,
+                    },
                 )
             except RuntimeError:
                 pass
