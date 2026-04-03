@@ -293,7 +293,8 @@ async def split_cluster(
         # INVARIANT: merge_protected_until is stored as naive UTC (no tzinfo).
         # All comparisons use _utcnow() which is also naive UTC.
         # Do NOT compare with timezone-aware datetimes.
-        merge_until = (datetime.now(timezone.utc) + timedelta(minutes=30)).replace(tzinfo=None)
+        from app.services.taxonomy._constants import SPLIT_MERGE_PROTECTION_MINUTES
+        merge_until = (datetime.now(timezone.utc) + timedelta(minutes=SPLIT_MERGE_PROTECTION_MINUTES)).replace(tzinfo=None)
         child_node.cluster_metadata = write_meta(
             child_node.cluster_metadata,
             position_source="interpolated",

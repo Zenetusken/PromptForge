@@ -35,6 +35,12 @@ CLUSTERING_BLEND_W_TRANSFORM = 0.15
 # When a domain's total member count exceeds this AND its mean child coherence
 # is below the ceiling, HDBSCAN is used to discover semantic sub-groups that
 # can be promoted to sub-domain nodes.
+# Split child merge protection window — must be longer than the warm path
+# interval (default 300s = 5 min) to survive at least 2 warm cycles.
+# Previously 30 minutes, which was barely enough and caused Groundhog Day
+# re-merges when timing was unlucky.
+SPLIT_MERGE_PROTECTION_MINUTES = 60  # 1 hour
+
 SUB_DOMAIN_MIN_MEMBERS = 20         # domain must have ≥20 total members
 SUB_DOMAIN_COHERENCE_CEILING = 0.50 # mean child coherence must be below this
 SUB_DOMAIN_MIN_GROUP_MEMBERS = 5    # each HDBSCAN group needs ≥5 members
