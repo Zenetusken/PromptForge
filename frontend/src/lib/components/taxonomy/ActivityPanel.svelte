@@ -138,6 +138,13 @@
     window.dispatchEvent(new CustomEvent('select-cluster', { detail: { id } }));
   }
 
+  // -- Score event → load optimization in main editor --
+
+  function loadOptimization(traceId: string | null): void {
+    if (!traceId) return;
+    window.dispatchEvent(new CustomEvent('load-optimization', { detail: { trace_id: traceId } }));
+  }
+
   // -- Initial seed --
 
   async function loadInitial(): Promise<void> {
@@ -230,6 +237,15 @@
               class="ap-cluster-link"
               onclick={(e) => { e.stopPropagation(); handleClusterClick(ev.cluster_id); }}
             >{ev.cluster_id.slice(0, 8)}</span>
+          {/if}
+          {#if ev.op === 'score' && ev.optimization_id}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <span
+              class="ap-cluster-link"
+              onclick={(e) => { e.stopPropagation(); loadOptimization(ev.optimization_id); }}
+              title="View optimization"
+            >↗</span>
           {/if}
           <span class="ap-metric">{keyMetric(ev)}</span>
         </button>

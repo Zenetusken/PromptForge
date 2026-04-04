@@ -186,7 +186,22 @@
       sseHadError = true;
     };
 
-    return () => eventSource?.close();
+    const handleLoadOpt = (e: Event) => {
+      const traceId = (e as CustomEvent).detail?.trace_id;
+      if (traceId) {
+        import('$lib/api/client').then(({ getOptimization }) => {
+          getOptimization(traceId as string).then(opt => {
+            if (opt) forgeStore.loadFromRecord(opt);
+          }).catch(() => {});
+        });
+      }
+    };
+    window.addEventListener('load-optimization', handleLoadOpt);
+
+    return () => {
+      eventSource?.close();
+      window.removeEventListener('load-optimization', handleLoadOpt);
+    };
   });
 
   // ---- Health polling (fixed 60s interval) ----
