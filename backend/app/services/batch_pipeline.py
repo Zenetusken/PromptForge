@@ -667,3 +667,31 @@ async def batch_taxonomy_assign(
         "clusters_created": clusters_created,
         "domains_touched": domains_list,
     }
+
+
+def estimate_batch_cost(
+    prompt_count: int,
+    agent_count: int,
+    tier: str,
+) -> float | None:
+    """Estimate USD cost for a batch seed run.
+
+    Returns None for sampling tier (IDE subscription covers it).
+    """
+    if tier == "sampling":
+        return None
+    if tier == "passthrough":
+        return 0.0
+
+    # Agent generation: N agents × 1 Haiku call
+    # ~500 input tokens + ~500 output tokens per agent
+    haiku_cost_per_call = 0.001 * 0.5 + 0.005 * 0.5  # $1/$5 per 1M tokens
+    agent_cost = agent_count * haiku_cost_per_call
+
+    # Per optimization: analyze (Sonnet) + optimize (Opus) + score (Sonnet)
+    # Rough estimates: ~2K tokens in + ~2K out per phase
+    sonnet_cost = 0.003 * 2 + 0.015 * 2  # $3/$15 per 1M tokens
+    opus_cost = 0.005 * 2 + 0.025 * 2    # $5/$25 per 1M tokens
+    per_opt = sonnet_cost + opus_cost + sonnet_cost  # analyze + optimize + score
+
+    return round(agent_cost + prompt_count * per_opt, 2)
