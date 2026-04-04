@@ -185,8 +185,14 @@ async def handle_seed(
             duration_ms=int((time.monotonic() - t0) * 1000),
         )
 
-    # Determine concurrency based on tier
-    max_parallel = {"internal": 10, "sampling": 2, "passthrough": 1}.get(tier, 5)
+    # Determine concurrency based on tier + provider type
+    # CLI handles 10 parallel subprocesses; API rate limits cap at 5
+    if tier == "internal" and provider is not None:
+        max_parallel = 10 if provider.name == "claude_cli" else 5
+    elif tier == "sampling":
+        max_parallel = 2
+    else:
+        max_parallel = 1
 
     # Run batch pipeline
     from app.services.embedding_service import EmbeddingService

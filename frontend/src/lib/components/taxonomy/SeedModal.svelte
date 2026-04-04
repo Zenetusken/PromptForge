@@ -21,9 +21,12 @@
   let error = $state<string | null>(null);
   let progress = $state({ completed: 0, total: 0, current: '' });
 
-  // Load agents on mount
+  // Reset transient state + load agents when modal opens
   $effect(() => {
     if (open) {
+      result = null;
+      error = null;
+      progress = { completed: 0, total: 0, current: '' };
       listSeedAgents().then(a => {
         agents = a;
         selectedAgents = new Set(a.map(ag => ag.name));

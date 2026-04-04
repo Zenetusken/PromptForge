@@ -29,8 +29,10 @@
   function decisionColor(e: TaxonomyActivityEvent): string {
     if (e.op === 'error') return 'var(--color-neon-red)';
     const d = e.decision;
-    // Red — seed failures
-    if (d === 'seed_failed' || d === 'seed_prompt_failed') return 'var(--color-neon-red)';
+    // Red — batch-level seed failure only
+    if (d === 'seed_failed') return 'var(--color-neon-red)';
+    // Amber — individual prompt failures (expected, fail-forward)
+    if (d === 'seed_prompt_failed') return 'var(--color-neon-yellow)';
     // Green — successful operations
     if (d === 'accepted' || d === 'merged' || d === 'merge_into' || d === 'complete'
         || d === 'split_complete' || d === 'archived' || d === 'domain_created'
@@ -129,13 +131,27 @@
       if (e.decision === 'seed_agents_complete') {
         return `${c.prompts_after_dedup ?? c.prompts_generated ?? '?'} prompts`;
       }
+      if (e.decision === 'seed_prompt_scored') {
+        const score = typeof c.overall_score === 'number' ? c.overall_score.toFixed(1) : '?';
+        return `${score} ${c.intent_label ?? c.task_type ?? ''}`;
+      }
+      if (e.decision === 'seed_prompt_failed') {
+        return typeof c.error === 'string' ? c.error.slice(0, 40) : 'failed';
+      }
       if (e.decision === 'seed_completed') {
-        return `${c.prompts_optimized ?? '?'} done`;
+        return `${c.prompts_optimized ?? '?'} done, ${c.clusters_created ?? 0} clusters`;
       }
       if (e.decision === 'seed_failed') {
         return typeof c.error_message === 'string' ? c.error_message.slice(0, 40) : 'failed';
       }
-      return typeof c.prompts_optimized === 'number' ? `${c.prompts_optimized} done` : '';
+      if (e.decision === 'seed_persist_complete') {
+        return `${c.rows_inserted ?? '?'} rows`;
+      }
+      if (e.decision === 'seed_taxonomy_complete') {
+        const domains = Array.isArray(c.domains_touched) ? c.domains_touched.length : 0;
+        return `${c.clusters_created ?? 0} clusters, ${domains} domains`;
+      }
+      return '';
     }
     return '';
   }
