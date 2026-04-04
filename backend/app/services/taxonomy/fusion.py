@@ -371,9 +371,13 @@ def compute_score_correlated_target(
     the warm-path adaptation can move toward via EMA.
 
     Args:
-        scored_profiles: List of ``(overall_score, phase_weights_json)``
-            tuples. Each ``phase_weights_json`` maps phase name to
-            weight dict (e.g. ``{"analysis": {"w_topic": 0.6, ...}}``).
+        scored_profiles: List of ``(score, phase_weights_json)`` tuples.
+            ``score`` should be ``improvement_score`` when available (wider
+            variance: std≈0.53 vs 0.27 for ``overall_score``) so the
+            z-score weighting has more signal to work with; fall back to
+            ``overall_score`` for optimizations that lack improvement data.
+            Each ``phase_weights_json`` maps phase name to weight dict
+            (e.g. ``{"analysis": {"w_topic": 0.6, ...}}``).
         min_samples: Minimum profiles required for meaningful signal.
             Returns ``None`` below this threshold.
 

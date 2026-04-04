@@ -1475,6 +1475,7 @@ async def phase_refresh(
                 Optimization.overall_score,
                 Optimization.phase_weights_json,
                 Optimization.cluster_id,
+                Optimization.improvement_score,  # wider variance (std≈0.53 vs 0.27)
             ).where(
                 Optimization.overall_score.isnot(None),
                 Optimization.phase_weights_json.isnot(None),
@@ -1487,8 +1488,12 @@ async def phase_refresh(
 
         # --- Global adaptation (existing) ---
         if len(scored_rows) >= SCORE_ADAPTATION_MIN_SAMPLES:
+            # Prefer improvement_score (wider variance: std≈0.53 vs 0.27 for
+            # overall_score) so score-correlated adaptation has more signal to
+            # work with. Fall back to overall_score when improvement_score is
+            # absent (e.g. passthrough-only optimizations).
             scored_profiles = [
-                (float(row[0]), row[1])
+                (float(row[3] if row[3] is not None else row[0]), row[1])
                 for row in scored_rows
             ]
             target_profiles = compute_score_correlated_target(scored_profiles)
@@ -1526,7 +1531,9 @@ async def phase_refresh(
         for row in scored_rows:
             cid = row[2]
             if cid:
-                cluster_groups.setdefault(cid, []).append((float(row[0]), row[1]))
+                # row[3] = improvement_score (wider variance), row[0] = overall_score
+                score = float(row[3] if row[3] is not None else row[0])
+                cluster_groups.setdefault(cid, []).append((score, row[1]))
 
         clusters_adapted = 0
         for cid, members in cluster_groups.items():
