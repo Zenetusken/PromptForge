@@ -79,8 +79,11 @@
     })
   );
 
-  // Badge count reflects the filtered view (what the user actually sees)
-  const totalFamilies = $derived(filteredFamilies.length);
+  // Badge count reflects the TOTAL matching clusters, not the paginated view.
+  // Counts from allFamilies (pre-pagination) excluding domains and templates.
+  const totalFamilies = $derived(
+    allFamilies.filter(f => f.state !== 'domain' && !(showTemplates && f.state === 'template')).length
+  );
 
 
   // Group filtered families by primary domain (ignores qualifier from "primary: qualifier")
