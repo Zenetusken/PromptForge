@@ -38,19 +38,26 @@ spectral_split(
 ) -> ClusterResult | None
 ```
 
+**Minimum input size:** `spectral_split()` requires N ≥ `max(k_range) * SPECTRAL_MIN_GROUP_SIZE` (i.e., ≥ 12 for k_range=(2,3,4) with min_group=3). Below this, return None immediately — not enough members for any valid partition. The existing `SPLIT_MIN_MEMBERS=25` guard in `phase_split_emerge()` already ensures N ≥ 25, so this is a defense-in-depth check.
+
 **Steps:**
 1. Compute cosine similarity matrix: `S = embeddings @ embeddings.T`
 2. Clip negative values: `S = np.clip(S, 0, None)` (spectral requires non-negative affinity)
-3. For each k in k_range:
+3. For each k in k_range (skip k where `N < k * SPECTRAL_MIN_GROUP_SIZE`):
    - Run `SpectralClustering(n_clusters=k, affinity='precomputed', random_state=42).fit_predict(S)`
-   - Compute silhouette score on the labels using cosine metric
-   - Reject if any cluster has fewer than 3 members (prevent degenerate micro-clusters)
-4. Select k with best silhouette score
-5. If best silhouette < silhouette_gate → return None (genuinely unsplittable)
+   - Compute raw silhouette score on the labels using cosine metric (range [-1, 1])
+   - **Rescale to [0, 1]:** `(raw_sil + 1.0) / 2.0` — matches existing `batch_cluster()` convention so Q_system DBCV component receives consistent values
+   - Reject if any cluster has fewer than `SPECTRAL_MIN_GROUP_SIZE` members
+4. Select k with best rescaled silhouette score
+5. If best rescaled silhouette < silhouette_gate → return None (genuinely unsplittable)
 6. Compute L2-normalized centroid per cluster (mean of members, re-normalized)
-7. Return `ClusterResult(labels, n_clusters, noise_count=0, centroids, persistences=[silhouette]*n, silhouette=best_silhouette)`
+7. Return `ClusterResult(labels, n_clusters, noise_count=0, centroids, persistences=[rescaled_silhouette]*n, silhouette=rescaled_silhouette)`
+
+**Silhouette scale convention:** The existing `batch_cluster()` rescales silhouette from [-1, 1] to [0, 1] via `(raw + 1.0) / 2.0` before storing in `ClusterResult.silhouette`. `spectral_split()` follows the same convention. All downstream Q_system calculations receive values in the [0, 1] range. The `SPECTRAL_SILHOUETTE_GATE` is specified in rescaled units (0.15 rescaled ≈ -0.70 raw — a very permissive gate that only rejects truly degenerate partitions).
 
 **Why no noise:** Spectral assigns every point to a cluster. For splits, this is better than HDBSCAN's noise label — we don't want orphaned members during a split. The existing noise reassignment code in `split.py` still runs but will be a no-op (noise_count=0).
+
+**No schema migration needed:** `"candidate"` is already a valid value in `PromptCluster.state` (defined in `models.py`). The state column is a plain string — no enum migration required.
 
 ### Integration in `split.py`
 
@@ -107,6 +114,14 @@ New function `phase_evaluate_candidates()` in `warm_phases.py`, runs after Phase
 
 Candidate promotion/rejection is a per-cluster coherence check, not a speculative transaction. It commits directly — no rollback needed. The Q-gate already validated the split before creating candidates.
 
+### Candidates excluded from Q_system computation during Phase 1
+
+The existing `_load_active_nodes()` in `warm_path.py` loads all non-domain, non-archived nodes — which includes candidates. If low-coherence candidates are included in Q_after, they could cause the Q-gate to reject the very split that created them. Fix: `_load_active_nodes()` must exclude `state="candidate"` when computing Q metrics for the speculative Q-gate. Candidates are evaluated separately in Phase 0.5.
+
+### Rejection reassignment targets active clusters only
+
+During `phase_evaluate_candidates()`, rejected members are reassigned using a filtered `assign_cluster()` call that targets only `state.in_(["active", "mature", "template"])` — NOT other candidates. This prevents cascading failures where members are reassigned to a candidate that itself gets rejected moments later in the same evaluation loop. The rejection loop processes all rejections first, then commits all reassignments in one transaction.
+
 ### Constants
 
 | Constant | Value | Purpose |
@@ -124,7 +139,7 @@ Candidate promotion/rejection is a per-cluster coherence check, not a speculativ
 | `candidate_created` | Split produces a candidate child | `parent_id`, `parent_label`, `parent_member_count`, `child_label`, `child_member_count`, `child_coherence`, `split_algorithm`, `k_selected`, `silhouette_score` |
 | `candidate_promoted` | Warm path promotes to active | `cluster_label`, `member_count`, `coherence`, `reason`, `coherence_floor`, `time_as_candidate_ms` |
 | `candidate_rejected` | Warm path rejects candidate | `cluster_label`, `member_count`, `coherence`, `reason`, `coherence_floor`, `members_reassigned_to` (list of {cluster_id, cluster_label, count}) |
-| `split_fully_reversed` | All candidates from one split rejected | `parent_id`, `parent_label`, `candidates_rejected`, `total_members_reassigned` |
+| `split_fully_reversed` | All candidates from one split rejected | `parent_id`, `parent_label`, `candidates_rejected` (int), `candidate_labels` (list[str]), `total_members_reassigned` (int) |
 
 ### New event (op="split")
 
@@ -155,17 +170,19 @@ candidate/candidate_promoted  → per-child promotion (or rejection)
 
 ### Sidebar filter tabs
 
-Add `candidate` to the existing state filter row in ClusterNavigator:
+Add `candidate` to the existing state filter row in ClusterNavigator. This reverses a previous intentional exclusion (ClusterNavigator had a comment: "Candidate state intentionally excluded — candidates are transient internal nodes"). With the candidate visibility feature, this exclusion no longer applies.
 
 ```
 all | active | candidate | mature | template | archived
 ```
 
+Requires updating `StateFilter` type in `clusters.svelte.ts` to include `'candidate'`.
+
 When candidates > 0, the `candidate` tab shows a count badge.
 
 ### Topology visualization
 
-Candidate nodes render at **40% opacity** with their domain color. Same size scaling by member count. Same parent-child positioning. Clickable — opens Inspector. No billboard label until promoted (reduces visual noise for transient state).
+Candidate nodes render at **40% opacity** via `stateOpacity()` in `TopologyData.ts` (which already handles state-based opacity — add `candidate: 0.4`). Same size scaling by member count. Same parent-child positioning. Clickable — opens Inspector. No billboard label until promoted (reduces visual noise for transient state).
 
 ### Inspector
 
@@ -175,7 +192,7 @@ State badge shows `CANDIDATE` with dimmed styling (`--color-text-dim`). All fiel
 
 | Event | Toast |
 |-------|-------|
-| Split producing candidates | `"Split: 3 candidates from Saas Growth Strategy"` (one toast per split) |
+| Split producing candidates | `"Split: 3 candidates from SaaS Growth Strategy"` (one toast per split) |
 | Candidate promoted | `"Promoted: SaaS Billing Tasks → active"` (per child) |
 | Candidate rejected | `"Rejected: SaaS Misc (coh 0.18) — 4 members reassigned"` (per child) |
 
@@ -236,10 +253,11 @@ All candidate events flow through existing `taxonomy_activity` SSE type. No new 
 | `backend/app/services/taxonomy/warm_phases.py` | Add `phase_evaluate_candidates()` after Phase 0 |
 | `backend/app/services/taxonomy/warm_path.py` | Call candidate evaluation in warm path flow |
 | `backend/app/services/taxonomy/_constants.py` | Add spectral + candidate constants |
-| `backend/app/services/taxonomy/engine.py` | Sub-domain candidates consistent treatment |
+| `backend/app/services/taxonomy/engine.py` | Exclude candidates from `_load_active_nodes()` Q computation in speculative phases |
 | `frontend/src/lib/components/taxonomy/ActivityPanel.svelte` | candidate op chip, keyMetric, decisionColor |
-| `frontend/src/lib/components/taxonomy/TopologyRenderer.ts` | Candidate node opacity (40%) |
+| `frontend/src/lib/components/taxonomy/TopologyData.ts` | `stateOpacity("candidate") = 0.4` |
 | `frontend/src/lib/components/layout/ClusterNavigator.svelte` | Candidate filter tab with count badge |
+| `frontend/src/lib/stores/clusters.svelte.ts` | Add `'candidate'` to `StateFilter` type |
 | `frontend/src/lib/utils/colors.ts` | `stateColor("candidate")` mapping |
 | `frontend/src/routes/app/+page.svelte` | Toast notifications for candidate events |
 | `backend/tests/taxonomy/test_spectral_split.py` | New: spectral algorithm unit tests |
