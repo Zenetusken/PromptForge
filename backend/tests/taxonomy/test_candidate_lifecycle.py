@@ -311,10 +311,11 @@ class TestSplitFullyReversed:
         logged_decisions: list[dict] = []
 
         class _FakeLogger:
-            def log_decision(self, path, op, decision, context=None):
+            def log_decision(self, path, op, decision, context=None, **kwargs):
                 logged_decisions.append({
                     "path": path, "op": op, "decision": decision,
                     "context": context or {},
+                    **kwargs,
                 })
 
         fake_logger = _FakeLogger()
@@ -335,4 +336,4 @@ class TestSplitFullyReversed:
         ]
         assert len(srf_events) >= 1
         assert srf_events[0]["context"]["parent_id"] == parent.id
-        assert srf_events[0]["context"]["rejected_count"] >= 2
+        assert srf_events[0]["context"]["candidates_rejected"] >= 2

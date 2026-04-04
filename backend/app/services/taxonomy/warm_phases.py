@@ -131,7 +131,7 @@ async def _reassign_to_active(
     db: AsyncSession,
     opt_ids: list[str],
     opt_embeddings: list[np.ndarray],
-) -> None:
+) -> list[dict]:
     """Reassign optimizations to the nearest active/mature/template cluster.
 
     Only targets non-candidate, non-archived, non-domain clusters so that
@@ -141,9 +141,13 @@ async def _reassign_to_active(
         db: Active database session.
         opt_ids: Optimization primary-key IDs to reassign.
         opt_embeddings: Corresponding unit-norm embeddings (same order).
+
+    Returns:
+        List of {cluster_id, cluster_label, count} dicts summarizing
+        where members were reassigned — used in candidate_rejected event.
     """
     if not opt_ids:
-        return
+        return []
 
     # Load candidate target clusters (active/mature/template only)
     targets_q = await db.execute(
@@ -153,8 +157,8 @@ async def _reassign_to_active(
     )
     target_clusters: list[PromptCluster] = list(targets_q.scalars().all())
     if not target_clusters:
-        # No stable target exists — leave assignments unchanged
-        return
+        logger.warning("_reassign_to_active: no stable targets available")
+        return []
 
     # Pre-decode target centroids
     target_centroids: list[np.ndarray] = []
@@ -169,7 +173,9 @@ async def _reassign_to_active(
                 pass
 
     if not valid_targets:
-        return
+        return []
+
+    reassignment_counts: dict[str, dict] = {}
 
     for opt_id, emb in zip(opt_ids, opt_embeddings):
         # Find nearest target by cosine similarity
@@ -182,15 +188,27 @@ async def _reassign_to_active(
                 best_target = tc
 
         if best_target is None:
+            logger.warning("_reassign_to_active: no target found for opt %s", opt_id)
             continue
 
-        opt = await db.get(Optimization, opt_id)
-        if opt is None:
-            continue
+        try:
+            opt = await db.get(Optimization, opt_id)
+            if opt is None:
+                continue
+            opt.cluster_id = best_target.id
+            best_target.member_count = (best_target.member_count or 0) + 1
+            key = best_target.id
+            if key not in reassignment_counts:
+                reassignment_counts[key] = {
+                    "cluster_id": best_target.id,
+                    "cluster_label": best_target.label,
+                    "count": 0,
+                }
+            reassignment_counts[key]["count"] += 1
+        except Exception as exc:
+            logger.warning("_reassign_to_active: failed for opt %s: %s", opt_id, exc)
 
-        # Update the optimization's cluster assignment
-        opt.cluster_id = best_target.id
-        best_target.member_count = (best_target.member_count or 0) + 1
+    return list(reassignment_counts.values())
 
 
 async def phase_evaluate_candidates(
@@ -282,13 +300,18 @@ async def phase_evaluate_candidates(
             rejected += 1
             if candidate.parent_id:
                 parent_outcomes[candidate.parent_id]["rejected"] += 1
+                parent_outcomes[candidate.parent_id].setdefault("labels", []).append(candidate.label or "unknown")
             try:
                 get_event_logger().log_decision(
                     path="warm", op="candidate", decision="candidate_rejected",
+                    cluster_id=candidate.id,
                     context={
-                        "cluster_id": candidate.id,
-                        "label": candidate.label,
+                        "cluster_label": candidate.label,
                         "reason": "zero_members",
+                        "coherence": None,
+                        "coherence_floor": CANDIDATE_COHERENCE_FLOOR,
+                        "member_count": 0,
+                        "members_reassigned_to": [],
                         "parent_id": candidate.parent_id,
                         "time_as_candidate_ms": time_as_candidate_ms,
                     },
@@ -298,16 +321,20 @@ async def phase_evaluate_candidates(
             continue
 
         # Compute pairwise coherence from member embeddings
+        coherence: float | None = None
         embeddings = [emb for _, emb in members]
-        if len(embeddings) >= 2:
-            coherence = compute_pairwise_coherence(embeddings)
-        else:
-            # Single member — coherence is 1.0 by definition, but we
-            # treat singletons as promotable (they'll grow or be retired).
-            coherence = 1.0
+        try:
+            if len(embeddings) >= 2:
+                coherence = compute_pairwise_coherence(embeddings)
+            else:
+                # Single member — coherence is 1.0 by definition
+                coherence = 1.0
+        except Exception as coh_exc:
+            logger.warning("Coherence computation failed for candidate '%s': %s", candidate.label, coh_exc)
+            coherence = None
 
         # Case 2: coherence meets floor — promote to active
-        if coherence >= CANDIDATE_COHERENCE_FLOOR:
+        if coherence is not None and coherence >= CANDIDATE_COHERENCE_FLOOR:
             candidate.state = "active"
             candidate.coherence = coherence
             promoted += 1
@@ -320,11 +347,13 @@ async def phase_evaluate_candidates(
             try:
                 get_event_logger().log_decision(
                     path="warm", op="candidate", decision="candidate_promoted",
+                    cluster_id=candidate.id,
                     context={
-                        "cluster_id": candidate.id,
-                        "label": candidate.label,
+                        "cluster_label": candidate.label,
                         "coherence": round(coherence, 4),
+                        "coherence_floor": CANDIDATE_COHERENCE_FLOOR,
                         "member_count": member_count,
+                        "reason": "coherence_above_floor",
                         "parent_id": candidate.parent_id,
                         "time_as_candidate_ms": time_as_candidate_ms,
                     },
@@ -333,10 +362,11 @@ async def phase_evaluate_candidates(
                 pass
 
         else:
-            # Case 3: coherence below floor — reassign members and archive
+            # Case 3: coherence below floor or None — reassign members and archive
+            reason = "coherence_unavailable" if coherence is None else "coherence_below_floor"
             opt_ids = [oid for oid, _ in members]
             opt_embs = [emb for _, emb in members]
-            await _reassign_to_active(db, opt_ids, opt_embs)
+            reassignment_info = await _reassign_to_active(db, opt_ids, opt_embs)
 
             candidate.state = "archived"
             candidate.archived_at = now
@@ -344,19 +374,26 @@ async def phase_evaluate_candidates(
             rejected += 1
             if candidate.parent_id:
                 parent_outcomes[candidate.parent_id]["rejected"] += 1
+                parent_outcomes[candidate.parent_id].setdefault("labels", []).append(candidate.label or "unknown")
+                parent_outcomes[candidate.parent_id].setdefault("reassigned", 0)
+                parent_outcomes[candidate.parent_id]["reassigned"] += len(opt_ids)
             logger.info(
-                "Candidate '%s' rejected (coherence=%.3f < %.2f), reassigning %d members",
-                candidate.label, coherence, CANDIDATE_COHERENCE_FLOOR, member_count,
+                "Candidate '%s' rejected (%s, coherence=%s < %.2f), reassigning %d members",
+                candidate.label, reason,
+                f"{coherence:.3f}" if coherence is not None else "None",
+                CANDIDATE_COHERENCE_FLOOR, member_count,
             )
             try:
                 get_event_logger().log_decision(
                     path="warm", op="candidate", decision="candidate_rejected",
+                    cluster_id=candidate.id,
                     context={
-                        "cluster_id": candidate.id,
-                        "label": candidate.label,
-                        "reason": "low_coherence",
-                        "coherence": round(coherence, 4),
+                        "cluster_label": candidate.label,
+                        "reason": reason,
+                        "coherence": round(coherence, 4) if coherence is not None else None,
+                        "coherence_floor": CANDIDATE_COHERENCE_FLOOR,
                         "member_count": member_count,
+                        "members_reassigned_to": reassignment_info,
                         "parent_id": candidate.parent_id,
                         "time_as_candidate_ms": time_as_candidate_ms,
                     },
@@ -369,16 +406,28 @@ async def phase_evaluate_candidates(
         total = outcomes["promoted"] + outcomes["rejected"]
         if total > 0 and outcomes["promoted"] == 0:
             splits_fully_reversed += 1
+            # Look up parent label for observability
+            parent_label = "unknown"
+            try:
+                parent_node = await db.get(PromptCluster, parent_id)
+                if parent_node:
+                    parent_label = parent_node.label or "unknown"
+            except Exception:
+                pass
             logger.info(
                 "Split fully reversed: all %d candidates from parent '%s' rejected",
-                total, parent_id,
+                total, parent_label,
             )
             try:
                 get_event_logger().log_decision(
                     path="warm", op="candidate", decision="split_fully_reversed",
+                    cluster_id=parent_id,
                     context={
                         "parent_id": parent_id,
-                        "rejected_count": outcomes["rejected"],
+                        "parent_label": parent_label,
+                        "candidates_rejected": outcomes["rejected"],
+                        "candidate_labels": outcomes.get("labels", []),
+                        "total_members_reassigned": outcomes.get("reassigned", 0),
                     },
                 )
             except RuntimeError:

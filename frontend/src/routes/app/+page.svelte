@@ -135,7 +135,7 @@
         if (actData.op === 'split' && actData.decision === 'split_complete') {
           const ctx = actData.context ?? {};
           if (ctx.children_state === 'candidate') {
-            const childCount = typeof ctx.children_created === 'number' ? ctx.children_created : '?';
+            const childCount = typeof ctx.hdbscan_clusters === 'number' ? ctx.hdbscan_clusters : '?';
             addToast('created', `Split: ${childCount} candidates from ${ctx.parent_label ?? 'cluster'}`);
           }
         }
