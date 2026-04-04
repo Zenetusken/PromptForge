@@ -10,13 +10,16 @@ import logging
 from dataclasses import dataclass, field
 
 import numpy as np
-from sklearn.cluster import HDBSCAN
+from sklearn.cluster import HDBSCAN, SpectralClustering
 from sklearn.metrics import silhouette_score
 
 from app.services.taxonomy._constants import (
     CLUSTERING_BLEND_W_OPTIMIZED,
     CLUSTERING_BLEND_W_RAW,
     CLUSTERING_BLEND_W_TRANSFORM,
+    SPECTRAL_K_RANGE,
+    SPECTRAL_MIN_GROUP_SIZE,
+    SPECTRAL_SILHOUETTE_GATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -290,6 +293,104 @@ def nearest_centroid(
             best_idx = i
 
     return best_idx, best_score
+
+
+def spectral_split(
+    embeddings: np.ndarray,
+    k_range: tuple[int, ...] = SPECTRAL_K_RANGE,
+    silhouette_gate: float = SPECTRAL_SILHOUETTE_GATE,
+) -> tuple[ClusterResult | None, dict[int, float]]:
+    """Split embeddings into sub-clusters using spectral clustering.
+
+    Unlike HDBSCAN, spectral clustering finds sub-communities by analyzing
+    the similarity graph structure — not density — which works for
+    uniform-density embedding spaces that HDBSCAN cannot separate.
+
+    Tries each k in *k_range*, selects the partition with the best
+    silhouette score (rescaled to [0, 1]).  Rejects partitions where
+    any group has fewer than ``SPECTRAL_MIN_GROUP_SIZE`` members.
+
+    Returns:
+        Tuple of (ClusterResult or None, dict mapping k → rescaled
+        silhouette for ALL k values attempted). The dict is always populated
+        even when the result is None — needed for observability.
+    """
+    n = embeddings.shape[0]
+    min_required = max(k_range) * SPECTRAL_MIN_GROUP_SIZE
+    all_silhouettes: dict[int, float] = {}
+    if n < min_required:
+        logger.debug(
+            "spectral_split: N=%d < min_required=%d, skipping", n, min_required,
+        )
+        return None, all_silhouettes
+
+    # Cosine similarity matrix (L2-normalized → dot product = cosine)
+    sim_matrix = embeddings @ embeddings.T
+    sim_matrix = np.clip(sim_matrix, 0, None)  # spectral requires non-negative
+
+    best_k: int | None = None
+    best_sil: float = -1.0
+    best_labels: np.ndarray | None = None
+
+    for k in k_range:
+        if n < k * SPECTRAL_MIN_GROUP_SIZE:
+            continue
+        try:
+            sc = SpectralClustering(
+                n_clusters=k,
+                affinity="precomputed",
+                random_state=42,
+                assign_labels="kmeans",
+            )
+            labels = sc.fit_predict(sim_matrix)
+        except Exception as exc:
+            logger.warning("SpectralClustering failed for k=%d: %s", k, exc)
+            continue
+
+        # Reject if any group is too small
+        group_sizes = [int((labels == cid).sum()) for cid in range(k)]
+        if any(s < SPECTRAL_MIN_GROUP_SIZE for s in group_sizes):
+            all_silhouettes[k] = -1.0  # rejected for group size
+            continue
+
+        # Silhouette score (cosine metric, raw range [-1, 1])
+        try:
+            raw_sil = silhouette_score(embeddings, labels, metric="cosine")
+            rescaled = (raw_sil + 1.0) / 2.0
+        except Exception:
+            continue
+
+        all_silhouettes[k] = round(rescaled, 4)
+        if rescaled > best_sil:
+            best_sil = rescaled
+            best_k = k
+            best_labels = labels
+
+    if best_labels is None or best_sil < silhouette_gate:
+        logger.debug(
+            "spectral_split: no valid partition (best_sil=%.4f, gate=%.4f)",
+            best_sil, silhouette_gate,
+        )
+        return None, all_silhouettes
+
+    # Compute L2-normalized centroids
+    centroids: list[np.ndarray] = []
+    for cid in range(best_k):
+        member_vecs = embeddings[best_labels == cid]
+        mean_vec = member_vecs.mean(axis=0).astype(np.float32)
+        norm = np.linalg.norm(mean_vec)
+        if norm > 0:
+            mean_vec = mean_vec / norm
+        centroids.append(mean_vec)
+
+    return ClusterResult(
+        labels=best_labels,
+        n_clusters=best_k,
+        noise_count=0,
+        persistences=[best_sil] * best_k,
+        centroids=centroids,
+        silhouette=best_sil,
+    ), all_silhouettes
 
 
 def batch_cluster(

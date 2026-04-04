@@ -55,6 +55,19 @@ SUB_DOMAIN_MIN_GROUP_MEMBERS = 5    # each HDBSCAN group needs ≥5 members
 SUB_DOMAIN_HDBSCAN_MIN_CLUSTER = 5  # HDBSCAN min_cluster_size parameter
 
 
+# ---------------------------------------------------------------------------
+# Spectral split algorithm
+# ---------------------------------------------------------------------------
+SPECTRAL_K_RANGE = (2, 3, 4)            # k values to try
+SPECTRAL_SILHOUETTE_GATE = 0.15         # minimum rescaled silhouette to accept
+SPECTRAL_MIN_GROUP_SIZE = 3             # minimum members per sub-cluster
+
+# ---------------------------------------------------------------------------
+# Candidate lifecycle
+# ---------------------------------------------------------------------------
+CANDIDATE_COHERENCE_FLOOR = 0.30        # minimum coherence for promotion
+
+
 def _utcnow() -> datetime:
     """Naive UTC timestamp — matches SQLAlchemy DateTime() round-trip on SQLite.
 
