@@ -1,12 +1,12 @@
-"""Shared cluster split logic — member-level HDBSCAN + k-means fallback.
+"""Shared cluster split logic — spectral primary + HDBSCAN fallback.
 
 Extracted from warm_phases.py to be reusable by both warm-path leaf splits
 and cold-path mega-cluster splits. The function receives pre-fetched
 Optimization embedding rows and handles:
   1. Blended embedding construction
-  2. HDBSCAN clustering (min_cluster_size=8)
-  3. K-means bisection fallback when HDBSCAN finds < 2 clusters
-  4. Child node creation with Haiku labeling
+  2. Spectral clustering (primary — handles uniform-density clusters)
+  3. HDBSCAN fallback when spectral finds < 2 clusters
+  4. Child node creation (state=candidate) with Haiku labeling
   5. Optimization reassignment to children
   6. Noise point reassignment to nearest child
   7. Parent node archival
@@ -38,6 +38,7 @@ from app.services.taxonomy.clustering import (
     compute_pairwise_coherence,
     cosine_similarity,
     l2_normalize_1d,
+    spectral_split,
 )
 from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.family_ops import merge_score_into_cluster
@@ -104,43 +105,42 @@ async def split_cluster(
     if len(child_blended) < SPLIT_MIN_MEMBERS:
         return SplitResult(success=False, children_created=0, noise_reassigned=0)
 
-    # HDBSCAN — min_cluster_size=8 ensures each child has enough members
-    # to sustain independent weight learning (needs ≥10 samples; 8 is a
-    # reasonable floor given noise reassignment adds a few more).
-    split_result = batch_cluster(child_blended, min_cluster_size=8)
-    used_kmeans_fallback = False
+    # Spectral clustering — primary algorithm.
+    # Spectral finds sub-communities via similarity graph structure,
+    # solving uniform-density failures that HDBSCAN cannot handle.
+    emb_stack = np.stack(child_blended, axis=0).astype(np.float32)
+    norms = np.linalg.norm(emb_stack, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    emb_stack = (emb_stack / norms).astype(np.float32)
 
-    # K-means bisection fallback
-    if (
-        split_result.n_clusters < 2
-        and len(child_blended) >= 2 * SPLIT_MIN_MEMBERS
-    ):
-        try:
-            from sklearn.cluster import KMeans
+    split_result, all_silhouettes = spectral_split(emb_stack)
+    used_algorithm = "spectral"
 
-            emb_stack = np.stack(child_blended, axis=0)
-            km = KMeans(n_clusters=2, n_init=10, random_state=42)
-            km_labels = km.fit_predict(emb_stack)
-            sizes = [int((km_labels == c).sum()) for c in range(2)]
-            if all(s >= 3 for s in sizes):
-                centroids = [
-                    l2_normalize_1d(km.cluster_centers_[c].astype(np.float32))
-                    for c in range(2)
-                ]
-                split_result = type(split_result)(
-                    labels=km_labels,
-                    centroids=centroids,
-                    n_clusters=2,
-                    persistences=[0.5, 0.5],
-                    noise_count=0,
-                )
-                used_kmeans_fallback = True
-                logger.info(
-                    "HDBSCAN failed, k-means bisection succeeded: %s members",
-                    sizes,
-                )
-        except Exception as km_exc:
-            logger.debug("k-means fallback failed: %s", km_exc)
+    # Log spectral evaluation result
+    spectral_silhouettes: dict[str, float] = {str(k): v for k, v in all_silhouettes.items()}
+    try:
+        get_event_logger().log_decision(
+            path=log_path, op="split", decision="spectral_evaluation",
+            cluster_id=node.id,
+            context={
+                "cluster_label": node.label,
+                "member_count": len(child_blended),
+                "input_coherence": round(node.coherence or 0.0, 4),
+                "silhouettes_by_k": spectral_silhouettes,
+                "best_k": split_result.n_clusters if split_result else None,
+                "best_silhouette": round(split_result.silhouette, 4) if split_result else None,
+                "gate_threshold": 0.15,
+                "accepted": split_result is not None,
+                "fallback_to_hdbscan": split_result is None,
+            },
+        )
+    except RuntimeError:
+        pass
+
+    # Fallback: HDBSCAN may find density-based structure spectral missed
+    if split_result is None:
+        split_result = batch_cluster(child_blended, min_cluster_size=8)
+        used_algorithm = "hdbscan"
 
     if split_result.n_clusters < 2:
         # Not an error — HDBSCAN correctly determined this cluster has no
@@ -151,9 +151,10 @@ async def split_cluster(
                 path=log_path, op="split", decision="no_sub_structure",
                 cluster_id=node.id,
                 context={
+                    "spectral_silhouettes": spectral_silhouettes,
                     "hdbscan_clusters": int(split_result.n_clusters),
                     "total_members": len(child_blended),
-                    "reason": "HDBSCAN found no separable sub-groups",
+                    "reason": "Neither spectral nor HDBSCAN found separable sub-groups",
                 },
             )
         except RuntimeError:
@@ -166,9 +167,9 @@ async def split_cluster(
             path=log_path, op="split", decision="algorithm_result",
             cluster_id=node.id,
             context={
+                "algorithm": used_algorithm,
                 "hdbscan_clusters": int(split_result.n_clusters),
                 "noise_count": int(split_result.noise_count),
-                "fallback": "kmeans" if used_kmeans_fallback else "none",
                 "total_members": len(child_blended),
             },
         )
@@ -266,7 +267,7 @@ async def split_cluster(
             scored_count=cd["scored_count"],
             avg_score=cd["avg_score"],
             coherence=cd["coherence"],
-            state="active",
+            state="candidate",
             domain=parent_domain,
             parent_id=parent_id_for_children,
             color_hex=generate_color(0.0, 0.0, 0.0),
@@ -319,14 +320,18 @@ async def split_cluster(
         )
         try:
             get_event_logger().log_decision(
-                path=log_path, op="split", decision="child_created",
+                path=log_path, op="candidate", decision="candidate_created",
                 cluster_id=child_node.id,
                 context={
                     "parent_id": node.id,
                     "parent_label": node.label,
+                    "parent_member_count": node.member_count or 0,
                     "child_label": label,
                     "members": len(cd["group_opt_ids"]),
                     "coherence": round(cd["coherence"], 4),
+                    "split_algorithm": used_algorithm,
+                    "k_selected": split_result.n_clusters,
+                    "silhouette_score": round(getattr(split_result, "silhouette", 0.0) or 0.0, 4),
                 },
             )
         except RuntimeError:
@@ -487,12 +492,8 @@ async def split_cluster(
                     }
                     for c in new_children
                 ],
-                "fallback": (
-                    "kmeans"
-                    if split_result.n_clusters >= 2
-                    and getattr(split_result, "persistences", None) == [0.5, 0.5]
-                    else "none"
-                ),
+                "algorithm": used_algorithm,
+                "children_state": "candidate",
             },
         )
     except RuntimeError:
