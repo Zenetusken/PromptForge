@@ -880,4 +880,10 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.routers.seed import router as seed_router
+    app.include_router(seed_router)
+except ImportError:
+    pass
+
 asgi_app = app
