@@ -398,11 +398,13 @@ async def test_warm_path_recomputes_nonzero_coherence(session_factory, mock_embe
 
 @pytest.mark.asyncio
 async def test_split_triggers_on_stale_coherence_cluster(session_factory, mock_embedding, mock_provider):
-    """A 14-member mega-cluster with stale coherence should be split.
+    """A 26-member cluster with stale coherence should be split.
 
     With actual pairwise coherence well below the dynamic split floor,
     inline recomputation in split detection should trigger the split
     in a single warm cycle — not require two cycles.
+
+    Note: SPLIT_MIN_MEMBERS=25, so we need ≥26 members to trigger.
     """
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
     rng = np.random.RandomState(77)
@@ -414,7 +416,7 @@ async def test_split_triggers_on_stale_coherence_cluster(session_factory, mock_e
             state="domain",
             domain="general",
             centroid_embedding=rng.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
-            member_count=14,
+            member_count=26,
             color_hex="#6366f1",
         )
         db.add(domain_node)
@@ -430,15 +432,15 @@ async def test_split_triggers_on_stale_coherence_cluster(session_factory, mock_e
             domain="general",
             parent_id=domain_node.id,
             centroid_embedding=center.tobytes(),
-            member_count=14,
+            member_count=26,
             coherence=0.95,  # stale — actual will be ~0.2
             color_hex="#a855f7",
         )
         db.add(mega)
         await db.flush()
 
-        # Add 14 diverse optimizations (7 topics × 2) — low actual coherence
-        diverse_embs = _make_diverse_embeddings(7, 2, rng)
+        # Add 26 diverse optimizations (13 topics × 2) — low actual coherence
+        diverse_embs = _make_diverse_embeddings(13, 2, rng)
         for i, emb in enumerate(diverse_embs):
             opt = Optimization(
                 raw_prompt=f"mega topic {i}",

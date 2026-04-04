@@ -25,11 +25,11 @@ logger = logging.getLogger(__name__)
 async def handle_seed(
     project_description: str | None = None,
     workspace_path: str | None = None,
-    repo_full_name: str | None = None,
+    repo_full_name: str | None = None,  # Reserved: GitHub explore (populates codebase_context)
     prompt_count: int = 30,
     agents: list[str] | None = None,
     prompts: list[str] | None = None,
-    ctx: Any | None = None,
+    ctx: Any | None = None,  # MCP Context — reserved for future sampling-tier support
     routing: Any | None = None,  # Injected by REST endpoint from request.app.state.routing
 ) -> SeedOutput:
     """Full batch seeding flow: explore → generate → optimize → persist → taxonomy.
@@ -106,7 +106,7 @@ async def handle_seed(
 
         # Explore workspace context — degrades gracefully on failure
         workspace_profile = None
-        codebase_context = None
+        codebase_context = None  # Populated when repo_full_name explore is implemented
         explore_t0 = time.monotonic()
         if workspace_path:
             try:
