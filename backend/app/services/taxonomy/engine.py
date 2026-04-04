@@ -1266,32 +1266,31 @@ class TaxonomyEngine:
             coherences = [c.coherence for c in children if c.coherence is not None]
             mean_coh = float(np.mean(coherences)) if coherences else 0.0
 
-            # Log evaluation event for every domain so Activity panel shows why
-            # sub-domains are or aren't triggered, even for domains that skip.
-            try:
-                get_event_logger().log_decision(
-                    path="warm", op="discover", decision="sub_domain_evaluation",
-                    cluster_id=domain_node.id,
-                    context={
-                        "domain_label": domain_node.label,
-                        "total_members": total_members,
-                        "cluster_count": len(children),
-                        "mean_coherence": round(mean_coh, 4) if coherences else None,
-                        "thresholds": {
-                            "min_members": SUB_DOMAIN_MIN_MEMBERS,
-                            "coherence_ceiling": SUB_DOMAIN_COHERENCE_CEILING,
+            # Only log evaluation when it would trigger or is close to triggering
+            # (≥75% of member threshold). Suppresses per-cycle noise for small domains.
+            would_trigger = (
+                total_members >= SUB_DOMAIN_MIN_MEMBERS
+                and bool(coherences)
+                and mean_coh < SUB_DOMAIN_COHERENCE_CEILING
+            )
+            close_to_threshold = total_members >= int(SUB_DOMAIN_MIN_MEMBERS * 0.75)
+            if would_trigger or close_to_threshold:
+                try:
+                    get_event_logger().log_decision(
+                        path="warm", op="discover", decision="sub_domain_evaluation",
+                        cluster_id=domain_node.id,
+                        context={
+                            "domain_label": domain_node.label,
+                            "total_members": total_members,
+                            "cluster_count": len(children),
+                            "mean_coherence": round(mean_coh, 4) if coherences else None,
+                            "passes_members": total_members >= SUB_DOMAIN_MIN_MEMBERS,
+                            "passes_coherence": mean_coh < SUB_DOMAIN_COHERENCE_CEILING if coherences else False,
+                            "would_trigger": would_trigger,
                         },
-                        "passes_members": total_members >= SUB_DOMAIN_MIN_MEMBERS,
-                        "passes_coherence": mean_coh < SUB_DOMAIN_COHERENCE_CEILING if coherences else False,
-                        "would_trigger": (
-                            total_members >= SUB_DOMAIN_MIN_MEMBERS
-                            and bool(coherences)
-                            and mean_coh < SUB_DOMAIN_COHERENCE_CEILING
-                        ),
-                    },
-                )
-            except RuntimeError:
-                pass
+                    )
+                except RuntimeError:
+                    pass
 
             # Early-exit checks (after logging so skipped domains are visible)
             if total_members < SUB_DOMAIN_MIN_MEMBERS:

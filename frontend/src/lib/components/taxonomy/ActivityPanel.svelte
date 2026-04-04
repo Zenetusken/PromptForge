@@ -72,12 +72,14 @@
       if (e.decision === 'merge_into' && typeof c.winner_label === 'string') {
         const candidates = c.candidates as any[] | undefined;
         const score = Array.isArray(candidates) && candidates.length > 0 && typeof candidates[0].effective_score === 'number'
-          ? ` (${(candidates[0].effective_score as number).toFixed(3)})`
+          ? `${(candidates[0].effective_score as number).toFixed(3)}`
           : '';
-        return `→ ${c.winner_label}${score}`;
+        const members = typeof c.member_count === 'number' ? `[${c.member_count}m]` : '';
+        const label = typeof c.prompt_label === 'string' ? `"${c.prompt_label}" ` : '';
+        return `${label}→ ${c.winner_label} ${members} ${score}`.trim();
       }
       if (e.decision === 'create_new' && typeof c.new_label === 'string') {
-        return `new: ${c.new_label}`;
+        return `new: ${c.new_label} [${c.prompt_domain ?? ''}]`;
       }
       if (typeof c.winner_label === 'string') {
         return c.winner_label;
@@ -93,6 +95,11 @@
       return '';
     }
     if (e.op === 'refit') {
+      if (e.decision === 'cluster_detail') {
+        const clusters = Array.isArray(c.clusters) ? c.clusters as any[] : [];
+        const top = clusters.slice(0, 3).map((cl: any) => `${cl.label}(${cl.member_count})`).join(', ');
+        return top || `${c.total_optimizations ?? '?'} optimizations`;
+      }
       return `Q ${(c.q_before as number)?.toFixed(3) ?? '?'}→${(c.q_after as number)?.toFixed(3) ?? '?'}`;
     }
     if (e.op === 'split') {

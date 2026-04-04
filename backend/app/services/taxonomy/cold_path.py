@@ -476,6 +476,35 @@ async def execute_cold_path(
             mc_repairs,
         )
 
+    # Log per-cluster membership detail — critical for understanding
+    # how clusters form after a refit (e.g., why a cluster got 39 members)
+    try:
+        large_clusters = [
+            n for n in all_nodes
+            if n.state not in ("domain", "archived") and (n.member_count or 0) >= 5
+        ]
+        if large_clusters:
+            get_event_logger().log_decision(
+                path="cold", op="refit", decision="cluster_detail",
+                context={
+                    "clusters": [
+                        {
+                            "id": n.id,
+                            "label": n.label,
+                            "domain": n.domain,
+                            "member_count": n.member_count or 0,
+                            "avg_score": round(n.avg_score, 2) if n.avg_score else None,
+                            "coherence": round(n.coherence, 4) if n.coherence is not None else None,
+                        }
+                        for n in sorted(large_clusters, key=lambda x: -(x.member_count or 0))
+                    ],
+                    "total_nodes": len(all_nodes),
+                    "total_optimizations": sum(actual_counts.values()),
+                },
+            )
+    except RuntimeError:
+        pass
+
     # ------------------------------------------------------------------
     # Step 16: Recompute per-member coherence from optimization embeddings
     # ------------------------------------------------------------------
