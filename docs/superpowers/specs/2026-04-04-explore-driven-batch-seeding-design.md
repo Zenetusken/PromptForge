@@ -287,6 +287,80 @@ Published to existing event bus. Frontend handles in `+page.svelte` SSE handler.
 - Progress indicator via SSE
 - Completion summary
 
+## Observability & Error Handling
+
+### Event Logging
+
+Uses the existing `TaxonomyEventLogger` with a new `op="seed"` operation type. Events flow to JSONL persistence, ring buffer, SSE (Activity panel), and cross-process notification for MCP-originated batches.
+
+**Batch lifecycle events:**
+
+| Decision | When | Context Keys |
+|---|---|---|
+| `seed_started` | Batch begins | `batch_id`, `tier`, `project_description` (truncated), `agent_count`, `prompt_count_target`, `estimated_cost_usd` |
+| `seed_explore_complete` | Explore phase done | `batch_id`, `workspace_profile_length`, `codebase_context_length`, `duration_ms` |
+| `seed_agents_complete` | All agents returned | `batch_id`, `prompts_generated`, `prompts_after_dedup`, `per_agent` [{name, count, duration_ms}], `duplicates_removed` |
+| `seed_prompt_scored` | One prompt through pipeline | `batch_id`, `prompt_index`, `total`, `overall_score`, `improvement_score`, `task_type`, `strategy_used`, `duration_ms` |
+| `seed_prompt_failed` | One prompt failed | `batch_id`, `prompt_index`, `error_type`, `error_message` (truncated 200 chars), `recovery`: "skipped" |
+| `seed_persist_complete` | Bulk INSERT done | `batch_id`, `rows_inserted`, `transaction_ms` |
+| `seed_taxonomy_complete` | Cluster assignments done | `batch_id`, `clusters_assigned`, `clusters_created`, `domains_touched`, `transaction_ms` |
+| `seed_completed` | Batch finished | `batch_id`, `total_duration_ms`, `prompts_optimized`, `prompts_failed`, `clusters_created`, `domains_touched`, `cost_usd` |
+| `seed_failed` | Entire batch failed | `batch_id`, `phase` (which phase failed), `error_type`, `error_message`, `prompts_completed_before_failure` |
+
+**Per-prompt scoring events:**
+Each prompt that completes the pipeline ALSO fires the standard `hot/score/scored` event (from the existing pipeline instrumentation). This means the Activity panel shows both batch-level progress (`seed_prompt_scored`) and detailed scoring traces (`score/scored` with raw_llm, heuristic, blended, divergence).
+
+### Error Handling Strategy
+
+**Principle: fail-forward per prompt, fail-fast per phase.**
+
+Individual prompt failures don't stop the batch — they're logged, skipped, and counted. Phase-level failures (explore fails, all agents fail, persist fails) stop the batch with a clear error.
+
+| Failure | Scope | Recovery | Event |
+|---|---|---|---|
+| Single agent returns malformed JSON | Agent | Skip agent, log warning, continue with other agents' prompts | `seed_prompt_failed` with `error_type: "agent_parse_error"` |
+| Single agent LLM timeout | Agent | Skip agent, continue | `seed_prompt_failed` with `error_type: "agent_timeout"` |
+| All agents fail | Batch | Stop batch, return error | `seed_failed` with `phase: "generate"` |
+| Single prompt analyze phase fails | Prompt | Skip prompt, continue batch | `seed_prompt_failed` with `error_type: "analyze_error"` |
+| Single prompt optimize phase fails | Prompt | Skip prompt, continue | `seed_prompt_failed` with `error_type: "optimize_error"` |
+| Single prompt score phase fails | Prompt | Skip prompt, continue | `seed_prompt_failed` with `error_type: "score_error"` |
+| Embedding computation fails | Prompt | Skip prompt, continue | `seed_prompt_failed` with `error_type: "embedding_error"` |
+| Bulk persist fails (SQLite locked) | Batch | Retry once after 5s. If still locked, return partial result | `seed_failed` with `phase: "persist"` |
+| Taxonomy assign_cluster fails | Prompt | Skip taxonomy for this prompt, mark for hot-path retry on next optimization | `seed_prompt_failed` with `error_type: "taxonomy_error"` |
+| Explore phase fails | Batch | Continue WITHOUT context (degrade gracefully — prompts generated without codebase grounding) | `seed_explore_complete` with `codebase_context_length: 0` |
+| Rate limit hit (429) | Batch | Back off, reduce parallelism by half, retry | Logged at INFO level, parallelism adjustment noted in `seed_completed` |
+
+### Structured Logging (Python logger)
+
+In addition to event logger events, standard Python `logger.info/warning/error` calls at key points:
+
+```python
+logger.info("Seed batch %s started: %d agents, ~%d prompts, tier=%s", batch_id, n_agents, target, tier)
+logger.info("Seed explore: workspace=%d chars, codebase=%d chars (%dms)", ws_len, cb_len, dur)
+logger.info("Seed agents: %d prompts from %d agents, %d deduped (%dms)", total, n_agents, deduped, dur)
+logger.info("Seed prompt %d/%d: score=%.1f task=%s strategy=%s (%dms)", i, total, score, task, strat, dur)
+logger.warning("Seed prompt %d/%d failed: %s: %s", i, total, type(exc).__name__, str(exc)[:200])
+logger.info("Seed persist: %d rows in %dms", count, dur)
+logger.info("Seed taxonomy: %d assigned, %d new clusters, domains=%s (%dms)", assigned, new, domains, dur)
+logger.info("Seed batch %s completed: %d/%d optimized, %d failed, %d clusters, $%.2f (%ds)", ...)
+logger.error("Seed batch %s failed at %s: %s", batch_id, phase, exc, exc_info=True)
+```
+
+### Cost Tracking
+
+Each `seed_prompt_scored` event includes `duration_ms`. The `seed_completed` event includes `cost_usd` computed from actual model usage (not estimated). If the batch is interrupted, the partial cost is still reported in `seed_failed`.
+
+For sampling tier: `cost_usd = None` (IDE subscription covers it). The event still logs `duration_ms` for performance analysis.
+
+### Activity Panel Integration
+
+The `seed` op type is added to the ActivityPanel filter chips. Events render with:
+- `seed_started`: cyan (informational) — "Seeding: fintech API (30 prompts)"
+- `seed_prompt_scored`: gray (informational) — "8.4 REST API authentication"
+- `seed_prompt_failed`: amber (warning) — "Failed: timeout on prompt 12"
+- `seed_completed`: green (success) — "30 optimized, 5 clusters, 3 domains"
+- `seed_failed`: red (error) — "Failed at persist: database locked"
+
 ## Files Created/Modified
 
 | File | Phase | Change |
