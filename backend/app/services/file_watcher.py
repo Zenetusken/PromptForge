@@ -108,3 +108,44 @@ async def watch_strategy_files(strategies_dir: Path) -> None:
         except Exception as exc:
             logger.error("Strategy file watcher error: %s", exc)
             await asyncio.sleep(5)
+
+
+async def watch_seed_agent_files(agents_dir: Path) -> None:
+    """Watch seed agent .md files for changes and publish events."""
+    from app.services.event_bus import event_bus
+
+    if not agents_dir.is_dir():
+        logger.info(
+            "Seed agents directory %s does not exist — file watcher not started",
+            agents_dir,
+        )
+        return
+
+    logger.info("Watching seed agent files in %s", agents_dir)
+    while True:
+        try:
+            async for changes in awatch(
+                agents_dir,
+                debounce=500,
+                force_polling=True,
+                poll_delay_ms=1000,
+            ):
+                for change_type, path_str in changes:
+                    if Path(path_str).suffix != ".md":
+                        continue
+                    stem = Path(path_str).stem
+                    action = {1: "created", 2: "modified", 3: "deleted"}.get(
+                        change_type, "unknown"
+                    )
+                    logger.info("Seed agent %s: %s", action, stem)
+                    event_bus.publish("agent_changed", {
+                        "action": action,
+                        "name": stem,
+                        "timestamp": time.time(),
+                    })
+        except asyncio.CancelledError:
+            logger.info("Seed agent file watcher stopped")
+            return
+        except Exception as exc:
+            logger.error("Seed agent file watcher error: %s", exc)
+            await asyncio.sleep(5)

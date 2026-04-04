@@ -88,6 +88,13 @@ async def lifespan(app: FastAPI):
     )
     app.state.watcher_task = watcher_task
 
+    # Start seed agent file watcher
+    from app.services.file_watcher import watch_seed_agent_files
+    agent_watcher_task = asyncio.create_task(
+        watch_seed_agent_files(PROMPTS_DIR / "seed-agents")
+    )
+    app.state.agent_watcher_task = agent_watcher_task
+
     # Track in-flight extraction tasks for graceful shutdown
     extraction_tasks: set[asyncio.Task[None]] = set()
 
@@ -693,6 +700,7 @@ async def lifespan(app: FastAPI):
             getattr(app.state, "extraction_task", None),
             getattr(app.state, "warm_path_task", None),
             getattr(app.state, "watcher_task", None),
+            getattr(app.state, "agent_watcher_task", None),
         ]
         if t is not None
     ]

@@ -29,10 +29,13 @@
   function decisionColor(e: TaxonomyActivityEvent): string {
     if (e.op === 'error') return 'var(--color-neon-red)';
     const d = e.decision;
+    // Red — seed failures
+    if (d === 'seed_failed') return 'var(--color-neon-red)';
     // Green — successful operations
     if (d === 'accepted' || d === 'merged' || d === 'merge_into' || d === 'complete'
         || d === 'split_complete' || d === 'archived' || d === 'domain_created'
-        || d === 'created' || d === 'patterns_refreshed' || d === 'zombies_archived')
+        || d === 'created' || d === 'patterns_refreshed' || d === 'zombies_archived'
+        || d === 'seed_completed')
       return 'var(--color-neon-green)';
     // Cyan — new entities created
     if (d === 'create_new' || d === 'child_created' || d === 'family_split')
@@ -41,9 +44,11 @@
     if (d === 'rejected' || d === 'blocked' || d === 'skipped'
         || d === 'candidates_filtered')
       return 'var(--color-neon-yellow)';
-    // Informational — algorithm results, noise
+    // Informational — algorithm results, noise, seed progress
     if (d === 'algorithm_result' || d === 'noise_reassigned' || d === 'mega_clusters_detected'
-        || d === 'no_sub_structure' || d === 'scored')
+        || d === 'no_sub_structure' || d === 'scored'
+        || d === 'seed_started' || d === 'seed_explore_complete' || d === 'seed_agents_complete'
+        || d === 'seed_persist_complete' || d === 'seed_taxonomy_complete')
       return 'var(--color-text-secondary)';
     return 'var(--color-text-dim)';
   }
@@ -118,6 +123,18 @@
     }
     if (e.op === 'reconcile') {
       return typeof c.count === 'number' ? `${c.count} zombies` : '';
+    }
+    if (e.op === 'seed') {
+      if (e.decision === 'seed_agents_complete') {
+        return `${c.prompts_after_dedup ?? c.prompts_generated ?? '?'} prompts`;
+      }
+      if (e.decision === 'seed_completed') {
+        return `${c.prompts_optimized ?? '?'} done`;
+      }
+      if (e.decision === 'seed_failed') {
+        return typeof c.error_message === 'string' ? c.error_message.slice(0, 40) : 'failed';
+      }
+      return typeof c.prompts_optimized === 'number' ? `${c.prompts_optimized} done` : '';
     }
     return '';
   }
@@ -207,7 +224,7 @@
     </div>
     <!-- Operation type filter chips -->
     <div class="ap-filter-row">
-      {#each ['assign','extract','score','split','merge','retire','phase','refit','emerge','discover','reconcile','refresh','error'] as opVal}
+      {#each ['assign','extract','score','seed','split','merge','retire','phase','refit','emerge','discover','reconcile','refresh','error'] as opVal}
         <button
           class="ap-chip"
           class:ap-chip-active={filterOp === opVal}
