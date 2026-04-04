@@ -358,6 +358,7 @@ def spectral_split(
             raw_sil = silhouette_score(embeddings, labels, metric="cosine")
             rescaled = (raw_sil + 1.0) / 2.0
         except Exception:
+            all_silhouettes[k] = -1.0  # silhouette computation failed
             continue
 
         all_silhouettes[k] = round(rescaled, 4)
