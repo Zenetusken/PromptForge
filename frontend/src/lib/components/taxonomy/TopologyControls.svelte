@@ -57,76 +57,79 @@
 
 <svelte:window onkeydown={handleGlobalKey} />
 
-<!-- HUD overlay — elements distributed across canvas edges -->
+<!-- HUD — right-edge instrument cluster -->
 <div class="hud">
-  <!-- TOP-RIGHT: Metrics readout -->
-  <div class="hud-metrics">
-    <TopologyInfoPanel />
-  </div>
+  <!-- Primary instrument cluster: metrics + controls -->
+  <div class="hud-cluster">
+    <!-- Metrics readout -->
+    <div class="hud-block hud-metrics">
+      <TopologyInfoPanel />
+    </div>
 
-  <!-- RIGHT EDGE: Command & layer controls -->
-  <div class="hud-controls">
-    <div class="hud-row">
+    <!-- Layers + commands -->
+    <div class="hud-block hud-controls">
+      <div class="hud-row">
+        <button
+          class="hud-toggle"
+          class:hud-toggle--on={clustersStore.showSimilarityEdges}
+          style="--hud-accent: var(--color-neon-cyan)"
+          onclick={() => { clustersStore.showSimilarityEdges = !clustersStore.showSimilarityEdges; }}
+          use:tooltip={TOPOLOGY_TOOLTIPS.toggle_similarity}
+        >
+          <span class="hud-indicator"></span>
+          Sim
+        </button>
+        <button
+          class="hud-toggle"
+          class:hud-toggle--on={clustersStore.showInjectionEdges}
+          style="--hud-accent: var(--color-neon-orange)"
+          onclick={() => { clustersStore.showInjectionEdges = !clustersStore.showInjectionEdges; }}
+          use:tooltip={TOPOLOGY_TOOLTIPS.toggle_injection}
+        >
+          <span class="hud-indicator"></span>
+          Inj
+        </button>
+      </div>
+      <div class="hud-row">
+        <button class="hud-cmd" onclick={onSeed} use:tooltip={'Seed taxonomy with generated prompts'}>
+          Seed
+        </button>
+        <button
+          class="hud-cmd"
+          onclick={handleRecluster}
+          disabled={reclustering}
+          use:tooltip={TOPOLOGY_TOOLTIPS.recluster}
+        >
+          {reclustering ? '...' : 'Recluster'}
+        </button>
+        <span class="hud-lod" use:tooltip={'Level of detail'}>{lodTier.toUpperCase()}</span>
+      </div>
       <button
-        class="hud-toggle"
-        class:hud-toggle--on={clustersStore.showSimilarityEdges}
-        style="--hud-accent: var(--color-neon-cyan)"
-        onclick={() => { clustersStore.showSimilarityEdges = !clustersStore.showSimilarityEdges; }}
-        use:tooltip={TOPOLOGY_TOOLTIPS.toggle_similarity}
+        class="hud-toggle hud-toggle--wide"
+        class:hud-toggle--on={showActivity}
+        style="--hud-accent: var(--color-neon-purple)"
+        onclick={onToggleActivity}
+        use:tooltip={'Toggle taxonomy decision feed'}
       >
         <span class="hud-indicator"></span>
-        Sim
-      </button>
-      <button
-        class="hud-toggle"
-        class:hud-toggle--on={clustersStore.showInjectionEdges}
-        style="--hud-accent: var(--color-neon-orange)"
-        onclick={() => { clustersStore.showInjectionEdges = !clustersStore.showInjectionEdges; }}
-        use:tooltip={TOPOLOGY_TOOLTIPS.toggle_injection}
-      >
-        <span class="hud-indicator"></span>
-        Inj
+        Activity
       </button>
     </div>
-    <div class="hud-row">
-      <button class="hud-cmd" onclick={onSeed} use:tooltip={'Seed taxonomy with generated prompts'}>
-        Seed
-      </button>
-      <button
-        class="hud-cmd"
-        onclick={handleRecluster}
-        disabled={reclustering}
-        use:tooltip={TOPOLOGY_TOOLTIPS.recluster}
-      >
-        {reclustering ? '...' : 'Recluster'}
-      </button>
-      <span class="hud-lod" use:tooltip={'Level of detail'}>{lodTier.toUpperCase()}</span>
-    </div>
-    <button
-      class="hud-toggle hud-toggle--wide"
-      class:hud-toggle--on={showActivity}
-      style="--hud-accent: var(--color-neon-purple)"
-      onclick={onToggleActivity}
-      use:tooltip={'Toggle taxonomy decision feed'}
-    >
-      <span class="hud-indicator"></span>
-      Activity
-    </button>
-  </div>
 
-  <!-- BOTTOM-RIGHT: Status readout -->
-  <div class="hud-status">
-    <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.active}>{filteredCounts.active} active</span>
-    {#if filteredCounts.candidate > 0}
-      <span class="hud-sep"></span>
-      <span class="hud-count hud-count--candidate" use:tooltip={TAXONOMY_TOOLTIPS.candidate}>{filteredCounts.candidate} forming</span>
-    {/if}
-    {#if filteredCounts.template > 0}
-      <span class="hud-sep"></span>
-      <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.template}>{filteredCounts.template} tmpl</span>
-    {/if}
-    <span class="hud-sep"></span>
-    <span class="hud-legend">wire=coh sat=score</span>
+    <!-- Status telemetry -->
+    <div class="hud-block hud-status">
+      <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.active}>{filteredCounts.active} active</span>
+      {#if filteredCounts.candidate > 0}
+        <span class="hud-sep"></span>
+        <span class="hud-count hud-count--candidate" use:tooltip={TAXONOMY_TOOLTIPS.candidate}>{filteredCounts.candidate} forming</span>
+      {/if}
+      {#if filteredCounts.template > 0}
+        <span class="hud-sep"></span>
+        <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.template}>{filteredCounts.template} tmpl</span>
+      {/if}
+      <span class="hud-fill"></span>
+      <span class="hud-legend">wire=coh sat=score</span>
+    </div>
   </div>
 
   <!-- Search overlay (Ctrl+F) -->
@@ -144,12 +147,12 @@
 </div>
 
 <style>
-  /* ══ HUD — cockpit-style overlay on the 3D canvas ══
+  /* ══ HUD — right-edge instrument cluster ══
    *
-   * Elements are positioned absolutely to canvas edges.
-   * No container box — each group floats independently.
-   * Semi-transparent backgrounds let the graph bleed through.
-   * Borders only appear on interactive elements on hover.
+   * Single vertical column anchored top-right. Blocks stack with
+   * 2px gaps — tight enough to read as one unit, loose enough to
+   * show graph between blocks. Each block is semi-transparent with
+   * backdrop-blur. No outer container border.
    */
 
   .hud {
@@ -159,31 +162,41 @@
     z-index: 10;
   }
 
-  /* ── Top-right: Metrics readout ── */
+  /* ── Instrument cluster — right-aligned vertical stack ── */
 
-  .hud-metrics {
+  .hud-cluster {
     position: absolute;
     top: 6px;
     right: 6px;
-    width: 172px;
-    pointer-events: auto;
-    background: color-mix(in srgb, var(--color-bg-primary) 68%, transparent);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 25%, transparent);
-  }
-
-  /* ── Right edge: Controls ── */
-
-  .hud-controls {
-    position: absolute;
-    right: 6px;
-    bottom: 28px;
-    width: 172px;
+    width: 178px;
     display: flex;
     flex-direction: column;
     gap: 2px;
     pointer-events: auto;
+  }
+
+  /* ── Individual HUD blocks ── */
+
+  .hud-block {
+    background: color-mix(in srgb, var(--color-bg-primary) 75%, transparent);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border-left: 1px solid color-mix(in srgb, var(--color-neon-cyan) 12%, transparent);
+  }
+
+  /* ── Metrics readout ── */
+
+  .hud-metrics {
+    /* InfoPanel manages its own padding */
+  }
+
+  /* ── Controls block ── */
+
+  .hud-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 6px;
   }
 
   .hud-row {
@@ -191,7 +204,7 @@
     gap: 2px;
   }
 
-  /* ── Toggle buttons (layers + activity) ── */
+  /* ── Toggle buttons ── */
 
   .hud-toggle {
     display: flex;
@@ -199,11 +212,9 @@
     gap: 3px;
     flex: 1;
     padding: 2px 5px;
-    background: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
-    border: 1px solid transparent;
-    color: color-mix(in srgb, var(--color-text-dim) 70%, transparent);
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 30%, transparent);
+    color: var(--color-text-dim);
     font-family: var(--font-mono);
     font-size: 9px;
     cursor: pointer;
@@ -213,12 +224,12 @@
   }
 
   .hud-toggle:hover {
-    border-color: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 35%, transparent);
+    border-color: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 40%, transparent);
     color: var(--color-text-secondary);
   }
 
   .hud-toggle--on {
-    border-color: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 45%, transparent);
+    border-color: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 50%, transparent);
     color: var(--color-text-primary);
     background: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 6%, transparent);
   }
@@ -232,7 +243,7 @@
     height: 4px;
     flex-shrink: 0;
     background: var(--hud-accent, var(--color-neon-cyan));
-    opacity: 0.2;
+    opacity: 0.25;
     transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
@@ -245,11 +256,9 @@
   .hud-cmd {
     flex: 1;
     padding: 2px 4px;
-    background: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
-    border: 1px solid transparent;
-    color: color-mix(in srgb, var(--color-text-dim) 70%, transparent);
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 30%, transparent);
+    color: var(--color-text-dim);
     font-family: var(--font-mono);
     font-size: 9px;
     cursor: pointer;
@@ -260,7 +269,7 @@
   }
 
   .hud-cmd:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--color-neon-cyan) 35%, transparent);
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 40%, transparent);
     color: var(--color-neon-cyan);
     background: color-mix(in srgb, var(--color-neon-cyan) 5%, transparent);
   }
@@ -274,31 +283,22 @@
     font-family: var(--font-mono);
     font-size: 8px;
     font-weight: 700;
-    color: color-mix(in srgb, var(--color-text-dim) 60%, transparent);
+    color: var(--color-text-dim);
     padding: 2px 4px;
     letter-spacing: 0.08em;
-    background: color-mix(in srgb, var(--color-bg-primary) 45%, transparent);
-    border: 1px solid transparent;
     flex-shrink: 0;
   }
 
-  /* ── Bottom-right: Status telemetry ── */
+  /* ── Status telemetry ── */
 
   .hud-status {
-    position: absolute;
-    right: 6px;
-    bottom: 6px;
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 6px;
+    gap: 5px;
+    padding: 3px 6px;
     font-family: var(--font-mono);
     font-size: 9px;
-    color: color-mix(in srgb, var(--color-text-dim) 60%, transparent);
-    pointer-events: auto;
-    background: color-mix(in srgb, var(--color-bg-primary) 50%, transparent);
-    backdrop-filter: blur(3px);
-    -webkit-backdrop-filter: blur(3px);
+    color: var(--color-text-dim);
   }
 
   .hud-count {
@@ -306,19 +306,24 @@
   }
 
   .hud-count--candidate {
-    color: color-mix(in srgb, #7a7a9e 70%, transparent);
+    color: #7a7a9e;
   }
 
   .hud-sep {
     width: 1px;
     height: 8px;
-    background: color-mix(in srgb, var(--color-text-dim) 20%, transparent);
+    background: color-mix(in srgb, var(--color-text-dim) 25%, transparent);
+    flex-shrink: 0;
+  }
+
+  .hud-fill {
+    flex: 1;
   }
 
   .hud-legend {
     font-size: 7px;
-    letter-spacing: 0.02em;
-    color: color-mix(in srgb, var(--color-text-dim) 30%, transparent);
+    letter-spacing: 0.03em;
+    color: color-mix(in srgb, var(--color-text-dim) 50%, transparent);
   }
 
   /* ── Search overlay ── */
@@ -335,7 +340,7 @@
   .hud-search-input {
     width: 100%;
     padding: 4px 8px;
-    background: color-mix(in srgb, var(--color-bg-primary) 85%, transparent);
+    background: color-mix(in srgb, var(--color-bg-primary) 88%, transparent);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     border: 1px solid color-mix(in srgb, var(--color-neon-cyan) 25%, transparent);
