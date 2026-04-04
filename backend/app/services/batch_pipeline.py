@@ -11,12 +11,11 @@ import asyncio
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
-from app.config import settings
 from app.providers.base import LLMProvider
 from app.services.embedding_service import EmbeddingService
 from app.services.prompt_loader import PromptLoader
@@ -121,7 +120,7 @@ async def run_single_prompt(
         scorer_model = prefs.resolve_model("scorer", prefs_snapshot)
 
         system_prompt = prompt_loader.load("agent-guidance.md")
-        strategy_loader = StrategyLoader(prompt_loader._prompts_dir / "strategies")
+        strategy_loader = StrategyLoader(prompt_loader.prompts_dir / "strategies")
         available_strategies = strategy_loader.format_available()
 
         # --- Phase 1: Analyze ---
@@ -354,8 +353,6 @@ async def run_batch(
     results: list[PendingOptimization] = [None] * len(prompts)  # type: ignore
 
     async def _run_with_semaphore(index: int, prompt: str) -> None:
-        nonlocal semaphore
-
         # Rate limit (429) backoff: reduce semaphore by half on first 429, retry once
         _rate_limited = False
 
@@ -385,20 +382,22 @@ async def run_batch(
                 )
                 # Reduce effective parallelism by acquiring an extra slot
                 await semaphore.acquire()
-                await asyncio.sleep(5)
-                retry = await run_single_prompt(
-                    raw_prompt=prompt,
-                    provider=provider,
-                    prompt_loader=prompt_loader,
-                    embedding_service=embedding_service,
-                    codebase_context=codebase_context,
-                    workspace_guidance=workspace_guidance,
-                    batch_id=batch_id,
-                    prompt_index=index,
-                    total_prompts=len(prompts),
-                )
-                semaphore.release()
-                return retry
+                try:
+                    await asyncio.sleep(5)
+                    retry = await run_single_prompt(
+                        raw_prompt=prompt,
+                        provider=provider,
+                        prompt_loader=prompt_loader,
+                        embedding_service=embedding_service,
+                        codebase_context=codebase_context,
+                        workspace_guidance=workspace_guidance,
+                        batch_id=batch_id,
+                        prompt_index=index,
+                        total_prompts=len(prompts),
+                    )
+                    return retry
+                finally:
+                    semaphore.release()
             return result
 
         async with semaphore:
@@ -478,6 +477,7 @@ async def bulk_persist(
     if not completed:
         return 0
 
+    inserted = 0
     for attempt in range(2):
         try:
             async with session_factory() as db:
@@ -590,10 +590,15 @@ async def batch_taxonomy_assign(
     if not completed:
         return {"clusters_assigned": 0, "clusters_created": 0, "domains_touched": []}
 
+    from sqlalchemy import select as sa_select
+
+    from app.models import Optimization
     from app.services.taxonomy import get_engine
+    from app.services.taxonomy.cluster_meta import write_meta
     from app.services.taxonomy.family_ops import assign_cluster
 
     engine = get_engine()
+    assigned = 0
 
     async with session_factory() as db:
         for pending in completed:
@@ -609,13 +614,21 @@ async def batch_taxonomy_assign(
                     embedding_index=engine._embedding_index,
                 )
 
+                # Write cluster_id back to the Optimization row (matches engine.py hot path)
+                opt_row = await db.execute(
+                    sa_select(Optimization).where(Optimization.id == pending.id)
+                )
+                opt = opt_row.scalar_one_or_none()
+                if opt is not None:
+                    opt.cluster_id = cluster.id
+
                 # Track what was created
                 if cluster.member_count == 1:
                     clusters_created += 1
                 domains_touched.add(pending.domain or "general")
+                assigned += 1
 
                 # Defer pattern extraction to warm path
-                from app.services.taxonomy.cluster_meta import write_meta
                 cluster.cluster_metadata = write_meta(
                     cluster.cluster_metadata, pattern_stale=True,
                 )
@@ -637,7 +650,7 @@ async def batch_taxonomy_assign(
             path="hot", op="seed", decision="seed_taxonomy_complete",
             context={
                 "batch_id": batch_id,
-                "clusters_assigned": len(completed),
+                "clusters_assigned": assigned,
                 "clusters_created": clusters_created,
                 "domains_touched": domains_list,
                 "transaction_ms": duration_ms,
@@ -659,11 +672,11 @@ async def batch_taxonomy_assign(
 
     logger.info(
         "Taxonomy assign: %d clusters (%d new), domains=%s (%dms)",
-        len(completed), clusters_created, domains_list, duration_ms,
+        assigned, clusters_created, domains_list, duration_ms,
     )
 
     return {
-        "clusters_assigned": len(completed),
+        "clusters_assigned": assigned,
         "clusters_created": clusters_created,
         "domains_touched": domains_list,
     }
