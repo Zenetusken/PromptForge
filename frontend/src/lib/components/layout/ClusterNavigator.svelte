@@ -208,7 +208,7 @@
         role="tab"
         aria-selected={stateFilter === tab.filter}
         aria-label={tab.ariaLabel}
-        title={tab.ariaLabel}
+        use:tooltip={tab.ariaLabel}
         style="--tab-state-color: {tab.filter ? stateColor(tab.filter) : 'var(--color-text-dim)'};"
       >
         <span class="state-dot"></span>
