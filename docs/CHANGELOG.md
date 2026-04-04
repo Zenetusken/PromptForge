@@ -4,6 +4,34 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.13-dev — 2026-04-03
+
+### Added
+- **Sub-domain trigger evaluation logging** — `discover/sub_domain_evaluation` events emitted for each oversized domain showing member count, mean coherence, and whether the HDBSCAN threshold was met
+- **Score event cross-process notification** — MCP process score events now reach the backend via HTTP POST (`/api/events/_publish`), bridging the inter-process gap so they populate the SSE stream
+- **Score events populate backend ring buffer** — cross-process score events mirror into the in-memory ring buffer so `/api/clusters/activity` returns them after an MCP session
+- **`intent_label` on score events** — Activity panel displays human-readable labels (e.g. `python-debugging-assistance`) instead of raw UUIDs on `score` operation events
+- **Click score event `↗` button → load optimization in editor** — clicking the navigate icon on an Activity panel score event loads the optimization into the prompt editor
+- **Domain node member_count reconciliation in warm-path Phase 0** — domain nodes are now included in the Phase 0 member_count reconciliation pass, fixing stale counts on domain nodes
+- **Stale archived cluster pruning in Phase 0** — archived clusters older than 24 hours with zero members and no referencing optimizations are deleted in Phase 0 to prevent unbounded accumulation
+
+### Changed
+- **SSE keepalive timeout increased from 25s to 45s** — prevents EventSource disconnects during long-running warm-path operations that previously triggered client reconnects
+- **SQLite busy timeout increased to 30s** — applies uniformly across backend PRAGMA, MCP PRAGMA, and SQLAlchemy `connect_args` to reduce lock contention errors
+- **`improvement_score` wired into adaptation learning** — `fusion.py` now prefers `improvement_score` over `overall_score` for z-score weighting in `compute_score_correlated_target()`, improving signal quality for weight adaptation
+- **Warm-path 30s debounce after `taxonomy_changed` events** — batches rapid SSE invalidation events to reduce SQLite write contention during active clustering
+- **`SPLIT_MERGE_PROTECTION_MINUTES` constant** — value was hardcoded as 30 in earlier code; now a named constant set to 60 minutes (introduced in v0.3.12-dev, documented here as the canonical definition point)
+
+### Fixed
+- **Groundhog Day split loop (variant 3)** — same-domain merge during warm path reformed mega-clusters immediately after split; fixed with `mega_cluster_prevention` gate that checks proposed merge target size before committing
+- **MCP process score events silently skipped** — `TaxonomyEventLogger` was not initialized in MCP process lifespan, causing `get_event_logger()` to raise `RuntimeError` and drop all score events. Fixed by initializing the singleton in MCP lifespan
+- **Score events not reaching SSE** — MCP→backend cross-process notification was missing `cross_process=True` flag and ring buffer mirroring. Both issues fixed
+- **`/api/clusters/activity` returned 404** — route was registered after the `{cluster_id}` dynamic route, causing FastAPI to capture `activity` as a cluster ID. Moved to before the dynamic route
+- **Activity panel JSONL history fallback** — panel showed 0 events after server restart because ring buffer was empty; now seeds from JSONL history when ring buffer is empty
+- **Split events logged wrong path** — `log_path` argument was not propagated through call chain; warm-path splits logged `path="cold"`. Fixed with parameterized `log_path`
+- **Duplicate merge-skip events** — per-node logging in both merge passes produced event storms; consolidated to per-phase summary events
+- **No-op phase events suppressed** — events for phases with no mutations are now suppressed when the system has converged, reducing noise in the Activity panel
+
 ## v0.3.12-dev — 2026-04-03
 
 ### Added
