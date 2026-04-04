@@ -17,6 +17,16 @@
   // State filter — reads from shared store (drives both navigator tabs and topology graph)
   const stateFilter = $derived(clustersStore.stateFilter);
 
+  // Tab definitions: abbreviated labels with full aria-labels for accessibility
+  const STATE_TABS: { filter: StateFilter; label: string; ariaLabel: string }[] = [
+    { filter: null,        label: 'all',  ariaLabel: 'All' },
+    { filter: 'active',    label: 'act',  ariaLabel: 'active' },
+    { filter: 'candidate', label: 'cand', ariaLabel: 'candidate' },
+    { filter: 'mature',    label: 'mat',  ariaLabel: 'mature' },
+    { filter: 'template',  label: 'tmpl', ariaLabel: 'template' },
+    { filter: 'archived',  label: 'arch', ariaLabel: 'archived' },
+  ];
+
   // Count for the candidate tab badge — derived from raw tree to reflect true total
   const candidateCount = $derived(
     clustersStore.taxonomyTree.filter(n => n.state === 'candidate').length
@@ -188,16 +198,25 @@
     </button>
   </header>
 
-  <!-- State filter tabs -->
+  <!-- State filter tabs — chromatic dot + abbreviated labels -->
   <div class="state-tabs" role="tablist" aria-label="Filter by cluster state">
-    {#each ([null, 'active', 'candidate', 'mature', 'template', 'archived'] as StateFilter[]) as tab (tab ?? 'all')}
+    {#each STATE_TABS as tab (tab.ariaLabel)}
       <button
         class="state-tab"
-        class:state-tab--active={stateFilter === tab}
-        onclick={() => setStateFilter(tab)}
+        class:state-tab--active={stateFilter === tab.filter}
+        onclick={() => setStateFilter(tab.filter)}
         role="tab"
-        aria-selected={stateFilter === tab}
-      >{tab ?? 'All'}{#if tab === 'candidate' && candidateCount > 0}<span class="cn-tab-badge">{candidateCount}</span>{/if}</button>
+        aria-selected={stateFilter === tab.filter}
+        aria-label={tab.ariaLabel}
+        title={tab.ariaLabel}
+        style="--tab-state-color: {tab.filter ? stateColor(tab.filter) : 'var(--color-text-dim)'};"
+      >
+        <span class="state-dot"></span>
+        <span class="state-tab-label">{tab.label}</span>
+        {#if tab.filter === 'candidate' && candidateCount > 0}
+          <span class="cn-tab-badge">{candidateCount}</span>
+        {/if}
+      </button>
     {/each}
   </div>
 
@@ -369,7 +388,7 @@
 </div>
 
 <style>
-  /* ---- State filter tabs ---- */
+  /* ---- State filter tabs — chromatic dot + abbreviated labels ---- */
   .state-tabs {
     display: flex;
     align-items: center;
@@ -377,15 +396,16 @@
     padding: 0 6px;
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
-    gap: 2px;
+    gap: 1px;
   }
 
   .state-tab {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 3px;
     height: 20px;
-    padding: 0 6px;
+    padding: 0 4px;
     border: 1px solid transparent;
     background: transparent;
     color: var(--color-text-dim);
@@ -400,6 +420,18 @@
                 background 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
+  .state-dot {
+    width: 4px;
+    height: 4px;
+    flex-shrink: 0;
+    background: var(--tab-state-color, var(--color-text-dim));
+    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .state-tab-label {
+    line-height: 1;
+  }
+
   .state-tab:hover {
     color: var(--color-text-primary);
     background: var(--color-bg-hover);
@@ -411,6 +443,10 @@
     background: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 8%, transparent);
   }
 
+  .state-tab--active .state-dot {
+    background: var(--tab-state-color, var(--tier-accent, var(--color-neon-cyan)));
+  }
+
   .cn-tab-badge {
     display: inline-flex;
     align-items: center;
@@ -418,7 +454,7 @@
     min-width: 12px;
     height: 12px;
     padding: 0 2px;
-    margin-left: 3px;
+    margin-left: 2px;
     background: color-mix(in srgb, #7a7a9e 20%, transparent);
     border: 1px solid #7a7a9e;
     color: #7a7a9e;
