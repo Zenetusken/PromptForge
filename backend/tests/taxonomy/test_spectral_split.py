@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from app.services.taxonomy.clustering import ClusterResult, spectral_split
 

@@ -10,16 +10,14 @@ Tests cover:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
-import pytest_asyncio
 
 from app.models import Optimization, PromptCluster
 from app.services.taxonomy.warm_phases import phase_evaluate_candidates
 from tests.taxonomy.conftest import EMBEDDING_DIM, make_cluster_distribution
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -234,7 +232,6 @@ class TestCandidateReassignment:
         assert bad_candidate.state == "archived"
 
         # Verify reassigned optimizations are NOT in any candidate cluster
-        from sqlalchemy import select
         for opt_id in bad_opt_ids:
             opt = await db.get(Optimization, opt_id)
             if opt is None:
