@@ -570,7 +570,27 @@ async def lifespan(app: FastAPI):
         debounce_seconds = 30  # Wait 30s after last event before running
 
         try:
-            await asyncio.sleep(60)  # Initial delay — let system stabilize
+            # Wait for taxonomy engine + provider to be ready (poll, not sleep)
+            for _ in range(60):  # up to 60s
+                engine = getattr(app.state, "taxonomy_engine", None)
+                routing = getattr(app.state, "routing", None)
+                if engine and routing and routing.state.provider:
+                    break
+                await asyncio.sleep(1)
+            else:
+                logger.warning("Warm path timer: engine/provider not ready after 60s")
+
+            # Run one immediate warm cycle on startup to refresh stale
+            # clusters (pattern_stale=True from splits while server was down).
+            # Without this, clusters show "No meta-patterns" for 5+ minutes.
+            if engine:
+                try:
+                    from app.database import async_session_factory
+                    await engine.run_warm_path(async_session_factory)
+                    logger.info("Startup warm path completed")
+                except Exception as startup_exc:
+                    logger.warning("Startup warm path failed (non-fatal): %s", startup_exc)
+
             while True:
                 try:
                     await asyncio.wait_for(
