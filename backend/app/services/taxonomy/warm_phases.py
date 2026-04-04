@@ -726,7 +726,7 @@ async def phase_split_emerge(
                 except (ValueError, TypeError):
                     continue
 
-            if len(child_blended_fam) >= 6:
+            if len(child_blended_fam) >= SPLIT_MIN_MEMBERS:
                 split_clusters_fam = batch_cluster(
                     child_blended_fam, min_cluster_size=3
                 )

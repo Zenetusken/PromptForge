@@ -4,7 +4,7 @@ Extracted from warm_phases.py to be reusable by both warm-path leaf splits
 and cold-path mega-cluster splits. The function receives pre-fetched
 Optimization embedding rows and handles:
   1. Blended embedding construction
-  2. HDBSCAN clustering (min_cluster_size=3)
+  2. HDBSCAN clustering (min_cluster_size=8)
   3. K-means bisection fallback when HDBSCAN finds < 2 clusters
   4. Child node creation with Haiku labeling
   5. Optimization reassignment to children
@@ -104,8 +104,10 @@ async def split_cluster(
     if len(child_blended) < SPLIT_MIN_MEMBERS:
         return SplitResult(success=False, children_created=0, noise_reassigned=0)
 
-    # HDBSCAN
-    split_result = batch_cluster(child_blended, min_cluster_size=3)
+    # HDBSCAN — min_cluster_size=8 ensures each child has enough members
+    # to sustain independent weight learning (needs ≥10 samples; 8 is a
+    # reasonable floor given noise reassignment adds a few more).
+    split_result = batch_cluster(child_blended, min_cluster_size=8)
     used_kmeans_fallback = False
 
     # K-means bisection fallback
