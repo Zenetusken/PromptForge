@@ -57,155 +57,153 @@
 
 <svelte:window onkeydown={handleGlobalKey} />
 
-<div class="tc-panel">
-  <!-- Adaptive info panel -->
-  <div class="tc-section tc-info">
+<!-- HUD overlay — elements distributed across canvas edges -->
+<div class="hud">
+  <!-- TOP-RIGHT: Metrics readout -->
+  <div class="hud-metrics">
     <TopologyInfoPanel />
   </div>
 
-  <!-- Edge layers — inline toggles, no section title (self-explanatory) -->
-  <div class="tc-section tc-layers">
-    <div class="tc-layer-row">
+  <!-- RIGHT EDGE: Command & layer controls -->
+  <div class="hud-controls">
+    <div class="hud-row">
       <button
-        class="tc-toggle"
-        class:tc-toggle-active={clustersStore.showSimilarityEdges}
-        style="--toggle-color: var(--color-neon-cyan)"
+        class="hud-toggle"
+        class:hud-toggle--on={clustersStore.showSimilarityEdges}
+        style="--hud-accent: var(--color-neon-cyan)"
         onclick={() => { clustersStore.showSimilarityEdges = !clustersStore.showSimilarityEdges; }}
         use:tooltip={TOPOLOGY_TOOLTIPS.toggle_similarity}
       >
-        <span class="tc-toggle-dot"></span>
-        Similarity
+        <span class="hud-indicator"></span>
+        Sim
       </button>
       <button
-        class="tc-toggle"
-        class:tc-toggle-active={clustersStore.showInjectionEdges}
-        style="--toggle-color: var(--color-neon-orange)"
+        class="hud-toggle"
+        class:hud-toggle--on={clustersStore.showInjectionEdges}
+        style="--hud-accent: var(--color-neon-orange)"
         onclick={() => { clustersStore.showInjectionEdges = !clustersStore.showInjectionEdges; }}
         use:tooltip={TOPOLOGY_TOOLTIPS.toggle_injection}
       >
-        <span class="tc-toggle-dot"></span>
-        Injection
+        <span class="hud-indicator"></span>
+        Inj
       </button>
     </div>
-  </div>
-
-  <!-- Command strip — unified action bar -->
-  <div class="tc-section tc-commands">
-    <div class="tc-cmd-row">
-      <button
-        class="tc-cmd"
-        onclick={onSeed}
-        use:tooltip={'Seed taxonomy with generated prompts'}
-      >
+    <div class="hud-row">
+      <button class="hud-cmd" onclick={onSeed} use:tooltip={'Seed taxonomy with generated prompts'}>
         Seed
       </button>
       <button
-        class="tc-cmd"
+        class="hud-cmd"
         onclick={handleRecluster}
         disabled={reclustering}
         use:tooltip={TOPOLOGY_TOOLTIPS.recluster}
       >
-        {reclustering ? 'Running...' : 'Recluster'}
+        {reclustering ? '...' : 'Recluster'}
       </button>
-      <span class="tc-lod" use:tooltip={'Level of detail'}>{lodTier.toUpperCase()}</span>
+      <span class="hud-lod" use:tooltip={'Level of detail'}>{lodTier.toUpperCase()}</span>
     </div>
     <button
-      class="tc-toggle tc-activity-toggle"
-      class:tc-toggle-active={showActivity}
-      style="--toggle-color: var(--color-neon-purple)"
+      class="hud-toggle hud-toggle--wide"
+      class:hud-toggle--on={showActivity}
+      style="--hud-accent: var(--color-neon-purple)"
       onclick={onToggleActivity}
       use:tooltip={'Toggle taxonomy decision feed'}
     >
-      <span class="tc-toggle-dot"></span>
+      <span class="hud-indicator"></span>
       Activity
     </button>
   </div>
 
-  <!-- Search (Ctrl+F) -->
+  <!-- BOTTOM-RIGHT: Status readout -->
+  <div class="hud-status">
+    <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.active}>{filteredCounts.active} active</span>
+    {#if filteredCounts.candidate > 0}
+      <span class="hud-sep"></span>
+      <span class="hud-count hud-count--candidate" use:tooltip={TAXONOMY_TOOLTIPS.candidate}>{filteredCounts.candidate} forming</span>
+    {/if}
+    {#if filteredCounts.template > 0}
+      <span class="hud-sep"></span>
+      <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.template}>{filteredCounts.template} tmpl</span>
+    {/if}
+    <span class="hud-sep"></span>
+    <span class="hud-legend">wire=coh sat=score</span>
+  </div>
+
+  <!-- Search overlay (Ctrl+F) -->
   {#if searchOpen}
-    <div class="tc-section tc-search">
+    <div class="hud-search">
       <input
         type="text"
         bind:value={searchQuery}
         onkeydown={handleKeyDown}
         placeholder="Search nodes..."
-        class="tc-search-input"
+        class="hud-search-input"
       />
     </div>
   {/if}
-
-  <!-- Status strip — counts + visual encoding legend -->
-  <div class="tc-section tc-status">
-    <div class="tc-counts">
-      <span use:tooltip={TAXONOMY_TOOLTIPS.active}>{filteredCounts.active} active</span>
-      {#if filteredCounts.candidate > 0}
-        <span class="tc-dot-sep"></span>
-        <span class="tc-count-candidate" use:tooltip={TAXONOMY_TOOLTIPS.candidate}>{filteredCounts.candidate} forming</span>
-      {/if}
-      {#if filteredCounts.template > 0}
-        <span class="tc-dot-sep"></span>
-        <span use:tooltip={TAXONOMY_TOOLTIPS.template}>{filteredCounts.template} tmpl</span>
-      {/if}
-    </div>
-    <div class="tc-legend">
-      <span>wireframe <span class="tc-legend-sep">=</span> coherence</span>
-      <span>saturation <span class="tc-legend-sep">=</span> score</span>
-    </div>
-  </div>
 </div>
 
 <style>
-  /* ── Panel container ── */
+  /* ══ HUD — cockpit-style overlay on the 3D canvas ══
+   *
+   * Elements are positioned absolutely to canvas edges.
+   * No container box — each group floats independently.
+   * Semi-transparent backgrounds let the graph bleed through.
+   * Borders only appear on interactive elements on hover.
+   */
 
-  .tc-panel {
+  .hud {
     position: absolute;
-    top: 0;
-    right: 0;
-    width: 184px;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 6px;
-    pointer-events: auto;
+    inset: 0;
+    pointer-events: none;
     z-index: 10;
   }
 
-  /* ── Sections — floating HUD blocks ── */
+  /* ── Top-right: Metrics readout ── */
 
-  .tc-section {
-    padding: 5px 6px;
-    background: color-mix(in srgb, var(--color-bg-primary) 72%, transparent);
+  .hud-metrics {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 172px;
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--color-bg-primary) 68%, transparent);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 35%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 25%, transparent);
   }
 
-  /* ── Info panel section ── */
+  /* ── Right edge: Controls ── */
 
-  .tc-info {
-    padding: 0;
-  }
-
-  /* ── Layer toggles ── */
-
-  .tc-layers {
-    padding: 3px 6px 4px;
-  }
-
-  .tc-layer-row {
+  .hud-controls {
+    position: absolute;
+    right: 6px;
+    bottom: 28px;
+    width: 172px;
     display: flex;
-    gap: 3px;
+    flex-direction: column;
+    gap: 2px;
+    pointer-events: auto;
   }
 
-  .tc-toggle {
+  .hud-row {
+    display: flex;
+    gap: 2px;
+  }
+
+  /* ── Toggle buttons (layers + activity) ── */
+
+  .hud-toggle {
     display: flex;
     align-items: center;
     gap: 3px;
     flex: 1;
     padding: 2px 5px;
-    background: transparent;
-    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
-    color: var(--color-text-dim);
+    background: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    border: 1px solid transparent;
+    color: color-mix(in srgb, var(--color-text-dim) 70%, transparent);
     font-family: var(--font-mono);
     font-size: 9px;
     cursor: pointer;
@@ -214,51 +212,44 @@
                 background 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .tc-toggle:hover {
-    border-color: color-mix(in srgb, var(--toggle-color, var(--color-neon-cyan)) 40%, transparent);
+  .hud-toggle:hover {
+    border-color: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 35%, transparent);
     color: var(--color-text-secondary);
   }
 
-  .tc-toggle.tc-toggle-active {
-    border-color: color-mix(in srgb, var(--toggle-color, var(--color-neon-cyan)) 50%, transparent);
+  .hud-toggle--on {
+    border-color: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 45%, transparent);
     color: var(--color-text-primary);
-    background: color-mix(in srgb, var(--toggle-color, var(--color-neon-cyan)) 6%, transparent);
+    background: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 6%, transparent);
   }
 
-  .tc-toggle-dot {
+  .hud-toggle--wide {
+    width: 100%;
+  }
+
+  .hud-indicator {
     width: 4px;
     height: 4px;
     flex-shrink: 0;
-    background: var(--toggle-color, var(--color-neon-cyan));
-    opacity: 0.3;
+    background: var(--hud-accent, var(--color-neon-cyan));
+    opacity: 0.2;
     transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .tc-toggle.tc-toggle-active .tc-toggle-dot {
+  .hud-toggle--on .hud-indicator {
     opacity: 1;
   }
 
-  /* ── Command strip ── */
+  /* ── Command buttons ── */
 
-  .tc-commands {
-    padding: 3px 6px 4px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .tc-cmd-row {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-  }
-
-  .tc-cmd {
+  .hud-cmd {
     flex: 1;
     padding: 2px 4px;
-    background: transparent;
-    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
-    color: var(--color-text-dim);
+    background: color-mix(in srgb, var(--color-bg-primary) 55%, transparent);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    border: 1px solid transparent;
+    color: color-mix(in srgb, var(--color-text-dim) 70%, transparent);
     font-family: var(--font-mono);
     font-size: 9px;
     cursor: pointer;
@@ -268,98 +259,99 @@
                 background 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .tc-cmd:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--color-neon-cyan) 40%, transparent);
+  .hud-cmd:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 35%, transparent);
     color: var(--color-neon-cyan);
     background: color-mix(in srgb, var(--color-neon-cyan) 5%, transparent);
   }
 
-  .tc-cmd:disabled {
-    opacity: 0.4;
+  .hud-cmd:disabled {
+    opacity: 0.35;
     cursor: not-allowed;
   }
 
-  .tc-lod {
+  .hud-lod {
     font-family: var(--font-mono);
     font-size: 8px;
     font-weight: 700;
-    color: var(--color-text-dim);
+    color: color-mix(in srgb, var(--color-text-dim) 60%, transparent);
     padding: 2px 4px;
     letter-spacing: 0.08em;
-    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 30%, transparent);
-    background: color-mix(in srgb, var(--color-bg-hover) 25%, transparent);
+    background: color-mix(in srgb, var(--color-bg-primary) 45%, transparent);
+    border: 1px solid transparent;
     flex-shrink: 0;
   }
 
-  .tc-activity-toggle {
-    width: 100%;
-  }
+  /* ── Bottom-right: Status telemetry ── */
 
-  /* ── Search ── */
-
-  .tc-search {
-    padding: 3px 6px;
-  }
-
-  .tc-search-input {
-    width: 100%;
-    padding: 2px 5px;
-    background: color-mix(in srgb, var(--color-bg-input) 80%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
-    color: var(--color-text-primary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    outline: none;
-  }
-
-  .tc-search-input:focus {
-    border-color: color-mix(in srgb, var(--color-neon-cyan) 40%, transparent);
-  }
-
-  .tc-search-input::placeholder {
-    color: var(--color-text-dim);
-    opacity: 0.5;
-  }
-
-  /* ── Status strip ── */
-
-  .tc-status {
-    padding: 3px 6px 4px;
-  }
-
-  .tc-counts {
+  .hud-status {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
     display: flex;
     align-items: center;
     gap: 4px;
+    padding: 2px 6px;
     font-family: var(--font-mono);
     font-size: 9px;
-    color: var(--color-text-dim);
+    color: color-mix(in srgb, var(--color-text-dim) 60%, transparent);
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--color-bg-primary) 50%, transparent);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
   }
 
-  .tc-count-candidate {
-    color: #7a7a9e;
+  .hud-count {
+    cursor: default;
   }
 
-  .tc-dot-sep {
-    width: 2px;
-    height: 2px;
-    flex-shrink: 0;
-    background: var(--color-text-dim);
-    opacity: 0.3;
+  .hud-count--candidate {
+    color: color-mix(in srgb, #7a7a9e 70%, transparent);
   }
 
-  .tc-legend {
-    display: flex;
-    gap: 8px;
-    margin-top: 2px;
-    font-family: var(--font-mono);
+  .hud-sep {
+    width: 1px;
+    height: 8px;
+    background: color-mix(in srgb, var(--color-text-dim) 20%, transparent);
+  }
+
+  .hud-legend {
     font-size: 7px;
-    color: color-mix(in srgb, var(--color-text-dim) 40%, transparent);
     letter-spacing: 0.02em;
+    color: color-mix(in srgb, var(--color-text-dim) 30%, transparent);
   }
 
-  .tc-legend-sep {
-    opacity: 0.3;
-    margin: 0 1px;
+  /* ── Search overlay ── */
+
+  .hud-search {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 240px;
+    pointer-events: auto;
+  }
+
+  .hud-search-input {
+    width: 100%;
+    padding: 4px 8px;
+    background: color-mix(in srgb, var(--color-bg-primary) 85%, transparent);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid color-mix(in srgb, var(--color-neon-cyan) 25%, transparent);
+    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    outline: none;
+    text-align: center;
+  }
+
+  .hud-search-input:focus {
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 50%, transparent);
+  }
+
+  .hud-search-input::placeholder {
+    color: var(--color-text-dim);
+    opacity: 0.4;
   }
 </style>
