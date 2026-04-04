@@ -15,9 +15,12 @@
   let pageLimit = $state(PAGE_SIZE);
 
   // State filter — reads from shared store (drives both navigator tabs and topology graph)
-  // Candidate state intentionally excluded — candidates are transient internal nodes
-  // not yet promoted to user-visible states by the lifecycle service.
   const stateFilter = $derived(clustersStore.stateFilter);
+
+  // Count for the candidate tab badge — derived from raw tree to reflect true total
+  const candidateCount = $derived(
+    clustersStore.taxonomyTree.filter(n => n.state === 'candidate').length
+  );
 
   // Derive families from the store's filtered tree (orphans + state filter already applied)
   const allFamilies = $derived(clustersStore.filteredTaxonomyTree);
@@ -187,14 +190,14 @@
 
   <!-- State filter tabs -->
   <div class="state-tabs" role="tablist" aria-label="Filter by cluster state">
-    {#each ([null, 'active', 'mature', 'template', 'archived'] as StateFilter[]) as tab (tab ?? 'all')}
+    {#each ([null, 'active', 'candidate', 'mature', 'template', 'archived'] as StateFilter[]) as tab (tab ?? 'all')}
       <button
         class="state-tab"
         class:state-tab--active={stateFilter === tab}
         onclick={() => setStateFilter(tab)}
         role="tab"
         aria-selected={stateFilter === tab}
-      >{tab ?? 'All'}</button>
+      >{tab ?? 'All'}{#if tab === 'candidate' && candidateCount > 0}<span class="cn-tab-badge">{candidateCount}</span>{/if}</button>
     {/each}
   </div>
 
@@ -406,6 +409,24 @@
     color: var(--tier-accent, var(--color-neon-cyan));
     border-color: var(--tier-accent, var(--color-neon-cyan));
     background: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 8%, transparent);
+  }
+
+  .cn-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 12px;
+    height: 12px;
+    padding: 0 2px;
+    margin-left: 3px;
+    background: color-mix(in srgb, #7a7a9e 20%, transparent);
+    border: 1px solid #7a7a9e;
+    color: #7a7a9e;
+    font-size: 8px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
   }
 
   /* ---- Search ---- */

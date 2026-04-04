@@ -26,7 +26,7 @@ const SUGGESTION_AUTO_DISMISS_MS = 10_000;
 /** Shape of a match result from the cluster match endpoint. */
 export type ClusterMatch = NonNullable<ClusterMatchResponse['match']>;
 
-export type StateFilter = null | 'active' | 'mature' | 'template' | 'archived';
+export type StateFilter = null | 'active' | 'candidate' | 'mature' | 'template' | 'archived';
 
 class ClusterStore {
   // Suggestion state

@@ -136,7 +136,7 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
       opacity: stateOpacity(node.state),
       persistence: node.persistence ?? 0.5,
       state: node.state,
-      label: node.label ?? '',
+      label: node.state === 'candidate' ? '' : (node.label ?? ''),
       visible: true,
       parentId: node.parent_id ?? undefined,
       coherence: node.coherence ?? 0.5,
