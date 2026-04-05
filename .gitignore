@@ -90,6 +90,12 @@ archive/
 .superpowers/
 **/superpowers/
 
+# Internal development artifacts (not public-facing)
+docs/plans/
+docs/specs/
+docs/archive-v2/
+docs/TERMS.md
+
 # Scratch / experiment files
 test_svg*.html
 fix_*.py
