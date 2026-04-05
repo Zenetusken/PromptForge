@@ -1754,7 +1754,37 @@ async def phase_refresh(
             ]
             labels = await asyncio.gather(*label_tasks, return_exceptions=True)
 
-            # --- Phase C: Apply labels + sequential pattern extraction ---
+            # --- Phase C: Parallel pattern extraction across clusters ---
+            # Each cluster's patterns are extracted independently. The LLM
+            # calls are the bottleneck (~8-30s each), so parallelizing across
+            # clusters gives a massive speedup (N clusters in parallel vs
+            # N×5 sequential calls that caused 4+ minute recluster delays).
+
+            async def _extract_patterns_for_cluster(
+                cluster_node: PromptCluster,
+                opts: list,
+            ) -> list[str]:
+                texts: list[str] = []
+                for opt in opts[:5]:
+                    try:
+                        extracted = await extract_meta_patterns(
+                            opt, db, engine._provider, engine._prompt_loader,
+                        )
+                        texts.extend(extracted)
+                    except Exception:
+                        pass  # non-fatal per-optimization
+                return texts
+
+            # Fire all pattern extractions in parallel
+            extraction_tasks = [
+                _extract_patterns_for_cluster(sc[0], sc[2])
+                for sc in stale_clusters
+            ]
+            all_patterns = await asyncio.gather(
+                *extraction_tasks, return_exceptions=True,
+            )
+
+            # --- Phase D: Apply labels + patterns (sequential DB writes) ---
             for i, (node, member_texts, sample_opts) in enumerate(stale_clusters):
                 new_label = labels[i]
                 if isinstance(new_label, BaseException):
@@ -1762,19 +1792,11 @@ async def phase_refresh(
                 if new_label and new_label != "Unnamed Cluster":
                     node.label = new_label
 
-                # Fix #15: extract new patterns FIRST, only delete old ones if
-                # extraction succeeds. Pattern extraction uses db, so stays sequential.
-                new_pattern_texts: list[str] = []
-                for opt in sample_opts[:5]:
-                    try:
-                        texts = await extract_meta_patterns(
-                            opt, db, engine._provider, engine._prompt_loader,
-                        )
-                        new_pattern_texts.extend(texts)
-                    except Exception:
-                        pass  # non-fatal per-optimization
+                # Apply extracted patterns
+                new_pattern_texts = all_patterns[i]
+                if isinstance(new_pattern_texts, BaseException):
+                    new_pattern_texts = []
 
-                # Only delete old patterns if we successfully extracted new ones
                 if new_pattern_texts:
                     old_patterns = await db.execute(
                         select(MetaPattern).where(
