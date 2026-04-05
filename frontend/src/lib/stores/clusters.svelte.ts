@@ -235,6 +235,16 @@ class ClusterStore {
       const detail = await getClusterDetail(id);
       if (gen !== this._clusterGeneration) return; // stale — newer load in flight
       this.clusterDetail = detail;
+      // Auto-switch state filter if the selected cluster would be hidden
+      // by the current filter (e.g., clicking a candidate while on "active" tab).
+      // null = "all" which shows everything, so no switch needed.
+      if (
+        this.stateFilter !== null
+        && detail.state !== 'domain'
+        && detail.state !== this.stateFilter
+      ) {
+        this.stateFilter = (detail.state as StateFilter) ?? null;
+      }
     } catch (err) {
       if (gen !== this._clusterGeneration) return;
       this.clusterDetailError = (err instanceof Error && err.message) ? err.message : 'Failed to load cluster';
