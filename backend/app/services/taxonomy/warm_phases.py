@@ -53,8 +53,9 @@ from app.services.taxonomy.clustering import (
 )
 from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.family_ops import (
+    _ExtractedPatterns,
     adaptive_merge_threshold,
-    extract_meta_patterns,
+    build_breadcrumb,
     merge_meta_pattern,
 )
 from app.utils.text_cleanup import parse_domain
@@ -271,6 +272,11 @@ async def phase_evaluate_candidates(
     # Maps parent_id → {promoted: int, rejected: int}
     parent_outcomes: dict[str, dict[str, int]] = {}
 
+    # Exclude ALL candidate IDs from reassignment targets — prevents
+    # rejected members from being reassigned to a sibling candidate
+    # that itself gets rejected later in this same evaluation loop.
+    all_candidate_ids = {c.id for c in candidates}
+
     now = _utcnow()
 
     for candidate in candidates:
@@ -372,7 +378,9 @@ async def phase_evaluate_candidates(
             reason = "coherence_unavailable" if coherence is None else "coherence_below_floor"
             opt_ids = [oid for oid, _ in members]
             opt_embs = [emb for _, emb in members]
-            reassignment_info = await _reassign_to_active(db, opt_ids, opt_embs)
+            reassignment_info = await _reassign_to_active(
+                db, opt_ids, opt_embs, exclude_cluster_ids=all_candidate_ids,
+            )
 
             candidate.state = "archived"
             candidate.archived_at = now
@@ -1856,29 +1864,67 @@ async def phase_refresh(
             labels = await asyncio.gather(*label_tasks, return_exceptions=True)
 
             # --- Phase C: Parallel pattern extraction across clusters ---
-            # Each cluster's patterns are extracted independently. The LLM
-            # calls are the bottleneck (~8-30s each), so parallelizing across
-            # clusters gives a massive speedup (N clusters in parallel vs
-            # N×5 sequential calls that caused 4+ minute recluster delays).
+            # LLM calls are the bottleneck (~8-30s each). Parallelizing across
+            # clusters gives massive speedup. IMPORTANT: extract_meta_patterns()
+            # does DB reads (taxonomy context lookup). We pre-compute taxonomy
+            # context strings here (sequential, safe) and pass them to the
+            # parallel LLM calls to avoid concurrent DB session access.
+
+            # Pre-compute taxonomy context per cluster (sequential DB reads)
+            cluster_taxonomy_ctx: dict[str, str] = {}
+            for sc_node, _, sc_opts in stale_clusters:
+                ctx_str = ""
+                try:
+                    breadcrumb = await build_breadcrumb(db, sc_node)
+                    ctx_str = (
+                        f'This prompt belongs to the "{sc_node.label}" pattern cluster '
+                        f"({' > '.join(breadcrumb)}).\n"
+                    )
+                except Exception:
+                    pass
+                cluster_taxonomy_ctx[sc_node.id] = ctx_str
 
             async def _extract_patterns_for_cluster(
                 cluster_node: PromptCluster,
                 opts: list,
+                tax_ctx: str,
             ) -> list[str]:
+                """Extract patterns using LLM only — no DB access."""
                 texts: list[str] = []
                 for opt in opts[:5]:
                     try:
-                        extracted = await extract_meta_patterns(
-                            opt, db, engine._provider, engine._prompt_loader,
+                        # Direct LLM call instead of extract_meta_patterns() to
+                        # avoid shared DB session in parallel coroutines.
+                        template = engine._prompt_loader.render(
+                            "extract_patterns.md",
+                            {
+                                "raw_prompt": (opt.raw_prompt or "")[:2000],
+                                "optimized_prompt": (opt.optimized_prompt or "")[:2000],
+                                "intent_label": opt.intent_label or "general",
+                                "domain_raw": opt.domain_raw or opt.domain or "general",
+                                "strategy_used": opt.strategy_used or "auto",
+                                "taxonomy_context": tax_ctx,
+                            },
                         )
-                        texts.extend(extracted)
+                        from app.providers.base import call_provider_with_retry
+                        response = await call_provider_with_retry(
+                            engine._provider,
+                            model=settings.MODEL_HAIKU,
+                            system_prompt="You are a prompt engineering analyst. Extract reusable meta-patterns.",
+                            user_message=template,
+                            output_format=_ExtractedPatterns,
+                        )
+                        patterns = [str(p) for p in response.patterns if isinstance(p, str)][:5]
+                        texts.extend(patterns)
                     except Exception:
                         pass  # non-fatal per-optimization
                 return texts
 
-            # Fire all pattern extractions in parallel
+            # Fire all pattern extractions in parallel (LLM only, no DB)
             extraction_tasks = [
-                _extract_patterns_for_cluster(sc[0], sc[2])
+                _extract_patterns_for_cluster(
+                    sc[0], sc[2], cluster_taxonomy_ctx.get(sc[0].id, ""),
+                )
                 for sc in stale_clusters
             ]
             all_patterns = await asyncio.gather(

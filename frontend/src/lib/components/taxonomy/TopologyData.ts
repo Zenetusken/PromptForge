@@ -137,16 +137,17 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
     // Final size: apply state multiplier then clamp to prevent domain
     // nodes from overwhelming the scene (volume scales as r³).
     const finalSize = Math.min(MAX_NODE_SIZE, size * stateSizeMultiplier(node.state));
+    const nodeOpacity = stateOpacity(node.state, stateFilter ?? null);
 
     nodes.push({
       id: node.id,
       position: [x, y, z],
       color: stateNodeColor(node.state, node.domain ?? node.color_hex),
       size: finalSize,
-      opacity: stateOpacity(node.state, stateFilter ?? null),
+      opacity: nodeOpacity,
       persistence: node.persistence ?? 0.5,
       state: node.state,
-      label: stateOpacity(node.state, stateFilter ?? null) < 0.5 ? '' : (node.label ?? ''),
+      label: nodeOpacity < 0.5 ? '' : (node.label ?? ''),
       visible: true,
       parentId: node.parent_id ?? undefined,
       coherence: node.coherence ?? 0.5,
