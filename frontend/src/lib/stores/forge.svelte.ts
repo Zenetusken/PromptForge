@@ -304,11 +304,11 @@ class ForgeStore {
     this.originalScores = opt.original_scores ?? null;
     this.scoreDeltas = opt.score_deltas ?? null;
 
-    // Bidirectional family link — auto-select in patterns store so Inspector shows family detail
+    // Bidirectional family link — auto-select in patterns store so Inspector shows family detail.
+    // Always call selectCluster (even with null) to clear stale Inspector state
+    // from a previous optimization that had a different cluster.
     this.clusterId = opt.cluster_id ?? null;
-    if (this.clusterId) {
-      clustersStore.selectCluster(this.clusterId);
-    }
+    clustersStore.selectCluster(this.clusterId);
 
     // Cache the result in the editor store so each result tab has its own data
     if (opt.id) {
