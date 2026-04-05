@@ -17,6 +17,10 @@
   import { stateColor } from '$lib/utils/colors';
   import { parsePrimaryDomain } from '$lib/utils/formatting';
   import type { ClusterNode } from '$lib/api/clusters';
+  import { BeamPool } from './BeamPool';
+  import { ClusterPhysics } from './ClusterPhysics';
+  import { createRippleUniforms, RIPPLE_VERTEX_SHADER, RIPPLE_FRAGMENT_SHADER } from './BeamShader';
+  import { buildNodeMap } from './TopologyData';
 
   // Resolved at module level to avoid per-frame allocations
   const HIGHLIGHT_COLOR = parseInt(stateColor('template').replace('#', ''), 16);
@@ -92,6 +96,16 @@
   // Flat node lookup for mid-LOD label logic and domain highlight
   let flatNodeMap: Map<string, ClusterNode> = new Map();
 
+  // Beam pool + cluster physics state
+  let beamPool: BeamPool | null = null;
+  let clusterPhysics: ClusterPhysics | null = null;
+  let _hasPlayedEntrance = false;
+  let _beamNodeGroups: Map<string, THREE.Group> = new Map();
+  let _sceneNodeMap: Map<string, import('./TopologyData').SceneNode> = new Map();
+  let _prevNodeSizes: Map<string, number> = new Map();
+  let _seedBatchActive = false;
+  let _removeDomainRotation: (() => void) | null = null;
+
   // External highlight tracking (for family selection sync)
   let _highlightedId: string | null = null;
   let _highlightedColor: number | null = null;
@@ -130,6 +144,11 @@
 
   function rebuildScene(data: SceneData): void {
     if (!renderer) return;
+
+    // Temporarily remove beam pool from scene to protect it from disposal
+    if (beamPool) {
+      renderer.scene.remove(beamPool.group);
+    }
 
     // Clear previous
     interaction?.clear();
@@ -241,13 +260,18 @@
 
         domainGroups.push(group);
       } else {
-        // Cluster: dense triangular wireframe contour
+        // Cluster: dense triangular wireframe contour with ripple shader
         // Coherence maps [0,1] to opacity multiplier [0.5, 1.0]
-        const wireMat = new THREE.MeshBasicMaterial({
-          color: node.color,
-          wireframe: true,
+        const wireUniforms = createRippleUniforms();
+        wireUniforms.uColor.value = new THREE.Color(node.color);
+        wireUniforms.uOpacity.value = node.opacity * (0.5 + 0.5 * node.coherence);
+        const wireMat = new THREE.ShaderMaterial({
+          uniforms: wireUniforms,
+          vertexShader: RIPPLE_VERTEX_SHADER,
+          fragmentShader: RIPPLE_FRAGMENT_SHADER,
           transparent: true,
-          opacity: node.opacity * (0.5 + 0.5 * node.coherence),
+          wireframe: true,
+          depthWrite: false,
         });
         const wire = new THREE.Mesh(clusterWireGeo, wireMat);
         wire.scale.setScalar(node.size);
@@ -260,21 +284,25 @@
     }
 
     // Domain rotation: ~1 revolution per 50s at 60fps
-    renderer.onAnimate = () => {
+    // Unsubscribe previous callback to prevent accumulation across rebuilds
+    _removeDomainRotation?.();
+    _removeDomainRotation = renderer.addAnimationCallback(() => {
       for (const g of domainGroups) {
         g.rotation.y += 0.002;
       }
-    };
+    });
+
+    // Build node map once — used for edge building, beam targeting, and edge group opacity
+    _sceneNodeMap = buildNodeMap(data.nodes);
 
     // Build edges — hierarchical edges (parent→child) are always drawn
     // if both endpoints exist in the scene, regardless of LOD visibility.
     // This prevents child clusters from appearing "orphaned" when their
     // domain parent is at the edge of a visibility threshold.
     const edgePositions: number[] = [];
-    const nodeMap = new Map(data.nodes.map(n => [n.id, n]));
     for (const edge of data.edges) {
-      const from = nodeMap.get(edge.from);
-      const to = nodeMap.get(edge.to);
+      const from = _sceneNodeMap.get(edge.from);
+      const to = _sceneNodeMap.get(edge.to);
       if (!from || !to) continue;
       const isHierarchical = edge.type === 'hierarchical';
       if (isHierarchical || (from.visible && to.visible)) {
@@ -296,7 +324,7 @@
     }
 
     // Similarity + injection edges — shared builder, separate groups with toggles
-    similarityEdgeGroup = buildEdgeGroup(data, nodeMap, {
+    similarityEdgeGroup = buildEdgeGroup(data, _sceneNodeMap, {
       type: 'similarity',
       color: SIMILARITY_EDGE_COLOR,
       dashed: true,
@@ -317,7 +345,7 @@
     similarityEdgeGroup.visible = clustersStore.showSimilarityEdges;
     renderer.scene.add(similarityEdgeGroup);
 
-    injectionEdgeGroup = buildEdgeGroup(data, nodeMap, {
+    injectionEdgeGroup = buildEdgeGroup(data, _sceneNodeMap, {
       type: 'injection',
       color: INJECTION_EDGE_COLOR,
       dashed: false,
@@ -373,6 +401,20 @@
         sprite.visible = true;
       }
       renderer.scene.add(labels.group);
+    }
+
+    // Build beam targeting map (node groups for beam target objects)
+    // _sceneNodeMap was already built above (before edges) — no need to rebuild
+    _beamNodeGroups.clear();
+    for (const [nodeId, mesh] of nodeMeshes) {
+      if (mesh?.parent) {
+        _beamNodeGroups.set(nodeId, mesh.parent as THREE.Group);
+      }
+    }
+
+    // Re-add beam pool to scene (protected from disposal above)
+    if (beamPool) {
+      renderer.scene.add(beamPool.group);
     }
   }
 
@@ -560,6 +602,53 @@
             renderer?.focusOn(new THREE.Vector3(cx, cy, cz), 40, 800);
           }
         }
+
+        // Entrance beams — materialization burst on first mount
+        if (!_hasPlayedEntrance && beamPool && sceneData.nodes.length > 0) {
+          _hasPlayedEntrance = true;
+          const sorted = [...sceneData.nodes]
+            .filter(n => n.state !== 'domain')
+            .sort((a, b) => b.size - a.size)
+            .slice(0, 10);
+          sorted.forEach((node, i) => {
+            setTimeout(() => {
+              const group = _beamNodeGroups.get(node.id);
+              if (!group || !beamPool || !renderer) return;
+              beamPool.acquire(group, {
+                colorEnd: new THREE.Color(node.color),
+                radius: 0.03,
+                sustainMs: 200,
+              }, renderer.camera);
+            }, i * 50);
+          });
+        }
+
+        // Fire beams at clusters that grew (post-optimization or post-seed)
+        if (_prevNodeSizes.size > 0 && beamPool && renderer) {
+          const isSeedBatch = _seedBatchActive;
+          let firedCount = 0;
+          for (const node of sceneData.nodes) {
+            if (node.state === 'domain') continue;
+            const prevSize = _prevNodeSizes.get(node.id);
+            if (prevSize !== undefined && node.size > prevSize) {
+              const group = _beamNodeGroups.get(node.id);
+              if (group) {
+                setTimeout(() => {
+                  if (!beamPool || !renderer) return;
+                  beamPool.acquire(group, {
+                    colorEnd: new THREE.Color(node.color),
+                    radius: isSeedBatch ? 0.12 : 0.04,
+                    sustainMs: isSeedBatch ? 600 : 800,
+                  }, renderer.camera);
+                  clusterPhysics?.onBeamImpact(node.id, node.size);
+                }, isSeedBatch ? firedCount * 80 : 0);
+                firedCount++;
+              }
+            }
+          }
+          _prevNodeSizes.clear();
+          if (isSeedBatch) _seedBatchActive = false;
+        }
       });
     }
   });
@@ -578,6 +667,34 @@
     if (injectionEdgeGroup) {
       injectionEdgeGroup.visible = show;
     }
+  });
+
+  // Optimization event listener — snapshot member counts before tree rebuild
+  $effect(() => {
+    if (!beamPool || !renderer) return;
+    function onOptimization(e: Event) {
+      // Only snapshot on actual optimization completions — ignore feedback/failure
+      const detail = (e as CustomEvent).detail;
+      if (detail?.status !== 'completed') return;
+      _prevNodeSizes.clear();
+      for (const [id, node] of _sceneNodeMap) {
+        _prevNodeSizes.set(id, node.size);
+      }
+    }
+    window.addEventListener('optimization-event', onOptimization);
+    return () => window.removeEventListener('optimization-event', onOptimization);
+  });
+
+  // Seed batch tracking — flag active seed for beam burst parameters
+  $effect(() => {
+    if (!beamPool || !renderer) return;
+    function onSeedProgress(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (!detail) return;
+      _seedBatchActive = true;
+    }
+    window.addEventListener('seed-batch-progress', onSeedProgress);
+    return () => window.removeEventListener('seed-batch-progress', onSeedProgress);
   });
 
   // Domain highlight dimming — when a domain is highlighted in the navigator,
@@ -605,7 +722,7 @@
         const child = group.children[i];
         const mat = (child as THREE.Mesh | THREE.LineSegments | THREE.Points).material as
           THREE.MeshBasicMaterial | THREE.LineBasicMaterial | THREE.PointsMaterial;
-        if (!mat || mat.opacity === undefined) continue;
+        if (!mat) continue;
         let baseOpacity: number;
         if (i === 0) {
           baseOpacity = node.opacity * 0.9;              // fill (both types)
@@ -613,6 +730,11 @@
           baseOpacity = node.opacity * (i === 2 ? 0.95 : 0.9); // edges or points
         } else {
           baseOpacity = node.opacity * (0.5 + 0.5 * node.coherence); // cluster wire (coherence)
+        }
+        // Handle ripple ShaderMaterial (wireframe child)
+        if ((mat as any).isShaderMaterial && (mat as any).uniforms?.uOpacity) {
+          (mat as any).uniforms.uOpacity.value = baseOpacity * dimFactor;
+          continue;
         }
         mat.opacity = baseOpacity * dimFactor;
       }
@@ -665,6 +787,33 @@
     renderer.onLodChange(handleLodChange);
     renderer.start();
 
+    // Initialize beam pool + cluster physics
+    beamPool = new BeamPool();
+    clusterPhysics = new ClusterPhysics();
+    renderer.scene.add(beamPool.group);
+
+    let lastTime = performance.now();
+    const removeBeamUpdate = renderer.addAnimationCallback(() => {
+      const now = performance.now();
+      const delta = (now - lastTime) / 1000;
+      lastTime = now;
+
+      beamPool?.update(delta, renderer!.camera);
+
+      clusterPhysics?.update(delta, (nodeId, scale, ripple) => {
+        const group = _beamNodeGroups.get(nodeId);
+        if (!group) return;
+        for (const child of group.children) {
+          child.scale.setScalar(scale);
+        }
+        const wire = group.children[1];
+        if (wire && (wire as THREE.Mesh).material &&
+            ((wire as THREE.Mesh).material as any).uniforms?.uRipple) {
+          ((wire as THREE.Mesh).material as any).uniforms.uRipple.value = ripple;
+        }
+      });
+    });
+
     // Taxonomy data loaded by +layout.svelte on app mount — no need to re-fetch here.
     // The $effect watching filteredTaxonomyTree (line 432) rebuilds the scene reactively.
 
@@ -678,6 +827,12 @@
     ro.observe(container);
 
     return () => {
+      beamPool?.dispose();
+      beamPool = null;
+      clusterPhysics?.clear();
+      clusterPhysics = null;
+      removeBeamUpdate();
+      _removeDomainRotation?.();
       ro.disconnect();
       interaction?.dispose();
       labels?.dispose();
