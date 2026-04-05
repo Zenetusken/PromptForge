@@ -198,7 +198,7 @@
     </button>
   </header>
 
-  <!-- State filter tabs — chromatic dot + abbreviated labels -->
+  <!-- State filter tabs -->
   <div class="state-tabs" role="tablist" aria-label="Filter by cluster state">
     {#each STATE_TABS as tab (tab.ariaLabel)}
       <button
@@ -210,13 +210,7 @@
         aria-label={tab.ariaLabel}
         use:tooltip={tab.ariaLabel}
         style="--tab-state-color: {tab.filter ? stateColor(tab.filter) : 'var(--color-text-dim)'};"
-      >
-        <span class="state-dot"></span>
-        <span class="state-tab-label">{tab.label}</span>
-        {#if tab.filter === 'candidate' && candidateCount > 0}
-          <span class="cn-tab-badge">{candidateCount}</span>
-        {/if}
-      </button>
+      >{tab.label}{#if tab.filter === 'candidate' && candidateCount > 0}<span class="cn-tab-badge">{candidateCount}</span>{/if}</button>
     {/each}
   </div>
 
@@ -388,70 +382,45 @@
 </div>
 
 <style>
-  /* ---- State filter tabs — chromatic instrument indicators ---- */
+  /* ---- State filter tabs ---- */
   .state-tabs {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     height: 24px;
-    padding: 0;
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
-    gap: 0;
   }
 
   .state-tab {
-    display: flex;
     flex: 1 1 0%;
-    min-width: 0;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    height: 20px;
-    line-height: 20px;
+    height: 100%;
     padding: 0;
-    border: 1px solid transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--color-text-dim);
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 600;
-    font-family: var(--font-sans);
+    font-family: var(--font-mono);
     cursor: pointer;
     text-transform: uppercase;
-    border-radius: 0;
-    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                border-color 200ms cubic-bezier(0.16, 1, 0.3, 1),
-                background 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .state-dot {
-    width: 5px;
-    height: 5px;
-    flex-shrink: 0;
-    background: var(--tab-state-color, var(--color-text-dim));
-    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  /* All tabs have dots for visual consistency */
-
-  .state-tab-label {
-    line-height: 1;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
+    transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .state-tab:hover {
     color: var(--color-text-primary);
-    background: var(--color-bg-hover);
+    background: color-mix(in srgb, var(--color-bg-hover) 50%, transparent);
   }
 
-  /* Active tab glows in its OWN state color — true chromatic encoding */
   .state-tab--active {
-    color: var(--tab-state-color, var(--color-text-dim));
-    border-color: var(--tab-state-color, var(--color-text-dim));
-    background: color-mix(in srgb, var(--tab-state-color, var(--color-text-dim)) 8%, transparent);
-  }
-
-  .state-tab--active .state-dot {
-    background: var(--tab-state-color, var(--color-text-dim));
+    color: var(--tab-state-color, var(--color-neon-cyan));
+    border-bottom-color: var(--tab-state-color, var(--color-neon-cyan));
   }
 
   .state-tab:focus-visible {
@@ -460,21 +429,11 @@
   }
 
   .cn-tab-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 12px;
-    height: 12px;
-    padding: 0 2px;
-    margin-left: 2px;
-    background: color-mix(in srgb, var(--tab-state-color, #7a7a9e) 20%, transparent);
-    border: 1px solid var(--tab-state-color, #7a7a9e);
-    color: var(--tab-state-color, #7a7a9e);
-    font-size: 9px;
     font-family: var(--font-mono);
+    font-size: 9px;
     font-weight: 700;
-    line-height: 1;
-    flex-shrink: 0;
+    color: var(--tab-state-color, #7a7a9e);
+    margin-left: 2px;
   }
 
   /* ---- Search ---- */
