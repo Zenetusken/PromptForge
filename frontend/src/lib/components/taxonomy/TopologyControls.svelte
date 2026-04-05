@@ -72,12 +72,32 @@
     if (metricsTimer) clearTimeout(metricsTimer);
   });
 
-  // --- Keyboard shortcuts ---
-  function handleSearch(): void {
-    if (searchQuery.trim()) onSearch(searchQuery.trim());
+  // --- Dismiss all overlays ---
+  function dismissAll() {
+    if (searchOpen) { searchOpen = false; searchQuery = ''; }
+    if (controlsVisible) { controlsVisible = false; }
+    if (metricsVisible) { metricsVisible = false; }
   }
 
-  function handleKeyDown(e: KeyboardEvent): void {
+  // --- Graph background click ---
+  function handleGraphClick(e: MouseEvent) {
+    // Only dismiss if clicking the HUD background itself (not a child element)
+    if (e.target === e.currentTarget) {
+      dismissAll();
+    }
+  }
+
+  // --- Search ---
+  function handleSearch(): void {
+    if (searchQuery.trim()) {
+      onSearch(searchQuery.trim());
+    } else {
+      // Empty search = close
+      searchOpen = false;
+    }
+  }
+
+  function handleSearchKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Enter') handleSearch();
     if (e.key === 'Escape') { searchOpen = false; searchQuery = ''; }
   }
@@ -87,14 +107,28 @@
     try { await onRecluster(); } finally { reclustering = false; }
   }
 
+  // --- Global keyboard ---
   function handleGlobalKey(e: KeyboardEvent): void {
+    // Ctrl+F: toggle search
     if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
       e.preventDefault();
-      searchOpen = true;
+      searchOpen = !searchOpen;
+      if (!searchOpen) searchQuery = '';
+      return;
     }
-    if (e.key === 'q' && !searchOpen && !(e.target instanceof HTMLInputElement)) {
+
+    // Escape: dismiss any visible overlay
+    if (e.key === 'Escape') {
+      if (searchOpen) { searchOpen = false; searchQuery = ''; return; }
+      if (metricsVisible) { metricsVisible = false; return; }
+      if (controlsVisible) { controlsVisible = false; return; }
+    }
+
+    // Q: toggle metrics (only when not in text input)
+    if (e.key === 'q' && !searchOpen && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
       metricsVisible = !metricsVisible;
       if (metricsVisible) showMetrics();
+      else if (metricsTimer) clearTimeout(metricsTimer);
     }
   }
 </script>
@@ -103,7 +137,8 @@
 
 <!-- Diegetic UI — minimal overlay, auto-hide controls -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="hud" onmousemove={handleMouseMove}>
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<div class="hud" onmousemove={handleMouseMove} onclick={handleGraphClick}>
   <!-- AMBIENT: Minimal telemetry — hidden when controls are visible -->
   <div class="hud-ambient" class:hud-ambient--hidden={controlsVisible}>
     <span>{filteredCounts.active} clusters</span>
@@ -149,7 +184,7 @@
       <input
         type="text"
         bind:value={searchQuery}
-        onkeydown={handleKeyDown}
+        onkeydown={handleSearchKeyDown}
         placeholder="Search nodes..."
         class="hud-search-input"
       />
