@@ -115,9 +115,15 @@ class ClusterStore {
 
   setStateFilter(filter: StateFilter): void {
     this.stateFilter = filter;
-    // Clear cluster selection — the previous selection may not exist in
-    // the new filtered view (e.g., active cluster selected, switch to archived tab)
-    this.selectCluster(null);
+    // Only clear selection if the selected cluster wouldn't be visible in the
+    // new filter. Switching to "all" (null) or to the same state as the selected
+    // cluster preserves the selection. Switching to a different state clears it.
+    if (this.selectedClusterId && filter !== null) {
+      const selected = this.taxonomyTree.find(n => n.id === this.selectedClusterId);
+      if (!selected || (selected.state !== filter && selected.state !== 'domain')) {
+        this.selectCluster(null);
+      }
+    }
   }
 
   toggleHighlightDomain(domain: string): void {
