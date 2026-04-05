@@ -638,6 +638,10 @@
     border: none;
     padding: 0 1px;
     opacity: 1;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .ap-cluster-link {
