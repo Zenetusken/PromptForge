@@ -114,6 +114,9 @@ async def execute_cold_path(
     Returns:
         ColdPathResult with quality metrics and acceptance status.
     """
+    import time as _time
+    _cold_t0 = _time.monotonic()
+
     nodes_created = 0
     nodes_updated = 0
 
@@ -175,6 +178,9 @@ async def execute_cold_path(
         )
 
     # ------------------------------------------------------------------
+    logger.info("Cold path: Steps 1-4 (load+validate) %.1fs", _time.monotonic() - _cold_t0)
+    _cold_t1 = _time.monotonic()
+
     # Step 4b: Blend embeddings for multi-signal HDBSCAN
     # Look up per-cluster mean optimized + transformation vectors from the
     # engine's in-memory indices (populated by prior hot/warm paths).
@@ -209,13 +215,21 @@ async def execute_cold_path(
         )
 
     # ------------------------------------------------------------------
+    logger.info("Cold path: Step 4b (blend) %.1fs", _time.monotonic() - _cold_t1)
+    _cold_t2 = _time.monotonic()
+
     # Step 5: Run HDBSCAN clustering (on blended embeddings)
     # Raw centroids (embeddings) are kept for storage and matching —
     # only HDBSCAN sees the blended signal.
     # ------------------------------------------------------------------
     cluster_result = batch_cluster(blended_embeddings, min_cluster_size=3)
+    logger.info(
+        "Cold path: Step 5 (HDBSCAN) %.1fs — %d clusters, %d noise",
+        _time.monotonic() - _cold_t2, cluster_result.n_clusters, cluster_result.noise_count,
+    )
 
     # ------------------------------------------------------------------
+    _cold_t3 = _time.monotonic()
     # Step 6: Load existing nodes for matching
     # Fix #6: Original used `state.in_(["active", "candidate"])` which
     #         missed mature/template nodes. All non-domain, non-archived
@@ -349,6 +363,11 @@ async def execute_cold_path(
         all_nodes.append(node)
 
     # ------------------------------------------------------------------
+    logger.info(
+        "Cold path: Steps 6-10 (match/create) %.1fs — created=%d updated=%d",
+        _time.monotonic() - _cold_t3, nodes_created, nodes_updated,
+    )
+    _cold_t4 = _time.monotonic()
     # Step 11: Include leftover unmatched nodes for UMAP coordinates
     # ------------------------------------------------------------------
     # Unmatched nodes that HDBSCAN did not absorb still need UMAP
@@ -506,6 +525,8 @@ async def execute_cold_path(
         pass
 
     # ------------------------------------------------------------------
+    logger.info("Cold path: Steps 11-15 (reconcile) %.1fs", _time.monotonic() - _cold_t4)
+    _cold_t5 = _time.monotonic()
     # Step 16: Recompute per-member coherence from optimization embeddings
     # ------------------------------------------------------------------
     # The HDBSCAN coherence computed above measures centroid-to-centroid
@@ -546,6 +567,8 @@ async def execute_cold_path(
     await db.flush()
 
     # ------------------------------------------------------------------
+    logger.info("Cold path: Step 16 (coherence recompute) %.1fs", _time.monotonic() - _cold_t5)
+    _cold_t6 = _time.monotonic()
     # Step 17: UMAP 3D projection with Procrustes alignment
     # ------------------------------------------------------------------
     umap_fitted = False
@@ -596,6 +619,8 @@ async def execute_cold_path(
             )
 
     # ------------------------------------------------------------------
+    logger.info("Cold path: Step 17-18 (UMAP) %.1fs", _time.monotonic() - _cold_t6)
+    _cold_t7 = _time.monotonic()
     # Step 19: OKLab coloring with minimum deltaE (skip domain nodes)
     # ------------------------------------------------------------------
     color_pairs: list[tuple[str, str]] = []
@@ -628,6 +653,8 @@ async def execute_cold_path(
     engine._update_per_node_separation(active_after)
 
     # ------------------------------------------------------------------
+    logger.info("Cold path: Steps 19-20 (color+separation) %.1fs", _time.monotonic() - _cold_t7)
+    _cold_t8 = _time.monotonic()
     # Step 21: Compute Q_after
     # ------------------------------------------------------------------
     q_after = engine._compute_q_from_nodes(active_after, silhouette=cluster_result.silhouette)
