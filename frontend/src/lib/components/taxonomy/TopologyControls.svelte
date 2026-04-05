@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { clustersStore } from '$lib/stores/clusters.svelte';
-  import { TAXONOMY_TOOLTIPS } from '$lib/utils/metric-tooltips';
   import { tooltip } from '$lib/actions/tooltip';
   import { TOPOLOGY_TOOLTIPS } from '$lib/utils/ui-tooltips';
   import TopologyInfoPanel from './TopologyInfoPanel.svelte';
@@ -51,8 +51,12 @@
     metricsTimer = setTimeout(() => { metricsVisible = false; }, 2000);
   }
 
-  // --- Edge hover detection (right 50px zone) ---
+  // --- Edge hover detection (right 50px zone, throttled) ---
+  let lastMoveTime = 0;
   function handleMouseMove(e: MouseEvent) {
+    const now = performance.now();
+    if (now - lastMoveTime < 100) return; // throttle to 10Hz
+    lastMoveTime = now;
     const target = e.currentTarget as HTMLElement;
     if (!target) return;
     const rect = target.getBoundingClientRect();
@@ -61,6 +65,12 @@
       showControls();
     }
   }
+
+  // --- Cleanup timers on destroy ---
+  onDestroy(() => {
+    if (controlsTimer) clearTimeout(controlsTimer);
+    if (metricsTimer) clearTimeout(metricsTimer);
+  });
 
   // --- Keyboard shortcuts ---
   function handleSearch(): void {
@@ -94,8 +104,8 @@
 <!-- Diegetic UI — minimal overlay, auto-hide controls -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="hud" onmousemove={handleMouseMove}>
-  <!-- AMBIENT: Minimal telemetry — always visible, bottom-right -->
-  <div class="hud-ambient">
+  <!-- AMBIENT: Minimal telemetry — hidden when controls are visible -->
+  <div class="hud-ambient" class:hud-ambient--hidden={controlsVisible}>
     <span>{filteredCounts.active} clusters</span>
     <span class="hud-dot">·</span>
     <span class="hud-lod">{lodTier.toUpperCase()}</span>
@@ -176,6 +186,10 @@
     font-size: 9px;
     color: color-mix(in srgb, var(--color-text-dim) 40%, transparent);
     transition: opacity 500ms ease;
+  }
+
+  .hud-ambient--hidden {
+    opacity: 0;
   }
 
   .hud-dot {
