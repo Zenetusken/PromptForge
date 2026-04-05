@@ -3,6 +3,8 @@
   import { TAXONOMY_TOOLTIPS } from '$lib/utils/metric-tooltips';
   import { tooltip } from '$lib/actions/tooltip';
   import { TOPOLOGY_TOOLTIPS } from '$lib/utils/ui-tooltips';
+  import { generatePanelInsight } from '$lib/utils/taxonomy-health';
+  import type { PanelMode } from '$lib/utils/taxonomy-health';
   import TopologyInfoPanel from './TopologyInfoPanel.svelte';
   import type { LODTier } from './TopologyRenderer';
 
@@ -23,6 +25,31 @@
 
   // Canonical state breakdown from the store (respects orphan filter + state filter)
   const filteredCounts = $derived(clustersStore.clusterCounts);
+
+  // Insight text — generated here so it can be positioned independently (top-left)
+  const detail = $derived(clustersStore.clusterDetail);
+  const selectedId = $derived(clustersStore.selectedClusterId);
+  const mode: PanelMode = $derived.by(() => {
+    if (!selectedId || !detail) return 'system';
+    if (detail.state === 'domain') return 'domain';
+    return 'cluster';
+  });
+  const insight = $derived(generatePanelInsight({
+    mode,
+    stats: clustersStore.taxonomyStats,
+    detail: detail ? {
+      coherence: detail.coherence,
+      separation: detail.separation,
+      output_coherence: detail.output_coherence ?? null,
+      blend_w_optimized: detail.blend_w_optimized ?? null,
+      member_count: detail.member_count,
+      split_failures: detail.split_failures ?? 0,
+      label: detail.label,
+      state: detail.state,
+    } : null,
+    domainChildCount: (detail?.children ?? []).length,
+    domainBelowFloor: (detail?.children ?? []).filter(c => c.coherence != null && c.coherence < 0.5).length,
+  }));
 
   function handleSearch(): void {
     if (searchQuery.trim()) {
@@ -57,47 +84,51 @@
 
 <svelte:window onkeydown={handleGlobalKey} />
 
-<!-- HUD — right-edge instrument cluster -->
+<!-- HUD — 4-corner distributed overlay -->
 <div class="hud">
-  <!-- Primary instrument cluster: metrics + controls -->
-  <div class="hud-cluster">
-    <!-- Metrics readout -->
-    <div class="hud-block hud-metrics">
-      <TopologyInfoPanel />
-    </div>
+  <!-- TOP-RIGHT: Metrics readout -->
+  <div class="hud-tr">
+    <TopologyInfoPanel hideInsight />
+  </div>
 
-    <!-- Controls — uniform button grid, no dots (active state shows via border+tint) -->
-    <div class="hud-block hud-controls">
-      <div class="hud-row">
-        <button class="hud-btn" class:hud-btn--on={clustersStore.showSimilarityEdges} style="--hud-accent: var(--color-neon-cyan)" onclick={() => { clustersStore.showSimilarityEdges = !clustersStore.showSimilarityEdges; }} use:tooltip={TOPOLOGY_TOOLTIPS.toggle_similarity}>Sim</button>
-        <button class="hud-btn" class:hud-btn--on={clustersStore.showInjectionEdges} style="--hud-accent: var(--color-neon-orange)" onclick={() => { clustersStore.showInjectionEdges = !clustersStore.showInjectionEdges; }} use:tooltip={TOPOLOGY_TOOLTIPS.toggle_injection}>Inj</button>
-      </div>
-      <div class="hud-row">
-        <button class="hud-btn" onclick={onSeed} use:tooltip={'Seed taxonomy with generated prompts'}>Seed</button>
-        <button class="hud-btn" onclick={handleRecluster} disabled={reclustering} use:tooltip={TOPOLOGY_TOOLTIPS.recluster}>{reclustering ? '...' : 'Recluster'}</button>
-      </div>
-      <div class="hud-row">
-        <button class="hud-btn" class:hud-btn--on={showActivity} style="--hud-accent: var(--color-neon-purple)" onclick={onToggleActivity} use:tooltip={'Toggle taxonomy decision feed'}>Activity</button>
-      </div>
+  <!-- TOP-LEFT: Insight callout -->
+  {#if insight}
+    <div class="hud-tl">
+      <p class="hud-insight">{insight}</p>
     </div>
+  {/if}
 
-    <!-- Status telemetry -->
-    <div class="hud-block hud-status">
-      <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.active}>{filteredCounts.active} active</span>
-      {#if filteredCounts.candidate > 0}
-        <span class="hud-sep"></span>
-        <span class="hud-count hud-count--candidate" use:tooltip={TAXONOMY_TOOLTIPS.candidate}>{filteredCounts.candidate} forming</span>
-      {/if}
-      {#if filteredCounts.template > 0}
-        <span class="hud-sep"></span>
-        <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.template}>{filteredCounts.template} tmpl</span>
-      {/if}
-      <span class="hud-sep"></span>
-      <span class="hud-lod" use:tooltip={'Level of detail'}>{lodTier.toUpperCase()}</span>
+  <!-- BOTTOM-RIGHT: Controls -->
+  <div class="hud-br">
+    <div class="hud-row">
+      <button class="hud-btn" class:hud-btn--on={clustersStore.showSimilarityEdges} style="--hud-accent: var(--color-neon-cyan)" onclick={() => { clustersStore.showSimilarityEdges = !clustersStore.showSimilarityEdges; }} use:tooltip={TOPOLOGY_TOOLTIPS.toggle_similarity}>Sim</button>
+      <button class="hud-btn" class:hud-btn--on={clustersStore.showInjectionEdges} style="--hud-accent: var(--color-neon-orange)" onclick={() => { clustersStore.showInjectionEdges = !clustersStore.showInjectionEdges; }} use:tooltip={TOPOLOGY_TOOLTIPS.toggle_injection}>Inj</button>
+    </div>
+    <div class="hud-row">
+      <button class="hud-btn" onclick={onSeed} use:tooltip={'Seed taxonomy with generated prompts'}>Seed</button>
+      <button class="hud-btn" onclick={handleRecluster} disabled={reclustering} use:tooltip={TOPOLOGY_TOOLTIPS.recluster}>{reclustering ? '...' : 'Recluster'}</button>
+    </div>
+    <div class="hud-row">
+      <button class="hud-btn" class:hud-btn--on={showActivity} style="--hud-accent: var(--color-neon-purple)" onclick={onToggleActivity} use:tooltip={'Toggle taxonomy decision feed'}>Activity</button>
     </div>
   </div>
 
-  <!-- Search overlay (Ctrl+F) -->
+  <!-- BOTTOM-LEFT: Status telemetry -->
+  <div class="hud-bl">
+    <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.active}>{filteredCounts.active} active</span>
+    {#if filteredCounts.candidate > 0}
+      <span class="hud-sep"></span>
+      <span class="hud-count hud-count--candidate" use:tooltip={TAXONOMY_TOOLTIPS.candidate}>{filteredCounts.candidate} forming</span>
+    {/if}
+    {#if filteredCounts.template > 0}
+      <span class="hud-sep"></span>
+      <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.template}>{filteredCounts.template} tmpl</span>
+    {/if}
+    <span class="hud-sep"></span>
+    <span class="hud-lod" use:tooltip={'Level of detail'}>{lodTier.toUpperCase()}</span>
+  </div>
+
+  <!-- CENTER-TOP: Search (Ctrl+F) -->
   {#if searchOpen}
     <div class="hud-search">
       <input
@@ -112,13 +143,7 @@
 </div>
 
 <style>
-  /* ══ HUD — right-edge instrument cluster ══
-   *
-   * Single vertical column anchored top-right. Blocks stack with
-   * 2px gaps — tight enough to read as one unit, loose enough to
-   * show graph between blocks. Each block is semi-transparent with
-   * backdrop-blur. No outer container border.
-   */
+  /* ══ HUD — 4-corner distributed overlay ══ */
 
   .hud {
     position: absolute;
@@ -127,38 +152,52 @@
     z-index: 10;
   }
 
-  /* ── Instrument cluster — right-aligned vertical stack ── */
+  /* ── TOP-RIGHT: Metrics readout ── */
 
-  .hud-cluster {
+  .hud-tr {
     position: absolute;
-    top: 6px;
-    right: 6px;
+    top: 8px;
+    right: 8px;
     width: 178px;
-    display: flex;
-    flex-direction: column;
     pointer-events: auto;
     background: color-mix(in srgb, var(--color-bg-primary) 75%, transparent);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
   }
 
-  /* ── HUD blocks — seamless sections within the cluster ── */
+  /* ── TOP-LEFT: Insight callout ── */
 
-  .hud-block + .hud-block {
-    border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
+  .hud-tl {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    max-width: 220px;
+    pointer-events: none;
   }
 
-  .hud-metrics {
-    /* InfoPanel manages its own padding */
+  .hud-insight {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    color: color-mix(in srgb, var(--color-text-dim) 70%, transparent);
+    line-height: 1.5;
+    margin: 0;
   }
 
-  /* ── Controls — uniform button grid ── */
+  /* ── BOTTOM-RIGHT: Controls ── */
 
-  .hud-controls {
+  .hud-br {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    width: 178px;
     display: flex;
     flex-direction: column;
     gap: 2px;
     padding: 4px 6px;
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--color-bg-primary) 75%, transparent);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
 
   .hud-row {
@@ -166,13 +205,11 @@
     gap: 2px;
   }
 
-  /* Single unified button class for all controls */
   .hud-btn {
     display: flex;
     flex: 1;
     align-items: center;
     justify-content: center;
-    gap: 3px;
     height: 22px;
     padding: 0 6px;
     background: transparent;
@@ -202,18 +239,19 @@
     cursor: not-allowed;
   }
 
-  /* Toggle state shown via border + background tint — no dots needed */
+  /* ── BOTTOM-LEFT: Status telemetry ── */
 
-  /* ── Status telemetry ── */
-
-  .hud-status {
+  .hud-bl {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 3px 6px;
+    pointer-events: auto;
     font-family: var(--font-mono);
     font-size: 9px;
-    color: var(--color-text-dim);
+    color: color-mix(in srgb, var(--color-text-dim) 70%, transparent);
   }
 
   .hud-count { cursor: default; }
@@ -222,23 +260,21 @@
   .hud-sep {
     width: 1px;
     height: 8px;
-    background: color-mix(in srgb, var(--color-text-dim) 25%, transparent);
+    background: color-mix(in srgb, var(--color-text-dim) 20%, transparent);
     flex-shrink: 0;
   }
 
   .hud-lod {
-    font-family: var(--font-mono);
     font-size: 8px;
     font-weight: 700;
-    color: var(--color-text-dim);
     letter-spacing: 0.08em;
   }
 
-  /* ── Search overlay ── */
+  /* ── CENTER-TOP: Search ── */
 
   .hud-search {
     position: absolute;
-    top: 6px;
+    top: 8px;
     left: 50%;
     transform: translateX(-50%);
     width: 240px;

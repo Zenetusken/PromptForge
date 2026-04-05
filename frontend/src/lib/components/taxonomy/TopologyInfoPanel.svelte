@@ -7,6 +7,12 @@
   import { tooltip } from '$lib/actions/tooltip';
   import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
 
+  interface Props {
+    hideInsight?: boolean;
+  }
+
+  let { hideInsight = false }: Props = $props();
+
   const stats = $derived(clustersStore.taxonomyStats);
   const detail = $derived(clustersStore.clusterDetail);
   const selectedId = $derived(clustersStore.selectedClusterId);
@@ -223,10 +229,12 @@
     {/if}
   </div>
 
-  <!-- ROW 4: Insight -->
-  <div class="ip-row ip-insight">
-    <p class="ip-insight-text">{insight}</p>
-  </div>
+  <!-- ROW 4: Insight (hidden when parent renders it separately) -->
+  {#if !hideInsight}
+    <div class="ip-row ip-insight">
+      <p class="ip-insight-text">{insight}</p>
+    </div>
+  {/if}
 </div>
 
 <style>
