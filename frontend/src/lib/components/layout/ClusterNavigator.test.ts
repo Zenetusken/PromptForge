@@ -236,8 +236,8 @@ describe('ClusterNavigator', () => {
   // ── 2. Pagination ──────────────────────────────────────────────────────────
 
   it('shows "Load more" button when has_more is true', async () => {
-    // Provide >50 nodes so client-side pagination shows "Load more"
-    const manyNodes = Array.from({ length: 51 }, (_, i) =>
+    // PAGE_SIZE is 500 — provide >500 nodes so client-side pagination shows "Load more"
+    const manyNodes = Array.from({ length: 501 }, (_, i) =>
       mockClusterNode({ id: `fam-${i}`, label: `Pattern ${i}`, domain: 'backend' }),
     );
     mockFetch([
@@ -268,9 +268,9 @@ describe('ClusterNavigator', () => {
   it('clicking "Load more" fetches next page and appends results', async () => {
     const user = userEvent.setup();
 
-    // 51 nodes so first page = 50 items with has_more=true, second page = 1 item
-    const manyNodes = Array.from({ length: 51 }, (_, i) =>
-      mockClusterNode({ id: `fam-${i}`, label: i === 50 ? 'Auth patterns' : `Pattern ${i}`, domain: 'backend' }),
+    // PAGE_SIZE is 500 — 501 nodes so first page = 500 items with has_more=true
+    const manyNodes = Array.from({ length: 501 }, (_, i) =>
+      mockClusterNode({ id: `fam-${i}`, label: i === 500 ? 'Auth patterns' : `Pattern ${i}`, domain: 'backend' }),
     );
     mockFetch([
       { match: '/api/clusters/tree', response: { nodes: manyNodes } },

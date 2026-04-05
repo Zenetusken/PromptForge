@@ -277,7 +277,11 @@ describe('ForgeStore', () => {
       expect(cacheResult).toHaveBeenCalledWith('opt-cache-1', result);
     });
 
-    it('selects cluster in clustersStore when cluster_id set', () => {
+    it('selects cluster in clustersStore when cluster_id set and cluster exists in tree', () => {
+      // Populate taxonomy tree so loadFromRecord finds the cluster
+      clustersStore.taxonomyTree = [
+        { id: 'clus-1', parent_id: null, label: 'API patterns', state: 'active', domain: 'backend', task_type: 'coding', member_count: 2, usage_count: 3, avg_score: 8.0, persistence: null, coherence: null, separation: null, stability: null, color_hex: null, umap_x: null, umap_y: null, umap_z: null, preferred_strategy: null, created_at: null },
+      ] as any;
       const fetchMock = mockFetch([
         { match: '/clusters/clus-1', response: { id: 'clus-1', label: 'API patterns', domain: 'backend', task_type: 'coding', usage_count: 3, member_count: 2, avg_score: 8.0, state: 'active', created_at: null, updated_at: null, meta_patterns: [], optimizations: [] } },
       ]);

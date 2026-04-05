@@ -329,14 +329,17 @@ describe('ClusterStore', () => {
       expect(clustersStore.clusterDetail).toBeNull();
     });
 
-    it('sets clusterDetailError on load failure', async () => {
+    it('clears selection and error on load failure (ghost node cleanup)', async () => {
       mockFetch([
         { match: '/clusters/bad-id', response: { detail: 'Not found' }, status: 404 },
       ]);
       clustersStore.selectCluster('bad-id');
       await flushAll();
-      expect(clustersStore.clusterDetailError).toBeTruthy();
+      // On 404, the store clears the selection entirely to avoid
+      // showing stale "Cluster not found" errors for ghost nodes.
+      expect(clustersStore.selectedClusterId).toBeNull();
       expect(clustersStore.clusterDetail).toBeNull();
+      expect(clustersStore.clusterDetailError).toBeNull();
     });
 
     it('sets clusterDetailLoading true during fetch then false', async () => {

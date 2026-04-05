@@ -130,7 +130,7 @@ describe('stateColor', () => {
     expect(stateColor('active')).toBe('#4d8eff');
     expect(stateColor('mature')).toBe('#a855f7');
     expect(stateColor('template')).toBe('#00e5ff');
-    expect(stateColor('archived')).toBe('#2a2a3e');
+    expect(stateColor('archived')).toBe('#3a3a52');
   });
 
   it('returns fallback gray for unknown state', () => {
