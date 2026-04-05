@@ -292,15 +292,17 @@
       }
     });
 
+    // Build node map once — used for edge building, beam targeting, and edge group opacity
+    _sceneNodeMap = buildNodeMap(data.nodes);
+
     // Build edges — hierarchical edges (parent→child) are always drawn
     // if both endpoints exist in the scene, regardless of LOD visibility.
     // This prevents child clusters from appearing "orphaned" when their
     // domain parent is at the edge of a visibility threshold.
     const edgePositions: number[] = [];
-    const nodeMap = new Map(data.nodes.map(n => [n.id, n]));
     for (const edge of data.edges) {
-      const from = nodeMap.get(edge.from);
-      const to = nodeMap.get(edge.to);
+      const from = _sceneNodeMap.get(edge.from);
+      const to = _sceneNodeMap.get(edge.to);
       if (!from || !to) continue;
       const isHierarchical = edge.type === 'hierarchical';
       if (isHierarchical || (from.visible && to.visible)) {
@@ -322,7 +324,7 @@
     }
 
     // Similarity + injection edges — shared builder, separate groups with toggles
-    similarityEdgeGroup = buildEdgeGroup(data, nodeMap, {
+    similarityEdgeGroup = buildEdgeGroup(data, _sceneNodeMap, {
       type: 'similarity',
       color: SIMILARITY_EDGE_COLOR,
       dashed: true,
@@ -343,7 +345,7 @@
     similarityEdgeGroup.visible = clustersStore.showSimilarityEdges;
     renderer.scene.add(similarityEdgeGroup);
 
-    injectionEdgeGroup = buildEdgeGroup(data, nodeMap, {
+    injectionEdgeGroup = buildEdgeGroup(data, _sceneNodeMap, {
       type: 'injection',
       color: INJECTION_EDGE_COLOR,
       dashed: false,
@@ -401,16 +403,14 @@
       renderer.scene.add(labels.group);
     }
 
-    // Build beam targeting maps
+    // Build beam targeting map (node groups for beam target objects)
+    // _sceneNodeMap was already built above (before edges) — no need to rebuild
     _beamNodeGroups.clear();
     for (const [nodeId] of nodeMeshes) {
       const mesh = nodeMeshes.get(nodeId);
       if (mesh?.parent) {
         _beamNodeGroups.set(nodeId, mesh.parent as THREE.Group);
       }
-    }
-    if (sceneData) {
-      _sceneNodeMap = buildNodeMap(sceneData.nodes);
     }
 
     // Re-add beam pool to scene (protected from disposal above)
@@ -674,6 +674,9 @@
   $effect(() => {
     if (!beamPool || !renderer) return;
     function onOptimization(e: Event) {
+      // Only snapshot on actual optimization completions — ignore feedback/failure
+      const detail = (e as CustomEvent).detail;
+      if (detail?.status !== 'completed') return;
       _prevMemberCounts.clear();
       for (const [id, node] of _sceneNodeMap) {
         _prevMemberCounts.set(id, node.size);

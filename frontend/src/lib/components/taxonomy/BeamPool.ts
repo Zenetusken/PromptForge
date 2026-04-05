@@ -31,7 +31,11 @@ export class BeamPool {
   }
 
   get activeCount(): number {
-    return this._beams.filter(b => b.state !== 'idle').length;
+    let count = 0;
+    for (const b of this._beams) {
+      if (b.state !== 'idle') count++;
+    }
+    return count;
   }
 
   update(delta: number, camera: THREE.PerspectiveCamera): void {

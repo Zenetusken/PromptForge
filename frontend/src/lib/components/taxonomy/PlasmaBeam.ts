@@ -47,7 +47,20 @@ export class PlasmaBeam {
   private _tempBinormal = new THREE.Vector3();
   private _tempUp = new THREE.Vector3();
 
+  // Pre-computed sin/cos table for radial vertex placement (avoids trig per frame)
+  private _cosTable: Float32Array;
+  private _sinTable: Float32Array;
+
   constructor() {
+    // Pre-compute sin/cos for radial segments (values never change)
+    this._cosTable = new Float32Array(RADIAL_SEGMENTS + 1);
+    this._sinTable = new Float32Array(RADIAL_SEGMENTS + 1);
+    for (let j = 0; j <= RADIAL_SEGMENTS; j++) {
+      const angle = (j / RADIAL_SEGMENTS) * Math.PI * 2;
+      this._cosTable[j] = Math.cos(angle);
+      this._sinTable[j] = Math.sin(angle);
+    }
+
     for (let i = 0; i <= TUBULAR_SEGMENTS; i++) {
       this._curvePoints.push(new THREE.Vector3());
     }
@@ -257,9 +270,8 @@ export class PlasmaBeam {
       const binormal = this._tempBinormal.crossVectors(tangent, normal).normalize();
 
       for (let j = 0; j <= RADIAL_SEGMENTS; j++) {
-        const angle = (j / RADIAL_SEGMENTS) * Math.PI * 2;
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
+        const cos = this._cosTable[j];
+        const sin = this._sinTable[j];
 
         posArray[idx++] = P.x + radius * (cos * normal.x + sin * binormal.x);
         posArray[idx++] = P.y + radius * (cos * normal.y + sin * binormal.y);
