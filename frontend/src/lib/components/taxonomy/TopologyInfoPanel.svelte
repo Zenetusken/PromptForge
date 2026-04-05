@@ -243,6 +243,11 @@
     border-top: 1px solid var(--color-border-subtle);
   }
 
+  /* Last row has no bottom/top border — the parent hud-block separator handles the seam */
+  .ip-row:last-child {
+    border-top: none;
+  }
+
   /* -- Row 1: Identity -- */
 
   .ip-identity {
