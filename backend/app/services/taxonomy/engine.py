@@ -1266,15 +1266,16 @@ class TaxonomyEngine:
             coherences = [c.coherence for c in children if c.coherence is not None]
             mean_coh = float(np.mean(coherences)) if coherences else 0.0
 
-            # Only log evaluation when it would trigger or is close to triggering
-            # (≥75% of member threshold). Suppresses per-cycle noise for small domains.
+            # Only log when the evaluation would actually trigger sub-domain
+            # discovery. Previous "close to threshold" logging produced 960+
+            # noise events per day from domains that pass the member threshold
+            # but never the coherence threshold.
             would_trigger = (
                 total_members >= SUB_DOMAIN_MIN_MEMBERS
                 and bool(coherences)
                 and mean_coh < SUB_DOMAIN_COHERENCE_CEILING
             )
-            close_to_threshold = total_members >= int(SUB_DOMAIN_MIN_MEMBERS * 0.75)
-            if would_trigger or close_to_threshold:
+            if would_trigger:
                 try:
                     get_event_logger().log_decision(
                         path="warm", op="discover", decision="sub_domain_evaluation",
