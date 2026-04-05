@@ -963,11 +963,7 @@
     margin-top: 2px;
   }
 
-  .health-trend {
-    font-family: var(--font-mono);
-    font-size: 9px;
-    white-space: nowrap;
-  }
+  /* .health-trend removed — unused selector */
 
   /* Pattern family detail */
   .family-detail {

@@ -133,7 +133,7 @@
 
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="seed-overlay" onclick={handleOverlayClick} role="dialog" aria-modal="true" aria-label="Seed Taxonomy">
+  <div class="seed-overlay" onclick={handleOverlayClick} role="dialog" aria-modal="true" aria-label="Seed Taxonomy" tabindex="-1">
     <div class="seed-modal">
       <!-- Header -->
       <div class="seed-header">
@@ -176,7 +176,7 @@
           <!-- Agent checkboxes -->
           {#if agents.length > 0}
             <div class="seed-field">
-              <label class="seed-label">AGENTS</label>
+              <span class="seed-label">AGENTS</span>
               <div class="seed-agents">
                 {#each agents as agent}
                   <label class="seed-agent" class:seed-agent--selected={selectedAgents.has(agent.name)}>
