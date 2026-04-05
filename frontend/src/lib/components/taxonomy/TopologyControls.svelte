@@ -66,54 +66,37 @@
       <TopologyInfoPanel />
     </div>
 
-    <!-- Layers + commands -->
+    <!-- Controls — uniform button grid -->
     <div class="hud-block hud-controls">
       <div class="hud-row">
         <button
-          class="hud-toggle"
-          class:hud-toggle--on={clustersStore.showSimilarityEdges}
+          class="hud-btn"
+          class:hud-btn--on={clustersStore.showSimilarityEdges}
           style="--hud-accent: var(--color-neon-cyan)"
           onclick={() => { clustersStore.showSimilarityEdges = !clustersStore.showSimilarityEdges; }}
           use:tooltip={TOPOLOGY_TOOLTIPS.toggle_similarity}
-        >
-          <span class="hud-indicator"></span>
-          Sim
-        </button>
+        ><span class="hud-dot"></span>Sim</button>
         <button
-          class="hud-toggle"
-          class:hud-toggle--on={clustersStore.showInjectionEdges}
+          class="hud-btn"
+          class:hud-btn--on={clustersStore.showInjectionEdges}
           style="--hud-accent: var(--color-neon-orange)"
           onclick={() => { clustersStore.showInjectionEdges = !clustersStore.showInjectionEdges; }}
           use:tooltip={TOPOLOGY_TOOLTIPS.toggle_injection}
-        >
-          <span class="hud-indicator"></span>
-          Inj
-        </button>
+        ><span class="hud-dot"></span>Inj</button>
       </div>
       <div class="hud-row">
-        <button class="hud-cmd" onclick={onSeed} use:tooltip={'Seed taxonomy with generated prompts'}>
-          Seed
-        </button>
-        <button
-          class="hud-cmd"
-          onclick={handleRecluster}
-          disabled={reclustering}
-          use:tooltip={TOPOLOGY_TOOLTIPS.recluster}
-        >
-          {reclustering ? '...' : 'Recluster'}
-        </button>
-        <span class="hud-lod" use:tooltip={'Level of detail'}>{lodTier.toUpperCase()}</span>
+        <button class="hud-btn" onclick={onSeed} use:tooltip={'Seed taxonomy with generated prompts'}>Seed</button>
+        <button class="hud-btn" onclick={handleRecluster} disabled={reclustering} use:tooltip={TOPOLOGY_TOOLTIPS.recluster}>{reclustering ? '...' : 'Recluster'}</button>
       </div>
-      <button
-        class="hud-toggle hud-toggle--wide"
-        class:hud-toggle--on={showActivity}
-        style="--hud-accent: var(--color-neon-purple)"
-        onclick={onToggleActivity}
-        use:tooltip={'Toggle taxonomy decision feed'}
-      >
-        <span class="hud-indicator"></span>
-        Activity
-      </button>
+      <div class="hud-row">
+        <button
+          class="hud-btn"
+          class:hud-btn--on={showActivity}
+          style="--hud-accent: var(--color-neon-purple)"
+          onclick={onToggleActivity}
+          use:tooltip={'Toggle taxonomy decision feed'}
+        ><span class="hud-dot"></span>Activity</button>
+      </div>
     </div>
 
     <!-- Status telemetry -->
@@ -127,8 +110,8 @@
         <span class="hud-sep"></span>
         <span class="hud-count" use:tooltip={TAXONOMY_TOOLTIPS.template}>{filteredCounts.template} tmpl</span>
       {/if}
-      <span class="hud-fill"></span>
-      <span class="hud-legend">wire=coh sat=score</span>
+      <span class="hud-sep"></span>
+      <span class="hud-lod" use:tooltip={'Level of detail'}>{lodTier.toUpperCase()}</span>
     </div>
   </div>
 
@@ -175,22 +158,19 @@
     pointer-events: auto;
   }
 
-  /* ── Individual HUD blocks ── */
+  /* ── HUD blocks — borderless floating panels ── */
 
   .hud-block {
     background: color-mix(in srgb, var(--color-bg-primary) 75%, transparent);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    border-left: 1px solid color-mix(in srgb, var(--color-neon-cyan) 12%, transparent);
   }
-
-  /* ── Metrics readout ── */
 
   .hud-metrics {
     /* InfoPanel manages its own padding */
   }
 
-  /* ── Controls block ── */
+  /* ── Controls — uniform button grid ── */
 
   .hud-controls {
     display: flex;
@@ -204,16 +184,17 @@
     gap: 2px;
   }
 
-  /* ── Toggle buttons ── */
-
-  .hud-toggle {
+  /* Single unified button class for all controls */
+  .hud-btn {
     display: flex;
-    align-items: center;
-    gap: 3px;
     flex: 1;
-    padding: 2px 5px;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 22px;
+    padding: 0 6px;
     background: transparent;
-    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 30%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 25%, transparent);
     color: var(--color-text-dim);
     font-family: var(--font-mono);
     font-size: 9px;
@@ -223,70 +204,33 @@
                 background 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .hud-toggle:hover {
+  .hud-btn:hover:not(:disabled) {
     border-color: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 40%, transparent);
     color: var(--color-text-secondary);
   }
 
-  .hud-toggle--on {
+  .hud-btn--on {
     border-color: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 50%, transparent);
     color: var(--color-text-primary);
     background: color-mix(in srgb, var(--hud-accent, var(--color-neon-cyan)) 6%, transparent);
   }
 
-  .hud-toggle--wide {
-    width: 100%;
+  .hud-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
   }
 
-  .hud-indicator {
-    width: 4px;
-    height: 4px;
+  .hud-dot {
+    width: 5px;
+    height: 5px;
     flex-shrink: 0;
     background: var(--hud-accent, var(--color-neon-cyan));
     opacity: 0.25;
     transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .hud-toggle--on .hud-indicator {
+  .hud-btn--on .hud-dot {
     opacity: 1;
-  }
-
-  /* ── Command buttons ── */
-
-  .hud-cmd {
-    flex: 1;
-    padding: 2px 4px;
-    background: transparent;
-    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 30%, transparent);
-    color: var(--color-text-dim);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    cursor: pointer;
-    text-align: center;
-    transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
-                color 150ms cubic-bezier(0.16, 1, 0.3, 1),
-                background 150ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .hud-cmd:hover:not(:disabled) {
-    border-color: color-mix(in srgb, var(--color-neon-cyan) 40%, transparent);
-    color: var(--color-neon-cyan);
-    background: color-mix(in srgb, var(--color-neon-cyan) 5%, transparent);
-  }
-
-  .hud-cmd:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-
-  .hud-lod {
-    font-family: var(--font-mono);
-    font-size: 8px;
-    font-weight: 700;
-    color: var(--color-text-dim);
-    padding: 2px 4px;
-    letter-spacing: 0.08em;
-    flex-shrink: 0;
   }
 
   /* ── Status telemetry ── */
@@ -301,13 +245,8 @@
     color: var(--color-text-dim);
   }
 
-  .hud-count {
-    cursor: default;
-  }
-
-  .hud-count--candidate {
-    color: #7a7a9e;
-  }
+  .hud-count { cursor: default; }
+  .hud-count--candidate { color: #7a7a9e; }
 
   .hud-sep {
     width: 1px;
@@ -316,14 +255,12 @@
     flex-shrink: 0;
   }
 
-  .hud-fill {
-    flex: 1;
-  }
-
-  .hud-legend {
-    font-size: 7px;
-    letter-spacing: 0.03em;
-    color: color-mix(in srgb, var(--color-text-dim) 50%, transparent);
+  .hud-lod {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    font-weight: 700;
+    color: var(--color-text-dim);
+    letter-spacing: 0.08em;
   }
 
   /* ── Search overlay ── */

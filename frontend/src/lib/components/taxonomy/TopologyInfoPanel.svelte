@@ -359,18 +359,27 @@
   .ip-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1px;
+    gap: 0;
     padding: 0;
-    background: var(--color-border-subtle);
+    background: transparent;
   }
 
   .ip-cell {
-    background: var(--color-bg-secondary);
+    background: transparent;
     padding: 3px 6px;
     display: flex;
     justify-content: space-between;
     align-items: baseline;
     cursor: default;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
+  }
+
+  .ip-cell:nth-child(odd) {
+    border-right: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
+  }
+
+  .ip-cell:nth-child(n+3) {
+    border-bottom: none;
   }
 
   .ip-cell-label {
