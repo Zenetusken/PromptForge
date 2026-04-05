@@ -32,8 +32,8 @@
     const d = e.decision;
     // Red — batch-level seed failure only
     if (d === 'seed_failed') return 'var(--color-neon-red)';
-    // Amber — individual prompt failures (expected, fail-forward)
-    if (d === 'seed_prompt_failed') return 'var(--color-neon-yellow)';
+    // Amber — individual prompt failures (expected, fail-forward), dissolution
+    if (d === 'seed_prompt_failed' || d === 'dissolved') return 'var(--color-neon-yellow)';
     // Green — successful operations
     if (d === 'accepted' || d === 'merged' || d === 'merge_into' || d === 'complete'
         || d === 'split_complete' || d === 'archived' || d === 'domain_created'
@@ -167,6 +167,12 @@
       return typeof c.meta_patterns_added === 'number' ? `${c.meta_patterns_added} patterns` : '';
     }
     if (e.op === 'retire') {
+      if (e.decision === 'dissolved') {
+        const label = typeof c.cluster_label === 'string' ? c.cluster_label : '';
+        const coh = typeof c.coherence === 'number' ? `coh=${c.coherence.toFixed(3)}` : '';
+        const mc = typeof c.member_count === 'number' ? `${c.member_count}m` : '';
+        return `${label} ${coh} ${mc} → reassigned`.trim();
+      }
       return typeof c.sibling_label === 'string' ? `→ ${c.sibling_label}` : '';
     }
     if (e.op === 'discover') {

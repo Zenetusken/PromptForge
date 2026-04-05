@@ -67,6 +67,15 @@ SPECTRAL_MIN_GROUP_SIZE = 3             # minimum members per sub-cluster
 # ---------------------------------------------------------------------------
 CANDIDATE_COHERENCE_FLOOR = 0.30        # minimum coherence for promotion
 
+# ---------------------------------------------------------------------------
+# Cluster dissolution
+# ---------------------------------------------------------------------------
+# Small incoherent clusters that can't be split (below SPLIT_MIN_MEMBERS)
+# are dissolved: members reassigned to nearest active cluster, cluster archived.
+DISSOLVE_COHERENCE_CEILING = 0.30       # dissolve if coherence below this
+DISSOLVE_MAX_MEMBERS = 5                # only dissolve clusters with <= N members
+DISSOLVE_MIN_AGE_HOURS = 2              # cluster must be at least N hours old
+
 
 def _utcnow() -> datetime:
     """Naive UTC timestamp — matches SQLAlchemy DateTime() round-trip on SQLite.

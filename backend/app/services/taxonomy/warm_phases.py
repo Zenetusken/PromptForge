@@ -131,6 +131,7 @@ async def _reassign_to_active(
     db: AsyncSession,
     opt_ids: list[str],
     opt_embeddings: list[np.ndarray],
+    exclude_cluster_ids: set[str] | None = None,
 ) -> list[dict]:
     """Reassign optimizations to the nearest active/mature/template cluster.
 
@@ -141,6 +142,8 @@ async def _reassign_to_active(
         db: Active database session.
         opt_ids: Optimization primary-key IDs to reassign.
         opt_embeddings: Corresponding unit-norm embeddings (same order).
+        exclude_cluster_ids: Cluster IDs to exclude from targets (e.g., the
+            dissolving cluster itself).
 
     Returns:
         List of {cluster_id, cluster_label, count} dicts summarizing
@@ -155,7 +158,10 @@ async def _reassign_to_active(
             PromptCluster.state.in_(["active", "mature", "template"])
         )
     )
-    target_clusters: list[PromptCluster] = list(targets_q.scalars().all())
+    target_clusters: list[PromptCluster] = [
+        tc for tc in targets_q.scalars().all()
+        if not exclude_cluster_ids or tc.id not in exclude_cluster_ids
+    ]
     if not target_clusters:
         logger.warning("_reassign_to_active: no stable targets available")
         return []
@@ -1654,6 +1660,101 @@ async def phase_retire(
                     )
                 except RuntimeError:
                     pass
+
+    # --- Dissolution: small incoherent clusters with members ---
+    # These clusters are too small to split (< SPLIT_MIN_MEMBERS) and too
+    # incoherent to be useful. Dissolve them: reassign members to nearest
+    # active cluster, then archive. Uses the same _reassign_to_active()
+    # helper built for candidate rejection.
+    from app.services.taxonomy._constants import (
+        DISSOLVE_COHERENCE_CEILING,
+        DISSOLVE_MAX_MEMBERS,
+        DISSOLVE_MIN_AGE_HOURS,
+    )
+
+    now = _utcnow()
+    for node in active_nodes:
+        mc = node.member_count or 0
+        if mc == 0 or mc > DISSOLVE_MAX_MEMBERS:
+            continue
+        if node.coherence is None or node.coherence >= DISSOLVE_COHERENCE_CEILING:
+            continue
+        # Age guard: don't dissolve newly created clusters (give them time to grow)
+        if node.created_at:
+            try:
+                created = node.created_at
+                # Handle timezone-aware vs naive comparison
+                if hasattr(created, 'tzinfo') and created.tzinfo is not None:
+                    created = created.replace(tzinfo=None)
+                age_hours = (now - created).total_seconds() / 3600
+                if age_hours < DISSOLVE_MIN_AGE_HOURS:
+                    continue
+            except (TypeError, ValueError):
+                pass  # can't determine age, proceed
+
+        # This cluster qualifies for dissolution
+        ops_attempted += 1
+        logger.info(
+            "Dissolving incoherent cluster '%s' (members=%d, coherence=%.3f)",
+            node.label, mc, node.coherence,
+        )
+
+        # Gather member embeddings for reassignment
+        member_q = await db.execute(
+            select(Optimization.id, Optimization.embedding)
+            .where(
+                Optimization.cluster_id == node.id,
+                Optimization.embedding.isnot(None),
+            )
+        )
+        member_rows = member_q.all()
+        opt_ids = [r[0] for r in member_rows]
+        opt_embs = []
+        for _, emb_bytes in member_rows:
+            try:
+                opt_embs.append(np.frombuffer(emb_bytes, dtype=np.float32).copy())
+            except (ValueError, TypeError):
+                opt_embs.append(np.zeros(384, dtype=np.float32))
+
+        # Reassign members to nearest active cluster (exclude self)
+        reassignment_info = await _reassign_to_active(
+            db, opt_ids, opt_embs, exclude_cluster_ids={node.id},
+        )
+
+        # Archive the dissolved cluster
+        node.state = "archived"
+        node.archived_at = now
+        node.member_count = 0
+        ops_accepted += 1
+        operations_log.append({
+            "type": "dissolve",
+            "node_id": node.id,
+            "node_label": node.label,
+            "members_reassigned": len(opt_ids),
+        })
+
+        # Remove from indices
+        await engine._embedding_index.remove(node.id)
+        await engine._transformation_index.remove(node.id)
+        await engine._optimized_index.remove(node.id)
+        embedding_index_mutations += 1
+
+        try:
+            get_event_logger().log_decision(
+                path="warm", op="retire", decision="dissolved",
+                cluster_id=node.id,
+                context={
+                    "cluster_label": node.label,
+                    "coherence": round(node.coherence, 4) if node.coherence is not None else None,
+                    "member_count": len(opt_ids),
+                    "reason": "incoherent_small_cluster",
+                    "coherence_ceiling": DISSOLVE_COHERENCE_CEILING,
+                    "max_members": DISSOLVE_MAX_MEMBERS,
+                    "members_reassigned_to": reassignment_info,
+                },
+            )
+        except RuntimeError:
+            pass
 
     return PhaseResult(
         phase="retire",
