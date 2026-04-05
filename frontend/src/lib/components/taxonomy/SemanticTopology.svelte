@@ -741,7 +741,6 @@
     flex: 0 0 35%;
     min-height: 0;
     overflow: hidden;
-    border-top: 1px solid var(--color-border-subtle);
   }
 
   canvas {

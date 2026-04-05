@@ -209,6 +209,14 @@
     return '';
   }
 
+  function severityLevel(e: TaxonomyActivityEvent): 'error' | 'info' | 'normal' {
+    if (e.op === 'error' || e.decision === 'rejected' || e.decision === 'failed'
+        || e.decision === 'seed_failed' || e.decision === 'candidate_rejected') return 'error';
+    const c = decisionColor(e);
+    if (c === 'var(--color-text-secondary)' || c === 'var(--color-text-dim)') return 'info';
+    return 'normal';
+  }
+
   function formatTs(ts: string): string {
     try {
       const d = new Date(ts);
@@ -307,7 +315,8 @@
   <!-- Event list -->
   <div class="ap-list" bind:this={scrollEl}>
     {#each filtered as ev, i (ev.ts + ev.op + ev.decision + (ev.cluster_id ?? '') + i)}
-      <div class="ap-row">
+      {@const severity = severityLevel(ev)}
+      <div class="ap-row" class:ap-row--error={severity === 'error'} class:ap-row--info={severity === 'info'} style="--row-path-color: {pathColor(ev.path)}">
         <!-- Summary line -->
         <button
           class="ap-row-summary"
@@ -356,118 +365,195 @@
 </div>
 
 <style>
+  /* ══ Mission Control Terminal ══ */
+
   .ap-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--color-bg-secondary);
-    border-top: 1px solid var(--color-border-subtle);
+    background: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border-top: 1px solid color-mix(in srgb, var(--color-neon-purple) 15%, transparent);
     font-family: var(--font-mono);
     overflow: hidden;
   }
 
-  /* -- Header -- */
+  /* ── Header ── */
 
   .ap-header {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 8px;
-    border-bottom: 1px solid var(--color-border-subtle);
+    padding: 5px 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
     flex-shrink: 0;
+    position: relative;
+  }
+
+  .ap-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: color-mix(in srgb, var(--color-neon-purple) 20%, transparent);
   }
 
   .ap-title {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.1em;
-    color: var(--color-text-dim);
+    color: var(--color-text-secondary);
     font-family: var(--font-display);
   }
 
   .ap-count {
     font-size: 9px;
+    font-family: var(--font-mono);
     color: var(--color-text-dim);
-    opacity: 0.6;
+    opacity: 0.7;
+    padding: 1px 4px;
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 50%, transparent);
   }
 
-  .ap-header-spacer {
-    flex: 1;
-  }
+  .ap-header-spacer { flex: 1; }
 
   .ap-pin {
-    padding: 1px 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 18px;
+    padding: 0;
     background: transparent;
-    border: 1px solid var(--color-border-subtle);
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 30%, transparent);
     color: var(--color-text-dim);
     font-size: 10px;
     cursor: pointer;
     line-height: 1;
-    transition: border-color 0.15s, color 0.15s;
+    transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .ap-pin:hover {
-    border-color: var(--color-border-accent);
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 40%, transparent);
     color: var(--color-text-secondary);
   }
 
   .ap-pin.ap-pin-active {
-    border-color: color-mix(in srgb, var(--color-neon-cyan) 40%, transparent);
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 50%, transparent);
     color: var(--color-neon-cyan);
+    background: color-mix(in srgb, var(--color-neon-cyan) 6%, transparent);
   }
 
-  /* -- Filters -- */
+  /* ── Filters ── */
 
   .ap-filters {
-    padding: 3px 8px;
-    border-bottom: 1px solid var(--color-border-subtle);
+    padding: 4px 8px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
     flex-shrink: 0;
-  }
-
-  .ap-chip-row {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 3px;
   }
 
-  .ap-chip {
+  /* Path filter chips — prominent with colored dots */
+  .ap-chip-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .ap-chip-row > .ap-chip {
+    display: flex;
+    align-items: center;
+    gap: 3px;
     padding: 1px 6px;
     background: transparent;
-    border: 1px solid var(--color-border-subtle);
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
     color: var(--color-text-dim);
     font-family: var(--font-mono);
     font-size: 9px;
+    font-weight: 600;
     cursor: pointer;
-    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .ap-chip:hover {
-    border-color: color-mix(in srgb, var(--chip-color, var(--color-neon-cyan)) 30%, transparent);
+  .ap-chip-row > .ap-chip::before {
+    content: '';
+    width: 4px;
+    height: 4px;
+    flex-shrink: 0;
+    background: var(--chip-color, var(--color-text-dim));
+    opacity: 0.4;
+    transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ap-chip-row > .ap-chip:hover {
+    border-color: color-mix(in srgb, var(--chip-color, var(--color-neon-cyan)) 40%, transparent);
     color: var(--color-text-secondary);
   }
 
-  .ap-chip.ap-chip-active {
+  .ap-chip-row > .ap-chip:hover::before { opacity: 0.7; }
+
+  .ap-chip-row > .ap-chip.ap-chip-active {
     border-color: color-mix(in srgb, var(--chip-color, var(--color-neon-cyan)) 50%, transparent);
     color: var(--chip-color, var(--color-neon-cyan));
     background: color-mix(in srgb, var(--chip-color, var(--color-neon-cyan)) 8%, transparent);
   }
 
+  .ap-chip-row > .ap-chip.ap-chip-active::before { opacity: 1; }
+
   .ap-chip-sep {
     width: 1px;
-    height: 10px;
-    background: var(--color-border-subtle);
-    margin: 0 2px;
+    height: 12px;
+    background: color-mix(in srgb, var(--color-text-dim) 20%, transparent);
+    margin: 0 3px;
   }
 
+  /* Op filter chips — smaller, dimmer, subordinate */
   .ap-filter-row {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 2px;
     flex-wrap: wrap;
-    margin-top: 3px;
+    margin-top: 1px;
   }
 
-  /* -- List -- */
+  .ap-filter-row > .ap-chip {
+    padding: 0px 4px;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 25%, transparent);
+    color: var(--color-text-dim);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ap-filter-row > .ap-chip:hover {
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
+    color: var(--color-text-secondary);
+  }
+
+  .ap-filter-row > .ap-chip.ap-chip-active {
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 50%, transparent);
+    color: var(--color-neon-cyan);
+    background: color-mix(in srgb, var(--color-neon-cyan) 6%, transparent);
+  }
+
+  /* ── Event list ── */
 
   .ap-list {
     flex: 1;
@@ -475,16 +561,24 @@
     overflow-x: hidden;
   }
 
-  .ap-list::-webkit-scrollbar {
-    width: 3px;
+  .ap-list::-webkit-scrollbar { width: 3px; }
+  .ap-list::-webkit-scrollbar-track { background: transparent; }
+  .ap-list::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-neon-purple) 20%, transparent);
   }
 
-  .ap-list::-webkit-scrollbar-thumb {
-    background: var(--color-border-subtle);
-  }
+  /* ── Event rows — severity-driven visual weight ── */
 
   .ap-row {
-    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 25%, transparent);
+    border-left: 2px solid var(--row-path-color, transparent);
+  }
+
+  .ap-row--info { opacity: 0.5; }
+  .ap-row--info:hover { opacity: 0.85; }
+
+  .ap-row--error {
+    background: color-mix(in srgb, var(--color-neon-red) 3%, transparent);
   }
 
   .ap-row-summary {
@@ -492,7 +586,7 @@
     align-items: center;
     gap: 5px;
     width: 100%;
-    padding: 3px 8px;
+    padding: 3px 8px 3px 6px;
     background: transparent;
     border: none;
     cursor: pointer;
@@ -500,55 +594,64 @@
     font-family: var(--font-mono);
     font-size: 9px;
     color: var(--color-text-secondary);
-    transition: background 0.1s;
+    transition: background 100ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .ap-row-summary:hover {
-    background: var(--color-bg-hover);
+    background: color-mix(in srgb, var(--color-bg-hover) 60%, transparent);
   }
 
   .ap-ts {
     color: var(--color-text-dim);
     flex-shrink: 0;
     font-size: 8px;
-    min-width: 62px;
+    min-width: 56px;
+    opacity: 0.5;
   }
+
+  .ap-row-summary:hover .ap-ts { opacity: 0.8; }
 
   .ap-badge {
     padding: 0 3px;
-    border: 1px solid currentColor;
     font-size: 8px;
-    opacity: 0.8;
     flex-shrink: 0;
+    font-family: var(--font-mono);
   }
 
   .ap-badge-path {
     min-width: 24px;
     text-align: center;
+    border: 1px solid currentColor;
+    opacity: 0.6;
   }
 
   .ap-badge-op {
     color: var(--color-text-dim);
-    border-color: var(--color-border-subtle);
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 50%, transparent);
+    opacity: 0.5;
   }
 
   .ap-badge-decision {
-    font-weight: 600;
+    font-weight: 700;
+    font-size: 9px;
+    border: none;
+    padding: 0 1px;
+    opacity: 1;
   }
 
   .ap-cluster-link {
     font-family: var(--font-mono);
     font-size: 8px;
     color: var(--color-neon-cyan);
-    opacity: 0.7;
+    opacity: 0;
     cursor: pointer;
     text-decoration: underline dotted;
     flex-shrink: 0;
+    transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .ap-cluster-link:hover {
-    opacity: 1;
-  }
+  .ap-row-summary:hover .ap-cluster-link { opacity: 0.6; }
+  .ap-cluster-link:hover { opacity: 1 !important; }
 
   .ap-metric {
     color: var(--color-text-dim);
@@ -558,46 +661,63 @@
     white-space: nowrap;
     flex: 1;
     min-width: 0;
+    opacity: 0.7;
   }
 
-  /* -- Expanded context -- */
+  /* ── Expanded context — data card ── */
 
   .ap-context {
-    padding: 4px 8px 4px 16px;
-    background: color-mix(in srgb, var(--color-bg-primary) 50%, transparent);
-    border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 40%, transparent);
+    padding: 6px 8px 6px 14px;
+    background: color-mix(in srgb, var(--color-bg-card) 70%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 30%, transparent);
+    border-left: 2px solid var(--row-path-color, var(--color-border-subtle));
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
+    animation: ctx-enter 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes ctx-enter {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   .ap-ctx-row {
     display: flex;
     gap: 8px;
     font-size: 8px;
+    padding: 1px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 15%, transparent);
   }
+
+  .ap-ctx-row:last-child { border-bottom: none; }
 
   .ap-ctx-key {
     color: var(--color-text-dim);
     flex-shrink: 0;
     min-width: 100px;
     font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 7.5px;
   }
 
   .ap-ctx-val {
     color: var(--color-text-secondary);
     word-break: break-all;
     white-space: pre-wrap;
-    font-size: 7.5px;
+    font-size: 8px;
   }
 
-  /* -- Empty state -- */
+  /* ── Empty state ── */
 
   .ap-empty {
-    padding: 12px 8px;
+    padding: 16px 8px;
     font-size: 9px;
     color: var(--color-text-dim);
-    opacity: 0.6;
+    opacity: 0.5;
     text-align: center;
+    font-family: var(--font-display);
+    letter-spacing: 0.05em;
   }
 </style>
