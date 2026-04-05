@@ -66,7 +66,7 @@
 <style>
   .workbench {
     display: grid;
-    grid-template-columns: 36px 260px 1fr 280px;
+    grid-template-columns: 36px 240px 1fr 280px;
     grid-template-rows: 1fr 20px;
     height: 100vh;
     width: 100vw;

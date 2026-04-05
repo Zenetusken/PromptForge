@@ -393,24 +393,25 @@
     display: flex;
     align-items: center;
     height: 24px;
-    padding: 0 6px;
+    padding: 0 4px;
     border-bottom: 1px solid var(--color-border-subtle);
     flex-shrink: 0;
-    gap: 1px;
+    gap: 0;
   }
 
   .state-tab {
     display: flex;
+    flex: 1;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 2px;
     height: 20px;
     line-height: 20px;
-    padding: 0 3px;
+    padding: 0 1px;
     border: 1px solid transparent;
     background: transparent;
     color: var(--color-text-dim);
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     font-family: var(--font-sans);
     cursor: pointer;
@@ -422,8 +423,8 @@
   }
 
   .state-dot {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     flex-shrink: 0;
     background: var(--tab-state-color, var(--color-text-dim));
     transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -435,7 +436,7 @@
 
   .state-tab-label {
     line-height: 1;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
   }
 
   .state-tab:hover {
