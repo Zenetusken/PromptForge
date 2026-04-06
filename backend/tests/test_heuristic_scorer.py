@@ -74,3 +74,62 @@ def test_specificity_with_constraints() -> None:
     )
     score = HeuristicScorer.heuristic_specificity(prompt)
     assert score > 5.0
+
+
+# ---------------------------------------------------------------------------
+# heuristic_clarity (v2 — precision signals + ambiguity, no Flesch)
+# ---------------------------------------------------------------------------
+
+
+def test_clarity_vague_prompt_scores_low() -> None:
+    """Vague prompt with no precision signals should score near base (5.0)."""
+    prompt = "write some code to handle user data"
+    score = HeuristicScorer.heuristic_clarity(prompt)
+    assert score <= 5.5, f"Vague prompt scored {score}, expected <= 5.5"
+
+
+def test_clarity_structured_technical_prompt_scores_high() -> None:
+    """Well-structured technical prompt with constraints should score > 7."""
+    prompt = (
+        "## Task\n"
+        "Write validate_email(addr: str) -> bool.\n\n"
+        "## Requirements\n"
+        "- Must validate against RFC 5322\n"
+        "- Raise ValueError if addr is None\n"
+        "- Return False on invalid format\n\n"
+        "## Output\n"
+        "Python function with type hints."
+    )
+    score = HeuristicScorer.heuristic_clarity(prompt)
+    assert score > 7.0, f"Structured prompt scored {score}, expected > 7.0"
+
+
+def test_clarity_xml_structured_prompt_not_penalized() -> None:
+    """XML-structured prompt should score well (not penalized by Flesch)."""
+    prompt = (
+        "<role>Senior code reviewer</role>\n"
+        "<task>Review the code diff for security vulnerabilities.</task>\n"
+        "<output-format>\n"
+        "- Severity: critical / warning / info\n"
+        "- Location: file:line\n"
+        "</output-format>"
+    )
+    score = HeuristicScorer.heuristic_clarity(prompt)
+    assert score > 6.0, f"XML prompt scored {score}, expected > 6.0"
+
+
+def test_clarity_ambiguity_identifiers_not_penalized() -> None:
+    """Words like 'maybe' inside identifiers should not trigger penalty."""
+    prompt = (
+        "Parse the etc_config field. Use maybe_transform() to coerce null. "
+        "Handle the things_queue from RabbitMQ."
+    )
+    score = HeuristicScorer.heuristic_clarity(prompt)
+    assert score >= 5.0, f"Identifier FP scored {score}, expected >= 5.0"
+
+
+def test_clarity_genuine_ambiguity_penalized() -> None:
+    """Standalone ambiguity words should still reduce clarity."""
+    prompt = "Maybe do something about the stuff. Perhaps try things somehow."
+    score = HeuristicScorer.heuristic_clarity(prompt)
+    assert score < 4.0, f"Ambiguous prompt scored {score}, expected < 4.0"

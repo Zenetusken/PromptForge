@@ -27,8 +27,6 @@ limits==5.8.0
 # File watching
 watchfiles==1.1.1
 
-# Scoring heuristics
-textstat==0.7.13
 
 # Embeddings
 sentence-transformers==5.3.0

@@ -155,41 +155,59 @@ class HeuristicScorer:
 
     @staticmethod
     def heuristic_clarity(prompt: str) -> float:
-        """Clarity via readability score and ambiguity markers.
+        """Clarity via precision signals and ambiguity density.
 
-        Flesch reading ease can go negative for technical text (multi-syllable
-        domain terms like "microservices", "infrastructure").  We clamp Flesch
-        to [0, 100] before mapping to prevent technical prompts from scoring
-        below 3.0.  Structural clarity signals (headers, lists, explicit
-        sections) provide a bonus that compensates for low readability scores
-        in well-structured technical content.
+        Measures how unambiguously the prompt communicates intent.
+        Structural organization gets a light bonus (capped at +1.5 to
+        avoid correlating with the structure dimension).  The core
+        differentiator is precision signals and ambiguity penalties.
         """
-        try:
-            import textstat
-            flesch = textstat.flesch_reading_ease(prompt)
-        except Exception:
-            logger.debug("textstat unavailable for clarity heuristic — using default Flesch score")
-            flesch = 50.0
+        score = 5.0
 
-        # Clamp Flesch to [0, 100] — negative values are common for technical
-        # text and would drag the score below 3.0 unfairly.
-        flesch = max(0.0, min(100.0, flesch))
+        # --- Organizational clarity (capped +1.5) ---
+        has_headers = bool(re.search(r"(?m)^#{1,6}\s+\S", prompt))
+        xml_opens = set(re.findall(r"<([A-Za-z][A-Za-z0-9_-]*)(?:\s[^>]*)?>", prompt))
+        xml_closes = set(re.findall(r"</([A-Za-z][A-Za-z0-9_-]*)>", prompt))
+        xml_pairs = len(xml_opens & xml_closes)
+        list_items = len(re.findall(r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S", prompt))
+        has_sections = has_headers or xml_pairs >= 2 or list_items >= 3
+        if has_sections:
+            score += 1.0
+        if re.search(
+            r"\b(?:output|format|return|json|schema|yaml|xml|markdown)\b",
+            prompt, re.IGNORECASE,
+        ):
+            score += 0.5
 
-        # Map Flesch score (0-100) to our scale (3-9)
-        # Higher Flesch = easier to read = more clear
-        score = 3.0 + (flesch / 100.0) * 6.0
+        # --- Precision signals (up to +3.0) ---
+        precision_checks: list[tuple[str, int]] = [
+            (r"\b(?:must|shall|should)\b", 0),                             # explicit constraints
+            (r"(?:->|:\s*(?:str|int|float|bool|list|dict))\b", 0),        # typed parameters
+            (r"```|^    \S", re.MULTILINE),                                # code blocks / indented code
+            (r"<role>|\byou are\b|^##?\s+role\b", re.IGNORECASE | re.MULTILINE),  # role framing
+            (r"\b(?:raise|error|edge\s*case|handle)\b", re.IGNORECASE),   # error/edge handling
+            (r"\b(?:scope|boundar|limitation|constraint)\b", re.IGNORECASE),  # scoping language
+        ]
+        precision_hits = sum(
+            1 for pat, flags in precision_checks if re.search(pat, prompt, flags)
+        )
+        score += min(precision_hits * 0.5, 3.0)
 
-        # Structural clarity bonus: well-organized prompts with headers and
-        # lists are clear regardless of readability score.
-        if re.search(r"(?m)^#{1,3}\s+\S", prompt):
-            score += 1.5  # Has markdown headers
-        if re.search(r"(?m)^\s*[-*]\s+\S", prompt):
-            score += 0.5  # Has bullet points
-
-        # Penalize ambiguity markers
-        ambiguity = ["maybe", "perhaps", "somehow", "something", "stuff", "things", "etc"]
-        hits = sum(1 for w in ambiguity if w in prompt.lower())
-        score -= hits * 0.5
+        # --- Ambiguity penalty (max -3.0) ---
+        ambiguity_words = [
+            "maybe", "perhaps", "somehow", "something",
+            "stuff", "things", "etc", "possibly",
+        ]
+        ambiguity_hits = 0
+        for word in ambiguity_words:
+            pattern = rf"\b{word}\b(?![_a-zA-Z0-9])"
+            matches = re.findall(pattern, prompt, re.IGNORECASE)
+            for m in matches:
+                start = prompt.lower().find(m.lower())
+                if start > 0 and prompt[start - 1] == "_":
+                    continue
+                ambiguity_hits += 1
+        score -= min(ambiguity_hits * 0.5, 3.0)
 
         return round(max(1.0, min(10.0, score)), 2)
 
