@@ -74,8 +74,8 @@ class TestDimensionScores:
             faithfulness=9.0,
             conciseness=5.0,
         )
-        # mean of [8.0, 6.0, 7.0, 9.0, 5.0] = 35/5 = 7.0
-        assert scores.overall == 7.0
+        # weighted: 8*0.20 + 6*0.20 + 7*0.15 + 9*0.25 + 5*0.20 = 7.1
+        assert scores.overall == 7.1
 
     def test_overall_rounded_to_2_decimals(self):
         _scores = DimensionScores(
@@ -85,7 +85,7 @@ class TestDimensionScores:
             faithfulness=9.0,
             conciseness=5.0,
         )
-        # mean = 35/5 = 7.0 — exact; use a case that needs rounding
+        # weighted mean — use a case that needs rounding
         scores2 = DimensionScores(
             clarity=7.1,
             specificity=8.2,
@@ -93,8 +93,8 @@ class TestDimensionScores:
             faithfulness=9.4,
             conciseness=5.0,
         )
-        # 7.1 + 8.2 + 6.3 + 9.4 + 5.0 = 36.0 / 5 = 7.2
-        assert scores2.overall == 7.2
+        # weighted: 7.1*0.20 + 8.2*0.20 + 6.3*0.15 + 9.4*0.25 + 5.0*0.20 ≈ 7.35
+        assert scores2.overall == 7.35
 
     def test_boundary_values_accepted(self):
         scores = DimensionScores(

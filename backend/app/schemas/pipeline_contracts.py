@@ -22,6 +22,20 @@ from pydantic import BaseModel, Field, model_validator
 # Canonical task type values — must match the analyze.md template prompt
 TaskType = Literal["coding", "writing", "analysis", "creative", "data", "system", "general"]
 
+# ---------------------------------------------------------------------------
+# Dimension weights — canonical definition, imported by score_blender.py
+# ---------------------------------------------------------------------------
+
+DIMENSION_WEIGHTS: dict[str, float] = {
+    "clarity": 0.20,
+    "specificity": 0.20,
+    "structure": 0.15,
+    "faithfulness": 0.25,
+    "conciseness": 0.20,
+}
+
+SCORING_FORMULA_VERSION: int = 2  # v1=equal-weight mean, v2=weighted mean
+
 # Strategy names are now fully adaptive — discovered from prompts/strategies/*.md files.
 # No hardcoded Literal. The analyzer outputs a string validated against available files.
 
@@ -72,9 +86,11 @@ class DimensionScores(BaseModel):
 
     @property
     def overall(self) -> float:
-        """Mean of the five dimension scores, rounded to 2 decimal places."""
-        mean = (self.clarity + self.specificity + self.structure + self.faithfulness + self.conciseness) / 5
-        return round(mean, 2)
+        """Weighted mean of the five dimension scores, rounded to 2 decimal places."""
+        return round(
+            sum(getattr(self, dim) * w for dim, w in DIMENSION_WEIGHTS.items()),
+            2,
+        )
 
     @classmethod
     def compute_deltas(cls, original: "DimensionScores", optimized: "DimensionScores") -> dict[str, float]:

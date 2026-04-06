@@ -171,7 +171,10 @@ async def handle_refine(
         score_deltas = new_turn.deltas if isinstance(new_turn.deltas, dict) else None
         overall_score = None
         if scores:
-            overall_score = round(sum(scores.values()) / max(len(scores), 1), 2)
+            from app.schemas.pipeline_contracts import DIMENSION_WEIGHTS
+            overall_score = round(
+                sum(scores.get(d, 5.0) * w for d, w in DIMENSION_WEIGHTS.items()), 2,
+            )
 
         suggestions = []
         if final_event_data and "suggestions" in final_event_data:

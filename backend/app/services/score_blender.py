@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from app.schemas.pipeline_contracts import DimensionScores
+from app.schemas.pipeline_contracts import DIMENSION_WEIGHTS, DimensionScores
 
 logger = logging.getLogger(__name__)
 
@@ -19,21 +19,13 @@ logger = logging.getLogger(__name__)
 # Higher weight = more trust in the heuristic for that dimension.
 HEURISTIC_WEIGHTS: dict[str, float] = {
     "structure": 0.50,      # Heuristic is very reliable (regex detects headers/lists/tags)
-    "conciseness": 0.40,    # TTR + filler detection is solid
+    "conciseness": 0.20,    # TTR penalizes domain-term repetition in structured prompts; LLM judges density better
     "specificity": 0.40,    # Constraint counting works well
-    "clarity": 0.30,        # Flesch is limited; LLM judges ambiguity better
+    "clarity": 0.40,        # Precision signals + ambiguity detection now reliable
     "faithfulness": 0.20,   # Embedding similarity is rough; LLM evaluates intent better
 }
 
-DIMENSIONS = ("clarity", "specificity", "structure", "faithfulness", "conciseness")
-
-DIMENSION_WEIGHTS: dict[str, float] = {
-    "clarity": 0.25,
-    "specificity": 0.25,
-    "structure": 0.20,
-    "faithfulness": 0.20,
-    "conciseness": 0.10,
-}
+DIMENSIONS = tuple(DIMENSION_WEIGHTS.keys())
 
 # Z-score normalization parameters
 ZSCORE_MIN_SAMPLES = 30       # Minimum sample count for z-score stability (CLT threshold)

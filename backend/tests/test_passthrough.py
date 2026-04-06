@@ -531,11 +531,12 @@ class TestPassthroughScoringLogic:
 
         assert data_specific["scores"]["specificity"] > data_vague["scores"]["specificity"]
 
-    async def test_overall_score_is_mean_of_dimensions(self, app_client):
-        """overall_score = mean of the 5 dimension scores."""
+    async def test_overall_score_is_weighted_mean_of_dimensions(self, app_client):
+        """overall_score = weighted mean of the 5 dimension scores."""
         data = await self._prepare_and_save(app_client, LONG_OPTIMIZED)
         scores = data["scores"]
-        expected = round(sum(scores.values()) / 5, 2)
+        from app.schemas.pipeline_contracts import DIMENSION_WEIGHTS
+        expected = round(sum(scores[d] * w for d, w in DIMENSION_WEIGHTS.items()), 2)
         assert data["overall_score"] == pytest.approx(expected, abs=0.01)
 
     async def test_scoring_mode_is_heuristic(self, app_client):
