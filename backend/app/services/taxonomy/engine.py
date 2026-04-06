@@ -211,14 +211,18 @@ class TaxonomyEngine:
                 )
                 return
 
-            # Idempotency: skip if a 'source' OptimizationPattern already exists
+            # Idempotency: skip if a 'source' OptimizationPattern already exists.
+            # Use .first() to tolerate duplicate source records from
+            # historical race conditions (scalar_one_or_none raises
+            # MultipleResultsFound even with .limit(1) in some SQLAlchemy
+            # edge cases).
             existing = await db.execute(
                 select(OptimizationPattern).where(
                     OptimizationPattern.optimization_id == optimization_id,
                     OptimizationPattern.relationship == "source",
                 )
             )
-            if existing.scalar_one_or_none():
+            if existing.scalars().first():
                 logger.debug(
                     "Skipping taxonomy extraction for %s (already processed)",
                     optimization_id,
@@ -266,7 +270,13 @@ class TaxonomyEngine:
                     select(PromptCluster).where(PromptCluster.id == old_cluster_id)
                 )
                 old_cluster = old_cluster_q.scalar_one_or_none()
-                if old_cluster and old_cluster.state != "archived":
+                if old_cluster is None:
+                    logger.warning(
+                        "Old cluster %s not found during reassignment of opt %s — "
+                        "member_count may be inconsistent",
+                        old_cluster_id, optimization_id,
+                    )
+                elif old_cluster.state != "archived":
                     old_cluster.member_count = max(0, (old_cluster.member_count or 1) - 1)
                     if opt.overall_score is not None and (old_cluster.scored_count or 0) > 0:
                         old_cluster.scored_count = max(0, old_cluster.scored_count - 1)
@@ -315,10 +325,10 @@ class TaxonomyEngine:
                         await self._transformation_index.upsert(
                             cluster.id, transform_vec
                         )
-                except Exception:
-                    logger.debug(
-                        "TransformationIndex upsert failed for cluster %s — ignoring",
-                        cluster.id,
+                except Exception as ti_exc:
+                    logger.warning(
+                        "TransformationIndex upsert failed for cluster %s: %s",
+                        cluster.id, ti_exc,
                     )
 
             # Update OptimizedEmbeddingIndex with running mean of cluster output embeddings
@@ -336,10 +346,10 @@ class TaxonomyEngine:
                         await self._optimized_index.upsert(
                             cluster.id, optimized_vec
                         )
-                except Exception:
-                    logger.debug(
-                        "OptimizedEmbeddingIndex upsert failed for cluster %s — ignoring",
-                        cluster.id,
+                except Exception as oi_exc:
+                    logger.warning(
+                        "OptimizedEmbeddingIndex upsert failed for cluster %s: %s",
+                        cluster.id, oi_exc,
                     )
 
             # 3. Extract meta-patterns
@@ -460,6 +470,13 @@ class TaxonomyEngine:
         # no preemption between check and context manager entry.
         if self._warm_path_lock.locked():
             logger.debug("Warm path skipped — lock already held")
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="skip", decision="lock_held",
+                    context={"reason": "warm_path_lock already held"},
+                )
+            except RuntimeError:
+                pass
             return None
 
         async with self._warm_path_lock:
@@ -761,14 +778,23 @@ class TaxonomyEngine:
         """Full HDBSCAN + UMAP refit — the "defrag" operation.
 
         Acquires the same ``_warm_path_lock`` (cold path is a superset of
-        warm path).  Delegates to :func:`execute_cold_path` which reclusters
-        all PromptCluster embeddings, updates or creates PromptClusters,
-        runs UMAP 3D projection with Procrustes alignment, regenerates
-        OKLab colors, and creates a snapshot.
+        warm path).  Uses skip-if-busy guard matching warm-path pattern —
+        callers handle ``None`` as "lock held, try later".
 
         Returns:
-            ColdPathResult on completion.
+            ColdPathResult on completion, or None if skipped due to lock.
         """
+        if self._warm_path_lock.locked():
+            logger.debug("Cold path skipped — warm/cold lock already held")
+            try:
+                get_event_logger().log_decision(
+                    path="cold", op="skip", decision="lock_held",
+                    context={"reason": "warm_path_lock already held"},
+                )
+            except RuntimeError:
+                pass
+            return None
+
         async with self._warm_path_lock:
             try:
                 return await execute_cold_path(self, db)
