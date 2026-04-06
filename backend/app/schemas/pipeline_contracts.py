@@ -73,7 +73,7 @@ class DimensionScores(BaseModel):
                 raise ValueError(f"{name} must be between 1.0 and 10.0, got {value}")
         return self
 
-    _DIMENSIONS: ClassVar[tuple[str, ...]] = ("clarity", "specificity", "structure", "faithfulness", "conciseness")
+    _DIMENSIONS: ClassVar[tuple[str, ...]] = tuple(DIMENSION_WEIGHTS.keys())
 
     @classmethod
     def from_dict(cls, d: dict[str, float], default: float = 5.0) -> "DimensionScores":

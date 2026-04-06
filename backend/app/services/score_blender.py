@@ -155,7 +155,7 @@ def blend_scores(
                 dim, llm_raw, heur_raw, abs(llm_raw - heur_raw),
             )
 
-    # Overall: weighted mean — conciseness downweighted to prevent compression
+    # Overall: weighted mean (faithfulness 0.25, structure 0.15, rest 0.20)
     overall = round(
         sum(blended[dim] * DIMENSION_WEIGHTS[dim] for dim in DIMENSIONS),
         2,

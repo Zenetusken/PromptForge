@@ -48,6 +48,7 @@ from app.database import async_session_factory
 from app.models import Optimization
 from app.providers.base import LLMProvider, TokenUsage
 from app.schemas.pipeline_contracts import (
+    DIMENSION_WEIGHTS,
     AnalysisResult,
     DimensionScores,
     OptimizationResult,
@@ -1125,14 +1126,10 @@ async def run_sampling_pipeline(
             suggestions=suggestions,
         )
         # Compute weighted improvement score from deltas.
-        # Weights match DIMENSION_WEIGHTS in score_blender.py.
         if deltas:
-            _imp = (
-                deltas.get("clarity", 0) * 0.25
-                + deltas.get("specificity", 0) * 0.25
-                + deltas.get("structure", 0) * 0.20
-                + deltas.get("faithfulness", 0) * 0.20
-                + deltas.get("conciseness", 0) * 0.10
+            _imp = sum(
+                deltas.get(dim, 0) * w
+                for dim, w in DIMENSION_WEIGHTS.items()
             )
             db_opt.improvement_score = round(max(0.0, min(10.0, _imp)), 2)
         db.add(db_opt)

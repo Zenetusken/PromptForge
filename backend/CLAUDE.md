@@ -75,7 +75,7 @@ Shared: `app/utils/sse.py` (`format_sse()`), `app/dependencies/rate_limit.py` (i
 - **Streaming**: optimize/refine use `messages.stream()` to prevent HTTP timeouts (up to 128K tokens)
 - **Explore**: runs when GitHub repo linked AND `enable_explore=True`. Semantic retrieval + single-shot Haiku synthesis
 - **Scoring**: skippable via `enable_scoring` preference (lean mode = 2 LLM calls). A/B randomized presentation + hybrid scoring
-- **Hybrid scoring**: LLM + heuristic blended with dimension weights (structure 50%, conciseness/specificity 40%, clarity 30%, faithfulness 20%). Z-score normalization when ≥10 samples. Divergence flags at >2.5pt gap. Passthrough clamped [1.0, 10.0], excluded from z-score distribution
+- **Hybrid scoring**: LLM + heuristic blended per dimension (structure 50%, specificity 40%, clarity 40%, conciseness/faithfulness 20%). Overall weighted mean (faithfulness 0.25, structure 0.15, rest 0.20). `DIMENSION_WEIGHTS` canonical in `pipeline_contracts.py`. Z-score normalization when ≥30 samples. Divergence flags at >2.5pt gap. Passthrough clamped [1.0, 10.0], excluded from z-score distribution
 - **Passthrough**: `prepare_optimization` assembles prompt → external LLM processes → `save_result` persists with heuristic-only scoring
 
 ## Routing internals

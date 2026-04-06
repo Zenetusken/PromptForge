@@ -16,6 +16,38 @@ class HeuristicScorer:
     """Static scoring utilities for passthrough pipeline validation."""
 
     # ------------------------------------------------------------------
+    # Shared regex patterns (DRY — used by structure, clarity, conciseness)
+    # ------------------------------------------------------------------
+
+    _RE_HEADERS = r"(?m)^#{1,6}\s+\S"
+    _RE_LIST_ITEMS = r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S"
+    _RE_XML_OPEN = r"<([A-Za-z][A-Za-z0-9_-]*)(?:\s[^>]*)?>",
+    _RE_XML_CLOSE = r"</([A-Za-z][A-Za-z0-9_-]*)>"
+    _RE_XML_ANY = r"</?[A-Za-z][A-Za-z0-9_-]*\s*/?>"
+    _RE_FORMAT_MENTION = r"\b(?:output|format|return|json|schema|yaml|xml|markdown)\b"
+
+    @staticmethod
+    def _count_structural_signals(prompt: str) -> dict[str, int]:
+        """Parse structural formatting signals once for reuse across heuristics."""
+        n_headers = len(re.findall(HeuristicScorer._RE_HEADERS, prompt))
+        n_list_items = len(re.findall(HeuristicScorer._RE_LIST_ITEMS, prompt))
+        # XML section pairs: count tags with matching open/close
+        xml_opens = set(re.findall(r"<([A-Za-z][A-Za-z0-9_-]*)(?:\s[^>]*)?>", prompt))
+        xml_closes = set(re.findall(HeuristicScorer._RE_XML_CLOSE, prompt))
+        n_xml_sections = len(xml_opens & xml_closes)
+        n_xml_tags = len(re.findall(HeuristicScorer._RE_XML_ANY, prompt))
+        has_format = bool(re.search(
+            HeuristicScorer._RE_FORMAT_MENTION, prompt, re.IGNORECASE,
+        ))
+        return {
+            "n_headers": n_headers,
+            "n_list_items": n_list_items,
+            "n_xml_sections": n_xml_sections,
+            "n_xml_tags": n_xml_tags,
+            "has_format_mention": has_format,
+        }
+
+    # ------------------------------------------------------------------
     # Structural heuristics
     # ------------------------------------------------------------------
 
@@ -27,48 +59,38 @@ class HeuristicScorer:
         structural signals.  Both bonuses are additive — prompts using
         both patterns for different purposes get credit for each.
         """
+        sig = HeuristicScorer._count_structural_signals(prompt)
         score = 4.0
 
         # --- Markdown headers ---
-        headers = re.findall(r"(?m)^#{1,6}\s+\S", prompt)
-        n_headers = len(headers)
-        if n_headers >= 3:
+        if sig["n_headers"] >= 3:
             score += 2.5
-        elif n_headers >= 2:
+        elif sig["n_headers"] >= 2:
             score += 2.0
-        elif n_headers == 1:
+        elif sig["n_headers"] == 1:
             score += 1.0
 
         # --- XML section pairs (paired open/close tags) ---
-        xml_opens = set(re.findall(r"<([A-Za-z][A-Za-z0-9_-]*)(?:\s[^>]*)?>", prompt))
-        xml_closes = set(re.findall(r"</([A-Za-z][A-Za-z0-9_-]*)>", prompt))
-        xml_sections = len(xml_opens & xml_closes)
-        if xml_sections >= 3:
+        if sig["n_xml_sections"] >= 3:
             score += 2.5
-        elif xml_sections >= 2:
+        elif sig["n_xml_sections"] >= 2:
             score += 2.0
-        elif xml_sections == 1:
+        elif sig["n_xml_sections"] == 1:
             score += 1.0
-        elif len(re.findall(r"</?[A-Za-z][A-Za-z0-9_-]*\s*/?>", prompt)) >= 2:
+        elif sig["n_xml_tags"] >= 2:
             # Unpaired XML tags (e.g., self-closing or data delimiters)
             score += 1.0
 
         # --- List items ---
-        list_items = re.findall(r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S", prompt)
-        n_items = len(list_items)
-        if n_items >= 4:
+        if sig["n_list_items"] >= 4:
             score += 2.0
-        elif n_items >= 2:
+        elif sig["n_list_items"] >= 2:
             score += 1.5
-        elif n_items == 1:
+        elif sig["n_list_items"] == 1:
             score += 0.5
 
         # --- Output format mention ---
-        if re.search(
-            r"\b(?:output|format|return|json|schema|yaml|xml|markdown)\b",
-            prompt,
-            re.IGNORECASE,
-        ):
+        if sig["has_format_mention"]:
             score += 1.0
 
         return round(max(1.0, min(10.0, score)), 2)
@@ -111,8 +133,9 @@ class HeuristicScorer:
         # Structural density bonus: headers and lists compress information.
         # Well-structured prompts with domain-term repetition shouldn't be
         # penalized by low TTR — structure IS conciseness.
-        headers = len(re.findall(r"(?m)^#{1,6}\s+\S", prompt))
-        lists = len(re.findall(r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S", prompt))
+        sig = HeuristicScorer._count_structural_signals(prompt)
+        headers = sig["n_headers"]
+        lists = sig["n_list_items"]
         if headers >= 2 and lists >= 3:
             score += 1.5
         elif headers >= 2 and lists >= 2:
@@ -187,18 +210,11 @@ class HeuristicScorer:
         score = 5.0
 
         # --- Organizational clarity (capped +1.5) ---
-        has_headers = bool(re.search(r"(?m)^#{1,6}\s+\S", prompt))
-        xml_opens = set(re.findall(r"<([A-Za-z][A-Za-z0-9_-]*)(?:\s[^>]*)?>", prompt))
-        xml_closes = set(re.findall(r"</([A-Za-z][A-Za-z0-9_-]*)>", prompt))
-        xml_pairs = len(xml_opens & xml_closes)
-        list_items = len(re.findall(r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S", prompt))
-        has_sections = has_headers or xml_pairs >= 2 or list_items >= 3
+        sig = HeuristicScorer._count_structural_signals(prompt)
+        has_sections = sig["n_headers"] >= 1 or sig["n_xml_sections"] >= 2 or sig["n_list_items"] >= 3
         if has_sections:
             score += 1.0
-        if re.search(
-            r"\b(?:output|format|return|json|schema|yaml|xml|markdown)\b",
-            prompt, re.IGNORECASE,
-        ):
+        if sig["has_format_mention"]:
             score += 0.5
 
         # --- Precision signals (up to +3.0) ---
@@ -207,7 +223,8 @@ class HeuristicScorer:
             (r"(?:->|:\s*(?:str|int|float|bool|list|dict))\b", 0),        # typed parameters
             (r"```|^    \S", re.MULTILINE),                                # code blocks / indented code
             (r"<role>|\byou are\b|^##?\s+role\b", re.IGNORECASE | re.MULTILINE),  # role framing
-            (r"\b(?:raise|error|edge\s*case)\b|\bhandle\s+(?:error|exception|failure|edge)", re.IGNORECASE),   # error/edge handling
+            (r"\b(?:raise|error|edge\s*case)\b|\bhandle\s+(?:error|exception|failure|edge)",  # error/edge handling
+             re.IGNORECASE),
             (r"\b(?:scope|boundar|limitation|constraint)\b", re.IGNORECASE),  # scoping language
         ]
         precision_hits = sum(

@@ -233,15 +233,13 @@ async def run_single_prompt(
             deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
             scoring_mode = "hybrid"
 
-        # Improvement score (matches pipeline.py weights)
+        # Improvement score — weights from single source of truth
         improvement_score: float | None = None
         if deltas:
-            _imp = (
-                deltas.get("clarity", 0) * 0.25
-                + deltas.get("specificity", 0) * 0.25
-                + deltas.get("structure", 0) * 0.20
-                + deltas.get("faithfulness", 0) * 0.20
-                + deltas.get("conciseness", 0) * 0.10
+            from app.schemas.pipeline_contracts import DIMENSION_WEIGHTS
+            _imp = sum(
+                deltas.get(dim, 0) * w
+                for dim, w in DIMENSION_WEIGHTS.items()
             )
             improvement_score = round(max(0.0, min(10.0, _imp)), 2)
 
@@ -257,14 +255,14 @@ async def run_single_prompt(
         try:
             opt_vec = await embedding_service.aembed_single(optimization.optimized_prompt)
             opt_embedding = opt_vec.astype("float32").tobytes()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Optimized embedding failed for prompt %d: %s", prompt_index, exc)
         try:
             diff_text = f"{raw_prompt} → {optimization.optimized_prompt}"
             xfm_vec = await embedding_service.aembed_single(diff_text)
             xfm_embedding = xfm_vec.astype("float32").tobytes()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Transformation embedding failed for prompt %d: %s", prompt_index, exc)
 
         duration_ms = int((time.monotonic() - t0) * 1000)
         task_type = (
@@ -447,8 +445,8 @@ async def run_batch(
                         1 for r in results if r is not None and r.status == "failed"
                     ),
                 })
-            except Exception:
-                pass
+            except Exception as _bus_exc:
+                logger.debug("seed_batch_progress publish failed: %s", _bus_exc)
 
             if on_progress:
                 on_progress(index, len(prompts), result)
@@ -667,8 +665,8 @@ async def batch_taxonomy_assign(
             "batch_id": batch_id,
             "clusters_created": clusters_created,
         })
-    except Exception:
-        pass
+    except Exception as _bus_exc:
+        logger.warning("taxonomy_changed publish failed after batch seed: %s", _bus_exc)
 
     logger.info(
         "Taxonomy assign: %d clusters (%d new), domains=%s (%dms)",
