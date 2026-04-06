@@ -51,8 +51,9 @@ export const BEAM_FRAGMENT_SHADER = /* glsl */ `
     float energy = 0.6 + 0.4 * pulse;
     float radial = abs(vUv.y - 0.5) * 2.0;
     float falloff = 1.0 - smoothstep(0.0, 1.0, radial * uThickness);
+    // Energy modulates alpha only — color stays at defined palette values
     float alpha = energy * falloff * uOpacity;
-    gl_FragColor = vec4(color * energy, alpha);
+    gl_FragColor = vec4(color, alpha);
   }
 `;
 
