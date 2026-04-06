@@ -30,14 +30,6 @@ export class BeamPool {
     return beam;
   }
 
-  get activeCount(): number {
-    let count = 0;
-    for (const b of this._beams) {
-      if (b.state !== 'idle') count++;
-    }
-    return count;
-  }
-
   update(delta: number, camera: THREE.PerspectiveCamera): void {
     this._origin.copy(this._ndcOrigin).unproject(camera);
     for (const beam of this._beams) {

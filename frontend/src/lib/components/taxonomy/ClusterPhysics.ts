@@ -69,11 +69,4 @@ export class ClusterPhysics {
   clear(): void {
     this._states.clear();
   }
-
-  isActive(nodeId: string): boolean {
-    const state = this._states.get(nodeId);
-    if (!state) return false;
-    return state.rippleIntensity > RIPPLE_EPSILON ||
-      Math.abs(state.targetScale - state.baseScale) > 0.001;
-  }
 }

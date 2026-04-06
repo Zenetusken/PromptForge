@@ -412,6 +412,17 @@
       }
     }
 
+    // Reconcile physics state with actual data-driven node sizes.
+    // Speculative accretion growth may have drifted from real member counts —
+    // setBaseScale snaps physics to the authoritative data on each rebuild.
+    if (clusterPhysics) {
+      for (const node of data.nodes) {
+        if (node.state !== 'domain') {
+          clusterPhysics.setBaseScale(node.id, node.size);
+        }
+      }
+    }
+
     // Re-add beam pool to scene (protected from disposal above)
     if (beamPool) {
       renderer.scene.add(beamPool.group);
@@ -624,8 +635,8 @@
         }
 
         // Fire beams at clusters that grew (post-optimization or post-seed)
+        const isSeedBatch = _seedBatchActive;
         if (_prevNodeSizes.size > 0 && beamPool && renderer) {
-          const isSeedBatch = _seedBatchActive;
           let firedCount = 0;
           for (const node of sceneData.nodes) {
             if (node.state === 'domain') continue;
@@ -647,8 +658,10 @@
             }
           }
           _prevNodeSizes.clear();
-          if (isSeedBatch) _seedBatchActive = false;
         }
+        // Always clear seed flag after tree rebuild — prevents contaminating
+        // future optimize beams if seed batch had no detectable growth
+        if (isSeedBatch) _seedBatchActive = false;
       });
     }
   });
@@ -685,12 +698,21 @@
     return () => window.removeEventListener('optimization-event', onOptimization);
   });
 
-  // Seed batch tracking — flag active seed for beam burst parameters
+  // Seed batch tracking — flag active seed AND snapshot sizes on first event.
+  // Individual optimization_created events may not fire during batch seeding
+  // (bulk persist model), so we snapshot here.
   $effect(() => {
     if (!beamPool || !renderer) return;
     function onSeedProgress(e: Event) {
       const detail = (e as CustomEvent).detail;
       if (!detail) return;
+      // Only snapshot once per batch (first event)
+      if (!_seedBatchActive) {
+        _prevNodeSizes.clear();
+        for (const [id, node] of _sceneNodeMap) {
+          _prevNodeSizes.set(id, node.size);
+        }
+      }
       _seedBatchActive = true;
     }
     window.addEventListener('seed-batch-progress', onSeedProgress);
