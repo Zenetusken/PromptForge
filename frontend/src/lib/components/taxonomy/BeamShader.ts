@@ -42,7 +42,10 @@ export const BEAM_FRAGMENT_SHADER = /* glsl */ `
   varying vec2 vUv;
 
   void main() {
-    vec3 color = mix(uColorStart, uColorEnd, vUv.x);
+    // Gradient: domain color dominant (70% of beam), fading to cyan at camera end.
+    // pow() biases the mix toward uColorEnd (target) for most of the beam length.
+    float colorT = pow(vUv.x, 0.4);
+    vec3 color = mix(uColorStart, uColorEnd, colorT);
     float scroll = vUv.x - uTime * uFlowSpeed;
     float pulse = 0.5 + 0.5 * sin(scroll * 12.0);
     float energy = 0.6 + 0.4 * pulse;

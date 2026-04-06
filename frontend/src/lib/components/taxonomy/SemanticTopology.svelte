@@ -627,7 +627,7 @@
               if (!group || !beamPool || !renderer) return;
               beamPool.acquire(group, {
                 colorEnd: new THREE.Color(node.color),
-                radius: 0.03,
+                radius: 0.015 + node.size * 0.012, // scale with cluster size
                 sustainMs: 200,
               }, renderer.camera);
             }, i * 50);
@@ -646,9 +646,10 @@
               if (group) {
                 setTimeout(() => {
                   if (!beamPool || !renderer) return;
+                  const nodeRadius = 0.02 + node.size * 0.015;
                   beamPool.acquire(group, {
                     colorEnd: new THREE.Color(node.color),
-                    radius: isSeedBatch ? 0.12 : 0.04,
+                    radius: isSeedBatch ? nodeRadius * 2.0 : nodeRadius,
                     sustainMs: isSeedBatch ? 600 : 800,
                   }, renderer.camera);
                   clusterPhysics?.onBeamImpact(node.id, node.size);
