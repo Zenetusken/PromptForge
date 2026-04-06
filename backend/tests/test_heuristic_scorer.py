@@ -190,3 +190,22 @@ def test_specificity_multiple_constraints_score_higher() -> None:
     assert multiple_score > single_score, (
         f"Multiple={multiple_score} should exceed Single={single_score}"
     )
+
+
+# ---------------------------------------------------------------------------
+# heuristic_conciseness (v2 — minimum information gate)
+# ---------------------------------------------------------------------------
+
+
+def test_conciseness_vague_short_prompt_capped() -> None:
+    """Very short vague prompts should not score high on conciseness."""
+    prompt = "write some code to handle user data"
+    score = HeuristicScorer.heuristic_conciseness(prompt)
+    assert score < 6.0, f"7-word vague prompt scored {score}, expected < 6.0"
+
+
+def test_conciseness_short_but_dense_still_reasonable() -> None:
+    """Short prompts that ARE dense should score moderately."""
+    prompt = "sum_list(numbers: list[float]) -> float. Sum of elements. Empty returns 0.0."
+    score = HeuristicScorer.heuristic_conciseness(prompt)
+    assert score >= 5.0, f"Dense short prompt scored {score}, expected >= 5.0"

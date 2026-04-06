@@ -121,6 +121,12 @@ class HeuristicScorer:
             matches = re.findall(pattern, prompt, re.IGNORECASE)
             score -= 0.8 * len(matches)
 
+        # Minimum information gate: short prompts get a ceiling.
+        # Brevity without substance is not conciseness.
+        if total < 15:
+            ceiling = 4.0 + (total / 15) * 4.0
+            score = min(score, ceiling)
+
         return round(max(1.0, min(10.0, score)), 2)
 
     @staticmethod
