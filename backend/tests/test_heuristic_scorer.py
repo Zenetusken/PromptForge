@@ -1,35 +1,6 @@
 """Tests for HeuristicScorer — TDD: tests written before implementation."""
 
-import pytest
-
 from app.services.heuristic_scorer import HeuristicScorer
-
-# ---------------------------------------------------------------------------
-# apply_bias_correction
-# ---------------------------------------------------------------------------
-
-
-def test_applies_default_discount() -> None:
-    """8.0 * 0.85 = 6.8 with default factor."""
-    scores = {"clarity": 8.0, "specificity": 8.0}
-    result = HeuristicScorer.apply_bias_correction(scores)
-    assert result["clarity"] == pytest.approx(6.8, abs=0.01)
-    assert result["specificity"] == pytest.approx(6.8, abs=0.01)
-
-
-def test_custom_factor() -> None:
-    """10.0 * 0.9 = 9.0 with explicit factor."""
-    scores = {"clarity": 10.0}
-    result = HeuristicScorer.apply_bias_correction(scores, factor=0.9)
-    assert result["clarity"] == pytest.approx(9.0, abs=0.01)
-
-
-def test_scores_clamped_to_minimum() -> None:
-    """1.0 * 0.85 = 0.85 → clamped to 1.0."""
-    scores = {"clarity": 1.0}
-    result = HeuristicScorer.apply_bias_correction(scores, factor=0.85)
-    assert result["clarity"] == pytest.approx(1.0, abs=0.01)
-
 
 # ---------------------------------------------------------------------------
 # heuristic_structure

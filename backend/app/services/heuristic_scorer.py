@@ -9,40 +9,11 @@ from __future__ import annotations
 import logging
 import re
 
-from app.config import settings
-
 logger = logging.getLogger(__name__)
 
 
 class HeuristicScorer:
     """Static scoring utilities for passthrough pipeline validation."""
-
-    # ------------------------------------------------------------------
-    # Bias correction
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def apply_bias_correction(
-        scores: dict[str, float],
-        factor: float | None = None,
-    ) -> dict[str, float]:
-        """Apply a discount factor to LLM self-ratings to correct for overconfidence.
-
-        Args:
-            scores: Mapping of dimension name → raw LLM score.
-            factor: Multiplicative discount. Defaults to ``settings.BIAS_CORRECTION_FACTOR``
-                    (0.85 = 15 % discount).
-
-        Returns:
-            New dict with each score multiplied by *factor*, clamped to [1.0, 10.0],
-            and rounded to 2 decimal places.
-        """
-        if factor is None:
-            factor = settings.BIAS_CORRECTION_FACTOR
-        return {
-            dim: round(max(1.0, min(10.0, score * factor)), 2)
-            for dim, score in scores.items()
-        }
 
     # ------------------------------------------------------------------
     # Structural heuristics
@@ -133,11 +104,17 @@ class HeuristicScorer:
         # Base 6.0 + TTR adjustment (0.5 midpoint for long prompts)
         score = 6.0 + (ttr - 0.5) * 4.0
 
-        # Structural density bonus: headers and lists compress information
+        # Structural density bonus: headers and lists compress information.
+        # Well-structured prompts with domain-term repetition shouldn't be
+        # penalized by low TTR — structure IS conciseness.
         headers = len(re.findall(r"(?m)^#{1,6}\s+\S", prompt))
         lists = len(re.findall(r"(?m)^\s*[-*+]\s+\S|^\s*\d+\.\s+\S", prompt))
-        if headers >= 2 and lists >= 2:
+        if headers >= 2 and lists >= 3:
+            score += 1.5
+        elif headers >= 2 and lists >= 2:
             score += 1.0
+        elif headers >= 1 and lists >= 2:
+            score += 0.5
 
         # Filler penalty
         for pattern in fillers:

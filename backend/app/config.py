@@ -66,11 +66,6 @@ class Settings(BaseSettings):
         default="60/minute", description="Default rate limit for unlabeled endpoints.",
     )
 
-    # --- Passthrough ---
-    BIAS_CORRECTION_FACTOR: float = Field(
-        default=0.85, description="Multiplicative bias correction for passthrough self-rated scores (0.0-1.0).",
-    )
-
     # --- Context Budget ---
     MAX_CONTEXT_TOKENS: int = Field(
         default=80000, description="Maximum token budget for assembled optimization context.",
