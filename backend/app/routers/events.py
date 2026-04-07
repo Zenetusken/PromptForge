@@ -50,8 +50,29 @@ async def publish_event(body: InternalEventRequest, request: Request) -> OkRespo
         try:
             from app.services.taxonomy.event_logger import get_event_logger
             get_event_logger()._buffer.append(body.data)
-        except (RuntimeError, Exception):
-            pass  # Non-fatal
+        except RuntimeError:
+            # Event logger not yet initialized — lazy-init with defaults
+            # so the ring buffer starts capturing immediately instead of
+            # silently dropping events that arrive before lifespan completes.
+            try:
+                from app.services.taxonomy.event_logger import TaxonomyEventLogger, set_event_logger
+                _tel = TaxonomyEventLogger(publish_to_bus=False)
+                set_event_logger(_tel)
+                _tel._buffer.append(body.data)
+                logger.info(
+                    "taxonomy_activity received before lifespan init "
+                    "— lazy-initialized event logger for ring buffer"
+                )
+            except Exception as _init_exc:
+                logger.warning(
+                    "Failed to lazy-init event logger for ring buffer: %s",
+                    _init_exc,
+                )
+        except Exception as _mirror_exc:
+            logger.warning(
+                "Failed to mirror taxonomy_activity to ring buffer: %s",
+                _mirror_exc,
+            )
 
     return OkResponse()
 

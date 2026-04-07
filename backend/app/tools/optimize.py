@@ -164,7 +164,11 @@ async def handle_optimize(
         # Forward key pipeline events to the event bus so the web UI
         # shows live progress (phase transitions, scores, model IDs)
         # when the optimization is triggered from the IDE via MCP.
-        forward_events = {"status", "score_card", "prompt_preview", "optimization_start", "suggestions"}
+        # Note: events are prefixed with "optimization_" for the event bus,
+        # so "status" → "optimization_status", etc.
+        forward_events = {"status", "score_card", "prompt_preview", "suggestions"}
+        # optimization_start already has the prefix — forward without double-prefixing.
+        forward_verbatim = {"optimization_start"}
 
         result = None
         # Resolve domain resolver for the internal pipeline
@@ -190,6 +194,8 @@ async def handle_optimize(
         ):
             if event.event in forward_events:
                 await notify_event_bus(f"optimization_{event.event}", event.data)
+            elif event.event in forward_verbatim:
+                await notify_event_bus(event.event, event.data)
             if event.event == "optimization_complete":
                 result = event.data
             elif event.event == "error":

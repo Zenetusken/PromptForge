@@ -1,6 +1,7 @@
 """Pydantic response models for the unified cluster API."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -137,7 +138,7 @@ class ReclusterResponse(BaseModel):
 class ClusterUpdateRequest(BaseModel):
     intent_label: str | None = None
     domain: str | None = None
-    state: str | None = None
+    state: Literal["candidate", "active", "mature", "template", "archived", "domain"] | None = None
 
 
 class SimilarityEdge(BaseModel):

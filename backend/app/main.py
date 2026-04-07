@@ -302,6 +302,18 @@ async def lifespan(app: FastAPI):
                     await _wms_db.commit()
             except Exception:
                 pass
+            # Startup: ensure created_at index on taxonomy_snapshots
+            try:
+                async with async_session_factory() as _idx_db:
+                    await _idx_db.execute(
+                        _text_gsc(
+                            "CREATE INDEX IF NOT EXISTS ix_taxonomy_snapshot_created_at "
+                            "ON taxonomy_snapshots (created_at DESC)"
+                        )
+                    )
+                    await _idx_db.commit()
+            except Exception:
+                pass
 
             # One-time backfill: embed optimized_prompt + transformation for existing rows
             import numpy as np

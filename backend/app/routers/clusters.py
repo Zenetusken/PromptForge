@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.exc import OperationalError
+
 from app.config import settings
 from app.database import get_db
 from app.dependencies.rate_limit import RateLimit
@@ -82,7 +84,7 @@ class UpdateClusterResponse(BaseModel):
 @router.get("/api/clusters/tree")
 async def get_cluster_tree(
     request: Request,
-    min_persistence: float = 0.0,
+    min_persistence: float = Query(0.0, ge=0.0, le=1.0),
     db: AsyncSession = Depends(get_db),
 ) -> ClusterTreeResponse:
     """Flat node list for 3D topology visualization."""
@@ -91,6 +93,9 @@ async def get_cluster_tree(
         engine = _get_engine(request)
         nodes = await engine.get_tree(db, min_persistence=min_persistence)
         return ClusterTreeResponse(nodes=[ClusterNode(**n) for n in nodes])
+    except OperationalError as exc:
+        logger.warning("GET /api/clusters/tree DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("GET /api/clusters/tree failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Failed to load cluster tree") from exc
@@ -110,6 +115,9 @@ async def get_cluster_stats(
         # Map total_families -> total_clusters for the unified schema
         total_clusters = data.pop("total_families", 0)
         return ClusterStats(total_clusters=total_clusters, **data)
+    except OperationalError as exc:
+        logger.warning("GET /api/clusters/stats DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("GET /api/clusters/stats failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Failed to load cluster stats") from exc
@@ -131,6 +139,9 @@ async def get_similarity_edges(
                 for a, b, s in pairs
             ]
         )
+    except OperationalError as exc:
+        logger.warning("GET /api/clusters/similarity-edges DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("GET /api/clusters/similarity-edges failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Failed to compute similarity edges") from exc
@@ -190,6 +201,9 @@ async def get_injection_edges(
         ]
 
         return InjectionEdgesResponse(edges=edges)
+    except OperationalError as exc:
+        logger.warning("GET /api/clusters/injection-edges DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("GET /api/clusters/injection-edges failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Failed to load injection edges") from exc
@@ -204,51 +218,58 @@ async def get_cluster_templates(
     _rate: None = Depends(RateLimit(lambda: settings.DEFAULT_RATE_LIMIT)),
 ) -> ClusterListResponse:
     """List clusters with state=template, sorted by avg_score descending."""
-    query = (
-        select(PromptCluster)
-        .where(PromptCluster.state == "template")
-        .order_by(PromptCluster.avg_score.desc())
-    )
-    count_query = select(func.count(PromptCluster.id)).where(
-        PromptCluster.state == "template"
-    )
-    total = (await db.execute(count_query)).scalar() or 0
-    result = await db.execute(query.offset(offset).limit(limit))
-    clusters = result.scalars().all()
-
-    items = [
-        ClusterNode(
-            id=c.id,
-            parent_id=c.parent_id,
-            label=c.label,
-            state=c.state,
-            domain=c.domain,
-            task_type=c.task_type,
-            persistence=c.persistence,
-            coherence=c.coherence,
-            separation=c.separation,
-            stability=c.stability,
-            member_count=c.member_count or 0,
-            usage_count=c.usage_count or 0,
-            avg_score=c.avg_score,
-            color_hex=c.color_hex,
-            umap_x=c.umap_x,
-            umap_y=c.umap_y,
-            umap_z=c.umap_z,
-            preferred_strategy=c.preferred_strategy,
-            created_at=c.created_at,
+    try:
+        query = (
+            select(PromptCluster)
+            .where(PromptCluster.state == "template")
+            .order_by(PromptCluster.avg_score.desc())
         )
-        for c in clusters
-    ]
+        count_query = select(func.count(PromptCluster.id)).where(
+            PromptCluster.state == "template"
+        )
+        total = (await db.execute(count_query)).scalar() or 0
+        result = await db.execute(query.offset(offset).limit(limit))
+        clusters = result.scalars().all()
 
-    return ClusterListResponse(
-        total=total,
-        count=len(items),
-        offset=offset,
-        has_more=offset + len(items) < total,
-        next_offset=offset + len(items) if offset + len(items) < total else None,
-        items=items,
-    )
+        items = [
+            ClusterNode(
+                id=c.id,
+                parent_id=c.parent_id,
+                label=c.label,
+                state=c.state,
+                domain=c.domain,
+                task_type=c.task_type,
+                persistence=c.persistence,
+                coherence=c.coherence,
+                separation=c.separation,
+                stability=c.stability,
+                member_count=c.member_count or 0,
+                usage_count=c.usage_count or 0,
+                avg_score=c.avg_score,
+                color_hex=c.color_hex,
+                umap_x=c.umap_x,
+                umap_y=c.umap_y,
+                umap_z=c.umap_z,
+                preferred_strategy=c.preferred_strategy,
+                created_at=c.created_at,
+            )
+            for c in clusters
+        ]
+
+        return ClusterListResponse(
+            total=total,
+            count=len(items),
+            offset=offset,
+            has_more=offset + len(items) < total,
+            next_offset=offset + len(items) if offset + len(items) < total else None,
+            items=items,
+        )
+    except OperationalError as exc:
+        logger.warning("GET /api/clusters/templates DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
+    except Exception as exc:
+        logger.error("GET /api/clusters/templates failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to load cluster templates") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +431,9 @@ async def get_cluster_detail(
         )
     except HTTPException:
         raise
+    except OperationalError as exc:
+        logger.warning("GET /api/clusters/%s DB contention: %s", cluster_id, exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("GET /api/clusters/%s failed: %s", cluster_id, exc, exc_info=True)
         raise HTTPException(500, "Failed to load cluster detail") from exc
@@ -454,7 +478,16 @@ async def update_cluster(
         cluster.state = body.state
         logger.info("Cluster state changed: id=%s '%s' -> '%s'", cluster_id, old_state, body.state)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except OperationalError as exc:
+        await db.rollback()
+        logger.warning("Cluster update DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.warning("Cluster update failed: %s", exc)
+        raise HTTPException(409, "Update conflicts with existing data") from exc
 
     return UpdateClusterResponse(
         id=cluster.id,
@@ -499,6 +532,9 @@ async def match_cluster(
         match_dict["similarity"] = result.similarity
 
         return ClusterMatchResponse(match=match_dict)
+    except OperationalError as exc:
+        logger.warning("Cluster match DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("Cluster match failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Cluster matching failed") from exc
@@ -528,6 +564,9 @@ async def trigger_recluster(
             nodes_updated=result.nodes_updated,
             umap_fitted=result.umap_fitted,
         )
+    except OperationalError as exc:
+        logger.warning("Manual recluster DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("Manual recluster failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Recluster failed") from exc
@@ -544,6 +583,9 @@ async def repair_integrity(
         result = await engine.repair_data_integrity(db)
         await db.commit()
         return {"status": "completed", **result}
+    except OperationalError as exc:
+        logger.warning("Data integrity repair DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("Data integrity repair failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Repair failed") from exc
@@ -565,6 +607,9 @@ async def reassign_clusters(
         result = await engine.reassign_all_clusters(db)
         await db.commit()
         return {"status": "completed", **result}
+    except OperationalError as exc:
+        logger.warning("Cluster reassignment DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("Cluster reassignment failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Cluster reassignment failed") from exc
@@ -620,6 +665,9 @@ async def backfill_scores(
         await db.commit()
         logger.info("Score backfill completed: %d clusters updated", updated)
         return {"status": "completed", "clusters_updated": updated}
+    except OperationalError as exc:
+        logger.warning("Score backfill DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
     except Exception as exc:
         logger.error("Score backfill failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Score backfill failed") from exc

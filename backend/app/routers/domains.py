@@ -10,6 +10,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -25,24 +26,35 @@ router = APIRouter(prefix="/api/domains", tags=["domains"])
 @router.get("", response_model=list[DomainInfo])
 async def list_domains(db: AsyncSession = Depends(get_db)) -> list[DomainInfo]:
     """List all active domain nodes with colors and metadata."""
-    result = await db.execute(
-        select(PromptCluster)
-        .where(PromptCluster.state == "domain")
-        .order_by(PromptCluster.label)
-    )
-    from app.services.taxonomy.cluster_meta import read_meta
-
-    return [
-        DomainInfo(
-            id=d.id,
-            label=d.label,
-            color_hex=d.color_hex or "#7a7a9e",
-            member_count=d.member_count,
-            avg_score=d.avg_score,
-            source=read_meta(d.cluster_metadata)["source"],
+    try:
+        result = await db.execute(
+            select(PromptCluster)
+            .where(PromptCluster.state == "domain")
+            .order_by(PromptCluster.label)
         )
-        for d in result.scalars()
-    ]
+        from app.services.taxonomy.cluster_meta import read_meta
+
+        domains = []
+        for d in result.scalars():
+            try:
+                source = read_meta(d.cluster_metadata)["source"]
+            except Exception:
+                source = "unknown"
+            domains.append(DomainInfo(
+                id=d.id,
+                label=d.label,
+                color_hex=d.color_hex or "#7a7a9e",
+                member_count=d.member_count,
+                avg_score=d.avg_score,
+                source=source,
+            ))
+        return domains
+    except OperationalError as exc:
+        logger.warning("GET /api/domains DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
+    except Exception as exc:
+        logger.error("GET /api/domains failed: %s", exc, exc_info=True)
+        raise HTTPException(500, "Failed to load domains") from exc
 
 
 @router.post("/{domain_id}/promote", response_model=DomainInfo)
@@ -116,7 +128,16 @@ async def promote_to_domain(
         proposed_by_snapshot=None,
         signal_member_count_at_generation=0,
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except OperationalError as exc:
+        await db.rollback()
+        logger.warning("Domain promote DB contention: %s", exc)
+        raise HTTPException(503, "Database busy — retry in a moment") from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.warning("Domain promote failed: %s", exc)
+        raise HTTPException(409, f"Domain '{cluster.label}' already exists (concurrent create)") from exc
 
     logger.info("Cluster %s promoted to domain: label='%s'", domain_id, cluster.label)
 

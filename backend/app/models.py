@@ -216,6 +216,10 @@ class TaxonomySnapshot(Base):
     # Legacy flag — marks snapshots from pre-PromptCluster era
     legacy = Column(Boolean, nullable=False, default=False)
 
+    __table_args__ = (
+        Index("ix_taxonomy_snapshot_created_at", created_at.desc()),
+    )
+
 
 # --- Ported tables (GitHub/Embedding) ---
 # These match the v2 schema closely to minimize friction when porting services in Phase 2.

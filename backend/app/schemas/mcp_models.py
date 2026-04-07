@@ -617,3 +617,20 @@ class HealthOutput(BaseModel):
         description="Maximum allowed domain nodes (DOMAIN_COUNT_CEILING=30). "
         "When domain_count >= domain_ceiling, new domain creation is suppressed.",
     )
+
+
+class ExplainResult(BaseModel):
+    """Output for synthesis_explain — plain-English optimization summary."""
+
+    summary: str = Field(
+        description="1-2 sentence plain-English overview of what improved and why.",
+    )
+    changes: list[str] = Field(
+        description="3-5 bullet points describing specific changes in non-technical language.",
+    )
+    strategy_used: str = Field(
+        description="Strategy name with a lay-audience description of the approach.",
+    )
+    score_delta: float = Field(
+        description="Overall score improvement (positive = better).",
+    )

@@ -14,8 +14,10 @@ logger = logging.getLogger(__name__)
 _SHUTDOWN_SENTINEL = object()
 
 # Replay buffer size — keeps the last N events for SSE reconnection replay.
-# ~200 events × ~1KB each ≈ 200KB memory, negligible.
-_REPLAY_BUFFER_SIZE = 200
+# During warm-path bursts, 30+ events per phase can churn through quickly,
+# causing reconnecting clients to miss events if the buffer is too small.
+# ~500 events × ~1KB each ≈ 500KB memory, negligible.
+_REPLAY_BUFFER_SIZE = 500
 
 
 class EventBus:

@@ -389,8 +389,10 @@ class TestManagerRecovery:
             "sampling_capable": True, "written_at": now, "last_activity": now,
         }))
         mgr = RoutingManager(event_bus=event_bus, data_dir=tmp_path)
-        assert mgr.state.sampling_capable is True
-        assert mgr.state.mcp_connected is True
+        # On startup, session file sampling state is NEVER trusted —
+        # we wait for a live initialize handshake from the IDE.
+        assert mgr.state.sampling_capable is None
+        assert mgr.state.mcp_connected is False
 
     def test_stale_session_file(self, tmp_path: Path, event_bus: EventBus) -> None:
         """Old mcp_session.json — sampling goes to None (unknown)."""

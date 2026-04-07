@@ -125,11 +125,99 @@ class RoutingDecision:
 # ---------------------------------------------------------------------------
 
 
+def _can_sample(state: RoutingState, ctx: RoutingContext) -> bool:
+    """Whether sampling is available for the current request."""
+    return (
+        ctx.caller == "mcp"
+        and state.sampling_capable is True
+        and state.mcp_connected
+    )
+
+
+def _can_internal(state: RoutingState) -> bool:
+    """Whether an internal provider is available."""
+    return state.provider is not None
+
+
+# Tier chain: each entry is (tier, condition, reason).
+# The resolver walks the chain top-to-bottom; first match wins.
+# Degradation chains are explicit: when a forced tier fails, the
+# resolver walks a fallback chain (sampling → internal → passthrough).
+_FALLBACK_CHAIN: list[Literal["sampling", "internal", "passthrough"]] = [
+    "sampling",
+    "internal",
+    "passthrough",
+]
+
+
+def _resolve_with_fallback(
+    requested: Literal["sampling", "internal", "passthrough"],
+    state: RoutingState,
+    ctx: RoutingContext,
+    reason_prefix: str,
+    *,
+    degraded_from_label: str | None = None,
+) -> RoutingDecision:
+    """Walk the fallback chain starting from *requested* tier.
+
+    Returns the first tier whose preconditions are met, tracking
+    ``degraded_from`` when the resolved tier differs from *requested*.
+
+    Args:
+        degraded_from_label: Override for ``degraded_from`` when the
+            resolved tier differs from *requested*. Defaults to
+            *requested* itself.  Use this when the semantic origin of
+            the fallback differs from the starting tier (e.g., auto
+            tier 4-5 degrades from "internal", not "sampling").
+    """
+    checkers: dict[str, tuple[bool, str]] = {
+        "sampling": (
+            _can_sample(state, ctx),
+            f"{reason_prefix}, MCP client supports sampling",
+        ),
+        "internal": (
+            _can_internal(state),
+            f"{reason_prefix}, using internal provider",
+        ),
+        "passthrough": (
+            True,  # always available
+            f"{reason_prefix}, no provider or sampling available",
+        ),
+    }
+
+    label = degraded_from_label or requested
+    # When an explicit label overrides the starting tier, every result
+    # is considered degraded (e.g., auto tiers 4-5 are always "degraded
+    # from internal" because internal is the natural tier).
+    always_degraded = degraded_from_label is not None and degraded_from_label != requested
+    start_idx = _FALLBACK_CHAIN.index(requested)
+    for tier in _FALLBACK_CHAIN[start_idx:]:
+        available, reason = checkers[tier]
+        if available:
+            return RoutingDecision(
+                tier=tier,
+                provider=state.provider if tier == "internal" else None,
+                provider_name=state.provider_name if tier == "internal" else None,
+                reason=reason,
+                degraded_from=label if (tier != requested or always_degraded) else None,
+            )
+
+    # Unreachable — passthrough is always True
+    return RoutingDecision(tier="passthrough", reason="fallback")  # pragma: no cover
+
+
 def resolve_route(state: RoutingState, ctx: RoutingContext) -> RoutingDecision:
     """Determine the execution tier for a pipeline request.
 
     This is a **pure function** — no I/O, no logging, no side effects.
     All inputs are frozen dataclasses; the output is a frozen dataclass.
+
+    Priority chain (highest to lowest):
+      1. ``force_passthrough`` — unconditional passthrough
+      2. ``force_sampling`` — sampling with fallback to internal → passthrough
+      3. Internal provider available
+      4. Auto-sampling (MCP caller + sampling capable)
+      5. Passthrough fallback
     """
     pipeline = ctx.preferences.get("pipeline", {})
     force_passthrough = bool(pipeline.get("force_passthrough"))
@@ -142,35 +230,14 @@ def resolve_route(state: RoutingState, ctx: RoutingContext) -> RoutingDecision:
             reason="force_passthrough enabled",
         )
 
-    # Tier 2: force_sampling — requires MCP caller + sampling capability
+    # Tier 2: force_sampling — walk fallback chain from sampling
     if force_sampling:
-        sampling_ok = (
-            ctx.caller == "mcp"
-            and state.sampling_capable is True
-            and state.mcp_connected
-        )
-        if sampling_ok:
-            return RoutingDecision(
-                tier="sampling",
-                reason="force_sampling enabled, MCP client supports sampling",
-            )
-        # Degrade: try internal, then passthrough
-        if state.provider is not None:
-            return RoutingDecision(
-                tier="internal",
-                provider=state.provider,
-                provider_name=state.provider_name,
-                reason="force_sampling degraded: sampling unavailable, using internal provider",
-                degraded_from="sampling",
-            )
-        return RoutingDecision(
-            tier="passthrough",
-            reason="force_sampling degraded: sampling unavailable, no internal provider",
-            degraded_from="sampling",
+        return _resolve_with_fallback(
+            "sampling", state, ctx, "force_sampling"
         )
 
     # Tier 3: internal provider available
-    if state.provider is not None:
+    if _can_internal(state):
         return RoutingDecision(
             tier="internal",
             provider=state.provider,
@@ -178,23 +245,12 @@ def resolve_route(state: RoutingState, ctx: RoutingContext) -> RoutingDecision:
             reason="internal provider available",
         )
 
-    # Tier 4: auto sampling — MCP caller with sampling capability
-    if (
-        ctx.caller == "mcp"
-        and state.sampling_capable is True
-        and state.mcp_connected
-    ):
-        return RoutingDecision(
-            tier="sampling",
-            reason="no internal provider, MCP client supports sampling",
-            degraded_from="internal",
-        )
-
-    # Tier 5: passthrough fallback
-    return RoutingDecision(
-        tier="passthrough",
-        reason="no internal provider or sampling available",
-        degraded_from="internal",
+    # Tier 4–5: auto-sampling or passthrough fallback.
+    # degraded_from tracks "internal" — that's the natural tier we'd use
+    # if a provider were available.
+    return _resolve_with_fallback(
+        "sampling", state, ctx, "auto",
+        degraded_from_label="internal",
     )
 
 
@@ -660,13 +716,12 @@ class RoutingManager:
             return _defaults
 
         try:
-            # Apply staleness checks
-            sampling = data.get("sampling_capable", False)
-            if not self._session_file.is_capability_fresh(data):
-                logger.info("routing.recovery capability stale — discarding sampling_capable")
-                sampling = None  # Stale → unknown
-
-            connected = not self._session_file.detect_disconnect(data)
+            # On a fresh server start, no MCP clients are connected — the
+            # session file is always stale.  Never trust sampling_capable
+            # from the file; a real `initialize` handshake from the IDE
+            # will set it within ~2 seconds if VS Code is actually open.
+            file_sampling = data.get("sampling_capable", False)
+            file_connected = not self._session_file.detect_disconnect(data)
 
             last_activity = None
             if "last_activity" in data:
@@ -676,14 +731,15 @@ class RoutingManager:
                     pass
 
             logger.info(
-                "routing.recovery sampling_capable=%s mcp_connected=%s last_activity=%s",
-                sampling, connected, last_activity,
+                "routing.recovery file_sampling=%s file_connected=%s last_activity=%s "
+                "(ignoring — waiting for live initialize handshake)",
+                file_sampling, file_connected, last_activity,
             )
             return RoutingState(
                 provider=None,  # Provider set separately via set_provider()
                 provider_name=None,
-                sampling_capable=sampling,
-                mcp_connected=connected,
+                sampling_capable=None,   # Always unknown until live handshake
+                mcp_connected=False,     # Always disconnected until live SSE
                 last_capability_update=None,
                 last_activity=last_activity,
             )

@@ -224,6 +224,7 @@ async def auto_inject_patterns(
                 .where(
                     MetaPattern.global_source_count >= CROSS_CLUSTER_MIN_SOURCE_COUNT,
                     MetaPattern.embedding.isnot(None),
+                    PromptCluster.state != "archived",
                 )
                 .order_by(MetaPattern.global_source_count.desc())
                 .limit(CROSS_CLUSTER_MAX_PATTERNS * 3)  # fetch extra for filtering

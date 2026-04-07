@@ -4,6 +4,7 @@ Copyright 2025-2026 Project Synthesis contributors.
 """
 
 from app.tools.analyze import handle_analyze
+from app.tools.explain import handle_explain
 from app.tools.feedback import handle_feedback
 from app.tools.get_optimization import handle_get_optimization
 from app.tools.health import handle_health
@@ -18,6 +19,7 @@ from app.tools.strategies import handle_strategies
 
 __all__ = [
     "handle_analyze",
+    "handle_explain",
     "handle_feedback",
     "handle_get_optimization",
     "handle_health",

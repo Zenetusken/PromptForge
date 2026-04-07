@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api", tags=["refinement"])
 
 
 class RefineRequest(BaseModel):
-    optimization_id: str = Field(description="ID of the optimization to refine.")
+    optimization_id: str = Field(..., min_length=1, description="ID of the optimization to refine.")
     refinement_request: str = Field(
         ..., min_length=1,
         description="User's refinement request or feedback for the next iteration.",
@@ -126,7 +126,12 @@ async def refine(
                 yield format_sse(event.event, event.data)
         except Exception as exc:
             logger.error("Refinement SSE stream error: %s", exc, exc_info=True)
-            yield format_sse("error", {"error": str(exc)})
+            from app.providers.base import ProviderError
+            if isinstance(exc, ProviderError):
+                msg = f"Provider error: {type(exc).__name__}"
+            else:
+                msg = "An internal error occurred during refinement"
+            yield format_sse("error", {"error": msg})
 
     return StreamingResponse(
         event_stream(),

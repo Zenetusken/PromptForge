@@ -74,9 +74,12 @@ async def submit_feedback(
 
 @router.get("/feedback")
 async def get_feedback(
-    optimization_id: str = Query(..., description="Optimization ID to fetch feedback for."),
+    optimization_id: str = Query(..., min_length=1, description="Optimization ID to fetch feedback for."),
     db: AsyncSession = Depends(get_db),
 ) -> FeedbackListResponse:
+    # Note: intentionally returns empty aggregation for non-existent optimization_id
+    # (dashboard batch-fetch pattern) rather than 404. POST /api/feedback does check
+    # existence via FeedbackService.create_feedback → ValueError → 404.
     svc = FeedbackService(db)
     feedbacks = await svc.get_for_optimization(optimization_id)
     agg = await svc.get_aggregation(optimization_id)

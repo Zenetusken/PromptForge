@@ -29,6 +29,7 @@ from app.config import DATA_DIR, PROMPTS_DIR
 from app.providers.detector import detect_provider
 from app.schemas.mcp_models import (
     AnalyzeOutput,
+    ExplainResult,
     FeedbackOutput,
     HealthOutput,
     HistoryOutput,
@@ -359,6 +360,14 @@ async def _mcp_lifespan(server: FastMCP) -> AsyncIterator[dict]:
         asyncio.create_task(_domain_event_listener())
 
     yield {}
+    # Drain any pending cross-process event forwarding tasks before
+    # cleanup, so taxonomy_activity events aren't silently cancelled.
+    try:
+        from app.services.taxonomy.event_logger import get_event_logger
+        await get_event_logger().drain_pending(timeout=10.0)
+    except RuntimeError:
+        pass  # Event logger never initialized — nothing to drain
+
     # Clean up session file on shutdown so the next startup doesn't
     # see a stale file and trigger false reconnect_detected events.
     # Without this, `init.sh restart` leaves mcp_session.json from the
@@ -610,23 +619,27 @@ class _CapabilityDetectionMiddleware:
                 except Exception:
                     pass
 
-                # Disconnect logic
-                # For Streamable HTTP, SSE GET streams are ephemeral — the
-                # client opens GET /mcp, receives pending responses, and the
-                # stream closes naturally.  An empty SSE count does NOT mean
-                # the client disconnected; it will open new GETs on its next
-                # request.  True disconnection is detected by the staleness-
-                # based _disconnect_loop (30s poll, 5-minute threshold).
-                #
-                # We only log the stream count change; no immediate routing
-                # state transitions on SSE close.
-                if cls._active_sse_streams == 0:
-                    logger.debug("All SSE streams closed (ephemeral — not a disconnect)")
-                elif was_sampling and not cls._sampling_sse_sessions:
-                    logger.debug(
-                        "Last sampling SSE closed (non-sampling streams remain: %d)",
-                        cls._active_sse_streams,
-                    )
+                # Disconnect logic — fire instant routing state transitions
+                # when the last sampling SSE closes.  The disconnect loop
+                # (30s poll) is a fallback; this is the primary signal.
+                routing = _shared._routing
+                if was_sampling and not cls._sampling_sse_sessions and routing:
+                    if cls._active_sse_streams == 0:
+                        logger.info(
+                            "All SSE streams closed — firing on_mcp_disconnect()"
+                        )
+                        routing.on_mcp_disconnect()
+                    else:
+                        logger.info(
+                            "Last sampling SSE closed (non-sampling remain: %d) "
+                            "— firing on_sampling_disconnect()",
+                            cls._active_sse_streams,
+                        )
+                        routing.on_sampling_disconnect()
+                elif cls._active_sse_streams == 0 and routing:
+                    # All non-sampling streams closed — full disconnect
+                    logger.info("All SSE streams closed — firing on_mcp_disconnect()")
+                    routing.on_mcp_disconnect()
 
     # ── Activity tracking ─────────────────────────────────────────
 
@@ -772,6 +785,7 @@ mcp.streamable_http_app = _patched_streamable_http_app
 
 # Import handlers
 from app.tools.analyze import handle_analyze  # noqa: E402
+from app.tools.explain import handle_explain  # noqa: E402
 from app.tools.feedback import handle_feedback  # noqa: E402
 from app.tools.get_optimization import handle_get_optimization  # noqa: E402
 from app.tools.health import handle_health  # noqa: E402
@@ -1123,6 +1137,25 @@ async def synthesis_seed(
         ctx=ctx,
         routing=None,  # MCP path: handle_seed falls back to get_routing()
     )
+
+
+@mcp.tool(structured_output=True)
+async def synthesis_explain(
+    optimization_id: Annotated[str, Field(
+        description="Optimization ID or trace_id to explain.",
+    )],
+    ctx: Context | None = None,
+) -> ExplainResult:
+    """Get a plain-English explanation of what an optimization changed and why.
+
+    Call after synthesis_optimize or synthesis_get_optimization to understand
+    the result in non-technical terms. Returns a brief summary, specific
+    change descriptions, the strategy used, and the score improvement.
+
+    Chain: Call synthesis_get_optimization first to browse results,
+    then this tool to explain one.
+    """
+    return await handle_explain(optimization_id)
 
 
 # ---------------------------------------------------------------------------

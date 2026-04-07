@@ -68,8 +68,12 @@ async def list_strategies(
     Returns name, tagline, description, and validation warnings.
     Auto-discovers: adding/removing .md files changes this list.
     """
-    raw = _loader.list_with_metadata()
-    return [StrategyMetadata(**item) for item in raw]
+    try:
+        raw = _loader.list_with_metadata()
+        return [StrategyMetadata(**item) for item in raw]
+    except Exception as exc:
+        logger.error("GET /api/strategies failed: %s", exc, exc_info=True)
+        raise HTTPException(503, "Failed to load strategies") from exc
 
 
 @router.get("/strategies/{name}")
