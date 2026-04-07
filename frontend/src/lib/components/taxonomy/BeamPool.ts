@@ -9,7 +9,8 @@ export class BeamPool {
   readonly group: THREE.Group;
   private _beams: PlasmaBeam[] = [];
   private _origin = new THREE.Vector3();
-  private _ndcOrigin = new THREE.Vector3(0, -0.9, 0.1);
+  // Frame of reference center-bottom like an FPS weapon viewport origin, precisely on the near plane
+  private _ndcOrigin = new THREE.Vector3(0.0, -1.0, -0.99);
 
   constructor() {
     this.group = new THREE.Group();

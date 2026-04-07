@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { clustersStore } from '$lib/stores/clusters.svelte';
+
   import { TopologyRenderer, type LODTier } from './TopologyRenderer';
   import { buildSceneData, assignLodVisibility, type SceneData } from './TopologyData';
   import { TopologyInteraction } from './TopologyInteraction';
@@ -105,6 +106,7 @@
   let _prevNodeSizes: Map<string, number> = new Map();
   let _seedBatchActive = false;
   let _removeDomainRotation: (() => void) | null = null;
+  let _removeFormationAnim: (() => void) | null = null;
 
   // External highlight tracking (for family selection sync)
   let _highlightedId: string | null = null;
@@ -476,10 +478,18 @@
 
   async function handleRecluster(): Promise<void> {
     try {
-      await triggerRecluster();
+      const result = await triggerRecluster();
+      if (result.status === 'skipped') {
+        addToast('modified', 'Recluster skipped — taxonomy cycle in progress');
+        return;
+      }
+      if (result.status === 'rejected') {
+        addToast('deleted', 'Recluster rejected — quality gate failed');
+        return;
+      }
       await clustersStore.loadTree();
+      addToast('created', `Recluster complete — ${result.nodes_created ?? 0} created, ${result.nodes_updated ?? 0} updated`);
     } catch (err) {
-      // Recluster failed — tree stays as-is
       console.error('Recluster failed:', err);
       addToast('deleted', 'Recluster failed');
     }
@@ -534,14 +544,9 @@
         // UMAP rest positions (copy before force modification)
         const restPositions = new Float32Array(positions);
 
-        // Cache key: hash of node IDs + positions (invalidates when UMAP changes)
-        const fingerprint = sceneData.nodes
-          .map(n => `${n.id}:${n.position[0].toFixed(2)},${n.position[1].toFixed(2)},${n.position[2].toFixed(2)}`)
-          .sort()
-          .join('|');
-        const cacheKey = 'topology_settled_' + fingerprint.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0).toString(36);
-
+        const cacheKey = 'topology_settled_' + sceneData.nodes.map(n => n.id).sort().join('|');
         let settledPositions: Float32Array;
+        
         try {
           const cached = localStorage.getItem(cacheKey);
           if (cached) {
@@ -553,10 +558,9 @@
               iterations: 60,
             });
             settledPositions = settled.positions;
-            // Cache for next load (cap at 200 entries to prevent localStorage bloat)
             try {
-              // Clean old entries
-              for (let k = 0; k < localStorage.length; k++) {
+              // Remove stale topology cache entries before writing new one
+              for (let k = localStorage.length - 1; k >= 0; k--) {
                 const key = localStorage.key(k);
                 if (key?.startsWith('topology_settled_') && key !== cacheKey) {
                   localStorage.removeItem(key);
@@ -566,51 +570,117 @@
             } catch { /* quota exceeded — ignore */ }
           }
         } catch {
-          // Fallback: always compute
-          const settled = settleForces({
-            positions, restPositions, sizes,
-            parentIndices, domainGroups,
-            iterations: 60,
-          });
+          const settled = settleForces({ positions, restPositions, sizes, parentIndices, domainGroups, iterations: 60 });
           settledPositions = settled.positions;
         }
 
+        // Start all nodes collapsed at origin for galaxy formation
         sceneData.nodes.forEach((n, i) => {
-          n.position = [settledPositions[i * 3], settledPositions[i * 3 + 1], settledPositions[i * 3 + 2]];
+          const radius = Math.random() * 2.0;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos((Math.random() * 2) - 1);
+          n.position = [
+            radius * Math.sin(phi) * Math.cos(theta),
+            radius * Math.sin(phi) * Math.sin(theta),
+            radius * Math.cos(phi)
+          ];
         });
 
         rebuildScene(sceneData);
 
+        // Hide edges during formation to prevent visual clutter
+        let hierarchicalLinesMesh: any = null;
+        renderer?.scene.children.forEach(c => {
+           if (c.userData.isInterClusterEdge) hierarchicalLinesMesh = c;
+        });
+        if (hierarchicalLinesMesh) hierarchicalLinesMesh.visible = false;
+        if (similarityEdgeGroup) similarityEdgeGroup.visible = false;
+        if (injectionEdgeGroup) injectionEdgeGroup.visible = false;
+
+        // Galaxy Formation Animation Loop (Lerp to Settled Positions)
+        // Capture in const for TypeScript narrowing inside the closure
+        const formSceneData = sceneData;
+        let formProgress = 0.0;
+        const formDuration = 90.0; // frames
+        const initialPositions = new Float32Array(nodeCount * 3);
+        sceneData.nodes.forEach((n, i) => {
+           initialPositions[i*3] = n.position[0];
+           initialPositions[i*3+1] = n.position[1];
+           initialPositions[i*3+2] = n.position[2];
+        });
+
+        _removeFormationAnim?.();
+        _removeFormationAnim = renderer?.addAnimationCallback(() => {
+           formProgress += 1.0;
+           // cubic ease-out
+           const t = Math.min(formProgress / formDuration, 1.0);
+           const easeT = 1 - Math.pow(1 - t, 3);
+
+           formSceneData.nodes.forEach((n, i) => {
+              n.position[0] = initialPositions[i*3] + (settledPositions[i*3] - initialPositions[i*3]) * easeT;
+              n.position[1] = initialPositions[i*3+1] + (settledPositions[i*3+1] - initialPositions[i*3+1]) * easeT;
+              n.position[2] = initialPositions[i*3+2] + (settledPositions[i*3+2] - initialPositions[i*3+2]) * easeT;
+
+              const group = _beamNodeGroups.get(n.id);
+              if (group) group.position.set(...n.position);
+
+              if (labels) {
+                 const sprite = labels.getOrCreate(n.id, n.label, n.color);
+                 sprite.position.set(n.position[0], n.position[1] + n.size + 0.5, n.position[2]);
+              }
+           });
+
+           if (t >= 1.0) {
+              _removeFormationAnim?.();
+              _removeFormationAnim = null;
+
+              // Re-enable edges and update geometry
+              if (hierarchicalLinesMesh && _sceneNodeMap) {
+                 const edgePositions: number[] = [];
+                 for (const edge of formSceneData.edges) {
+                   const from = _sceneNodeMap.get(edge.from);
+                   const to = _sceneNodeMap.get(edge.to);
+                   if (!from || !to) continue;
+                   if (edge.type === 'hierarchical' || (from.visible && to.visible)) {
+                     edgePositions.push(...from.position, ...to.position);
+                   }
+                 }
+                 if (edgePositions.length > 0) {
+                   hierarchicalLinesMesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+                 }
+                 hierarchicalLinesMesh.visible = true;
+              }
+              if (similarityEdgeGroup) similarityEdgeGroup.visible = clustersStore.showSimilarityEdges;
+              if (injectionEdgeGroup) injectionEdgeGroup.visible = clustersStore.showInjectionEdges;
+           }
+        }) ?? null;
+
         // Auto-focus on the largest domain cluster on initial load.
-        // Without this, the camera starts at origin (0,0,80) which may
-        // be void space if the largest cluster's UMAP coords are elsewhere.
         if (!focusedNodeId && sceneData.nodes.length > 0) {
-          // Find the domain with the most visible children
           const domainSizes = new Map<string, { count: number; cx: number; cy: number; cz: number }>();
           for (const n of sceneData.nodes) {
             if (n.state === 'domain' || !n.visible) continue;
             const dom = (flatNodeMap.get(n.id)?.domain ?? 'general').split(':')[0].trim().toLowerCase();
             const entry = domainSizes.get(dom) ?? { count: 0, cx: 0, cy: 0, cz: 0 };
             entry.count++;
-            entry.cx += n.position[0];
-            entry.cy += n.position[1];
-            entry.cz += n.position[2];
+            // Focus on settled target, not start
+            const idx = nodeIndexMap.get(n.id)!;
+            entry.cx += settledPositions[idx * 3];
+            entry.cy += settledPositions[idx * 3 + 1];
+            entry.cz += settledPositions[idx * 3 + 2];
             domainSizes.set(dom, entry);
           }
           let bestDomain = '';
           let bestCount = 0;
           for (const [dom, entry] of domainSizes) {
-            if (entry.count > bestCount) {
-              bestCount = entry.count;
-              bestDomain = dom;
-            }
+            if (entry.count > bestCount) { bestCount = entry.count; bestDomain = dom; }
           }
           if (bestDomain && bestCount > 0) {
             const entry = domainSizes.get(bestDomain)!;
             const cx = entry.cx / entry.count;
             const cy = entry.cy / entry.count;
             const cz = entry.cz / entry.count;
-            renderer?.focusOn(new THREE.Vector3(cx, cy, cz), 40, 800);
+            renderer?.focusOn(new THREE.Vector3(cx, cy, cz), 60, 1500); // Slower pan to match formation
           }
         }
 
@@ -618,19 +688,26 @@
         if (!_hasPlayedEntrance && beamPool && sceneData.nodes.length > 0) {
           _hasPlayedEntrance = true;
           const sorted = [...sceneData.nodes]
-            .filter(n => n.state !== 'domain')
-            .sort((a, b) => b.size - a.size)
-            .slice(0, 10);
+            .filter(n => n.state === 'domain')
+            .sort((a, b) => b.size - a.size);
+            
           sorted.forEach((node, i) => {
             setTimeout(() => {
               const group = _beamNodeGroups.get(node.id);
               if (!group || !beamPool || !renderer) return;
+              
+              // Scale aesthetics by node size dynamically
+              const sizeFactor = Math.min(Math.max(node.size / 50, 0.5), 3.0);
+              
               beamPool.acquire(group, {
-                colorEnd: new THREE.Color(node.color),
-                radius: 0.015 + node.size * 0.012, // scale with cluster size
-                sustainMs: 200,
+                color: new THREE.Color(node.color), // Exact color of target node
+                radius: node.size * 0.04 * sizeFactor,           // Scales dynamically with node size
+                sustainMs: 1500 + (sizeFactor * 500), // Linger longer for bigger domains
               }, renderer.camera);
-            }, i * 50);
+              
+              // Ensure the cluster visually reacts/ripples to the materialization burst
+              clusterPhysics?.onBeamImpact(node.id, node.size);
+            }, i * 150);
           });
         }
 
@@ -639,21 +716,25 @@
         if (_prevNodeSizes.size > 0 && beamPool && renderer) {
           let firedCount = 0;
           for (const node of sceneData.nodes) {
-            if (node.state === 'domain') continue;
+            if (node.state !== 'domain') continue; // Only for domain nodes
+            
             const prevSize = _prevNodeSizes.get(node.id);
             if (prevSize !== undefined && node.size > prevSize) {
               const group = _beamNodeGroups.get(node.id);
               if (group) {
                 setTimeout(() => {
                   if (!beamPool || !renderer) return;
-                  const nodeRadius = 0.02 + node.size * 0.015;
+                  
+                  const sizeFactor = Math.min(Math.max(node.size / 50, 0.5), 3.0);
+                  const nodeRadius = node.size * 0.04 * sizeFactor;
+                  
                   beamPool.acquire(group, {
-                    colorEnd: new THREE.Color(node.color),
+                    color: new THREE.Color(node.color),
                     radius: isSeedBatch ? nodeRadius * 2.0 : nodeRadius,
-                    sustainMs: isSeedBatch ? 600 : 800,
+                    sustainMs: (isSeedBatch ? 3500 : 2500) + (sizeFactor * 500),
                   }, renderer.camera);
                   clusterPhysics?.onBeamImpact(node.id, node.size);
-                }, isSeedBatch ? firedCount * 80 : 0);
+                }, isSeedBatch ? firedCount * 120 : 0);
                 firedCount++;
               }
             }
@@ -855,6 +936,8 @@
       clusterPhysics?.clear();
       clusterPhysics = null;
       removeBeamUpdate();
+      _removeFormationAnim?.();
+      _removeFormationAnim = null;
       _removeDomainRotation?.();
       ro.disconnect();
       interaction?.dispose();

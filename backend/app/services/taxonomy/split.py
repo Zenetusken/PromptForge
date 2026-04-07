@@ -29,7 +29,7 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Optimization, PromptCluster
+from app.models import MetaPattern, Optimization, PromptCluster
 from app.services.taxonomy._constants import SPLIT_MIN_MEMBERS, _utcnow
 from app.services.taxonomy.cluster_meta import write_meta
 from app.services.taxonomy.clustering import (
@@ -344,12 +344,31 @@ async def split_cluster(
     node.state = "archived"
     node.archived_at = _utcnow()
     node.member_count = 0
+    node.weighted_member_sum = 0.0
     node.scored_count = 0
     node.usage_count = 0
     node.avg_score = None
     await engine._embedding_index.remove(node.id)
     await engine._transformation_index.remove(node.id)
     await engine._optimized_index.remove(node.id)
+
+    # Clean up parent's meta-patterns — archived clusters don't participate
+    # in pattern injection or matching, so their patterns are dead weight.
+    # Pattern: matches lifecycle.py:603-609 (retire cleanup).
+    try:
+        orphan_mp_q = await db.execute(
+            select(MetaPattern).where(MetaPattern.cluster_id == node.id)
+        )
+        orphan_mps = list(orphan_mp_q.scalars().all())
+        for mp in orphan_mps:
+            await db.delete(mp)
+        if orphan_mps:
+            logger.info(
+                "Split: deleted %d orphaned meta-patterns from archived parent '%s'",
+                len(orphan_mps), node.label,
+            )
+    except Exception as mp_exc:
+        logger.warning("Split meta-pattern cleanup failed (non-fatal): %s", mp_exc)
 
     # Upsert children into embedding index
     for child in new_children:

@@ -18,6 +18,7 @@
 
 export interface WorkerInput {
   positions: Float32Array;      // [x0,y0,z0, x1,y1,z1, ...]
+  velocities?: Float32Array;    // optional starting velocities
   restPositions: Float32Array;  // UMAP positions — semantic anchor points
   sizes: Float32Array;          // [s0, s1, ...]
   parentIndices: Int32Array;    // parent index per node (-1 = root/no parent)
@@ -27,6 +28,7 @@ export interface WorkerInput {
 
 export interface WorkerOutput {
   positions: Float32Array;
+  velocities: Float32Array;
   elapsed: number;
 }
 
@@ -58,9 +60,9 @@ const DAMPING = 0.88;
  * Run the semantic gravity simulation synchronously.
  */
 export function settleForces(input: WorkerInput): WorkerOutput {
-  const { positions, restPositions, sizes, parentIndices, domainGroups, iterations } = input;
+  const { positions, velocities, restPositions, sizes, parentIndices, domainGroups, iterations } = input;
   const n = sizes.length;
-  if (n === 0) return { positions: new Float32Array(0), elapsed: 0 };
+  if (n === 0) return { positions: new Float32Array(0), velocities: new Float32Array(0), elapsed: 0 };
   if (positions.length !== n * 3) {
     throw new Error(
       `settleForces: positions.length (${positions.length}) must equal sizes.length * 3 (${n * 3})`
@@ -70,7 +72,7 @@ export function settleForces(input: WorkerInput): WorkerOutput {
 
   const pos = new Float32Array(positions);
   const rest = restPositions;
-  const vel = new Float32Array(n * 3);
+  const vel = velocities ? new Float32Array(velocities) : new Float32Array(n * 3);
   const force = new Float32Array(n * 3);
 
   for (let iter = 0; iter < iterations; iter++) {
@@ -181,13 +183,13 @@ export function settleForces(input: WorkerInput): WorkerOutput {
     }
   }
 
-  return { positions: pos, elapsed: performance.now() - start };
+  return { positions: pos, velocities: vel, elapsed: performance.now() - start };
 }
 
 // Worker message handler (only active when loaded as Web Worker)
 if (typeof self !== 'undefined' && typeof (self as any).importScripts === 'function') {
   self.onmessage = (event: MessageEvent<WorkerInput>) => {
     const result = settleForces(event.data);
-    (self as any).postMessage(result, [result.positions.buffer]);
+    (self as any).postMessage(result, [result.positions.buffer, result.velocities.buffer]);
   };
 }

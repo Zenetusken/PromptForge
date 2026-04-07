@@ -42,6 +42,9 @@ class ForgeStore {
 
   phaseModels: Record<string, string> = $state({});
 
+  /** Timestamp (ms) when the current synthesis started — drives elapsed timer. */
+  synthesisStartedAt = $state<number | null>(null);
+
   /** Routing decision from the backend's first SSE event per optimize stream. */
   routingDecision = $state<{ tier: string; provider: string | null; reason: string; degraded_from: string | null } | null>(null);
 
@@ -127,27 +130,19 @@ class ForgeStore {
     this.phaseModels = {};
 
     this.status = 'analyzing';
+    this.synthesisStartedAt = Date.now();
 
     this.controller = optimizeSSE(
       this.prompt,
       this.strategy,
       (event: SSEEvent) => this.handleEvent(event),
       (err: Error) => {
+        this.synthesisStartedAt = null;
         // Internal pipeline: attempt reconnection via trace ID polling.
         if (this.traceId && !this.passthroughTraceId) {
           this.error = err.message;
           this.status = 'error';
           this.reconnect();
-        } else if (!this.traceId && !this.passthroughTraceId
-                   && ['analyzing', 'optimizing', 'scoring'].includes(this.status)) {
-          // Sampling proxy: no traceId yet — the event bus (/api/events)
-          // may still deliver the result. Wait before showing error.
-          setTimeout(() => {
-            if (this.status !== 'complete' && this.status !== 'idle') {
-              this.error = 'Connection lost. Check history for results.';
-              this.status = 'error';
-            }
-          }, 15_000);
         } else {
           this.error = err.message;
           this.status = 'error';
@@ -161,14 +156,6 @@ class ForgeStore {
           } else if (this.passthroughTraceId) {
             this.error = 'Connection lost during passthrough setup. Please try again.';
             this.status = 'error';
-          } else if (['analyzing', 'optimizing', 'scoring'].includes(this.status)) {
-            // Sampling proxy: stream ended without result — event bus may deliver
-            setTimeout(() => {
-              if (this.status !== 'complete' && this.status !== 'idle') {
-                this.error = 'Connection lost. Check history for results.';
-                this.status = 'error';
-              }
-            }, 15_000);
           }
         }
       },
@@ -199,6 +186,9 @@ class ForgeStore {
         reason: event.reason as string,
         degraded_from: (event.degraded_from ?? null) as string | null,
       };
+      if (this.routingDecision.degraded_from === 'sampling') {
+        addToast('modified', `Sampling unavailable from browser \u2014 using ${this.routingDecision.tier}`);
+      }
       return;
     }
     if (eventType === 'passthrough') {
@@ -252,6 +242,7 @@ class ForgeStore {
       addToast('created', `${d.patterns ?? 0} patterns auto-injected`);
     } else if (eventType === 'error') {
       this.error = (event.error || event.message) as string;
+      this.synthesisStartedAt = null;
       this.status = 'error';
     }
   }
@@ -289,6 +280,7 @@ class ForgeStore {
     this.result = opt;
     this.prompt = opt.raw_prompt || '';
     this.status = 'complete';
+    this.synthesisStartedAt = null;
     this.error = null;
     this.feedback = null;
 
@@ -342,6 +334,7 @@ class ForgeStore {
     this.passthroughStrategy = null;
     this.clusterId = null;
     this.routingDecision = null;
+    this.synthesisStartedAt = null;
     this.status = 'idle';
   }
 
@@ -447,6 +440,7 @@ class ForgeStore {
     this.result = null;
     this.traceId = null;
     this.error = null;
+    this.synthesisStartedAt = null;
     this.feedback = null;
     this.currentPhase = null;
     this.previewPrompt = null;

@@ -30,8 +30,10 @@
         preferencesStore.setPipelineToggle('force_sampling', true);
       }
     }
-    // Sampling no longer available → clear stale force_sampling
+    // Sampling no longer available → clear stale force_sampling instantly
+    // (optimistic local update BEFORE async API call to prevent UI flash)
     if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
+      preferencesStore.prefs.pipeline.force_sampling = false;
       preferencesStore.setPipelineToggle('force_sampling', false);
     }
   }
@@ -55,11 +57,9 @@
           const label = type === 'optimization_analyzed' ? 'analyzed' : 'optimized';
           addToast('created', `Prompt ${label}`);
         }
-        // Auto-load sampling result via event bus. Covers two scenarios:
-        // 1. Web UI SYNTHESIZE with sampling proxy — SSE stream may drop during
-        //    the 20-30s MCP call (forgeStore.status = analyzing/optimizing/scoring)
-        // 2. IDE-triggered optimization via MCP bridge — the web UI was idle but
-        //    should show the result (forgeStore.status = idle)
+        // Auto-load optimization results via event bus. Covers IDE-triggered
+        // optimizations via MCP bridge — the web UI was idle but should show
+        // the result (forgeStore.status = idle).
         if (type === 'optimization_created' && data.trace_id && data.status === 'completed') {
           const alreadyLoaded = forgeStore.result?.trace_id === data.trace_id;
           const shouldLoad = forgeStore.status !== 'complete' && !alreadyLoaded;
@@ -96,7 +96,7 @@
         if (d.original_scores) forgeStore.originalScores = d.original_scores as import('$lib/api/client').DimensionScores;
         if (d.deltas) forgeStore.scoreDeltas = d.deltas;
       }
-      if (type === 'optimization_optimization_start') {
+      if (type === 'optimization_start') {
         const d = data as { trace_id?: string };
         if (d.trace_id) forgeStore.traceId = d.trace_id;
       }
@@ -145,6 +145,10 @@
         // without being coupled to the SSE layer
         window.dispatchEvent(new CustomEvent('seed-batch-progress', { detail: data }));
       }
+      if (type === 'agent_changed') {
+        // Seed agent files were hot-reloaded — notify SeedModal to refresh agent list
+        window.dispatchEvent(new CustomEvent('agent-changed', { detail: data }));
+      }
       if (type === 'domain_created') {
         domainStore.invalidate();
       }
@@ -174,7 +178,9 @@
         }
 
         // Auto-disable force_sampling INSTANTLY when sampling goes away.
+        // Optimistic local update first to prevent UI flash.
         if (wasSamplingCapable && d.sampling_capable !== true && preferencesStore.pipeline.force_sampling) {
+          preferencesStore.prefs.pipeline.force_sampling = false;
           preferencesStore.setPipelineToggle('force_sampling', false);
         }
 

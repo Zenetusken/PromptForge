@@ -59,7 +59,11 @@
 
   const isPassthroughMode = $derived(forgeStore.status === 'passthrough');
 
-  const buttonLabel = $derived(isPassthroughMode ? 'PREPARE' : 'SYNTHESIZE');
+  const buttonLabel = $derived(
+    isSynthesizing ? 'CANCEL'
+    : isPassthroughMode ? 'PREPARE'
+    : 'SYNTHESIZE'
+  );
 
   const phaseLabel = $derived.by(() => {
     const label = getPhaseLabel(forgeStore.status);
@@ -84,6 +88,14 @@
 
   // Ensure cleanup on component unmount (e.g. if forge is still in-flight)
   $effect(() => () => { pendingResultEffect?.(); pendingResultEffect = null; });
+
+  function handleButtonClick() {
+    if (isSynthesizing) {
+      forgeStore.cancel();
+      return;
+    }
+    handleSynthesize();
+  }
 
   async function handleSynthesize() {
     // Clean up any orphaned detached effect from a previous call
@@ -147,8 +159,8 @@
 
     <button
       class="synthesize-btn"
-      disabled={isSynthesizing}
-      onclick={handleSynthesize}
+      class:synthesize-btn--cancel={isSynthesizing}
+      onclick={handleButtonClick}
     >
       {buttonLabel}
     </button>
@@ -273,4 +285,7 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
+
+  /* Cancel state — inherits tier accent from base .synthesize-btn.
+     Class kept as a semantic hook for tests and future differentiation. */
 </style>

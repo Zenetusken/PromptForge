@@ -83,6 +83,32 @@ def adaptive_merge_threshold(member_count: int) -> float:
     return base
 
 # ---------------------------------------------------------------------------
+# Score-weight helpers
+# ---------------------------------------------------------------------------
+
+
+def score_to_centroid_weight(score: float | None) -> float:
+    """Convert an optimization score to a centroid influence weight.
+
+    Power-law mapping gives high-scoring prompts outsized centroid influence
+    (4.25x range: score 3→0.20 vs score 9→0.85) compared to linear mapping
+    (1.37x range).  This ensures cluster centroids track the semantic center
+    of quality, not just quantity.
+
+    Used by: hot-path assignment, warm-path reconciliation, cold-path
+    reconciliation, and new-cluster creation.  **All call sites must use
+    this single formula** to prevent centroid drift on reconciliation.
+
+    Args:
+        score: Overall score in [1, 10], or None (defaults to 5.0).
+
+    Returns:
+        Weight in [0.2, 1.0].
+    """
+    return max(0.2, ((score or 5.0) / 10.0) ** 1.5)
+
+
+# ---------------------------------------------------------------------------
 # Score reconciliation helpers
 # ---------------------------------------------------------------------------
 #
@@ -391,7 +417,7 @@ async def assign_cluster(
                         # shift the centroid more than low-scoring ones.
                         # Power-law weight for better score differentiation (4.25x range vs 1.37x).
                         # score 3.0 → 0.20, score 5.0 → 0.35, score 7.0 → 0.59, score 9.0 → 0.85
-                        score_weight = max(0.2, ((overall_score or 5.0) / 10.0) ** 1.5)
+                        score_weight = score_to_centroid_weight(overall_score)
                         old_centroid = np.frombuffer(
                             matched.centroid_embedding, dtype=np.float32
                         )
@@ -491,7 +517,7 @@ async def assign_cluster(
         parent_id=domain_node.id if domain_node else None,
         centroid_embedding=embedding.astype(np.float32).tobytes(),
         member_count=1,
-        weighted_member_sum=max(0.1, (overall_score or 5.0) / 10.0),
+        weighted_member_sum=score_to_centroid_weight(overall_score),
         scored_count=1 if overall_score is not None else 0,
         usage_count=0,
         avg_score=overall_score,
@@ -799,6 +825,17 @@ async def extract_meta_patterns(
             opt.id,
             exc,
         )
+        try:
+            get_event_logger().log_decision(
+                path="hot", op="extract", decision="pattern_extraction_failed",
+                optimization_id=opt.id,
+                context={
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc)[:300],
+                },
+            )
+        except RuntimeError:
+            pass
         return []
 
 

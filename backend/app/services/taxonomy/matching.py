@@ -97,15 +97,22 @@ async def match_prompt(
     # 1. Embed the prompt text
     query_emb = await embedding_service.aembed_single(prompt_text)
 
-    # Phase 2: Composite fusion for similarity search
+    # Phase 2: Composite fusion for similarity search (fallback to raw on failure)
     from app.services.taxonomy import get_engine
     from app.services.taxonomy.fusion import resolve_fused_embedding
 
     engine = get_engine()
-    search_emb = await resolve_fused_embedding(
-        prompt_text, query_emb, embedding_service, engine, db,
-        phase="pattern_injection",
-    )
+    try:
+        search_emb = await resolve_fused_embedding(
+            prompt_text, query_emb, embedding_service, engine, db,
+            phase="pattern_injection",
+        )
+    except Exception as fusion_exc:
+        logger.warning(
+            "Composite fusion failed, falling back to raw embedding: %s",
+            fusion_exc,
+        )
+        search_emb = query_emb
 
     # ------------------------------------------------------------------
     # Level 1: Family-level search
@@ -346,6 +353,7 @@ async def match_prompt(
             .where(
                 MetaPattern.global_source_count >= CROSS_CLUSTER_MIN_SOURCE_COUNT,
                 MetaPattern.embedding.isnot(None),
+                PromptCluster.state != "archived",
             )
             .order_by(MetaPattern.global_source_count.desc())
             .limit(CROSS_CLUSTER_MAX_PATTERNS * 3)  # fetch extra for filtering

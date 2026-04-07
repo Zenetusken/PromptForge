@@ -3,6 +3,9 @@
 Verifies that higher-scoring optimizations shift the cluster centroid
 more than lower-scoring ones, and that weighted_member_sum is correctly
 initialized and accumulated.
+
+All weight expectations use ``score_to_centroid_weight()`` — the shared
+power-law formula: ``max(0.2, (score / 10.0) ** 1.5)``.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PromptCluster
-from app.services.taxonomy.family_ops import assign_cluster
+from app.services.taxonomy.family_ops import assign_cluster, score_to_centroid_weight
 
 EMBEDDING_DIM = 384
 
@@ -37,49 +40,55 @@ def _close_vec(base: np.ndarray, offset_seed: int, scale: float = 0.05) -> np.nd
 
 @pytest.mark.asyncio
 async def test_new_cluster_weighted_member_sum_from_score(db: AsyncSession):
-    """weighted_member_sum should be score/10 on a freshly created cluster."""
+    """weighted_member_sum should be power-law score weight on a fresh cluster."""
     emb = _unit_vec(1)
     cluster = await assign_cluster(
         db, emb, label="test", domain="general",
         task_type="coding", overall_score=8.0,
     )
-    assert cluster.weighted_member_sum == pytest.approx(0.8, abs=1e-6)
+    assert cluster.weighted_member_sum == pytest.approx(
+        score_to_centroid_weight(8.0), abs=1e-6,
+    )
     assert cluster.member_count == 1
 
 
 @pytest.mark.asyncio
 async def test_new_cluster_weighted_member_sum_none_score(db: AsyncSession):
-    """When overall_score is None, default weight should be 5.0/10 = 0.5."""
+    """When overall_score is None, default weight uses score=5.0."""
     emb = _unit_vec(2)
     cluster = await assign_cluster(
         db, emb, label="test-none", domain="general",
         task_type="coding", overall_score=None,
     )
-    assert cluster.weighted_member_sum == pytest.approx(0.5, abs=1e-6)
+    assert cluster.weighted_member_sum == pytest.approx(
+        score_to_centroid_weight(None), abs=1e-6,
+    )
 
 
 @pytest.mark.asyncio
 async def test_new_cluster_weighted_member_sum_low_score(db: AsyncSession):
-    """A very low score (0.5) should produce weight 0.1 (clamped by max(0.1, ...))."""
+    """A very low score (0.5) should produce weight 0.2 (clamped floor)."""
     emb = _unit_vec(3)
     cluster = await assign_cluster(
         db, emb, label="test-low", domain="general",
         task_type="coding", overall_score=0.5,
     )
-    # 0.5 / 10.0 = 0.05, clamped to 0.1
-    assert cluster.weighted_member_sum == pytest.approx(0.1, abs=1e-6)
+    # (0.5 / 10.0)^1.5 = 0.011, clamped to 0.2
+    assert cluster.weighted_member_sum == pytest.approx(0.2, abs=1e-6)
 
 
 @pytest.mark.asyncio
 async def test_new_cluster_weighted_member_sum_zero_score(db: AsyncSession):
-    """Score of 0.0 is falsy — treated as missing, defaults to 5.0/10 = 0.5."""
+    """Score of 0.0 is falsy — treated as missing, defaults to score=5.0."""
     emb = _unit_vec(4)
     cluster = await assign_cluster(
         db, emb, label="test-zero", domain="general",
         task_type="coding", overall_score=0.0,
     )
-    # 0.0 is falsy → (0.0 or 5.0) → 5.0/10 = 0.5
-    assert cluster.weighted_member_sum == pytest.approx(0.5, abs=1e-6)
+    # 0.0 is falsy → (0.0 or 5.0) → power-law(5.0)
+    assert cluster.weighted_member_sum == pytest.approx(
+        score_to_centroid_weight(0.0), abs=1e-6,
+    )
 
 
 # ── Score-weighted merge ────────────────────────────────────────────
@@ -149,6 +158,7 @@ async def test_high_score_shifts_centroid_more(db: AsyncSession):
 async def test_weighted_member_sum_accumulates(db: AsyncSession):
     """weighted_member_sum should accumulate across merges."""
     base = _unit_vec(20)
+    w_init = score_to_centroid_weight(5.0)
     cluster = PromptCluster(
         label="accumulate",
         domain="general",
@@ -156,31 +166,34 @@ async def test_weighted_member_sum_accumulates(db: AsyncSession):
         state="active",
         centroid_embedding=base.astype(np.float32).tobytes(),
         member_count=1,
-        weighted_member_sum=0.5,
+        weighted_member_sum=w_init,
         avg_score=5.0,
         scored_count=1,
     )
     db.add(cluster)
     await db.flush()
 
-    # Merge optimization with score=10 (weight=1.0)
+    # Merge optimization with score=10
+    w_10 = score_to_centroid_weight(10.0)
     near = _close_vec(base, offset_seed=21, scale=0.05)
     result = await assign_cluster(
         db, near, label="merge1", domain="general",
         task_type="coding", overall_score=10.0,
     )
     assert result.id == cluster.id
-    assert result.weighted_member_sum == pytest.approx(0.5 + 1.0, abs=1e-6)
+    assert result.weighted_member_sum == pytest.approx(w_init + w_10, abs=1e-6)
     assert result.member_count == 2
 
-    # Merge another with score=2 (weight=0.2)
-    near2 = _close_vec(base, offset_seed=22, scale=0.05)
+    # Merge another with score=2 — use tighter scale so it stays above
+    # adaptive threshold after the first merge shifted the centroid.
+    w_2 = score_to_centroid_weight(2.0)
+    near2 = _close_vec(base, offset_seed=22, scale=0.03)
     result2 = await assign_cluster(
         db, near2, label="merge2", domain="general",
         task_type="coding", overall_score=2.0,
     )
     assert result2.id == cluster.id
-    assert result2.weighted_member_sum == pytest.approx(0.5 + 1.0 + 0.2, abs=1e-6)
+    assert result2.weighted_member_sum == pytest.approx(w_init + w_10 + w_2, abs=1e-6)
     assert result2.member_count == 3
 
 

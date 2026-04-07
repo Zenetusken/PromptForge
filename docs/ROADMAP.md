@@ -39,6 +39,22 @@ Living document tracking planned improvements. Items are prioritized but not sch
 
 **Files:** `services/routing.py` (resolve_route), `mcp_server.py` (capability middleware), `tools/optimize.py` (context construction)
 
+### REST-to-sampling proxy via IDE session registry
+**Status:** Planned
+**Context:** The web UI cannot perform MCP sampling because `POST /api/optimize` uses `caller="rest"`, which the routing resolver correctly blocks from sampling (only `caller="mcp"` can reach sampling tiers). A previous sampling proxy implementation (`mcp_proxy.py` called from `routers/optimize.py`) was removed in v0.3.16-dev because it was architecturally broken: the proxy opened a **new** MCP session with `capabilities: {}` (no sampling support), so `create_message()` targeted the proxy client — not the IDE's session — and hung for 120s per phase before timing out.
+
+**Root cause:** MCP's `create_message()` is a server-to-client request that goes to the session that made the tool call. The proxy's session has no sampling handler. There is no mechanism to route a sampling request through a *different* client's session (the IDE's).
+
+**Proposed solution:** The MCP server maintains a **session registry** mapping session IDs to their declared capabilities. When a non-sampling MCP client (or REST proxy) calls `synthesis_optimize` and routing selects sampling tier:
+1. The tool handler queries the registry for any active sampling-capable session
+2. If found, it borrows that session's `create_message()` channel for the LLM call
+3. The original caller receives the result when the IDE completes the sampling request
+4. If no sampling session exists, falls back to internal/passthrough with clear error
+
+**Complexity:** Medium-high. Requires changes to session lifecycle tracking, cross-session request routing in FastMCP, and proper cleanup when IDE sessions disconnect mid-request. Must handle race conditions (IDE disconnects while a proxied request is in-flight).
+
+**Files:** `mcp_server.py` (session registry + lifecycle hooks), `services/mcp_proxy.py` (optional: thin REST proxy using registry), `tools/optimize.py` (session lookup before `run_sampling_pipeline`), `services/routing.py` (per-session capability in `RoutingContext`)
+
 ### Unified scoring service
 **Status:** Planned
 **Context:** The scoring orchestration (heuristic compute → historical stats fetch → hybrid blend → delta compute) is repeated across `pipeline.py`, `sampling_pipeline.py`, `save_result.py`, and `optimize.py` with divergent error handling. A shared `ScoringService` would eliminate duplication and ensure consistent behavior across all tiers.

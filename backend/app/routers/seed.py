@@ -36,7 +36,7 @@ async def seed_taxonomy(body: SeedRequest, request: Request) -> SeedOutput:
         )
     except Exception as exc:
         logger.error("POST /api/seed failed: %s", exc, exc_info=True)
-        raise HTTPException(500, f"Seed failed: {exc}") from exc
+        raise HTTPException(500, "Seed operation failed. Check server logs for details.") from exc
 
 
 @router.get("/api/seed/agents")

@@ -24,10 +24,15 @@ export function createBeamUniforms(): Record<string, THREE.IUniform> {
 
 export const BEAM_VERTEX_SHADER = /* glsl */ `
   varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
 
   void main() {
     vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vNormal = normalize(normalMatrix * normal);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewPosition = -mvPosition.xyz;
+    gl_Position = projectionMatrix * mvPosition;
   }
 `;
 
@@ -40,19 +45,53 @@ export const BEAM_FRAGMENT_SHADER = /* glsl */ `
   uniform float uThickness;
 
   varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
 
   void main() {
-    // Gradient: domain color dominant (70% of beam), fading to cyan at camera end.
-    // pow() biases the mix toward uColorEnd (target) for most of the beam length.
-    float colorT = pow(vUv.x, 0.4);
-    vec3 color = mix(uColorStart, uColorEnd, colorT);
-    float scroll = vUv.x - uTime * uFlowSpeed;
-    float pulse = 0.5 + 0.5 * sin(scroll * 12.0);
-    float energy = 0.6 + 0.4 * pulse;
-    float radial = abs(vUv.y - 0.5) * 2.0;
-    float falloff = 1.0 - smoothstep(0.0, 1.0, radial * uThickness);
-    // Energy modulates alpha only — color stays at defined palette values
-    float alpha = energy * falloff * uOpacity;
+    vec3 color = uColorStart; // Exact color of the node
+    
+    // Speed modifiers
+    float streamSpeed = uTime * uFlowSpeed * 1.5; 
+    
+    // 1. Structural Geometric Edges (Wireframe aesthetic merging with domain aesthetic)
+    // Create sharp straight lines instead of smooth curves by stepping over the radial UV map.
+    // vUv.y maps around the beam outline (8 sides).
+    float edgeLine = step(0.90, fract(vUv.y * 8.0)); // Thinner, sharper lines
+    
+    // 2. High-speed Hexagonal Data Packets travelling strictly along the geometric structure
+    float packetLong = step(0.85, fract(vUv.x * 10.0 - streamSpeed));
+    float packetShort = step(0.97, fract(vUv.x * 25.0 - streamSpeed * 1.8));
+    float dataStream = max(packetLong * 0.7, packetShort);
+    
+    // 3. Angular helix (step function forces it into rings/hexagons)
+    // Using floor to lock it to discrete geometric steps
+    float geoSteps = floor(vUv.y * 8.0) / 8.0;
+    float helix = step(0.90, fract(vUv.x * 8.0 + geoSteps * 4.0 - streamSpeed * 0.7));
+    
+    // 4. Sharp Fresnel Contour (simulates 1px neon glass rim)
+    vec3 normal = normalize(vNormal);
+    vec3 viewDir = normalize(vViewPosition);
+    float fresnel = 1.0 - abs(dot(normal, viewDir));
+    float rimLine = step(0.85, fresnel); // very sharp step to match precise wireframes
+    
+    // Muzzle / Injection Flash
+    float muzzle = pow(1.0 - vUv.x, 20.0) * 1.5;
+
+    // Combine structural components
+    // Emphasize the geometric wiring and neon structure over soft gradient glows
+    float basePresence = 0.05; 
+    float structure = (edgeLine * 0.5) + (dataStream * 1.2) + (helix * 0.8) + (rimLine * 0.8) + muzzle;
+    
+    // Keep raw color to match strictly to domain
+    float energy = clamp(basePresence + structure, 0.0, 1.0);
+    
+    // Length-wise fade in/out - extremely sharp bounds
+    float sharpFade = step(0.01, vUv.x) * step(vUv.x, 0.99);
+    
+    // Clamp alpha output
+    float alpha = energy * uOpacity * sharpFade * step(0.5, uThickness);
+    
     gl_FragColor = vec4(color, alpha);
   }
 `;
@@ -78,16 +117,23 @@ export const RIPPLE_VERTEX_SHADER = /* glsl */ `
 
   void main() {
     vUv = uv;
-    vec3 displaced = position + normal * uRipple * 0.15;
+    // Digital jitter scale on impact instead of smooth ballooning
+    float noise = fract(sin(dot(position.xyz, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+    float jitter = 0.3 + 0.7 * noise; // erratic offset based on vertex position
+    
+    vec3 displaced = position + normal * uRipple * (0.15 * jitter);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
   }
 `;
 
 export const RIPPLE_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uColor;
+  uniform float uRipple;
   uniform float uOpacity;
 
   void main() {
-    gl_FragColor = vec4(uColor, uOpacity);
+    // Keep absolute brand color, just flash the opacity on ripple impact
+    float flashOpacity = min(1.0, uOpacity + uRipple * 0.6);
+    gl_FragColor = vec4(uColor, flashOpacity);
   }
 `;

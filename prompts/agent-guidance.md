@@ -53,9 +53,11 @@ Well-optimized prompts have clear visual structure. Use these patterns:
 Do not over-structure simple prompts. A one-sentence question does not need headers and XML tags. Match structure complexity to prompt complexity.
 
 ### Appropriate Length
-The optimized prompt should be roughly the same length as the original, ±50%. If the original is 50 tokens, the optimization should be 25–75 tokens. Dramatic length changes signal either padding (too long) or loss of information (too short). Exceptions:
-- Very short prompts (<20 tokens) often need expansion to add specificity
+The optimized prompt should be roughly the same length as the original, ±50%. If the original is 50 tokens, the optimization should be 25–75 tokens. A 3x expansion is almost always padding. A 10x expansion is always wrong. Dramatic length changes signal either padding (too long) or loss of information (too short). Exceptions:
+- Very short prompts (<20 tokens) often need expansion to add specificity — but even then, target 2-3x, not 10x
 - Very long prompts (>1000 tokens) often benefit from structural compression
+
+**Length is a hard constraint, not a suggestion.** If the scoring dimensions (clarity, specificity, structure) reward adding content, but the result exceeds 2x the original length, compress instead of expanding. Prefer precision (better word choices) over accretion (more words).
 
 ---
 
@@ -150,6 +152,17 @@ Do NOT pad prompts with unnecessary instructions. These add tokens without impro
 - "Be sure to carefully consider..." — just ask for what you want
 - "In your response, make sure to include..." — just list what to include
 - Repeating the same instruction in different words
+- Prescribing rigid output templates when the user asked for a report (let the executor organize naturally)
+
+### Scope Prescription
+Do NOT convert codebase understanding into execution checklists. The optimizer formulates intent with informed precision; the executor navigates the codebase. These are different jobs.
+- Listing specific files to check ("examine auth.py, session.py, and middleware.py")
+- Enumerating functions to inspect ("verify each log_decision() call site")
+- Prescribing directory scopes ("focus on backend/services/taxonomy/")
+- Adding `## Scope` or `## Audit targets` sections with file-level detail
+- Creating numbered checklists of things to verify at each site
+
+Instead, use codebase knowledge to express **what matters and why** — the executor will find the right files. "Audit observability for silent failures, especially where cross-process events can be silently dropped" is better than "Check event_notification.py line 33 for retry logic."
 
 ### Hallucinated Constraints
 Do NOT add constraints the user never mentioned:
@@ -221,12 +234,22 @@ When a prompt includes both context and instructions:
 
 ## Context Handling
 
-### Codebase Context
-When codebase context is provided (from workspace exploration), use it to:
-- Inform language and framework choices in the optimization
-- Reference specific patterns, conventions, or APIs from the codebase
-- Ensure the optimized prompt aligns with the project's tech stack
-- Never fabricate codebase details — only use what is explicitly provided
+### Codebase Context — Intelligence Layer
+Codebase context is an intelligence layer for prompt formulation. It tells you how the system works so you write like a developer who understands the codebase — not so you can enumerate what you learned. The executor has full codebase access and will discover files and architecture on their own.
+
+Use codebase context to:
+- Write with correct domain vocabulary (function names, event types, architectural terms)
+- Identify what actually matters — which subsystems have real risks, gaps, or complexity
+- Frame constraints that reflect actual system behavior, not file-level navigation
+- Calibrate the prompt's depth and focus to the system's real complexity
+
+Do NOT use codebase context to:
+- List file paths, service names, or directory structures in the optimized prompt
+- Pre-scope the task to specific modules — this narrows what the executor discovers
+- Convert understanding into checklists or inspection plans
+- Add `## Scope` or `## Files` sections that restrict the execution phase
+
+Never fabricate codebase details — only use what is explicitly provided.
 
 ### Workspace Intelligence
 When workspace intelligence metadata is available (project type, tech stack, manifest info), use it to:

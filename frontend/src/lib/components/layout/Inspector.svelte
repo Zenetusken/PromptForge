@@ -431,6 +431,7 @@
             {Object.values(forgeStore.phaseModels).slice(-1)[0]}
           </div>
         {/if}
+        <button class="phase-cancel" onclick={() => forgeStore.cancel()}>cancel</button>
       </div>
 
     {:else if !viewingCachedTab && isPassthrough}
@@ -725,6 +726,24 @@
     color: var(--color-text-dim);
     text-align: center;
     margin-top: 2px;
+  }
+
+  .phase-cancel {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-dim);
+    background: none;
+    border: none;
+    padding: 2px 0;
+    cursor: pointer;
+    margin-top: 4px;
+    opacity: 0.6;
+    transition: opacity 150ms, color 150ms;
+  }
+
+  .phase-cancel:hover {
+    opacity: 1;
+    color: var(--tier-accent, var(--color-neon-cyan));
   }
 
   .phase-label {

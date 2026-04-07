@@ -19,19 +19,34 @@ export type DegradationReason =
   | 'no_sampling_detected'
   | null;
 
+const _PIPELINE_STATUSES = new Set(['analyzing', 'optimizing', 'scoring']);
+
 /**
- * Reactive tier derivation — re-evaluates whenever any dependency changes.
+ * Effective execution tier — single flat derivation.
  *
- * Priority chain (matches backend):
- *  1. force_passthrough → passthrough
- *  2. force_sampling (if capable + connected) → sampling
- *  3. local provider available → internal
- *  4. auto-sampling available → sampling
- *  5. fallback → passthrough
+ * During active pipeline execution (analyzing/optimizing/scoring), prefer
+ * the backend's authoritative routing decision from the SSE stream. The
+ * backend accounts for ``caller="rest"`` which blocks sampling tiers from
+ * the web UI — the frontend prediction doesn't know about this constraint.
+ *
+ * When idle or complete, derive the tier from preferences + capabilities
+ * (the 5-tier priority chain matching ``services/routing.py``).
+ *
+ * All reactive dependencies are read in a single callback to ensure
+ * Svelte's fine-grained tracking catches every state change.
  */
 let _tier = $derived.by((): EffectiveTier => {
+  // --- Live overlay: backend's actual decision during pipeline execution ---
+  const live = forgeStore.routingDecision;
+  if (live && _PIPELINE_STATUSES.has(forgeStore.status)) {
+    return live.tier as EffectiveTier;
+  }
+
+  // --- Predicted tier: 5-tier priority chain ---
+  // 1. force_passthrough always wins
   if (preferencesStore.pipeline.force_passthrough) return 'passthrough';
 
+  // 2. force_sampling (if capable + connected)
   if (
     preferencesStore.pipeline.force_sampling &&
     forgeStore.samplingCapable === true &&
@@ -40,12 +55,15 @@ let _tier = $derived.by((): EffectiveTier => {
     return 'sampling';
   }
 
+  // 3. Internal provider available
   if (forgeStore.provider) return 'internal';
 
+  // 4. Auto-sampling
   if (forgeStore.samplingCapable === true && !forgeStore.mcpDisconnected) {
     return 'sampling';
   }
 
+  // 5. Passthrough fallback
   return 'passthrough';
 });
 

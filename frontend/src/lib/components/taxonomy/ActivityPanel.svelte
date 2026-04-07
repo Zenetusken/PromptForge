@@ -54,12 +54,14 @@
     if (d === 'rejected' || d === 'blocked' || d === 'skipped'
         || d === 'candidates_filtered')
       return 'var(--color-neon-yellow)';
-    // Informational — algorithm results, noise, seed progress
+    // Informational — algorithm results, noise, seed progress, audit
     if (d === 'algorithm_result' || d === 'noise_reassigned' || d === 'mega_clusters_detected'
         || d === 'no_sub_structure' || d === 'scored'
         || d === 'seed_started' || d === 'seed_explore_complete' || d === 'seed_agents_complete'
         || d === 'seed_persist_complete' || d === 'seed_taxonomy_complete'
-        || d === 'seed_prompt_scored')
+        || d === 'seed_prompt_scored'
+        || d === 'q_computed' || d === 'repaired'
+        || d === 'domains_created' || d === 'sub_domains_created')
       return 'var(--color-text-secondary)';
     return 'var(--color-text-dim)';
   }
@@ -176,6 +178,13 @@
       return typeof c.sibling_label === 'string' ? `→ ${c.sibling_label}` : '';
     }
     if (e.op === 'discover') {
+      if (e.decision === 'domains_created' || e.decision === 'sub_domains_created') {
+        const count = typeof c.count === 'number' ? c.count : 0;
+        const names = Array.isArray(c.domains) ? c.domains.slice(0, 3).join(', ')
+          : Array.isArray(c.sub_domains) ? c.sub_domains.slice(0, 3).join(', ')
+          : '';
+        return names ? `${count}: ${names}` : `${count} domains`;
+      }
       return typeof c.domain_label === 'string' ? c.domain_label : '';
     }
     if (e.op === 'error') {
@@ -184,7 +193,26 @@
     if (e.op === 'emerge') {
       return typeof c.domain === 'string' ? c.domain : '';
     }
+    if (e.op === 'audit') {
+      if (typeof c.q_system === 'number' || typeof c.q_baseline === 'number') {
+        const qb = typeof c.q_baseline === 'number' ? c.q_baseline.toFixed(3) : '?';
+        const qs = typeof c.q_system === 'number' ? c.q_system.toFixed(3) : '?';
+        return `Q ${qb}→${qs}`;
+      }
+      return '';
+    }
     if (e.op === 'reconcile') {
+      if (e.decision === 'repaired') {
+        const fixes = [
+          typeof c.member_counts_fixed === 'number' && c.member_counts_fixed > 0
+            ? `${c.member_counts_fixed} counts` : '',
+          typeof c.coherence_updated === 'number' && c.coherence_updated > 0
+            ? `${c.coherence_updated} coh` : '',
+          typeof c.scores_reconciled === 'number' && c.scores_reconciled > 0
+            ? `${c.scores_reconciled} scores` : '',
+        ].filter(Boolean).join(', ');
+        return fixes || 'repaired';
+      }
       return typeof c.count === 'number' ? `${c.count} zombies` : '';
     }
     if (e.op === 'seed') {
@@ -309,7 +337,7 @@
     </div>
     <!-- Operation type filter chips -->
     <div class="ap-filter-row">
-      {#each ['assign','extract','score','seed','split','candidate','merge','retire','phase','refit','emerge','discover','reconcile','refresh','error'] as opVal}
+      {#each ['assign','extract','score','seed','split','candidate','merge','retire','phase','refit','emerge','discover','reconcile','refresh','audit','error'] as opVal}
         <button
           class="ap-chip"
           class:ap-chip-active={filterOp === opVal}
@@ -585,8 +613,19 @@
     border-left: 2px solid var(--row-path-color, transparent);
   }
 
-  .ap-row--info { opacity: 0.5; }
-  .ap-row--info:hover { opacity: 0.85; }
+  /* Use color-based dimming instead of opacity to prevent the Three.js
+     topology canvas from bleeding through the semi-transparent panel
+     background on info-severity rows (the "superimposed text" artifact). */
+  .ap-row--info .ap-row-summary { color: color-mix(in srgb, var(--color-text-secondary) 50%, transparent); }
+  .ap-row--info .ap-badge-path { opacity: 0.4; }
+  .ap-row--info .ap-badge-op { opacity: 0.35; }
+  .ap-row--info .ap-badge-decision { opacity: 0.5; }
+  .ap-row--info .ap-metric { opacity: 0.4; }
+  .ap-row--info:hover .ap-row-summary { color: var(--color-text-secondary); }
+  .ap-row--info:hover .ap-badge-path,
+  .ap-row--info:hover .ap-badge-op,
+  .ap-row--info:hover .ap-badge-decision,
+  .ap-row--info:hover .ap-metric { opacity: 0.85; }
 
   .ap-row--error {
     background: color-mix(in srgb, var(--color-neon-red) 3%, transparent);

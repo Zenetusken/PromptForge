@@ -237,17 +237,23 @@ async def attempt_merge(
         else:
             survivor, loser = node_a, node_b
 
-        # Weighted centroid.
+        # Weighted centroid — use weighted_member_sum (score-weighted) rather
+        # than raw member_count.  Each centroid is already a score-weighted
+        # mean of its members, so the correct blend weight is the total
+        # score-weight that produced it (weighted_member_sum), not the
+        # unweighted count.  Falls back to member_count for pre-migration
+        # clusters where weighted_member_sum is 0.0 or None.
         emb_a = np.frombuffer(node_a.centroid_embedding, dtype=np.float32).copy()
         emb_b = np.frombuffer(node_b.centroid_embedding, dtype=np.float32).copy()
-        if total > 0:
-            merged_centroid = l2_normalize_1d(
-                (emb_a * count_a + emb_b * count_b) / total
-            )
-        else:
-            merged_centroid = l2_normalize_1d((emb_a + emb_b) / 2.0)
+        wms_a = node_a.weighted_member_sum or float(count_a) or 1.0
+        wms_b = node_b.weighted_member_sum or float(count_b) or 1.0
+        wms_total = wms_a + wms_b
+        merged_centroid = l2_normalize_1d(
+            (emb_a * wms_a + emb_b * wms_b) / wms_total
+        )
 
-        # Weighted coherence average.
+        # Weighted coherence average (member_count is fine here — coherence
+        # is per-member, not score-dependent).
         coh_a = node_a.coherence or 0.0
         coh_b = node_b.coherence or 0.0
         if total > 0:
@@ -268,6 +274,7 @@ async def attempt_merge(
         # Update survivor.
         survivor.centroid_embedding = merged_centroid.tobytes()
         survivor.member_count = total
+        survivor.weighted_member_sum = wms_total
         survivor.coherence = merged_coherence
         survivor.scored_count = merged_scored
         survivor.avg_score = merged_avg
@@ -277,6 +284,7 @@ async def attempt_merge(
         loser.state = "archived"
         loser.archived_at = _utcnow()
         loser.member_count = 0
+        loser.weighted_member_sum = 0.0
         loser.scored_count = 0
         loser.avg_score = None
         loser.usage_count = 0
@@ -568,6 +576,11 @@ async def attempt_retire(
             target_sibling.member_count = (
                 (target_sibling.member_count or 0) + opt_result.rowcount
             )
+            # Transfer weighted_member_sum from retiring node to sibling
+            target_sibling.weighted_member_sum = (
+                (target_sibling.weighted_member_sum or 0.0)
+                + (node.weighted_member_sum or 0.0)
+            )
             # Reconcile scored_count and avg_score on the target sibling
             # immediately — don't defer to warm-path reconciliation.
             from app.services.taxonomy.family_ops import combine_cluster_scores
@@ -609,6 +622,7 @@ async def attempt_retire(
         node.state = "archived"
         node.archived_at = _utcnow()
         node.member_count = 0
+        node.weighted_member_sum = 0.0
         node.usage_count = 0
         node.avg_score = None
         node.scored_count = 0

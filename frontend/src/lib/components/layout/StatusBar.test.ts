@@ -102,7 +102,7 @@ describe('StatusBar', () => {
     expect(screen.getByText(/optimizing \[2\/3\]/i)).toBeInTheDocument();
   });
 
-  it('applies green phase color when sampling tier is active', () => {
+  it('shows phase progress with status-phase class during pipeline', () => {
     mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
     forgeStore.provider = null;
     forgeStore.samplingCapable = true;
@@ -110,7 +110,9 @@ describe('StatusBar', () => {
     forgeStore.status = 'optimizing';
     render(StatusBar);
     const phase = screen.getByText(/optimizing \[2\/3\]/i);
-    expect(phase.classList.contains('status-phase-sampling')).toBe(true);
+    // Tier accent color is inherited from --tier-accent CSS variable
+    // set on the workbench container (not a per-element class).
+    expect(phase.classList.contains('status-phase')).toBe(true);
   });
 
   it('does not show version in status bar (moved to System accordion)', () => {

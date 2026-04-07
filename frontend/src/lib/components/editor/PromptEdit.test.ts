@@ -64,22 +64,34 @@ describe('PromptEdit', () => {
     expect(screen.getByRole('button', { name: /SYNTHESIZE/i })).not.toBeDisabled();
   });
 
-  it('synthesize button is disabled when status is analyzing', () => {
+  it('shows CANCEL button when status is analyzing', () => {
     forgeStore.status = 'analyzing';
     render(PromptEdit);
-    expect(screen.getByRole('button', { name: /SYNTHESIZE/i })).toBeDisabled();
+    const btn = screen.getByRole('button', { name: /CANCEL/i });
+    expect(btn).not.toBeDisabled();
   });
 
-  it('synthesize button is disabled when status is optimizing', () => {
+  it('shows CANCEL button when status is optimizing', () => {
     forgeStore.status = 'optimizing';
     render(PromptEdit);
-    expect(screen.getByRole('button', { name: /SYNTHESIZE/i })).toBeDisabled();
+    const btn = screen.getByRole('button', { name: /CANCEL/i });
+    expect(btn).not.toBeDisabled();
   });
 
-  it('synthesize button is disabled when status is scoring', () => {
+  it('shows CANCEL button when status is scoring', () => {
     forgeStore.status = 'scoring';
     render(PromptEdit);
-    expect(screen.getByRole('button', { name: /SYNTHESIZE/i })).toBeDisabled();
+    const btn = screen.getByRole('button', { name: /CANCEL/i });
+    expect(btn).not.toBeDisabled();
+  });
+
+  it('clicking CANCEL during synthesis calls forgeStore.cancel', async () => {
+    const user = userEvent.setup();
+    const cancelSpy = vi.spyOn(forgeStore, 'cancel');
+    forgeStore.status = 'analyzing';
+    render(PromptEdit);
+    await user.click(screen.getByRole('button', { name: /CANCEL/i }));
+    expect(cancelSpy).toHaveBeenCalled();
   });
 
   it('synthesize button is enabled again when status is complete', () => {

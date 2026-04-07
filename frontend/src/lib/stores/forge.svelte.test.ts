@@ -22,9 +22,14 @@ vi.mock('$lib/api/client', async (importOriginal) => {
 import { forgeStore } from './forge.svelte';
 import { editorStore } from './editor.svelte';
 import { clustersStore } from './clusters.svelte';
+import { addToast } from './toast.svelte';
 import { mockFetch, mockOptimizationResult, mockDimensionScores } from '../test-utils';
 import type { SSEEvent } from '$lib/api/client';
 import * as apiClient from '$lib/api/client';
+
+vi.mock('./toast.svelte', () => ({
+  addToast: vi.fn(),
+}));
 
 describe('ForgeStore', () => {
   beforeEach(() => {
@@ -73,6 +78,29 @@ describe('ForgeStore', () => {
         degraded_from: 'sampling',
       } as SSEEvent);
       expect(forgeStore.routingDecision?.degraded_from).toBe('sampling');
+    });
+
+    it('shows degradation toast when degraded from sampling', () => {
+      forgeStore._handleEvent({
+        event: 'routing',
+        tier: 'passthrough',
+        provider: null,
+        reason: 'Degraded',
+        degraded_from: 'sampling',
+      } as SSEEvent);
+      expect(addToast).toHaveBeenCalledWith('modified', expect.stringContaining('Sampling unavailable'));
+    });
+
+    it('does not show degradation toast for non-sampling degradation', () => {
+      vi.mocked(addToast).mockClear();
+      forgeStore._handleEvent({
+        event: 'routing',
+        tier: 'internal',
+        provider: 'claude-cli',
+        reason: 'Internal provider available',
+        degraded_from: null,
+      } as SSEEvent);
+      expect(addToast).not.toHaveBeenCalled();
     });
   });
 
@@ -485,8 +513,7 @@ describe('ForgeStore', () => {
       forgeStore.forge();
 
       // Simulate receiving a traceId (optimization_start event) so the error
-      // callback enters the immediate-error branch instead of the deferred
-      // sampling proxy branch (15s setTimeout).
+      // callback enters the reconnection branch.
       forgeStore.traceId = 'trace-err-1';
 
       errorCallback(new Error('Connection dropped'));
@@ -585,12 +612,34 @@ describe('ForgeStore', () => {
       forgeStore.assembledPrompt = 'Assembled';
       forgeStore.passthroughTraceId = 'pt-trace-1';
       forgeStore.routingDecision = { tier: 'internal', provider: 'claude-cli', reason: 'test', degraded_from: null };
+      forgeStore.synthesisStartedAt = Date.now();
       forgeStore.cancel();
       expect(forgeStore.status).toBe('idle');
       expect(forgeStore.traceId).toBeNull();
       expect(forgeStore.assembledPrompt).toBeNull();
       expect(forgeStore.passthroughTraceId).toBeNull();
       expect(forgeStore.routingDecision).toBeNull();
+      expect(forgeStore.synthesisStartedAt).toBeNull();
+    });
+  });
+
+  describe('synthesisStartedAt', () => {
+    it('is set when forge() starts', () => {
+      forgeStore.prompt = 'This is a valid prompt with more than 20 characters';
+      forgeStore.forge();
+      expect(forgeStore.synthesisStartedAt).toBeTypeOf('number');
+    });
+
+    it('is cleared on cancel', () => {
+      forgeStore.synthesisStartedAt = Date.now();
+      forgeStore.cancel();
+      expect(forgeStore.synthesisStartedAt).toBeNull();
+    });
+
+    it('is cleared on reset', () => {
+      forgeStore.synthesisStartedAt = Date.now();
+      forgeStore.reset();
+      expect(forgeStore.synthesisStartedAt).toBeNull();
     });
   });
 

@@ -9,17 +9,15 @@ import {
 export type BeamState = 'idle' | 'firing' | 'sustain' | 'terminate';
 
 export interface BeamConfig {
-  colorEnd: THREE.Color;
+  color: THREE.Color;
   radius: number;
   sustainMs: number;
 }
 
-const RADIAL_SEGMENTS = 4;
-const TUBULAR_SEGMENTS = 12;
-const FIRING_MS = 300;
-const TERMINATE_MS = 400;
-const REBUILD_ANGLE_THRESHOLD = 0.035;
-const REBUILD_DIST_THRESHOLD = 0.5;
+const RADIAL_SEGMENTS = 5; // Pentagonal cross-section as per design
+const TUBULAR_SEGMENTS = 16; // Smoother arc
+const FIRING_MS = 600;
+const TERMINATE_MS = 800;
 
 export class PlasmaBeam {
   readonly mesh: THREE.Mesh;
@@ -116,13 +114,14 @@ export class PlasmaBeam {
     this._stateTime = 0;
     this._frameCounter = 0;
 
-    this._material.uniforms.uColorEnd.value.copy(config.colorEnd);
+    this._material.uniforms.uColorStart.value.copy(config.color);
+    this._material.uniforms.uColorEnd.value.copy(config.color);
     this._material.uniforms.uOpacity.value = 0;
     this._material.uniforms.uFlowSpeed.value = 2.0;
     this._material.uniforms.uThickness.value = 1.0;
     this._sustainMs = config.sustainMs;
 
-    this._updateCurve(origin, camera, true);
+    this._updateCurve(origin, camera);
     this.mesh.visible = true;
 
     this._lastCameraQuat.copy(camera.quaternion);
@@ -152,7 +151,7 @@ export class PlasmaBeam {
       case 'firing': {
         const t = Math.min(this._stateTime / FIRING_MS, 1);
         this._material.uniforms.uOpacity.value = t;
-        this._updateCurve(origin, camera, true);
+        this._updateCurve(origin, camera);
         if (t >= 1) {
           this._state = 'sustain';
           this._stateTime = 0;
@@ -161,10 +160,8 @@ export class PlasmaBeam {
       }
       case 'sustain': {
         this._material.uniforms.uOpacity.value = 1.0;
-        const needsRebuild = this._frameCounter % 3 === 0 && this._needsCurveRebuild(camera);
-        if (needsRebuild) {
-          this._updateCurve(origin, camera, false);
-        }
+        // Always update curve during sustain to ensure it stays attached to moving camera/nodes
+        this._updateCurve(origin, camera);
         if (this._sustainMs !== Infinity && this._stateTime >= this._sustainMs) {
           this._state = 'terminate';
           this._stateTime = 0;
@@ -174,7 +171,7 @@ export class PlasmaBeam {
       case 'terminate': {
         const t = Math.min(this._stateTime / TERMINATE_MS, 1);
         this._material.uniforms.uOpacity.value = 1.0 - t;
-        this._updateCurve(origin, camera, true);
+        this._updateCurve(origin, camera);
         if (t >= 1) {
           this._reset();
           return false;
@@ -197,23 +194,16 @@ export class PlasmaBeam {
     this._material.uniforms.uThickness.value = 1.0;
   }
 
-  private _needsCurveRebuild(camera: THREE.PerspectiveCamera): boolean {
-    const angleDiff = camera.quaternion.angleTo(this._lastCameraQuat);
-    if (angleDiff > REBUILD_ANGLE_THRESHOLD) return true;
-    if (!this._targetObject) return false;
-    this._targetObject.getWorldPosition(this._tempVec);
-    return this._tempVec.distanceTo(this._lastTargetPos) > REBUILD_DIST_THRESHOLD;
-  }
-
   private _updateCurve(
     origin: THREE.Vector3,
     camera: THREE.PerspectiveCamera,
-    force: boolean
   ): void {
     if (!this._targetObject) return;
-    if (!force && !this._needsCurveRebuild(camera)) return;
 
+    // Use the exact unprojected origin which is anchored to the bottom
+    // center of the camera near-plane (HUD-style)
     this._origin.copy(origin);
+
     this._targetObject.getWorldPosition(this._target);
 
     this._control.addVectors(this._origin, this._target).multiplyScalar(0.5);
@@ -271,6 +261,7 @@ export class PlasmaBeam {
     }
 
     posAttr.needsUpdate = true;
+    this._geometry.computeVertexNormals();
     this._geometry.computeBoundingSphere();
   }
 

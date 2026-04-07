@@ -35,6 +35,20 @@
     return `${phaseDisplay}...`;  // passthrough or other non-pipeline status
   });
 
+  // Elapsed timer for active pipeline phases
+  let elapsed = $state<number | null>(null);
+  $effect(() => {
+    if (forgeStore.synthesisStartedAt && phaseProgress) {
+      elapsed = Math.floor((Date.now() - forgeStore.synthesisStartedAt) / 1000);
+      const interval = setInterval(() => {
+        elapsed = Math.floor((Date.now() - forgeStore.synthesisStartedAt!) / 1000);
+      }, 1000);
+      return () => { clearInterval(interval); elapsed = null; };
+    } else {
+      elapsed = null;
+    }
+  });
+
   const lastScore = $derived(
     activeResult?.overall_score
       ? formatScore(activeResult.overall_score)
@@ -64,7 +78,7 @@
       <span class="status-disconnected" use:tooltip={STATUS_TOOLTIPS.mcp_disconnected}>disconnected</span>
     {/if}
     {#if phaseProgress}
-      <span class="status-phase" class:status-phase-passthrough={phaseDisplay === 'passthrough'} class:status-phase-sampling={routing.isSampling}>{phaseProgress}</span>
+      <span class="status-phase">{phaseProgress}{#if elapsed != null} {elapsed}s{/if}</span>
     {:else if lastScore}
       {#if breadcrumbLabel}
         <span class="status-breadcrumb">
@@ -152,14 +166,6 @@
     font-size: 10px;
     color: var(--tier-accent, var(--color-neon-cyan));
     white-space: nowrap;
-  }
-
-  .status-phase-sampling {
-    color: var(--color-neon-green);
-  }
-
-  .status-phase-passthrough {
-    color: var(--color-neon-yellow);
   }
 
   .status-metric {

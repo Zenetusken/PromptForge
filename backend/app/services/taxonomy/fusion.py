@@ -556,14 +556,16 @@ async def build_composite_query(
     # Uses global_source_count (cross-cluster presence) not source_count (per-cluster).
     pattern = np.zeros(dim, dtype=np.float32)
     try:
-        from app.models import MetaPattern
+        from app.models import MetaPattern, PromptCluster
         from app.services.pipeline_constants import CROSS_CLUSTER_MIN_SOURCE_COUNT
 
         result = await db.execute(
             select(MetaPattern.embedding)
+            .join(PromptCluster, MetaPattern.cluster_id == PromptCluster.id)
             .where(
                 MetaPattern.global_source_count >= CROSS_CLUSTER_MIN_SOURCE_COUNT,
                 MetaPattern.embedding.isnot(None),
+                PromptCluster.state != "archived",
             )
             .order_by(MetaPattern.global_source_count.desc())
             .limit(FUSION_PATTERN_TOP_K)

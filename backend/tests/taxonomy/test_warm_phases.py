@@ -514,6 +514,182 @@ async def test_phase_refresh_does_not_delete_old_patterns_on_extraction_failure(
     assert len(patterns) >= 1
 
 
+@pytest.mark.asyncio
+async def test_phase_refresh_selects_explicit_pattern_stale_clusters(
+    db, mock_embedding, mock_provider,
+):
+    """Clusters with explicit pattern_stale=True in cluster_metadata must be
+    refreshed by Phase 4.
+
+    Regression test: Phase 4 reported clusters_refreshed=0 when a per-cluster
+    exception in the Phase D processing loop propagated to the outer
+    try/except, aborting refresh for ALL stale clusters. This test verifies
+    the filter logic correctly selects stale clusters after JSON round-trip.
+    """
+    from app.services.taxonomy.cluster_meta import write_meta
+    from app.services.taxonomy.warm_phases import phase_refresh
+
+    engine = _make_mock_engine(db, mock_embedding, mock_provider)
+
+    # Create cluster with explicit pattern_stale=True (as split.py sets it)
+    metadata = write_meta(None, pattern_stale=True, pattern_member_count=0)
+    node = PromptCluster(
+        label="Pattern Stale Node",
+        state="active",
+        domain="general",
+        centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+        member_count=5,
+        coherence=0.8,
+        color_hex="#a855f7",
+        cluster_metadata=metadata,
+    )
+    db.add(node)
+    await db.flush()
+
+    # Add member optimizations (need >= 3 for refresh_min_members)
+    for i in range(5):
+        opt = Optimization(
+            raw_prompt=f"stale pattern member {i}",
+            intent_label=f"stale label {i}",
+            cluster_id=node.id,
+        )
+        db.add(opt)
+
+    await db.commit()
+
+    # Expire all cached objects to force fresh DB reads (tests JSON round-trip)
+    db.expire_all()
+
+    result = await phase_refresh(engine, db)
+    assert result.clusters_refreshed >= 1, (
+        f"Expected clusters_refreshed >= 1 for cluster with pattern_stale=True, "
+        f"got {result.clusters_refreshed}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_phase_refresh_cross_session_json_roundtrip(
+    session_factory, mock_embedding, mock_provider,
+):
+    """Cross-session test: pattern_stale=True must survive SQLite JSON
+    round-trip and be visible to phase_refresh in a separate session.
+
+    This mimics the real warm-path flow where split (Phase 1) commits
+    pattern_stale=True in one session and Phase 4 reads it in another.
+    """
+    from app.services.taxonomy.cluster_meta import write_meta
+    from app.services.taxonomy.warm_phases import phase_refresh
+
+    # Session 1: create cluster with pattern_stale=True and commit
+    async with session_factory() as db1:
+        metadata = write_meta(None, pattern_stale=True, pattern_member_count=0)
+        node = PromptCluster(
+            label="Cross Session Stale",
+            state="active",
+            domain="general",
+            centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+            member_count=5,
+            coherence=0.8,
+            color_hex="#a855f7",
+            cluster_metadata=metadata,
+        )
+        db1.add(node)
+        await db1.flush()
+        node_id = node.id
+
+        for i in range(5):
+            opt = Optimization(
+                raw_prompt=f"cross session member {i}",
+                intent_label=f"cross label {i}",
+                cluster_id=node_id,
+            )
+            db1.add(opt)
+        await db1.commit()
+
+    # Session 2: phase_refresh should find the stale cluster
+    async with session_factory() as db2:
+        engine = _make_mock_engine(db2, mock_embedding, mock_provider)
+        result = await phase_refresh(engine, db2)
+        assert result.clusters_refreshed >= 1, (
+            f"Cross-session: expected clusters_refreshed >= 1, "
+            f"got {result.clusters_refreshed}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_phase_refresh_split_flow_metadata_survives(
+    session_factory, mock_embedding, mock_provider,
+):
+    """Mimics the exact split.py flow: create cluster, flush (NULL metadata),
+    then set pattern_stale=True in subsequent write_meta calls, flush, commit.
+
+    Phase 4 in a separate session must see pattern_stale=True.
+    """
+    from app.services.taxonomy.cluster_meta import read_meta, write_meta
+    from app.services.taxonomy.warm_phases import phase_refresh
+
+    async with session_factory() as db1:
+        # Step 1: Create cluster WITHOUT cluster_metadata (like split.py:263)
+        node = PromptCluster(
+            label="Split Child Sim",
+            state="candidate",
+            domain="general",
+            centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+            member_count=8,
+            coherence=0.7,
+            color_hex="#a855f7",
+        )
+        db1.add(node)
+        await db1.flush()  # INSERT with cluster_metadata=NULL (split.py:277)
+        node_id = node.id
+
+        # Step 2: Set position metadata (split.py:304)
+        node.cluster_metadata = write_meta(
+            node.cluster_metadata,
+            position_source="interpolated",
+            merge_protected_until="2026-04-06T12:00:00",
+        )
+
+        # Step 3: Add optimizations (split.py:311)
+        for i in range(8):
+            opt = Optimization(
+                raw_prompt=f"split child member {i}",
+                intent_label=f"split label {i}",
+                cluster_id=node_id,
+            )
+            db1.add(opt)
+
+        # Step 4: Set pattern_stale=True (split.py:462-467)
+        node.cluster_metadata = write_meta(
+            node.cluster_metadata,
+            pattern_member_count=node.member_count,
+            pattern_stale=True,
+        )
+        await db1.flush()  # UPDATE with final metadata (split.py:469)
+        await db1.commit()
+
+    # Session 2: verify metadata survived and Phase 4 finds it
+    async with session_factory() as db2:
+        from sqlalchemy import select as sa_select
+
+        # Direct read to verify JSON round-trip
+        row = (await db2.execute(
+            sa_select(PromptCluster).where(PromptCluster.id == node_id)
+        )).scalar_one()
+        meta = read_meta(row.cluster_metadata)
+        assert meta["pattern_stale"] is True, (
+            f"pattern_stale lost after commit+read: {meta}"
+        )
+
+        # Phase 4 must find and refresh this cluster
+        engine = _make_mock_engine(db2, mock_embedding, mock_provider)
+        result = await phase_refresh(engine, db2)
+        assert result.clusters_refreshed >= 1, (
+            f"Split-flow: expected clusters_refreshed >= 1, "
+            f"got {result.clusters_refreshed}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # notin_ query filter (Fix #10)
 # ---------------------------------------------------------------------------
@@ -545,3 +721,87 @@ async def test_phase_reconcile_notin_query_excludes_archived(
     await db.refresh(archived)
     # Archived node must remain archived — not touched by reconcile
     assert archived.state == "archived"
+
+
+# ---------------------------------------------------------------------------
+# Leaked MetaPattern cleanup (taxonomy health audit)
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_result_has_leaked_patterns_field():
+    """ReconcileResult includes the leaked_patterns_cleaned counter."""
+    field_names = {f.name for f in fields(ReconcileResult)}
+    assert "leaked_patterns_cleaned" in field_names
+
+
+@pytest.mark.asyncio
+async def test_phase_reconcile_cleans_leaked_patterns(db, mock_embedding, mock_provider):
+    """phase_reconcile deletes MetaPatterns belonging to archived clusters."""
+    from app.models import MetaPattern
+
+    engine = _make_mock_engine(db, mock_embedding, mock_provider)
+
+    # Create an archived cluster with leaked MetaPatterns
+    archived = PromptCluster(
+        label="Archived Leaker",
+        state="archived",
+        domain="general",
+        centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+        member_count=0,
+        color_hex="#a855f7",
+    )
+    db.add(archived)
+    await db.flush()
+
+    for i in range(3):
+        mp = MetaPattern(
+            cluster_id=archived.id,
+            pattern_text=f"leaked pattern {i}",
+            embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+        )
+        db.add(mp)
+
+    # Also create an active cluster with patterns that must NOT be deleted
+    active = PromptCluster(
+        label="Active Node",
+        state="active",
+        domain="general",
+        centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+        member_count=5,
+        coherence=0.8,
+        color_hex="#a855f7",
+    )
+    db.add(active)
+    await db.flush()
+
+    active_mp = MetaPattern(
+        cluster_id=active.id,
+        pattern_text="active pattern",
+        embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+    )
+    db.add(active_mp)
+
+    # Active cluster needs real optimization refs or reconcile archives it as zombie
+    for i in range(5):
+        db.add(Optimization(
+            raw_prompt=f"active member {i}",
+            intent_label=f"label {i}",
+            cluster_id=active.id,
+        ))
+    await db.commit()
+
+    result = await phase_reconcile(engine, db)
+    assert result.leaked_patterns_cleaned == 3
+
+    # Verify leaked patterns gone, active pattern preserved
+    from sqlalchemy import select as sa_select
+
+    remaining_leaked = (await db.execute(
+        sa_select(MetaPattern).where(MetaPattern.cluster_id == archived.id)
+    )).scalars().all()
+    assert len(remaining_leaked) == 0
+
+    remaining_active = (await db.execute(
+        sa_select(MetaPattern).where(MetaPattern.cluster_id == active.id)
+    )).scalars().all()
+    assert len(remaining_active) == 1

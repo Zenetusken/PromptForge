@@ -247,6 +247,17 @@ async def _run_speculative_phase(
                 "Failed to persist split failure metadata (non-fatal): %s",
                 meta_exc,
             )
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="split", decision="metadata_persist_failed",
+                    context={
+                        "cluster_ids": list(phase_result.split_attempted_ids)[:10],
+                        "error_type": type(meta_exc).__name__,
+                        "error_message": str(meta_exc)[:300],
+                    },
+                )
+            except RuntimeError:
+                pass
 
     return phase_result
 
@@ -460,6 +471,19 @@ async def execute_warm_path(
             audit_result.q_final or 0.0,
             audit_result.deadlock_breaker_used,
         )
+
+    # ------------------------------------------------------------------
+    # Snapshot pruning — tiered retention policy (own session + commit).
+    # prune_snapshots() keeps 0-24h: all, 1-30d: best/day, 30+d: best/week.
+    # ------------------------------------------------------------------
+    try:
+        async with session_factory() as db:
+            from app.services.taxonomy.snapshot import prune_snapshots
+            pruned = await prune_snapshots(db)
+            if pruned:
+                logger.info("Pruned %d old snapshots via retention policy", pruned)
+    except Exception as prune_exc:
+        logger.warning("Snapshot pruning failed (non-fatal): %s", prune_exc)
 
     # ------------------------------------------------------------------
     # Finalize: invalidate cache (warm_path_age already incremented

@@ -145,10 +145,13 @@ export interface InjectionEdgesResponse {
 }
 
 export interface ReclusterResult {
-  status: 'completed' | 'skipped';
+  status: 'completed' | 'rejected' | 'skipped';
   reason?: string;
   snapshot_id?: string;
   q_system?: number | null;
+  q_before?: number | null;
+  q_after?: number | null;
+  accepted?: boolean;
   nodes_created?: number;
   nodes_updated?: number;
   umap_fitted?: boolean;

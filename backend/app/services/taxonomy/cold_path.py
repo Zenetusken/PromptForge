@@ -51,7 +51,7 @@ from app.services.taxonomy.clustering import (
 )
 from app.services.taxonomy.coloring import enforce_minimum_delta_e, generate_color
 from app.services.taxonomy.event_logger import get_event_logger
-from app.services.taxonomy.family_ops import adaptive_merge_threshold
+from app.services.taxonomy.family_ops import adaptive_merge_threshold, score_to_centroid_weight
 from app.services.taxonomy.labeling import generate_label
 from app.services.taxonomy.projection import UMAPProjector, procrustes_align
 from app.services.taxonomy.quality import COLD_PATH_EPSILON, is_cold_path_non_regressive
@@ -500,9 +500,7 @@ async def execute_cold_path(
     )
     wms_by_cluster: dict[str, float] = {}
     for cid, opt_score in wms_q.all():
-        wms_by_cluster[cid] = wms_by_cluster.get(cid, 0.0) + max(
-            0.1, (opt_score or 5.0) / 10.0
-        )
+        wms_by_cluster[cid] = wms_by_cluster.get(cid, 0.0) + score_to_centroid_weight(opt_score)
     for node in all_nodes:
         if node.id in wms_by_cluster:
             node.weighted_member_sum = wms_by_cluster[node.id]
