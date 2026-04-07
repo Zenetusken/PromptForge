@@ -355,6 +355,33 @@ async def run_single_prompt(
             )
             improvement_score = round(max(0.0, min(10.0, _imp)), 2)
 
+        # --- Phase 3.5: Suggest (matches pipeline.py Phase 4) ---
+        # Generate 3 actionable suggestions for the optimized prompt.
+        # Previously skipped for seeds, breaking refinement UX (empty suggestions panel).
+        suggestions_list: list | None = None
+        if optimized_scores and analysis.weaknesses is not None:
+            try:
+                import json as _json
+                from app.schemas.pipeline_contracts import SuggestionsOutput
+                suggest_msg = prompt_loader.render("suggest.md", {
+                    "optimized_prompt": optimization.optimized_prompt,
+                    "scores": _json.dumps(optimized_scores.model_dump(), indent=2),
+                    "weaknesses": ", ".join(analysis.weaknesses) if analysis.weaknesses else "none identified",
+                    "strategy_used": effective_strategy,
+                })
+                suggest_result: SuggestionsOutput = await call_provider_with_retry(
+                    provider,
+                    model=scorer_model,  # Haiku — cheap and fast
+                    system_prompt=system_prompt,
+                    user_message=suggest_msg,
+                    output_format=SuggestionsOutput,
+                    max_tokens=2048,
+                    effort="low",
+                )
+                suggestions_list = suggest_result.suggestions
+            except Exception as _sug_exc:
+                logger.debug("Suggestion generation failed for prompt %d: %s", prompt_index, _sug_exc)
+
         # --- Phase 4: Embed ---
         # Raw embedding already computed before Phase 2 for enrichment queries.
         # Only compute optimized + transformation embeddings here.
@@ -409,6 +436,7 @@ async def run_single_prompt(
             model_used=optimizer_model,
             routing_tier="internal",
             heuristic_flags=_heuristic_flags,
+            suggestions=suggestions_list,
             context_sources={
                 "source": "batch_seed",
                 "batch_id": batch_id,

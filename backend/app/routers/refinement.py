@@ -114,6 +114,31 @@ async def refine(
     else:
         branch_id = body.branch_id or versions[-1].branch_id
 
+    # --- Context enrichment for refinement (previously missing) ---
+    # Fetch workspace guidance and adaptation state so the refine.md template
+    # gets the same context as the regular optimize pipeline.
+    _codebase_guidance: str | None = None
+    _adaptation_state: str | None = None
+    try:
+        from pathlib import Path
+        from app.config import PROJECT_ROOT
+        from app.services.workspace_intelligence import WorkspaceIntelligence
+        wi = WorkspaceIntelligence()
+        _codebase_guidance = wi.analyze([Path(PROJECT_ROOT)])
+    except Exception:
+        pass  # Degrade gracefully — workspace guidance is optional
+
+    if prefs_snapshot.get("pipeline", {}).get("enable_adaptation", True):
+        try:
+            from app.services.adaptation_tracker import AdaptationTracker
+            from app.services.prompt_loader import PromptLoader
+            tracker = AdaptationTracker(db, PromptLoader(PROMPTS_DIR))
+            _adaptation_state = await tracker.render_adaptation_state(
+                opt.task_type or "general",
+            )
+        except Exception:
+            pass  # Degrade gracefully — adaptation is optional
+
     async def event_stream():
         yield format_sse("routing", {
             "tier": decision.tier, "provider": decision.provider_name,
@@ -122,6 +147,8 @@ async def refine(
         try:
             async for event in ref_svc.create_refinement_turn(
                 body.optimization_id, branch_id, body.refinement_request,
+                codebase_guidance=_codebase_guidance,
+                adaptation_state=_adaptation_state,
             ):
                 yield format_sse(event.event, event.data)
         except Exception as exc:
