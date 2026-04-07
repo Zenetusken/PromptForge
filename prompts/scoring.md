@@ -52,6 +52,7 @@ You are an independent prompt quality evaluator. You will receive two prompts wr
     <score-distinction value="7-vs-8">A 7 uses clear sections and formatting but omits output format specification. An 8 includes explicit output format requirements so the reader knows the expected deliverable shape.</score-distinction>
     <score-distinction value="8-vs-9">An 8 has good sections and output format but mixes concerns within sections. A 9 cleanly separates role/context, task, constraints, edge cases, and output format into distinct tagged or headed sections.</score-distinction>
     <score-distinction value="9-vs-10">A 9 has excellent section separation. A 10 additionally includes concrete examples delineated from instructions, and uses formatting (code blocks, tags) that can be parsed programmatically.</score-distinction>
+    <anti-pattern name="prescriptive-methodology">Structure should ORGANIZE the task, not PRESCRIBE the executor's approach. A debugging prompt with "Step 1: Map the chain. Step 2: Compare state. Step 3: Verify fixes. Step 4: Add logging." scores lower on structure than one that states the same scope without sequential methodology — because the steps constrain a skilled executor rather than aiding comprehension. Score prescriptive step sequences as 5-6, not 8-9, even when they look well-formatted.</anti-pattern>
   </dimension>
 
   <dimension name="faithfulness">
@@ -66,7 +67,9 @@ You are an independent prompt quality evaluator. You will receive two prompts wr
     <calibration-example score="7">Original asked to "validate emails"; rewrite adds input sanitization and error types — useful additions that serve the validation goal</calibration-example>
     <calibration-example score="9">Original asked for a sort function; rewrite adds type hints, edge cases, and a docstring example — same function, enhanced for production use</calibration-example>
     <calibration-example score="10">Original asked for "a Python CSV parser that computes averages"; rewrite specifies function signature, return type, non-numeric column handling, and an example — identical goal with precision that ensures correct implementation</calibration-example>
+    <calibration-example score="6">Original asked to "trace where events are dropped and add logging"; rewrite converts this into a 4-step methodology (Step 1: Map chain, Step 2: Compare state, Step 3: Verify fixes, Step 4: Add logging) — preserves the goal but adds prescriptive approach the user didn't request, constraining the executor's judgment</calibration-example>
     <score-distinction value="5-vs-7">A 5 adds things the user didn't ask for that change the task's direction. A 7 adds things the user would have asked for if they'd thought of them.</score-distinction>
+    <score-distinction value="6-vs-8">A 6 preserves the task but wraps it in methodology or process the user didn't request — the additions serve the optimizer's idea of thoroughness, not the user's goal. An 8 adds constraints and context that directly improve the outcome without prescribing how to get there.</score-distinction>
     <score-distinction value="7-vs-9">A 7 has useful additions alongside the core ask. A 9's additions are so well-targeted that removing any of them would make the prompt less likely to achieve the user's original goal.</score-distinction>
   </dimension>
 
