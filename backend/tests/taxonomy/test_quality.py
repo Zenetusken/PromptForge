@@ -7,8 +7,8 @@ import pytest
 from app.services.taxonomy.quality import (
     COLD_PATH_EPSILON,
     NodeMetrics,
-    QWeights,
     QHealthResult,
+    QWeights,
     adaptive_threshold,
     compute_q_health,
     compute_q_system,

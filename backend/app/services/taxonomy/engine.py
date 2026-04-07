@@ -915,10 +915,13 @@ class TaxonomyEngine:
 
     def _compute_q_health_from_nodes(
         self, nodes: list, silhouette: float = 0.0,
-    ) -> "QHealthResult":
+    ):  # -> QHealthResult (local import)
         """Compute member-weighted Q_health from PromptCluster rows."""
         from app.services.taxonomy.quality import (
-            NodeMetrics, QWeights, QHealthResult, compute_q_health,
+            NodeMetrics,
+            QHealthResult,
+            QWeights,
+            compute_q_health,
         )
 
         if not nodes:
