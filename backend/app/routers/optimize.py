@@ -91,7 +91,9 @@ class OptimizeRequest(BaseModel):
     strategy: str | None = Field(None, description="Strategy override")
     workspace_path: str | None = Field(None, description="Workspace root for guidance file scanning")
     repo_full_name: str | None = Field(None, description="GitHub repo (owner/name) for curated codebase context")
-    applied_pattern_ids: list[str] | None = Field(None, max_length=20, description="Pattern IDs to inject into optimizer context")
+    applied_pattern_ids: list[str] | None = Field(
+        None, max_length=20, description="Pattern IDs to inject into optimizer context",
+    )
 
 
 @router.post("/optimize")

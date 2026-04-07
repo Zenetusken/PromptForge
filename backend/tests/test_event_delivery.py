@@ -11,7 +11,6 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import threading
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -19,14 +18,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient
 
-from app.services.event_bus import EventBus, _REPLAY_BUFFER_SIZE
+from app.services.event_bus import _REPLAY_BUFFER_SIZE, EventBus
 from app.services.taxonomy.event_logger import (
-    TaxonomyEventLogger,
     _MAX_RETRY_QUEUE,
+    TaxonomyEventLogger,
     reset_event_logger,
     set_event_logger,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -61,7 +59,6 @@ class TestSyncFallback:
     def test_forward_sync_calls_httpx_post(self, tel: TaxonomyEventLogger) -> None:
         """_forward_sync should POST to the backend endpoint in a thread."""
         event = {"ts": "2026-04-06T00:00:00Z", "path": "hot", "op": "assign", "decision": "merge_into"}
-        completed = threading.Event()
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()

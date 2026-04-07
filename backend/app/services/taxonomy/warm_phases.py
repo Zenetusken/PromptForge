@@ -952,8 +952,8 @@ async def phase_reconcile(
     # optimization's current cluster_id. Previously this just DELETED stale
     # records, causing prompts to vanish from cluster detail views.
     try:
+
         from app.models import OptimizationPattern
-        from sqlalchemy import delete as sa_delete
 
         active_ids_sq2 = select(PromptCluster.id).where(
             PromptCluster.state.in_(["active", "candidate", "mature", "template", "domain"])

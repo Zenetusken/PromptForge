@@ -596,12 +596,12 @@ async def bulk_persist(
     # Quality gate: filter out low-quality seeds before persisting.
     # Seeds with overall_score < 5.0 or improvement_score <= 0.0 add noise
     # to the taxonomy and few-shot pool without providing value.
-    SEED_MIN_SCORE = 5.0
+    seed_min_score = 5.0
     completed_raw = [r for r in results if r.status == "completed"]
     completed = []
     quality_rejected = 0
     for r in completed_raw:
-        if r.overall_score is not None and r.overall_score < SEED_MIN_SCORE:
+        if r.overall_score is not None and r.overall_score < seed_min_score:
             quality_rejected += 1
             logger.info(
                 "Seed quality gate: rejected %s (score=%.2f, improvement=%.2f)",
@@ -611,7 +611,7 @@ async def bulk_persist(
         completed.append(r)
     if quality_rejected:
         logger.info("Seed quality gate: %d/%d rejected (min_score=%.1f)",
-                     quality_rejected, len(completed_raw), SEED_MIN_SCORE)
+                     quality_rejected, len(completed_raw), seed_min_score)
 
     if not completed:
         return 0

@@ -43,10 +43,10 @@ _PUBLISH_URL = "http://127.0.0.1:8000/api/events/_publish"
 
 # Reusable httpx client — avoids per-call connection overhead for
 # high-frequency events like optimization_status (~10 calls per pipeline).
-_httpx_client: "httpx.AsyncClient | None" = None
+_httpx_client: object = None  # httpx.AsyncClient, lazily initialized
 
 
-def _get_client() -> "httpx.AsyncClient":
+def _get_client() -> object:
     """Lazy-init a module-level reusable httpx client."""
     global _httpx_client
     if _httpx_client is None or _httpx_client.is_closed:
