@@ -26,11 +26,16 @@ export interface SceneNode {
 
 /** Opacity by lifecycle state and active filter.
  *  - null filter ("all" tab): candidates at 40%, everything else 100%
+ *  - "archived" filter: treat as "all" — archived nodes are excluded from the
+ *    3D graph (no UMAP positions), so dimming everything to highlight nothing
+ *    is pointless. Show the full graph instead.
  *  - specific filter: matching nodes 100%, domains 50%, rest 25% (ghosted)
  */
 function stateOpacity(state: string, stateFilter: string | null = null): number {
-  if (stateFilter === null) {
-    // "all" tab — candidates translucent, everything else full
+  if (stateFilter === null || stateFilter === 'archived') {
+    // "all" or "archived" tab — candidates translucent, everything else full.
+    // Archived nodes are filtered out of the graph in buildSceneData(), so
+    // there's nothing to highlight — show the normal view instead of ghosting.
     return state === 'candidate' ? 0.4 : 1.0;
   }
   // Filtered tab — matching nodes glow, rest ghosted
