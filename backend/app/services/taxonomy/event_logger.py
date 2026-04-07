@@ -170,7 +170,6 @@ class TaxonomyEventLogger:
             # of being silently cancelled.
             try:
                 loop = asyncio.get_running_loop()
-                from app.services.event_notification import notify_event_bus
                 task = loop.create_task(
                     self._forward_with_retry(event, op, decision),
                     name=f"taxonomy_fwd_{op}_{decision}",
