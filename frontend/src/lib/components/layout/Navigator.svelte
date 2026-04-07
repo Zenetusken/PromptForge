@@ -255,6 +255,7 @@
       editorStore.openResult(opt.id); // open tab — data already cached by loadFromRecord
       // Stay on the current sidebar panel — don't switch away from history
     } catch {
+      addToast('deleted', 'Failed to load optimization');
       forgeStore.prompt = item.raw_prompt;
       forgeStore.status = 'idle';
     }

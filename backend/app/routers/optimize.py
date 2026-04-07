@@ -1,12 +1,11 @@
 """Optimization endpoints — POST /api/optimize (SSE), GET /api/optimize/{trace_id}, passthrough."""
 
-import asyncio
 import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,9 +61,9 @@ class OptimizationDetail(BaseModel):
     scoring_mode: str | None = Field(default=None, description="Scoring method: 'hybrid', 'heuristic', or 'skipped'.")
     duration_ms: int | None = Field(default=None, description="Total pipeline duration in milliseconds.")
     status: str = Field(description="Optimization status: 'completed', 'pending', or 'failed'.")
-    context_sources: dict[str, bool] | None = Field(
+    context_sources: dict | None = Field(
         default=None,
-        description="Which context sources were available (guidance, codebase, adaptation).",
+        description="Which context sources were available (guidance, codebase, adaptation, or batch seed metadata).",
     )
     created_at: str | None = Field(default=None, description="ISO 8601 creation timestamp.")
     intent_label: str | None = Field(default=None, description="Short intent classification label (3-6 words).")
@@ -92,7 +91,7 @@ class OptimizeRequest(BaseModel):
     strategy: str | None = Field(None, description="Strategy override")
     workspace_path: str | None = Field(None, description="Workspace root for guidance file scanning")
     repo_full_name: str | None = Field(None, description="GitHub repo (owner/name) for curated codebase context")
-    applied_pattern_ids: list[str] | None = Field(None, description="Pattern IDs to inject into optimizer context")
+    applied_pattern_ids: list[str] | None = Field(None, max_length=20, description="Pattern IDs to inject into optimizer context")
 
 
 @router.post("/optimize")
@@ -140,79 +139,6 @@ async def optimize(
         applied_pattern_ids=body.applied_pattern_ids,
         preferences_snapshot=prefs_snapshot,
     )
-
-    # Sampling proxy: when force_sampling degrades to internal/passthrough
-    # because REST callers can't use MCP sampling directly, proxy through
-    # the MCP server which owns the sampling session with the IDE bridge.
-    if decision.degraded_from == "sampling" and routing.state.sampling_capable is True:
-        from app.services.mcp_proxy import call_mcp_tool
-
-        async def sampling_proxy_stream():
-            yield format_sse("routing", {
-                "tier": "sampling", "provider": None,
-                "reason": "force_sampling via MCP proxy",
-                "degraded_from": None,
-            })
-            yield format_sse("status", {"phase": "analyze", "status": "running"})
-            try:
-                # Default workspace_path to the project root so the MCP tool
-                # can scan for CLAUDE.md / AGENTS.md and inject workspace context.
-                # The web UI doesn't send workspace_path, but the server IS
-                # the project — its guidance files are the relevant context.
-                from app.config import PROJECT_ROOT
-                effective_workspace = body.workspace_path or str(PROJECT_ROOT)
-
-                # Launch MCP call as background task so we can yield keepalives
-                task = asyncio.ensure_future(call_mcp_tool("synthesis_optimize", {
-                    "prompt": body.prompt,
-                    "strategy": body.strategy,
-                    "workspace_path": effective_workspace,
-                    "repo_full_name": body.repo_full_name,
-                    "applied_pattern_ids": body.applied_pattern_ids,
-                }))
-
-                # Keepalive loop: yield SSE comments every 10s to prevent
-                # browser/proxy idle timeout during the 20-30s MCP call.
-                while not task.done():
-                    try:
-                        await asyncio.wait_for(asyncio.shield(task), timeout=10.0)
-                    except asyncio.TimeoutError:
-                        yield ": keepalive\n\n"
-
-                result = task.result()
-
-                # Fetch the full record from DB so the SSE event matches the
-                # OptimizationDetail shape the frontend expects.
-                trace_id = result.get("trace_id")
-                if trace_id:
-                    yield format_sse("optimization_start", {"trace_id": trace_id})
-                    from app.database import async_session_factory
-                    async with async_session_factory() as fresh_db:
-                        opt_result = await fresh_db.execute(
-                            select(Optimization).where(Optimization.trace_id == trace_id)
-                        )
-                        opt = opt_result.scalar_one_or_none()
-                        if opt:
-                            cluster_id = await _get_cluster_id(fresh_db, opt.id)
-                            detail = _serialize_optimization(opt, cluster_id=cluster_id)
-                            yield format_sse("optimization_complete", detail.model_dump())
-                        else:
-                            logger.warning("Sampling proxy: optimization not found for trace_id=%s", trace_id)
-                            yield format_sse("optimization_complete", result)
-                else:
-                    yield format_sse("optimization_complete", result)
-            except Exception as exc:
-                logger.error("Sampling proxy failed: %s", exc, exc_info=True)
-                yield format_sse("error", {"error": f"Sampling proxy error: {exc}"})
-
-        logger.info(
-            "POST /api/optimize: sampling proxy — force_sampling degraded, proxying through MCP server",
-        )
-        return StreamingResponse(
-            sampling_proxy_stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
-        )
 
     if decision.tier == "passthrough":
         # Inline passthrough — stream assembled template via SSE
@@ -285,7 +211,12 @@ async def optimize(
                 yield format_sse(event.event, event.data)
         except Exception as exc:
             logger.error("Pipeline SSE stream error: %s", exc, exc_info=True)
-            yield format_sse("error", {"error": str(exc)})
+            from app.providers.base import ProviderError
+            if isinstance(exc, ProviderError):
+                msg = f"Provider error: {type(exc).__name__}"
+            else:
+                msg = "An internal error occurred during optimization"
+            yield format_sse("error", {"error": msg})
 
     return StreamingResponse(
         event_stream(),
@@ -396,6 +327,15 @@ class PassthroughSaveRequest(BaseModel):
     model: str | None = Field(
         None, description="External model identifier.",
     )
+
+    _VALID_SCORE_KEYS = frozenset({"clarity", "specificity", "structure", "faithfulness", "conciseness"})
+
+    @model_validator(mode="after")
+    def _strip_unknown_score_keys(self) -> "PassthroughSaveRequest":
+        """Strip unrecognized score dimensions — external LLMs may add extras."""
+        if self.scores is not None:
+            self.scores = {k: v for k, v in self.scores.items() if k in self._VALID_SCORE_KEYS}
+        return self
 
 
 @router.post("/optimize/passthrough")

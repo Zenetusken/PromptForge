@@ -75,6 +75,9 @@ async def run_single_prompt(
     agent_name: str = "",
     prompt_index: int = 0,
     total_prompts: int = 1,
+    session_factory: Any | None = None,
+    taxonomy_engine: Any | None = None,
+    domain_resolver: Any | None = None,
 ) -> PendingOptimization:
     """Run one prompt through analyze → optimize → score → embed in memory.
 
@@ -124,10 +127,20 @@ async def run_single_prompt(
         available_strategies = strategy_loader.format_available()
 
         # --- Phase 1: Analyze ---
+        # Use dynamic domain labels from domain resolver when available (matches pipeline.py).
+        # Falls back to hardcoded list on cold start before domain resolver is initialized.
+        _known_domains = "backend, frontend, database, data, devops, security, fullstack, general"
+        if domain_resolver is not None:
+            try:
+                _labels = domain_resolver.domain_labels
+                if _labels:
+                    _known_domains = ", ".join(sorted(_labels))
+            except Exception:
+                pass  # Fall back to hardcoded list
         analyze_msg = prompt_loader.render("analyze.md", {
             "raw_prompt": raw_prompt,
             "available_strategies": available_strategies,
-            "known_domains": "backend, frontend, database, data, devops, security, fullstack, general",
+            "known_domains": _known_domains,
         })
         analysis: AnalysisResult = await call_provider_with_retry(
             provider,
@@ -143,6 +156,16 @@ async def run_single_prompt(
         effective_task_type = semantic_upgrade_general(analysis.task_type, raw_prompt)
         if effective_task_type != analysis.task_type:
             analysis.task_type = effective_task_type
+
+        # Domain resolution (matches pipeline.py hot path)
+        effective_domain = analysis.domain or "general"
+        if domain_resolver is not None:
+            try:
+                effective_domain = await domain_resolver.resolve(
+                    analysis.domain, analysis.confidence, raw_prompt,
+                )
+            except Exception as _dr_exc:
+                logger.debug("Domain resolve failed for prompt %d: %s", prompt_index, _dr_exc)
 
         effective_strategy = resolve_effective_strategy(
             selected_strategy=analysis.selected_strategy,
@@ -162,6 +185,75 @@ async def run_single_prompt(
             f"Rationale: {analysis.strategy_rationale}"
         )
 
+        # --- Pre-optimization enrichment (matches pipeline.py Phase 1.5) ---
+        # Embed raw prompt BEFORE Phase 2 so it can drive pattern/few-shot search
+        prompt_embedding = None
+        raw_embedding: bytes | None = None
+        try:
+            prompt_vec = await embedding_service.aembed_single(raw_prompt)
+            prompt_embedding = prompt_vec  # ndarray for search
+            raw_embedding = prompt_vec.astype("float32").tobytes()
+        except Exception as exc:
+            logger.warning("Raw embedding failed for prompt %d: %s", prompt_index, exc)
+
+        # Auto-inject meta-patterns from taxonomy knowledge graph
+        applied_patterns_text: str | None = None
+        context_flags: dict[str, bool] = {}
+        if taxonomy_engine is not None and session_factory is not None and prompt_embedding is not None:
+            try:
+                from app.services.pattern_injection import (
+                    auto_inject_patterns,
+                    format_injected_patterns,
+                )
+                async with session_factory() as _enrich_db:
+                    injected, _cluster_ids = await auto_inject_patterns(
+                        raw_prompt=raw_prompt,
+                        taxonomy_engine=taxonomy_engine,
+                        db=_enrich_db,
+                        trace_id=trace_id,
+                    )
+                if injected:
+                    applied_patterns_text = format_injected_patterns(injected)
+                    context_flags["cluster_injection"] = True
+            except Exception as _pi_exc:
+                logger.debug("Pattern injection failed for prompt %d: %s", prompt_index, _pi_exc)
+
+        # Retrieve few-shot examples from high-scoring past optimizations
+        few_shot_text: str | None = None
+        if session_factory is not None and prompt_embedding is not None:
+            try:
+                from app.services.pattern_injection import (
+                    format_few_shot_examples,
+                    retrieve_few_shot_examples,
+                )
+                async with session_factory() as _fs_db:
+                    examples = await retrieve_few_shot_examples(
+                        raw_prompt=raw_prompt,
+                        db=_fs_db,
+                        trace_id=trace_id,
+                        prompt_embedding=prompt_embedding,
+                    )
+                few_shot_text = format_few_shot_examples(examples)
+                if few_shot_text:
+                    context_flags["few_shot_examples"] = True
+            except Exception as _fs_exc:
+                logger.debug("Few-shot retrieval failed for prompt %d: %s", prompt_index, _fs_exc)
+
+        # Render adaptation state (strategy affinity from user feedback)
+        adaptation_text: str | None = None
+        if session_factory is not None:
+            try:
+                from app.services.adaptation_tracker import AdaptationTracker
+                async with session_factory() as _adapt_db:
+                    tracker = AdaptationTracker(_adapt_db, prompt_loader)
+                    adaptation_text = await tracker.render_adaptation_state(
+                        analysis.task_type or "general",
+                    )
+                if adaptation_text:
+                    context_flags["adaptation"] = True
+            except Exception as _at_exc:
+                logger.debug("Adaptation state failed for prompt %d: %s", prompt_index, _at_exc)
+
         # --- Phase 2: Optimize ---
         optimize_msg = prompt_loader.render("optimize.md", {
             "raw_prompt": raw_prompt,
@@ -169,9 +261,9 @@ async def run_single_prompt(
             "strategy_instructions": strategy_instructions,
             "codebase_guidance": workspace_guidance,
             "codebase_context": codebase_context,
-            "adaptation_state": None,
-            "applied_patterns": None,
-            "few_shot_examples": None,
+            "adaptation_state": adaptation_text,
+            "applied_patterns": applied_patterns_text,
+            "few_shot_examples": few_shot_text,
         })
         dynamic_max_tokens = compute_optimize_max_tokens(len(raw_prompt))
         optimization: OptimizationResult = await call_provider_with_retry(
@@ -198,6 +290,7 @@ async def run_single_prompt(
         optimized_scores = None
         deltas = None
         scoring_mode = "skipped"
+        _heuristic_flags: list | None = None
         if prefs.get("pipeline.enable_scoring", prefs_snapshot):
             import random
             original_first = random.choice([True, False])
@@ -225,13 +318,31 @@ async def run_single_prompt(
             heur_optimized = HeuristicScorer.score_prompt(
                 optimization.optimized_prompt, original=raw_prompt,
             )
-            blended_original = blend_scores(llm_original, heur_original, None)
-            blended_optimized = blend_scores(llm_optimized, heur_optimized, None)
+
+            # Fetch historical stats for z-score normalization (matches pipeline.py)
+            historical_stats = None
+            if session_factory is not None:
+                try:
+                    from app.services.optimization_service import OptimizationService
+                    async with session_factory() as _stats_db:
+                        svc = OptimizationService(_stats_db)
+                        historical_stats = await svc.get_score_distribution(
+                            exclude_scoring_modes=["heuristic"],
+                        )
+                except Exception as _hs_exc:
+                    logger.debug("Historical stats fetch failed: %s", _hs_exc)
+
+            blended_original = blend_scores(llm_original, heur_original, historical_stats)
+            blended_optimized = blend_scores(llm_optimized, heur_optimized, historical_stats)
 
             original_scores = blended_original.to_dimension_scores()
             optimized_scores = blended_optimized.to_dimension_scores()
             deltas = DimensionScores.compute_deltas(original_scores, optimized_scores)
             scoring_mode = "hybrid"
+            # Capture divergence flags (matches pipeline.py)
+            if blended_optimized.divergence_flags:
+                _heuristic_flags = blended_optimized.divergence_flags
+                context_flags["divergence_flags"] = True
 
         # Improvement score — weights from single source of truth
         improvement_score: float | None = None
@@ -244,14 +355,10 @@ async def run_single_prompt(
             improvement_score = round(max(0.0, min(10.0, _imp)), 2)
 
         # --- Phase 4: Embed ---
-        raw_embedding: bytes | None = None
+        # Raw embedding already computed before Phase 2 for enrichment queries.
+        # Only compute optimized + transformation embeddings here.
         opt_embedding: bytes | None = None
         xfm_embedding: bytes | None = None
-        try:
-            raw_vec = await embedding_service.aembed_single(raw_prompt)
-            raw_embedding = raw_vec.astype("float32").tobytes()
-        except Exception as exc:
-            logger.warning("Raw embedding failed for prompt %d: %s", prompt_index, exc)
         try:
             opt_vec = await embedding_service.aembed_single(optimization.optimized_prompt)
             opt_embedding = opt_vec.astype("float32").tobytes()
@@ -287,7 +394,7 @@ async def run_single_prompt(
             improvement_score=improvement_score,
             scoring_mode=scoring_mode,
             intent_label=title_case_label(analysis.intent_label or "general"),
-            domain=analysis.domain or "general",
+            domain=effective_domain,
             domain_raw=(analysis.domain or "general"),
             embedding=raw_embedding,
             optimized_embedding=opt_embedding,
@@ -300,10 +407,12 @@ async def run_single_prompt(
             provider=provider.name,
             model_used=optimizer_model,
             routing_tier="internal",
+            heuristic_flags=_heuristic_flags,
             context_sources={
                 "source": "batch_seed",
                 "batch_id": batch_id,
                 "agent": agent_name,
+                **context_flags,
             },
         )
 
@@ -334,6 +443,9 @@ async def run_batch(
     workspace_guidance: str | None = None,
     batch_id: str | None = None,
     on_progress: Any | None = None,
+    session_factory: Any | None = None,
+    taxonomy_engine: Any | None = None,
+    domain_resolver: Any | None = None,
 ) -> list[PendingOptimization]:
     """Run N prompts through the pipeline in parallel.
 
@@ -342,6 +454,10 @@ async def run_batch(
         provider: LLM provider for all phases.
         max_parallel: Concurrency limit (10 internal, 5 API, 2 sampling).
         on_progress: Callback fired after each prompt completes.
+        session_factory: Async DB session factory for enrichment queries
+            (pattern injection, few-shot retrieval, adaptation state, score stats).
+        taxonomy_engine: TaxonomyEngine singleton for pattern injection.
+        domain_resolver: DomainResolver singleton for domain resolution.
 
     Returns:
         List of PendingOptimization results (some may have status="failed").
@@ -366,6 +482,9 @@ async def run_batch(
                 batch_id=batch_id,
                 prompt_index=index,
                 total_prompts=len(prompts),
+                session_factory=session_factory,
+                taxonomy_engine=taxonomy_engine,
+                domain_resolver=domain_resolver,
             )
             # Check for rate limit error in result
             if (
@@ -392,6 +511,9 @@ async def run_batch(
                         batch_id=batch_id,
                         prompt_index=index,
                         total_prompts=len(prompts),
+                        session_factory=session_factory,
+                        taxonomy_engine=taxonomy_engine,
+                        domain_resolver=domain_resolver,
                     )
                     return retry
                 finally:
@@ -471,7 +593,25 @@ async def bulk_persist(
     Includes retry logic — one retry after 5s on transient failures.
     """
     t0 = time.monotonic()
-    completed = [r for r in results if r.status == "completed"]
+    # Quality gate: filter out low-quality seeds before persisting.
+    # Seeds with overall_score < 5.0 or improvement_score <= 0.0 add noise
+    # to the taxonomy and few-shot pool without providing value.
+    SEED_MIN_SCORE = 5.0
+    completed_raw = [r for r in results if r.status == "completed"]
+    completed = []
+    quality_rejected = 0
+    for r in completed_raw:
+        if r.overall_score is not None and r.overall_score < SEED_MIN_SCORE:
+            quality_rejected += 1
+            logger.info(
+                "Seed quality gate: rejected %s (score=%.2f, improvement=%.2f)",
+                r.id[:8], r.overall_score, r.improvement_score or 0.0,
+            )
+            continue
+        completed.append(r)
+    if quality_rejected:
+        logger.info("Seed quality gate: %d/%d rejected (min_score=%.1f)",
+                     quality_rejected, len(completed_raw), SEED_MIN_SCORE)
 
     if not completed:
         return 0
@@ -590,7 +730,7 @@ async def batch_taxonomy_assign(
 
     from sqlalchemy import select as sa_select
 
-    from app.models import Optimization
+    from app.models import Optimization, OptimizationPattern
     from app.services.taxonomy import get_engine
     from app.services.taxonomy.cluster_meta import write_meta
     from app.services.taxonomy.family_ops import assign_cluster
@@ -619,6 +759,15 @@ async def batch_taxonomy_assign(
                 opt = opt_row.scalar_one_or_none()
                 if opt is not None:
                     opt.cluster_id = cluster.id
+
+                # Create OptimizationPattern join record so downstream consumers
+                # (history, detail view, lifecycle, pattern injection) can find this
+                # optimization's cluster. Matches engine.py hot path step 5.
+                db.add(OptimizationPattern(
+                    optimization_id=pending.id,
+                    cluster_id=cluster.id,
+                    relationship="source",
+                ))
 
                 # Track what was created
                 if cluster.member_count == 1:

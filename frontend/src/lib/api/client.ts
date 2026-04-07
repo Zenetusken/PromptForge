@@ -56,7 +56,7 @@ export interface OptimizationResult {
   created_at: string;
   model_used: string;
   models_by_phase: Record<string, string> | null;
-  context_sources: Record<string, boolean> | null;
+  context_sources: Record<string, unknown> | null;
   intent_label: string | null;
   domain: string | null;
   cluster_id: string | null;
@@ -458,10 +458,14 @@ export function connectEventStream(onEvent: EventHandler): EventSource {
 
     const eventTypes = [
         'optimization_created', 'optimization_analyzed',
+        'optimization_failed', 'optimization_status',
+        'optimization_score_card', 'optimization_start',
         'feedback_submitted', 'refinement_turn',
-        'optimization_failed', 'strategy_changed',
-        'taxonomy_changed', 'domain_created',
-        'routing_state_changed', 'preferences_changed',
+        'strategy_changed', 'preferences_changed',
+        'taxonomy_changed', 'taxonomy_activity',
+        'domain_created', 'routing_state_changed',
+        'seed_batch_progress',
+        'agent_changed',
     ];
     for (const type of eventTypes) {
         es.addEventListener(type, (e: MessageEvent) => {

@@ -194,9 +194,28 @@ async def handle_seed(
     else:
         max_parallel = 1
 
-    # Run batch pipeline
+    # Run batch pipeline — resolve service singletons for enrichment parity
+    # with the regular internal pipeline (pattern injection, few-shot, adaptation,
+    # domain resolution, z-score normalization).
+    from app.database import async_session_factory
     from app.services.embedding_service import EmbeddingService
     from app.services.prompt_loader import PromptLoader
+
+    # Taxonomy engine (singleton, may not be initialized on cold start)
+    _taxonomy_engine = None
+    try:
+        from app.services.taxonomy import get_engine
+        _taxonomy_engine = get_engine()
+    except Exception:
+        logger.debug("Taxonomy engine unavailable for seed enrichment")
+
+    # Domain resolver (singleton, may not be initialized on cold start)
+    _domain_resolver = None
+    try:
+        from app.services.domain_resolver import get_domain_resolver
+        _domain_resolver = get_domain_resolver()
+    except Exception:
+        logger.debug("Domain resolver unavailable for seed enrichment")
 
     try:
         results = await run_batch(
@@ -208,6 +227,9 @@ async def handle_seed(
             codebase_context=codebase_context if not prompts else None,
             workspace_guidance=workspace_profile if not prompts else None,
             batch_id=batch_id,
+            session_factory=async_session_factory,
+            taxonomy_engine=_taxonomy_engine,
+            domain_resolver=_domain_resolver,
         )
     except Exception as exc:
         logger.error("Seed batch execution failed: %s", exc, exc_info=True)
@@ -240,9 +262,7 @@ async def handle_seed(
         1 for r in results if r.status == "completed"
     )
 
-    # Bulk persist
-    from app.database import async_session_factory
-
+    # Bulk persist (async_session_factory already imported above)
     try:
         await bulk_persist(results, async_session_factory, batch_id)
     except Exception as exc:
