@@ -460,3 +460,48 @@ class TestComputeQHealth:
         assert abs(result.coherence_weighted - 0.6) < 0.01
         # Separation includes both (both finite)
         assert abs(result.separation_weighted - 0.65) < 0.01
+
+
+class TestComputeIntentLabelCoherence:
+    """Tests for compute_intent_label_coherence (Tier 5b)."""
+
+    def test_identical_labels_return_one(self):
+        """All identical labels → perfect coherence."""
+        from app.services.taxonomy.quality import compute_intent_label_coherence
+
+        assert compute_intent_label_coherence(["Build REST API", "Build REST API", "Build REST API"]) == 1.0
+
+    def test_disjoint_labels_return_zero(self):
+        """Completely disjoint labels → zero coherence."""
+        from app.services.taxonomy.quality import compute_intent_label_coherence
+
+        result = compute_intent_label_coherence(["Build REST API", "Deploy Docker Container"])
+        assert result < 0.15  # no token overlap after stop-word removal
+
+    def test_partial_overlap_intermediate(self):
+        """Partial token overlap → intermediate coherence."""
+        from app.services.taxonomy.quality import compute_intent_label_coherence
+
+        result = compute_intent_label_coherence(["Build REST API", "Build REST Service"])
+        assert 0.2 < result < 0.8
+
+    def test_empty_list_returns_one(self):
+        """Empty or single-label list → trivially coherent."""
+        from app.services.taxonomy.quality import compute_intent_label_coherence
+
+        assert compute_intent_label_coherence([]) == 1.0
+        assert compute_intent_label_coherence(["Single Label"]) == 1.0
+
+    def test_empty_string_labels_skipped(self):
+        """Empty strings are filtered out."""
+        from app.services.taxonomy.quality import compute_intent_label_coherence
+
+        assert compute_intent_label_coherence(["", "", ""]) == 1.0
+
+    def test_stop_words_filtered(self):
+        """Labels differing only in stop words should be highly coherent."""
+        from app.services.taxonomy.quality import compute_intent_label_coherence
+
+        # "Build" vs "Build" after stop words removed → same token set
+        result = compute_intent_label_coherence(["Build the API", "Build an API"])
+        assert result >= 0.8

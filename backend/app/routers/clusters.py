@@ -445,7 +445,7 @@ async def update_cluster(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> UpdateClusterResponse:
-    """Update a cluster's label, domain, and/or state."""
+    """Update a cluster's label and/or state."""
     if body.intent_label is None and body.state is None:
         raise HTTPException(422, "At least one of 'intent_label' or 'state' must be provided")
 
