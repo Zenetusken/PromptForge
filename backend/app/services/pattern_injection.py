@@ -18,6 +18,8 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.utils.text_cleanup import LABEL_STOP_WORDS
+
 logger = logging.getLogger(__name__)
 
 # Module-level counters for health check observability.
@@ -74,9 +76,6 @@ class FewShotExample:
 # ---------------------------------------------------------------------------
 # Intent label token bonus for few-shot ranking
 # ---------------------------------------------------------------------------
-
-from app.utils.text_cleanup import LABEL_STOP_WORDS
-
 
 def _intent_label_bonus(prompt_text: str, candidate_label: str) -> float:
     """Jaccard token overlap bonus for intent-label similarity.

@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.utils.text_cleanup import LABEL_STOP_WORDS, extract_meaningful_words
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -35,8 +37,6 @@ _COMMON_VERBS = frozenset({
     "define", "list", "calculate", "monitor", "render", "serialize",
     "fetch", "handle", "process", "wrap", "encode", "decode",
 })
-
-from app.utils.text_cleanup import LABEL_STOP_WORDS, extract_meaningful_words
 
 
 def _get_signal_loader():

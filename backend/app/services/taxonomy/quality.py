@@ -14,6 +14,7 @@ import statistics
 from dataclasses import dataclass
 
 from app.services.pipeline_constants import DOMAIN_COHERENCE_FLOOR
+from app.utils.text_cleanup import LABEL_STOP_WORDS
 
 logger = logging.getLogger(__name__)
 
@@ -254,8 +255,6 @@ def coherence_threshold(node) -> float:
 # ---------------------------------------------------------------------------
 # Intent label coherence — supplementary split signal (Tier 5b)
 # ---------------------------------------------------------------------------
-
-from app.utils.text_cleanup import LABEL_STOP_WORDS
 
 
 def compute_intent_label_coherence(intent_labels: list[str]) -> float:
