@@ -23,7 +23,7 @@
   import { addToast } from '$lib/stores/toast.svelte';
   import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
-  import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
+  import ScoreSparkline from '$lib/components/shared/ScoreSparkline.svelte';
   import { PHASE_LABELS, DIMENSION_LABELS } from '$lib/utils/dimensions';
   import { formatScore, truncateText, isPassthroughResult, trendInfo, formatRelativeTime } from '$lib/utils/formatting';
 

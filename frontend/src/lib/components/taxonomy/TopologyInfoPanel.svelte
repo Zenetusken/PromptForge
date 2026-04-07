@@ -5,7 +5,7 @@
   import type { PanelMode } from '$lib/utils/taxonomy-health';
   import { TAXONOMY_TOOLTIPS, TOPOLOGY_PANEL_TOOLTIPS } from '$lib/utils/metric-tooltips';
   import { tooltip } from '$lib/actions/tooltip';
-  import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
+  import ScoreSparkline from '$lib/components/shared/ScoreSparkline.svelte';
 
   interface Props {
     hideInsight?: boolean;

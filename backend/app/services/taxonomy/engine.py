@@ -2302,8 +2302,12 @@ class TaxonomyEngine:
         q_coverage = latest.q_coverage if latest else None
         q_dbcv = latest.q_dbcv if latest else None
 
-        # Sparkline history
-        q_values = [s.q_system for s in snapshots]
+        # Sparkline history — prefer q_health (member-weighted) with q_system fallback
+        # for older snapshots that predate the q_health column.
+        q_values = [
+            s.q_health if s.q_health is not None else s.q_system
+            for s in snapshots
+        ]
         sparkline = compute_sparkline_data(q_values)
 
         q_history = []

@@ -11,7 +11,7 @@
   import { tooltip } from '$lib/actions/tooltip';
   import { STATUS_TOOLTIPS } from '$lib/utils/ui-tooltips';
   import Logo from '$lib/components/shared/Logo.svelte';
-  import ScoreSparkline from '$lib/components/refinement/ScoreSparkline.svelte';
+  import ScoreSparkline from '$lib/components/shared/ScoreSparkline.svelte';
   import type { ClusterStats } from '$lib/api/clusters';
 
   function qHealthTooltip(stats: ClusterStats | null): string {
