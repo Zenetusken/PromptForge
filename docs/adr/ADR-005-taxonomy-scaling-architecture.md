@@ -113,6 +113,43 @@ Project Synthesis's taxonomy engine manages all prompt optimizations through an 
 
 **Observability:** New event `op="promote", decision="global_pattern"` logged by TaxonomyEventLogger.
 
+### 7. Global Pattern Tier — Durable Cross-Project Techniques
+
+**New model: `GlobalPattern`** — independent table, survives cluster archival.
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| id | UUID | PK |
+| pattern_text | str | The technique description |
+| embedding | bytes | 384-dim for injection search |
+| source_cluster_ids | JSON list[str] | Contributing clusters |
+| source_project_ids | JSON list[str] | Contributing projects |
+| cross_project_count | int | Distinct projects |
+| global_source_count | int | Distinct clusters |
+| avg_cluster_score | float | Mean avg_score of source clusters |
+| promoted_at | datetime | Graduation timestamp |
+| last_validated_at | datetime | Last warm-path validation |
+| state | str | `active` / `demoted` / `retired` |
+
+**Promotion criteria** (warm path Phase 4):
+- MetaPattern's pairwise matches span >= 2 distinct projects
+- `global_source_count >= 5`
+- Source clusters' `avg_score >= 6.0`
+- Deduplicated: cosine >= 0.90 against existing GlobalPatterns updates rather than creates
+
+**Injection:** Cross-cluster injection query searches BOTH MetaPattern (cluster-level) AND GlobalPattern (global tier). GlobalPatterns with `state='active'` get 1.3x relevance multiplier.
+
+**Validation** (every 10th warm cycle):
+- Check source clusters still active with decent scores
+- `avg_cluster_score < 5.5` → demoted (multiplier removed, pattern kept)
+- All source clusters archived → 30-day grace period → retired
+
+**Retention policy:**
+- Hard cap: 500 global patterns
+- LRU eviction when cap hit (least-recently-validated retired first)
+- Demoted patterns evicted before active ones
+- Retired patterns excluded from injection, kept for audit
+
 ## Implementation Phases
 
 ### Phase 1: Foundation (can be built now)
@@ -128,7 +165,8 @@ Project Synthesis's taxonomy engine manages all prompt optimizations through an 
 - Project creation on GitHub repo link
 - Hot-path project-scoped search + cross-project assignment
 - Per-project Q metrics and warm path scoping
-- Global pattern promotion with cross-project counting
+- GlobalPattern model + promotion pipeline + injection integration
+- Validation cycle (every 10th warm path) + retention policy (500 cap, LRU eviction)
 - Topology UI: project filter dropdown
 
 ### Phase 3: Performance (driven by monitoring data)
