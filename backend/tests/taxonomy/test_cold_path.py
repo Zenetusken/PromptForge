@@ -274,7 +274,7 @@ async def test_execute_cold_path_matches_mature_nodes(db, mock_embedding, mock_p
 async def test_cold_path_matching_query_includes_mature_template():
     """Fix #6: verify existing-node matching uses notin_ not in_([active, candidate]).
 
-    Static code inspection: cold_path.py must use notin_(["domain", "archived"])
+    Static code inspection: cold_path.py must use notin_(EXCLUDED_STRUCTURAL_STATES)
     for the existing-node query, verifying that mature/template are now included.
     We check that the HDBSCAN input query and the matching query both use notin_
     rather than the narrower in_(["active", "candidate"]) pattern.
