@@ -16,9 +16,11 @@ import asyncio
 import json
 import logging
 import re
+import statistics
 import time
 import traceback
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -63,6 +65,59 @@ from app.services.taxonomy.warm_path import WarmPathResult, execute_warm_path
 from app.utils.text_cleanup import LABEL_STOP_WORDS, is_low_quality_label, parse_domain, validate_intent_label
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# ADR-005: Adaptive scheduler measurement (Phase 1 — measurement only)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WarmCycleMeasurement:
+    """Single warm cycle measurement for adaptive scheduling."""
+    dirty_count: int
+    duration_ms: int
+
+
+class AdaptiveScheduler:
+    """Self-tuning warm path scheduler (ADR-005).
+
+    Phase 1: measurement only (always all-dirty mode).
+    Phase 3: adds round-robin branching when data shows need.
+    """
+
+    _WINDOW_SIZE = 10
+    _BOOTSTRAP_TARGET_MS = 10_000  # 10s default until enough data
+
+    def __init__(self) -> None:
+        self._window: list[WarmCycleMeasurement] = []
+        self._target_cycle_ms: int = self._BOOTSTRAP_TARGET_MS
+
+    @property
+    def target_cycle_ms(self) -> int:
+        return self._target_cycle_ms
+
+    def record(self, dirty_count: int, duration_ms: int) -> None:
+        """Record a warm cycle measurement and update target."""
+        self._window.append(WarmCycleMeasurement(dirty_count, duration_ms))
+        if len(self._window) > self._WINDOW_SIZE:
+            self._window = self._window[-self._WINDOW_SIZE:]
+
+        # Update target after bootstrap period
+        if len(self._window) >= self._WINDOW_SIZE:
+            durations = [m.duration_ms for m in self._window]
+            quantiles = statistics.quantiles(durations, n=4)
+            self._target_cycle_ms = int(quantiles[2])  # 75th percentile
+
+    def snapshot(self) -> dict:
+        """Return scheduler state for logging/observability."""
+        return {
+            "target_cycle_ms": self._target_cycle_ms,
+            "window_size": len(self._window),
+            "mode": "all_dirty",  # Phase 1: always all-dirty
+            "bootstrapping": len(self._window) < self._WINDOW_SIZE,
+        }
+
 
 # ---------------------------------------------------------------------------
 # TaxonomyEngine
@@ -119,6 +174,8 @@ class TaxonomyEngine:
         # Hot path marks clusters as dirty when members change.
         # Warm path snapshots and clears at cycle start.
         self._dirty_set: set[str] = set()
+        # ADR-005: Adaptive scheduler — rolling window of warm cycle timings.
+        self._scheduler = AdaptiveScheduler()
 
     def mark_dirty(self, cluster_id: str) -> None:
         """Mark a cluster as needing warm-path processing."""

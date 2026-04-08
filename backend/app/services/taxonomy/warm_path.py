@@ -364,6 +364,9 @@ async def execute_warm_path(
     Returns:
         WarmPathResult aggregating all phase outcomes.
     """
+    import time as _time
+    _cycle_start = _time.monotonic()
+
     all_phase_results: list[PhaseResult] = []
     q_baseline: float | None = None
 
@@ -543,6 +546,19 @@ async def execute_warm_path(
     # Aggregate totals
     total_attempted = sum(pr.ops_attempted for pr in all_phase_results)
     total_accepted = sum(pr.ops_accepted for pr in all_phase_results)
+
+    # ADR-005: Record cycle measurement for adaptive scheduling
+    _cycle_duration_ms = int((_time.monotonic() - _cycle_start) * 1000)
+    engine._scheduler.record(
+        dirty_count=len(dirty_ids) if dirty_ids is not None else -1,
+        duration_ms=_cycle_duration_ms,
+    )
+    logger.debug(
+        "Warm cycle measurement recorded: duration_ms=%d dirty_count=%s scheduler=%s",
+        _cycle_duration_ms,
+        len(dirty_ids) if dirty_ids is not None else "all",
+        engine._scheduler.snapshot(),
+    )
 
     return WarmPathResult(
         snapshot_id=audit_result.snapshot_id,
