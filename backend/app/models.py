@@ -108,7 +108,8 @@ class PromptCluster(Base):
     id = Column(String, primary_key=True, default=_uuid)
     parent_id = Column(String, ForeignKey("prompt_cluster.id"), nullable=True, index=True)
     label = Column(String, nullable=False, default="")
-    state = Column(String(20), nullable=False, default="active")  # candidate|active|mature|template|domain|archived
+    # States: candidate|active|mature|template|domain|project|archived
+    state = Column(String(20), nullable=False, default="active")
     domain = Column(String(50), nullable=False, default="general")
     task_type = Column(String(50), nullable=False, default="general")
 

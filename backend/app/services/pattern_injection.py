@@ -237,6 +237,7 @@ async def auto_inject_patterns(
             CROSS_CLUSTER_MIN_SOURCE_COUNT,
             CROSS_CLUSTER_RELEVANCE_FLOOR,
         )
+        from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
 
         # Ensure we have a prompt embedding for relevance scoring
         if prompt_embedding is None:
@@ -254,7 +255,7 @@ async def auto_inject_patterns(
                 .where(
                     MetaPattern.global_source_count >= CROSS_CLUSTER_MIN_SOURCE_COUNT,
                     MetaPattern.embedding.isnot(None),
-                    PromptCluster.state != "archived",
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 )
                 .order_by(MetaPattern.global_source_count.desc())
                 .limit(CROSS_CLUSTER_MAX_PATTERNS * 3)  # fetch extra for filtering

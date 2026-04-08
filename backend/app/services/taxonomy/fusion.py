@@ -558,6 +558,7 @@ async def build_composite_query(
     try:
         from app.models import MetaPattern, PromptCluster
         from app.services.pipeline_constants import CROSS_CLUSTER_MIN_SOURCE_COUNT
+        from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
 
         result = await db.execute(
             select(MetaPattern.embedding)
@@ -565,7 +566,7 @@ async def build_composite_query(
             .where(
                 MetaPattern.global_source_count >= CROSS_CLUSTER_MIN_SOURCE_COUNT,
                 MetaPattern.embedding.isnot(None),
-                PromptCluster.state != "archived",
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
             .order_by(MetaPattern.global_source_count.desc())
             .limit(FUSION_PATTERN_TOP_K)

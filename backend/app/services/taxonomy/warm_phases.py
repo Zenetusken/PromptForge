@@ -2224,6 +2224,7 @@ async def phase_merge(
                     await engine._transformation_index.remove(loser.id)
                     await engine._optimized_index.remove(loser.id)
                     embedding_index_mutations += 2
+                    engine.mark_dirty(merged.id)  # ADR-005: survivor needs re-evaluation
 
     # --- Same-domain duplicate merge ---
     same_domain_merge_base = 0.65
@@ -2360,6 +2361,7 @@ async def phase_merge(
                             await engine._transformation_index.remove(loser.id)
                             await engine._optimized_index.remove(loser.id)
                             embedding_index_mutations += 2
+                            engine.mark_dirty(merged.id)  # ADR-005: survivor needs re-evaluation
                             label_merged = True
                             break  # one merge per domain per cycle
 
@@ -2470,6 +2472,7 @@ async def phase_merge(
                                 await engine._transformation_index.remove(small.id)
                                 await engine._optimized_index.remove(small.id)
                                 embedding_index_mutations += 2
+                                engine.mark_dirty(merged.id)  # ADR-005: survivor needs re-evaluation
                                 merged_this_domain = True
                                 break  # one merge per domain per cycle
 
@@ -2606,6 +2609,10 @@ async def phase_retire(
         reassignment_info = await _reassign_to_active(
             db, opt_ids, opt_embs, exclude_cluster_ids={node.id},
         )
+
+        # ADR-005: mark dissolution targets dirty for next cycle re-evaluation
+        for _ra_info in reassignment_info:
+            engine.mark_dirty(_ra_info["cluster_id"])
 
         # Archive the dissolved cluster — zero ALL counters to prevent
         # phantom data. Must match the fields cleared by attempt_merge()
@@ -3083,7 +3090,7 @@ async def phase_refresh(
             .join(PromptCluster, MetaPattern.cluster_id == PromptCluster.id)
             .where(
                 MetaPattern.embedding.isnot(None),
-                PromptCluster.state != "archived",
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         all_patterns = list(all_patterns_q.scalars().all())

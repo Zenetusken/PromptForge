@@ -16,6 +16,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Optimization, OptimizationPattern, PromptCluster
+from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
 
 logger = logging.getLogger(__name__)
 
@@ -189,12 +190,12 @@ class PromptLifecycleService:
         now = _utcnow()
         stale_cutoff = now - timedelta(days=STALE_DAYS)
 
-        # Exclude archived AND domain nodes.  Domain nodes have
-        # usage_count=0 and could be old enough to trigger stale
-        # detection, but they're structural and must never be curated.
+        # Exclude structural nodes (domain, archived, project).  These have
+        # usage_count=0 and could be old enough to trigger stale detection,
+        # but they're organizational and must never be curated.
         result = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["archived", "domain"])
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
             )
         )
         clusters = list(result.scalars().all())
@@ -416,7 +417,7 @@ class PromptLifecycleService:
                 PromptCluster.last_used_at.isnot(None),
                 PromptCluster.last_used_at < decay_cutoff,
                 PromptCluster.usage_count > 0,
-                PromptCluster.state.notin_(["archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         clusters = list(result.scalars().all())
