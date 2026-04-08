@@ -4,6 +4,16 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Added
+- **ADR-005 Phase 1: taxonomy scaling architecture** — foundational infrastructure for multi-project support
+  - Centralized `EXCLUDED_STRUCTURAL_STATES` constant replacing 37+ inline state exclusion patterns across 8 taxonomy files
+  - `GlobalPattern` model for durable cross-project patterns that survive cluster archival
+  - `project_id` column on `Optimization` for per-project filtering (denormalized FK)
+  - Legacy project node migration: existing domain nodes re-parented under a "Legacy" project hierarchy on startup
+  - Dirty-set tracking on taxonomy engine: warm path split/merge phases only process clusters that changed since last cycle
+  - Adaptive scheduler measurement infrastructure: rolling window of warm cycle timings with self-tuning p75 target duration
+  - `project_filter` parameter on `EmbeddingIndex.search()` for per-project vector filtering with backward-compatible cache format
+
 ### Fixed
 - **Observability audit: 50+ silent failure paths instrumented** — systematic audit of all taxonomy hot/warm/cold paths, pipeline phases, pattern injection, batch seeding, and trace logging. Added `logger.warning()` to every silent `np.frombuffer` embedding deserialization catch across 12 files. Promoted `q_health` computation failures, breadcrumb build failures, merge-back detection failures, and pattern extraction failures from silent/debug to warning level. Added event bus publish failure logging where previously swallowed
 - **Pipeline embedding failure now logged** — `pipeline.py` embedding service failure was `except Exception: pass` (no log), losing visibility into why downstream pattern injection and few-shot retrieval degrade. Now warns with trace_id

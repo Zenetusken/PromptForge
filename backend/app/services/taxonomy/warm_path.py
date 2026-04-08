@@ -547,12 +547,15 @@ async def execute_warm_path(
     total_attempted = sum(pr.ops_attempted for pr in all_phase_results)
     total_accepted = sum(pr.ops_accepted for pr in all_phase_results)
 
-    # ADR-005: Record cycle measurement for adaptive scheduling
+    # ADR-005: Record cycle measurement for adaptive scheduling.
+    # Only record dirty-only cycles — full-scan cycles (dirty_ids=None) lack
+    # a meaningful dirty_count and would corrupt Phase 3 regression analysis.
     _cycle_duration_ms = int((_time.monotonic() - _cycle_start) * 1000)
-    engine._scheduler.record(
-        dirty_count=len(dirty_ids) if dirty_ids is not None else -1,
-        duration_ms=_cycle_duration_ms,
-    )
+    if dirty_ids is not None:
+        engine._scheduler.record(
+            dirty_count=len(dirty_ids),
+            duration_ms=_cycle_duration_ms,
+        )
     logger.debug(
         "Warm cycle measurement recorded: duration_ms=%d dirty_count=%s scheduler=%s",
         _cycle_duration_ms,

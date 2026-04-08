@@ -373,8 +373,7 @@ async def get_cluster_detail(
                 .join(PromptCluster, MetaPattern.cluster_id == PromptCluster.id)
                 .where(
                     PromptCluster.domain == node.get("label", ""),
-                    PromptCluster.state != "domain",
-                    PromptCluster.state != "project",
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 )
                 .order_by(MetaPattern.source_count.desc())
             )
