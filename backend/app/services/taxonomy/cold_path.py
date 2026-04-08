@@ -38,6 +38,7 @@ from app.models import Optimization, PromptCluster
 from app.services.taxonomy._constants import (
     CLUSTERING_BLEND_W_OPTIMIZED,
     CLUSTERING_BLEND_W_TRANSFORM,
+    EXCLUDED_STRUCTURAL_STATES,
     MEGA_CLUSTER_MEMBER_FLOOR,
     SPLIT_COHERENCE_FLOOR,
 )
@@ -124,7 +125,7 @@ async def execute_cold_path(
     # Step 1: Compute Q_before from current active nodes
     # ------------------------------------------------------------------
     q_before_result = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
+        select(PromptCluster).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
     )
     q_before_nodes = list(q_before_result.scalars().all())
     q_before = engine._compute_q_from_nodes(q_before_nodes)
@@ -136,7 +137,7 @@ async def execute_cold_path(
     # ------------------------------------------------------------------
     fam_result = await db.execute(
         select(PromptCluster).where(
-            PromptCluster.state.notin_(["domain", "archived"])
+            PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
         )
     )
     families = list(fam_result.scalars().all())
@@ -256,7 +257,7 @@ async def execute_cold_path(
     # ------------------------------------------------------------------
     existing_result = await db.execute(
         select(PromptCluster).where(
-            PromptCluster.state.notin_(["domain", "archived"])
+            PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
         )
     )
     existing_nodes = {n.id: n for n in existing_result.scalars().all()}
@@ -492,7 +493,7 @@ async def execute_cold_path(
             child_count = (await db.execute(
                 select(sa_func.count()).where(
                     PromptCluster.domain == dn_label,
-                    PromptCluster.state.notin_(["domain", "archived"]),
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 )
             )).scalar() or 0
             dn.member_count = child_count
@@ -524,7 +525,7 @@ async def execute_cold_path(
     try:
         large_clusters = [
             n for n in all_nodes
-            if n.state not in ("domain", "archived") and (n.member_count or 0) >= 5
+            if n.state not in EXCLUDED_STRUCTURAL_STATES and (n.member_count or 0) >= 5
         ]
         if large_clusters:
             get_event_logger().log_decision(
@@ -673,7 +674,7 @@ async def execute_cold_path(
     # Step 20: Compute per-node separation
     # ------------------------------------------------------------------
     active_result = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
+        select(PromptCluster).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
     )
     active_after = list(active_result.scalars().all())
 
@@ -936,7 +937,7 @@ async def execute_cold_path(
     try:
         mega_q = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 PromptCluster.member_count >= MEGA_CLUSTER_MEMBER_FLOOR,
                 PromptCluster.coherence < SPLIT_COHERENCE_FLOOR,
             )
@@ -1109,7 +1110,7 @@ async def execute_umap_projection(
     # Load all active non-domain clusters
     all_q = await db.execute(
         select(PromptCluster).where(
-            PromptCluster.state.notin_(["domain", "archived"])
+            PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
         )
     )
     all_clusters = list(all_q.scalars().all())

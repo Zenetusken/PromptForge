@@ -215,10 +215,11 @@ async def test_cold_path_hdbscan_query_excludes_archived_state():
     import app.services.taxonomy.cold_path as cold_path_module
 
     source = inspect.getsource(cold_path_module)
-    # Fix #5: should use notin_(["domain", "archived"]) not state != "domain"
-    assert 'notin_(["domain", "archived"])' in source, (
+    # Fix #5: should use notin_(EXCLUDED_STRUCTURAL_STATES) not state != "domain"
+    # (refactored from inline list to constant in ADR-005 Task A2)
+    assert 'notin_(EXCLUDED_STRUCTURAL_STATES)' in source, (
         "Fix #5 not applied: cold_path.py must filter with "
-        'state.notin_(["domain", "archived"]) for HDBSCAN input'
+        'state.notin_(EXCLUDED_STRUCTURAL_STATES) for HDBSCAN input'
     )
 
 
@@ -273,7 +274,7 @@ async def test_execute_cold_path_matches_mature_nodes(db, mock_embedding, mock_p
 async def test_cold_path_matching_query_includes_mature_template():
     """Fix #6: verify existing-node matching uses notin_ not in_([active, candidate]).
 
-    Static code inspection: cold_path.py must use notin_(["domain", "archived"])
+    Static code inspection: cold_path.py must use notin_(EXCLUDED_STRUCTURAL_STATES)
     for the existing-node query, verifying that mature/template are now included.
     We check that the HDBSCAN input query and the matching query both use notin_
     rather than the narrower in_(["active", "candidate"]) pattern.
@@ -285,11 +286,12 @@ async def test_cold_path_matching_query_includes_mature_template():
     source = inspect.getsource(cold_path_module)
 
     # Verify the existing-node matching query uses notin_ (Fix #6)
-    # The existing_result query for matching should use notin_(["domain", "archived"])
+    # The existing_result query for matching should use notin_(EXCLUDED_STRUCTURAL_STATES)
     # We check it appears at least twice (HDBSCAN input + matching query)
-    notin_count = source.count('notin_(["domain", "archived"])')
+    # (refactored from inline list to constant in ADR-005 Task A2)
+    notin_count = source.count('notin_(EXCLUDED_STRUCTURAL_STATES)')
     assert notin_count >= 2, (
-        f"Fix #6 requires notin_([\"domain\", \"archived\"]) in both the "
+        f"Fix #6 requires notin_(EXCLUDED_STRUCTURAL_STATES) in both the "
         f"HDBSCAN input query and the existing-node matching query. "
         f"Found {notin_count} occurrence(s)."
     )

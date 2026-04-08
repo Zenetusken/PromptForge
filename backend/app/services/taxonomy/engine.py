@@ -16,9 +16,11 @@ import asyncio
 import json
 import logging
 import re
+import statistics
 import time
 import traceback
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,7 +39,7 @@ from app.models import (
 from app.providers.base import LLMProvider
 from app.services.embedding_service import EmbeddingService
 from app.services.prompt_loader import PromptLoader
-from app.services.taxonomy._constants import _utcnow
+from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES, _utcnow
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.cold_path import ColdPathResult, execute_cold_path
 from app.services.taxonomy.embedding_index import EmbeddingIndex
@@ -63,6 +65,59 @@ from app.services.taxonomy.warm_path import WarmPathResult, execute_warm_path
 from app.utils.text_cleanup import LABEL_STOP_WORDS, is_low_quality_label, parse_domain, validate_intent_label
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# ADR-005: Adaptive scheduler measurement (Phase 1 — measurement only)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WarmCycleMeasurement:
+    """Single warm cycle measurement for adaptive scheduling."""
+    dirty_count: int
+    duration_ms: int
+
+
+class AdaptiveScheduler:
+    """Self-tuning warm path scheduler (ADR-005).
+
+    Phase 1: measurement only (always all-dirty mode).
+    Phase 3: adds round-robin branching when data shows need.
+    """
+
+    _WINDOW_SIZE = 10
+    _BOOTSTRAP_TARGET_MS = 10_000  # 10s default until enough data
+
+    def __init__(self) -> None:
+        self._window: list[WarmCycleMeasurement] = []
+        self._target_cycle_ms: int = self._BOOTSTRAP_TARGET_MS
+
+    @property
+    def target_cycle_ms(self) -> int:
+        return self._target_cycle_ms
+
+    def record(self, dirty_count: int, duration_ms: int) -> None:
+        """Record a warm cycle measurement and update target."""
+        self._window.append(WarmCycleMeasurement(dirty_count, duration_ms))
+        if len(self._window) > self._WINDOW_SIZE:
+            self._window = self._window[-self._WINDOW_SIZE:]
+
+        # Update target after bootstrap period
+        if len(self._window) >= self._WINDOW_SIZE:
+            durations = [m.duration_ms for m in self._window]
+            quantiles = statistics.quantiles(durations, n=4)
+            self._target_cycle_ms = int(quantiles[2])  # 75th percentile
+
+    def snapshot(self) -> dict:
+        """Return scheduler state for logging/observability."""
+        return {
+            "target_cycle_ms": self._target_cycle_ms,
+            "window_size": len(self._window),
+            "mode": "all_dirty",  # Phase 1: always all-dirty
+            "bootstrapping": len(self._window) < self._WINDOW_SIZE,
+        }
+
 
 # ---------------------------------------------------------------------------
 # TaxonomyEngine
@@ -115,6 +170,33 @@ class TaxonomyEngine:
         # Stats cache — monotonic TTL, invalidated on warm/cold path completion.
         self._stats_cache: dict | None = None
         self._stats_cache_time: float = 0.0
+        # ADR-005: Dirty-set tracking for warm path optimization.
+        # Hot path marks clusters as dirty when members change.
+        # Warm path snapshots and clears at cycle start.
+        self._dirty_set: set[str] = set()
+        # ADR-005: Adaptive scheduler — rolling window of warm cycle timings.
+        self._scheduler = AdaptiveScheduler()
+
+    def mark_dirty(self, cluster_id: str) -> None:
+        """Mark a cluster as needing warm-path processing."""
+        self._dirty_set.add(cluster_id)
+
+    def snapshot_dirty_set(self) -> set[str]:
+        """Snapshot the dirty set and clear it atomically.
+
+        Returns the set of cluster IDs that need processing.
+        Safe under asyncio cooperative scheduling (no await between read and clear).
+        """
+        snapshot = set(self._dirty_set)
+        self._dirty_set.clear()
+        return snapshot
+
+    def is_first_warm_cycle(self) -> bool:
+        """True if this is the first warm cycle after server restart.
+
+        The first cycle runs a full scan to catch changes from before restart.
+        """
+        return self._warm_path_age == 0
 
     @property
     def _provider(self) -> LLMProvider | None:
@@ -285,6 +367,7 @@ class TaxonomyEngine:
                     old_cluster.cluster_metadata = write_meta(
                         old_cluster.cluster_metadata, pattern_stale=True,
                     )
+                    self.mark_dirty(old_cluster.id)  # ADR-005: old cluster lost a member
                     logger.info(
                         "Decremented old cluster '%s' member_count to %d "
                         "(reassigned to '%s')",
@@ -292,6 +375,7 @@ class TaxonomyEngine:
                         cluster.label,
                     )
             opt.cluster_id = cluster.id
+            self.mark_dirty(cluster.id)  # ADR-005: new cluster gained a member
 
             # ----- Intent label hardening (Tier 2) -----
             from app.services.pipeline_constants import MAX_INTENT_LABEL_LENGTH
@@ -579,7 +663,7 @@ class TaxonomyEngine:
         # Count clusters before
         before_q = await db.execute(
             select(sa_func.count()).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         clusters_before = before_q.scalar() or 0
@@ -597,7 +681,7 @@ class TaxonomyEngine:
         # Archive all non-domain active clusters — we'll rebuild from scratch
         active_q = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         now = _utcnow()
@@ -644,7 +728,7 @@ class TaxonomyEngine:
         # Count clusters after
         after_q = await db.execute(
             select(sa_func.count()).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         clusters_after = after_q.scalar() or 0
@@ -712,7 +796,7 @@ class TaxonomyEngine:
             cluster_q = await db.execute(
                 select(PromptCluster.id).where(
                     PromptCluster.id == opt.cluster_id,
-                    PromptCluster.state.notin_(["archived"]),
+                    PromptCluster.state.notin_(["archived"]),  # intentional: only archived, not structural
                 )
             )
             if cluster_q.scalar_one_or_none():
@@ -731,7 +815,7 @@ class TaxonomyEngine:
             sa_delete(MetaPattern).where(
                 MetaPattern.cluster_id.notin_(
                     select(PromptCluster.id).where(
-                        PromptCluster.state.notin_(["archived"]),
+                        PromptCluster.state.notin_(["archived"]),  # intentional: only archived, not structural
                     )
                 )
             )
@@ -763,7 +847,7 @@ class TaxonomyEngine:
         # --- 3. Compute coherence ---
         active_clusters = (await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )).scalars().all()
 
@@ -1396,7 +1480,7 @@ class TaxonomyEngine:
             children_q = await db.execute(
                 select(PromptCluster).where(
                     PromptCluster.parent_id == domain_node.id,
-                    PromptCluster.state.notin_(["domain", "archived"]),
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 )
             )
             children = list(children_q.scalars().all())
@@ -1608,7 +1692,7 @@ class TaxonomyEngine:
                     reparented = 0
                     for cid in group["cluster_ids"]:
                         cluster = await db.get(PromptCluster, cid)
-                        if cluster and cluster.state not in ("domain", "archived"):
+                        if cluster and cluster.state not in EXCLUDED_STRUCTURAL_STATES:
                             cluster.parent_id = sub_node.id
                             cluster.domain = sub_label
                             reparented += 1
@@ -1942,7 +2026,7 @@ class TaxonomyEngine:
                 sa_func.count(),
             ).where(
                 PromptCluster.domain == domain_node.label,
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 PromptCluster.umap_x.isnot(None),
                 PromptCluster.umap_y.isnot(None),
                 PromptCluster.umap_z.isnot(None),
@@ -2138,7 +2222,7 @@ class TaxonomyEngine:
         # Load non-domain/non-archived nodes for metrics (Fix #10)
         result = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"])
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
             )
         )
         active_nodes = list(result.scalars().all())
@@ -2418,7 +2502,7 @@ class TaxonomyEngine:
         try:
             _health_nodes_q = await db.execute(
                 select(PromptCluster).where(
-                    PromptCluster.state.notin_(["domain", "archived"])
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
                 )
             )
             _health_nodes = list(_health_nodes_q.scalars().all())

@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PromptCluster
-from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD
+from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD, EXCLUDED_STRUCTURAL_STATES
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.quality import is_non_regressive
@@ -93,7 +93,7 @@ async def _load_active_nodes(
             from the result set. Used in Q computation to prevent low-coherence
             candidates from dragging Q_after below Q_before.
     """
-    excluded = ["domain", "archived"]
+    excluded = list(EXCLUDED_STRUCTURAL_STATES)
     if exclude_candidates:
         excluded.append("candidate")
     result = await db.execute(
@@ -111,6 +111,7 @@ async def _run_speculative_phase(
     session_factory: SessionFactory,
     split_protected_ids: set[str] | None = None,
     phase_idx: int = 0,
+    dirty_ids: set[str] | None = None,  # ADR-005: None = process all
 ) -> PhaseResult:
     """Execute a single speculative phase with a per-phase Q gate.
 
@@ -148,7 +149,9 @@ async def _run_speculative_phase(
             phase_result = await phase_fn(engine, db)
         else:
             # phase_split_emerge and phase_merge take split_protected_ids
-            phase_result = await phase_fn(engine, db, split_protected_ids or set())
+            phase_result = await phase_fn(
+                engine, db, split_protected_ids or set(), dirty_ids=dirty_ids,
+            )
 
         # Re-query nodes and compute Q_after — same exclusion as Q_before.
         nodes_after = await _load_active_nodes(db, exclude_candidates=True)
@@ -361,11 +364,27 @@ async def execute_warm_path(
     Returns:
         WarmPathResult aggregating all phase outcomes.
     """
+    import time as _time
+    _cycle_start = _time.monotonic()
+
     all_phase_results: list[PhaseResult] = []
     q_baseline: float | None = None
 
+    # ADR-005: Snapshot dirty set — first cycle does full scan
+    if engine.is_first_warm_cycle():
+        dirty_ids: set[str] | None = None  # None = process all clusters (restart recovery)
+    else:
+        dirty_ids = engine.snapshot_dirty_set() or None  # empty set → None (full scan)
+
+    logger.info(
+        "Warm path cycle: dirty_ids=%s (first_cycle=%s)",
+        len(dirty_ids) if dirty_ids is not None else "all",
+        engine.is_first_warm_cycle(),
+    )
+
     # ------------------------------------------------------------------
     # Phase 0: Reconcile — fresh session, always commits
+    # ADR-005: Full scan — reconciliation needs complete cluster state
     # ------------------------------------------------------------------
     async with session_factory() as db:
         reconcile_result = await phase_reconcile(engine, db)
@@ -386,6 +405,7 @@ async def execute_warm_path(
 
     # ------------------------------------------------------------------
     # Phase 0.5: Evaluate candidates — NOT Q-gated, always commits
+    # ADR-005: Full scan — candidate evaluation needs complete cluster state
     # ------------------------------------------------------------------
     async with session_factory() as db:
         candidate_result = await phase_evaluate_candidates(db)
@@ -418,6 +438,7 @@ async def execute_warm_path(
         "split_emerge", phase_split_emerge, engine, session_factory,
         split_protected_ids=set(),
         phase_idx=0,
+        dirty_ids=dirty_ids,  # ADR-005: only split dirty clusters
     )
     all_phase_results.append(split_result)
 
@@ -431,11 +452,13 @@ async def execute_warm_path(
         "merge", phase_merge, engine, session_factory,
         split_protected_ids=split_protected_ids,
         phase_idx=1,
+        dirty_ids=dirty_ids,  # ADR-005: only merge when ≥1 partner is dirty
     )
     all_phase_results.append(merge_result)
 
     # ------------------------------------------------------------------
     # Phase 3: Retire — speculative
+    # ADR-005: Full scan — retirement needs complete cluster state
     # ------------------------------------------------------------------
     retire_result = await _run_speculative_phase(
         "retire", phase_retire, engine, session_factory,
@@ -457,6 +480,7 @@ async def execute_warm_path(
 
     # ------------------------------------------------------------------
     # Phase 4: Refresh — fresh session, always commits
+    # ADR-005: Full scan — label/pattern refresh needs complete cluster state
     # ------------------------------------------------------------------
     async with session_factory() as db:
         refresh_result = await phase_refresh(engine, db)
@@ -468,6 +492,7 @@ async def execute_warm_path(
 
     # ------------------------------------------------------------------
     # Phase 5: Discover — fresh session, always commits
+    # ADR-005: Full scan — domain discovery needs complete cluster state
     # ------------------------------------------------------------------
     async with session_factory() as db:
         discover_result = await phase_discover(engine, db)
@@ -480,6 +505,7 @@ async def execute_warm_path(
 
     # ------------------------------------------------------------------
     # Phase 6: Audit — fresh session, creates snapshot
+    # ADR-005: Full scan — audit/snapshot needs complete cluster state
     # ------------------------------------------------------------------
     async with session_factory() as db:
         audit_result = await phase_audit(
@@ -520,6 +546,22 @@ async def execute_warm_path(
     # Aggregate totals
     total_attempted = sum(pr.ops_attempted for pr in all_phase_results)
     total_accepted = sum(pr.ops_accepted for pr in all_phase_results)
+
+    # ADR-005: Record cycle measurement for adaptive scheduling.
+    # Only record dirty-only cycles — full-scan cycles (dirty_ids=None) lack
+    # a meaningful dirty_count and would corrupt Phase 3 regression analysis.
+    _cycle_duration_ms = int((_time.monotonic() - _cycle_start) * 1000)
+    if dirty_ids is not None:
+        engine._scheduler.record(
+            dirty_count=len(dirty_ids),
+            duration_ms=_cycle_duration_ms,
+        )
+    logger.debug(
+        "Warm cycle measurement recorded: duration_ms=%d dirty_count=%s scheduler=%s",
+        _cycle_duration_ms,
+        len(dirty_ids) if dirty_ids is not None else "all",
+        engine._scheduler.snapshot(),
+    )
 
     return WarmPathResult(
         snapshot_id=audit_result.snapshot_id,

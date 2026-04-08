@@ -33,6 +33,7 @@ from app.models import (
 from app.providers.base import LLMProvider, call_provider_with_retry
 from app.services.embedding_service import EmbeddingService
 from app.services.prompt_loader import PromptLoader
+from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
 from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.projection import interpolate_position
 from app.utils.text_cleanup import parse_domain
@@ -564,7 +565,7 @@ async def assign_cluster(
         from sqlalchemy import func as _func
         count_q = await db.execute(
             select(_func.count()).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 PromptCluster.domain == domain,
             )
         )

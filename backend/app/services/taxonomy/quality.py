@@ -14,6 +14,7 @@ import statistics
 from dataclasses import dataclass
 
 from app.services.pipeline_constants import DOMAIN_COHERENCE_FLOOR
+from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
 from app.utils.text_cleanup import LABEL_STOP_WORDS
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ def compute_q_system(
     Included states: candidate, active, mature, template.
     Excluded states: domain (structural containers), archived (retired).
     """
-    active = [n for n in nodes if n.state not in ("domain", "archived")]
+    active = [n for n in nodes if n.state not in EXCLUDED_STRUCTURAL_STATES]
     if not active:
         return 0.0
 
@@ -180,7 +181,7 @@ def compute_q_health(
     Falls back to equal weighting (identical to compute_q_system) when all
     clusters have member_count <= 1 or total_members == 0.
     """
-    active = [n for n in nodes if n.state not in ("domain", "archived")]
+    active = [n for n in nodes if n.state not in EXCLUDED_STRUCTURAL_STATES]
     if not active:
         return QHealthResult(
             q_health=0.0, coherence_weighted=0.0, separation_weighted=0.0,

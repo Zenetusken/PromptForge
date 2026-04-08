@@ -40,6 +40,20 @@ CLUSTERING_BLEND_W_TRANSFORM = 0.15
 
 
 # ---------------------------------------------------------------------------
+# Structural state exclusion
+# ---------------------------------------------------------------------------
+# States that represent structural/organizational nodes, not active clusters.
+# Used in all taxonomy queries that operate on "active" clusters:
+#   PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
+# Centralized here so adding a new structural state is a one-line change.
+EXCLUDED_STRUCTURAL_STATES: frozenset[str] = frozenset({
+    "domain",    # domain grouping nodes
+    "archived",  # tombstoned clusters
+    "project",   # project hierarchy nodes (ADR-005)
+})
+
+
+# ---------------------------------------------------------------------------
 # Sub-domain discovery
 # ---------------------------------------------------------------------------
 # When a domain's total member count exceeds this AND its mean child coherence
