@@ -14,7 +14,6 @@ from app.config import PROMPTS_DIR, settings
 from app.database import get_db
 from app.dependencies.rate_limit import RateLimit
 from app.models import Optimization, OptimizationPattern
-from app.services.heuristic_scorer import HeuristicScorer
 from app.services.heuristic_suggestions import generate_heuristic_suggestions
 from app.services.passthrough import assemble_passthrough_prompt
 from app.services.pipeline import PipelineOrchestrator
@@ -523,69 +522,22 @@ async def passthrough_save(
     cleaned_prompt, extracted_changes = split_prompt_and_changes(body.optimized_prompt)
     effective_changes = body.changes_summary or extracted_changes
 
-    if scoring_enabled:
-        from app.schemas.pipeline_contracts import DimensionScores
-        from app.services.score_blender import blend_scores
+    if scoring_enabled or body.scores:
+        from app.services.scoring_service import score_passthrough
 
-        # Heuristic baseline — always computed (on cleaned text)
-        heur_optimized = HeuristicScorer.score_prompt(
-            cleaned_prompt, original=opt.raw_prompt,
+        score_result = await score_passthrough(
+            raw_prompt=opt.raw_prompt,
+            optimized_prompt=cleaned_prompt,
+            external_scores=body.scores,
+            db=db,
+            scoring_enabled=scoring_enabled,
         )
-        heur_original = HeuristicScorer.score_prompt(opt.raw_prompt)
-
-        # Fetch historical stats for z-score normalization
-        historical_stats: dict | None = None
-        try:
-            from app.services.optimization_service import OptimizationService
-            opt_svc = OptimizationService(db)
-            historical_stats = await opt_svc.get_score_distribution(
-                exclude_scoring_modes=["heuristic", "hybrid_passthrough"],
-            )
-        except Exception as exc:
-            logger.debug("Historical stats unavailable for normalization: %s", exc)
-
-        if body.scores:
-            # Hybrid path: external LLM scores + heuristic blending.
-            # No bias correction — z-score normalization and dimension-
-            # specific heuristic weights already guard against LLM
-            # overconfidence.
-            try:
-                external_dims = DimensionScores.from_dict(
-                    {k: max(1.0, min(10.0, float(v))) for k, v in body.scores.items()},
-                )
-                blended_opt = blend_scores(
-                    external_dims, heur_optimized, historical_stats,
-                )
-                opt_dims = blended_opt.to_dimension_scores()
-                scoring_mode = "hybrid_passthrough"
-                heuristic_flags = blended_opt.divergence_flags or []
-            except Exception as exc:
-                logger.warning(
-                    "Hybrid blending failed, falling back to heuristic: %s", exc,
-                )
-                opt_dims = DimensionScores.from_dict(heur_optimized)
-                scoring_mode = "heuristic"
-        else:
-            # Heuristic-only path — use raw heuristic scores directly.
-            # No blending: z-score normalization is designed for LLM
-            # scores, not model-independent heuristics.
-            opt_dims = DimensionScores.from_dict(heur_optimized)
-            scoring_mode = "heuristic"
-
-        # Original scores — symmetric with optimized path
-        if scoring_mode == "hybrid_passthrough":
-            blended_orig = blend_scores(
-                DimensionScores.from_dict(heur_original),
-                heur_original, historical_stats,
-            )
-            orig_dims = blended_orig.to_dimension_scores()
-        else:
-            orig_dims = DimensionScores.from_dict(heur_original)
-
-        optimized_scores = opt_dims.to_dict()
-        original_scores = orig_dims.to_dict()
-        overall = opt_dims.overall
-        deltas = DimensionScores.compute_deltas(orig_dims, opt_dims)
+        optimized_scores = score_result.optimized_scores
+        original_scores = score_result.original_scores
+        overall = score_result.overall
+        deltas = score_result.deltas
+        scoring_mode = score_result.scoring_mode
+        heuristic_flags = score_result.divergence_flags
 
     # Normalize strategy if external LLM returned a verbose name
     effective_strategy = opt.strategy_used

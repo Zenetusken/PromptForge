@@ -15,9 +15,7 @@ from app.config import PROMPTS_DIR, settings
 from app.database import async_session_factory
 from app.models import Optimization
 from app.schemas.mcp_models import SaveResultOutput
-from app.schemas.pipeline_contracts import DimensionScores
 from app.services.event_notification import notify_event_bus
-from app.services.heuristic_scorer import HeuristicScorer
 from app.services.heuristic_suggestions import generate_heuristic_suggestions
 from app.services.pipeline_constants import (
     MAX_DOMAIN_RAW_LENGTH,
@@ -25,7 +23,6 @@ from app.services.pipeline_constants import (
     VALID_TASK_TYPES,
 )
 from app.services.preferences import PreferencesService
-from app.services.score_blender import blend_scores
 from app.services.strategy_loader import StrategyLoader
 from app.tools._shared import DATA_DIR, get_domain_resolver
 from app.utils.text_cleanup import parse_domain, split_prompt_and_changes, title_case_label, validate_intent_label
@@ -109,76 +106,22 @@ async def handle_save_result(
         if not changes_summary and extracted_changes:
             changes_summary = extracted_changes
 
-        # Compute scores
-        heuristic_scores: dict[str, float] = {}
-        final_scores: dict[str, float] = {}
-        overall: float | None = None
-        original_scores: dict[str, float] | None = None
-        deltas: dict[str, float] | None = None
+        # Compute scores via shared passthrough scoring service
+        from app.services.scoring_service import score_passthrough
 
-        if scoring_enabled:
-            heuristic_scores = HeuristicScorer.score_prompt(
-                optimized_prompt,
-                original=opt.raw_prompt if opt and opt.raw_prompt else None,
-            )
-
-            # Fetch historical stats for z-score normalization (shared by
-            # both hybrid and original-score blending).
-            historical_stats: dict | None = None
-            try:
-                from app.services.optimization_service import OptimizationService
-                opt_svc = OptimizationService(db)
-                historical_stats = await opt_svc.get_score_distribution(
-                    exclude_scoring_modes=["heuristic", "hybrid_passthrough"],
-                )
-            except Exception as exc:
-                logger.debug("Could not fetch score distribution: %s", exc)
-
-            if clean_scores:
-                try:
-                    # Build DimensionScores directly from external scores —
-                    # no bias correction.  Z-score normalization (inside
-                    # blend_scores) and dimension-specific heuristic weights
-                    # already guard against LLM overconfidence.
-                    ide_scores = DimensionScores.from_dict(clean_scores)
-                    blended = blend_scores(
-                        ide_scores, heuristic_scores, historical_stats,
-                    )
-                    opt_dims = blended.to_dimension_scores()
-                    final_scores = opt_dims.to_dict()
-                    heuristic_flags = blended.divergence_flags or []
-                    scoring_mode = "hybrid_passthrough"
-
-                except Exception as exc:
-                    logger.warning("Hybrid blending failed, falling back to heuristic: %s", exc)
-                    final_scores = heuristic_scores
-                    scoring_mode = "heuristic"
-            else:
-                final_scores = heuristic_scores
-                scoring_mode = "heuristic"
-
-            opt_ds = DimensionScores.from_dict(final_scores)
-            overall = opt_ds.overall
-
-            # Compute original scores and deltas — both sides must use
-            # the same scoring pipeline for symmetric comparison.
-            if opt and opt.raw_prompt:
-                original_heur = HeuristicScorer.score_prompt(opt.raw_prompt)
-                if scoring_mode == "hybrid_passthrough":
-                    # Blend originals through the same pipeline as optimized
-                    try:
-                        blended_orig = blend_scores(
-                            DimensionScores.from_dict(original_heur),
-                            original_heur, historical_stats,
-                        )
-                        orig_ds = blended_orig.to_dimension_scores()
-                        original_scores = orig_ds.to_dict()
-                    except Exception:
-                        original_scores = original_heur
-                else:
-                    original_scores = original_heur
-                orig_ds = DimensionScores.from_dict(original_scores)
-                deltas = DimensionScores.compute_deltas(orig_ds, opt_ds)
+        score_result = await score_passthrough(
+            raw_prompt=opt.raw_prompt if opt else None,
+            optimized_prompt=optimized_prompt,
+            external_scores=clean_scores,
+            db=db,
+            scoring_enabled=scoring_enabled,
+        )
+        final_scores = score_result.optimized_scores
+        overall = score_result.overall
+        original_scores = score_result.original_scores
+        deltas = score_result.deltas
+        scoring_mode = score_result.scoring_mode
+        heuristic_flags = score_result.divergence_flags
 
         # Generate heuristic suggestions (zero-LLM)
         from app.services.heuristic_analyzer import HeuristicAnalyzer
