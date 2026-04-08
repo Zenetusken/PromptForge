@@ -1438,7 +1438,7 @@ async def phase_reconcile(
                 if opt_row and opt_row in {c.id for c in (await db.execute(
                     select(PromptCluster).where(
                         PromptCluster.id == opt_row,
-                        PromptCluster.state.notin_(["archived"]),
+                        PromptCluster.state.notin_(["archived"]),  # intentional: only archived, not structural
                     )
                 )).scalars().all()}:
                     # Migrate to current cluster

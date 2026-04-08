@@ -712,7 +712,7 @@ class TaxonomyEngine:
             cluster_q = await db.execute(
                 select(PromptCluster.id).where(
                     PromptCluster.id == opt.cluster_id,
-                    PromptCluster.state.notin_(["archived"]),
+                    PromptCluster.state.notin_(["archived"]),  # intentional: only archived, not structural
                 )
             )
             if cluster_q.scalar_one_or_none():
@@ -731,7 +731,7 @@ class TaxonomyEngine:
             sa_delete(MetaPattern).where(
                 MetaPattern.cluster_id.notin_(
                     select(PromptCluster.id).where(
-                        PromptCluster.state.notin_(["archived"]),
+                        PromptCluster.state.notin_(["archived"]),  # intentional: only archived, not structural
                     )
                 )
             )
