@@ -212,8 +212,11 @@ _launch() {
 # ---------------------------------------------------------------------------
 
 _await_ready() {
+    # Polls readiness for named services.  Sets FAILED_SERVICES (global)
+    # to the list of services that did not become ready in time.
     local -a names=("$@")
     local -A ready health
+    FAILED_SERVICES=()
     for n in "${names[@]}"; do
         ready[$n]=0
         health[$n]=""
@@ -250,9 +253,58 @@ _await_ready() {
                 pending=true
             fi
         done
-        $pending || return 0
+        $pending || break
         sleep 1
     done
+
+    # Collect failed services
+    for n in "${names[@]}"; do
+        if (( ${ready[$n]} == 2 )); then
+            FAILED_SERVICES+=("$n")
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+# Retry logic — exponential backoff per failed service
+# ---------------------------------------------------------------------------
+
+_retry_service() {
+    # Retry a single failed service up to 3 times with exponential backoff.
+    # Returns 0 on success, 1 on final failure.
+    local svc="$1"
+    local max_retries=3
+    local delay=2
+
+    for attempt in $(seq 1 "$max_retries"); do
+        _warn "[RETRY $attempt/$max_retries] $svc — retrying in ${delay}s"
+        sleep "$delay"
+
+        # Stop the failed process before re-launch
+        stop_service "$svc" 2>/dev/null
+
+        _launch "$svc"
+        local rc=$?
+        case $rc in
+            1) return 0 ;;  # already running
+            2) return 1 ;;  # port conflict
+        esac
+
+        # Wait for just this service
+        FAILED_SERVICES=()
+        _await_ready "$svc"
+        if (( ${#FAILED_SERVICES[@]} == 0 )); then
+            return 0  # success
+        fi
+
+        delay=$(( delay * 2 ))  # 2s -> 4s -> 8s
+    done
+
+    # Final failure
+    local last_err
+    last_err=$(tail -1 "$DATA_DIR/${svc}.log" 2>/dev/null || echo "no log available")
+    _fail "$svc failed after $max_retries retries: $last_err"
+    return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -278,6 +330,23 @@ start_services() {
 
     if (( ${#to_await[@]} > 0 )); then
         _await_ready "${to_await[@]}"
+    fi
+
+    # Retry any services that failed initial readiness
+    local any_failed=false
+    if (( ${#FAILED_SERVICES[@]} > 0 )); then
+        _log "Retrying ${#FAILED_SERVICES[@]} failed service(s)..."
+        local -a still_failed=()
+        for svc in "${FAILED_SERVICES[@]}"; do
+            if ! _retry_service "$svc"; then
+                still_failed+=("$svc")
+                any_failed=true
+            fi
+        done
+        if $any_failed; then
+            _fail "Services failed to start: ${still_failed[*]}"
+            exit 1
+        fi
     fi
 
     echo ""
