@@ -13,6 +13,7 @@ from app._version import __version__
 from app.config import DATA_DIR, PROMPTS_DIR, settings
 from app.services.event_bus import event_bus
 from app.services.file_watcher import watch_strategy_files
+from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
 
 # Configure root logger so app.services.* INFO messages reach stderr/log file.
 # Uvicorn sets up its own loggers but doesn't propagate to third-party loggers.
@@ -181,7 +182,7 @@ async def lifespan(app: FastAPI):
                     async with async_session_factory() as _check_db:
                         _active_count = (await _check_db.execute(
                             _sel_check(_func_check.count()).where(
-                                _PC_check.state != "archived",
+                                _PC_check.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                                 _PC_check.centroid_embedding.isnot(None),
                             )
                         )).scalar() or 0
@@ -202,7 +203,7 @@ async def lifespan(app: FastAPI):
                         _clusters = (
                             await _db.execute(
                                 _select(PromptCluster).where(
-                                    PromptCluster.state != "archived"
+                                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
                                 )
                             )
                         ).scalars().all()

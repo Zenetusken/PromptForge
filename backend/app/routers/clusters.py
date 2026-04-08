@@ -37,6 +37,7 @@ from app.schemas.clusters import (
 )
 from app.services.taxonomy import TaxonomyEngine
 from app.services.taxonomy import get_engine as get_taxonomy_engine
+from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
 from app.services.taxonomy.event_logger import get_event_logger
 
 logger = logging.getLogger(__name__)
@@ -175,13 +176,13 @@ async def get_injection_edges(
             .where(
                 OptimizationPattern.relationship == "injected",
                 Optimization.cluster_id.isnot(None),
-                # Source cluster must still exist and be non-archived
+                # Source cluster must still exist and be non-structural
                 OptimizationPattern.cluster_id.in_(
-                    select(PromptCluster.id).where(PromptCluster.state != "archived")
+                    select(PromptCluster.id).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
                 ),
-                # Target cluster must still exist and be non-archived
+                # Target cluster must still exist and be non-structural
                 Optimization.cluster_id.in_(
-                    select(PromptCluster.id).where(PromptCluster.state != "archived")
+                    select(PromptCluster.id).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
                 ),
             )
             .group_by(
@@ -373,6 +374,7 @@ async def get_cluster_detail(
                 .where(
                     PromptCluster.domain == node.get("label", ""),
                     PromptCluster.state != "domain",
+                    PromptCluster.state != "project",
                 )
                 .order_by(MetaPattern.source_count.desc())
             )
