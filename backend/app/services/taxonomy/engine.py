@@ -115,6 +115,31 @@ class TaxonomyEngine:
         # Stats cache — monotonic TTL, invalidated on warm/cold path completion.
         self._stats_cache: dict | None = None
         self._stats_cache_time: float = 0.0
+        # ADR-005: Dirty-set tracking for warm path optimization.
+        # Hot path marks clusters as dirty when members change.
+        # Warm path snapshots and clears at cycle start.
+        self._dirty_set: set[str] = set()
+
+    def mark_dirty(self, cluster_id: str) -> None:
+        """Mark a cluster as needing warm-path processing."""
+        self._dirty_set.add(cluster_id)
+
+    def snapshot_dirty_set(self) -> set[str]:
+        """Snapshot the dirty set and clear it atomically.
+
+        Returns the set of cluster IDs that need processing.
+        Safe under asyncio cooperative scheduling (no await between read and clear).
+        """
+        snapshot = set(self._dirty_set)
+        self._dirty_set.clear()
+        return snapshot
+
+    def is_first_warm_cycle(self) -> bool:
+        """True if this is the first warm cycle after server restart.
+
+        The first cycle runs a full scan to catch changes from before restart.
+        """
+        return self._warm_path_age == 0
 
     @property
     def _provider(self) -> LLMProvider | None:
@@ -285,6 +310,7 @@ class TaxonomyEngine:
                     old_cluster.cluster_metadata = write_meta(
                         old_cluster.cluster_metadata, pattern_stale=True,
                     )
+                    self.mark_dirty(old_cluster.id)  # ADR-005: old cluster lost a member
                     logger.info(
                         "Decremented old cluster '%s' member_count to %d "
                         "(reassigned to '%s')",
@@ -292,6 +318,7 @@ class TaxonomyEngine:
                         cluster.label,
                     )
             opt.cluster_id = cluster.id
+            self.mark_dirty(cluster.id)  # ADR-005: new cluster gained a member
 
             # ----- Intent label hardening (Tier 2) -----
             from app.services.pipeline_constants import MAX_INTENT_LABEL_LENGTH
