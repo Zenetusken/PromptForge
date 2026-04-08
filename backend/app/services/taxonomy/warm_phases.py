@@ -249,6 +249,7 @@ class ReconcileResult:
     scores_reconciled: int = 0
     zombies_archived: int = 0
     leaked_patterns_cleaned: int = 0
+    outliers_ejected: int = 0
 
 
 @dataclass
@@ -289,6 +290,14 @@ async def _reassign_to_active(
 ) -> list[dict]:
     """Reassign optimizations to the nearest active/mature/template cluster.
 
+    Domain-aware: prefers same-domain targets to prevent dissolution cascades
+    where cross-domain reassignment creates more incoherent clusters that
+    trigger further dissolutions.  Falls back to cross-domain only when no
+    same-domain target has cosine >= ``_CROSS_DOMAIN_FALLBACK_FLOOR``.
+
+    When reassigning cross-domain, updates ``opt.domain`` to match the
+    target cluster's domain so the Optimization row stays consistent.
+
     Only targets non-candidate, non-archived, non-domain clusters so that
     rejected candidate members always land in a stable parent cluster.
 
@@ -306,6 +315,11 @@ async def _reassign_to_active(
     if not opt_ids:
         return []
 
+    # Minimum same-domain cosine before allowing cross-domain fallback.
+    # Below this, the member has no viable home in its own domain and
+    # cross-domain placement is the lesser evil.
+    cross_domain_fallback_floor = 0.30
+
     # Load candidate target clusters (active/mature/template only).
     # SQL-level exclusion prevents the dissolving cluster from appearing
     # in results regardless of SQLAlchemy identity-map state.
@@ -322,15 +336,17 @@ async def _reassign_to_active(
         logger.warning("_reassign_to_active: no stable targets available")
         return []
 
-    # Pre-decode target centroids
+    # Pre-decode target centroids and parse domains
     target_centroids: list[np.ndarray] = []
     valid_targets: list[PromptCluster] = []
+    target_domains: list[str] = []  # parsed primary domain per target
     for tc in target_clusters:
         if tc.centroid_embedding:
             try:
                 centroid = np.frombuffer(tc.centroid_embedding, dtype=np.float32).copy()
                 target_centroids.append(centroid)
                 valid_targets.append(tc)
+                target_domains.append(parse_domain(tc.domain)[0])
             except (ValueError, TypeError):
                 pass
 
@@ -340,30 +356,56 @@ async def _reassign_to_active(
     reassignment_counts: dict[str, dict] = {}
 
     for opt_id, emb in zip(opt_ids, opt_embeddings):
-        # Find nearest target by cosine similarity
-        best_target: PromptCluster | None = None
-        best_sim: float = -1.0
-        for tc, centroid in zip(valid_targets, target_centroids):
-            sim = cosine_similarity(emb, centroid)
-            if sim > best_sim:
-                best_sim = sim
-                best_target = tc
-
-        if best_target is None:
-            logger.warning("_reassign_to_active: no target found for opt %s", opt_id)
-            continue
-
+        # Load the optimization to read its domain
         try:
             opt = await db.get(Optimization, opt_id)
             if opt is None:
                 continue
-            opt.cluster_id = best_target.id
-            best_target.member_count = (best_target.member_count or 0) + 1
-            key = best_target.id
+        except Exception as exc:
+            logger.warning("_reassign_to_active: failed to load opt %s: %s", opt_id, exc)
+            continue
+
+        opt_primary_domain, _ = parse_domain(opt.domain)
+
+        # Two-pass search: same-domain first, cross-domain fallback
+        best_same: PromptCluster | None = None
+        best_same_sim: float = -1.0
+        best_any: PromptCluster | None = None
+        best_any_sim: float = -1.0
+
+        for tc, centroid, td in zip(valid_targets, target_centroids, target_domains):
+            sim = cosine_similarity(emb, centroid)
+            if sim > best_any_sim:
+                best_any_sim = sim
+                best_any = tc
+            if td == opt_primary_domain and sim > best_same_sim:
+                best_same_sim = sim
+                best_same = tc
+
+        # Prefer same-domain target.  Only fall back to cross-domain when
+        # no same-domain target reaches the minimum cosine floor.
+        if best_same is not None and best_same_sim >= cross_domain_fallback_floor:
+            chosen = best_same
+        elif best_any is not None:
+            chosen = best_any
+        else:
+            logger.warning("_reassign_to_active: no target found for opt %s", opt_id)
+            continue
+
+        try:
+            opt.cluster_id = chosen.id
+            # Keep opt.domain consistent with the target cluster's domain.
+            # Without this, cross-domain reassignment leaves stale domain
+            # values that confuse downstream reconciliation and reporting.
+            chosen_primary, _ = parse_domain(chosen.domain)
+            if chosen_primary != opt_primary_domain and chosen.domain:
+                opt.domain = chosen.domain
+            chosen.member_count = (chosen.member_count or 0) + 1
+            key = chosen.id
             if key not in reassignment_counts:
                 reassignment_counts[key] = {
-                    "cluster_id": best_target.id,
-                    "cluster_label": best_target.label,
+                    "cluster_id": chosen.id,
+                    "cluster_label": chosen.label,
                     "count": 0,
                 }
             reassignment_counts[key]["count"] += 1
@@ -626,6 +668,221 @@ async def phase_evaluate_candidates(
         "rejected": rejected,
         "splits_fully_reversed": splits_fully_reversed,
     }
+
+
+# ---------------------------------------------------------------------------
+# Outlier reconciliation helper (called at end of Phase 0)
+# ---------------------------------------------------------------------------
+
+# Coherence gate: only inspect clusters below this threshold
+_OUTLIER_CLUSTER_COHERENCE_GATE = 0.45
+
+# Minimum cosine to own centroid — members below this are outlier candidates
+_OUTLIER_COSINE_FLOOR = 0.40
+
+# Margin: target must be better by at least this much to justify ejection
+_OUTLIER_REASSIGN_MARGIN = 0.10
+
+# Max ejections per cluster per warm cycle (stability guard)
+_OUTLIER_MAX_PER_CLUSTER = 5
+
+
+async def _reconcile_outlier_members(
+    db: AsyncSession,
+    engine: "TaxonomyEngine",
+) -> int:
+    """Eject cross-domain outliers from clusters they don't belong in.
+
+    Identifies members whose ``domain`` differs from their cluster's domain
+    AND whose cosine to the cluster centroid is below ``_OUTLIER_COSINE_FLOOR``.
+
+    For each outlier:
+    1. Try to reassign to a same-domain cluster that provides a better fit.
+    2. If no better same-domain cluster exists, create a singleton cluster
+       in the member's correct domain (orphan liberation).
+
+    This is the individual-member analog of dissolution — completing the
+    reconciliation phase by checking member fit, not just cluster-level metrics.
+
+    Returns:
+        Number of members ejected.
+    """
+    # Load active clusters (source candidates: coherence < gate, 3+ members)
+    active_q = await db.execute(
+        select(PromptCluster).where(
+            PromptCluster.state.in_(["active", "mature", "template"]),
+        )
+    )
+    all_active = list(active_q.scalars().all())
+
+    # Pre-decode centroids and domains for target search
+    target_centroids: dict[str, np.ndarray] = {}
+    target_domains: dict[str, str] = {}
+    for c in all_active:
+        if c.centroid_embedding:
+            try:
+                target_centroids[c.id] = np.frombuffer(
+                    c.centroid_embedding, dtype=np.float32,
+                ).copy()
+                target_domains[c.id] = parse_domain(c.domain)[0]
+            except (ValueError, TypeError):
+                pass
+
+    # Only inspect clusters with enough members and low coherence
+    source_candidates = [
+        c for c in all_active
+        if (c.member_count or 0) > 2
+        and c.coherence is not None
+        and c.coherence < _OUTLIER_CLUSTER_COHERENCE_GATE
+    ]
+
+    # Look up domain node IDs for parenting new singletons
+    domain_node_q = await db.execute(
+        select(PromptCluster).where(PromptCluster.state == "domain")
+    )
+    domain_nodes: dict[str, PromptCluster] = {
+        dn.label: dn for dn in domain_node_q.scalars().all()
+    }
+
+    total_ejected = 0
+
+    for cluster in source_candidates:
+        cluster_primary, _ = parse_domain(cluster.domain)
+        cluster_centroid = target_centroids.get(cluster.id)
+        if cluster_centroid is None:
+            continue
+
+        # Load members with their embeddings and domains
+        member_q = await db.execute(
+            select(
+                Optimization.id,
+                Optimization.embedding,
+                Optimization.domain,
+                Optimization.intent_label,
+                Optimization.overall_score,
+            ).where(
+                Optimization.cluster_id == cluster.id,
+                Optimization.embedding.isnot(None),
+            )
+        )
+        members = member_q.all()
+
+        ejected_this_cluster = 0
+        for opt_id, emb_bytes, opt_domain, intent_label, overall_score in members:
+            if ejected_this_cluster >= _OUTLIER_MAX_PER_CLUSTER:
+                break
+
+            opt_primary, _ = parse_domain(opt_domain)
+
+            # Only eject members whose domain doesn't match the cluster
+            if opt_primary == cluster_primary:
+                continue
+
+            try:
+                emb = np.frombuffer(emb_bytes, dtype=np.float32).copy()
+            except (ValueError, TypeError):
+                continue
+
+            # Check cosine to current centroid
+            cos_to_current = cosine_similarity(emb, cluster_centroid)
+            if cos_to_current >= _OUTLIER_COSINE_FLOOR:
+                # Close enough semantically — domain mismatch is borderline
+                continue
+
+            # Find best same-domain target
+            best_target_id: str | None = None
+            best_target_sim: float = -1.0
+            for tid, tc_centroid in target_centroids.items():
+                if tid == cluster.id:
+                    continue
+                if target_domains.get(tid) != opt_primary:
+                    continue
+                sim = cosine_similarity(emb, tc_centroid)
+                if sim > best_target_sim:
+                    best_target_sim = sim
+                    best_target_id = tid
+
+            # Decision: reassign to better cluster OR create singleton
+            opt = await db.get(Optimization, opt_id)
+            if opt is None:
+                continue
+
+            old_cluster_label = cluster.label
+            target_label: str
+            target_domain_str: str
+            cos_to_target: float
+
+            if (
+                best_target_id is not None
+                and best_target_sim >= cos_to_current + _OUTLIER_REASSIGN_MARGIN
+            ):
+                # Path A: better same-domain cluster exists → reassign
+                target_cluster = next(
+                    (c for c in all_active if c.id == best_target_id), None,
+                )
+                if target_cluster is None:
+                    continue
+                opt.cluster_id = best_target_id
+                target_cluster.member_count = (target_cluster.member_count or 0) + 1
+                target_label = target_cluster.label
+                target_domain_str = target_cluster.domain or opt_domain
+                cos_to_target = best_target_sim
+            else:
+                # Path B: no better cluster → create singleton in correct domain
+                # This liberates orphans that were swept in by dissolution cascades
+                parent_node = domain_nodes.get(opt_primary)
+                new_singleton = PromptCluster(
+                    label=intent_label or f"Singleton ({opt_primary})",
+                    domain=opt_domain,
+                    task_type=None,
+                    parent_id=parent_node.id if parent_node else None,
+                    centroid_embedding=emb.astype(np.float32).tobytes(),
+                    member_count=1,
+                    weighted_member_sum=score_to_centroid_weight(overall_score),
+                    scored_count=1 if overall_score is not None else 0,
+                    avg_score=overall_score,
+                    coherence=1.0,
+                    state="active",
+                )
+                db.add(new_singleton)
+                await db.flush()  # populate ID
+                opt.cluster_id = new_singleton.id
+                target_label = new_singleton.label
+                target_domain_str = opt_domain or "general"
+                cos_to_target = 1.0  # singleton is the member itself
+
+            cluster.member_count = max(0, (cluster.member_count or 1) - 1)
+            ejected_this_cluster += 1
+            total_ejected += 1
+
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="reconcile", decision="outlier_ejected",
+                    cluster_id=cluster.id,
+                    context={
+                        "opt_id": opt_id,
+                        "opt_domain": opt_domain,
+                        "source_cluster": old_cluster_label,
+                        "source_domain": cluster.domain,
+                        "target_cluster": target_label,
+                        "target_domain": target_domain_str,
+                        "cos_to_source": round(cos_to_current, 4),
+                        "cos_to_target": round(cos_to_target, 4),
+                        "created_singleton": best_target_id is None
+                        or best_target_sim < cos_to_current + _OUTLIER_REASSIGN_MARGIN,
+                    },
+                )
+            except RuntimeError:
+                pass
+
+    if total_ejected:
+        await db.flush()
+        logger.info(
+            "Outlier reconciliation: ejected %d cross-domain members",
+            total_ejected,
+        )
+
+    return total_ejected
 
 
 # ---------------------------------------------------------------------------
@@ -1114,6 +1371,22 @@ async def phase_reconcile(
     except Exception as orphan_exc:
         logger.warning("Semi-orphan repair failed (non-fatal): %s", orphan_exc)
 
+    # --- Cross-domain outlier reconciliation ---
+    # Eject members whose domain differs from their cluster's domain.
+    # This cleans up the primary source of junk-drawer clusters:
+    # _reassign_to_active() historically ignored domain, so dissolution
+    # cascades sprayed members cross-domain.  Now that _reassign_to_active()
+    # is domain-aware, this pass cleans up the existing mess.
+    #
+    # ORDERING: Must run BEFORE OptimizationPattern repair so that OP repair
+    # sees the updated cluster_id values and can migrate/backfill correctly.
+    try:
+        result.outliers_ejected = await _reconcile_outlier_members(db, engine)
+    except Exception as outlier_exc:
+        logger.warning(
+            "Outlier reconciliation failed (non-fatal): %s", outlier_exc,
+        )
+
     # --- Stale OptimizationPattern repair ---
     # Migrate join records pointing to archived/missing clusters to the
     # optimization's current cluster_id. Previously this just DELETED stale
@@ -1496,7 +1769,8 @@ async def phase_split_emerge(
 
         # --- Leaf split path ---
         # Triggers for: (a) normal splits (≥ SPLIT_MIN_MEMBERS), or
-        # (b) forced splits for large incoherent clusters (≥ FORCED_SPLIT_MIN_MEMBERS, coherence < 0.25)
+        # (b) forced splits for incoherent clusters
+        #     (≥ FORCED_SPLIT_MIN_MEMBERS, coherence < FORCED_SPLIT_COHERENCE_FLOOR)
         _qualifies_for_leaf_split = (
             member_count >= SPLIT_MIN_MEMBERS
             or is_forced_split_candidate

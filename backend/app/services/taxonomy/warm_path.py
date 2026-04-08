@@ -371,11 +371,13 @@ async def execute_warm_path(
         reconcile_result = await phase_reconcile(engine, db)
         await db.commit()
         logger.info(
-            "Phase 0 (reconcile): fixed=%d coherence=%d scores=%d zombies=%d",
+            "Phase 0 (reconcile): fixed=%d coherence=%d scores=%d "
+            "zombies=%d outliers_ejected=%d",
             reconcile_result.member_counts_fixed,
             reconcile_result.coherence_updated,
             reconcile_result.scores_reconciled,
             reconcile_result.zombies_archived,
+            reconcile_result.outliers_ejected,
         )
 
         # Compute Q_baseline from the reconciled state
