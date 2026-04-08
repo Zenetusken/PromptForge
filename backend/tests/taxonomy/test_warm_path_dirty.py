@@ -1,7 +1,8 @@
 """Tests for warm path dirty-set integration."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 
 @pytest.mark.asyncio

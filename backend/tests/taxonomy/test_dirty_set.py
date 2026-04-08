@@ -1,7 +1,8 @@
 """Tests for TaxonomyEngine dirty-set tracking."""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 
 @pytest.fixture

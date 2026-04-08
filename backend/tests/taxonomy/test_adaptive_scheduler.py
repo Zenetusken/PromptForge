@@ -2,9 +2,7 @@
 
 import statistics
 
-import pytest
-
-from app.services.taxonomy.engine import WarmCycleMeasurement, AdaptiveScheduler
+from app.services.taxonomy.engine import AdaptiveScheduler
 
 
 class TestAdaptiveScheduler:
