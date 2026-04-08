@@ -14,16 +14,18 @@ from datetime import datetime, timezone
 
 DEADLOCK_BREAKER_THRESHOLD = 5  # consecutive rejected cycles before forcing
 SPLIT_COHERENCE_FLOOR = 0.5    # below this coherence, node is a split candidate
-SPLIT_MIN_MEMBERS = 25         # minimum members before a node can be split
-# Raised from 6 to 25: clusters under 25 members don't have enough data
-# to sustain independent weight learning (min 10 samples) after splitting
-# into 2-3 children. Pattern injection quality also degrades when clusters
-# are fragmented — a broad 25-member cluster with diverse meta-patterns
-# serves the optimizer better than 3 narrow 8-member clusters.
-# See session analysis: 26% split success rate, 29% children re-merged.
+SPLIT_MIN_MEMBERS = 12         # minimum members before a node can be split
+# Lowered from 25 to 12: the previous threshold created a dead zone where
+# clusters with 6-24 members and coherence between 0.25 and 0.50 could
+# not be dissolved (too big), force-split (coherence too high), or
+# normal-split (too few members).  A 12-member cluster splitting into
+# 2 children of 6 is viable for spectral clustering
+# (SPECTRAL_MIN_GROUP_SIZE=3, min k=2).  Weight learning quality at
+# 6 members is lower, but cluster health (removing incoherent groupings)
+# takes priority over weight learning optimality.
 MEGA_CLUSTER_MEMBER_FLOOR = 50  # cold path mega-cluster split threshold
-# Raised from 12 to 50: only truly oversized clusters warrant cold-path
-# splitting. Aligns with SPLIT_MIN_MEMBERS * 2 logic.
+# Only truly oversized clusters warrant cold-path splitting.
+# Well above SPLIT_MIN_MEMBERS (12) — warm-path handles normal splits.
 
 
 # ---------------------------------------------------------------------------
@@ -50,8 +52,8 @@ CLUSTERING_BLEND_W_TRANSFORM = 0.15
 SPLIT_MERGE_PROTECTION_MINUTES = 60  # 1 hour
 
 # Maximum times the same member set (by content hash) can fail split before
-# permanent cooldown.  Prevents Groundhog Day loops where the same ~25-39
-# member pool is repeatedly split and rolled back/merged.
+# permanent cooldown.  Prevents Groundhog Day loops where the same member
+# pool is repeatedly split and rolled back/merged.
 SPLIT_CONTENT_HASH_MAX_RETRIES = 2
 
 SUB_DOMAIN_MIN_MEMBERS = 20         # domain must have ≥20 total members
@@ -83,9 +85,11 @@ DISSOLVE_MIN_AGE_HOURS = 2              # cluster must be at least N hours old
 
 # Forced split for large incoherent clusters that exceed dissolution member cap
 # but have very low coherence. These clusters are too big to dissolve and too
-# small for the normal split path (SPLIT_MIN_MEMBERS=25) — the forced split
-# catches the gap (6-24 members with coherence < 0.25).
-FORCED_SPLIT_COHERENCE_FLOOR = 0.25     # force split if coherence below this
+# small for the normal split path (SPLIT_MIN_MEMBERS=12) — the forced split
+# catches the gap (6-11 members with coherence < 0.35).
+# Raised from 0.25 to 0.35 to close the dead zone between dissolution
+# (coherence < 0.30, members <= 5) and normal split (members >= 12).
+FORCED_SPLIT_COHERENCE_FLOOR = 0.35     # force split if coherence below this
 FORCED_SPLIT_MIN_MEMBERS = 6            # minimum members for forced spectral split
 # Set to 6 (not 8) to close the gap with DISSOLVE_MAX_MEMBERS=5.
 # Spectral clustering works at 6 members (SPECTRAL_MIN_GROUP_SIZE=3, min k=2).
