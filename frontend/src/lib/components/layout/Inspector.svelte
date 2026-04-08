@@ -190,8 +190,8 @@
               <button
                 class="family-intent"
                 onclick={startRename}
-                use:tooltip={INSPECTOR_TOOLTIPS.rename}
-                aria-label="Click to rename"
+                use:tooltip={family.label}
+                aria-label="Click to rename: {family.label}"
               >{family.label}</button>
             {/if}
             <span
