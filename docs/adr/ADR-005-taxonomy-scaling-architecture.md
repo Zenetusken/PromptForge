@@ -53,7 +53,7 @@ Project Synthesis's taxonomy engine manages all prompt optimizations through an 
 
 **In-project search (primary):** Embedding index searches only the active project's partition first. O(partition_size) instead of O(total).
 
-**Cross-project assignment (fallback):** If no in-project match but a strong cross-project match exists (cosine > 0.7), assign to the cross-project cluster directly. This accelerates singleton absorption — a prompt in Project B can join a semantically identical cluster in Project A. The cluster naturally becomes multi-project.
+**Cross-project assignment (fallback):** If no in-project match, search globally with a boosted threshold: `adaptive_merge_threshold() + 0.15` (~0.70 for singletons, ~0.74 for larger clusters). If a strong cross-project match passes this boosted gate, assign directly. This accelerates singleton absorption — a prompt in Project B can join a semantically identical cluster in Project A. The cluster naturally becomes multi-project.
 
 **New cluster creation:** When no match is found anywhere, create a new singleton under the active project's domain subtree.
 
@@ -126,16 +126,16 @@ Project Synthesis's taxonomy engine manages all prompt optimizations through an 
 
 **Injection:** Cross-cluster injection query searches BOTH MetaPattern (cluster-level) AND GlobalPattern (global tier). GlobalPatterns with `state='active'` get 1.3x relevance multiplier.
 
-**Validation** (every 10th warm cycle):
+**Validation** (every 10th warm cycle, min 30-min wall-clock gate):
 - Check source clusters still active with decent scores
-- `avg_cluster_score < 5.5` → demoted (multiplier removed, pattern kept)
-- All source clusters archived → 30-day grace period → retired
+- `avg_cluster_score < 5.0` → demoted (multiplier removed, pattern kept)
+- Re-promote at `avg_cluster_score >= 6.0` (1.0-point hysteresis gap prevents oscillation)
+- All source clusters archived AND >30 days since last validation → retired
 
 **Retention policy:**
-- Hard cap: 500 global patterns
-- LRU eviction when cap hit (least-recently-validated retired first)
-- Demoted patterns evicted before active ones
-- Retired patterns excluded from injection, kept for audit
+- Hard cap: 500 GlobalPatterns with `state IN ('active', 'demoted')`
+- Eviction order when cap hit: (1) demoted LRU by `last_validated_at`, (2) active LRU
+- Retired patterns excluded from cap count, kept for audit trail
 
 ## Implementation Phases
 
@@ -173,12 +173,12 @@ Project Synthesis's taxonomy engine manages all prompt optimizations through an 
 ### Negative
 - Tree parent migration adds complexity to the existing tree traversal code
 - Every tree query that filters by state needs `state='project'` exclusion
-- Cross-project assignment (cosine > 0.7) means clusters can contain optimizations from multiple projects — the topology view needs to handle this
+- Cross-project assignment (adaptive threshold + 0.15 boost) means clusters can contain optimizations from multiple projects — the topology view needs to handle this
 - The adaptive scheduler needs 10 cycles of data before self-tuning activates
 
 ### Risks
 - SQLite may not handle seed batches of 100+ prompts without contention. Mitigation: monitoring + PostgreSQL escape hatch.
-- Cross-project assignment at 0.7 threshold may be too aggressive, merging unrelated prompts from different project contexts. Mitigation: the threshold is a constant that can be tuned, and the merge is reversible (split path).
+- Cross-project assignment boost (+0.15 over adaptive threshold) may be too aggressive, merging unrelated prompts from different project contexts. Mitigation: the boost is a constant that can be tuned, and the merge is reversible (split path).
 - The "Legacy" project node is a migration artifact that may confuse users. Mitigation: rename to the first linked repo when one is connected.
 
 ## References
