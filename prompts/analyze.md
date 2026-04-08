@@ -18,15 +18,16 @@ Analyze the prompt above and determine:
 
    **Decision rules (apply in order — first match wins):**
    - SQL, schema, ORM, queries, migrations, indexes, tables, database optimization → **database**
-   - Data science, machine learning, pandas, sklearn, datasets, analytics, ETL, predictions, model training → **data**
+   - Data science, machine learning, pandas, sklearn, datasets, analytics, ETL, predictions, model training, CSV processing → **data**
    - React, Svelte, Vue, CSS, components, layout, UI, responsive, accessibility → **frontend**
    - API endpoints, server, middleware, FastAPI, Django, Flask, routes, authentication → **backend**
    - Docker, CI/CD, Kubernetes, Terraform, deployment, monitoring, nginx → **devops**
    - Auth, encryption, JWT, OAuth, XSS, CSRF, injection, vulnerabilities, CORS → **security**
    - Prompt equally requires BOTH frontend UI AND backend server work → **fullstack**
-   - None of the above match → **use a descriptive domain name** (e.g., "marketing", "finance", "education", "legal", "saas", "design"). Only use "general" if the prompt is truly domain-agnostic with no identifiable subject area.
+   - SaaS-specific business logic: subscription management, tenant isolation, onboarding flow design, usage metering, SaaS pricing tiers, churn strategy, customer success playbooks → **saas**
+   - None of the above match → **use a descriptive domain name** (e.g., "marketing", "finance", "education", "legal", "design"). Only use "general" if the prompt is truly domain-agnostic with no identifiable subject area.
 
-   A prompt can mention APIs, services, and data flow while being primarily about the database — classify by the **primary concern**, not by every keyword present.
+   Classify by WHAT the prompt asks you to BUILD or ANALYZE, not by the business context it serves. A CSV dedup script for a SaaS product is "data". RBAC for a SaaS app is "backend" or "security". Image upload for a SaaS dashboard is "fullstack". Release notes or changelog writing is "writing" task in "general" domain. Only use "saas" when the prompt's primary concern is SaaS-specific business logic that doesn't fit any technical domain above.
 4. **Weaknesses** — List specific, actionable problems. Be concrete: "no output format specified" not "could be improved."
 5. **Strengths** — What does this prompt already do well? Even weak prompts have strengths.
 6. **Strategy** — Select the single best strategy from the available list above. Always commit to a specific strategy — "auto" should be a last resort, not a default. Match the strategy to the task type:
