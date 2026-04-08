@@ -319,13 +319,39 @@ git commit -m "feat(taxonomy): Phase 3B cache compat + snapshot/restore with lab
 
 ---
 
-### Task 7: Replace engine.py direct internal access + cross-validate backends
+### Task 7: Fix pairwise_similarities + size property + engine.py direct access
 
 **Files:**
 - Modify: `backend/app/services/taxonomy/engine.py` (replace _matrix/_ids access)
 - Test: `backend/tests/taxonomy/test_backend_project_filter.py` (create)
 
-- [ ] **Step 1: Add reset() method to EmbeddingIndex**
+- [ ] **Step 1: Fix size property to use live count (not including tombstones)**
+
+```python
+@property
+def size(self) -> int:
+    """Number of live (non-tombstoned) entries."""
+    return len(self._id_to_label)
+```
+
+- [ ] **Step 2: Fix pairwise_similarities to access backend matrix**
+
+`pairwise_similarities()` uses `self._matrix` directly. After the refactor, expose the matrix via a property:
+
+```python
+@property
+def _matrix(self) -> np.ndarray:
+    """Access the raw matrix (numpy backend only). Used by pairwise_similarities."""
+    if isinstance(self._backend, _NumpyBackend):
+        return self._backend._matrix
+    # HNSW doesn't expose a matrix — pairwise_similarities already guards at 2000
+    logger.warning("pairwise_similarities not available with HNSW backend")
+    return np.empty((0, self._dim), dtype=np.float32)
+```
+
+This preserves backward compatibility for `pairwise_similarities()` which already caps at 2000 clusters. At 2000+ clusters, HNSW is active and the property returns an empty matrix, triggering the existing early-return guard.
+
+- [ ] **Step 3: Add reset() method to EmbeddingIndex**
 
 ```python
 async def reset(self) -> None:
@@ -340,11 +366,11 @@ async def reset(self) -> None:
         self._backend.build(np.empty((0, self._dim), dtype=np.float32), 0)
 ```
 
-- [ ] **Step 2: Replace engine.py direct access with reset()**
+- [ ] **Step 4: Replace engine.py direct access with reset()**
 
 Find `engine.py` line ~696-702 where `_embedding_index._matrix` and `_ids` are accessed. Replace with `await self._embedding_index.reset()`.
 
-- [ ] **Step 3: Write cross-validation test**
+- [ ] **Step 5: Write cross-validation test**
 
 ```python
 # backend/tests/taxonomy/test_backend_project_filter.py
@@ -409,7 +435,7 @@ async def test_numpy_and_hnsw_return_same_results():
             assert project_ids[cid] == "proj-A"
 ```
 
-- [ ] **Step 4: Run tests, commit**
+- [ ] **Step 6: Run tests, commit**
 
 ```bash
 pytest tests/taxonomy/test_backend_project_filter.py -v

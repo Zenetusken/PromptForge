@@ -504,6 +504,27 @@ After cluster assignment, update the cache:
                 self._cluster_project_cache[cluster.id] = project_id
 ```
 
+Pass project_id to `assign_cluster()`:
+
+```python
+            cluster = await assign_cluster(
+                db, embedding, label, domain, task_type, overall_score,
+                embedding_index=self._embedding_index,
+                project_id=project_id,  # ADR-005 Phase 2A
+            )
+```
+
+**IMPORTANT:** Find the existing `assign_cluster()` call in `process_optimization()` and add `project_id=project_id` to it. The parameter defaults to `None` so existing behavior is preserved when `project_id` is None.
+
+Also update the caller in `main.py` that dispatches `process_optimization`. Find the line (around `main.py:687`) that calls `engine.process_optimization(oid, db)` and pass `repo_full_name`:
+
+```python
+            await engine.process_optimization(
+                oid, db,
+                repo_full_name=opt.repo_full_name,  # ADR-005 Phase 2A
+            )
+```
+
 And pass project_id to the embedding index upsert:
 
 ```python
@@ -731,7 +752,14 @@ After the in-project search finds no match:
             if candidate.id in {c.id for c in (project_candidates or [])}:
                 continue  # already evaluated
 
-            # ... cosine + penalty computation (same as existing) ...
+            # Compute cosine similarity (same formula as existing code above)
+            centroid = np.frombuffer(candidate.centroid_embedding, dtype=np.float32)
+            score = float(np.dot(embedding, centroid) / (
+                np.linalg.norm(embedding) * np.linalg.norm(centroid) + 1e-9
+            ))
+            # Apply the same multi-signal penalties as the existing loop
+            # (coherence, output coherence, task_type mismatch, size pressure)
+            # The implementer must replicate or factor out the existing penalty code
             boosted_threshold = adaptive_merge_threshold(candidate) + CROSS_PROJECT_THRESHOLD_BOOST
             if score >= boosted_threshold:
                 best_match = candidate
@@ -1088,3 +1116,9 @@ curl -s http://127.0.0.1:8000/api/health | python3 -m json.tool | grep project
 ```bash
 git add -A && git commit -m "fix: Phase 2A E2E validation adjustments"
 ```
+
+---
+
+### Deferred: Frontend (ProjectFilter + multi-project badge)
+
+The spec's Section 4 describes a `ProjectFilter` Svelte component and multi-project badge in the topology view. This is deferred to a follow-up task after backend work is validated. The backend endpoints (tree with `project_id` filter, cluster detail with `member_counts_by_project`) are delivered in Task 7 and provide the data the frontend will consume.
