@@ -627,12 +627,24 @@ async def assign_cluster(
                 if cross_matches and cross_matches[0][1] > 0:
                     c_idx, c_score = cross_matches[0]
                     c_matched = cross_valid[c_idx]
+
+                    # Apply same multi-signal penalties as Tier 1
+                    c_effective = c_score
+                    if c_matched.coherence is not None and c_matched.coherence < 0.4:
+                        c_effective -= (0.4 - c_matched.coherence) * 0.3
+                    _c_meta = _rm_assign(c_matched.cluster_metadata)
+                    _c_out_coh = _c_meta.get("output_coherence")
+                    if _c_out_coh is not None and _c_out_coh < 0.35:
+                        c_effective -= (0.35 - _c_out_coh) * 0.4
+                    if task_type and c_matched.task_type and task_type != c_matched.task_type:
+                        c_effective *= 0.88
+
                     c_threshold = (
                         adaptive_merge_threshold(c_matched.member_count or 1)
                         + CROSS_PROJECT_THRESHOLD_BOOST
                     )
 
-                    if c_score >= c_threshold:
+                    if c_effective >= c_threshold:
                         # Cross-domain check still applies
                         matched_primary, _ = parse_domain(c_matched.domain)
                         incoming_primary, _ = parse_domain(domain)

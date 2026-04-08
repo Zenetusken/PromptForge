@@ -410,8 +410,8 @@ class TaxonomyEngine:
                 # Re-upsert centroid with project_id so the embedding index
                 # knows which project this cluster belongs to.  assign_cluster
                 # already wrote the centroid without project_id; this adds the tag.
-                if cluster.centroid:
-                    _centroid = np.frombuffer(cluster.centroid, dtype=np.float32)
+                if cluster.centroid_embedding:
+                    _centroid = np.frombuffer(cluster.centroid_embedding, dtype=np.float32)
                     await self._embedding_index.upsert(
                         cluster.id, _centroid, project_id=project_id,
                     )
