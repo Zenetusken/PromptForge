@@ -44,6 +44,7 @@ from app.services.taxonomy._constants import (
     DISSOLVE_COHERENCE_CEILING,
     DISSOLVE_MAX_MEMBERS,
     DISSOLVE_MIN_AGE_HOURS,
+    EXCLUDED_STRUCTURAL_STATES,
     FORCED_SPLIT_COHERENCE_FLOOR,
     FORCED_SPLIT_MIN_MEMBERS,
     LABEL_COHERENCE_SPLIT_SIGNAL,
@@ -910,7 +911,7 @@ async def phase_reconcile(
     """Reconcile member counts, coherence, scores, domain node repairs, and
     archive zombie clusters.
 
-    Fix #10: queries nodes with ``state.notin_(["domain", "archived"])``
+    Fix #10: queries nodes with ``state.notin_(EXCLUDED_STRUCTURAL_STATES)``
     instead of iterating over a stale ``active_nodes`` list.
     Fix #16: uses fresh query results from its own session.
     """
@@ -963,7 +964,7 @@ async def phase_reconcile(
         # relying on a stale active_nodes list from a prior query.
         nodes_q = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"])
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
             )
         )
         live_nodes = list(nodes_q.scalars().all())
@@ -1110,7 +1111,7 @@ async def phase_reconcile(
             child_count = (await db.execute(
                 select(func.count()).where(
                     PromptCluster.domain == domain_node.label,
-                    PromptCluster.state.notin_(["domain", "archived"]),
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 )
             )).scalar() or 0
             if domain_node.member_count != child_count:
@@ -1125,7 +1126,7 @@ async def phase_reconcile(
             child_count_q = await db.execute(
                 select(func.count()).where(
                     PromptCluster.parent_id == domain_node.id,
-                    PromptCluster.state.notin_(["domain", "archived"]),
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 )
             )
             actual_count = child_count_q.scalar() or 0
@@ -1137,7 +1138,7 @@ async def phase_reconcile(
             self_ref_q = await db.execute(
                 select(PromptCluster).where(
                     PromptCluster.domain == domain_node.label,
-                    PromptCluster.state.notin_(["domain", "archived"]),
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                     PromptCluster.id == PromptCluster.parent_id,
                 )
             )
@@ -1181,7 +1182,7 @@ async def phase_reconcile(
         # instead of iterating over a stale active_nodes list.
         zombie_q = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         zombie_candidates = list(zombie_q.scalars().all())
@@ -1519,7 +1520,7 @@ async def phase_split_emerge(
     # Q_before/Q_after are computed by the orchestrator (_run_speculative_phase),
     # not here — phases focus on mutations, orchestrator handles quality gating.
     active_q = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
+        select(PromptCluster).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
     )
     active_nodes = list(active_q.scalars().all())
 
@@ -1780,7 +1781,7 @@ async def phase_split_emerge(
         fam_q = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.parent_id == node.id,
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         node_families = list(fam_q.scalars().all())
@@ -1962,7 +1963,7 @@ async def phase_split_emerge(
     fam_result = await db.execute(
         select(PromptCluster).where(
             PromptCluster.parent_id.is_(None),
-            PromptCluster.state.notin_(["domain", "archived"]),
+            PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
         )
     )
     unassigned_families = list(fam_result.scalars().all())
@@ -2011,7 +2012,7 @@ async def phase_merge(
 
     # Load active nodes
     active_q = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
+        select(PromptCluster).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
     )
     active_nodes = list(active_q.scalars().all())
 
@@ -2217,7 +2218,7 @@ async def phase_merge(
 
         # Reload active nodes (may have changed from global merge)
         current_q = await db.execute(
-            select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
+            select(PromptCluster).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
         )
         current_active = list(current_q.scalars().all())
 
@@ -2342,7 +2343,7 @@ async def phase_merge(
                             break  # one merge per domain per cycle
 
             # Signal B: high centroid similarity within domain
-            remaining = [s for s in siblings if s.state not in ("domain", "archived")]
+            remaining = [s for s in siblings if s.state not in EXCLUDED_STRUCTURAL_STATES]
             if len(remaining) >= 2:
                 merged_this_domain = False
                 for i in range(len(remaining)):
@@ -2374,8 +2375,8 @@ async def phase_merge(
                         except (ValueError, TypeError):
                             continue
                         both_active = (
-                            remaining[i].state not in ("domain", "archived")
-                            and remaining[j].state not in ("domain", "archived")
+                            remaining[i].state not in EXCLUDED_STRUCTURAL_STATES
+                            and remaining[j].state not in EXCLUDED_STRUCTURAL_STATES
                         )
                         combined_mc = max(
                             remaining[i].member_count or 0,
@@ -2490,7 +2491,7 @@ async def phase_retire(
 
     # Load active nodes
     active_q = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
+        select(PromptCluster).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
     )
     active_nodes = list(active_q.scalars().all())
 
@@ -2684,7 +2685,7 @@ async def phase_refresh(
 
         # Load active non-domain nodes
         nodes_q = await db.execute(
-            select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
+            select(PromptCluster).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
         )
         active_nodes = list(nodes_q.scalars().all())
 
@@ -3250,7 +3251,7 @@ async def phase_audit(
 
     # Compute per-node separation and Q_final
     active_q = await db.execute(
-        select(PromptCluster).where(PromptCluster.state.notin_(["domain", "archived"]))
+        select(PromptCluster).where(PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES))
     )
     active_after = list(active_q.scalars().all())
     engine._update_per_node_separation(active_after)

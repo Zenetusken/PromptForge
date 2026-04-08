@@ -26,7 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PromptCluster
-from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD
+from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD, EXCLUDED_STRUCTURAL_STATES
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.event_logger import get_event_logger
 from app.services.taxonomy.quality import is_non_regressive
@@ -93,7 +93,7 @@ async def _load_active_nodes(
             from the result set. Used in Q computation to prevent low-coherence
             candidates from dragging Q_after below Q_before.
     """
-    excluded = ["domain", "archived"]
+    excluded = list(EXCLUDED_STRUCTURAL_STATES)
     if exclude_candidates:
         excluded.append("candidate")
     result = await db.execute(

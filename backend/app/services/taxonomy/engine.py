@@ -37,7 +37,7 @@ from app.models import (
 from app.providers.base import LLMProvider
 from app.services.embedding_service import EmbeddingService
 from app.services.prompt_loader import PromptLoader
-from app.services.taxonomy._constants import _utcnow
+from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES, _utcnow
 from app.services.taxonomy.cluster_meta import read_meta, write_meta
 from app.services.taxonomy.cold_path import ColdPathResult, execute_cold_path
 from app.services.taxonomy.embedding_index import EmbeddingIndex
@@ -579,7 +579,7 @@ class TaxonomyEngine:
         # Count clusters before
         before_q = await db.execute(
             select(sa_func.count()).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         clusters_before = before_q.scalar() or 0
@@ -597,7 +597,7 @@ class TaxonomyEngine:
         # Archive all non-domain active clusters — we'll rebuild from scratch
         active_q = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         now = _utcnow()
@@ -644,7 +644,7 @@ class TaxonomyEngine:
         # Count clusters after
         after_q = await db.execute(
             select(sa_func.count()).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
         clusters_after = after_q.scalar() or 0
@@ -763,7 +763,7 @@ class TaxonomyEngine:
         # --- 3. Compute coherence ---
         active_clusters = (await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )).scalars().all()
 
@@ -1396,7 +1396,7 @@ class TaxonomyEngine:
             children_q = await db.execute(
                 select(PromptCluster).where(
                     PromptCluster.parent_id == domain_node.id,
-                    PromptCluster.state.notin_(["domain", "archived"]),
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 )
             )
             children = list(children_q.scalars().all())
@@ -1608,7 +1608,7 @@ class TaxonomyEngine:
                     reparented = 0
                     for cid in group["cluster_ids"]:
                         cluster = await db.get(PromptCluster, cid)
-                        if cluster and cluster.state not in ("domain", "archived"):
+                        if cluster and cluster.state not in EXCLUDED_STRUCTURAL_STATES:
                             cluster.parent_id = sub_node.id
                             cluster.domain = sub_label
                             reparented += 1
@@ -1942,7 +1942,7 @@ class TaxonomyEngine:
                 sa_func.count(),
             ).where(
                 PromptCluster.domain == domain_node.label,
-                PromptCluster.state.notin_(["domain", "archived"]),
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 PromptCluster.umap_x.isnot(None),
                 PromptCluster.umap_y.isnot(None),
                 PromptCluster.umap_z.isnot(None),
@@ -2138,7 +2138,7 @@ class TaxonomyEngine:
         # Load non-domain/non-archived nodes for metrics (Fix #10)
         result = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.notin_(["domain", "archived"])
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
             )
         )
         active_nodes = list(result.scalars().all())
@@ -2418,7 +2418,7 @@ class TaxonomyEngine:
         try:
             _health_nodes_q = await db.execute(
                 select(PromptCluster).where(
-                    PromptCluster.state.notin_(["domain", "archived"])
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES)
                 )
             )
             _health_nodes = list(_health_nodes_q.scalars().all())
