@@ -368,6 +368,7 @@ class TaxonomyEngine:
                     task_type=opt.task_type or "general",
                     overall_score=opt.overall_score,
                     embedding_index=self._embedding_index,
+                    project_id=project_id,
                 )
 
             # Write back the definitive cluster assignment.
@@ -756,6 +757,7 @@ class TaxonomyEngine:
                     task_type=opt.task_type or "general",
                     overall_score=opt.overall_score,
                     embedding_index=self._embedding_index,
+                    project_id=getattr(opt, "project_id", None),
                 )
 
             opt.cluster_id = cluster.id
