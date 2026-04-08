@@ -2772,6 +2772,10 @@ async def phase_refresh(
                     )
                 cluster_taxonomy_ctx[sc_node.id] = ctx_str
 
+            # Bound concurrency to avoid Haiku rate-limit pressure.
+            # 10 matches batch_pipeline.py's CLI concurrency limit.
+            _extraction_sem = asyncio.Semaphore(10)
+
             async def _extract_patterns_for_cluster(
                 cluster_node: PromptCluster,
                 opts: list,
@@ -2795,13 +2799,14 @@ async def phase_refresh(
                             },
                         )
                         from app.providers.base import call_provider_with_retry
-                        response = await call_provider_with_retry(
-                            engine._provider,
-                            model=settings.MODEL_HAIKU,
-                            system_prompt="You are a prompt engineering analyst. Extract reusable meta-patterns.",
-                            user_message=template,
-                            output_format=_ExtractedPatterns,
-                        )
+                        async with _extraction_sem:
+                            response = await call_provider_with_retry(
+                                engine._provider,
+                                model=settings.MODEL_HAIKU,
+                                system_prompt="You are a prompt engineering analyst. Extract reusable meta-patterns.",
+                                user_message=template,
+                                output_format=_ExtractedPatterns,
+                            )
                         patterns = [str(p) for p in response.patterns if isinstance(p, str)][:5]
                         texts.extend(patterns)
                     except Exception as _pe:
