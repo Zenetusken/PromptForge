@@ -404,7 +404,7 @@ async def test_split_triggers_on_stale_coherence_cluster(session_factory, mock_e
     inline recomputation in split detection should trigger the split
     in a single warm cycle — not require two cycles.
 
-    Note: SPLIT_MIN_MEMBERS=25, so we need ≥26 members to trigger.
+    Note: SPLIT_MIN_MEMBERS=12, so we need ≥12 members to trigger (test uses 26).
     """
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
     rng = np.random.RandomState(77)

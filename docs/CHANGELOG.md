@@ -4,6 +4,16 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Fixed
+- **Dissolution cascade cross-domain contamination** — `_reassign_to_active()` now prefers same-domain target clusters, preventing dissolved members from spraying cross-domain and creating junk-drawer clusters. Updates `opt.domain` on cross-domain reassignment for data consistency
+- **Lifecycle dead zone for mid-size clusters** — lowered `SPLIT_MIN_MEMBERS` 25->12 and raised `FORCED_SPLIT_COHERENCE_FLOOR` 0.25->0.35, closing the gap where clusters with 6-24 members and coherence 0.25-0.50 had no lifecycle operation available
+
+### Added
+- **Cross-domain outlier reconciliation** — Phase 0 reconciliation now ejects members whose domain differs from their cluster's domain when cosine similarity to centroid is below 0.40 and a better same-domain cluster exists. Caps at 5 ejections per cluster per cycle
+
+### Changed
+- **Analyzer "saas" domain classification tightened** — "saas" moved from generic fallback example to explicit decision rule with clear criteria (subscription management, tenant isolation, onboarding flows, usage metering). Added clarifying instruction: classify by what the prompt asks to build, not business context
+
 ## v0.3.17-dev — 2026-04-07
 
 ### Added
