@@ -364,6 +364,18 @@ async def execute_warm_path(
     all_phase_results: list[PhaseResult] = []
     q_baseline: float | None = None
 
+    # ADR-005: Snapshot dirty set — first cycle does full scan
+    if engine.is_first_warm_cycle():
+        dirty_ids: set[str] | None = None  # None = process all clusters (restart recovery)
+    else:
+        dirty_ids = engine.snapshot_dirty_set() or None  # empty set → None (full scan)
+
+    logger.info(
+        "Warm path cycle: dirty_ids=%s (first_cycle=%s)",
+        len(dirty_ids) if dirty_ids is not None else "all",
+        engine.is_first_warm_cycle(),
+    )
+
     # ------------------------------------------------------------------
     # Phase 0: Reconcile — fresh session, always commits
     # ------------------------------------------------------------------
