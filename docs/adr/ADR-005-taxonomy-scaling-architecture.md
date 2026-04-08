@@ -100,20 +100,7 @@ Project Synthesis's taxonomy engine manages all prompt optimizations through an 
 
 **Project scoping:** Vectors tagged with project_id. `search(embedding, k, threshold, project_filter=None)` filters before computation.
 
-### 6. Global Pattern Promotion (Cross-Project Learning)
-
-**Criteria:** A MetaPattern is promoted to global tier when:
-- `global_source_count >= 5` (present in 5+ distinct clusters)
-- Those clusters span `>= 2` distinct projects
-- The pattern's embedding has cosine similarity > 0.82 with patterns in other projects (already computed by the `global_source_count` pipeline)
-
-**Frequency:** Computed every warm cycle as part of Phase 4 (refresh). The existing `global_source_count` computation already joins across all clusters — extending it with project-count is one additional GROUP BY.
-
-**Injection:** Global patterns are injected into all projects' optimizations. The existing cross-cluster injection pipeline (pattern_injection.py) already searches patterns with high `global_source_count`. No change needed — the injection is already cross-project by design.
-
-**Observability:** New event `op="promote", decision="global_pattern"` logged by TaxonomyEventLogger.
-
-### 7. Global Pattern Tier — Durable Cross-Project Techniques
+### 6. Global Pattern Tier — Durable Cross-Project Techniques
 
 **New model: `GlobalPattern`** — independent table, survives cluster archival.
 
@@ -152,27 +139,27 @@ Project Synthesis's taxonomy engine manages all prompt optimizations through an 
 
 ## Implementation Phases
 
-### Phase 1: Foundation (can be built now)
-- Add `state='project'` to PromptCluster state enum
-- Create "Legacy" project node, migrate existing domains
-- Add `project_id` to Optimization (denormalized)
-- Dirty-set tracking on TaxonomyEngine
-- Warm path: dirty-only processing (skip unchanged clusters)
-- Embedding index: project_filter parameter
-- Adaptive warm path scheduler with rolling window
+### Phase 1: Foundation (dirty tracking + adaptive measurement)
+- `EXCLUDED_STRUCTURAL_STATES` constant replacing 37+ inline state lists
+- `state='project'` code convention (no DDL — state is String(20))
+- "Legacy" project node migration with rollback support
+- `project_id` on Optimization (denormalized) + backfill
+- Dirty-set tracking on TaxonomyEngine (with restart full-scan)
+- Warm path: dirty-only processing with phase-specific scoping
+- Adaptive scheduler: rolling window + p75 target (all-dirty mode only)
+- Embedding index: project_filter parameter + _project_ids array
 
-### Phase 2: Multi-Project (when second project is linked)
+### Phase 2: Multi-Project + Global Tier
 - Project creation on GitHub repo link
-- Hot-path project-scoped search + cross-project assignment
-- Per-project Q metrics and warm path scoping
-- GlobalPattern model + promotion pipeline + injection integration
-- Validation cycle (every 10th warm path) + retention policy (500 cap, LRU eviction)
+- Hot-path project-scoped search + cross-project assignment (boosted threshold)
+- Per-project Q metrics via _load_active_nodes(project_id)
+- GlobalPattern model + promotion + injection + validation + retention
 - Topology UI: project filter dropdown
 
-### Phase 3: Performance (driven by monitoring data)
-- HNSW embedding index (if search > 50ms)
-- PostgreSQL migration (if SQLite contention > 30s p95)
-- Round-robin warm path scheduling (if cycle time > 30s consistently)
+### Phase 3: Performance (driven by /api/monitoring data)
+- Round-robin warm scheduling branch (when cycle time > target)
+- HNSW embedding index (when search > 50ms)
+- PostgreSQL migration (when SQLite contention > 30s p95)
 
 ## Consequences
 
