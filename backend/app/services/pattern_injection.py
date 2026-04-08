@@ -285,7 +285,12 @@ async def auto_inject_patterns(
                             cluster_id=mp.cluster_id,
                         ))
                         cc_count += 1
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as _cc_exc:
+                    logger.warning(
+                        "Corrupt pattern embedding in cross-cluster injection, "
+                        "pattern=%s: %s trace_id=%s",
+                        mp.id, _cc_exc, trace_id,
+                    )
                     continue
 
             if cc_count:
@@ -501,7 +506,11 @@ async def retrieve_few_shot_examples(
                     if max(input_sim, output_sim) <= max(prev_input, prev_output):
                         continue
                 seen[opt_id] = (input_sim, output_sim, example)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _fs_exc:
+                logger.warning(
+                    "Corrupt embedding in few-shot candidate, opt=%s: %s trace_id=%s",
+                    opt_id, _fs_exc, trace_id,
+                )
                 continue
 
         # Rank by max(input_sim, output_sim) * overall_score + label overlap bonus

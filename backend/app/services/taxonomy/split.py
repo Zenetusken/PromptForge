@@ -99,10 +99,28 @@ async def split_cluster(
                 raw=raw, optimized=opt_emb, transformation=trans_emb,
             ))
             child_opt_ids.append(opt_id)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as _emb_exc:
+            logger.warning(
+                "Corrupt embedding in split member collection, opt=%s: %s",
+                opt_id, _emb_exc,
+            )
             continue
 
     if len(child_blended) < SPLIT_MIN_MEMBERS:
+        try:
+            get_event_logger().log_decision(
+                path=log_path, op="split", decision="insufficient_members",
+                cluster_id=node.id,
+                context={
+                    "cluster_label": node.label,
+                    "valid_embeddings": len(child_blended),
+                    "min_required": SPLIT_MIN_MEMBERS,
+                    "total_members": len(opt_rows),
+                    "dropped_corrupt": len(opt_rows) - len(child_blended),
+                },
+            )
+        except RuntimeError:
+            pass
         return SplitResult(success=False, children_created=0, noise_reassigned=0)
 
     # Spectral clustering — primary algorithm.
@@ -372,6 +390,19 @@ async def split_cluster(
             pass
 
     if len(new_children) < 2:
+        try:
+            get_event_logger().log_decision(
+                path=log_path, op="split", decision="too_few_children",
+                cluster_id=node.id,
+                context={
+                    "cluster_label": node.label,
+                    "children_created": len(new_children),
+                    "algorithm": used_algorithm,
+                    "reason": "Fewer than 2 viable children after label generation",
+                },
+            )
+        except RuntimeError:
+            pass
         return SplitResult(success=False, children_created=0, noise_reassigned=0)
 
     # Archive parent
@@ -467,7 +498,11 @@ async def split_cluster(
                 child_centroids.append(
                     np.frombuffer(ch.centroid_embedding, dtype=np.float32)
                 )
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _cc_exc:
+                logger.warning(
+                    "Corrupt child centroid in separation computation, cluster='%s': %s",
+                    ch.label, _cc_exc,
+                )
                 child_centroids.append(np.zeros(384, dtype=np.float32))
         for i, ch in enumerate(new_children):
             min_dist = 1.0
@@ -505,8 +540,11 @@ async def split_cluster(
                 ch.cluster_metadata = write_meta(
                     ch.cluster_metadata, output_coherence=round(out_coh, 4),
                 )
-        except Exception:
-            pass  # Non-fatal
+        except Exception as _oc_exc:
+            logger.warning(
+                "Output coherence computation failed for child '%s': %s",
+                ch.label, _oc_exc,
+            )
 
     # Defer meta-pattern extraction to warm-path Phase 4 (Refresh).
     # Mark all children as pattern_stale=True so Phase 4 picks them up.

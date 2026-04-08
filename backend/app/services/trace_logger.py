@@ -65,7 +65,11 @@ class TraceLogger:
                     continue
                 try:
                     entry = json.loads(line)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as jde:
+                    logger.warning(
+                        "Malformed JSONL line in %s (skipping): %s",
+                        path.name, jde,
+                    )
                     continue
                 if entry.get("trace_id") == trace_id:
                     matches.append(entry)

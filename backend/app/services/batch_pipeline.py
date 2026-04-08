@@ -135,8 +135,11 @@ async def run_single_prompt(
                 _labels = domain_resolver.domain_labels
                 if _labels:
                     _known_domains = ", ".join(sorted(_labels))
-            except Exception:
-                pass  # Fall back to hardcoded list
+            except Exception as _dr_exc:
+                logger.warning(
+                    "Domain resolver labels unavailable (falling back to hardcoded): %s",
+                    _dr_exc,
+                )
         analyze_msg = prompt_loader.render("analyze.md", {
             "raw_prompt": raw_prompt,
             "available_strategies": available_strategies,

@@ -278,10 +278,17 @@ async def _sampling_request_structured(
         # Client doesn't support tools in sampling (McpError from VS Code,
         # TypeError/AttributeError from other clients) — fall back to plain
         # text with explicit JSON schema instruction appended.
-        logger.info(
-            "Structured sampling not supported (client raised %s: %s), falling back to text + schema",
+        logger.warning(
+            "Structured sampling fallback: client raised %s: %s — using text + schema",
             type(exc).__name__, exc,
         )
+        try:
+            await notify_event_bus("optimization_status", {
+                "phase": "structured_fallback",
+                "reason": type(exc).__name__,
+            })
+        except Exception:
+            pass
         schema_json = _json.dumps(output_model.model_json_schema(), indent=2)
         json_instruction = (
             "\n\n---\nIMPORTANT: Respond with ONLY a valid JSON object matching "

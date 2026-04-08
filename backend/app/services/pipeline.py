@@ -398,8 +398,12 @@ class PipelineOrchestrator:
                 from app.services.embedding_service import EmbeddingService as _EmbSvc
 
                 _prompt_embedding = await _EmbSvc().aembed_single(raw_prompt)
-            except Exception:
-                pass  # consumers will embed independently as fallback
+            except Exception as _emb_exc:
+                logger.warning(
+                    "Prompt embedding failed (downstream consumers will re-embed independently): "
+                    "%s trace_id=%s",
+                    _emb_exc, trace_id,
+                )
 
             # Score-informed strategy recommendation from historical data
             data_recommendation = None

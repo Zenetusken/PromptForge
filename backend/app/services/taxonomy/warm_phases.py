@@ -210,7 +210,7 @@ async def _detect_merge_back(
         except RuntimeError:
             pass
     except Exception as _mb_exc:
-        logger.debug("Merge-back detection failed (non-fatal): %s", _mb_exc)
+        logger.warning("Merge-back detection failed (non-fatal): %s", _mb_exc)
 
 
 # ---------------------------------------------------------------------------
@@ -347,8 +347,11 @@ async def _reassign_to_active(
                 target_centroids.append(centroid)
                 valid_targets.append(tc)
                 target_domains.append(parse_domain(tc.domain)[0])
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as _tc_exc:
+                logger.warning(
+                    "Corrupt centroid in reassignment targets, cluster='%s': %s",
+                    tc.label, _tc_exc,
+                )
 
     if not valid_targets:
         return []
@@ -475,8 +478,11 @@ async def phase_evaluate_candidates(
             try:
                 emb = np.frombuffer(emb_bytes, dtype=np.float32).copy()
                 emb_by_cluster.setdefault(cid, []).append((opt_id, emb))
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as _ce_exc:
+                logger.warning(
+                    "Corrupt embedding in candidate member loading, opt=%s: %s",
+                    opt_id, _ce_exc,
+                )
 
     # Track outcomes per parent_id for split_fully_reversed detection
     # Maps parent_id → {promoted: int, rejected: int}
@@ -725,8 +731,11 @@ async def _reconcile_outlier_members(
                     c.centroid_embedding, dtype=np.float32,
                 ).copy()
                 target_domains[c.id] = parse_domain(c.domain)[0]
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as _ot_exc:
+                logger.warning(
+                    "Corrupt centroid in outlier target loading, cluster='%s': %s",
+                    c.label, _ot_exc,
+                )
 
     # Only inspect clusters with enough members and low coherence
     source_candidates = [
@@ -780,7 +789,11 @@ async def _reconcile_outlier_members(
 
             try:
                 emb = np.frombuffer(emb_bytes, dtype=np.float32).copy()
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _oe_exc:
+                logger.warning(
+                    "Corrupt embedding in outlier reconciliation, opt=%s: %s",
+                    opt_id, _oe_exc,
+                )
                 continue
 
             # Check cosine to current centroid
@@ -1349,7 +1362,11 @@ async def phase_reconcile(
                         new_cid, _sim = matches[0]
                         orphan.cluster_id = new_cid
                         repaired += 1
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as _so_exc:
+                    logger.warning(
+                        "Corrupt embedding in semi-orphan repair, opt=%s: %s",
+                        orphan.id, _so_exc,
+                    )
                     continue
             if repaired:
                 await db.flush()
@@ -1877,7 +1894,11 @@ async def phase_split_emerge(
                         transformation=trans_vec,
                     ))
                     child_fam_ids_fam.append(f.id)
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as _fs_exc:
+                    logger.warning(
+                        "Corrupt embedding in family split, cluster='%s': %s",
+                        f.label, _fs_exc,
+                    )
                     continue
 
             if len(child_blended_fam) >= SPLIT_MIN_MEMBERS:
@@ -2034,7 +2055,11 @@ async def phase_merge(
                     transformation=trans_vec,
                 ))
                 valid_nodes.append(n)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _gm_exc:
+                logger.warning(
+                    "Corrupt centroid in global merge candidates, cluster='%s': %s",
+                    n.label, _gm_exc,
+                )
                 continue
 
         if (_global_sp_count or _global_mc_count) and len(blended_centroids) >= 2:
@@ -2547,7 +2572,11 @@ async def phase_retire(
         for _, emb_bytes in member_rows:
             try:
                 opt_embs.append(np.frombuffer(emb_bytes, dtype=np.float32).copy())
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _de_exc:
+                logger.warning(
+                    "Corrupt embedding in dissolution, defaulting to zeros: %s",
+                    _de_exc,
+                )
                 opt_embs.append(np.zeros(384, dtype=np.float32))
 
         # Reassign members to nearest active cluster (exclude self)
@@ -2718,8 +2747,11 @@ async def phase_refresh(
                         f'This prompt belongs to the "{sc_node.label}" pattern cluster '
                         f"({' > '.join(breadcrumb)}).\n"
                     )
-                except Exception:
-                    pass
+                except Exception as _bc_exc:
+                    logger.warning(
+                        "Breadcrumb build failed for cluster '%s' (pattern refresh): %s",
+                        sc_node.label, _bc_exc,
+                    )
                 cluster_taxonomy_ctx[sc_node.id] = ctx_str
 
             async def _extract_patterns_for_cluster(
@@ -2755,7 +2787,7 @@ async def phase_refresh(
                         patterns = [str(p) for p in response.patterns if isinstance(p, str)][:5]
                         texts.extend(patterns)
                     except Exception as _pe:
-                        logger.debug(
+                        logger.warning(
                             "Pattern extraction failed for opt %s: %s",
                             opt.id, _pe,
                         )
@@ -3023,7 +3055,11 @@ async def phase_refresh(
                         pattern_embs.append(emb)
                         pattern_cluster_ids.append(mp.cluster_id)
                         valid_patterns.append(mp)
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as _gsc_exc:
+                    logger.warning(
+                        "Corrupt pattern embedding in global_source_count, pattern=%s: %s",
+                        mp.id, _gsc_exc,
+                    )
                     continue
 
             if len(pattern_embs) >= 2:
@@ -3231,8 +3267,8 @@ async def phase_audit(
             active_after, silhouette=engine._last_silhouette,
         )
         _q_health_val = _q_health_result.q_health
-    except Exception:
-        pass
+    except Exception as _qh_exc:
+        logger.warning("q_health computation failed in warm audit: %s", _qh_exc)
 
     # Log structured audit summary for observability
     try:

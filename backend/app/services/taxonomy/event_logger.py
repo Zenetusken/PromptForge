@@ -32,18 +32,33 @@ _PUBLISH_URL = "http://127.0.0.1:8000/api/events/_publish"
 # ---------------------------------------------------------------------------
 
 _instance: "TaxonomyEventLogger | None" = None
+_uninitialized_warnings: int = 0
+_UNINITIALIZED_WARN_LIMIT: int = 5
 
 
 def get_event_logger() -> "TaxonomyEventLogger":
-    """Return the process-wide TaxonomyEventLogger (set during lifespan)."""
+    """Return the process-wide TaxonomyEventLogger (set during lifespan).
+
+    Raises RuntimeError when uninitialized.  The first few calls that hit
+    this path also emit a warning to Python logs so the outage is visible
+    even when callers catch RuntimeError silently.
+    """
     if _instance is None:
+        global _uninitialized_warnings  # noqa: PLW0603
+        _uninitialized_warnings += 1
+        if _uninitialized_warnings <= _UNINITIALIZED_WARN_LIMIT:
+            logger.warning(
+                "TaxonomyEventLogger not initialized (call %d/%d before suppression)",
+                _uninitialized_warnings, _UNINITIALIZED_WARN_LIMIT,
+            )
         raise RuntimeError("TaxonomyEventLogger not initialized — call set_event_logger() first")
     return _instance
 
 
 def set_event_logger(inst: "TaxonomyEventLogger") -> None:
-    global _instance
+    global _instance, _uninitialized_warnings  # noqa: PLW0603
     _instance = inst
+    _uninitialized_warnings = 0
 
 
 def reset_event_logger() -> None:
@@ -317,7 +332,11 @@ class TaxonomyEventLogger:
                 continue
             try:
                 events.append(json.loads(line))
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as jde:
+                logger.warning(
+                    "Malformed JSONL line in %s (skipping): %s",
+                    filepath.name, jde,
+                )
                 continue
         return events[offset : offset + limit]
 

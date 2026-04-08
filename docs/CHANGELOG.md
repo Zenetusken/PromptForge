@@ -5,13 +5,21 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Fixed
+- **Observability audit: 50+ silent failure paths instrumented** — systematic audit of all taxonomy hot/warm/cold paths, pipeline phases, pattern injection, batch seeding, and trace logging. Added `logger.warning()` to every silent `np.frombuffer` embedding deserialization catch across 12 files. Promoted `q_health` computation failures, breadcrumb build failures, merge-back detection failures, and pattern extraction failures from silent/debug to warning level. Added event bus publish failure logging where previously swallowed
+- **Pipeline embedding failure now logged** — `pipeline.py` embedding service failure was `except Exception: pass` (no log), losing visibility into why downstream pattern injection and few-shot retrieval degrade. Now warns with trace_id
+- **Pattern injection silent drops now visible** — `np.frombuffer` failures in cross-cluster injection and few-shot retrieval silently skipped patterns/examples. Now logs warning per dropped item with trace_id
+- **Sampling pipeline structured fallback now monitored** — when IDE client doesn't support tool calling and pipeline falls back to text+schema, now emits `optimization_status` event with `phase=structured_fallback` for frequency monitoring
+- **Trace and event JSONL readers now warn on malformed lines** — `trace_logger.py` and `event_logger.py` silently skipped unparseable JSONL lines. Now logs warning per malformed line with filename
+- **Event logger singleton warnings rate-limited** — `get_event_logger()` now emits up to 5 warnings when called before initialization, making outages detectable through Python logs instead of completely silent
 - **Dissolution cascade cross-domain contamination** — `_reassign_to_active()` now prefers same-domain target clusters, preventing dissolved members from spraying cross-domain and creating junk-drawer clusters. Updates `opt.domain` on cross-domain reassignment for data consistency
 - **Lifecycle dead zone for mid-size clusters** — lowered `SPLIT_MIN_MEMBERS` 25->12 and raised `FORCED_SPLIT_COHERENCE_FLOOR` 0.25->0.35, closing the gap where clusters with 6-24 members and coherence 0.25-0.50 had no lifecycle operation available
 
 ### Added
+- **Split failure events** — `split/insufficient_members` and `split/too_few_children` decision events now logged when split fails due to corrupt embeddings dropping members below threshold or fewer than 2 viable children after label generation
 - **Cross-domain outlier reconciliation** — Phase 0 reconciliation now ejects members whose domain differs from their cluster's domain when cosine similarity to centroid is below 0.40 and a better same-domain cluster exists. Caps at 5 ejections per cluster per cycle
 
 ### Changed
+- **Logging level consistency normalized** — merge-back detection failure promoted from debug to warning (loses split loop prevention data). Pattern extraction inner-loop failures promoted from debug to warning (loses taxonomy refresh data). Batch pipeline domain resolver failure changed from silent to warning
 - **Analyzer "saas" domain classification tightened** — "saas" moved from generic fallback example to explicit decision rule with clear criteria (subscription management, tenant isolation, onboarding flows, usage metering). Added clarifying instruction: classify by what the prompt asks to build, not business context
 
 ## v0.3.17-dev — 2026-04-07

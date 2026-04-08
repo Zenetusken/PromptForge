@@ -405,8 +405,11 @@ async def execute_warm_path(
                     "promoted": candidate_result["promoted"],
                     "rejected": candidate_result["rejected"],
                 })
-            except Exception:
-                pass
+            except Exception as _evt_exc:
+                logger.warning(
+                    "Failed to publish taxonomy_changed after candidate evaluation: %s",
+                    _evt_exc,
+                )
 
     # ------------------------------------------------------------------
     # Phase 1: Split/Emerge — speculative

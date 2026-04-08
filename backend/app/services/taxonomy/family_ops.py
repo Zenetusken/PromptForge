@@ -542,7 +542,11 @@ async def assign_cluster(
                     sibling_data.append(
                         (sib_emb, c_row.umap_x, c_row.umap_y, c_row.umap_z)
                     )
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as _sib_exc:
+                    logger.warning(
+                        "Corrupt sibling centroid for UMAP interpolation, cluster='%s': %s",
+                        c_row.label, _sib_exc,
+                    )
                     continue
 
         pos = interpolate_position(embedding, sibling_data)
@@ -984,7 +988,11 @@ async def compute_pattern_centroid(
             try:
                 c = np.frombuffer(p.centroid_embedding, dtype=np.float32)
                 vecs.append(c)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _pc_exc:
+                logger.warning(
+                    "Corrupt parent centroid in pattern_centroid, cluster='%s': %s",
+                    p.label, _pc_exc,
+                )
                 continue
 
     # Root-level clusters (no parent) — use their own centroids
@@ -993,7 +1001,11 @@ async def compute_pattern_centroid(
         try:
             c = np.frombuffer(rc.centroid_embedding, dtype=np.float32)
             vecs.append(c)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as _rc_exc:
+            logger.warning(
+                "Corrupt root centroid in pattern_centroid, cluster='%s': %s",
+                rc.label, _rc_exc,
+            )
             continue
 
     if not vecs:

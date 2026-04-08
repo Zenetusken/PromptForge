@@ -303,7 +303,11 @@ async def execute_cold_path(
                     if sim > best_sim:
                         best_sim = sim
                         best_match_id = nid
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as _ex_exc:
+                    logger.warning(
+                        "Corrupt existing node centroid in cold refit matching, node='%s': %s",
+                        existing.label, _ex_exc,
+                    )
                     continue
 
             if best_match_id:
@@ -406,8 +410,11 @@ async def execute_cold_path(
                     blend_embeddings(raw=emb, optimized=opt_vec, transformation=trans_vec)
                 )
                 all_nodes.append(leftover_node)
-            except (ValueError, TypeError):
-                pass  # skip corrupt embeddings
+            except (ValueError, TypeError) as _lo_exc:
+                logger.warning(
+                    "Corrupt leftover node centroid in cold refit, node='%s': %s",
+                    leftover_node.label, _lo_exc,
+                )
 
     # ------------------------------------------------------------------
     # Step 12: Restore domain->cluster parent_id links
@@ -563,8 +570,11 @@ async def execute_cold_path(
                 cold_emb_by_cluster.setdefault(cid, []).append(
                     np.frombuffer(emb_bytes, dtype=np.float32).copy()
                 )
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as _ce_exc:
+                logger.warning(
+                    "Corrupt embedding in cold coherence recomputation, cluster=%s: %s",
+                    cid, _ce_exc,
+                )
 
     coherence_repairs = 0
     for node in all_nodes:
@@ -747,7 +757,11 @@ async def execute_cold_path(
             emb = np.frombuffer(n.centroid_embedding, dtype=np.float32)
             if emb.shape[0] == 384:
                 index_centroids[n.id] = emb
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as _idx_exc:
+            logger.warning(
+                "Corrupt centroid in embedding index rebuild, node='%s': %s",
+                n.label, _idx_exc,
+            )
             continue
     try:
         await engine._embedding_index.rebuild(index_centroids)
@@ -789,7 +803,11 @@ async def execute_cold_path(
                 cluster_transforms.setdefault(cid, []).append(
                     np.frombuffer(t_bytes, dtype=np.float32).copy()
                 )
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _ti_exc:
+                logger.warning(
+                    "Corrupt transformation embedding in cold index rebuild, cluster=%s: %s",
+                    cid, _ti_exc,
+                )
                 continue
 
         # Only include clusters that survived the cold path (still active)
@@ -838,7 +856,11 @@ async def execute_cold_path(
                 cluster_opt_embs.setdefault(cid, []).append(
                     np.frombuffer(o_bytes, dtype=np.float32).copy()
                 )
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _oi_exc:
+                logger.warning(
+                    "Corrupt optimized embedding in cold index rebuild, cluster=%s: %s",
+                    cid, _oi_exc,
+                )
                 continue
 
         active_ids_oi = {n.id for n in active_after}
@@ -880,8 +902,8 @@ async def execute_cold_path(
             active_after, silhouette=cluster_result.silhouette,
         )
         _cold_q_health = _cold_health.q_health
-    except Exception:
-        pass
+    except Exception as _qh_exc:
+        logger.warning("q_health computation failed in cold snapshot: %s", _qh_exc)
 
     snap = await create_snapshot(
         db,

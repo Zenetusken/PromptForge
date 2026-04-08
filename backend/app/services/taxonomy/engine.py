@@ -970,7 +970,11 @@ class TaxonomyEngine:
             try:
                 c = np.frombuffer(n.centroid_embedding, dtype=np.float32).copy()
                 valid.append((i, c))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _sep_exc:
+                logger.warning(
+                    "Corrupt centroid in separation computation, cluster='%s': %s",
+                    n.label, _sep_exc,
+                )
                 n.separation = 1.0  # default for corrupt centroid
 
         if len(valid) < 2:
@@ -1028,7 +1032,11 @@ class TaxonomyEngine:
                 emb = np.frombuffer(f.centroid_embedding, dtype=np.float32)
                 embeddings.append(emb)
                 ids.append(f.id)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _emg_exc:
+                logger.warning(
+                    "Corrupt embedding in emerge family, cluster='%s': %s",
+                    f.label, _emg_exc,
+                )
                 continue
 
         if len(embeddings) < 3:
@@ -1120,8 +1128,8 @@ class TaxonomyEngine:
                     "domain_count": domain_count,
                     "ceiling": DOMAIN_COUNT_CEILING,
                 })
-            except Exception:
-                pass
+            except Exception as _dc_exc:
+                logger.debug("Failed to publish domain_ceiling_reached event: %s", _dc_exc)
             return []
 
         # --- Step b: Find "general" domain node ---
@@ -1462,7 +1470,11 @@ class TaxonomyEngine:
                         "intent_label": row.intent_label,
                         "raw": raw,
                     })
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as _sd_exc:
+                    logger.warning(
+                        "Corrupt embedding in sub-domain HDBSCAN, opt=%s: %s",
+                        row.id, _sd_exc,
+                    )
                     continue
 
             if len(embs_blended) < SUB_DOMAIN_MIN_MEMBERS:
@@ -1689,8 +1701,8 @@ class TaxonomyEngine:
                     "threshold": DOMAIN_DISCOVERY_MIN_MEMBERS,
                     "coherence": candidate.coherence or 0,
                 })
-            except Exception:
-                pass
+            except Exception as _dcd_exc:
+                logger.debug("Failed to publish domain_candidate_detected event: %s", _dcd_exc)
 
     async def _extract_domain_keywords(
         self, db: AsyncSession, cluster: PromptCluster, top_k: int = 15,
@@ -1815,8 +1827,8 @@ class TaxonomyEngine:
                 "node_id": node.id,
                 "source": "discovered",
             })
-        except Exception:
-            pass
+        except Exception as _dc_evt_exc:
+            logger.warning("Failed to publish domain_created event for '%s': %s", label, _dc_evt_exc)
 
         return node, reparented
 
@@ -1986,8 +1998,8 @@ class TaxonomyEngine:
             try:
                 from app.services.event_bus import event_bus
                 event_bus.publish("domain_archival_suggested", {"labels": suggestions})
-            except Exception:
-                pass
+            except Exception as _das_exc:
+                logger.debug("Failed to publish domain_archival_suggested event: %s", _das_exc)
         return suggestions
 
     async def _check_signal_staleness(self, db: AsyncSession) -> list[PromptCluster]:
@@ -2035,8 +2047,8 @@ class TaxonomyEngine:
                 "label": domain.label,
                 "keyword_count": len(keywords),
             })
-        except Exception:
-            pass
+        except Exception as _dsr_exc:
+            logger.debug("Failed to publish domain_signals_refreshed event: %s", _dsr_exc)
 
     async def _monitor_general_health(self, db: AsyncSession) -> None:
         """Log diagnostic metrics for the 'general' domain."""
@@ -2119,8 +2131,8 @@ class TaxonomyEngine:
                 active_nodes, silhouette=self._last_silhouette,
             )
             q_health_val = _health.q_health
-        except Exception:
-            pass
+        except Exception as _qh_exc:
+            logger.warning("q_health computation failed in warm snapshot: %s", _qh_exc)
 
         nodes_created = sum(1 for op in operations if op.get("type") == "emerge")
         nodes_merged = sum(1 for op in operations if op.get("type") == "merge")
@@ -2225,7 +2237,11 @@ class TaxonomyEngine:
             try:
                 c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                 centroids.append(c)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as _sm_exc:
+                logger.warning(
+                    "Corrupt centroid in snapshot metrics, cluster='%s': %s",
+                    n.label, _sm_exc,
+                )
                 continue
 
         separation = compute_mean_separation(centroids) if len(centroids) >= 2 else 1.0
