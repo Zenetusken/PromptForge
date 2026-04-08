@@ -93,28 +93,28 @@ async def _run_adr005_migration(db) -> None:
 
     from app.models import PromptCluster
 
-    # Step 1: Check if migration already ran
+    # Step 1: Find or create project node
     existing = await db.execute(
         _sel(PromptCluster).where(PromptCluster.state == "project").limit(1)
     )
-    if existing.scalar_one_or_none() is not None:
-        # Already migrated — just backfill any new optimizations missing project_id
-        await _backfill_project_ids(db)
-        return
+    legacy = existing.scalar_one_or_none()
 
-    # Step 2: Create Legacy project node
-    legacy = PromptCluster(
-        label="Legacy",
-        state="project",
-        domain="general",
-        task_type="general",
-        member_count=0,
-    )
-    db.add(legacy)
-    await db.flush()
-    logger.info("ADR-005 migration: created Legacy project node %s", legacy.id)
+    if legacy is None:
+        # First run: create Legacy project node
+        legacy = PromptCluster(
+            label="Legacy",
+            state="project",
+            domain="general",
+            task_type="general",
+            member_count=0,
+        )
+        db.add(legacy)
+        await db.flush()
+        logger.info(
+            "ADR-005 migration: created Legacy project node %s", legacy.id,
+        )
 
-    # Step 3: Re-parent all domain nodes under Legacy
+    # Step 2: Re-parent orphan domain nodes under project (every startup)
     domain_q = await db.execute(
         _sel(PromptCluster).where(
             PromptCluster.state == "domain",
@@ -125,9 +125,12 @@ async def _run_adr005_migration(db) -> None:
     for d in domains:
         d.parent_id = legacy.id
     if domains:
-        logger.info("ADR-005 migration: re-parented %d domain nodes under Legacy", len(domains))
+        logger.info(
+            "ADR-005 migration: re-parented %d domain nodes under Legacy",
+            len(domains),
+        )
 
-    # Step 4: Backfill project_id on Optimizations
+    # Step 3: Backfill project_id on Optimizations
     await _backfill_project_ids(db)
 
 

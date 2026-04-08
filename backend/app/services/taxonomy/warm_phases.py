@@ -1088,18 +1088,18 @@ async def phase_reconcile(
             select(PromptCluster).where(PromptCluster.state == "domain")
         )
         for domain_node in domain_q.scalars().all():
-            # Top-level domain nodes must have parent_id=None.
-            # Sub-domain nodes have parent_id pointing to another domain node
-            # — preserve that link. Only clear stale parent_id references.
+            # Domain nodes may be parented to another domain node (sub-domain)
+            # or a project node (ADR-005 hierarchy). Only clear stale
+            # parent_id references that point to non-structural parents.
             if domain_node.parent_id is not None:
-                parent_is_domain = (await db.execute(
+                parent_is_structural = (await db.execute(
                     select(func.count()).where(
                         PromptCluster.id == domain_node.parent_id,
-                        PromptCluster.state == "domain",
+                        PromptCluster.state.in_(["domain", "project"]),
                     )
                 )).scalar() or 0
-                if parent_is_domain == 0:
-                    # Stale reference — parent is not a domain node
+                if parent_is_structural == 0:
+                    # Stale reference — parent is not a domain or project node
                     logger.info(
                         "Clearing stale parent_id on domain '%s' (was %s)",
                         domain_node.label, domain_node.parent_id,
