@@ -949,8 +949,8 @@
   .family-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
+    gap: 4px;
+    /* No flex-wrap — name truncates to keep badges + dismiss on one line */
   }
 
   .family-intent {
@@ -964,6 +964,12 @@
     padding: 0;
     cursor: pointer;
     text-align: left;
+    /* Truncate to make room for domain badge + state badge + dismiss btn */
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
@@ -1040,7 +1046,6 @@
   }
 
   .dismiss-btn {
-    margin-left: auto;
     display: flex;
     align-items: center;
     justify-content: center;
