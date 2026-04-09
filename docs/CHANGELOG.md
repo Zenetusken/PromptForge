@@ -4,6 +4,9 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Added
+- **VS Code frictionless setup** — `./init.sh setup-vscode` detects VS Code across standard, snap, flatpak, Insiders, Codium, and custom paths, then installs/updates the MCP Copilot Bridge extension automatically. Created missing `.vscode/mcp.json` for native MCP discovery. Fixed dangling `serverSampling` reference in `.vscode/settings.json`
+
 ## v0.3.19-dev — 2026-04-09
 
 ### Added

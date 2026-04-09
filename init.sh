@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Project Synthesis — service manager
-# Usage: ./init.sh {start|stop|restart|status|logs}
+# Usage: ./init.sh {start|stop|restart|status|logs|setup-vscode}
 set -uo pipefail
 # Note: -e intentionally omitted — we handle errors per-command
 
@@ -39,15 +39,16 @@ declare -A READY_TIMEOUT=([backend]=45 [mcp]=10 [frontend]=15)
 
 if [[ -t 1 ]]; then
     _RST='\033[0m' _GRN='\033[32m' _YLW='\033[33m' _RED='\033[31m'
-    _CYN='\033[36m' _DIM='\033[90m'
+    _CYN='\033[36m' _DIM='\033[90m' _BLD='\033[1m'
 else
-    _RST='' _GRN='' _YLW='' _RED='' _CYN='' _DIM=''
+    _RST='' _GRN='' _YLW='' _RED='' _CYN='' _DIM='' _BLD=''
 fi
 
 _log()  { echo -e "${_CYN}[init.sh]${_RST} $*"; }
 _ok()   { echo -e "  ${_GRN}✓${_RST} $*"; }
 _fail() { echo -e "  ${_RED}✗${_RST} $*"; }
 _warn() { echo -e "  ${_YLW}!${_RST} $*"; }
+_info() { echo -e "  ${_DIM}$*${_RST}"; }
 
 # ---------------------------------------------------------------------------
 # Low-level utilities
@@ -360,6 +361,312 @@ start_services() {
 
     echo ""
     _log "Ready in $(( SECONDS - t0 ))s — logs: data/{backend,frontend,mcp}.log"
+
+    # Auto-setup VS Code bridge (non-fatal, silent when up-to-date)
+    _ensure_vscode_bridge
+}
+
+# ---------------------------------------------------------------------------
+# VS Code bridge — detection, status, and auto-setup
+# ---------------------------------------------------------------------------
+# Shared by: start_services (auto-install), show_status (display),
+#            do_restart (via start_services), setup-vscode (delegated).
+#
+# State is gathered once per invocation into _VS_* globals, then consumed
+# by display or install logic.  All VS Code operations are non-fatal —
+# service start/stop never fails due to bridge issues.
+# ---------------------------------------------------------------------------
+
+# ── Detection ────────────────────────────────────────────────────
+
+_detect_vscode_bins() {
+    # Returns ALL found VS Code binaries (one per line), deduplicated by
+    # resolved symlink target.  Handles snap, flatpak, WSL, macOS, custom.
+    local -A seen=()
+
+    # Strategy 1: PATH lookup (covers standard, snap symlinks, user aliases)
+    for bin in code code-insiders codium code-oss; do
+        local path
+        path=$(command -v "$bin" 2>/dev/null) || continue
+        local resolved
+        resolved=$(readlink -f "$path" 2>/dev/null || echo "$path")
+        [[ -z "${seen[$resolved]:-}" ]] || continue
+        seen[$resolved]=1
+        echo "$path"
+    done
+
+    # Strategy 2: Known install directories not on PATH
+    for dir in /snap/bin /usr/bin /usr/local/bin \
+               /usr/share/code/bin /usr/share/code-insiders/bin \
+               "$HOME/.local/bin" "$HOME/Applications" \
+               "/Applications/Visual Studio Code.app/Contents/Resources/app/bin" \
+               "/Applications/Visual Studio Code - Insiders.app/Contents/Resources/app/bin" \
+               "/Applications/VSCodium.app/Contents/Resources/app/bin" \
+               "/mnt/c/Program Files/Microsoft VS Code/bin"; do
+        [[ -d "$dir" ]] || continue
+        for bin in code code-insiders codium code-oss; do
+            [[ -x "$dir/$bin" ]] || continue
+            local resolved
+            resolved=$(readlink -f "$dir/$bin" 2>/dev/null || echo "$dir/$bin")
+            [[ -z "${seen[$resolved]:-}" ]] || continue
+            seen[$resolved]=1
+            echo "$dir/$bin"
+        done
+    done
+
+    # Strategy 3: Flatpak
+    if command -v flatpak &>/dev/null; then
+        for app_id in com.visualstudio.code com.visualstudio.code.insiders com.vscodium.codium; do
+            flatpak info "$app_id" &>/dev/null 2>&1 || continue
+            local key="flatpak:$app_id"
+            [[ -z "${seen[$key]:-}" ]] || continue
+            seen[$key]=1
+            echo "flatpak run $app_id"
+        done
+    fi
+}
+
+_run_vscode() {
+    # Timeout-guarded VS Code CLI wrapper.  Prevents hangs from WSL interop,
+    # remote extensions, or unresponsive snap/flatpak wrappers.
+    local cmd="$1"; shift
+    if [[ "$cmd" == flatpak\ run\ * ]]; then
+        timeout 10 bash -c "$cmd $(printf '%q ' "$@")" 2>/dev/null
+    else
+        timeout 10 "$cmd" "$@" 2>/dev/null
+    fi
+}
+
+_vscode_label() {
+    # Human-readable label: "code (snap)", "code-insiders", "codium (flatpak)"
+    local cmd="$1"
+    if [[ "$cmd" == flatpak\ run\ * ]]; then
+        echo "${cmd##*run } (flatpak)"
+    elif [[ "$cmd" == /snap/* ]]; then
+        echo "$(basename "$cmd") (snap)"
+    else
+        basename "$cmd"
+    fi
+}
+
+# ── State gathering ──────────────────────────────────────────────
+
+# Globals populated by _gather_vscode_state (called once per invocation)
+_VS_GATHERED=false
+_VS_BINS=()           # Validated VS Code binaries
+_VS_PRIMARY=""        # First working binary (used for display)
+_VS_PRIMARY_LABEL=""  # Human label for primary
+_VS_PRIMARY_VER=""    # VS Code version of primary
+_VS_BRIDGE_VER=""     # Installed bridge version (empty = not installed)
+_VS_VSIX_VER=""       # Available .vsix version
+_VS_VSIX_PATH=""      # Path to .vsix file
+_VS_MCP_JSON=false    # .vscode/mcp.json exists and valid
+_VS_SAMPLING_OK=false # sampling pre-approved in settings.json
+
+_gather_vscode_state() {
+    # Idempotent — only runs once per process.
+    $_VS_GATHERED && return 0
+    _VS_GATHERED=true
+
+    # Find .vsix
+    _VS_VSIX_PATH=$(ls -t "$SCRIPT_DIR/VSGithub/mcp-copilot-extension"/mcp-copilot-bridge-*.vsix 2>/dev/null | head -1)
+    [[ -n "$_VS_VSIX_PATH" ]] && \
+        _VS_VSIX_VER=$(basename "$_VS_VSIX_PATH" | sed 's/.*bridge-\(.*\)\.vsix/\1/')
+
+    # Detect binaries — validate each is responsive via _run_vscode (10s timeout)
+    local line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        if _run_vscode "$line" --version >/dev/null 2>&1; then
+            _VS_BINS+=("$line")
+        fi
+    done < <(_detect_vscode_bins 2>/dev/null)
+
+    # Primary binary info
+    if (( ${#_VS_BINS[@]} > 0 )); then
+        _VS_PRIMARY="${_VS_BINS[0]}"
+        _VS_PRIMARY_LABEL=$(_vscode_label "$_VS_PRIMARY")
+        _VS_PRIMARY_VER=$(_run_vscode "$_VS_PRIMARY" --version | head -1)
+
+        # Bridge extension version
+        _VS_BRIDGE_VER=$(_run_vscode "$_VS_PRIMARY" --list-extensions --show-versions \
+                         | grep -i "mcp-copilot-bridge" | sed 's/.*@//' || true)
+    fi
+
+    # Config file checks
+    local mcp_json="$SCRIPT_DIR/.vscode/mcp.json"
+    if [[ -f "$mcp_json" ]] && grep -q '"synthesis_mcp"' "$mcp_json" 2>/dev/null; then
+        _VS_MCP_JSON=true
+    fi
+
+    local settings="$SCRIPT_DIR/.vscode/settings.json"
+    if [[ -f "$settings" ]] && grep -q 'serverSampling' "$settings" 2>/dev/null \
+       && grep -q 'synthesis_mcp' "$settings" 2>/dev/null; then
+        _VS_SAMPLING_OK=true
+    fi
+}
+
+# ── Status display ───────────────────────────────────────────────
+
+_show_vscode_status() {
+    # Displays VS Code integration status.  Call after _gather_vscode_state.
+    # Used by: show_status (full), start_services (compact post-start).
+    local mode="${1:-full}"  # "full" or "compact"
+
+    _gather_vscode_state
+
+    if [[ "$mode" == "full" ]]; then
+        echo ""
+        _log "VS Code integration:"
+    fi
+
+    # No VS Code detected
+    if (( ${#_VS_BINS[@]} == 0 )); then
+        if [[ "$mode" == "full" ]]; then
+            echo -e "  ${_DIM}○ vscode    not detected${_RST}"
+            echo -e "  ${_DIM}○ bridge    –${_RST}"
+            echo -e "  ${_DIM}○ sampling  unavailable${_RST}"
+            echo ""
+            _info "Install VS Code to unlock the sampling pipeline."
+            _info "Copilot's LLM runs full optimization (analyze → optimize"
+            _info "→ score → suggest) in your IDE — no API key needed."
+        else
+            echo ""
+            _warn "VS Code not detected — sampling pipeline unavailable"
+            _info "Install VS Code + run ./init.sh setup-vscode to enable"
+        fi
+        return 1
+    fi
+
+    # VS Code found — show IDE status
+    if [[ "$mode" == "full" ]]; then
+        echo -e "  ${_GRN}●${_RST} vscode    ${_DIM}${_VS_PRIMARY_LABEL} v${_VS_PRIMARY_VER}${_RST}"
+        if (( ${#_VS_BINS[@]} > 1 )); then
+            _info "          + $(( ${#_VS_BINS[@]} - 1 )) other installation(s) detected"
+        fi
+    fi
+
+    # Bridge extension status
+    if [[ -n "$_VS_BRIDGE_VER" ]]; then
+        if [[ "$mode" == "full" ]]; then
+            if [[ "$_VS_BRIDGE_VER" == "$_VS_VSIX_VER" ]]; then
+                echo -e "  ${_GRN}●${_RST} bridge    ${_DIM}v${_VS_BRIDGE_VER} (up to date)${_RST}"
+            elif [[ -n "$_VS_VSIX_VER" ]]; then
+                echo -e "  ${_YLW}●${_RST} bridge    ${_DIM}v${_VS_BRIDGE_VER} (v${_VS_VSIX_VER} available — run ./init.sh setup-vscode)${_RST}"
+            else
+                echo -e "  ${_GRN}●${_RST} bridge    ${_DIM}v${_VS_BRIDGE_VER}${_RST}"
+            fi
+        fi
+    else
+        if [[ "$mode" == "full" ]]; then
+            echo -e "  ${_RED}○${_RST} bridge    ${_DIM}not installed — run ./init.sh setup-vscode${_RST}"
+        fi
+    fi
+
+    # Sampling pipeline readiness
+    if [[ "$mode" == "full" ]]; then
+        if [[ -n "$_VS_BRIDGE_VER" ]] && $_VS_SAMPLING_OK; then
+            echo -e "  ${_GRN}●${_RST} sampling  ${_DIM}pre-approved, pipeline ready${_RST}"
+        elif [[ -n "$_VS_BRIDGE_VER" ]] && ! $_VS_SAMPLING_OK; then
+            echo -e "  ${_YLW}●${_RST} sampling  ${_DIM}bridge installed but not pre-approved in settings.json${_RST}"
+        else
+            echo -e "  ${_DIM}○ sampling  bridge required — run ./init.sh setup-vscode${_RST}"
+        fi
+    fi
+
+    # Native MCP discovery
+    if [[ "$mode" == "full" ]]; then
+        if $_VS_MCP_JSON; then
+            echo -e "  ${_GRN}●${_RST} mcp.json  ${_DIM}native discovery enabled${_RST}"
+        else
+            echo -e "  ${_YLW}○${_RST} mcp.json  ${_DIM}missing — run: git checkout .vscode/mcp.json${_RST}"
+        fi
+    fi
+
+    # Compact mode — single summary line after start/restart
+    if [[ "$mode" == "compact" ]]; then
+        if [[ -n "$_VS_BRIDGE_VER" ]] && $_VS_SAMPLING_OK; then
+            echo ""
+            _ok "VS Code bridge v${_VS_BRIDGE_VER} — sampling pipeline ready"
+        elif [[ -n "$_VS_BRIDGE_VER" ]]; then
+            echo ""
+            _ok "VS Code bridge v${_VS_BRIDGE_VER} installed"
+        fi
+        # If bridge is missing, _ensure_vscode_bridge handles the messaging
+    fi
+
+    return 0
+}
+
+# ── Auto-install (called after start/restart) ────────────────────
+
+_ensure_vscode_bridge() {
+    # Auto-installs or updates the bridge into all detected VS Code binaries.
+    # Non-fatal — never blocks service startup.  Silent when up-to-date.
+
+    _gather_vscode_state
+
+    # No .vsix to install
+    [[ -z "$_VS_VSIX_PATH" ]] && return 0
+
+    # No VS Code — show hint (unless status already showed it)
+    if (( ${#_VS_BINS[@]} == 0 )); then
+        _show_vscode_status compact
+        return 0
+    fi
+
+    # Install/update across all detected installations
+    local any_action=false
+    local any_failure=false
+    for code_cmd in "${_VS_BINS[@]}"; do
+        local installed
+        installed=$(_run_vscode "$code_cmd" --list-extensions --show-versions 2>/dev/null \
+                    | grep -i "mcp-copilot-bridge" | sed 's/.*@//' || true)
+
+        # Already at target version — skip
+        [[ "$installed" == "$_VS_VSIX_VER" ]] && continue
+
+        # Print header on first action
+        if ! $any_action; then
+            echo ""
+            any_action=true
+        fi
+
+        local label
+        label=$(_vscode_label "$code_cmd")
+        if [[ -z "$installed" ]]; then
+            _log "Installing bridge v${_VS_VSIX_VER} into ${label}..."
+        else
+            _log "Updating bridge in ${label} (${installed} → ${_VS_VSIX_VER})..."
+        fi
+
+        local output
+        output=$(_run_vscode "$code_cmd" --install-extension "$_VS_VSIX_PATH" --force 2>&1)
+        if [[ $? -eq 0 ]]; then
+            _ok "Bridge v${_VS_VSIX_VER} → ${label}"
+        else
+            any_failure=true
+            _warn "Failed for ${label}: ${output%%$'\n'*}"
+        fi
+    done
+
+    if $any_failure; then
+        _info "Retry with: ./init.sh setup-vscode"
+    fi
+
+    # After any install/update, re-gather ALL state for accurate display
+    if $any_action; then
+        _VS_GATHERED=false
+        _VS_BINS=()
+        _VS_PRIMARY="" _VS_PRIMARY_LABEL="" _VS_PRIMARY_VER=""
+        _VS_BRIDGE_VER=""
+        _VS_VSIX_VER="" _VS_VSIX_PATH=""
+        _VS_MCP_JSON=false _VS_SAMPLING_OK=false
+        _gather_vscode_state
+    fi
+
+    # Show compact status (bridge version + sampling readiness)
+    _show_vscode_status compact
 }
 
 # ---------------------------------------------------------------------------
@@ -483,17 +790,21 @@ show_status() {
         port="$(_svc_port "$name")"
         [[ "$name" = "backend" ]] && health_path="/api/health"
 
+        local padded
+        printf -v padded '%-9s' "$name"
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             if _probe_port "$port" "$health_path"; then
-                echo -e "  ${_GRN}●${_RST} $name  ${_DIM}pid $pid  port $port${_RST}"
+                echo -e "  ${_GRN}●${_RST} ${padded}${_DIM}pid $pid  port $port${_RST}"
             else
-                echo -e "  ${_YLW}●${_RST} $name  ${_DIM}pid $pid  port $port  (not responding)${_RST}"
+                echo -e "  ${_YLW}●${_RST} ${padded}${_DIM}pid $pid  port $port  (not responding)${_RST}"
             fi
         else
-            echo -e "  ${_DIM}○ $name  stopped${_RST}"
+            echo -e "  ${_DIM}○ ${padded}stopped${_RST}"
             [[ -n "$pid" ]] && rm -f "$(_pid_file "$name")"
         fi
     done
+
+    _show_vscode_status full
     return 0
 }
 
@@ -523,14 +834,16 @@ case "${1:-start}" in
     restart) do_restart ;;
     status)  show_status ;;
     logs)    show_logs ;;
+    setup-vscode) shift; "$SCRIPT_DIR/scripts/setup-vscode.sh" "$@" ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|logs}"
+        echo "Usage: $0 {start|stop|restart|status|logs|setup-vscode}"
         echo ""
-        echo "  start    Start all services (backend, MCP, frontend)"
-        echo "  stop     Graceful stop (SIGTERM → wait → SIGKILL)"
-        echo "  restart  Stop then start"
-        echo "  status   Show service health with PIDs"
-        echo "  logs     Tail all service logs"
+        echo "  start         Start all services (backend, MCP, frontend)"
+        echo "  stop          Graceful stop (SIGTERM → wait → SIGKILL)"
+        echo "  restart       Stop then start"
+        echo "  status        Show service health with PIDs"
+        echo "  logs          Tail all service logs"
+        echo "  setup-vscode  Install VS Code bridge extension for sampling pipeline"
         exit 1
         ;;
 esac

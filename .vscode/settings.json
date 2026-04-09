@@ -6,7 +6,7 @@
     "cursor-workspace": true
   },
   "chat.mcp.serverSampling": {
-    "PromptForge_v2/.vscode/mcp.json: synthesis_mcp": {
+    ".vscode/mcp.json: synthesis_mcp": {
       "allowedDuringChat": true
     }
   }

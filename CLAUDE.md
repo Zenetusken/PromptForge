@@ -34,11 +34,12 @@ Guidance for Claude Code when working in this repository. **Keep all CLAUDE.md f
 | MCP server (standalone) | 8001 | `backend/app/mcp_server.py` |
 
 ```bash
-./init.sh            # start all three services
-./init.sh stop       # graceful stop (process group kill)
-./init.sh restart    # stop + start
-./init.sh status     # show running/stopped with PIDs
-./init.sh logs       # tail all service logs
+./init.sh              # start all three services
+./init.sh stop         # graceful stop (process group kill)
+./init.sh restart      # stop + start
+./init.sh status       # show running/stopped with PIDs
+./init.sh logs         # tail all service logs
+./init.sh setup-vscode # install VS Code bridge extension for sampling
 ```
 
 Logs: `data/backend.log`, `data/frontend.log`, `data/mcp.log`
@@ -108,9 +109,12 @@ docker compose up --build -d                                   # docker deployme
 
 `docs/ROADMAP.md` tracks improvements requiring breaking changes (schema migrations, multi-file refactors, breaking API changes). Non-breaking improvements should be implemented immediately — never deferred to the roadmap.
 
-## Claude Code automation
+## IDE integration
 
-### `.mcp.json`
+### VS Code (sampling pipeline)
+Two-layer integration: `.vscode/mcp.json` enables native MCP discovery (VS Code 1.99+), and the bridge extension (`VSGithub/mcp-copilot-extension/`) adds full sampling pipeline support. Run `./init.sh setup-vscode` to install — detects VS Code across standard, snap, flatpak, Insiders, Codium, and custom paths. The `chat.mcp.serverSampling` setting in `.vscode/settings.json` pre-approves sampling so no user consent dialog appears.
+
+### `.mcp.json` (Claude Code)
 Auto-loads the Project Synthesis MCP server (`http://127.0.0.1:8001/mcp`) when this directory is open in Claude Code. Verify with `./init.sh status`.
 
 ### Hooks (`.claude/hooks/`)
