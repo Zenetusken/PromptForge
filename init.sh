@@ -367,6 +367,7 @@ start_services() {
 
     echo ""
     _log "Ready in $(( SECONDS - t0 ))s — logs: data/{backend,frontend,mcp}.log"
+    _log "App: ${_BLD}http://localhost:${FRONTEND_PORT}/app${_RST}"
 
     # Phase 3: Verify the sampling endpoint is healthy now that MCP is up.
     _verify_bridge_health
