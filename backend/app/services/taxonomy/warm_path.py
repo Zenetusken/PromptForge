@@ -419,17 +419,34 @@ async def execute_warm_path(
     all_phase_results: list[PhaseResult] = []
     q_baseline: float | None = None
 
-    # ADR-005: Snapshot dirty set — first cycle does full scan
+    # ADR-005 Phase 3A: snapshot dirty set with project breakdown
+    dirty_by_project: dict[str, set[str]] | None = None
     if engine.is_first_warm_cycle():
-        dirty_ids: set[str] | None = None  # None = process all clusters (restart recovery)
+        dirty_ids: set[str] | None = None
     else:
-        dirty_ids = engine.snapshot_dirty_set() or None  # empty set → None (full scan)
+        dirty_ids, dirty_by_project = engine.snapshot_dirty_set_with_projects()
+        if not dirty_ids:
+            dirty_ids = None
+            dirty_by_project = None
 
-    logger.info(
-        "Warm path cycle: dirty_ids=%s (first_cycle=%s)",
-        len(dirty_ids) if dirty_ids is not None else "all",
-        engine.is_first_warm_cycle(),
-    )
+    # Phase 3A: scheduling mode decision
+    _total_dirty_count = len(dirty_ids) if dirty_ids is not None else None  # before scoping
+    mode = engine._scheduler.decide_mode(dirty_ids, dirty_by_project)
+    if mode.is_round_robin:
+        dirty_ids = mode.scoped_dirty_ids
+        logger.info(
+            "Warm path: round-robin mode, project='%s' (%d dirty, boundary=%d)",
+            mode.project_id,
+            len(dirty_ids) if dirty_ids else 0,
+            engine._scheduler._compute_boundary(),
+        )
+    else:
+        logger.info(
+            "Warm path cycle: dirty_ids=%s (first_cycle=%s, boundary=%d)",
+            len(dirty_ids) if dirty_ids is not None else "all",
+            engine.is_first_warm_cycle(),
+            engine._scheduler._compute_boundary(),
+        )
 
     # ------------------------------------------------------------------
     # Phase 0: Reconcile — fresh session, always commits
@@ -636,9 +653,9 @@ async def execute_warm_path(
     # Only record dirty-only cycles — full-scan cycles (dirty_ids=None) lack
     # a meaningful dirty_count and would corrupt Phase 3 regression analysis.
     _cycle_duration_ms = int((_time.monotonic() - _cycle_start) * 1000)
-    if dirty_ids is not None:
+    if _total_dirty_count is not None:
         engine._scheduler.record(
-            dirty_count=len(dirty_ids),
+            dirty_count=_total_dirty_count,  # total pre-scoping, not round-robin subset
             duration_ms=_cycle_duration_ms,
         )
     logger.debug(
@@ -647,6 +664,23 @@ async def execute_warm_path(
         len(dirty_ids) if dirty_ids is not None else "all",
         engine._scheduler.snapshot(),
     )
+
+    # ADR-005 Phase 3A: re-inject non-processed dirty clusters after round-robin
+    if mode.is_round_robin and dirty_by_project:
+        for pid, cids in dirty_by_project.items():
+            if pid != mode.project_id:
+                for cid in cids:
+                    engine.mark_dirty(cid, project_id=pid)
+        _reinjected = sum(
+            len(cids) for pid, cids in dirty_by_project.items()
+            if pid != mode.project_id
+        )
+        if _reinjected:
+            logger.info(
+                "Warm path: re-injected %d dirty clusters from %d non-processed projects",
+                _reinjected,
+                sum(1 for pid in dirty_by_project if pid != mode.project_id),
+            )
 
     return WarmPathResult(
         snapshot_id=audit_result.snapshot_id,
