@@ -105,6 +105,7 @@ async def handle_optimize(
                 domain=enrichment.domain_value,
                 domain_raw=enrichment.domain_value,
                 intent_label=enrichment.intent_label,
+                repo_full_name=repo_full_name,
                 context_sources=enrichment.context_sources_dict,
             )
             db.add(pending)

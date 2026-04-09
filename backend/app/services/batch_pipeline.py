@@ -59,6 +59,7 @@ class PendingOptimization:
     routing_tier: str | None = None
     heuristic_flags: list | None = None
     suggestions: list | None = None
+    repo_full_name: str | None = None
     context_sources: dict | None = None
     error: str | None = None  # Non-None if this prompt failed
 
@@ -71,6 +72,7 @@ async def run_single_prompt(
     *,
     codebase_context: str | None = None,
     workspace_guidance: str | None = None,
+    repo_full_name: str | None = None,
     batch_id: str = "",
     agent_name: str = "",
     prompt_index: int = 0,
@@ -445,6 +447,7 @@ async def run_single_prompt(
             routing_tier="internal",
             heuristic_flags=_heuristic_flags,
             suggestions=suggestions_list,
+            repo_full_name=repo_full_name,
             context_sources={
                 "source": "batch_seed",
                 "batch_id": batch_id,
@@ -478,6 +481,7 @@ async def run_batch(
     max_parallel: int = 10,
     codebase_context: str | None = None,
     workspace_guidance: str | None = None,
+    repo_full_name: str | None = None,
     batch_id: str | None = None,
     on_progress: Any | None = None,
     session_factory: Any | None = None,
@@ -516,6 +520,7 @@ async def run_batch(
                 embedding_service=embedding_service,
                 codebase_context=codebase_context,
                 workspace_guidance=workspace_guidance,
+                repo_full_name=repo_full_name,
                 batch_id=batch_id,
                 prompt_index=index,
                 total_prompts=len(prompts),
@@ -545,6 +550,7 @@ async def run_batch(
                         embedding_service=embedding_service,
                         codebase_context=codebase_context,
                         workspace_guidance=workspace_guidance,
+                        repo_full_name=repo_full_name,
                         batch_id=batch_id,
                         prompt_index=index,
                         total_prompts=len(prompts),
@@ -711,6 +717,7 @@ async def bulk_persist(
                         routing_tier=pending.routing_tier,
                         heuristic_flags=pending.heuristic_flags,
                         suggestions=pending.suggestions,
+                        repo_full_name=pending.repo_full_name,
                         context_sources=pending.context_sources,
                     )
                     db.add(db_opt)
