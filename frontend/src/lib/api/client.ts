@@ -336,7 +336,7 @@ export const getSettings = () => apiFetch<SettingsResponse>('/settings');
 
 // githubLogin (authorization code redirect) removed — device flow is primary.
 // Backend endpoint /auth/login still exists as fallback for deployed instances.
-export const githubMe = () => apiFetch<GitHubUser>('/github/auth/me');
+export const githubMe = () => tryFetch<GitHubUser>('/github/auth/me');
 export const githubLogout = () => apiFetch<void>('/github/auth/logout', { method: 'POST' });
 export const githubRepos = (page = 1) => apiFetch<{ repos: GitHubRepository[]; count: number }>(`/github/repos?page=${page}`);
 export const githubLink = (fullName: string, projectId?: string) =>
@@ -344,8 +344,9 @@ export const githubLink = (fullName: string, projectId?: string) =>
     method: 'POST',
     body: JSON.stringify({ full_name: fullName, project_id: projectId ?? null }),
   });
-export const githubLinked = () => apiFetch<LinkedRepo>('/github/repos/linked');
+export const githubLinked = () => tryFetch<LinkedRepo>('/github/repos/linked');
 export const githubUnlink = () => apiFetch<void>('/github/repos/unlink', { method: 'DELETE' });
+export const githubIndexStatus = () => tryFetch<IndexStatus>('/github/repos/index-status');
 
 export interface ProjectInfo {
   id: string;
@@ -372,14 +373,12 @@ export const githubTree = (owner: string, repo: string, branch?: string) =>
   );
 export const githubFileContent = (owner: string, repo: string, path: string, branch?: string) =>
   apiFetch<{ path: string; content: string; full_name: string }>(
-    `/github/repos/${owner}/${repo}/files/${encodeURIComponent(path)}${branch ? `?branch=${branch}` : ''}`,
+    `/github/repos/${owner}/${repo}/files/${path.split('/').map(encodeURIComponent).join('/')}${branch ? `?branch=${branch}` : ''}`,
   );
 export const githubBranches = (owner: string, repo: string) =>
   apiFetch<{ branches: string[] }>(`/github/repos/${owner}/${repo}/branches`);
 export const githubReindex = () =>
   apiFetch<{ status: string }>('/github/repos/reindex', { method: 'POST' });
-export const githubIndexStatus = () =>
-  apiFetch<IndexStatus>('/github/repos/index-status');
 
 // ---- GitHub Device Flow ----
 export interface DeviceCodeResponse {

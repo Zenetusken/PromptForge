@@ -11,13 +11,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import LinkedRepo, PromptCluster
 from app.routers.github_auth import _get_session_token
-from app.services.github_client import GitHubClient
+from app.services.github_client import GitHubApiError, GitHubClient
 
 logger = logging.getLogger(__name__)
 
 _REPO_NAME_RE = re.compile(r"^[a-zA-Z0-9_.-]+/[a-zA-Z0-9._-]+$")
 
 router = APIRouter(prefix="/api/github", tags=["github"])
+
+
+def _github_error_to_http(exc: GitHubApiError) -> HTTPException:
+    """Convert a GitHubApiError to a FastAPI HTTPException with appropriate status code."""
+    if exc.status_code == 401:
+        return HTTPException(401, "GitHub token expired or revoked. Please reconnect your GitHub account.")
+    if exc.status_code == 403:
+        return HTTPException(403, f"GitHub API access denied: {exc.message}")
+    if exc.status_code == 404:
+        return HTTPException(404, f"Not found on GitHub: {exc.message}")
+    return HTTPException(502, f"GitHub API error ({exc.status_code}): {exc.message}")
 
 
 class LinkRepoRequest(BaseModel):
@@ -65,7 +76,10 @@ async def list_repos(
     """List GitHub repos for the authenticated user."""
     _session_id, token = await _get_session_token(request, db)
     github_client = GitHubClient()
-    repos = await github_client.list_repos(token, per_page=per_page, page=page)
+    try:
+        repos = await github_client.list_repos(token, per_page=per_page, page=page)
+    except GitHubApiError as exc:
+        raise _github_error_to_http(exc)
     return RepoListResponse(repos=repos, count=len(repos))
 
 
@@ -88,13 +102,9 @@ async def link_repo(
     github_client = GitHubClient()
     try:
         repo_info = await github_client.get_repo(token, full_name)
-    except Exception:
-        logger.warning("Failed to fetch GitHub repo: %s", full_name)
-        raise HTTPException(
-            404,
-            "Repository '%s' not found or not accessible. Check the name and your permissions."
-            % full_name,
-        )
+    except GitHubApiError as exc:
+        logger.warning("Failed to fetch GitHub repo %s: %s", full_name, exc)
+        raise _github_error_to_http(exc)
 
     default_branch = repo_info.get("default_branch", "main")
     language = repo_info.get("language")
@@ -281,7 +291,10 @@ async def get_repo_tree(
     """Get recursive file tree for a repository."""
     _session_id, token = await _get_session_token(request, db)
     client = GitHubClient()
-    tree = await client.get_tree(token, f"{owner}/{repo}", branch)
+    try:
+        tree = await client.get_tree(token, f"{owner}/{repo}", branch)
+    except GitHubApiError as exc:
+        raise _github_error_to_http(exc)
     return {"tree": tree, "full_name": f"{owner}/{repo}", "branch": branch}
 
 
@@ -297,7 +310,10 @@ async def get_file_content(
     """Read a single file from a repository."""
     _session_id, token = await _get_session_token(request, db)
     client = GitHubClient()
-    content = await client.get_file_content(token, f"{owner}/{repo}", path, ref=branch)
+    try:
+        content = await client.get_file_content(token, f"{owner}/{repo}", path, ref=branch)
+    except GitHubApiError as exc:
+        raise _github_error_to_http(exc)
     if content is None:
         raise HTTPException(404, f"File not found: {path}")
     return {"path": path, "content": content, "full_name": f"{owner}/{repo}"}
@@ -313,7 +329,10 @@ async def list_branches(
     """List branches for a repository."""
     _session_id, token = await _get_session_token(request, db)
     client = GitHubClient()
-    branches = await client.list_branches(token, f"{owner}/{repo}")
+    try:
+        branches = await client.list_branches(token, f"{owner}/{repo}")
+    except GitHubApiError as exc:
+        raise _github_error_to_http(exc)
     return {"branches": [b["name"] for b in branches]}
 
 

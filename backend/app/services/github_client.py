@@ -1,4 +1,8 @@
-"""Raw GitHub API calls. All methods take explicit token — no shared session state."""
+"""Raw GitHub API calls. All methods take explicit token — no shared session state.
+
+Raises ``GitHubApiError`` on non-2xx responses from the GitHub API.
+Callers should catch this and return appropriate HTTP responses.
+"""
 
 import base64
 import logging
@@ -7,6 +11,27 @@ import httpx
 
 logger = logging.getLogger(__name__)
 GITHUB_API = "https://api.github.com"
+
+
+class GitHubApiError(Exception):
+    """Raised when the GitHub API returns a non-2xx status."""
+
+    def __init__(self, status_code: int, message: str) -> None:
+        self.status_code = status_code
+        self.message = message
+        super().__init__(f"GitHub API {status_code}: {message}")
+
+
+def _check(resp: httpx.Response) -> None:
+    """Raise ``GitHubApiError`` on non-2xx responses."""
+    if resp.is_success:
+        return
+    try:
+        body = resp.json()
+        msg = body.get("message", resp.reason_phrase or "Unknown error")
+    except Exception:
+        msg = resp.reason_phrase or "Unknown error"
+    raise GitHubApiError(resp.status_code, msg)
 
 
 class GitHubClient:
@@ -18,7 +43,7 @@ class GitHubClient:
 
     async def get_user(self, token: str) -> dict:
         resp = await self._client.get(f"{GITHUB_API}/user", headers=self._headers(token))
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def list_repos(self, token: str, per_page: int = 30, page: int = 1) -> list[dict]:
@@ -27,14 +52,14 @@ class GitHubClient:
             headers=self._headers(token),
             params={"per_page": per_page, "page": page, "sort": "updated"},
         )
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_repo(self, token: str, full_name: str) -> dict:
         resp = await self._client.get(
             f"{GITHUB_API}/repos/{full_name}", headers=self._headers(token)
         )
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_branch(self, token: str, full_name: str, branch: str) -> dict:
@@ -42,7 +67,7 @@ class GitHubClient:
             f"{GITHUB_API}/repos/{full_name}/branches/{branch}",
             headers=self._headers(token),
         )
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_branch_head_sha(self, token: str, full_name: str, branch: str) -> str:
@@ -55,7 +80,7 @@ class GitHubClient:
             headers=self._headers(token),
             params={"recursive": "1"},
         )
-        resp.raise_for_status()
+        _check(resp)
         return [item for item in resp.json().get("tree", []) if item["type"] == "blob"]
 
     async def list_branches(
@@ -66,7 +91,7 @@ class GitHubClient:
             headers=self._headers(token),
             params={"per_page": per_page},
         )
-        resp.raise_for_status()
+        _check(resp)
         return resp.json()
 
     async def get_file_content(
@@ -79,7 +104,7 @@ class GitHubClient:
         )
         if resp.status_code == 404:
             return None
-        resp.raise_for_status()
+        _check(resp)
         data = resp.json()
         if data.get("encoding") == "base64":
             return base64.b64decode(data["content"]).decode(errors="replace")

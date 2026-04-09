@@ -378,15 +378,17 @@
       {/each}
     {/if}
   {:else}
-    <div
+    <button
       class="tree-item tree-item--file"
+      class:tree-item--active={githubStore.selectedFile === node.path}
       style="padding-left: {8 + depth * 12}px"
+      onclick={() => githubStore.loadFileContent(node.path)}
     >
       <span class="tree-name">{node.name}</span>
       {#if node.size}
         <span class="tree-size">{node.size > 1024 ? `${(node.size / 1024).toFixed(0)}K` : `${node.size}B`}</span>
       {/if}
-    </div>
+    </button>
   {/if}
 {/snippet}
 
@@ -627,17 +629,35 @@
             </div>
 
           {:else}
-            <!-- Files tab: tree browser -->
-            {#if githubStore.treeLoading}
-              <p class="empty-note">Loading file tree...</p>
-            {:else if githubStore.fileTree.length === 0}
-              <p class="empty-note">No files found.</p>
-            {:else}
-              <div class="file-tree">
-                {#each githubStore.fileTree as node}
-                  {@render treeNode(node, 0)}
-                {/each}
+            <!-- Files tab -->
+            {#if githubStore.selectedFile}
+              <!-- File content viewer -->
+              <div class="file-viewer">
+                <div class="file-viewer-header">
+                  <span class="file-viewer-path font-mono">{githubStore.selectedFile}</span>
+                  <button class="file-viewer-close" onclick={() => githubStore.closeFile()}>x</button>
+                </div>
+                {#if githubStore.fileLoading}
+                  <p class="empty-note">Loading...</p>
+                {:else if githubStore.fileContent !== null}
+                  <pre class="file-viewer-content"><code>{githubStore.fileContent}</code></pre>
+                {:else}
+                  <p class="empty-note">Failed to load file.</p>
+                {/if}
               </div>
+            {:else}
+              <!-- File tree browser -->
+              {#if githubStore.treeLoading}
+                <p class="empty-note">Loading file tree...</p>
+              {:else if githubStore.fileTree.length === 0}
+                <p class="empty-note">No files found.</p>
+              {:else}
+                <div class="file-tree">
+                  {#each githubStore.fileTree as node}
+                    {@render treeNode(node, 0)}
+                  {/each}
+                </div>
+              {/if}
             {/if}
           {/if}
         {:else if githubStore.user}
@@ -648,7 +668,15 @@
             </div>
           </div>
 
-          {#if !repoPickerOpen}
+          {#if githubStore.authExpired}
+            <p class="error-note">GitHub session expired.</p>
+            <button
+              class="action-btn action-btn--primary"
+              onclick={() => { githubStore.authExpired = false; githubStore.logout(); githubStore.login(); }}
+            >
+              Reconnect GitHub
+            </button>
+          {:else if !repoPickerOpen}
             <button
               class="action-btn action-btn--primary"
               onclick={openRepoPicker}
@@ -2062,7 +2090,14 @@
     color: var(--tier-accent, var(--color-neon-cyan));
   }
   .tree-item--dir:hover { background: var(--color-surface-hover); }
-  .tree-item--file { color: var(--color-text-dim); }
+  .tree-item--file {
+    color: var(--color-text-dim);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+  .tree-item--file:hover { background: var(--color-surface-hover); }
+  .tree-item--active { background: var(--color-surface-hover); color: var(--color-text); }
   .tree-arrow { font-size: 8px; width: 8px; flex-shrink: 0; }
   .tree-name { overflow: hidden; text-overflow: ellipsis; }
   .tree-size {
@@ -2070,5 +2105,42 @@
     color: var(--color-text-dim);
     margin-left: auto;
     flex-shrink: 0;
+  }
+
+  /* File viewer */
+  .file-viewer { display: flex; flex-direction: column; height: 100%; }
+  .file-viewer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  .file-viewer-path {
+    font-size: 10px;
+    color: var(--tier-accent, var(--color-neon-cyan));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-viewer-close {
+    background: transparent;
+    border: none;
+    color: var(--color-text-dim);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 4px;
+  }
+  .file-viewer-close:hover { color: var(--color-text); }
+  .file-viewer-content {
+    overflow: auto;
+    max-height: 500px;
+    font-size: 10px;
+    line-height: 1.5;
+    padding: 8px;
+    margin: 0;
+    color: var(--color-text-dim);
+    white-space: pre;
+    tab-size: 2;
   }
 </style>

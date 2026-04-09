@@ -2,7 +2,7 @@
 import {
   githubMe, githubLogout, githubRepos, githubLink, githubLinked, githubUnlink,
   githubDeviceRequest, githubDevicePoll, githubTree, githubBranches,
-  githubReindex, githubIndexStatus,
+  githubFileContent, githubReindex, githubIndexStatus,
 } from '$lib/api/client';
 import type {
   GitHubUser, LinkedRepo, GitHubRepository, RepoTreeEntry, IndexStatus,
@@ -23,6 +23,7 @@ class GitHubStore {
   repos = $state<GitHubRepository[]>([]);
   loading = $state(false);
   error = $state<string | null>(null);
+  authExpired = $state(false);
 
   // Device flow state
   userCode = $state<string | null>(null);
@@ -38,12 +39,17 @@ class GitHubStore {
   treeLoading = $state(false);
   indexStatus = $state<IndexStatus | null>(null);
 
+  // File content viewer state
+  selectedFile = $state<string | null>(null);
+  fileContent = $state<string | null>(null);
+  fileLoading = $state(false);
+
   async checkAuth() {
     try {
-      const { tryFetch } = await import('$lib/api/client');
-      const user = await tryFetch<GitHubUser>('/github/auth/me');
+      const user = await githubMe();
       if (user) {
         this.user = user;
+        this.authExpired = false;
         await this.loadLinked();
       } else {
         this.user = null;
@@ -133,11 +139,20 @@ class GitHubStore {
 
   async loadRepos() {
     this.loading = true;
+    this.error = null;
     try {
       const response = await githubRepos();
       this.repos = response.repos;
+      this.authExpired = false;
     } catch (err: unknown) {
-      this.error = err instanceof Error ? err.message : 'Operation failed';
+      const msg = err instanceof Error ? err.message : 'Operation failed';
+      // Detect expired/revoked token (backend returns 401)
+      if (msg.includes('401') || msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('revoked')) {
+        this.authExpired = true;
+        this.error = 'GitHub session expired. Please reconnect.';
+      } else {
+        this.error = msg;
+      }
     } finally {
       this.loading = false;
     }
@@ -154,11 +169,8 @@ class GitHubStore {
   }
 
   async loadLinked() {
-    try {
-      this.linkedRepo = await githubLinked();
-    } catch {
-      this.linkedRepo = null;
-    }
+    // tryFetch returns null on 404 (no linked repo) — expected
+    this.linkedRepo = await githubLinked();
   }
 
   async unlinkRepo() {
@@ -202,11 +214,8 @@ class GitHubStore {
   }
 
   async loadIndexStatus() {
-    try {
-      this.indexStatus = await githubIndexStatus();
-    } catch {
-      this.indexStatus = null;
-    }
+    // tryFetch returns null on error — graceful
+    this.indexStatus = await githubIndexStatus();
   }
 
   async reindex() {
@@ -216,6 +225,29 @@ class GitHubStore {
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : 'Reindex failed';
     }
+  }
+
+  async loadFileContent(filePath: string) {
+    if (!this.linkedRepo) return;
+    const [owner, repo] = this.linkedRepo.full_name.split('/');
+    const branch = this.linkedRepo.branch ?? this.linkedRepo.default_branch;
+    this.selectedFile = filePath;
+    this.fileLoading = true;
+    this.fileContent = null;
+    try {
+      const data = await githubFileContent(owner, repo, filePath, branch);
+      this.fileContent = data.content;
+    } catch {
+      this.fileContent = null;
+      this.error = `Failed to load ${filePath}`;
+    } finally {
+      this.fileLoading = false;
+    }
+  }
+
+  closeFile() {
+    this.selectedFile = null;
+    this.fileContent = null;
   }
 
   toggleTreeNode(path: string) {
@@ -296,6 +328,7 @@ class GitHubStore {
     this.repos = [];
     this.loading = false;
     this.error = null;
+    this.authExpired = false;
     this.userCode = null;
     this.verificationUri = null;
     this.polling = false;
@@ -304,6 +337,9 @@ class GitHubStore {
     this.fileTree = [];
     this.treeLoading = false;
     this.indexStatus = null;
+    this.selectedFile = null;
+    this.fileContent = null;
+    this.fileLoading = false;
   }
 }
 
