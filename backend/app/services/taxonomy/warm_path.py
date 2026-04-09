@@ -430,6 +430,7 @@ async def execute_warm_path(
             dirty_by_project = None
 
     # Phase 3A: scheduling mode decision
+    _total_dirty_count = len(dirty_ids) if dirty_ids is not None else None  # before scoping
     mode = engine._scheduler.decide_mode(dirty_ids, dirty_by_project)
     if mode.is_round_robin:
         dirty_ids = mode.scoped_dirty_ids
@@ -652,9 +653,9 @@ async def execute_warm_path(
     # Only record dirty-only cycles — full-scan cycles (dirty_ids=None) lack
     # a meaningful dirty_count and would corrupt Phase 3 regression analysis.
     _cycle_duration_ms = int((_time.monotonic() - _cycle_start) * 1000)
-    if dirty_ids is not None:
+    if _total_dirty_count is not None:
         engine._scheduler.record(
-            dirty_count=len(dirty_ids),
+            dirty_count=_total_dirty_count,  # total pre-scoping, not round-robin subset
             duration_ms=_cycle_duration_ms,
         )
     logger.debug(

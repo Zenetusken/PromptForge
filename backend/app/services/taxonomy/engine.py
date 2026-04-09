@@ -234,6 +234,12 @@ class AdaptiveScheduler:
             "mode": self._last_mode,
             "bootstrapping": len(self._window) < self._WINDOW_SIZE,
             "boundary": self._compute_boundary(),
+            "skip_counts": dict(self._skip_counts),
+            "last_project_id": self._last_project_id,
+            "dirty_by_project_counts": {
+                pid: len(cids)
+                for pid, cids in (self._last_dirty_by_project or {}).items()
+            },
         }
 
 
