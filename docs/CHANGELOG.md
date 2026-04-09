@@ -5,6 +5,7 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ## Unreleased
 
 ### Added
+- **ADR-005 Phase 2B: GlobalPattern injection** — active GlobalPatterns injected alongside MetaPatterns in `auto_inject_patterns` with 1.3x relevance boost. `InjectedPattern` gains `source`/`source_id` fields. `format_injected_patterns` separates global patterns into a dedicated "Proven Cross-Project Techniques" section
 - **ADR-005 Phase 2A: cold path project_ids rebuild + topology endpoints** — cold path now resolves dominant project_id per cluster and passes to embedding index rebuild. Tree endpoint accepts `project_id` query param for sub-tree filtering. Cluster detail returns `member_counts_by_project` breakdown. Health endpoint reports `project_count`
 - **ADR-005 Phase 1: taxonomy scaling architecture** — foundational infrastructure for multi-project support
   - Centralized `EXCLUDED_STRUCTURAL_STATES` constant replacing 37+ inline state exclusion patterns across 8 taxonomy files
