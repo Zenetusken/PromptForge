@@ -537,6 +537,17 @@ async def lifespan(app: FastAPI):
             except Exception as pnid_exc:
                 logger.warning("LinkedRepo project_node_id backfill failed (non-fatal): %s", pnid_exc)
 
+            # ADR-005 Phase 2B: ensure global_pattern_id column on optimization_patterns
+            try:
+                async with async_session_factory() as _gpid_db:
+                    from sqlalchemy import text as _text_gpid
+                    await _gpid_db.execute(
+                        _text_gpid("ALTER TABLE optimization_patterns ADD COLUMN global_pattern_id VARCHAR(36)")
+                    )
+                    await _gpid_db.commit()
+            except Exception:
+                pass  # Column already exists
+
             # One-time backfill: embed optimized_prompt + transformation for existing rows
             import numpy as np
             from sqlalchemy import select as _bf_select
