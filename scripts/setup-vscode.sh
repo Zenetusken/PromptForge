@@ -419,12 +419,19 @@ validate_server_reachable() {
         return 1
     fi
 
-    if curl -sf --max-time 3 "http://127.0.0.1:8001/mcp" -X POST \
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 \
+        "http://127.0.0.1:8001/mcp" -X POST \
         -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"setup-check","version":"1.0.0"}}}' \
-        >/dev/null 2>&1; then
-        _ok "MCP server reachable at :8001"
+        -H "Accept: application/json, text/event-stream" \
+        -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{"sampling":{}},"clientInfo":{"name":"setup-check","version":"1.0.0"}}}' \
+        2>/dev/null)
+    if [[ "${http_code:0:1}" == "2" ]]; then
+        _ok "MCP server reachable at :8001 (sampling endpoint healthy)"
         return 0
+    elif [[ -n "$http_code" ]] && [[ "$http_code" != "000" ]]; then
+        _warn "MCP server responded with HTTP $http_code"
+        return 1
     fi
 
     _warn "MCP server not reachable — start with: ./init.sh start"
