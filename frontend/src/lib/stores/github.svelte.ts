@@ -124,7 +124,9 @@ class GitHubStore {
 
   async linkRepo(fullName: string, projectId?: string) {
     try {
-      this.linkedRepo = await githubLink(fullName, projectId);
+      await githubLink(fullName, projectId);
+      // Re-fetch from GET /repos/linked to get full response (includes project_label)
+      await this.loadLinked();
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : 'Operation failed';
     }
