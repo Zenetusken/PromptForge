@@ -528,13 +528,13 @@ describe('Navigator', () => {
     expect(githubStore.login).toHaveBeenCalled();
   });
 
-  it('shows user login and no-repo message when authenticated but no repo linked', () => {
+  it('shows user login and link button when authenticated but no repo linked', () => {
     githubStore.user = { login: 'testuser', avatar_url: '' };
     githubStore.linkedRepo = null;
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'github' } });
     expect(screen.getByText('testuser')).toBeInTheDocument();
-    expect(screen.getByText(/No repo linked/i)).toBeInTheDocument();
+    expect(screen.getByText(/Link a repository/i)).toBeInTheDocument();
   });
 
   it('shows linked repo info and unlink button when repo is linked', async () => {
