@@ -163,6 +163,8 @@ class GitHubStore {
       await githubLink(fullName, projectId);
       // Re-fetch from GET /repos/linked to get full response (includes project_label)
       await this.loadLinked();
+      // Start polling index status (background indexing triggered by link)
+      this.pollIndexStatus();
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : 'Operation failed';
     }
@@ -222,8 +224,18 @@ class GitHubStore {
     try {
       await githubReindex();
       this.indexStatus = { status: 'building', file_count: 0, indexed_at: null };
+      this.pollIndexStatus();
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : 'Reindex failed';
+    }
+  }
+
+  /** Poll index status until it leaves "building" state. */
+  private async pollIndexStatus() {
+    for (let i = 0; i < 30; i++) { // max ~60s
+      await new Promise(r => setTimeout(r, 2000));
+      await this.loadIndexStatus();
+      if (this.indexStatus && this.indexStatus.status !== 'building') break;
     }
   }
 

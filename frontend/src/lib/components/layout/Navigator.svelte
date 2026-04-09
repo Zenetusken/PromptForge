@@ -617,7 +617,7 @@
               {#if githubStore.indexStatus}
                 <div class="data-row">
                   <span class="data-label">Index</span>
-                  <span class="data-value" class:data-value--cyan={githubStore.indexStatus.status === 'indexed'}>
+                  <span class="data-value" class:data-value--cyan={githubStore.indexStatus.status === 'ready'}>
                     {githubStore.indexStatus.status} ({githubStore.indexStatus.file_count} files)
                   </span>
                 </div>
@@ -2066,8 +2066,9 @@
 
   /* File tree */
   .file-tree {
-    max-height: 400px;
+    flex: 1;
     overflow-y: auto;
+    min-height: 0;
   }
   .tree-item {
     display: flex;
@@ -2134,7 +2135,8 @@
   .file-viewer-close:hover { color: var(--color-text); }
   .file-viewer-content {
     overflow: auto;
-    max-height: 500px;
+    flex: 1;
+    min-height: 0;
     font-size: 10px;
     line-height: 1.5;
     padding: 8px;

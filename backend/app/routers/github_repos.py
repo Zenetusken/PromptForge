@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import PROMPTS_DIR
 from app.database import get_db
 from app.models import LinkedRepo, PromptCluster
 from app.routers.github_auth import _get_session_token
@@ -178,7 +179,7 @@ async def link_repo(
 
                 if _idx_provider:
                     explorer = CodebaseExplorer(
-                        prompt_loader=PromptLoader(),
+                        prompt_loader=PromptLoader(PROMPTS_DIR),
                         github_client=GitHubClient(),
                         embedding_service=EmbeddingService(),
                         provider=_idx_provider,
@@ -413,7 +414,7 @@ async def reindex_repo(
                 from app.services.prompt_loader import PromptLoader
 
                 explorer = CodebaseExplorer(
-                    prompt_loader=PromptLoader(),
+                    prompt_loader=PromptLoader(PROMPTS_DIR),
                     github_client=GitHubClient(),
                     embedding_service=EmbeddingService(),
                     provider=_reindex_provider,
