@@ -408,6 +408,7 @@ async def auto_inject_patterns(
             )
 
     # ADR-005 Phase 2B: provenance for global injections
+    # Uses same flush+expunge safety pattern as cluster provenance above
     if optimization_id:
         from app.models import OptimizationPattern
 
@@ -422,8 +423,12 @@ async def auto_inject_patterns(
                         similarity=ip.similarity,
                     )
                     db.add(prov)
+                    await db.flush()
                 except Exception as prov_exc:
-                    logger.warning("GlobalPattern provenance failed: %s", prov_exc)
+                    db.expunge(prov)
+                    logger.warning(
+                        "GlobalPattern provenance failed (expunged): %s", prov_exc,
+                    )
 
     # Detailed injection chain log for observability
     if cluster_meta:

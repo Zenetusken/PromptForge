@@ -271,7 +271,7 @@ async def test_validate_retires_all_archived(db: AsyncSession):
         pattern_text="test", embedding=emb_bytes,
         source_cluster_ids=[c.id], source_project_ids=["p1"],
         cross_project_count=1, global_source_count=1,
-        avg_cluster_score=6.0, state="active",
+        avg_cluster_score=6.0, state="demoted",  # already demoted — retirement eligible
         last_validated_at=_utcnow() - timedelta(days=35),
     )
     db.add(gp)

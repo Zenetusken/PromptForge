@@ -326,7 +326,8 @@ async def _validate_existing_patterns(db: AsyncSession) -> tuple[int, int, int]:
             })
 
         # Retirement: all source clusters archived AND stale validation
-        if (
+        # Use elif to prevent double-counting (demotion + retirement in same pass)
+        elif (
             all_archived
             and source_cids  # must have at least one source
             and gp.last_validated_at
@@ -338,6 +339,7 @@ async def _validate_existing_patterns(db: AsyncSession) -> tuple[int, int, int]:
                 "reason": "all_sources_archived",
                 "last_validated_days_ago": (now - gp.last_validated_at).days,
             })
+            continue  # skip last_validated_at update for retired patterns
 
         gp.last_validated_at = now
 
