@@ -282,7 +282,7 @@ async def _validate_existing_patterns(db: AsyncSession) -> tuple[int, int, int]:
 
         # Recompute avg_cluster_score from live clusters
         live_scores: list[float] = []
-        all_archived = True
+        all_archived = bool(source_cids)  # False if no sources (don't retire empty)
 
         for cid in source_cids:
             cl_stmt = select(PromptCluster).where(PromptCluster.id == cid)
@@ -290,6 +290,7 @@ async def _validate_existing_patterns(db: AsyncSession) -> tuple[int, int, int]:
             cluster = cl_result.scalar_one_or_none()
 
             if cluster is None:
+                all_archived = False  # missing cluster ≠ archived
                 continue
 
             if cluster.state != "archived":
@@ -381,6 +382,7 @@ async def _enforce_retention_cap(db: AsyncSession) -> int:
             gp.state = "retired"
             evicted += 1
             excess -= 1
+            _log_event("retired", gp.id, {"reason": "evicted", "was_state": "demoted"})
 
     # Then active LRU if still over
     if excess > 0:
@@ -394,6 +396,7 @@ async def _enforce_retention_cap(db: AsyncSession) -> int:
         for gp in active_result.scalars().all():
             gp.state = "retired"
             evicted += 1
+            _log_event("retired", gp.id, {"reason": "evicted", "was_state": "active"})
 
     if evicted:
         logger.info("GlobalPattern retention cap: evicted %d patterns", evicted)
