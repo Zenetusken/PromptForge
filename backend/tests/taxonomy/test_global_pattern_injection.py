@@ -1,6 +1,5 @@
 """Tests for GlobalPattern injection (Phase 2B)."""
 
-import pytest
 
 from app.services.pattern_injection import InjectedPattern, format_injected_patterns
 
