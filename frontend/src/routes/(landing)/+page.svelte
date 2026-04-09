@@ -84,12 +84,13 @@
   <section id="hero" class="hero" aria-labelledby="hero-heading">
     <div class="hero__container">
       <div class="hero__content">
+        <span class="hero__beta font-mono" data-animate style="--delay:50ms;">v0.3.19 BETA</span>
         <h1 id="hero-heading" class="hero__headline" data-animate style="--delay:100ms;">
           Prompts In.<br/>
           <span style="color: var(--color-neon-cyan);">Better Prompts Out.</span>
         </h1>
         <p class="hero__subheading" data-animate style="--delay:250ms;">
-          AI-powered prompt optimization pipeline. Analyze, rewrite, and score — completely free. No API key. No subscription. Your IDE's model does the work.
+          MCP-native prompt optimization. 13 tools, 6 strategies, hybrid scoring. Runs on your IDE's model or Claude — zero API key required.
         </p>
         <div class="hero__actions" data-animate style="--delay:400ms;">
           <a href="{base}/app" class="btn-primary">
@@ -114,11 +115,11 @@
           <div class="mockup__body">
             <div class="mockup__phase" style="animation-delay:800ms;">
               <span class="mockup__badge" style="color:var(--color-neon-cyan);border-color:var(--color-neon-cyan);">ANALYZE</span>
-              <span class="mockup__phase-text">task_type: coding &middot; strategy: chain-of-thought</span>
+              <span class="mockup__phase-text">task_type: coding &middot; strategy: auto &rarr; chain-of-thought</span>
             </div>
             <div class="mockup__phase" style="animation-delay:1300ms;">
               <span class="mockup__badge" style="color:var(--color-neon-purple);border-color:var(--color-neon-purple);">OPTIMIZE</span>
-              <span class="mockup__phase-text">+structure +constraints +examples &middot; 3 weaknesses addressed</span>
+              <span class="mockup__phase-text">+structure +constraints +context &middot; 3 weaknesses &middot; 2 patterns injected</span>
             </div>
             <div class="mockup__phase" style="animation-delay:1800ms;">
               <span class="mockup__badge" style="color:var(--color-neon-green);border-color:var(--color-neon-green);">SCORE</span>
@@ -149,7 +150,7 @@
   <!-- SECTION 2: PIPELINE DEEP-DIVE                                -->
   <!-- ============================================================ -->
   <section id="pipeline" class="pipeline-section" aria-labelledby="pipeline-heading">
-    <h2 id="pipeline-heading" class="section-heading pipeline-heading">Three Phases. Zero Guesswork.</h2>
+    <h2 id="pipeline-heading" class="section-heading pipeline-heading">13 Tools. Three Phases. Zero Guesswork.</h2>
 
     <div class="pipeline-sticky">
       <div class="pipeline-grid">
@@ -160,13 +161,13 @@
             <h3 class="pipeline-phase__title" style="color:var(--color-neon-cyan);">ANALYZE</h3>
           </div>
           <p class="pipeline-phase__text">
-            Classifies task type. Detects weaknesses. Selects from six optimization strategies. Confidence gate at 0.7 triggers automatic fallback.
+            Classifies across seven task types. 6-layer heuristic analysis detects weaknesses. Selects from six strategies with 0.7 confidence gate. Matches meta-patterns from the knowledge graph.
           </p>
           <div class="pipeline-phase__tags">
             <span class="pipeline-tag" style="border-color:var(--color-neon-cyan);color:var(--color-neon-cyan);">coding</span>
             <span class="pipeline-chip">No constraints</span>
             <span class="pipeline-chip">No examples</span>
-            <span class="pipeline-chip">No format spec</span>
+            <span class="pipeline-chip">pattern injection</span>
           </div>
         </div>
 
@@ -177,12 +178,13 @@
             <h3 class="pipeline-phase__title" style="color:var(--color-neon-purple);">OPTIMIZE</h3>
           </div>
           <p class="pipeline-phase__text">
-            Rewrites using the selected strategy. Adds structure, constraints, and specificity. Injects codebase context when a repo is linked. Every word earns its place.
+            Rewrites using the selected strategy. Injects codebase context, few-shot exemplars, and adaptation state. Routes across three execution tiers automatically.
           </p>
           <div class="pipeline-phase__tags">
             <span class="pipeline-tag" style="border-color:var(--color-neon-purple);color:var(--color-neon-purple);">chain-of-thought</span>
             <span class="pipeline-chip">+structure</span>
-            <span class="pipeline-chip">+constraints</span>
+            <span class="pipeline-chip">+context</span>
+            <span class="pipeline-chip">+few-shot</span>
           </div>
         </div>
 
@@ -193,7 +195,7 @@
             <h3 class="pipeline-phase__title" style="color:var(--color-neon-green);">SCORE</h3>
           </div>
           <p class="pipeline-phase__text">
-            Blind A/B evaluation. LLM scores blended with model-independent heuristics. Randomized presentation order prevents position bias. Z-score normalized when history exists.
+            Blind A/B evaluation. LLM scores blended with 5-dimension heuristics. Randomized presentation prevents bias. Z-score normalized at 30+ samples. Feeds three learning loops.
           </p>
           <div class="pipeline-phase__tags">
             <div class="pipeline-score-bars">
@@ -207,6 +209,7 @@
           </div>
         </div>
       </div>
+      <p class="pipeline-tools font-mono">optimize · analyze · prepare · save · health · strategies · history · get · match · feedback · refine · seed · explain</p>
     </div>
   </section>
 
@@ -217,15 +220,15 @@
     <div class="callout-bar__inner">
       <div class="callout-item" data-animate style="--delay:100ms;">
         <span class="callout-item__icon" style="color:var(--color-neon-green);">&#10003;</span>
-        <div class="callout-item__text"><strong>Completely free.</strong><br/>No subscription. No API key. No paid tier.</div>
+        <div class="callout-item__text"><strong>Completely free.</strong><br/>No subscription. No API key. Passthrough uses your IDE's existing model.</div>
       </div>
       <div class="callout-item" data-animate style="--delay:200ms;">
         <span class="callout-item__icon" style="color:var(--color-neon-cyan);">&#10003;</span>
-        <div class="callout-item__text"><strong>Your IDE's model does the work.</strong><br/>Cursor, Windsurf, Zed, JetBrains, Neovim — any MCP editor.</div>
+        <div class="callout-item__text"><strong>Three execution tiers.</strong><br/>Passthrough, IDE sampling, or internal Claude — auto-selected per session.</div>
       </div>
       <div class="callout-item" data-animate style="--delay:300ms;">
         <span class="callout-item__icon" style="color:var(--color-neon-purple);">&#10003;</span>
-        <div class="callout-item__text"><strong>Open source. Self-hosted.</strong><br/>Passthrough runs on your editor's existing model.</div>
+        <div class="callout-item__text"><strong>Open source. Self-hosted.</strong><br/>Apache 2.0. Zero telemetry. Prompts never leave your infrastructure.</div>
       </div>
     </div>
   </section>
@@ -291,7 +294,7 @@
           {/each}
         </div>
         <p class="score-caption">
-          Five dimensions. Hybrid LLM + heuristic scoring. Blind A/B evaluation with randomized presentation order.
+          Five dimensions. Hybrid LLM + heuristic scoring. Blind A/B with randomized order. Z-score normalized at 30+ samples.
         </p>
       </div>
     </div>
@@ -301,9 +304,9 @@
   <!-- SECTION 3.5: KNOWLEDGE GRAPH                                 -->
   <!-- ============================================================ -->
   <section id="knowledge-graph" class="section" aria-labelledby="kg-heading">
-    <h2 id="kg-heading" class="section-heading example-heading">Self-Building Pattern Library</h2>
+    <h2 id="kg-heading" class="section-heading example-heading">Evolutionary Knowledge Graph</h2>
     <p class="trust-mission" style="margin-bottom: 32px; max-width: 720px;">
-      Every optimization continuously teaches the system. Prompts are embedded, clustered, and mapped into a dense semantic knowledge graph. When you start a new prompt, the highest-scoring meta-patterns from similar past requests are matched and injected automatically.
+      Every optimization feeds a hierarchical taxonomy. Prompts are embedded, clustered via spectral analysis, and organized into domain-aware trees. Meta-patterns are extracted, scored, and promoted across projects. Hot, warm, and cold maintenance paths keep the graph healthy without manual intervention.
     </p>
 
     <div class="example-container">
@@ -371,6 +374,7 @@
             <span class="pipeline-tag" style="color: var(--color-text-dim); border-color: var(--color-border-subtle);">CODING</span>
             <span class="pipeline-tag" style="color: var(--color-neon-green); border-color: rgba(0, 229, 255, 0.3);">AVG 8.4</span>
             <span class="pipeline-tag" style="color: var(--color-text-dim); border-color: var(--color-border-subtle);">USAGE 42</span>
+            <span class="pipeline-tag" style="color: var(--color-neon-teal); border-color: rgba(0, 212, 170, 0.3);">GLOBAL</span>
           </div>
 
           <p class="example-line" style="margin-bottom: 12px; color: var(--color-text-secondary);">
@@ -408,38 +412,100 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- SECTION 4: WORKS EVERYWHERE                                  -->
+  <!-- SECTION 4: CAPABILITIES                                      -->
+  <!-- ============================================================ -->
+  <section id="capabilities" class="section" aria-labelledby="capabilities-heading">
+    <h2 id="capabilities-heading" class="section-heading integrations-heading">Beyond the Pipeline.</h2>
+    <p class="trust-mission" style="margin-bottom: 32px; max-width: 720px;">
+      The pipeline is the entry point. The system around it is what compounds.
+    </p>
+
+    <div class="integrations-container">
+      <div class="integrations-grid capabilities-grid">
+        <div class="integration-card" data-animate style="--delay:0ms;">
+          <div class="integration-icon" style="color:var(--color-neon-cyan);">
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 4h12v3H4zM4 9h12v3H4zM4 14h12v3H4z" stroke="currentColor" stroke-width="1.2"/><path d="M16 5.5l2 0M16 10.5l2 0M16 15.5l2 0" stroke="currentColor" stroke-width="1.2"/></svg>
+          </div>
+          <h3 class="integration-title">Multi-Turn Refinement</h3>
+          <p class="integration-desc">Iterative improvement with branching, rollback, and targeted suggestions. Each turn is a fresh pipeline run with score deltas and version history.</p>
+        </div>
+
+        <div class="integration-card" data-animate style="--delay:80ms;">
+          <div class="integration-icon" style="color:var(--color-neon-purple);">
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="4" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="16" cy="4" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="16" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="16" cy="16" r="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 5.5L7.5 7.5M14.5 5.5L12.5 7.5M5.5 14.5L7.5 12.5M14.5 14.5L12.5 12.5" stroke="currentColor" stroke-width="1"/></svg>
+          </div>
+          <h3 class="integration-title">Taxonomy Seeding</h3>
+          <p class="integration-desc">5 agent types generate diverse prompts, optimize through the full pipeline, and bootstrap the knowledge graph in minutes. Quality-gated at 5.0.</p>
+        </div>
+
+        <div class="integration-card" data-animate style="--delay:160ms;">
+          <div class="integration-icon" style="color:var(--color-neon-green);">
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="3" width="14" height="14" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M3 7h14M7 7v10" stroke="currentColor" stroke-width="1.2"/><path d="M10 11h4M10 14h3" stroke="currentColor" stroke-width="1"/></svg>
+          </div>
+          <h3 class="integration-title">Codebase-Aware Context</h3>
+          <p class="integration-desc">Cached architectural synthesis + per-prompt semantic file retrieval. Zero request-time LLM calls. Identical context across all execution tiers.</p>
+        </div>
+
+        <div class="integration-card" data-animate style="--delay:240ms;">
+          <div class="integration-icon" style="color:var(--color-neon-yellow);">
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 15h14M5 12h2v3H5zM9 9h2v6H9zM13 6h2v9h-2z" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="10" cy="4" r="1" fill="currentColor"/><circle cx="14" cy="3" r="1" fill="currentColor"/></svg>
+          </div>
+          <h3 class="integration-title">Decision Observability</h3>
+          <p class="integration-desc">Real-time activity feed. 21 instrumentation points across hot, warm, and cold paths. JSONL decision logs with 30-day rotation.</p>
+        </div>
+
+        <div class="integration-card" data-animate style="--delay:320ms;">
+          <div class="integration-icon" style="color:var(--color-neon-pink);">
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 10c3-6 11-6 14 0c-3 6-11 6-14 0z" stroke="currentColor" stroke-width="1.2"/><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M10 3v2M10 15v2M17 10h-2M5 10H3" stroke="currentColor" stroke-width="1"/></svg>
+          </div>
+          <h3 class="integration-title">Three Learning Loops</h3>
+          <p class="integration-desc">Adaptive weight learning from score correlation. Few-shot quality evolution from usage. Cluster lifecycle from coherence and coverage metrics.</p>
+        </div>
+
+        <div class="integration-card" data-animate style="--delay:400ms;">
+          <div class="integration-icon" style="color:var(--color-neon-teal);">
+            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="11" y="3" width="7" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="6.5" y="12" width="7" height="6" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 9v3M14.5 9v3M10 12v0" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1"/></svg>
+          </div>
+          <h3 class="integration-title">Multi-Project Isolation</h3>
+          <p class="integration-desc">Per-project taxonomy trees with cross-project pattern promotion. Global patterns surface techniques that work across codebases. 500-pattern cap.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 5: WORKS EVERYWHERE                                  -->
   <!-- ============================================================ -->
   <section id="integrations" class="section" aria-labelledby="integrations-heading">
-    <h2 id="integrations-heading" class="section-heading integrations-heading">Free. Forever. In Every Editor.</h2>
+    <h2 id="integrations-heading" class="section-heading integrations-heading">Three Tiers. Every Editor.</h2>
 
     <div class="integrations-container">
       <div class="integrations-grid">
-        <!-- Tier 1: Zero Config -->
+        <!-- Tier: Passthrough -->
         <div class="integration-card" data-animate style="--delay:0ms;">
-          <div class="integration-icon" style="color:var(--color-neon-cyan);">
+          <div class="integration-icon" style="color:var(--color-neon-yellow);">
             <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M11 2L5 11h4l-2 7 8-9h-5l3-7z" stroke="currentColor" stroke-width="1.2"/></svg>
           </div>
-          <h3 class="integration-title">Zero Cost</h3>
-          <p class="integration-desc">No subscription required. No API key. The MCP passthrough runs the pipeline through your IDE's existing model — you pay nothing extra.</p>
+          <h3 class="integration-title">Passthrough</h3>
+          <p class="integration-desc">Your IDE's model processes the assembled optimization prompt directly. Zero marginal cost. Works with any MCP-compatible editor. No provider configuration required.</p>
         </div>
 
-        <!-- Tier 2: Your IDE, Your LLM -->
+        <!-- Tier: IDE Sampling -->
         <div class="integration-card" data-animate style="--delay:100ms;">
-          <div class="integration-icon" style="color:var(--color-neon-purple);">
+          <div class="integration-icon" style="color:var(--color-neon-green);">
             <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2" y="3" width="16" height="14" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 8l3 2.5L5 13M10 13h5" stroke="currentColor" stroke-width="1.2"/></svg>
           </div>
-          <h3 class="integration-title">Your IDE, Your Model</h3>
-          <p class="integration-desc">Drop a single config file into your workspace. Your editor's built-in model runs the optimization — Synthesis orchestrates the pipeline, scores the result, tracks everything.</p>
+          <h3 class="integration-title">IDE Sampling</h3>
+          <p class="integration-desc">Full pipeline execution via your IDE's built-in LLM through MCP sampling. VS Code + Copilot auto-detected. Structured output with text fallback parsing.</p>
         </div>
 
-        <!-- Tier 3: Codebase-Aware -->
+        <!-- Tier: Internal Provider -->
         <div class="integration-card" data-animate style="--delay:200ms;">
-          <div class="integration-icon" style="color:var(--color-neon-green);">
+          <div class="integration-icon" style="color:var(--color-neon-cyan);">
             <svg width="28" height="28" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="14" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="14" cy="10" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 8v4M8 6h4a2 2 0 0 1 2 2v0" stroke="currentColor" stroke-width="1.2"/></svg>
           </div>
-          <h3 class="integration-title">Codebase-Aware Optimization</h3>
-          <p class="integration-desc">Link a GitHub repo and the optimizer learns your conventions. Function signatures, error handling patterns, naming standards, architecture decisions — optimized prompts reference YOUR code, not generic examples.</p>
+          <h3 class="integration-title">Internal Provider</h3>
+          <p class="integration-desc">Direct Claude integration via CLI or API. Streaming responses, prompt caching, per-phase model selection. The fastest and most capable execution path.</p>
         </div>
       </div>
 
@@ -473,7 +539,7 @@
   <!-- ============================================================ -->
   <section id="trust" class="trust-section" aria-labelledby="cta-heading">
     <p class="trust-mission">
-      Built by engineers who got tired of vague prompts. Apache 2.0 licensed. No telemetry. No cloud dependency. Your prompts never leave your infrastructure.
+      Built by engineers who got tired of vague prompts producing vague results. 13 MCP tools. 6 strategies. Three execution tiers. Every optimization scored, clustered, and fed back into the system.
     </p>
 
     <div class="trust-badges">
@@ -497,10 +563,10 @@
 
     <div class="trust-cta" data-animate>
       <h2 id="cta-heading" class="trust-cta__headline">
-        <span class="">STOP GUESSING. START MEASURING.</span>
+        <span class="">STOP GUESSING. START COMPOUNDING.</span>
       </h2>
       <p class="trust-cta__sub">
-        Every prompt scored. Every improvement tracked. Every iteration versioned.
+        Every prompt scored. Every pattern extracted. Every optimization compounds the next.
       </p>
       <div class="trust-cta__actions">
         <a href="{base}/app" class="btn-primary">
@@ -628,6 +694,16 @@
     line-height: 1.15;
     margin: 0 0 12px 0;
     color: var(--color-text-primary);
+  }
+
+  .hero__beta {
+    display: inline-block;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: var(--color-neon-cyan);
+    border: 1px solid var(--color-neon-cyan);
+    padding: 1px 6px;
+    margin-bottom: 6px;
   }
 
   .hero__subheading {
@@ -844,6 +920,17 @@
     color: var(--color-text-dim);
     padding: 1px 6px;
     border: 1px solid var(--color-border-subtle);
+  }
+
+  .pipeline-tools {
+    font-size: 10px;
+    color: var(--color-text-dim);
+    text-align: center;
+    margin-top: 16px;
+    line-height: 1.6;
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .pipeline-score-bars {
@@ -1173,6 +1260,10 @@
     min-width: 0;
   }
 
+  .capabilities-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .integration-card {
     padding: 16px;
     background: var(--color-bg-card);
@@ -1380,7 +1471,8 @@
       grid-template-columns: 1fr;
     }
 
-    .integrations-grid {
+    .integrations-grid,
+    .capabilities-grid {
       grid-template-columns: 1fr;
     }
 

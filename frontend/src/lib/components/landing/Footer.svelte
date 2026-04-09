@@ -8,6 +8,7 @@
       links: [
         { label: 'Pipeline', href: '#pipeline' },
         { label: 'Live Example', href: '#example' },
+        { label: 'Capabilities', href: '#capabilities' },
         { label: 'Integrations', href: '#integrations' },
         { label: 'Changelog', href: `${base}/changelog` },
       ],

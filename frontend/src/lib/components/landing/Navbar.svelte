@@ -16,6 +16,7 @@
   const navLinks = $derived([
     { label: 'Pipeline', href: `${anchorPrefix}#pipeline` },
     { label: 'Example', href: `${anchorPrefix}#example` },
+    { label: 'Capabilities', href: `${anchorPrefix}#capabilities` },
     { label: 'Integrations', href: `${anchorPrefix}#integrations` },
   ]);
 
@@ -39,6 +40,7 @@
     <a href="{base}/" class="navbar__logo" aria-label="Project Synthesis home">
       <Logo size={24} variant="full" />
     </a>
+    <span class="navbar__beta font-mono">BETA</span>
 
     <div class="navbar__links">
       {#each navLinks as link}
@@ -137,6 +139,16 @@
     font-size: 13px;
     letter-spacing: 0.15em;
     text-decoration: none;
+  }
+
+  .navbar__beta {
+    font-size: 8px;
+    letter-spacing: 0.1em;
+    color: var(--color-neon-cyan);
+    border: 1px solid var(--color-neon-cyan);
+    padding: 0 4px;
+    line-height: 14px;
+    margin-left: -4px;
   }
 
   .navbar__links {
