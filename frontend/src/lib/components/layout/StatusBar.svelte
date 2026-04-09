@@ -215,7 +215,6 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    max-width: 300px;
     overflow: hidden;
     white-space: nowrap;
   }
