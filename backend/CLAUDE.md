@@ -22,7 +22,7 @@ Everything backend developers need. For project overview, see root `CLAUDE.md`. 
 **Embeddings**: `embedding_service.py` (singleton `all-MiniLM-L6-v2`, 384-dim), `embedding_index.py` (dual-backend: `_NumpyBackend` default, `_HnswBackend` at ≥1000 clusters via `HNSW_CLUSTER_THRESHOLD`; stable `_id_to_label` mapping + tombstones; `project_filter` param on `search()`)
 **Domain**: `domain_resolver.py` (cached DB lookup, replaces `VALID_DOMAINS`, runtime `add_label()` for sub-domain registration), `domain_signal_loader.py` (keyword signals from domain metadata)
 **Patterns**: `pattern_injection.py` (`auto_inject_patterns()` with composite fusion + cross-cluster injection + GlobalPattern injection at 1.3x boost), `prompt_lifecycle.py` (state promotion, quality pruning, usage decay, orphan backfill)
-**Projects** (ADR-005): `project_service.py` (`ensure_project_for_repo()` — Legacy rename/new project/re-link, `resolve_project_id()` — repo→LinkedRepo→project chain). `global_patterns.py` (promotion/validation/retention lifecycle, Phase 4.5 in warm path)
+**Projects** (ADR-005): `project_service.py` (`ensure_project_for_repo()` — never renames Legacy, creates new project per repo, accepts `target_project_id` for explicit selection; `resolve_project_id()` — repo→LinkedRepo→project chain). `global_patterns.py` (promotion/validation/retention lifecycle, Phase 4.5 in warm path)
 **Infrastructure**: `event_bus.py` (in-process pub/sub), `event_notification.py` (cross-process HTTP POST), `trace_logger.py` (per-phase JSONL, daily rotation), `taxonomy/event_logger.py` (decision JSONL + ring buffer + SSE, singleton via `get_event_logger()`), `mcp_session_file.py` (read/write/staleness)
 **Feedback**: `feedback_service.py` (CRUD + adaptation update), `adaptation_tracker.py` (strategy affinity, degenerate detection)
 **GitHub**: `github_service.py` (Fernet encrypt/decrypt), `github_client.py` (raw API, explicit token param)
@@ -51,8 +51,8 @@ Model IDs centralized in `config.py`: `MODEL_SONNET` (`claude-sonnet-4-6`), `MOD
 | `preferences.py` | `GET/PATCH /api/preferences` |
 | `strategies.py` | `GET /api/strategies`, `GET /api/strategies/{name}`, `PUT /api/strategies/{name}` |
 | `settings.py` | `GET /api/settings` (read-only) |
-| `github_auth.py` | OAuth: login, callback, me, logout |
-| `github_repos.py` | `GET /api/repos`, link, linked, unlink |
+| `github_auth.py` | Device Flow: request_device_code, poll_device_code. Callback: login, callback. Common: me, logout |
+| `github_repos.py` | `GET /api/repos`, link, linked, unlink, tree, files, branches, index-status, reindex |
 | `health.py` | `GET /api/health` (provider, tiers, scores, errors, domain_count) |
 | `events.py` | `GET /api/events` (SSE), `POST /api/events/_publish` (cross-process) |
 | `domains.py` | `GET /api/domains`, `POST /api/domains/{id}/promote` |
@@ -76,7 +76,7 @@ Shared: `app/utils/sse.py` (`format_sse()`), `app/dependencies/rate_limit.py` (i
 
 - **3 phases**: analyze → optimize → score. Each is an independent LLM call with fresh context. Orchestrated by `pipeline.py`
 - **Streaming**: optimize/refine use `messages.stream()` to prevent HTTP timeouts (up to 128K tokens)
-- **Explore**: runs when GitHub repo linked AND `enable_explore=True`. Semantic retrieval + single-shot Haiku synthesis
+- **Codebase context**: pre-computed in background on repo link/reindex. Two layers: cached Haiku synthesis (architectural overview in `RepoIndexMeta.explore_synthesis`) + per-prompt curated retrieval (semantic file search, 30K char cap, 5-min TTL). Zero request-time LLM calls. All tiers receive identical context via `ContextEnrichmentService.enrich()`
 - **Scoring**: skippable via `enable_scoring` preference (lean mode = 2 LLM calls). A/B randomized presentation + hybrid scoring
 - **Hybrid scoring**: LLM + heuristic blended per dimension (structure 50%, specificity 40%, clarity 40%, conciseness/faithfulness 20%). Overall weighted mean: clarity 0.20, specificity 0.20, structure 0.15, faithfulness 0.25, conciseness 0.20. `DIMENSION_WEIGHTS` canonical in `pipeline_contracts.py`. Z-score normalization when ≥30 samples. Divergence flags at >2.5pt gap. Passthrough clamped [1.0, 10.0], excluded from z-score distribution
 - **Passthrough**: `prepare_optimization` assembles prompt → external LLM processes → `save_result` persists with heuristic-only scoring
@@ -107,7 +107,7 @@ REST callers never reach sampling tiers — only MCP tool invocations can route 
 
 ## Sampling pipeline internals
 
-End-to-end: MCP tool call → `handle_optimize()` → `routing.resolve()` → `sampling_pipeline.run_sampling_pipeline()` → Phase 0: Explore (optional, `SamplingLLMAdapter`) → Phase 1: Analyze → Phase 2: Optimize → Phase 3: Score → Phase 4: Suggest → persist + events.
+End-to-end: MCP tool call → `handle_optimize()` → `routing.resolve()` → `sampling_pipeline.run_sampling_pipeline()` → Phase 1: Analyze → Phase 2: Optimize → Phase 3: Score → Phase 4: Suggest → persist + events. Codebase context arrives pre-computed via `ContextEnrichmentService.enrich()` (no per-request explore LLM call).
 
 **Structured output fallback**: (1) Tool calling via `create_message(tools=..., tool_choice=required)` → parse `tool_use` block. (2) On `McpError`: inject JSON schema as text → `_parse_text_response()` (direct JSON, code block, brace-depth). (3) Analyze-only: `_build_analysis_from_text()` keyword classification.
 

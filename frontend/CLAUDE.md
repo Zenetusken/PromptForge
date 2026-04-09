@@ -40,7 +40,7 @@ Key types: `HealthResponse`, `OptimizationResult`, `RefinementTurn`, `HistoryIte
 |-------|---------|
 | `forge.svelte.ts` | Pipeline state (prompt, strategy, SSE, result, feedback). `localStorage` persistence via `synthesis:last_trace_id` — refresh restores last optimization |
 | `editor.svelte.ts` | Tab management (prompt/result/diff/mindmap types) |
-| `github.svelte.ts` | GitHub OAuth auth + repo link state |
+| `github.svelte.ts` | GitHub Device Flow auth, repo picker, file browser (tree/content), branch list, index status, project selection |
 | `refinement.svelte.ts` | Refinement sessions: turns, branches, suggestions, score progression |
 | `preferences.svelte.ts` | Persistent user preferences loaded from backend |
 | `toast.svelte.ts` | Toast notification queue with `addToast()` API |

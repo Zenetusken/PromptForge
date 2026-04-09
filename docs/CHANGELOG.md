@@ -4,6 +4,36 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.19-dev — 2026-04-09
+
+### Added
+- **GitHub Device Flow OAuth** — zero-config authentication using hardcoded GitHub App client ID. No client secret or callback URL required. Gated handoff UX: shows device code first, user clicks to open GitHub
+- **GitHub repo picker** — search repos, select existing project or auto-create on link. `project_id` parameter on link endpoint for explicit project selection
+- **GitHub file browser** — recursive file tree, single file content viewer, branch listing. 5 new endpoints: `tree`, `files/{path}`, `branches`, `index-status`, `reindex`
+- **Background repo indexing** — `RepoIndexService.build_index()` + `CodebaseExplorer.explore()` triggered as background task on repo link and reindex. Haiku architectural synthesis cached in `RepoIndexMeta.explore_synthesis`
+- **Unified codebase context pipeline** — two-layer architecture: cached explore synthesis (architectural overview) + per-prompt curated retrieval (semantic file search, 30K char cap). All tiers use identical pre-computed context via `ContextEnrichmentService.enrich()`. 5-min TTL cache on curated queries
+- **ADR-006: Universal Prompt Engine** — formal architectural decision documenting domain-agnostic design. Extension points are content additions (seed agents, domain keywords, context providers), not code changes
+- **74 missing taxonomy tests** — Phase 2B (16 tests: validation lifecycle, retention cap) and Phase 3B (58 tests: HNSW backend, auto-selection, cache, snapshot, benchmark). Total: 1872 backend tests
+- **Frontend-backend wiring** — 7 type gaps fixed: `project_node_id`/`project_label` on LinkedRepo, `project_id` on HistoryItem, `project_ids`/`member_counts_by_project` on ClusterDetail, `project_count`/`global_patterns` on HealthResponse
+
+### Changed
+- **`INDEX_CURATED_MAX_CHARS` raised from 8000 to 30000** — ~8K tokens of file outlines per optimization instead of ~2K
+- **Codebase context resolved once per request** — all tiers use unified enrichment instead of per-tier explore calls. Zero request-time LLM calls for codebase context
+- **Branch resolution from LinkedRepo** — context enrichment, pipeline, and sampling pipeline resolve branch from DB instead of defaulting to "main"
+- **Legacy project permanence** — `ensure_project_for_repo()` never renames Legacy. Always creates new project for linked repos, preserving pre-repo optimization history
+- **Reindex triggers explore synthesis** — was previously only triggered on initial repo link
+
+### Removed
+- **`SamplingLLMAdapter`** — dead code. Wrapped CodebaseExplorer for per-request Haiku calls; replaced by pre-computed background synthesis
+- **`_run_explore_phase()`** — dead code in sampling pipeline. Phase 0 now uses pre-computed context from enrichment service
+- **Phase 0 explore in internal pipeline** — was dead code (no caller passed `github_token`). Now handled by ContextEnrichmentService
+
+### Fixed
+- **Gated device flow handoff** — auto-opened GitHub tab before showing device code. Now shows code first, user clicks button to proceed
+- **StatusBar breadcrumb truncation** — removed 300px max-width that cut off intent labels
+- **Linked repo project_label** — re-fetches via `loadLinked()` after link to show project label immediately
+- **CI test failures** — health endpoint probes fail in CI (added `?probes=false`), spectral split environment-sensitive (accept both None and low-silhouette)
+
 ## v0.3.18-dev — 2026-04-08
 
 ### Added

@@ -136,12 +136,12 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **3D taxonomy visualization** — Three.js interactive topology with LOD tiers, diegetic UI, state filter tabs, click-to-focus navigation, force-directed layout
 
 ### Developer Integration (First Vertical)
-- **GitHub integration** — link a repo for codebase-aware optimization via semantic embedding search
+- **GitHub integration** — zero-config Device Flow OAuth (no secrets, no callback URL). Link a repo, browse files, and get codebase-aware optimization. Background indexing builds semantic file outlines + Haiku architectural synthesis on link/reindex
+- **Two-layer codebase context** — cached explore synthesis (architectural overview, once per repo) + per-prompt curated retrieval (semantic file search, 30K char cap). Zero request-time LLM calls for context — all tiers receive identical pre-computed context
 - **MCP server** — use from any MCP-compatible IDE (VS Code, Claude Code, etc.)
 - **VS Code bridge extension** — MCP Copilot Bridge for sampling-based optimization through the IDE's own LLM
 - **Passthrough mode** — IDE's own LLM does the optimization; server provides context + heuristic analysis + hybrid scoring
 - **Workspace scanning** — discovers CLAUDE.md, AGENTS.md, .cursorrules and other guidance files for context injection
-- **Structured repo indexing** — type-aware file outlines with domain-boosted semantic retrieval and token-budget packing
 - **Batch taxonomy seeding** — generate diverse prompts from a project description, optimize in parallel, let taxonomy discover patterns. 5 default seed agents, user-extensible by dropping `.md` files
 
 ### Application
@@ -195,13 +195,13 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (~110s, 1796 tests)
+# Backend tests (~120s, 1872 tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
 # Frontend type check
 cd frontend && npx svelte-check
 
-# Frontend tests (880+ tests)
+# Frontend tests (958 tests)
 cd frontend && npm test
 
 # Frontend build
@@ -238,8 +238,20 @@ cd frontend && npm run build
 | `/api/clusters/activity` | GET | Taxonomy decision event feed |
 | `/api/seed` | POST | Batch-seed taxonomy |
 | `/api/seed/agents` | GET | List available seed agents |
-| `/api/github/auth/*` | GET/POST | GitHub OAuth flow |
-| `/api/github/repos/*` | GET/POST/DELETE | Repo management |
+| `/api/github/auth/device` | POST | Request device code (zero-config OAuth) |
+| `/api/github/auth/device/poll` | POST | Poll for device authorization |
+| `/api/github/auth/login` | GET | Callback OAuth login (fallback) |
+| `/api/github/auth/callback` | GET | Callback OAuth redirect |
+| `/api/github/auth/me` | GET | Current GitHub user info |
+| `/api/github/repos` | GET | List user's GitHub repos |
+| `/api/github/repos/link` | POST | Link repo to session (triggers background indexing) |
+| `/api/github/repos/linked` | GET | Get linked repo for session |
+| `/api/github/repos/unlink` | DELETE | Remove linked repo |
+| `/api/github/repos/{owner}/{repo}/tree` | GET | Recursive file tree |
+| `/api/github/repos/{owner}/{repo}/files/{path}` | GET | Read single file |
+| `/api/github/repos/{owner}/{repo}/branches` | GET | List branches |
+| `/api/github/repos/index-status` | GET | Indexing status for linked repo |
+| `/api/github/repos/reindex` | POST | Trigger re-indexing |
 
 ## Roadmap
 
