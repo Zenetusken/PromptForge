@@ -341,6 +341,19 @@ class EmbeddingIndex:
 
         raw_results = self._backend.search(query, k, threshold, filter_fn)
 
+        if not raw_results:
+            # Diagnostic: log the best score even when below threshold
+            _diag = self._backend.search(query, 1, -1.0, filter_fn)
+            if _diag:
+                _best_label, _best_score = _diag[0]
+                _best_id = ids[_best_label] if _best_label < len(ids) else "?"
+                logger.info(
+                    "Embedding search miss: top_score=%.3f (threshold=%.2f, "
+                    "index_size=%d, best_id=%s)",
+                    _best_score, threshold, self.size,
+                    _best_id[:8] if _best_id and _best_id != "?" else "?",
+                )
+
         return [
             (ids[label], score)
             for label, score in raw_results
@@ -505,7 +518,11 @@ class EmbeddingIndex:
             matrix = snapshot.matrix.copy()
             self._last_rebuild_matrix = matrix.copy()
 
-            # Rebuild backend from matrix (always numpy on restore)
+            # Rebuild backend from matrix. Always restores to numpy for simplicity.
+            # At scale (3K+ clusters using HNSW), this means warm-path rollbacks
+            # temporarily degrade to O(N) search until the next cold-path rebuild
+            # restores HNSW. Acceptable: warm cycles take seconds already, and
+            # cold rebuilds run every few hours. See spec Section 7 for discussion.
             self._backend = _NumpyBackend(dim=self._dim)
             self._backend.build(matrix, matrix.shape[0])
 
