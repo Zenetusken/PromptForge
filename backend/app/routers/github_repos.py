@@ -23,6 +23,10 @@ router = APIRouter(prefix="/api/github", tags=["github"])
 class LinkRepoRequest(BaseModel):
     full_name: str = Field(description="GitHub repo in 'owner/repo' format.")
     branch: str | None = Field(default=None, description="Branch to use (defaults to repo default branch).")
+    project_id: str | None = Field(
+        default=None,
+        description="Existing project to add this repo to. If null, auto-creates.",
+    )
 
 
 class RepoListResponse(BaseModel):
@@ -114,7 +118,7 @@ async def link_repo(
 
     # ADR-005 Phase 2A: ensure project node exists for this repo
     from app.services.project_service import ensure_project_for_repo
-    project_node_id = await ensure_project_for_repo(db, full_name)
+    project_node_id = await ensure_project_for_repo(db, full_name, target_project_id=body.project_id)
     linked.project_node_id = project_node_id
 
     await db.commit()

@@ -152,3 +152,65 @@ async def test_resolve_project_id_unknown_repo_returns_legacy(db_session: AsyncS
 
     result = await resolve_project_id(db_session, "unknown/repo", legacy_project_id="legacy-id")
     assert result == "legacy-id"
+
+
+@pytest.mark.asyncio
+async def test_ensure_project_with_explicit_target(db_session: AsyncSession):
+    """Explicit target_project_id links repo to existing project."""
+    from app.services.project_service import ensure_project_for_repo
+
+    proj = PromptCluster(
+        label="existing-project", state="project", domain="general",
+        task_type="general", member_count=0,
+    )
+    db_session.add(proj)
+    await db_session.flush()
+
+    result = await ensure_project_for_repo(
+        db_session, "user/new-repo", target_project_id=proj.id,
+    )
+    assert result == proj.id
+
+
+@pytest.mark.asyncio
+async def test_ensure_project_invalid_target_falls_through(db_session: AsyncSession):
+    """Invalid target_project_id falls through to auto-creation."""
+    from app.services.project_service import ensure_project_for_repo
+
+    legacy = PromptCluster(
+        label="Legacy", state="project", domain="general",
+        task_type="general", member_count=0,
+    )
+    db_session.add(legacy)
+    await db_session.flush()
+
+    # Pass a non-existent project ID — should fall through and rename Legacy
+    result = await ensure_project_for_repo(
+        db_session, "user/first-repo", target_project_id="nonexistent-id",
+    )
+    assert result == legacy.id  # Legacy renamed
+    await db_session.refresh(legacy)
+    assert legacy.label == "user/first-repo"
+
+
+@pytest.mark.asyncio
+async def test_two_repos_share_one_project(db_session: AsyncSession):
+    """Two repos can be linked to the same project via target_project_id."""
+    from app.services.project_service import ensure_project_for_repo
+
+    legacy = PromptCluster(
+        label="Legacy", state="project", domain="general",
+        task_type="general", member_count=0,
+    )
+    db_session.add(legacy)
+    await db_session.flush()
+
+    # First repo renames Legacy
+    pid1 = await ensure_project_for_repo(db_session, "user/repo-a")
+    await db_session.flush()
+
+    # Second repo targets the same project explicitly
+    pid2 = await ensure_project_for_repo(
+        db_session, "user/repo-b", target_project_id=pid1,
+    )
+    assert pid1 == pid2  # same project

@@ -57,9 +57,9 @@ class GitHubStore {
     }
   }
 
-  async linkRepo(fullName: string) {
+  async linkRepo(fullName: string, projectId?: string) {
     try {
-      this.linkedRepo = await githubLink(fullName);
+      this.linkedRepo = await githubLink(fullName, projectId);
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : 'Operation failed';
     }
