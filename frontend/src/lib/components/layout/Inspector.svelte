@@ -352,9 +352,9 @@
             {/if}
           {/each}
         </div>
-        {#if forgeStore.phaseModels && Object.keys(forgeStore.phaseModels).length > 0}
+        {#if forgeStore.currentPhase && forgeStore.phaseModels[forgeStore.currentPhase]}
           <div class="phase-model">
-            {Object.values(forgeStore.phaseModels).slice(-1)[0]}
+            {forgeStore.phaseModels[forgeStore.currentPhase]}
           </div>
         {/if}
         <button class="phase-cancel" onclick={() => forgeStore.cancel()}>cancel</button>

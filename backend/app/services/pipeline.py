@@ -210,7 +210,10 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------------
             # Phase 1: Analyze
             # ---------------------------------------------------------------
-            yield PipelineEvent(event="status", data={"stage": "analyze", "state": "running"})
+            yield PipelineEvent(
+                event="status",
+                data={"stage": "analyze", "state": "running", "model": model_ids["analyze"]},
+            )
 
             system_prompt = self._load_system_prompt()
 
@@ -440,7 +443,10 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------------
             # Phase 2: Optimize
             # ---------------------------------------------------------------
-            yield PipelineEvent(event="status", data={"stage": "optimize", "state": "running"})
+            yield PipelineEvent(
+                event="status",
+                data={"stage": "optimize", "state": "running", "model": model_ids["optimize"]},
+            )
 
             adaptation_enabled = prefs.get("pipeline.enable_adaptation", prefs_snapshot)
             if not adaptation_enabled:
@@ -591,7 +597,10 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------------
             _divergence_flags: list[str] = []
             if prefs.get("pipeline.enable_scoring", prefs_snapshot):
-                yield PipelineEvent(event="status", data={"stage": "score", "state": "running"})
+                yield PipelineEvent(
+                    event="status",
+                    data={"stage": "score", "state": "running", "model": model_ids["score"]},
+                )
 
                 # Randomize A/B assignment
                 original_first = random.choice([True, False])
@@ -785,7 +794,10 @@ class PipelineOrchestrator:
             suggestions: list[dict[str, str]] = []
             if optimized_scores and analysis.weaknesses is not None:
                 try:
-                    yield PipelineEvent(event="status", data={"stage": "suggest", "state": "running"})
+                    yield PipelineEvent(
+                        event="status",
+                        data={"stage": "suggest", "state": "running", "model": settings.MODEL_HAIKU},
+                    )
 
                     suggest_msg = self.prompt_loader.render("suggest.md", {
                         "optimized_prompt": optimization.optimized_prompt,
