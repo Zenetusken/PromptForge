@@ -436,6 +436,7 @@ async def get_cluster_detail(
 
         return ClusterDetail(
             **node_data,
+            project_ids=list(member_counts_by_project.keys()),
             member_counts_by_project=member_counts_by_project,
             meta_patterns=[
                 MetaPatternItem(id=mp.id, pattern_text=mp.pattern_text, source_count=mp.source_count)
