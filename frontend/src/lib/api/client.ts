@@ -333,13 +333,20 @@ export const githubLogin = () => apiFetch<{ url: string }>('/github/auth/login')
 export const githubMe = () => apiFetch<GitHubUser>('/github/auth/me');
 export const githubLogout = () => apiFetch<void>('/github/auth/logout', { method: 'POST' });
 export const githubRepos = (page = 1) => apiFetch<{ repos: GitHubRepository[]; count: number }>(`/github/repos?page=${page}`);
-export const githubLink = (fullName: string) =>
+export const githubLink = (fullName: string, projectId?: string) =>
   apiFetch<LinkedRepo>('/github/repos/link', {
     method: 'POST',
-    body: JSON.stringify({ full_name: fullName }),
+    body: JSON.stringify({ full_name: fullName, project_id: projectId ?? null }),
   });
 export const githubLinked = () => apiFetch<LinkedRepo>('/github/repos/linked');
 export const githubUnlink = () => apiFetch<void>('/github/repos/unlink', { method: 'DELETE' });
+
+export interface ProjectInfo {
+  id: string;
+  label: string;
+  member_count: number;
+}
+export const listProjects = () => apiFetch<ProjectInfo[]>('/projects');
 
 // ---- Refinement Types ----
 

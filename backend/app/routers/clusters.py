@@ -81,6 +81,26 @@ class UpdateClusterResponse(BaseModel):
 # Primary endpoints — /api/clusters/*
 # ---------------------------------------------------------------------------
 
+
+@router.get("/api/projects")
+async def list_projects(
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """List all project nodes for project selection UI."""
+    result = await db.execute(
+        select(PromptCluster).where(PromptCluster.state == "project")
+    )
+    projects = result.scalars().all()
+    return [
+        {
+            "id": p.id,
+            "label": p.label,
+            "member_count": p.member_count or 0,
+        }
+        for p in projects
+    ]
+
+
 @router.get("/api/clusters/tree")
 async def get_cluster_tree(
     request: Request,

@@ -18,10 +18,17 @@ logger = logging.getLogger(__name__)
 async def ensure_project_for_repo(
     db: AsyncSession,
     repo_full_name: str,
+    target_project_id: str | None = None,
 ) -> str:
     """Find or create a project node for the given repo.
 
-    Logic:
+    Args:
+        db: Active database session.
+        repo_full_name: GitHub repo in "owner/repo" format.
+        target_project_id: If provided, link the repo to this existing project
+            instead of auto-creating. Validates the project exists.
+
+    Logic (when target_project_id is None):
     1. If LinkedRepo already has project_node_id set, return it.
     2. If only Legacy project exists (label="Legacy"), rename it to repo name.
     3. If a project node matching this repo label exists, reattach (re-link).
@@ -29,6 +36,27 @@ async def ensure_project_for_repo(
 
     Returns the project node ID (PromptCluster.id with state="project").
     """
+    # Explicit project choice — validate and use directly
+    if target_project_id:
+        project = await db.get(PromptCluster, target_project_id)
+        if project and project.state == "project":
+            lr = (await db.execute(
+                select(LinkedRepo).where(
+                    LinkedRepo.full_name == repo_full_name,
+                ).limit(1)
+            )).scalar_one_or_none()
+            if lr:
+                lr.project_node_id = target_project_id
+            logger.info(
+                "Phase 2A: linked repo '%s' to existing project '%s' (%s)",
+                repo_full_name, project.label, target_project_id[:8],
+            )
+            return target_project_id
+        logger.warning(
+            "Invalid target_project_id '%s' — falling through to auto-creation",
+            target_project_id,
+        )
+
     # Check if LinkedRepo already points to a project
     lr = (await db.execute(
         select(LinkedRepo).where(LinkedRepo.full_name == repo_full_name).limit(1)
