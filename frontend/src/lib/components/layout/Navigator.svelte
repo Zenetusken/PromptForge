@@ -1,6 +1,6 @@
 <script lang="ts">
   import ClusterNavigator from './ClusterNavigator.svelte';
-  import { githubStore } from '$lib/stores/github.svelte';
+  import { githubStore, type TreeNode } from '$lib/stores/github.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { editorStore } from '$lib/stores/editor.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -154,6 +154,7 @@
   let confirmDeleteTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ---- GitHub repo picker state ----
+  let githubTab = $state<'info' | 'files'>('info');
   let repoPickerOpen = $state(false);
   let repoSearch = $state('');
   let projects = $state<ProjectInfo[]>([]);
@@ -361,6 +362,34 @@
   }
 </script>
 
+{#snippet treeNode(node: TreeNode, depth: number)}
+  {#if node.type === 'dir'}
+    <button
+      class="tree-item tree-item--dir"
+      style="padding-left: {8 + depth * 12}px"
+      onclick={() => githubStore.toggleTreeNode(node.path)}
+    >
+      <span class="tree-arrow">{node.expanded ? '▾' : '▸'}</span>
+      <span class="tree-name">{node.name}</span>
+    </button>
+    {#if node.expanded && node.children}
+      {#each node.children as child}
+        {@render treeNode(child, depth + 1)}
+      {/each}
+    {/if}
+  {:else}
+    <div
+      class="tree-item tree-item--file"
+      style="padding-left: {8 + depth * 12}px"
+    >
+      <span class="tree-name">{node.name}</span>
+      {#if node.size}
+        <span class="tree-size">{node.size > 1024 ? `${(node.size / 1024).toFixed(0)}K` : `${node.size}B`}</span>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 <aside
   class="navigator"
   style="background: var(--color-bg-secondary); border-right: 1px solid var(--color-border-subtle);"
@@ -539,36 +568,78 @@
       </header>
       <div class="panel-body">
         {#if githubStore.linkedRepo}
-          <div class="card-terminal">
-            <div class="data-row">
-              <span class="data-label">Repo</span>
-              <span class="data-value font-mono">{githubStore.linkedRepo.full_name}</span>
-            </div>
-            <div class="data-row">
-              <span class="data-label">Branch</span>
-              <span class="data-value font-mono">
-                {githubStore.linkedRepo.branch ?? githubStore.linkedRepo.default_branch}
-              </span>
-            </div>
-            {#if githubStore.linkedRepo.language}
-              <div class="data-row">
-                <span class="data-label">Lang</span>
-                <span class="data-value">{githubStore.linkedRepo.language}</span>
-              </div>
-            {/if}
-            {#if githubStore.linkedRepo.project_label}
-              <div class="data-row">
-                <span class="data-label">Project</span>
-                <span class="data-value font-mono">{githubStore.linkedRepo.project_label}</span>
-              </div>
-            {/if}
+          <!-- Tab selector: Info / Files -->
+          <div class="github-tabs">
+            <button
+              class="github-tab"
+              class:github-tab--active={githubTab === 'info'}
+              onclick={() => { githubTab = 'info'; }}
+            >Info</button>
+            <button
+              class="github-tab"
+              class:github-tab--active={githubTab === 'files'}
+              onclick={() => { githubTab = 'files'; if (githubStore.fileTree.length === 0) githubStore.loadFileTree(); githubStore.loadIndexStatus(); }}
+            >Files
+              {#if githubStore.indexStatus?.status === 'building'}
+                <span class="index-badge index-badge--building">...</span>
+              {:else if githubStore.indexStatus?.file_count}
+                <span class="index-badge">{githubStore.indexStatus.file_count}</span>
+              {/if}
+            </button>
           </div>
-          <button
-            class="action-btn"
-            onclick={() => githubStore.unlinkRepo()}
-          >
-            Unlink repo
-          </button>
+
+          {#if githubTab === 'info'}
+            <div class="card-terminal">
+              <div class="data-row">
+                <span class="data-label">Repo</span>
+                <span class="data-value font-mono">{githubStore.linkedRepo.full_name}</span>
+              </div>
+              <div class="data-row">
+                <span class="data-label">Branch</span>
+                <span class="data-value font-mono">
+                  {githubStore.linkedRepo.branch ?? githubStore.linkedRepo.default_branch}
+                </span>
+              </div>
+              {#if githubStore.linkedRepo.language}
+                <div class="data-row">
+                  <span class="data-label">Lang</span>
+                  <span class="data-value">{githubStore.linkedRepo.language}</span>
+                </div>
+              {/if}
+              {#if githubStore.linkedRepo.project_label}
+                <div class="data-row">
+                  <span class="data-label">Project</span>
+                  <span class="data-value font-mono">{githubStore.linkedRepo.project_label}</span>
+                </div>
+              {/if}
+              {#if githubStore.indexStatus}
+                <div class="data-row">
+                  <span class="data-label">Index</span>
+                  <span class="data-value" class:data-value--cyan={githubStore.indexStatus.status === 'indexed'}>
+                    {githubStore.indexStatus.status} ({githubStore.indexStatus.file_count} files)
+                  </span>
+                </div>
+              {/if}
+            </div>
+            <div class="picker-actions">
+              <button class="action-btn" onclick={() => githubStore.unlinkRepo()}>Unlink</button>
+              <button class="action-btn" onclick={() => githubStore.reindex()}>Reindex</button>
+            </div>
+
+          {:else}
+            <!-- Files tab: tree browser -->
+            {#if githubStore.treeLoading}
+              <p class="empty-note">Loading file tree...</p>
+            {:else if githubStore.fileTree.length === 0}
+              <p class="empty-note">No files found.</p>
+            {:else}
+              <div class="file-tree">
+                {#each githubStore.fileTree as node}
+                  {@render treeNode(node, 0)}
+                {/each}
+              </div>
+            {/if}
+          {/if}
         {:else if githubStore.user}
           <div class="card-terminal">
             <div class="data-row">
@@ -1923,5 +1994,81 @@
     font-size: 10px;
     color: var(--color-neon-red);
     margin: 0 0 4px;
+  }
+
+  /* GitHub tabs */
+  .github-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .github-tab {
+    flex: 1;
+    padding: 4px 0;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-dim);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .github-tab:hover { color: var(--color-text); }
+  .github-tab--active {
+    color: var(--tier-accent, var(--color-neon-cyan));
+    border-bottom-color: var(--tier-accent, var(--color-neon-cyan));
+  }
+  .index-badge {
+    font-size: 9px;
+    padding: 0 3px;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-dim);
+  }
+  .index-badge--building {
+    color: var(--color-neon-yellow);
+    border-color: var(--color-neon-yellow);
+  }
+  .data-value--cyan { color: var(--tier-accent, var(--color-neon-cyan)); }
+
+  /* File tree */
+  .file-tree {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  .tree-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+    text-align: left;
+  }
+  .tree-item--dir {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--tier-accent, var(--color-neon-cyan));
+  }
+  .tree-item--dir:hover { background: var(--color-surface-hover); }
+  .tree-item--file { color: var(--color-text-dim); }
+  .tree-arrow { font-size: 8px; width: 8px; flex-shrink: 0; }
+  .tree-name { overflow: hidden; text-overflow: ellipsis; }
+  .tree-size {
+    font-size: 9px;
+    color: var(--color-text-dim);
+    margin-left: auto;
+    flex-shrink: 0;
   }
 </style>

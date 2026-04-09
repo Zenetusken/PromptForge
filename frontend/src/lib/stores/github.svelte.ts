@@ -1,6 +1,21 @@
 // frontend/src/lib/stores/github.svelte.ts
-import { githubMe, githubLogout, githubRepos, githubLink, githubLinked, githubUnlink, githubDeviceRequest, githubDevicePoll } from '$lib/api/client';
-import type { GitHubUser, LinkedRepo, GitHubRepository } from '$lib/api/client';
+import {
+  githubMe, githubLogout, githubRepos, githubLink, githubLinked, githubUnlink,
+  githubDeviceRequest, githubDevicePoll, githubTree, githubBranches,
+  githubReindex, githubIndexStatus,
+} from '$lib/api/client';
+import type {
+  GitHubUser, LinkedRepo, GitHubRepository, RepoTreeEntry, IndexStatus,
+} from '$lib/api/client';
+
+export interface TreeNode {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  size?: number;
+  children?: TreeNode[];
+  expanded?: boolean;
+}
 
 class GitHubStore {
   user = $state<GitHubUser | null>(null);
@@ -16,6 +31,12 @@ class GitHubStore {
   private deviceCode: string | null = null;
   private pollInterval = 5;
   private deviceExpiry = 0;
+
+  // Repo browsing state
+  branches = $state<string[]>([]);
+  fileTree = $state<TreeNode[]>([]);
+  treeLoading = $state(false);
+  indexStatus = $state<IndexStatus | null>(null);
 
   async checkAuth() {
     try {
@@ -144,9 +165,128 @@ class GitHubStore {
     try {
       await githubUnlink();
       this.linkedRepo = null;
+      this.fileTree = [];
+      this.branches = [];
+      this.indexStatus = null;
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : 'Operation failed';
     }
+  }
+
+  // -- Repo browsing --
+
+  async loadBranches() {
+    if (!this.linkedRepo) return;
+    const [owner, repo] = this.linkedRepo.full_name.split('/');
+    try {
+      const data = await githubBranches(owner, repo);
+      this.branches = data.branches;
+    } catch {
+      this.branches = [];
+    }
+  }
+
+  async loadFileTree() {
+    if (!this.linkedRepo) return;
+    const [owner, repo] = this.linkedRepo.full_name.split('/');
+    const branch = this.linkedRepo.branch ?? this.linkedRepo.default_branch;
+    this.treeLoading = true;
+    try {
+      const data = await githubTree(owner, repo, branch);
+      this.fileTree = this._buildTreeNodes(data.tree);
+    } catch {
+      this.fileTree = [];
+    } finally {
+      this.treeLoading = false;
+    }
+  }
+
+  async loadIndexStatus() {
+    try {
+      this.indexStatus = await githubIndexStatus();
+    } catch {
+      this.indexStatus = null;
+    }
+  }
+
+  async reindex() {
+    try {
+      await githubReindex();
+      this.indexStatus = { status: 'building', file_count: 0, indexed_at: null };
+    } catch (err: unknown) {
+      this.error = err instanceof Error ? err.message : 'Reindex failed';
+    }
+  }
+
+  toggleTreeNode(path: string) {
+    const toggle = (nodes: TreeNode[]): TreeNode[] =>
+      nodes.map(n => {
+        if (n.path === path && n.type === 'dir') {
+          return { ...n, expanded: !n.expanded };
+        }
+        if (n.children) {
+          return { ...n, children: toggle(n.children) };
+        }
+        return n;
+      });
+    this.fileTree = toggle(this.fileTree);
+  }
+
+  private _buildTreeNodes(flat: RepoTreeEntry[]): TreeNode[] {
+    const root: TreeNode[] = [];
+    const dirMap = new Map<string, TreeNode>();
+
+    // Sort: directories first (by depth), then alphabetically
+    const sorted = [...flat].sort((a, b) => a.path.localeCompare(b.path));
+
+    for (const entry of sorted) {
+      const parts = entry.path.split('/');
+      const name = parts[parts.length - 1];
+      const parentPath = parts.slice(0, -1).join('/');
+
+      const node: TreeNode = { name, path: entry.path, type: 'file', size: entry.size };
+
+      // Ensure parent directories exist
+      let currentPath = '';
+      for (let i = 0; i < parts.length - 1; i++) {
+        const part = parts[i];
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        if (!dirMap.has(currentPath)) {
+          const dirNode: TreeNode = {
+            name: part, path: currentPath, type: 'dir',
+            children: [], expanded: false,
+          };
+          dirMap.set(currentPath, dirNode);
+          // Attach to parent
+          const dirParent = parts.slice(0, i).join('/');
+          if (dirParent && dirMap.has(dirParent)) {
+            dirMap.get(dirParent)!.children!.push(dirNode);
+          } else if (!dirParent) {
+            root.push(dirNode);
+          }
+        }
+      }
+
+      // Attach file to parent
+      if (parentPath && dirMap.has(parentPath)) {
+        dirMap.get(parentPath)!.children!.push(node);
+      } else if (!parentPath) {
+        root.push(node);
+      }
+    }
+
+    // Sort: dirs first, then files, alphabetically within each group
+    const sortNodes = (nodes: TreeNode[]): TreeNode[] => {
+      nodes.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      for (const n of nodes) {
+        if (n.children) sortNodes(n.children);
+      }
+      return nodes;
+    };
+    return sortNodes(root);
   }
 
   /** @internal Test-only: restore initial state */
@@ -160,6 +300,10 @@ class GitHubStore {
     this.verificationUri = null;
     this.polling = false;
     this.deviceCode = null;
+    this.branches = [];
+    this.fileTree = [];
+    this.treeLoading = false;
+    this.indexStatus = null;
   }
 }
 

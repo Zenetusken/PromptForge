@@ -551,7 +551,7 @@ describe('Navigator', () => {
     render(Navigator, { props: { active: 'github' } });
     expect(screen.getByText('testuser/myrepo')).toBeInTheDocument();
     expect(screen.getByText('TypeScript')).toBeInTheDocument();
-    const unlinkBtn = screen.getByRole('button', { name: /Unlink repo/i });
+    const unlinkBtn = screen.getByRole('button', { name: /^Unlink$/i });
     await user.click(unlinkBtn);
     expect(githubStore.unlinkRepo).toHaveBeenCalled();
   });
