@@ -179,6 +179,7 @@ class TaxonomyEngine:
         # ADR-005 Phase 2A: project resolution caches
         self._cluster_project_cache: dict[str, str] = {}  # cluster_id -> project_id
         self._legacy_project_id: str | None = None  # cached Legacy project node ID
+        self._last_global_pattern_check: float = 0.0  # monotonic, Phase 2B
 
     def mark_dirty(self, cluster_id: str) -> None:
         """Mark a cluster as needing warm-path processing."""

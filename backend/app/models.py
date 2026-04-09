@@ -181,6 +181,7 @@ class OptimizationPattern(Base):
     optimization_id = Column(String, ForeignKey("optimizations.id"), nullable=False)
     cluster_id = Column(String, ForeignKey("prompt_cluster.id"), nullable=False)
     meta_pattern_id = Column(String, ForeignKey("meta_patterns.id"), nullable=True)
+    global_pattern_id = Column(String(36), ForeignKey("global_patterns.id"), nullable=True)
     relationship = Column(String(20), nullable=False, default="source")
     similarity = Column(Float, nullable=True)
     created_at = Column(DateTime, default=_utcnow, nullable=False)

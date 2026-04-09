@@ -63,6 +63,20 @@ CROSS_PROJECT_THRESHOLD_BOOST: float = 0.15
 
 
 # ---------------------------------------------------------------------------
+# Global Pattern Tier (ADR-005 Section 6)
+# ---------------------------------------------------------------------------
+GLOBAL_PATTERN_RELEVANCE_BOOST: float = 1.3
+GLOBAL_PATTERN_CAP: int = 500
+GLOBAL_PATTERN_PROMOTION_MIN_CLUSTERS: int = 5
+GLOBAL_PATTERN_PROMOTION_MIN_PROJECTS: int = 2
+GLOBAL_PATTERN_PROMOTION_MIN_SCORE: float = 6.0
+GLOBAL_PATTERN_DEMOTION_SCORE: float = 5.0
+GLOBAL_PATTERN_DEDUP_COSINE: float = 0.90
+GLOBAL_PATTERN_CYCLE_INTERVAL: int = 10
+GLOBAL_PATTERN_MIN_WALL_CLOCK_MINUTES: int = 30
+
+
+# ---------------------------------------------------------------------------
 # Sub-domain discovery
 # ---------------------------------------------------------------------------
 # When a domain's total member count exceeds this AND its mean child coherence

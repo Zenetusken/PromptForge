@@ -46,6 +46,8 @@ class InjectedPattern:
     domain: str
     similarity: float
     cluster_id: str = ""
+    source: str = "cluster"    # "cluster" | "global" (ADR-005 Phase 2B)
+    source_id: str = ""        # MetaPattern.id or GlobalPattern.id
 
 
 # ---------------------------------------------------------------------------
@@ -107,25 +109,40 @@ def format_injected_patterns(
     """Format InjectedPattern objects into the applied_patterns template variable.
 
     Merges with any existing applied_patterns_text from explicit pattern IDs.
+    Separates global patterns (ADR-005 Phase 2B) into their own section.
     """
     if not auto_injected:
         return existing_text
 
-    lines = []
-    for ip in auto_injected:
-        lines.append(
-            f"- [{ip.domain} | {ip.similarity:.2f}] {ip.pattern_text}\n"
-            f'  Source: "{ip.cluster_label}" cluster'
+    cluster_patterns = [p for p in auto_injected if p.source != "global"]
+    global_patterns = [p for p in auto_injected if p.source == "global"]
+
+    parts: list[str] = []
+
+    if cluster_patterns:
+        lines = []
+        for ip in sorted(cluster_patterns, key=lambda x: -x.similarity):
+            lines.append(
+                f"- [{ip.domain} | {ip.similarity:.2f}] {ip.pattern_text}\n"
+                f'  Source: "{ip.cluster_label}" cluster'
+            )
+        parts.append(
+            "The following proven patterns from past optimizations "
+            "should be applied where relevant:\n"
+            + "\n".join(lines)
         )
 
-    if existing_text:
-        return existing_text + "\n" + "\n".join(lines)
+    if global_patterns:
+        lines = ["## Proven Cross-Project Techniques"]
+        for gp in sorted(global_patterns, key=lambda x: -x.similarity):
+            lines.append(f"- {gp.pattern_text} (relevance: {gp.similarity:.2f})")
+        parts.append("\n".join(lines))
 
-    return (
-        "The following proven patterns from past optimizations "
-        "should be applied where relevant:\n"
-        + "\n".join(lines)
-    )
+    text = "\n\n".join(parts)
+
+    if existing_text:
+        return f"{existing_text}\n\n{text}"
+    return text
 
 
 async def auto_inject_patterns(
@@ -300,6 +317,55 @@ async def auto_inject_patterns(
         logger.warning("Cross-cluster injection failed (non-fatal): %s trace_id=%s", cc_exc, trace_id)
 
     # ------------------------------------------------------------------
+    # ADR-005 Phase 2B: inject GlobalPatterns with 1.3x relevance boost
+    # ------------------------------------------------------------------
+    try:
+        from app.models import GlobalPattern
+        from app.services.pipeline_constants import CROSS_CLUSTER_RELEVANCE_FLOOR
+        from app.services.taxonomy._constants import GLOBAL_PATTERN_RELEVANCE_BOOST
+
+        # Ensure we have a prompt embedding for relevance scoring
+        if prompt_embedding is None:
+            prompt_embedding = await embedding_svc.aembed_single(raw_prompt)
+
+        if prompt_embedding is not None:
+            gp_q = await db.execute(
+                select(GlobalPattern).where(
+                    GlobalPattern.state == "active",
+                    GlobalPattern.embedding.isnot(None),
+                )
+            )
+            gp_count = 0
+            for gp in gp_q.scalars():
+                try:
+                    gp_emb = np.frombuffer(gp.embedding, dtype=np.float32)
+                    sim = float(np.dot(prompt_embedding, gp_emb) / (
+                        np.linalg.norm(prompt_embedding) * np.linalg.norm(gp_emb) + 1e-9
+                    ))
+                    relevance = sim * GLOBAL_PATTERN_RELEVANCE_BOOST
+                    if relevance >= CROSS_CLUSTER_RELEVANCE_FLOOR:
+                        injected.append(InjectedPattern(
+                            pattern_text=gp.pattern_text,
+                            cluster_label="(global)",
+                            domain="cross-project",
+                            similarity=round(relevance, 2),
+                            cluster_id=gp.source_cluster_ids[0] if gp.source_cluster_ids else "",
+                            source="global",
+                            source_id=gp.id,
+                        ))
+                        gp_count += 1
+                except (ValueError, TypeError):
+                    continue
+
+            if gp_count:
+                logger.info(
+                    "GlobalPattern injection: added %d patterns with %.1fx boost. trace_id=%s",
+                    gp_count, GLOBAL_PATTERN_RELEVANCE_BOOST, trace_id,
+                )
+    except Exception as gp_exc:
+        logger.warning("GlobalPattern injection failed (non-fatal): %s trace_id=%s", gp_exc, trace_id)
+
+    # ------------------------------------------------------------------
     # Persist injection provenance when optimization_id is available.
     # Uses flush() to eagerly detect constraint violations — if provenance
     # fails, the pending objects are expunged so the main Optimization
@@ -340,6 +406,29 @@ async def auto_inject_patterns(
                 "Injection provenance failed (non-fatal, expunged): %s trace_id=%s",
                 exc, trace_id,
             )
+
+    # ADR-005 Phase 2B: provenance for global injections
+    # Uses same flush+expunge safety pattern as cluster provenance above
+    if optimization_id:
+        from app.models import OptimizationPattern
+
+        for ip in injected:
+            if ip.source == "global" and ip.source_id:
+                try:
+                    prov = OptimizationPattern(
+                        optimization_id=optimization_id,
+                        cluster_id=ip.cluster_id or "unknown",
+                        global_pattern_id=ip.source_id,
+                        relationship="global_injected",
+                        similarity=ip.similarity,
+                    )
+                    db.add(prov)
+                    await db.flush()
+                except Exception as prov_exc:
+                    db.expunge(prov)
+                    logger.warning(
+                        "GlobalPattern provenance failed (expunged): %s", prov_exc,
+                    )
 
     # Detailed injection chain log for observability
     if cluster_meta:
