@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from app.services.taxonomy.embedding_index import EmbeddingIndex, _NumpyBackend, _HnswBackend
+from app.services.taxonomy.embedding_index import EmbeddingIndex, _HnswBackend, _NumpyBackend
 
 
 def _random_emb(dim=384, seed=None):
