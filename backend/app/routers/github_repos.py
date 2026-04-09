@@ -138,6 +138,32 @@ async def link_repo(
 
     logger.info("Repo linked: %s branch=%s language=%s", full_name, active_branch, language)
 
+    # Trigger background indexing for semantic search (explore phase)
+    try:
+        import asyncio
+
+        from app.database import async_session_factory
+        from app.services.embedding_service import EmbeddingService
+        from app.services.repo_index_service import RepoIndexService
+
+        _idx_token = token  # already decrypted
+        _idx_repo = full_name
+        _idx_branch = active_branch
+
+        async def _bg_index():
+            async with async_session_factory() as bg_db:
+                svc = RepoIndexService(
+                    db=bg_db,
+                    github_client=GitHubClient(),
+                    embedding_service=EmbeddingService(),
+                )
+                await svc.build_index(_idx_repo, _idx_branch, _idx_token)
+
+        asyncio.create_task(_bg_index())
+        logger.info("Background indexing triggered for %s@%s", full_name, active_branch)
+    except Exception as idx_exc:
+        logger.warning("Failed to trigger background indexing: %s", idx_exc)
+
     return LinkRepoResponse(
         full_name=full_name,
         default_branch=default_branch,
@@ -195,3 +221,123 @@ async def unlink_repo(
         await db.delete(linked)
         await db.commit()
     return OkResponse()
+
+
+# ---------------------------------------------------------------------------
+# File tree, content, branches, indexing (V2 parity)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/repos/{owner}/{repo}/tree")
+async def get_repo_tree(
+    owner: str,
+    repo: str,
+    branch: str = Query("main"),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get recursive file tree for a repository."""
+    _session_id, token = await _get_session_token(request, db)
+    client = GitHubClient()
+    tree = await client.get_tree(token, f"{owner}/{repo}", branch)
+    return {"tree": tree, "full_name": f"{owner}/{repo}", "branch": branch}
+
+
+@router.get("/repos/{owner}/{repo}/files/{path:path}")
+async def get_file_content(
+    owner: str,
+    repo: str,
+    path: str,
+    branch: str = Query("main"),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Read a single file from a repository."""
+    _session_id, token = await _get_session_token(request, db)
+    client = GitHubClient()
+    content = await client.get_file_content(token, f"{owner}/{repo}", path, ref=branch)
+    if content is None:
+        raise HTTPException(404, f"File not found: {path}")
+    return {"path": path, "content": content, "full_name": f"{owner}/{repo}"}
+
+
+@router.get("/repos/{owner}/{repo}/branches")
+async def list_branches(
+    owner: str,
+    repo: str,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """List branches for a repository."""
+    _session_id, token = await _get_session_token(request, db)
+    client = GitHubClient()
+    branches = await client.list_branches(token, f"{owner}/{repo}")
+    return {"branches": [b["name"] for b in branches]}
+
+
+@router.get("/repos/index-status")
+async def get_index_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get indexing status for the linked repository."""
+    session_id, _token = await _get_session_token(request, db)
+    linked_q = await db.execute(
+        select(LinkedRepo).where(LinkedRepo.session_id == session_id)
+    )
+    linked = linked_q.scalar_one_or_none()
+    if not linked:
+        return {"status": "no_repo", "file_count": 0, "indexed_at": None}
+
+    from app.models import RepoIndexMeta
+
+    meta_q = await db.execute(
+        select(RepoIndexMeta).where(
+            RepoIndexMeta.repo_full_name == linked.full_name,
+            RepoIndexMeta.branch == (linked.branch or linked.default_branch),
+        )
+    )
+    meta = meta_q.scalar_one_or_none()
+    if not meta:
+        return {"status": "not_indexed", "file_count": 0, "indexed_at": None}
+    return {
+        "status": meta.status,
+        "file_count": meta.file_count or 0,
+        "head_sha": meta.head_sha,
+        "indexed_at": meta.indexed_at.isoformat() if meta.indexed_at else None,
+    }
+
+
+@router.post("/repos/reindex")
+async def reindex_repo(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger re-indexing of the linked repository."""
+    import asyncio
+
+    session_id, token = await _get_session_token(request, db)
+    linked_q = await db.execute(
+        select(LinkedRepo).where(LinkedRepo.session_id == session_id)
+    )
+    linked = linked_q.scalar_one_or_none()
+    if not linked:
+        raise HTTPException(404, "No linked repo")
+
+    branch = linked.branch or linked.default_branch
+
+    from app.database import async_session_factory
+    from app.services.embedding_service import EmbeddingService
+    from app.services.repo_index_service import RepoIndexService
+
+    async def _bg_index():
+        async with async_session_factory() as bg_db:
+            svc = RepoIndexService(
+                db=bg_db,
+                github_client=GitHubClient(),
+                embedding_service=EmbeddingService(),
+            )
+            await svc.build_index(linked.full_name, branch, token)
+
+    asyncio.create_task(_bg_index())
+    return {"status": "indexing", "repo": linked.full_name, "branch": branch}

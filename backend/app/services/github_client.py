@@ -58,6 +58,17 @@ class GitHubClient:
         resp.raise_for_status()
         return [item for item in resp.json().get("tree", []) if item["type"] == "blob"]
 
+    async def list_branches(
+        self, token: str, full_name: str, per_page: int = 50,
+    ) -> list[dict]:
+        resp = await self._client.get(
+            f"{GITHUB_API}/repos/{full_name}/branches",
+            headers=self._headers(token),
+            params={"per_page": per_page},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     async def get_file_content(
         self, token: str, full_name: str, path: str, ref: str
     ) -> str | None:

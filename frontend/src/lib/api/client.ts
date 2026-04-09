@@ -354,6 +354,33 @@ export interface ProjectInfo {
 }
 export const listProjects = () => apiFetch<ProjectInfo[]>('/projects');
 
+// ---- GitHub Repo Browsing ----
+export interface RepoTreeEntry {
+  path: string;
+  sha: string;
+  size: number;
+}
+export interface IndexStatus {
+  status: string;
+  file_count: number;
+  head_sha?: string;
+  indexed_at: string | null;
+}
+export const githubTree = (owner: string, repo: string, branch?: string) =>
+  apiFetch<{ tree: RepoTreeEntry[]; full_name: string; branch: string }>(
+    `/github/repos/${owner}/${repo}/tree${branch ? `?branch=${branch}` : ''}`,
+  );
+export const githubFileContent = (owner: string, repo: string, path: string, branch?: string) =>
+  apiFetch<{ path: string; content: string; full_name: string }>(
+    `/github/repos/${owner}/${repo}/files/${encodeURIComponent(path)}${branch ? `?branch=${branch}` : ''}`,
+  );
+export const githubBranches = (owner: string, repo: string) =>
+  apiFetch<{ branches: string[] }>(`/github/repos/${owner}/${repo}/branches`);
+export const githubReindex = () =>
+  apiFetch<{ status: string }>('/github/repos/reindex', { method: 'POST' });
+export const githubIndexStatus = () =>
+  apiFetch<IndexStatus>('/github/repos/index-status');
+
 // ---- GitHub Device Flow ----
 export interface DeviceCodeResponse {
   device_code: string;
