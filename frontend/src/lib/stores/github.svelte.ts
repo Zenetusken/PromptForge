@@ -230,12 +230,19 @@ class GitHubStore {
     }
   }
 
-  /** Poll index status until it leaves "building" state. */
+  /** Poll index status until it leaves "building" state or fails. */
   private async pollIndexStatus() {
+    let failures = 0;
     for (let i = 0; i < 30; i++) { // max ~60s
       await new Promise(r => setTimeout(r, 2000));
       await this.loadIndexStatus();
-      if (this.indexStatus && this.indexStatus.status !== 'building') break;
+      if (!this.indexStatus) {
+        failures++;
+        if (failures >= 3) break; // stop after 3 consecutive failures
+        continue;
+      }
+      failures = 0;
+      if (this.indexStatus.status !== 'building') break;
     }
   }
 

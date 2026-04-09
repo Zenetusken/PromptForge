@@ -252,7 +252,7 @@ class ContextEnrichmentService:
                     RepoIndexMeta.repo_full_name == repo_full_name,
                     RepoIndexMeta.branch == branch,
                     RepoIndexMeta.explore_synthesis.isnot(None),
-                )
+                ).limit(1)
             )
             return meta_q.scalar_one_or_none()
         except Exception:

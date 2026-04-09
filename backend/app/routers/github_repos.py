@@ -197,7 +197,7 @@ async def link_repo(
                                 select(RepoIndexMeta).where(
                                     RepoIndexMeta.repo_full_name == _idx_repo,
                                     RepoIndexMeta.branch == _idx_branch,
-                                )
+                                ).limit(1)
                             )
                             meta = meta_q.scalar_one_or_none()
                             if meta:
@@ -357,7 +357,7 @@ async def get_index_status(
         select(RepoIndexMeta).where(
             RepoIndexMeta.repo_full_name == linked.full_name,
             RepoIndexMeta.branch == (linked.branch or linked.default_branch),
-        )
+        ).order_by(RepoIndexMeta.indexed_at.desc()).limit(1)
     )
     meta = meta_q.scalar_one_or_none()
     if not meta:
@@ -432,7 +432,7 @@ async def reindex_repo(
                             select(RepoIndexMeta).where(
                                 RepoIndexMeta.repo_full_name == _reindex_repo,
                                 RepoIndexMeta.branch == branch,
-                            )
+                            ).limit(1)
                         )
                         meta = meta_q.scalar_one_or_none()
                         if meta:
