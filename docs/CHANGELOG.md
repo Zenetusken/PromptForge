@@ -4,7 +4,7 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
-## v0.3.21-dev — 2026-04-10
+## v0.3.22-dev — 2026-04-10
 
 ### Added
 - **`scripts/release.sh`** — one-command release workflow: version sync, changelog extraction, commit, tag, push, GitHub Release creation, dev bump. Closes the gap where git tags existed without corresponding GitHub Releases (Tier 3 changelog enrichment)
