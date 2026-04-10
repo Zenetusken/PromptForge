@@ -146,6 +146,7 @@
   .update-badge.available {
     color: #22c55e;
     border: 1px solid #22c55e;
+    border-radius: 0;
     position: relative;
   }
   .badge-dot {
@@ -201,6 +202,7 @@
     border: 1px solid #22c55e;
     padding: 2px 6px;
     letter-spacing: 0.5px;
+    border-radius: 0;
   }
   .dialog-changelog {
     padding: 12px 16px;
@@ -253,6 +255,30 @@
   }
   .warning-dismiss input {
     accent-color: #22c55e;
+    border-radius: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border: 1px solid #4a4a6e;
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+  }
+  .warning-dismiss input:checked {
+    border-color: #22c55e;
+    background: #22c55e;
+  }
+  .warning-dismiss input:checked::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 3px;
+    width: 4px;
+    height: 7px;
+    border: solid #0d0d14;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
   }
   .dialog-actions {
     padding: 12px 16px;
@@ -272,6 +298,7 @@
     font-size: 11px;
     letter-spacing: 0.5px;
     text-transform: uppercase;
+    border-radius: 0;
   }
   .btn-update:hover {
     background: rgba(34, 197, 94, 0.1);
@@ -285,6 +312,7 @@
     cursor: pointer;
     font-family: var(--font-mono);
     font-size: 11px;
+    border-radius: 0;
   }
   .dialog-footer {
     padding: 8px 16px 12px;
