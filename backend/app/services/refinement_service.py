@@ -240,6 +240,24 @@ class RefinementService:
 
         strategy_instructions = self.strategy_loader.load(strategy_name)
 
+        # Build score context for the refine template
+        prev_scores = prev_turn.scores or {}
+        scores_str = ", ".join(
+            f"{dim}: {prev_scores.get(dim, '?')}" for dim in
+            ("clarity", "specificity", "structure", "faithfulness", "conciseness")
+        ) if prev_scores else "not yet scored"
+        # Top 2 dimensions to protect
+        if prev_scores:
+            sorted_dims = sorted(
+                ((d, v) for d, v in prev_scores.items() if d != "overall"),
+                key=lambda x: x[1], reverse=True,
+            )
+            strongest_str = ", ".join(
+                f"{d} ({v})" for d, v in sorted_dims[:2]
+            )
+        else:
+            strongest_str = "unknown"
+
         refine_msg = self.prompt_loader.render("refine.md", {
             "current_prompt": current_prompt,
             "refinement_request": refinement_request,
@@ -248,6 +266,8 @@ class RefinementService:
             "codebase_guidance": codebase_guidance,
             "codebase_context": codebase_context,
             "adaptation_state": adaptation_state,
+            "current_scores": scores_str,
+            "strongest_dimensions": strongest_str,
         })
 
         # Dynamic output budget matching the main pipeline (128K cap with streaming)
@@ -369,11 +389,24 @@ class RefinementService:
             # ---------------------------------------------------------------
             yield PipelineEvent(event="status", data={"stage": "suggest", "state": "running"})
 
+            # Compute trajectory for suggestion generator
+            _neg_count = sum(1 for v in deltas_from_prev.values() if v < -0.3) if deltas_from_prev else 0
+            if not deltas_from_prev:
+                _trajectory = "first turn"
+            elif _neg_count >= 3:
+                _trajectory = "degrading"
+            elif _neg_count >= 2:
+                _trajectory = "oscillating"
+            else:
+                _trajectory = "improving"
+
             suggestions_list = await self._generate_suggestions(
                 optimized_prompt=refined.optimized_prompt,
                 scores=optimized_scores.model_dump(),
                 weaknesses=analysis.weaknesses,
                 strategy=refined.strategy_used,
+                score_deltas=deltas_from_prev,
+                score_trajectory=_trajectory,
             )
 
             yield PipelineEvent(event="suggestions", data={"suggestions": suggestions_list})
@@ -522,6 +555,8 @@ class RefinementService:
         scores: dict[str, Any],
         weaknesses: list[str],
         strategy: str,
+        score_deltas: dict[str, float] | None = None,
+        score_trajectory: str = "first turn",
     ) -> list[dict[str, str]]:
         """Generate 3 actionable refinement suggestions via Haiku.
 
@@ -530,15 +565,25 @@ class RefinementService:
             scores: Score dimensions as a dict.
             weaknesses: Weaknesses from the analyzer.
             strategy: Strategy name used.
+            score_deltas: Deltas from previous turn (if any).
+            score_trajectory: "improving", "degrading", "oscillating", or "first turn".
 
         Returns:
             List of 3 suggestion dicts: [{text: str, source: str}].
         """
+        deltas_str = "first turn — no previous deltas"
+        if score_deltas:
+            deltas_str = ", ".join(
+                f"{dim}: {v:+.1f}" for dim, v in score_deltas.items()
+            )
+
         suggest_msg = self.prompt_loader.render("suggest.md", {
             "optimized_prompt": optimized_prompt,
             "scores": json.dumps(scores, indent=2),
             "weaknesses": ", ".join(weaknesses) if weaknesses else "none identified",
             "strategy_used": strategy,
+            "score_deltas": deltas_str,
+            "score_trajectory": score_trajectory,
         })
 
         system_prompt = self.prompt_loader.load("agent-guidance.md")

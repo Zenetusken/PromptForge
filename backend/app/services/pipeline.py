@@ -804,6 +804,8 @@ class PipelineOrchestrator:
                         "scores": json.dumps(optimized_scores.model_dump(), indent=2),
                         "weaknesses": ", ".join(analysis.weaknesses) if analysis.weaknesses else "none identified",
                         "strategy_used": effective_strategy,
+                        "score_deltas": "first optimization — no previous deltas",
+                        "score_trajectory": "first turn",
                     })
 
                     suggest_result: SuggestionsOutput = await self._call_provider(

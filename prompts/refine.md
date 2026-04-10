@@ -10,6 +10,14 @@
 {{refinement_request}}
 </refinement-request>
 
+<current-scores>
+{{current_scores}}
+</current-scores>
+
+<strongest-dimensions>
+{{strongest_dimensions}}
+</strongest-dimensions>
+
 <codebase-context>
 {{codebase_guidance}}
 {{codebase_context}}
@@ -36,5 +44,11 @@ The user has an existing optimized prompt (shown as "current prompt" above) and 
 - **Be surgical.** Small, targeted changes are better than wholesale rewrites.
 - **Preserve formatting.** Keep the existing markdown structure (`##` headers, lists, code blocks). If the current prompt uses headers, your output must use headers too.
 - If the request conflicts with the original intent, prioritize the original intent and note the conflict.
+
+**Score protection:**
+- The `current-scores` show how this prompt performs on 5 dimensions (1-10 scale).
+- The `strongest-dimensions` are the top-scoring areas — **do not degrade these.**
+- If the refinement request would add significant content, **compress existing prose** to make room. Replace verbose explanations with concise lists. Remove redundant context. The prompt should not grow substantially in word count.
+- Trade-off rule: improving one dimension by N points while degrading another by >N points is a net loss. Aim for improvements that lift the target dimension without dragging others down.
 
 Summarize exactly what you changed and why.

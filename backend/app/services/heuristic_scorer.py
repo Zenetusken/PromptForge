@@ -132,16 +132,24 @@ class HeuristicScorer:
 
         # Structural density bonus: headers and lists compress information.
         # Well-structured prompts with domain-term repetition shouldn't be
-        # penalized by low TTR — structure IS conciseness.
+        # penalized by low TTR — structure IS conciseness.  Tiered bonus
+        # scales with structural complexity (cap +3.0).
         sig = HeuristicScorer._count_structural_signals(prompt)
         headers = sig["n_headers"]
         lists = sig["n_list_items"]
-        if headers >= 2 and lists >= 3:
-            score += 1.5
-        elif headers >= 2 and lists >= 2:
-            score += 1.0
-        elif headers >= 1 and lists >= 2:
-            score += 0.5
+        has_code = bool(re.search(r"```", prompt))
+        struct_bonus = 0.0
+        if headers >= 1 or lists >= 2:
+            struct_bonus += 1.0  # base: any meaningful structure
+        if headers >= 2:
+            struct_bonus += 0.5  # multi-section organization
+        if headers >= 4:
+            struct_bonus += 0.5  # deeply structured
+        if lists >= 3:
+            struct_bonus += 0.5  # dense list usage
+        if has_code and headers >= 1:
+            struct_bonus += 0.5  # code + headers = info-dense format
+        score += min(struct_bonus, 3.0)
 
         # Filler penalty
         for pattern in fillers:

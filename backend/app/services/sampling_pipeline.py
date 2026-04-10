@@ -1031,6 +1031,8 @@ async def run_sampling_pipeline(
                 "scores": _json.dumps(optimized_scores.model_dump(), indent=2),
                 "weaknesses": ", ".join(analysis.weaknesses) if analysis.weaknesses else "none identified",
                 "strategy_used": effective_strategy,
+                "score_deltas": "first optimization — no previous deltas",
+                "score_trajectory": "first turn",
             })
             suggest_result, suggest_model = await _sampling_request_structured(
                 ctx, system_prompt, suggest_msg, SuggestionsOutput,
