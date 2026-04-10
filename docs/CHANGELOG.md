@@ -4,27 +4,19 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
-## v0.3.23-dev — 2026-04-10
-
-### Fixed
-- **UpdateBadge dialog not opening on click** — click-outside listener on capture phase was immediately closing the dialog on the same event that opened it. Fixed with `stopPropagation` on toggle + deferred listener registration via `setTimeout(0)`
-- **UpdateBadge visibility** — added pulsing green indicator dot in top-right corner of the badge for better discoverability
-
-## v0.3.22-dev — 2026-04-10
+## v0.3.23 — 2026-04-10
 
 ### Added
-- **`scripts/release.sh`** — one-command release workflow: version sync, changelog extraction, commit, tag, push, GitHub Release creation, dev bump. Closes the gap where git tags existed without corresponding GitHub Releases (Tier 3 changelog enrichment)
-
-### Changed
-- **CLAUDE.md** — added `./init.sh update [tag]` to services command table
-- **frontend/CLAUDE.md** — added `pattern-graph-guide.svelte.ts` to store table, `update_available`/`update_complete` SSE events
+- **`scripts/release.sh`** — one-command release workflow: version sync, changelog extraction, commit, tag, push, GitHub Release creation (with changelog body), dev bump. Requires `gh` CLI
+- **UpdateBadge indicator dot** — pulsing green dot in top-right corner for better discoverability
 
 ### Fixed
-- **init.sh `_do_update` path resolution** — `_REAL_SCRIPT_DIR` now fails explicitly if unset (was silent fallback to `/tmp/`). All paths use `$BACKEND_DIR`/`$FRONTEND_DIR` (was relative `cd backend`)
-- **init.sh alembic failure handling** — migration errors now roll back `git checkout` and exit (was warn-and-continue). Matches Python `apply_update()` behavior
-- **init.sh post-checkout validation** — added venv sanity check before alembic/restart to catch broken deps early
-- **init.sh version validation** — conditional checkmark (was unconditional). Added alembic `(head)` check to validation output
-- **Update 202 response race** — deferred restart spawn via `asyncio.sleep(1)` task ensures HTTP response flushes before `init.sh restart` kills the backend process
+- **UpdateBadge dialog not opening** — `overflow: hidden` on StatusBar clipped the popup. Dialog now uses `position: fixed` with coordinates from `getBoundingClientRect()`. Click-outside handler deferred via `setTimeout(0)` to prevent open-then-close race
+- **UpdateBadge brand compliance** — explicit `border-radius: 0` on badge, NEW tag, buttons. Custom checkbox replaces browser default with industrial aesthetic
+- **init.sh `_do_update` path resolution** — `_REAL_SCRIPT_DIR` now fails explicitly if unset (was silent fallback to `/tmp/`). All paths use `$BACKEND_DIR`/`$FRONTEND_DIR`
+- **init.sh alembic failure handling** — migration errors now roll back `git checkout` and exit (was warn-and-continue)
+- **init.sh post-checkout validation** — venv sanity check + alembic `(head)` check added to validation output
+- **Update 202 response race** — deferred restart spawn via `asyncio.sleep(1)` so HTTP response flushes before backend kill
 
 ## v0.3.20 — 2026-04-10
 
