@@ -152,7 +152,7 @@
       }
       if (type === 'update_available') {
         updateStore.receive(data as Record<string, unknown>);
-        addToast('modified', `Update available: v${(data as any).latest_version}`);
+        addToast('modified', `Update available: v${(data as Record<string, unknown>).latest_version}`);
       }
       if (type === 'update_complete') {
         updateStore.receiveComplete(data as Record<string, unknown>);

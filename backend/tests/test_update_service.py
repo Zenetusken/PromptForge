@@ -299,6 +299,25 @@ async def test_tier3_changelog_enrichment(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_apply_update_rejects_dirty_tree(tmp_path):
+    """apply_update raises ValueError when tracked files have uncommitted changes."""
+    import subprocess as _sp
+    _sp.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+    _sp.run(["git", "config", "user.email", "test@test.com"], cwd=str(tmp_path), capture_output=True)
+    _sp.run(["git", "config", "user.name", "Test"], cwd=str(tmp_path), capture_output=True)
+    (tmp_path / "version.json").write_text('{"version": "0.3.20-dev"}')
+    _sp.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+    _sp.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+    _sp.run(["git", "tag", "v0.4.0"], cwd=str(tmp_path), capture_output=True)
+    # Create uncommitted tracked change
+    (tmp_path / "version.json").write_text('{"version": "dirty"}')
+
+    svc = UpdateService(project_root=tmp_path)
+    with pytest.raises(ValueError, match="Uncommitted changes"):
+        await svc.apply_update("v0.4.0")
+
+
+@pytest.mark.asyncio
 async def test_concurrent_update_rejected(tmp_path):
     import subprocess as _sp
     _sp.run(["git", "init"], cwd=str(tmp_path), capture_output=True)

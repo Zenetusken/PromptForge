@@ -340,7 +340,7 @@ class UpdateService:
                 cwd=str(self._root),
                 stdout=asyncio.subprocess.PIPE,
             )
-            stdout, _ = await proc.communicate()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
             if tag not in stdout.decode().strip().splitlines():
                 raise ValueError(f"Tag {tag} does not exist locally")
 
@@ -349,7 +349,7 @@ class UpdateService:
                 cwd=str(self._root),
                 stdout=asyncio.subprocess.PIPE,
             )
-            stdout, _ = await proc.communicate()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
             dirty = [
                 line for line in stdout.decode().strip().splitlines()
                 if line.strip() and not line.strip().startswith("??")
@@ -362,7 +362,7 @@ class UpdateService:
                 cwd=str(self._root),
                 stdout=asyncio.subprocess.PIPE,
             )
-            stdout, _ = await proc.communicate()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
             old_head = stdout.decode().strip()
 
             fetch = await asyncio.create_subprocess_exec(
@@ -379,7 +379,7 @@ class UpdateService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            _, stderr = await checkout.communicate()
+            _, stderr = await asyncio.wait_for(checkout.communicate(), timeout=30)
             if checkout.returncode != 0:
                 raise RuntimeError(f"git checkout failed: {stderr.decode()}")
 
@@ -398,7 +398,7 @@ class UpdateService:
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
-                await rollback.wait()
+                await asyncio.wait_for(rollback.wait(), timeout=30)
                 raise RuntimeError(
                     f"Migration failed: {alembic_exc}. Code rolled back to previous version."
                 ) from alembic_exc

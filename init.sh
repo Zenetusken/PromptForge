@@ -1049,21 +1049,30 @@ case "${1:-start}" in
     logs)    show_logs ;;
     setup-vscode) shift; "$SCRIPT_DIR/scripts/setup-vscode.sh" "$@" ;;
     update)
-        # Copy self to temp and re-exec to survive git checkout overwriting init.sh
+        # Copy self to temp and re-exec to survive git checkout overwriting init.sh.
+        # Pass the real SCRIPT_DIR so _do_update can resolve paths correctly.
         _tmp="$(mktemp /tmp/synthesis-update-XXXXXX.sh)"
         cp "$0" "$_tmp"
         chmod +x "$_tmp"
         shift
-        exec "$_tmp" _do_update "$@"
+        _REAL_SCRIPT_DIR="$SCRIPT_DIR" exec "$_tmp" _do_update "$@"
         ;;
     _do_update)
+        # Restore SCRIPT_DIR from the original invocation (temp file resolves to /tmp/)
+        SCRIPT_DIR="${_REAL_SCRIPT_DIR:-$SCRIPT_DIR}"
+        BACKEND_DIR="$SCRIPT_DIR/backend"
+        FRONTEND_DIR="$SCRIPT_DIR/frontend"
+        cd "$SCRIPT_DIR" || exit 1
+
         shift  # consume _do_update arg
         _update_tag="${1:-}"
         echo "[init.sh] Auto-update"
 
         # Auto-detect latest tag if not provided
         if [ -z "$_update_tag" ]; then
-            git fetch --tags --prune-tags 2>/dev/null
+            if ! git fetch --tags --prune-tags 2>&1; then
+                echo "  ! Warning: git fetch failed (network offline?). Using local tags only."
+            fi
             _update_tag=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
             if [ -z "$_update_tag" ]; then
                 echo "  ✗ No release tags found"
@@ -1077,7 +1086,7 @@ case "${1:-start}" in
             exit 1
         fi
 
-        _current=$(python3 -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo "unknown")
+        _current=$(python3 -c "import json; print(json.load(open('$SCRIPT_DIR/version.json'))['version'])" 2>/dev/null || echo "unknown")
         echo "  Current: v$_current"
         echo "  Target:  $_update_tag"
 
@@ -1096,16 +1105,16 @@ case "${1:-start}" in
         # Conditional dependency install
         if git diff --name-only "$_old_head" -- backend/requirements.txt | grep -q .; then
             echo "  Installing backend dependencies..."
-            (cd backend && source .venv/bin/activate && pip install -r requirements.txt -q)
+            (cd "$BACKEND_DIR" && source .venv/bin/activate && pip install -r requirements.txt -q)
         fi
         if git diff --name-only "$_old_head" -- frontend/package-lock.json | grep -q .; then
             echo "  Installing frontend dependencies..."
-            (cd frontend && npm ci --silent)
+            (cd "$FRONTEND_DIR" && npm ci --silent)
         fi
 
         # Run alembic migrations
         echo "  Running database migrations..."
-        if ! (cd backend && source .venv/bin/activate && python -m alembic upgrade head 2>&1); then
+        if ! (cd "$BACKEND_DIR" && source .venv/bin/activate && python -m alembic upgrade head 2>&1); then
             echo "  ! Migration warning: alembic upgrade may have failed. Check backend logs."
         fi
 
@@ -1116,14 +1125,18 @@ case "${1:-start}" in
         # Validate
         echo ""
         echo "  Validation:"
-        _new_version=$(python3 -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo "unknown")
+        _new_version=$(python3 -c "import json; print(json.load(open('$SCRIPT_DIR/version.json'))['version'])" 2>/dev/null || echo "unknown")
         _actual_tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "none")
         if [ "$_actual_tag" = "$_update_tag" ]; then
             echo "    ✓ Tag: HEAD at $_actual_tag"
         else
             echo "    ✗ Tag: HEAD at $_actual_tag (expected $_update_tag)"
         fi
-        echo "    ✓ Version: v$_new_version"
+        if [ "$_new_version" != "unknown" ]; then
+            echo "    ✓ Version: v$_new_version"
+        else
+            echo "    ✗ Version: could not read version.json"
+        fi
 
         # Clean up temp file
         rm -f "$0" 2>/dev/null

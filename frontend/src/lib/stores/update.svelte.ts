@@ -127,11 +127,12 @@ class UpdateStore {
         const h = await getHealth();
         if (h.version && this.latestVersion && h.version.startsWith(this.latestVersion.split('-')[0])) {
           this._stopPolling();
+          return; // success — skip timeout check below
         }
       } catch {
         // Backend still down — keep polling
       }
-      if (elapsed > 120_000) {
+      if (elapsed > 120_000 && this._pollTimer) {
         this._stopPolling();
         this.updating = false;
         addToast('deleted', 'Update may have failed. Try ./init.sh restart in the terminal.');

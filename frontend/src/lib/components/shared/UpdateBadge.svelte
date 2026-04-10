@@ -78,7 +78,7 @@
           <p>
             If you've made local commits or customizations, they won't be lost but
             will no longer be on an active branch. You can recover them later with
-            <code>git checkout main</code>.
+            <code>git checkout main &amp;&amp; git merge HEAD@{'{'}1{'}'}</code>.
           </p>
           <p class="warning-who">
             This matters if you've committed changes to strategies, prompts, or code.
