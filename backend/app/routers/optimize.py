@@ -184,6 +184,7 @@ async def optimize(
             domain_raw=enrichment.domain_value,
             intent_label=enrichment.intent_label,
             context_sources=enrichment.context_sources_dict,
+            repo_full_name=effective_repo,
         )
         db.add(pending)
         await db.commit()
@@ -484,6 +485,7 @@ async def passthrough_prepare(
         domain_raw=enrichment.domain_value,
         intent_label=enrichment.intent_label,
         context_sources=enrichment.context_sources_dict,
+        repo_full_name=body.repo_full_name,
     )
     db.add(pending)
     await db.commit()

@@ -384,7 +384,7 @@
   {#if node.type === 'dir'}
     <button
       class="tree-item tree-item--dir"
-      style="padding-left: {6 + depth * 12}px"
+      style="margin-left: {depth * 12}px; padding-left: 6px"
       onclick={() => githubStore.toggleTreeNode(node.path)}
     >
       <span class="tree-arrow">{node.expanded ? '▾' : '▸'}</span>
@@ -399,7 +399,7 @@
     <button
       class="tree-item tree-item--file"
       class:tree-item--active={githubStore.selectedFile === node.path}
-      style="padding-left: {6 + depth * 12}px"
+      style="margin-left: {depth * 12}px; padding-left: 6px"
       onclick={() => githubStore.loadFileContent(node.path)}
     >
       <span class="tree-name">{node.name}</span>
@@ -679,7 +679,7 @@
               <div class="file-viewer">
                 <div class="file-viewer-header">
                   <span class="file-viewer-path font-mono">{githubStore.selectedFile}</span>
-                  <button class="file-viewer-close" onclick={() => githubStore.closeFile()}>x</button>
+                  <button class="file-viewer-close" aria-label="Close file viewer" onclick={() => githubStore.closeFile()}>x</button>
                 </div>
                 {#if githubStore.fileLoading}
                   <p class="empty-note">Loading...</p>
@@ -1431,7 +1431,7 @@
   }
 
   .strat-name {
-    font-size: 10px;
+    font-size: 11px;
     font-family: var(--font-sans);
     font-weight: 400;
     color: var(--color-text-primary);
@@ -1453,7 +1453,7 @@
   }
 
   .strat-edit {
-    font-size: 10px;
+    font-size: 11px;
     font-family: var(--font-mono);
     color: var(--color-text-dim);
     background: transparent;
@@ -1557,7 +1557,7 @@
   .history-row {
     height: auto;
     min-height: 20px;
-    padding: 2px 6px;
+    padding: 2px 6px 2px 8px;
     flex-direction: column;
     align-items: stretch;
     gap: 1px;
@@ -1727,7 +1727,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 4px 6px;
+    padding: 4px 6px 4px 10px;
     border-left: 1px solid var(--color-border-subtle);
   }
 
@@ -1772,7 +1772,7 @@
     height: 20px;
     padding: 0 4px;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 11px;
     background: var(--color-bg-input);
     border: 1px solid var(--color-border-subtle);
     color: var(--color-text-primary);
@@ -1825,7 +1825,7 @@
     height: 20px;
     padding: 0 4px;
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 11px;
     background: var(--color-bg-input);
     border: 1px solid var(--color-border-subtle);
     color: var(--color-text-primary);
@@ -2037,6 +2037,10 @@
     font-size: 10px;
     color: var(--color-text-primary);
     cursor: pointer;
+    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .radio-row:hover {
+    background: var(--color-bg-hover);
   }
   .radio-row input[type="radio"] {
     accent-color: var(--tier-accent, var(--color-neon-cyan));
@@ -2067,9 +2071,9 @@
   }
   .device-code-text {
     font-family: var(--font-mono);
-    font-size: 20px;
+    font-size: 14px;
     font-weight: 700;
-    letter-spacing: 4px;
+    letter-spacing: 3px;
     color: var(--tier-accent, var(--color-neon-cyan));
     padding: 4px 6px;
     border: 1px solid var(--color-border-subtle);
@@ -2214,6 +2218,7 @@
     cursor: pointer;
     font-size: 10px;
     padding: 0 4px;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1), background 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .file-viewer-close:hover { color: var(--color-text-primary); background: var(--color-bg-hover); }
   .file-viewer-content {
