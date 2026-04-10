@@ -1087,10 +1087,15 @@ class TaxonomyEngine:
             if cluster.parent_id:
                 parent_map.setdefault(cluster.id, cluster.parent_id)
 
+        orphan_filter = (
+            ~Optimization.project_id.in_(valid_project_ids)
+            if valid_project_ids
+            else Optimization.project_id.isnot(None)
+        )
         orphan_q = await db.execute(
             select(Optimization).where(
                 Optimization.project_id.isnot(None),
-                ~Optimization.project_id.in_(valid_project_ids) if valid_project_ids else Optimization.project_id.isnot(None),
+                orphan_filter,
             )
         )
         orphan_opts = orphan_q.scalars().all()

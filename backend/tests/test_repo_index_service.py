@@ -342,7 +342,8 @@ async def test_get_or_create_meta_idempotent(db_session):
     meta2 = await svc._get_or_create_meta("owner/repo", "main")
     assert meta1.id == meta2.id
 
-    from sqlalchemy import func, select as sa_select
+    from sqlalchemy import func
+    from sqlalchemy import select as sa_select
     count_q = await db_session.execute(
         sa_select(func.count()).select_from(RepoIndexMeta).where(
             RepoIndexMeta.repo_full_name == "owner/repo",
