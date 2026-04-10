@@ -63,6 +63,7 @@ export interface OptimizationResult {
   domain: string | null;
   cluster_id: string | null;
   heuristic_flags: string[];
+  repo_full_name?: string | null;
   suggestions: Array<{ text: string; source: string }>;
 }
 
@@ -146,6 +147,7 @@ export interface LinkedRepo {
   language: string | null;
   project_node_id?: string | null;  // ADR-005
   project_label?: string | null;    // ADR-005
+  linked_at?: string | null;
 }
 
 export interface FeedbackResponse {
