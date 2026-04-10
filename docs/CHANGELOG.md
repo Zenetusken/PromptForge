@@ -4,6 +4,11 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.25 — 2026-04-10
+
+### Fixed
+- **Auto-update stable-only detection** — restored pre-release/dev tag filtering in `_parse_latest_tag()`. Only stable releases created via `./scripts/release.sh` trigger auto-update notifications. Clarified docstrings
+
 ## v0.3.24 — 2026-04-10
 
 ### Added
