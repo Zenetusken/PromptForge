@@ -4,12 +4,14 @@
 
   let dialogEl = $state<HTMLDivElement | null>(null);
 
-  function toggleDialog() {
+  function toggleDialog(e: MouseEvent) {
     if (updateStore.updating) return;
+    e.stopPropagation();
     updateStore.dialogOpen = !updateStore.dialogOpen;
   }
 
-  function handleUpdate() {
+  function handleUpdate(e: MouseEvent) {
+    e.stopPropagation();
     updateStore.startUpdate();
   }
 
@@ -21,8 +23,15 @@
 
   $effect(() => {
     if (updateStore.dialogOpen) {
-      document.addEventListener('click', handleClickOutside, true);
-      return () => document.removeEventListener('click', handleClickOutside, true);
+      // Defer listener to next tick so the opening click doesn't
+      // immediately trigger close via the capture-phase handler.
+      const timer = setTimeout(() => {
+        document.addEventListener('click', handleClickOutside);
+      }, 0);
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener('click', handleClickOutside);
+      };
     }
   });
 
@@ -44,6 +53,7 @@
       onclick={toggleDialog}
       use:tooltip={'Update available — click for details'}
     >
+      <span class="badge-dot"></span>
       &#8593; v{updateStore.latestVersion}
     </button>
   {/if}
@@ -128,6 +138,21 @@
   .update-badge.available {
     color: #22c55e;
     border: 1px solid #22c55e;
+    position: relative;
+  }
+  .badge-dot {
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 7px;
+    height: 7px;
+    background: #22c55e;
+    border: 1px solid var(--color-bg-secondary, #0d0d14);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
   .update-badge.updating {
     color: #eab308;

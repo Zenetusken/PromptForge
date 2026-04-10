@@ -4,6 +4,12 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.23-dev — 2026-04-10
+
+### Fixed
+- **UpdateBadge dialog not opening on click** — click-outside listener on capture phase was immediately closing the dialog on the same event that opened it. Fixed with `stopPropagation` on toggle + deferred listener registration via `setTimeout(0)`
+- **UpdateBadge visibility** — added pulsing green indicator dot in top-right corner of the badge for better discoverability
+
 ## v0.3.22-dev — 2026-04-10
 
 ### Added
