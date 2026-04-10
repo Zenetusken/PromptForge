@@ -19,6 +19,7 @@
     });
   }
   import { updateCluster } from '$lib/api/clusters';
+  import { listProjects } from '$lib/api/client';
   import { addToast } from '$lib/stores/toast.svelte';
   import MarkdownRenderer from '$lib/components/shared/MarkdownRenderer.svelte';
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
@@ -82,6 +83,16 @@
     }
     renameSaving = false;
   }
+
+  let projectLabels = $state<Record<string, string>>({});
+  let projectsLoaded = false;
+  $effect(() => {
+    if (projectsLoaded) return;
+    projectsLoaded = true;
+    listProjects().then(ps => {
+      projectLabels = Object.fromEntries(ps.map(p => [p.id, p.label]));
+    }).catch(() => {});
+  });
 
   let showDimensions = $state(false);
 
@@ -212,10 +223,16 @@
               <span class="meta-label">Members</span>
               <span class="meta-value">{family.member_count}</span>
             </div>
-            {#if family.project_ids && family.project_ids.length > 1}
+            {#if family.project_ids && family.project_ids.length > 0}
               <div class="meta-row">
-                <span class="meta-label">Projects</span>
-                <span class="meta-value meta-value--cyan">{family.project_ids.length}</span>
+                <span class="meta-label">{family.project_ids.length === 1 ? 'Project' : 'Projects'}</span>
+                <span class="meta-value meta-value--cyan">
+                  {#if family.project_ids.length === 1}
+                    {projectLabels[family.project_ids[0]] ?? family.project_ids.length}
+                  {:else}
+                    {family.project_ids.length}
+                  {/if}
+                </span>
               </div>
             {/if}
             <div class="meta-row" use:tooltip={CLUSTER_TOOLTIPS.avg_score}>
@@ -431,6 +448,12 @@
               <span class="meta-value" class:neon-yellow={isPassthroughResult_}>
                 {isPassthroughResult_ ? 'passthrough' : activeResult.provider}
               </span>
+            </div>
+          {/if}
+          {#if activeResult?.repo_full_name}
+            <div class="meta-row">
+              <span class="meta-label">Repo</span>
+              <span class="meta-value font-mono">{activeResult.repo_full_name}</span>
             </div>
           {/if}
           {#if activeResult?.scoring_mode && activeResult.scoring_mode !== 'skipped' && activeResult.scores}
