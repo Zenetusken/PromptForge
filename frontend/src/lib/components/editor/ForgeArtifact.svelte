@@ -126,6 +126,10 @@
       </div>
     </div>
 
+    {#if result?.repo_full_name}
+      <div class="artifact-repo-context font-mono">{result.repo_full_name}</div>
+    {/if}
+
     <!-- Prompt display (original / optimized / selected version) -->
     <div class="prompt-output-wrap">
       {#if renderMarkdown}
@@ -200,6 +204,12 @@
     display: flex;
     align-items: center;
     gap: 4px;
+  }
+
+  .artifact-repo-context {
+    font-size: 10px;
+    color: var(--color-text-dim);
+    padding: 0 8px 4px;
   }
 
 
