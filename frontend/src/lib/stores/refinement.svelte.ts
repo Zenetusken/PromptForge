@@ -17,6 +17,8 @@ class RefinementStore {
   private serverConfirmed = false;
   /** Incremented on every refine()/cancel()/reset() to invalidate stale recovery loops. */
   private generation = 0;
+  /** Incremented on every init() to drop stale responses from rapid tab switches. */
+  private _initGeneration = 0;
 
   // ── Derived getters ──────────────────────────────────────────────
 
@@ -52,12 +54,14 @@ class RefinementStore {
   }
 
   async init(optimizationId: string) {
+    const gen = ++this._initGeneration;
     this.optimizationId = optimizationId;
     this.status = 'idle';
     this.error = null;
     this.selectedVersion = null;
     try {
       const data = await getRefinementVersions(optimizationId);
+      if (gen !== this._initGeneration) return; // stale — newer init() was called
       this.turns = data.versions;
       if (this.turns.length > 0) {
         this.activeBranchId = this.turns[this.turns.length - 1].branch_id;
@@ -67,6 +71,7 @@ class RefinementStore {
         this.suggestions = forgeStore.initialSuggestions;
       }
     } catch {
+      if (gen !== this._initGeneration) return; // stale
       this.suggestions = forgeStore.initialSuggestions;
     }
   }
@@ -142,6 +147,7 @@ class RefinementStore {
 
   reset() {
     this.abortCurrent();
+    this._initGeneration = 0;
     this.optimizationId = null;
     this.turns = [];
     this.branches = [];
@@ -182,7 +188,7 @@ class RefinementStore {
   /**
    * Reload turns from the database after a successful refinement.
    */
-  private reloadTurns(preserveBranchId: string | null) {
+  reloadTurns(preserveBranchId: string | null) {
     if (!this.optimizationId) return;
     getRefinementVersions(this.optimizationId)
       .then((data) => {

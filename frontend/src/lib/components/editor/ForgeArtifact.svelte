@@ -14,6 +14,9 @@
   // Use per-tab cached result if available, fall back to global forgeStore.result
   const result = $derived(editorStore.activeResult ?? forgeStore.result);
 
+  // F6: Tab-aware feedback — read from per-tab cache when viewing a cached tab
+  const feedback = $derived(editorStore.activeFeedback ?? forgeStore.feedback);
+
   // The displayed prompt: original, selected refinement version, or latest optimized
   const displayPrompt = $derived.by(() => {
     if (showOriginal) return result?.raw_prompt || forgeStore.prompt || '';
@@ -96,7 +99,7 @@
         <span class="header-divider"></span>
         <button
           class="feedback-btn"
-          class:feedback-btn--active={forgeStore.feedback === 'thumbs_up'}
+          class:feedback-btn--active={feedback === 'thumbs_up'}
           onclick={() => forgeStore.submitFeedback('thumbs_up')}
           aria-label="Thumbs up"
           use:tooltip={ARTIFACT_TOOLTIPS.good_result}
@@ -105,7 +108,7 @@
         </button>
         <button
           class="feedback-btn"
-          class:feedback-btn--active={forgeStore.feedback === 'thumbs_down'}
+          class:feedback-btn--active={feedback === 'thumbs_down'}
           onclick={() => forgeStore.submitFeedback('thumbs_down')}
           aria-label="Thumbs down"
           use:tooltip={ARTIFACT_TOOLTIPS.poor_result}

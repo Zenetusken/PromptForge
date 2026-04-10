@@ -282,4 +282,18 @@ describe('routing store — degradation detection', () => {
   it('degradationReason is null when not degraded', () => {
     expect(routing.degradationReason).toBeNull();
   });
+
+  // F7 verification: tier returns live backend overlay during pipeline execution
+  it('uses live routingDecision tier during pipeline execution (F7)', () => {
+    forgeStore.status = 'analyzing' as any;
+    forgeStore.routingDecision = { tier: 'sampling', provider: null, reason: 'test', degraded_from: null } as any;
+    expect(routing.tier).toBe('sampling');
+  });
+
+  it('falls back to predicted tier when idle (not using routingDecision)', () => {
+    forgeStore.status = 'idle' as any;
+    forgeStore.routingDecision = { tier: 'sampling', provider: null, reason: 'stale', degraded_from: null } as any;
+    forgeStore.provider = 'claude_cli';
+    expect(routing.tier).toBe('internal');
+  });
 });

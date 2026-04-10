@@ -6,6 +6,7 @@
   import TierBadge from '$lib/components/shared/TierBadge.svelte';
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { routing } from '$lib/stores/routing.svelte';
+  import { githubStore } from '$lib/stores/github.svelte';
   import { taxonomyColor, qHealthColor } from '$lib/utils/colors';
   import { getPhaseLabel } from '$lib/utils/dimensions';
   import { formatScore, trendInfo } from '$lib/utils/formatting';
@@ -105,8 +106,14 @@
       <Logo size={14} variant="mark" />
     </div>
     <TierBadge tier={displayTier} provider={forgeStore.provider} degradedFrom={routing.isDegraded ? routing.requestedTier : null} />
+    {#if githubStore.linkedRepo}
+      <span class="status-project" use:tooltip={`Project: ${githubStore.linkedRepo.full_name}`}>{githubStore.linkedRepo.full_name.split('/')[1]}</span>
+    {/if}
     {#if forgeStore.mcpDisconnected && !routing.isDegraded && !routing.isAutoFallback}
       <span class="status-disconnected" use:tooltip={STATUS_TOOLTIPS.mcp_disconnected}>disconnected</span>
+    {/if}
+    {#if clustersStore.seedBatchActive}
+      <span class="status-seed" use:tooltip={'Seed batch in progress'}>SEED {clustersStore.seedBatchProgress.completed}/{clustersStore.seedBatchProgress.total}</span>
     {/if}
     {#if phaseProgress}
       <span class="status-phase">{phaseProgress}{#if elapsed != null} {elapsed}s{/if}</span>
@@ -257,6 +264,22 @@
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--color-neon-yellow);
+    white-space: nowrap;
+  }
+
+  .status-project {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-dim);
+    border: 1px solid var(--color-border-subtle);
+    padding: 0 4px;
+    white-space: nowrap;
+  }
+
+  .status-seed {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-neon-cyan);
     white-space: nowrap;
   }
 

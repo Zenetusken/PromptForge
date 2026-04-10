@@ -22,11 +22,18 @@
   let progress = $state({ completed: 0, total: 0, current: '' });
 
   // Reset transient state + load agents when modal opens
+  // F8: Restore progress from persistent store if a batch was active while modal was closed
   $effect(() => {
     if (open) {
       result = null;
       error = null;
-      progress = { completed: 0, total: 0, current: '' };
+      if (clustersStore.seedBatchActive) {
+        // Resume showing progress from store (seed was running while modal was closed)
+        progress = { ...clustersStore.seedBatchProgress };
+        seeding = true;
+      } else {
+        progress = { completed: 0, total: 0, current: '' };
+      }
       listSeedAgents().then(a => {
         agents = a;
         selectedAgents = new Set(a.map(ag => ag.name));
@@ -75,6 +82,7 @@
       error = err instanceof Error ? err.message : 'Seed failed';
     } finally {
       seeding = false;
+      clustersStore.clearSeedBatch();
     }
   }
 

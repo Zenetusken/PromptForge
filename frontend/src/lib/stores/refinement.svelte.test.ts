@@ -299,4 +299,40 @@ describe('RefinementStore', () => {
       expect(refinementStore.currentVersion).toBeNull();
     });
   });
+
+  describe('init generation guard (F4)', () => {
+    it('drops stale init responses when rapid successive calls', async () => {
+      const versionsA = { optimization_id: 'opt-a', versions: [mockRefinementTurn({ version: 1, prompt: 'A' })] };
+      const versionsB = { optimization_id: 'opt-b', versions: [mockRefinementTurn({ version: 1, prompt: 'B' })] };
+
+      let resolveA: (v: any) => void;
+      let resolveB: (v: any) => void;
+      const mockGetVersions = vi.mocked(apiClient.getRefinementVersions);
+      mockGetVersions
+        .mockImplementationOnce(() => new Promise(r => { resolveA = r; }))
+        .mockImplementationOnce(() => new Promise(r => { resolveB = r; }));
+
+      // Start init for opt-a, then immediately for opt-b
+      const initA = refinementStore.init('opt-a');
+      const initB = refinementStore.init('opt-b');
+
+      // Resolve B first, then A (out of order)
+      resolveB!(versionsB);
+      await initB;
+      resolveA!(versionsA);
+      await initA;
+
+      // Only opt-b data should be stored (opt-a was stale)
+      expect(refinementStore.optimizationId).toBe('opt-b');
+      expect(refinementStore.turns).toHaveLength(1);
+      expect(refinementStore.turns[0].prompt).toBe('B');
+    });
+  });
+
+  describe('reloadTurns is public (F5)', () => {
+    it('can be called externally without error', () => {
+      // Should not throw — verifies method is accessible
+      expect(() => refinementStore.reloadTurns(null)).not.toThrow();
+    });
+  });
 });

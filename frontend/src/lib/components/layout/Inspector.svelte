@@ -101,12 +101,16 @@
     promoteSaving = false;
   }
 
+  // F6: Tab-aware feedback — read from per-tab cache when viewing a cached tab
+  const feedback = $derived(editorStore.activeFeedback ?? forgeStore.feedback);
+
   // Sync feedback state from real-time events (e.g. MCP or cross-tab submissions)
   $effect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.optimization_id && detail.optimization_id === activeResult?.id) {
         forgeStore.feedback = detail.rating;
+        editorStore.cacheFeedback(detail.optimization_id, detail.rating);
       }
     };
     window.addEventListener('feedback-event', handler);
@@ -542,6 +546,20 @@
               />
             {/if}
             <span class="sparkline-label">{refinementStore.turns.length} versions</span>
+          </div>
+        {/if}
+
+        <!-- F11: Show individual dimension scores for selected refinement version -->
+        {#if refinementStore.selectedVersion?.scores}
+          {@const versionScores = refinementStore.selectedVersion.scores as unknown as import('$lib/api/client').DimensionScores}
+          <div class="version-scores-section">
+            <div class="section-heading" style="margin-bottom: 4px;">
+              v{refinementStore.selectedVersion.version} Scores
+            </div>
+            <ScoreCard
+              scores={versionScores}
+              originalScores={activeResult?.original_scores ?? activeResult?.scores}
+            />
           </div>
         {/if}
 

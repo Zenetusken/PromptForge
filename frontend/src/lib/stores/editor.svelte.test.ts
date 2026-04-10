@@ -115,4 +115,27 @@ describe('EditorStore', () => {
       expect(editorStore.tabs[0].id).toBe(PROMPT_TAB_ID);
     });
   });
+
+  describe('feedback caching (F6)', () => {
+    it('cacheFeedback stores feedback on cached result', () => {
+      const data = { id: 'opt-1', raw_prompt: 'test', status: 'completed' } as any;
+      editorStore.openResult('opt-1', data);
+      editorStore.cacheFeedback('opt-1', 'thumbs_up');
+      const cached = editorStore.getResult('opt-1') as any;
+      expect(cached.feedback_rating).toBe('thumbs_up');
+    });
+
+    it('activeFeedback returns feedback from active tab cache', () => {
+      const data = { id: 'opt-1', raw_prompt: 'test', status: 'completed' } as any;
+      editorStore.openResult('opt-1', data);
+      editorStore.cacheFeedback('opt-1', 'thumbs_down');
+      expect(editorStore.activeFeedback).toBe('thumbs_down');
+    });
+
+    it('activeFeedback returns null when no feedback cached', () => {
+      const data = { id: 'opt-2', raw_prompt: 'test', status: 'completed' } as any;
+      editorStore.openResult('opt-2', data);
+      expect(editorStore.activeFeedback).toBeNull();
+    });
+  });
 });

@@ -11,6 +11,7 @@
   import { triggerTierGuide } from '$lib/stores/tier-onboarding.svelte';
   import { routing } from '$lib/stores/routing.svelte';
   import { updateStore } from '$lib/stores/update.svelte';
+  import { refinementStore } from '$lib/stores/refinement.svelte';
 
   let backendError = $state<string | null>(null);
   let eventSource: EventSource | null = null;
@@ -34,8 +35,13 @@
     // Sampling no longer available → clear stale force_sampling instantly
     // (optimistic local update BEFORE async API call to prevent UI flash)
     if (preferencesStore.pipeline.force_sampling && h.sampling_capable !== true) {
+      const prev = preferencesStore.prefs.pipeline.force_sampling;
       preferencesStore.prefs.pipeline.force_sampling = false;
-      preferencesStore.setPipelineToggle('force_sampling', false);
+      preferencesStore.setPipelineToggle('force_sampling', false).catch(() => {
+        // Rollback optimistic update on API failure
+        preferencesStore.prefs.pipeline.force_sampling = prev;
+        addToast('deleted', 'Failed to update sampling preference');
+      });
     }
   }
 
@@ -74,32 +80,18 @@
             });
           }
         }
-      }
-      // Live pipeline progress from MCP-triggered optimizations.
-      // These events are forwarded by the MCP tool handler to the event bus
-      // so the web UI shows phase transitions, model IDs, and scores in real time.
-      if (type === 'optimization_status') {
-        const d = data as { phase?: string; status?: string; state?: string; model?: string };
-        const phase = d.phase;
-        const state = d.status || d.state;
-        if (state === 'running' || state === 'complete') {
-          if (phase === 'analyze' || phase === 'analyzing') forgeStore.status = 'analyzing';
-          else if (phase === 'optimize' || phase === 'optimizing') forgeStore.status = 'optimizing';
-          else if (phase === 'score' || phase === 'scoring') forgeStore.status = 'scoring';
-        }
-        if (d.model && phase) {
-          forgeStore.phaseModels = { ...forgeStore.phaseModels, [phase]: d.model };
+        // F5: Propagate refinement turns to the refinement store for cross-tab sync
+        if (type === 'refinement_turn') {
+          const d = data as { optimization_id?: string };
+          if (d.optimization_id && d.optimization_id === refinementStore.optimizationId) {
+            refinementStore.reloadTurns(refinementStore.activeBranchId);
+          }
         }
       }
-      if (type === 'optimization_score_card') {
-        const d = data as { optimized_scores?: any; original_scores?: any; deltas?: Record<string, number> };
-        if (d.optimized_scores) forgeStore.scores = d.optimized_scores as import('$lib/api/client').DimensionScores;
-        if (d.original_scores) forgeStore.originalScores = d.original_scores as import('$lib/api/client').DimensionScores;
-        if (d.deltas) forgeStore.scoreDeltas = d.deltas;
-      }
-      if (type === 'optimization_start') {
-        const d = data as { trace_id?: string };
-        if (d.trace_id) forgeStore.traceId = d.trace_id;
+      // F1: Route MCP pipeline progress through forgeStore.handleExternalEvent
+      // instead of direct mutations — single code path for all SSE status events.
+      if (type === 'optimization_status' || type === 'optimization_score_card' || type === 'optimization_start') {
+        forgeStore.handleExternalEvent(type, data as Record<string, unknown>);
       }
       if (type === 'optimization_failed') {
         window.dispatchEvent(new CustomEvent('optimization-event', { detail: data }));
@@ -142,6 +134,8 @@
         }
       }
       if (type === 'seed_batch_progress') {
+        // F8: Persist seed batch progress in store (survives modal close)
+        clustersStore.updateSeedProgress(data as { phase?: string; completed?: number; total?: number; current_prompt?: string });
         // Dispatch as a DOM custom event so SeedModal can listen
         // without being coupled to the SSE layer
         window.dispatchEvent(new CustomEvent('seed-batch-progress', { detail: data }));

@@ -239,6 +239,10 @@ class ForgeStore {
         this.phaseModels = data.models_by_phase as Record<string, string>;
       }
       this.loadFromRecord(data as OptimizationResult);
+      // Auto-switch to editor panel (only fires from user's own SSE stream)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'editor' }));
+      }
     } else if (eventType === 'context_injected') {
       const d = event as unknown as { patterns?: number };
       addToast('created', `${d.patterns ?? 0} patterns auto-injected`);
@@ -246,6 +250,42 @@ class ForgeStore {
       this.error = (event.error || event.message) as string;
       this.synthesisStartedAt = null;
       this.status = 'error';
+    }
+  }
+
+  /**
+   * Handle SSE events originating from the global event bus (MCP-triggered
+   * optimizations forwarded by +page.svelte).  Maps external event type
+   * strings to the internal handleEvent format, guarding against
+   * cross-contamination with an active user-initiated forge session.
+   */
+  handleExternalEvent(type: string, data: Record<string, unknown>): void {
+    // optimization_start always applies — it sets the trace for subsequent events
+    if (type === 'optimization_start') {
+      this.handleEvent({ event: 'optimization_start', trace_id: data.trace_id } as SSEEvent);
+      return;
+    }
+
+    // Guard: don't overwrite a user-initiated forge session with MCP events
+    // targeting a different trace.  When traceId is null (idle), accept all.
+    if (this.traceId && data.trace_id && this.traceId !== data.trace_id) {
+      return;
+    }
+
+    if (type === 'optimization_status') {
+      this.handleEvent({
+        event: 'status',
+        phase: data.phase,
+        status: data.status || data.state,
+        model: data.model,
+      } as SSEEvent);
+    } else if (type === 'optimization_score_card') {
+      this.handleEvent({
+        event: 'score_card',
+        optimized_scores: data.optimized_scores,
+        original_scores: data.original_scores,
+        deltas: data.deltas,
+      } as SSEEvent);
     }
   }
 
@@ -351,6 +391,7 @@ class ForgeStore {
     try {
       await apiFeedback(this.result.id, rating);
       this.feedback = rating;
+      editorStore.cacheFeedback(this.result.id, rating);
     } catch (err) {
       console.error('Feedback failed:', err);
       addToast('deleted', 'Feedback could not be saved');

@@ -13,20 +13,22 @@
   import { tooltip } from '$lib/actions/tooltip';
   import { EDITOR_TOOLTIPS } from '$lib/utils/ui-tooltips';
 
-  // Initialize refinement when result tab is active and forge is complete.
+  // Initialize refinement when result tab is active.
+  // Uses tab-scoped activeResult (not global forgeStore.result) to avoid
+  // cross-contamination when multiple result tabs are open.
   // Skip for passthrough results — refinement requires a local provider.
   let lastInitId = $state<string | null>(null);
   $effect(() => {
     const tab = editorStore.activeTab;
+    const result = editorStore.activeResult ?? forgeStore.result;
     if (
       tab?.type === 'result' &&
-      forgeStore.status === 'complete' &&
-      forgeStore.result?.id &&
-      forgeStore.result.id !== lastInitId &&
-      !isPassthroughResult(forgeStore.result)
+      result?.id &&
+      result.id !== lastInitId &&
+      !isPassthroughResult(result)
     ) {
-      lastInitId = forgeStore.result.id;
-      refinementStore.init(forgeStore.result.id);
+      lastInitId = result.id;
+      refinementStore.init(result.id);
     }
   });
 

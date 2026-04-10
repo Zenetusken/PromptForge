@@ -207,12 +207,18 @@ class ClusterStore {
   }
 
   /** Called by SSE handler when taxonomy_changed fires. */
-  invalidateClusters(): void {
-    this.loadTree();
+  async invalidateClusters(): Promise<void> {
+    await this.loadTree();
     // Refresh the currently selected cluster detail (if any) so the
     // Inspector never shows stale data after a warm/cold path mutation.
+    // Check existence in the new tree first to avoid ghost selections.
     if (this.selectedClusterId) {
-      this._loadClusterDetail(this.selectedClusterId);
+      const exists = Array.isArray(this.taxonomyTree) && this.taxonomyTree.some(n => n.id === this.selectedClusterId);
+      if (exists) {
+        this._loadClusterDetail(this.selectedClusterId);
+      } else {
+        this.selectCluster(null);
+      }
     }
   }
 
@@ -318,6 +324,26 @@ class ClusterStore {
   activityOpen = $state(false);
   activityLoading = $state(false);
 
+  // Seed batch progress (persistent across modal open/close)
+  seedBatchActive = $state(false);
+  seedBatchProgress = $state<{ completed: number; total: number; current: string }>({ completed: 0, total: 0, current: '' });
+
+  updateSeedProgress(data: { phase?: string; completed?: number; total?: number; current_prompt?: string }): void {
+    if (data.phase === 'optimize') {
+      this.seedBatchActive = true;
+      this.seedBatchProgress = {
+        completed: data.completed ?? this.seedBatchProgress.completed,
+        total: data.total ?? this.seedBatchProgress.total,
+        current: data.current_prompt ?? this.seedBatchProgress.current,
+      };
+    }
+  }
+
+  clearSeedBatch(): void {
+    this.seedBatchActive = false;
+    this.seedBatchProgress = { completed: 0, total: 0, current: '' };
+  }
+
   pushActivityEvent(event: TaxonomyActivityEvent): void {
     this.activityEvents = [event, ...this.activityEvents].slice(0, 200);
   }
@@ -387,6 +413,8 @@ class ClusterStore {
     this.activityEvents = [];
     this.activityOpen = false;
     this.activityLoading = false;
+    this.seedBatchActive = false;
+    this.seedBatchProgress = { completed: 0, total: 0, current: '' };
     if (this._debounceTimer) clearTimeout(this._debounceTimer);
     if (this._dismissTimer) clearTimeout(this._dismissTimer);
     this._debounceTimer = null;

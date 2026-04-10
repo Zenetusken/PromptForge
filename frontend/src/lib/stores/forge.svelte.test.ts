@@ -652,4 +652,72 @@ describe('ForgeStore', () => {
       expect(forgeStore.traceId).toBe('trace-start-1');
     });
   });
+
+  describe('handleExternalEvent (F1)', () => {
+    it('routes optimization_status through handleEvent', () => {
+      forgeStore.handleExternalEvent('optimization_status', {
+        phase: 'analyze',
+        status: 'running',
+        model: 'claude-sonnet-4-6',
+      });
+      expect(forgeStore.status).toBe('analyzing');
+      expect(forgeStore.phaseModels).toEqual({ analyze: 'claude-sonnet-4-6' });
+    });
+
+    it('routes optimization_score_card through handleEvent', () => {
+      const scores = mockDimensionScores();
+      forgeStore.handleExternalEvent('optimization_score_card', {
+        optimized_scores: scores,
+        original_scores: scores,
+        deltas: { clarity: 0.5 },
+      });
+      expect(forgeStore.scores).toEqual(scores);
+      expect(forgeStore.originalScores).toEqual(scores);
+      expect(forgeStore.scoreDeltas).toEqual({ clarity: 0.5 });
+    });
+
+    it('routes optimization_start and sets traceId', () => {
+      forgeStore.handleExternalEvent('optimization_start', {
+        trace_id: 'mcp-trace-1',
+      });
+      expect(forgeStore.traceId).toBe('mcp-trace-1');
+    });
+
+    it('ignores events with mismatched traceId when forge is active', () => {
+      forgeStore.traceId = 'user-trace-1';
+      forgeStore.handleExternalEvent('optimization_status', {
+        trace_id: 'mcp-trace-2',
+        phase: 'optimize',
+        status: 'running',
+      });
+      // Should NOT change status because trace IDs don't match
+      expect(forgeStore.status).toBe('idle');
+    });
+
+    it('accepts events when forge has no traceId (idle)', () => {
+      forgeStore.handleExternalEvent('optimization_status', {
+        trace_id: 'mcp-trace-1',
+        phase: 'score',
+        status: 'running',
+      });
+      expect(forgeStore.status).toBe('scoring');
+    });
+  });
+
+  describe('handleEvent — optimization_complete dispatches switch-activity (F13)', () => {
+    it('dispatches switch-activity editor on optimization_complete', () => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      const opt = mockOptimizationResult();
+      forgeStore._handleEvent({
+        event: 'optimization_complete',
+        ...opt,
+      } as unknown as SSEEvent);
+      const switchEvent = dispatchSpy.mock.calls.find(
+        ([e]) => (e as CustomEvent).type === 'switch-activity'
+      );
+      expect(switchEvent).toBeTruthy();
+      expect((switchEvent![0] as CustomEvent).detail).toBe('editor');
+      dispatchSpy.mockRestore();
+    });
+  });
 });

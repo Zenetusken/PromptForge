@@ -760,6 +760,11 @@ describe('Inspector', () => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
+      // Handle loadTree API calls triggered by invalidateClusters
+      if (url.includes('/clusters/tree')) return new Response(JSON.stringify({ nodes: [{ id: 'fam-1', label: 'test', state: 'template', domain: 'general', member_count: 1, usage_count: 1 }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/clusters/stats')) return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/clusters/similarity-edges')) return new Response(JSON.stringify({ edges: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/clusters/injection-edges')) return new Response(JSON.stringify({ edges: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       return new Response(JSON.stringify(makeFamilyDetail({ state: 'template' })), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -802,6 +807,11 @@ describe('Inspector', () => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
+      // Handle loadTree API calls triggered by invalidateClusters
+      if (url.includes('/clusters/tree')) return new Response(JSON.stringify({ nodes: [{ id: 'fam-1', label: 'test', state: 'active', domain: 'general', member_count: 1, usage_count: 1 }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/clusters/stats')) return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/clusters/similarity-edges')) return new Response(JSON.stringify({ edges: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/clusters/injection-edges')) return new Response(JSON.stringify({ edges: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       return new Response(JSON.stringify(makeFamilyDetail({ state: 'active' })), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

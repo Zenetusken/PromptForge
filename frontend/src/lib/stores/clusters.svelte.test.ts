@@ -359,4 +359,64 @@ describe('ClusterStore', () => {
       expect(clustersStore.clusterDetailLoading).toBe(false);
     });
   });
+
+  describe('invalidateClusters ghost selection (F3)', () => {
+    const treeNode = { id: 'fam-1', label: 'Test', state: 'active', coherence_score: 0.8, member_count: 3, usage_count: 1, domain: 'general', parent_id: null, children: null, breadcrumb: null };
+    const detailNode = { ...treeNode, optimizations: [] };
+
+    /** Mock all 4 loadTree API calls + optional cluster detail */
+    function mockTreeLoad(nodes: any[], includeDetail = false) {
+      const routes: any[] = [
+        { match: '/clusters/tree', response: { nodes } },
+        { match: '/clusters/stats', response: {} },
+        { match: '/clusters/similarity-edges', response: { edges: [] } },
+        { match: '/clusters/injection-edges', response: { edges: [] } },
+      ];
+      if (includeDetail) {
+        routes.push({ match: `/clusters/${nodes[0]?.id || 'fam-1'}`, response: detailNode });
+      }
+      mockFetch(routes);
+    }
+
+    it('clears selection when cluster no longer exists after tree reload', async () => {
+      // Pre-set selected cluster directly (skip async detail fetch)
+      clustersStore.selectedClusterId = 'fam-1' as any;
+
+      // Tree reload: fam-1 is gone
+      mockTreeLoad([]);
+      await clustersStore.invalidateClusters();
+      expect(clustersStore.selectedClusterId).toBeNull();
+    });
+
+    it('preserves selection when cluster still exists after tree reload', async () => {
+      // Pre-set selected cluster directly
+      clustersStore.selectedClusterId = 'fam-1' as any;
+
+      // Tree reload: fam-1 still present
+      mockTreeLoad([treeNode], true);
+      await clustersStore.invalidateClusters();
+      await flushAll();
+      expect(clustersStore.selectedClusterId).toBe('fam-1');
+    });
+  });
+
+  describe('seed batch state (F8)', () => {
+    it('updateSeedProgress sets active state and progress', () => {
+      clustersStore.updateSeedProgress({ phase: 'optimize', completed: 5, total: 30, current_prompt: 'test prompt' });
+      expect(clustersStore.seedBatchActive).toBe(true);
+      expect(clustersStore.seedBatchProgress).toEqual({ completed: 5, total: 30, current: 'test prompt' });
+    });
+
+    it('clearSeedBatch resets seed state', () => {
+      clustersStore.updateSeedProgress({ phase: 'optimize', completed: 10, total: 30 });
+      clustersStore.clearSeedBatch();
+      expect(clustersStore.seedBatchActive).toBe(false);
+      expect(clustersStore.seedBatchProgress).toEqual({ completed: 0, total: 0, current: '' });
+    });
+
+    it('ignores non-optimize phase events', () => {
+      clustersStore.updateSeedProgress({ phase: 'analyze', completed: 1, total: 5 });
+      expect(clustersStore.seedBatchActive).toBe(false);
+    });
+  });
 });

@@ -447,6 +447,8 @@
     }
     // Select family in store for Inspector
     clustersStore.selectCluster(nodeId);
+    // F10: Switch navigator to clusters tab so user sees the selection context
+    window.dispatchEvent(new CustomEvent('switch-activity', { detail: 'clusters' }));
   }
 
   function handleAscend(): void {

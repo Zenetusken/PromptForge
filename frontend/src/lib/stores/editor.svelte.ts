@@ -42,6 +42,25 @@ class EditorStore {
     return this._resultCache[optimizationId] ?? null;
   }
 
+  /** Cache a feedback rating alongside the optimization result. */
+  cacheFeedback(optimizationId: string, rating: string | null) {
+    const cached = this._resultCache[optimizationId];
+    if (cached) {
+      this._resultCache = {
+        ...this._resultCache,
+        [optimizationId]: { ...cached, feedback_rating: rating } as OptimizationResult,
+      };
+    }
+  }
+
+  /** Get the cached feedback rating for the active tab's optimization. */
+  get activeFeedback(): string | null {
+    const tab = this.activeTab;
+    if (!tab?.optimizationId) return null;
+    const cached = this._resultCache[tab.optimizationId];
+    return (cached as unknown as Record<string, unknown>)?.feedback_rating as string | null ?? null;
+  }
+
   /** Cache an optimization result by its ID and update any tab titles that reference it. */
   cacheResult(optimizationId: string, data: OptimizationResult) {
     this._resultCache = { ...this._resultCache, [optimizationId]: data };
