@@ -4,6 +4,36 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.24 — 2026-04-10
+
+### Added
+- **Unified `GitHubConnectionState` model** — 5-state getter (`disconnected`/`expired`/`authenticated`/`linked`/`ready`) replaces scattered null checks across all components. Single source of truth for GitHub connection status
+- **GitHub avatar in StatusBar** — 16px profile picture mini-badge between tier indicator and connection status. Username tooltip on hover
+- **Connection status indicators** — StatusBar shows state-specific text (repo name / `indexing...` / `expired` / `no repo`) with semantic colors. GitHub panel header shows matching badge
+- **Auth-expired reconnect banner** — appears inside the linked-repo Info tab when token expires, with one-click `reconnect()` that clears stale state and starts Device Flow
+- **GitHub OAuth token refresh** — stored `refresh_token` + `expires_at` from Device Flow. `_get_session_token()` auto-refreshes expired access tokens. `github_me` validates live with GitHub API
+- **Project visibility across UI** — Inspector shows project breadcrumb on clusters (single + multi-project), repo context row in optimization detail. ForgeArtifact shows `repo_full_name` below header. History rows show 2-letter project abbreviation badges
+- **Legacy project node** — pre-link optimizations reassigned to "Legacy" project (171 records), distinguishing them from post-link optimizations in history badges
+- **Repo picker enhancements** — shows description (truncated 60 chars), star count, private badge, last updated timestamp per repository
+- **GitHub Info tab improvements** — shows `linked_at` timestamp, project short name (full path in tooltip), connection status badge
+- **GitHub connection state design spec** — `docs/superpowers/specs/2026-04-10-github-connection-state-design.md`
+- **GitHub connection state implementation plan** — `docs/superpowers/plans/2026-04-10-github-connection-state.md`
+
+### Fixed
+- **Cross-component reactivity (12 fixes)** — F1: centralized MCP SSE handling via `forgeStore.handleExternalEvent()`. F3: async `invalidateClusters()` prevents ghost cluster selection. F4: refinement init generation guard. F5: `reloadTurns` public for cross-tab SSE. F6: per-tab feedback caching. F8: persistent seed batch progress survives modal close. F9: preference toggle rollback on API failure. F10: topology click dispatches `switch-activity`. F11: Inspector shows selected refinement version ScoreCard. F13: auto-switch to editor on forge complete. F15: project badge in StatusBar. F16: GitHub unlink clears cluster selection
+- **GitHub reconnect button was dead code** — `_handleAuthError()` set `user=null` alongside `authExpired=true`, making the button's `{:else if githubStore.user}` branch permanently unreachable. New `reconnect()` method clears `linkedRepo` first so template falls to Device Flow branch
+- **`authExpired` flag stuck after logout** — `checkAuth()` null path and `logout()` now reset `authExpired`. `checkAuth()` null path also clears stale `linkedRepo`
+- **GitHub token 8-hour expiry** — GitHub App has "Expire user authorization tokens" enabled but code only stored `access_token`, discarding `refresh_token`. Tokens now stored with expiry metadata and auto-refresh
+- **`repo_full_name` not persisted on passthrough tier** — both inline and standalone passthrough `Optimization` constructors were missing the field
+- **`repo_full_name` not passed from REST optimize router** — `orchestrator.run()` call now includes `repo_full_name=effective_repo`
+- **`LinkedRepo.id` type mismatch** — frontend required `id: string` but backend never returned it. Removed from interface
+- **GitHub panel brand compliance** — fixed 16 undefined CSS variables (`--color-border`, `--color-text`, `--color-surface-hover`). Unified tab styling with ClusterNavigator pattern (24px height, 600 weight, uppercase, color-mix hover). Compacted search input, file tree items, repo items to brand density spec. Fixed padding violations (max 6px sidebar rule). Added ARIA tab attributes. Replaced hardcoded rgba with `color-mix()` tokens
+
+### Changed
+- **StatusBar GitHub indicator** — replaced simple project badge with connection-state-aware display showing all 5 states
+- **Navigator GitHub tabs** — unified with ClusterNavigator `.state-tab` pattern (24px height, uppercase, font-weight 600, spring transitions, color-mix hover)
+- **`github_me` endpoint validates live** — calls GitHub API instead of returning cached DB data. Cleans up stale token + linked repo on revocation
+
 ## v0.3.23 — 2026-04-10
 
 ### Added

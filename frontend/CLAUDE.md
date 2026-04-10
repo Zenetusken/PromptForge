@@ -40,12 +40,12 @@ Key types: `HealthResponse`, `OptimizationResult`, `RefinementTurn`, `HistoryIte
 |-------|---------|
 | `forge.svelte.ts` | Pipeline state (prompt, strategy, SSE, result, feedback). `localStorage` persistence via `synthesis:last_trace_id` — refresh restores last optimization |
 | `editor.svelte.ts` | Tab management (prompt/result/diff/mindmap types) |
-| `github.svelte.ts` | GitHub Device Flow auth, repo picker, file browser (tree/content), branch list, index status, project selection |
+| `github.svelte.ts` | GitHub Device Flow auth + token refresh, `connectionState` getter (5 states), `reconnect()`, repo picker, file browser (tree/content), branch list, index status, project selection. `_handleAuthError()` centralizes 401 detection across all methods |
 | `refinement.svelte.ts` | Refinement sessions: turns, branches, suggestions, score progression |
 | `preferences.svelte.ts` | Persistent user preferences loaded from backend |
 | `toast.svelte.ts` | Toast notification queue with `addToast()` API |
 | `routing.svelte.ts` | Derived routing state mirroring backend 5-tier priority chain. Reactive tier resolver |
-| `clusters.svelte.ts` | Cluster state: paste detection (50-char delta, 300ms debounce), suggestion lifecycle (10s auto-dismiss), tree/stats, detail, template spawning, `StateFilter` + `filteredTaxonomyTree`, SSE invalidation. Activity panel state: `activityEvents`, `activityOpen`, `pushActivityEvent()`, `toggleActivity()`, `loadActivity()` with JSONL history fallback |
+| `clusters.svelte.ts` | Cluster state: paste detection (50-char delta, 300ms debounce), suggestion lifecycle (10s auto-dismiss), tree/stats, detail, template spawning, `StateFilter` + `filteredTaxonomyTree`, async `invalidateClusters()` with ghost-selection guard, seed batch progress (`seedBatchActive`/`seedBatchProgress`). Activity panel state: `activityEvents`, `activityOpen`, `pushActivityEvent()`, `toggleActivity()`, `loadActivity()` with JSONL history fallback |
 | `domains.svelte.ts` | API-driven domain palette. `colorFor()` resolves domain→hex with keyword fallback. Invalidated on `domain_created`/`taxonomy_changed` SSE |
 | `passthrough-guide.svelte.ts` | Passthrough workflow guide modal (visibility, "don't show again") |
 | `sampling-guide.svelte.ts` | Sampling tier guide modal state |
@@ -113,15 +113,16 @@ Events received at `/api/events` via `EventSource`. Types that drive UI reactivi
 
 | Event | UI Effect |
 |-------|-----------|
-| `optimization_created/analyzed/failed` | History auto-refresh, toast notifications |
-| `feedback_submitted` | Inspector feedback state sync |
-| `refinement_turn` | Refinement timeline update |
+| `optimization_created/analyzed/failed` | History auto-refresh, toast notifications. MCP events auto-load via `forgeStore.loadFromRecord()` |
+| `optimization_status/score_card/start` | Routed through `forgeStore.handleExternalEvent()` (single code path for MCP + web) |
+| `feedback_submitted` | Inspector feedback state sync + `editorStore.cacheFeedback()` |
+| `refinement_turn` | Refinement timeline update + `refinementStore.reloadTurns()` for cross-tab sync |
 | `strategy_changed` | Strategy list refresh |
 | `taxonomy_changed` | Cluster/domain store invalidation, topology re-render. Also fires with `trigger: "project_created"` on repo link |
 | `taxonomy_activity` | `clustersStore.pushActivityEvent()` — real-time feed to ActivityPanel |
 | `routing_state_changed` | Routing store update, tier availability toasts |
 | `domain_created` | Domain store invalidation |
-| `seed_batch_progress` | Dispatched as `seed-batch-progress` DOM CustomEvent for SeedModal progress bar |
+| `seed_batch_progress` | `clustersStore.updateSeedProgress()` (persistent) + DOM CustomEvent for SeedModal. StatusBar shows progress when modal closed |
 | `preferences_changed` | Preferences store reload |
 | `agent_changed` | Seed agent list refresh (hot-reload on file change) |
 | `update_available` | Update store populated, StatusBar UpdateBadge badge displayed |
@@ -137,4 +138,7 @@ Fixed 60s health polling for StatusBar display only — no routing decisions fro
 - **Paste detection**: clusters store watches 50-char deltas with 300ms debounce, auto-dismisses suggestions after 10s
 - **Toggle safety**: disabled conditions prefixed with `!currentValue &&` — toggle already ON is always interactive
 - **Routing reactivity**: frontend is purely reactive — receives `routing_state_changed` SSE, never makes routing decisions
+- **GitHub connection state**: `githubStore.connectionState` getter (5 states) replaces ad-hoc null checks. `reconnect()` clears `linkedRepo` before Device Flow so template falls to auth branch. `_handleAuthError()` centralizes 401 detection. Tab selection persisted to `localStorage` key `synthesis:github_tab`
+- **Cross-component SSE**: MCP pipeline events route through `forgeStore.handleExternalEvent()` (single code path). Refinement turns propagated to `refinementStore.reloadTurns()`. Seed batch progress persisted in `clustersStore` (survives modal close)
+- **Per-tab feedback caching**: `editorStore.cacheFeedback()`/`activeFeedback` getter prevents feedback state loss on tab switch
 - **Version**: `src/lib/version.ts` imports from root `version.json` — auto-synced by `scripts/sync-version.sh`, never edit manually
