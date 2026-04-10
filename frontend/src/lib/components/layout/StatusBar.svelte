@@ -116,15 +116,13 @@
         use:tooltip={githubStore.user.login}
       />
     {/if}
-    {#if activeResult?.repo_full_name}
-      <span class="status-github" style="color: var(--color-text-dim)">{activeResult.repo_full_name.split('/')[1]}</span>
-    {:else if !activeResult && githubStore.connectionState === 'ready'}
+    {#if githubStore.connectionState === 'ready'}
       <span class="status-github" style="color: var(--color-text-dim)">{githubStore.linkedRepo?.full_name.split('/')[1]}</span>
-    {:else if !activeResult && githubStore.connectionState === 'linked'}
+    {:else if githubStore.connectionState === 'linked'}
       <span class="status-github" style="color: var(--color-neon-cyan)">indexing...</span>
     {:else if githubStore.connectionState === 'expired'}
       <span class="status-github" style="color: var(--color-neon-red)">expired</span>
-    {:else if !activeResult && githubStore.connectionState === 'authenticated'}
+    {:else if githubStore.connectionState === 'authenticated'}
       <span class="status-github" style="color: var(--color-neon-yellow)">no repo</span>
     {/if}
     {#if forgeStore.mcpDisconnected && !routing.isDegraded && !routing.isAutoFallback}
