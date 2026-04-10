@@ -638,9 +638,9 @@
               </div>
             {/if}
             <div class="card-terminal">
-              <div class="data-row">
+              <div class="data-row" use:tooltip={githubStore.linkedRepo.full_name}>
                 <span class="data-label">Repo</span>
-                <span class="data-value font-mono">{githubStore.linkedRepo.full_name}</span>
+                <span class="data-value data-value--truncate font-mono">{githubStore.linkedRepo.full_name.split('/')[1]}</span>
               </div>
               <div class="data-row">
                 <span class="data-label">Branch</span>
@@ -654,9 +654,9 @@
                   <span class="data-value">{githubStore.linkedRepo.language}</span>
                 </div>
               {/if}
-              <div class="data-row">
+              <div class="data-row" use:tooltip={githubStore.linkedRepo.project_label ?? 'Auto-created on repo link'}>
                 <span class="data-label">Project</span>
-                <span class="data-value font-mono">{githubStore.linkedRepo.project_label ?? '(pending)'}</span>
+                <span class="data-value data-value--truncate font-mono">{githubStore.linkedRepo.project_label ?? '(pending)'}</span>
               </div>
               {#if githubStore.indexStatus}
                 <div class="data-row">
@@ -667,9 +667,9 @@
                 </div>
               {/if}
             </div>
-            <div class="picker-actions">
-              <button class="action-btn" onclick={() => githubStore.unlinkRepo()}>Unlink</button>
-              <button class="action-btn" onclick={() => githubStore.reindex()}>Reindex</button>
+            <div class="github-actions">
+              <button class="action-btn" onclick={() => githubStore.unlinkRepo()}>UNLINK</button>
+              <button class="action-btn" onclick={() => githubStore.reindex()}>REINDEX</button>
             </div>
 
           {:else}
@@ -2049,6 +2049,21 @@
     display: flex;
     gap: 6px;
     margin-top: 6px;
+  }
+  .github-actions {
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+  }
+  .github-actions .action-btn {
+    flex: 1;
+  }
+  .data-value--truncate {
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 140px;
   }
 
   /* Device flow */
