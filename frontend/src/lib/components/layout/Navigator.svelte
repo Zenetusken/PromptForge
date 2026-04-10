@@ -656,7 +656,7 @@
               {/if}
               <div class="data-row" use:tooltip={githubStore.linkedRepo.project_label ?? 'Auto-created on repo link'}>
                 <span class="data-label">Project</span>
-                <span class="data-value data-value--truncate font-mono">{githubStore.linkedRepo.project_label ?? '(pending)'}</span>
+                <span class="data-value data-value--truncate font-mono">{githubStore.linkedRepo.project_label ? (githubStore.linkedRepo.project_label.includes('/') ? githubStore.linkedRepo.project_label.split('/').pop() : githubStore.linkedRepo.project_label) : '(pending)'}</span>
               </div>
               {#if githubStore.indexStatus}
                 <div class="data-row">

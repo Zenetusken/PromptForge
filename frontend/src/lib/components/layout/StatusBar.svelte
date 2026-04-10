@@ -106,14 +106,22 @@
       <Logo size={14} variant="mark" />
     </div>
     <TierBadge tier={displayTier} provider={forgeStore.provider} degradedFrom={routing.isDegraded ? routing.requestedTier : null} />
+    {#if githubStore.user}
+      <img
+        class="status-avatar"
+        src={githubStore.user.avatar_url}
+        alt=""
+        width="16"
+        height="16"
+        use:tooltip={githubStore.user.login}
+      />
+    {/if}
     {#if githubStore.connectionState === 'ready'}
-      <span class="status-github" style="color: var(--color-text-dim)"
-        use:tooltip={`GitHub: ${githubStore.linkedRepo?.full_name}`}
-      >{githubStore.linkedRepo?.full_name.split('/')[1]}</span>
+      <span class="status-github" style="color: var(--color-text-dim)">{githubStore.linkedRepo?.full_name.split('/')[1]}</span>
     {:else if githubStore.connectionState === 'linked'}
       <span class="status-github" style="color: var(--color-neon-cyan)">indexing...</span>
     {:else if githubStore.connectionState === 'expired'}
-      <span class="status-github" style="color: var(--color-neon-red)">session expired</span>
+      <span class="status-github" style="color: var(--color-neon-red)">expired</span>
     {:else if githubStore.connectionState === 'authenticated'}
       <span class="status-github" style="color: var(--color-neon-yellow)">no repo</span>
     {/if}
@@ -275,6 +283,10 @@
     white-space: nowrap;
   }
 
+  .status-avatar {
+    border: 1px solid var(--color-border-accent);
+    flex-shrink: 0;
+  }
   .status-github {
     font-family: var(--font-mono);
     font-size: 10px;
