@@ -293,7 +293,7 @@ class UpdateService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            stdout, _ = await proc.communicate()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
             actual_tag = stdout.decode().strip()
             tag_ok = actual_tag == expected_tag
             checks.append({
@@ -314,7 +314,7 @@ class UpdateService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-            stdout, _ = await proc.communicate()
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
             output = stdout.decode().strip()
             alembic_ok = "(head)" in output
             checks.append({
@@ -431,7 +431,7 @@ class UpdateService:
             cwd=str(self._root),
             stdout=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await proc.communicate()
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
         if stdout.decode().strip():
             logger.info("requirements.txt changed — installing backend deps")
             pip = await asyncio.create_subprocess_exec(
@@ -449,7 +449,7 @@ class UpdateService:
             cwd=str(self._root),
             stdout=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await proc.communicate()
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
         if stdout.decode().strip():
             logger.info("package-lock.json changed — installing frontend deps")
             npm = await asyncio.create_subprocess_exec(
