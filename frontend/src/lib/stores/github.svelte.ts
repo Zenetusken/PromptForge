@@ -45,7 +45,7 @@ class GitHubStore {
     if (this.authExpired) return 'expired';
     if (!this.user) return 'disconnected';
     if (!this.linkedRepo) return 'authenticated';
-    if (!this.indexStatus || this.indexStatus.status === 'building') return 'linked';
+    if (!this.indexStatus || ['building', 'pending', 'indexing'].includes(this.indexStatus.status)) return 'linked';
     return 'ready';
   }
 
@@ -283,7 +283,7 @@ class GitHubStore {
     if (this.authExpired) return;
     try {
       await githubReindex();
-      this.indexStatus = { status: 'building', file_count: 0, indexed_at: null };
+      this.indexStatus = { status: 'building', file_count: 0, indexed_at: null, synthesis_status: 'pending' };
       this.pollIndexStatus();
     } catch (err: unknown) {
       if (this._handleAuthError(err)) return;
@@ -291,10 +291,10 @@ class GitHubStore {
     }
   }
 
-  /** Poll index status until it leaves "building" state or fails. */
+  /** Poll index status until file indexing and synthesis both settle, or fails. */
   private async pollIndexStatus() {
     let failures = 0;
-    for (let i = 0; i < 30; i++) { // max ~60s
+    for (let i = 0; i < 60; i++) { // max ~120s (synthesis can take time after file indexing)
       await new Promise(r => setTimeout(r, 2000));
       await this.loadIndexStatus();
       if (!this.indexStatus) {
@@ -303,7 +303,10 @@ class GitHubStore {
         continue;
       }
       failures = 0;
-      if (this.indexStatus.status !== 'building') break;
+      const filesInProgress = ['pending', 'indexing', 'building'].includes(this.indexStatus.status);
+      const synthStatus = this.indexStatus.synthesis_status;
+      const synthInProgress = !!synthStatus && ['pending', 'running'].includes(synthStatus);
+      if (!filesInProgress && !synthInProgress) break;
     }
   }
 

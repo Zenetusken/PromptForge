@@ -71,7 +71,7 @@
   }
 
   .input-field:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
   }
 

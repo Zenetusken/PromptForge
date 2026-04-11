@@ -2519,7 +2519,7 @@ class TaxonomyEngine:
         # "archived" tab filters on the frontend side from this full set.
         # The topology component further filters to non-archived for rendering.
         query = select(PromptCluster).where(
-            PromptCluster.state.in_(["active", "candidate", "mature", "template", "domain", "archived"])
+            PromptCluster.state.in_(["active", "candidate", "mature", "template", "domain", "archived", "project"])
         )
         if min_persistence > 0:
             query = query.where(PromptCluster.persistence >= min_persistence)

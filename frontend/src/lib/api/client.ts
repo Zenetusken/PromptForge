@@ -369,6 +369,8 @@ export interface IndexStatus {
   file_count: number;
   head_sha?: string;
   indexed_at: string | null;
+  synthesis_status?: string | null;
+  synthesis_error?: string | null;
 }
 export const githubTree = (owner: string, repo: string, branch?: string) =>
   apiFetch<{ tree: RepoTreeEntry[]; full_name: string; branch: string }>(

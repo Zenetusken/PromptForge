@@ -65,16 +65,19 @@ class ClaudeCLIProvider(LLMProvider):
         cmd = [
             "claude",
             "-p",
-            user_message,
             "--model",
             model,
-            "--system-prompt",
-            system_prompt,
             "--output-format",
             "json",
             "--json-schema",
             json.dumps(schema),
         ]
+
+        # System prompt as arg — typically small (< 10KB).
+        # User message piped via stdin — can be very large (explore prompts
+        # with hundreds of files exceed the OS ARG_MAX limit as CLI args).
+        if system_prompt:
+            cmd.extend(["--system-prompt", system_prompt])
 
         # Pass effort level when specified (low/medium/high/max).
         # Haiku doesn't support the effort parameter — skip it to avoid errors.
@@ -87,11 +90,12 @@ class ClaudeCLIProvider(LLMProvider):
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
+                proc.communicate(input=user_message.encode()),
                 timeout=_CLI_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
@@ -109,6 +113,11 @@ class ClaudeCLIProvider(LLMProvider):
             raise ProviderError(
                 "Claude CLI not found on PATH. "
                 "Install with: npm install -g @anthropic-ai/claude-code",
+                retryable=False,
+            )
+        except OSError as exc:
+            raise ProviderError(
+                f"Claude CLI subprocess failed: {exc}",
                 retryable=False,
             )
 

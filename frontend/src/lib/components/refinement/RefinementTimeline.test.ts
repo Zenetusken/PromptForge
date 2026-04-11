@@ -61,12 +61,16 @@ describe('RefinementTimeline', () => {
     expect(screen.getByText('refining...')).toBeInTheDocument();
   });
 
-  it('shows suggestion chips when suggestions are set', () => {
+  it('shows suggestion chips when suggestions are set', async () => {
+    const user = userEvent.setup();
     refinementStore.suggestions = [
       { text: 'Add more examples', source: 'model' },
       { text: 'Be more specific', source: 'heuristic' },
     ];
     render(RefinementTimeline);
+    // Expand the collapsible suggestions toggle
+    const toggle = screen.getByText('SUGGESTIONS').closest('button')!;
+    await user.click(toggle);
     expect(screen.getByText('Add more examples')).toBeInTheDocument();
   });
 
@@ -143,6 +147,9 @@ describe('RefinementTimeline', () => {
     vi.mocked(apiClient.refineSSE).mockReturnValue({ abort: vi.fn() } as any);
     const refineSpy = vi.spyOn(refinementStore, 'refine');
     render(RefinementTimeline);
+    // Expand the collapsible suggestions toggle
+    const toggle = screen.getByText('SUGGESTIONS').closest('button')!;
+    await user.click(toggle);
     await user.click(screen.getByText('Add examples'));
     expect(refineSpy).toHaveBeenCalledWith('Add examples');
   });
