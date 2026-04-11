@@ -207,6 +207,20 @@
     if (e.op === 'skip') {
       return typeof c.warm_path_age === 'number' ? `age=${c.warm_path_age}` : '';
     }
+    if (e.op === 'recovery') {
+      if (e.decision === 'scan') {
+        const n = typeof c.orphan_count === 'number' ? c.orphan_count : '?';
+        return `${n} orphan${n !== 1 ? 's' : ''} found`;
+      }
+      if (e.decision === 'success') {
+        const cid = typeof c.cluster_id === 'string' ? c.cluster_id.slice(0, 8) : '';
+        return `recovered → ${cid}`;
+      }
+      if (e.decision === 'failed') {
+        return typeof c.error_message === 'string' ? c.error_message.slice(0, 40) : 'failed';
+      }
+      return '';
+    }
     if (e.op === 'audit') {
       if (typeof c.q_system === 'number' || typeof c.q_baseline === 'number') {
         const qb = typeof c.q_baseline === 'number' ? c.q_baseline.toFixed(3) : '?';

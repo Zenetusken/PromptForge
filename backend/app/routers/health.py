@@ -91,6 +91,7 @@ class HealthResponse(BaseModel):
     injection_effectiveness: dict | None = Field(
         default=None, description="Score lift: injected vs non-injected optimizations.",
     )
+    recovery: dict | None = Field(default=None, description="Orphan recovery metrics.")
     global_patterns: dict[str, int] = Field(default_factory=dict)
     # Cross-service probe results (only populated when probes=True)
     services: dict[str, ServiceStatus] | None = Field(
@@ -340,6 +341,14 @@ async def health_check(
         request.app.state, "injection_effectiveness", None
     )
 
+    # Orphan recovery metrics
+    recovery_metrics: dict | None = None
+    try:
+        from app.services.orphan_recovery import recovery_service
+        recovery_metrics = recovery_service.get_metrics()
+    except Exception:
+        pass
+
     # Cross-service probes (skip when called as self-check to prevent recursion)
     services_result = None
     cross_service_result = None
@@ -372,6 +381,7 @@ async def health_check(
         project_count=project_count,
         injection_stats=injection_stats,
         injection_effectiveness=injection_effectiveness,
+        recovery=recovery_metrics,
         global_patterns={
             "active": gp_active,
             "demoted": gp_demoted,

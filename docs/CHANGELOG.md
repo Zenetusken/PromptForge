@@ -7,6 +7,7 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 ### Added
 - **Injection effectiveness measurement** — warm path Phase 4 now computes mean score lift for pattern-injected vs non-injected optimizations. Logged as `injection_effectiveness` taxonomy event and surfaced in `GET /api/health` response
 - **Pattern observability** — Phase 4 refresh logs merged/created/pruned counts per cluster, cross-cluster provenance counted in health stats, pipeline traces include injection details, ActivityPanel displays `global_pattern`, `injection_effectiveness`, and `skip` op types
+- **Orphan recovery system** — detects optimizations where hot-path extraction failed (embedding IS NULL), retries with fresh sessions, exponential backoff (3 attempts), and health metrics. Piggybacks on warm-path timer. `recovery` section in `GET /api/health`, `recovery/scan|success|failed` taxonomy events
 
 ### Changed
 - **GlobalPattern promotion unlocked for single-project** — removed hard `MIN_PROJECTS=2` gate that blocked all global pattern promotion. Cluster breadth (≥5 clusters) is now the sole quality gate; cross-project count remains as an observability metric

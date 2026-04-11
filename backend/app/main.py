@@ -1185,6 +1185,17 @@ async def lifespan(app: FastAPI):
                             await lifecycle.decay_usage(lifecycle_db)
                             await lifecycle_db.commit()
 
+                        # Orphan recovery — piggyback on warm-path timer
+                        try:
+                            from app.services.orphan_recovery import recovery_service
+                            recovery_stats = await recovery_service.scan_and_recover(
+                                async_session_factory, engine,
+                            )
+                            if recovery_stats.get("recovered"):
+                                app.state.recovery_metrics = recovery_service.get_metrics()
+                        except Exception:
+                            logger.debug("Orphan recovery failed (non-fatal)", exc_info=True)
+
                         # Auto-trigger UMAP projection or cold path:
                         # 1. Deadlock breaker → full cold path (HDBSCAN refit)
                         # 2. UMAP-less nodes → UMAP-only projection (no refit)
