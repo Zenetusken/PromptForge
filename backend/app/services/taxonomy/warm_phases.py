@@ -1136,6 +1136,23 @@ async def phase_reconcile(
                 domain_node.member_count = actual_count
                 result.member_counts_fixed += 1
 
+        # Reconcile project node member_count (child domain count by parent_id).
+        # Project member_count represents structural children (domains), matching
+        # how domain member_count represents clusters — NOT optimization count.
+        project_q = await db.execute(
+            select(PromptCluster).where(PromptCluster.state == "project")
+        )
+        for project_node in project_q.scalars():
+            child_domain_count = (await db.execute(
+                select(func.count()).where(
+                    PromptCluster.parent_id == project_node.id,
+                    PromptCluster.state == "domain",
+                )
+            )).scalar() or 0
+            if project_node.member_count != child_domain_count:
+                project_node.member_count = child_domain_count
+                result.member_counts_fixed += 1
+
             # Repair self-referencing parent_id links on children.
             self_ref_q = await db.execute(
                 select(PromptCluster).where(
