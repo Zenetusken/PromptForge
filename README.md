@@ -21,7 +21,7 @@ The real value isn't any single optimization — it's what happens over time. Ev
 - **Clusters** your prompts by semantic similarity — not by hardcoded categories, but by what they actually ask for. The system discovers your domains organically from your usage patterns
 - **Extracts patterns** — reusable techniques that made prompts better. "Always specify the target audience" or "include concrete examples" emerge as meta-patterns when they consistently correlate with high scores
 - **Injects proven techniques** — when you optimize a new prompt, the system searches for relevant patterns from your history and injects them automatically. You get better results because the system remembers what worked before
-- **Shares cross-project knowledge** — techniques that prove universal across 2+ projects are promoted to durable global patterns and applied everywhere with a relevance boost
+- **Shares cross-project knowledge** — techniques that prove universal across 5+ clusters are promoted to durable global patterns and applied everywhere with a 1.3x relevance boost
 
 The taxonomy is self-tuning. Clusters split when they grow incoherent, merge when they're redundant, and retire when they go stale. Domain nodes emerge when enough related prompts accumulate. The warm path processes only clusters that changed since the last cycle. The system scales from 100 to 50,000+ prompts without configuration.
 
@@ -133,9 +133,10 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Evolutionary taxonomy** — self-organizing hierarchical clustering with multi-project isolation. Project → domain → cluster → optimizations. Organic domain discovery from user behavior
 - **Pattern extraction** — reusable techniques extracted from successful optimizations, stored as meta-patterns per cluster
 - **Cross-cluster injection** — universal techniques injected across topic boundaries, ranked by composite relevance
-- **Global pattern tier** — durable cross-project patterns promoted from meta-pattern siblings spanning 2+ projects, injected with 1.3x relevance boost. Validated with demotion/re-promotion hysteresis, 500 retention cap
+- **Global pattern tier** — durable patterns promoted from meta-pattern siblings spanning 5+ clusters (single-project OK), injected with 1.3x relevance boost. Validated with demotion/re-promotion hysteresis, 500 retention cap. Injection effectiveness tracked in health endpoint
 - **Adaptive scheduling** — linear regression boundary with all-dirty vs per-project budget mode. Proportional quotas (min floor=3), per-project starvation guard, observable via `snapshot()`. Only changed clusters processed in split/merge phases
-- **3D taxonomy visualization** — Three.js interactive topology with LOD tiers, diegetic UI, state filter tabs, click-to-focus navigation, force-directed layout
+- **Orphan recovery** — automatic detection and recovery of optimizations where hot-path extraction failed, with exponential backoff and health metrics
+- **3D taxonomy visualization** — Three.js interactive topology with LOD tiers, diegetic UI, state filter tabs, click-to-focus navigation, force-directed layout. Project nodes as dodecahedrons with rich hover tooltips and dedicated inspector mode
 
 ### Developer Integration (First Vertical)
 - **GitHub integration** — zero-config Device Flow OAuth (no secrets, no callback URL). Link a repo, browse files, and get codebase-aware optimization. Background indexing with incremental refresh builds semantic file embeddings + Haiku architectural synthesis

@@ -2,7 +2,7 @@
 
 All notable changes to Project Synthesis. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## Unreleased
+## v0.3.29 — 2026-04-11
 
 ### Added
 - **Injection effectiveness measurement** — warm path Phase 4 now computes mean score lift for pattern-injected vs non-injected optimizations. Logged as `injection_effectiveness` taxonomy event and surfaced in `GET /api/health` response
