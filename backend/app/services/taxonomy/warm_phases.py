@@ -2906,12 +2906,19 @@ async def phase_refresh(
                         # (dedup at cosine >= 0.82 via merge_meta_pattern).
                         # Previously deleted all patterns first, destroying
                         # source_count history and preventing consolidation.
+                        _merged = 0
+                        _created = 0
                         for text in new_pattern_texts:
-                            await merge_meta_pattern(
+                            was_merged = await merge_meta_pattern(
                                 db, node.id, text, engine._embedding,
                             )
+                            if was_merged:
+                                _merged += 1
+                            else:
+                                _created += 1
 
                         # Prune excess: keep highest-value patterns, cap total
+                        _pruned = 0
                         prune_q = await db.execute(
                             select(MetaPattern).where(
                                 MetaPattern.cluster_id == node.id
@@ -2930,6 +2937,7 @@ async def phase_refresh(
                             for stale in sorted_by_value[MAX_PATTERNS_PER_CLUSTER:]:
                                 if stale.source_count <= 1:
                                     await db.delete(stale)
+                                    _pruned += 1
 
                     # Track extraction state
                     node.cluster_metadata = write_meta(
@@ -2940,8 +2948,10 @@ async def phase_refresh(
                     )
                     result.clusters_refreshed += 1
                     logger.info(
-                        "Refreshed label+patterns for '%s' (members=%d)",
+                        "Refreshed label+patterns for '%s' (members=%d, "
+                        "extracted=%d, merged=%d, created=%d, pruned=%d)",
                         node.label, node.member_count,
+                        len(new_pattern_texts), _merged, _created, _pruned,
                     )
                 except Exception as per_cluster_exc:
                     logger.warning(

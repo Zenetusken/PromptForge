@@ -599,6 +599,9 @@ class PipelineOrchestrator:
                     result={
                         "strategy_used": effective_strategy,
                         "effort": prefs.get("pipeline.optimizer_effort", prefs_snapshot) or "high",
+                        "patterns_injected": len(auto_injected_patterns),
+                        "injection_clusters": len(auto_injected_cluster_ids),
+                        "has_explicit_patterns": bool(applied_pattern_ids),
                     },
                 )
 

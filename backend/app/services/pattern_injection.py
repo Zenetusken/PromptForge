@@ -436,6 +436,7 @@ async def auto_inject_patterns(
     if optimization_id:
         from app.models import OptimizationPattern
 
+        _cc_prov_ok = 0
         for ip in injected:
             if ip.source != "global" and ip.source_id and ip.cluster_id not in cluster_ids:
                 # Cross-cluster pattern — not already covered by topic provenance
@@ -449,14 +450,18 @@ async def auto_inject_patterns(
                     )
                     db.add(cc_prov)
                     await db.flush()
+                    _cc_prov_ok += 1
                 except Exception as cc_prov_exc:
                     try:
                         db.expunge(cc_prov)
                     except Exception:
                         pass
+                    _injection_provenance_failures += 1
                     logger.warning(
                         "Cross-cluster provenance failed (expunged): %s", cc_prov_exc,
                     )
+        if _cc_prov_ok:
+            _injection_provenance_successes += _cc_prov_ok
 
     # Detailed injection chain log for observability
     if cluster_meta:

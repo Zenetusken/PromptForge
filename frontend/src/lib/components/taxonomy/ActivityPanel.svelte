@@ -193,6 +193,20 @@
     if (e.op === 'emerge') {
       return typeof c.domain === 'string' ? c.domain : '';
     }
+    if (e.op === 'global_pattern') {
+      const action = e.decision ?? '';
+      const text = typeof c.pattern_text === 'string' ? c.pattern_text.slice(0, 50) : '';
+      const score = typeof c.avg_score === 'number' ? `score=${c.avg_score.toFixed(1)}` : '';
+      return `${action}: ${text} ${score}`.trim();
+    }
+    if (e.op === 'injection_effectiveness') {
+      const lift = typeof c.lift === 'number' ? `lift=${c.lift > 0 ? '+' : ''}${c.lift.toFixed(2)}` : '';
+      const n = typeof c.injected_n === 'number' ? `(n=${c.injected_n}+${c.baseline_n ?? '?'})` : '';
+      return `${lift} ${n}`.trim();
+    }
+    if (e.op === 'skip') {
+      return typeof c.warm_path_age === 'number' ? `age=${c.warm_path_age}` : '';
+    }
     if (e.op === 'audit') {
       if (typeof c.q_system === 'number' || typeof c.q_baseline === 'number') {
         const qb = typeof c.q_baseline === 'number' ? c.q_baseline.toFixed(3) : '?';
