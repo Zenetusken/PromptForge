@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 import statistics
 import time
 import traceback
@@ -62,7 +61,7 @@ from app.services.taxonomy.matching import (
 )
 from app.services.taxonomy.sparkline import compute_sparkline_data
 from app.services.taxonomy.warm_path import WarmPathResult, execute_warm_path
-from app.utils.text_cleanup import LABEL_STOP_WORDS, is_low_quality_label, parse_domain, validate_intent_label
+from app.utils.text_cleanup import is_low_quality_label, parse_domain, validate_intent_label
 
 logger = logging.getLogger(__name__)
 
@@ -637,15 +636,10 @@ class TaxonomyEngine:
                         )
 
             # 2b: Deduplicate exact-match labels within cluster
-            if opt.intent_label and opt.intent_label == cluster.label and opt.raw_prompt:
-                _label_words = {w.lower() for w in opt.intent_label.split()}
-                for w in opt.raw_prompt.split()[:20]:
-                    cleaned = re.sub(r"[^a-zA-Z0-9]", "", w)
-                    if cleaned and cleaned.lower() not in _label_words and cleaned.lower() not in LABEL_STOP_WORDS:
-                        candidate = f"{opt.intent_label} ({cleaned.capitalize()})"[:MAX_INTENT_LABEL_LENGTH]
-                        if not is_low_quality_label(candidate):
-                            opt.intent_label = candidate
-                        break
+            # Previously appended a parenthetical word from the prompt (e.g.
+            # "(Implement)"), but these looked like status tags and added no
+            # semantic value. Duplicate labels within a cluster are acceptable —
+            # the cluster provides grouping context.
 
             # Update stale OP records to match new cluster assignment.
             # Prevents OP↔Optimization.cluster_id mismatch after reassignment.
