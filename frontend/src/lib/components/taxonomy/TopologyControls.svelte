@@ -270,7 +270,7 @@
     font-family: var(--font-mono);
     font-size: 9px;
     color: color-mix(in srgb, var(--color-text-dim) 40%, transparent);
-    transition: opacity 500ms ease;
+    transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .hud-lod {
@@ -290,7 +290,7 @@
     font-family: var(--font-mono);
     font-size: 9px;
     color: color-mix(in srgb, var(--color-text-dim) 40%, transparent);
-    transition: opacity 500ms ease;
+    transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1);
     white-space: nowrap;
   }
 
@@ -315,8 +315,6 @@
     transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1),
                 transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
     background: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
   }
 
   .hud-controls--visible {
@@ -371,8 +369,6 @@
     transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1),
                 transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
     background: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
   }
 
   .hud-metrics--visible {
@@ -390,7 +386,7 @@
     align-items: center;
     justify-content: center;
     pointer-events: auto;
-    background: rgba(0, 0, 0, 0.4);
+    background: color-mix(in srgb, var(--color-bg-primary) 40%, transparent);
     animation: hint-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
     z-index: 20;
   }
@@ -403,8 +399,6 @@
   .hud-hint {
     width: 220px;
     background: color-mix(in srgb, var(--color-bg-secondary) 95%, transparent);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
     border: 1px solid color-mix(in srgb, var(--hint-accent, var(--color-neon-cyan)) 25%, transparent);
     font-family: var(--font-mono);
     animation: hint-slide-in 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -494,8 +488,6 @@
     width: 100%;
     padding: 4px 8px;
     background: color-mix(in srgb, var(--color-bg-primary) 88%, transparent);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
     border: 1px solid color-mix(in srgb, var(--color-neon-cyan) 25%, transparent);
     color: var(--color-text-primary);
     font-family: var(--font-mono);

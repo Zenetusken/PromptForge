@@ -289,7 +289,7 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(6, 6, 12, 0.8);
+    background: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -584,7 +584,7 @@
 
   .comparison-table td {
     padding: 3px 6px;
-    border-bottom: 1px solid rgba(74, 74, 106, 0.08);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 8%, transparent);
     white-space: nowrap;
   }
 
@@ -671,7 +671,7 @@
 
   .guide-container :global(button:focus-visible),
   .dismiss-checkbox:focus-visible {
-    outline: 1px solid rgba(0, 229, 255, 0.3);
+    outline: 1px solid color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 30%, transparent);
     outline-offset: 2px;
   }
 </style>

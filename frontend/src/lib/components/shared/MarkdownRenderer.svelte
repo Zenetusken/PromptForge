@@ -160,7 +160,7 @@
     margin: 6px 0;
     padding: 4px 8px;
     border-left: 1px solid var(--color-neon-purple);
-    background: rgba(168, 85, 247, 0.04);
+    background: color-mix(in srgb, var(--color-neon-purple) 4%, transparent);
     color: var(--color-text-secondary);
     font-style: italic;
   }
@@ -173,7 +173,7 @@
   .md-render :global(blockquote blockquote) {
     margin-top: 4px;
     border-left-color: var(--color-neon-indigo);
-    background: rgba(123, 97, 255, 0.04);
+    background: color-mix(in srgb, var(--color-neon-indigo) 4%, transparent);
   }
 
   /* ---- Unordered Lists ---- */
@@ -258,7 +258,7 @@
 
   .md-render :global(ul li input[type="checkbox"]:checked) {
     border-color: var(--color-neon-green);
-    background: rgba(34, 255, 136, 0.12);
+    background: color-mix(in srgb, var(--color-neon-green) 12%, transparent);
   }
 
   .md-render :global(ul li input[type="checkbox"]:checked::after) {
@@ -363,7 +363,7 @@
 
   /* ---- Mark / Highlight ---- */
   .md-render :global(mark) {
-    background: rgba(251, 191, 36, 0.15);
+    background: color-mix(in srgb, var(--color-neon-yellow) 15%, transparent);
     color: var(--color-neon-yellow);
     padding: 0 2px;
   }

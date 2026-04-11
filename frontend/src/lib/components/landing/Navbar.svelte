@@ -149,7 +149,7 @@
   }
 
   .navbar__link:hover { color: var(--color-text-primary); }
-  .navbar__link:focus-visible { outline: 1px solid rgba(0, 229, 255, 0.3); outline-offset: 2px; }
+  .navbar__link:focus-visible { outline: 1px solid color-mix(in srgb, var(--color-neon-cyan) 30%, transparent); outline-offset: 2px; }
 
   /* ── Desktop CTAs ── */
 
@@ -186,18 +186,18 @@
   }
 
   .navbar__cta:focus-visible {
-    outline: 1px solid rgba(0, 229, 255, 0.3);
+    outline: 1px solid color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
     outline-offset: 2px;
   }
 
   .navbar__cta--primary {
     color: var(--color-neon-cyan);
     border-color: var(--color-neon-cyan);
-    background: rgba(0, 229, 255, 0.06);
+    background: color-mix(in srgb, var(--color-neon-cyan) 6%, transparent);
   }
 
   .navbar__cta--primary:hover {
-    background: rgba(0, 229, 255, 0.14);
+    background: color-mix(in srgb, var(--color-neon-cyan) 14%, transparent);
     border-color: var(--color-neon-cyan);
     color: var(--color-neon-cyan);
   }
@@ -217,7 +217,7 @@
   }
 
   .navbar__mobile-toggle:focus-visible {
-    outline: 1px solid rgba(0, 229, 255, 0.3);
+    outline: 1px solid color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
     outline-offset: 2px;
   }
 
@@ -242,7 +242,7 @@
   }
 
   .navbar__mobile-link:hover { color: var(--color-text-primary); }
-  .navbar__mobile-link:focus-visible { outline: 1px solid rgba(0, 229, 255, 0.3); outline-offset: 2px; }
+  .navbar__mobile-link:focus-visible { outline: 1px solid color-mix(in srgb, var(--color-neon-cyan) 30%, transparent); outline-offset: 2px; }
 
   .navbar__mobile-cta {
     display: flex;
@@ -265,7 +265,7 @@
   }
 
   .navbar__mobile-cta:hover { color: var(--color-text-primary); border-color: var(--color-text-dim); }
-  .navbar__mobile-cta:focus-visible { outline: 1px solid rgba(0, 229, 255, 0.3); outline-offset: 2px; }
+  .navbar__mobile-cta:focus-visible { outline: 1px solid color-mix(in srgb, var(--color-neon-cyan) 30%, transparent); outline-offset: 2px; }
 
   /* Skip link — invisible until focused */
   .skip-link {

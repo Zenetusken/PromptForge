@@ -352,7 +352,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.7);
+    background: color-mix(in srgb, var(--color-bg-primary) 70%, transparent);
   }
 
   .seed-modal {
@@ -426,7 +426,7 @@
 
   .seed-tab:hover {
     color: var(--color-text-primary);
-    background: rgba(255, 255, 255, 0.03);
+    background: color-mix(in srgb, var(--color-text-primary) 3%, transparent);
   }
 
   .seed-tab--active {
@@ -520,7 +520,7 @@
   }
 
   .seed-agent:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: color-mix(in srgb, var(--color-text-primary) 3%, transparent);
   }
 
   .seed-agent--selected {
@@ -588,7 +588,7 @@
     font-size: 10px;
     padding: 6px 8px;
     border: 1px solid var(--color-border-subtle);
-    background: rgba(0, 229, 255, 0.03);
+    background: color-mix(in srgb, var(--color-neon-cyan) 3%, transparent);
   }
 
   .seed-cost-label {
@@ -666,7 +666,7 @@
     color: var(--color-neon-red, #ff2255);
     border: 1px solid var(--color-neon-red, #ff2255);
     padding: 8px 10px;
-    background: rgba(255, 34, 85, 0.06);
+    background: color-mix(in srgb, var(--color-neon-red) 6%, transparent);
   }
 
   /* Result card */
@@ -823,7 +823,7 @@
   }
 
   .seed-btn-primary:hover:not(:disabled) {
-    background: rgba(0, 229, 255, 0.1);
+    background: color-mix(in srgb, var(--color-neon-cyan) 10%, transparent);
   }
 
   .seed-btn-primary:disabled {
@@ -844,7 +844,7 @@
   }
 
   .seed-btn-secondary:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.04);
+    background: color-mix(in srgb, var(--color-text-primary) 4%, transparent);
     border-color: var(--color-text-secondary);
   }
 

@@ -43,11 +43,11 @@
   });
 
   const categoryColor: Record<string, string> = {
-    Added: '#22c55e',
-    Changed: '#eab308',
-    Fixed: '#ef4444',
-    Removed: '#ef4444',
-    Deprecated: '#7a7a9e',
+    Added: 'var(--color-neon-green)',
+    Changed: 'var(--color-neon-yellow)',
+    Fixed: 'var(--color-neon-red)',
+    Removed: 'var(--color-neon-red)',
+    Deprecated: 'var(--color-text-dim)',
   };
 </script>
 
@@ -83,7 +83,7 @@
           <div class="changelog-label">What's New</div>
           {#each updateStore.changelogEntries as entry}
             <div class="changelog-entry">
-              <span style="color: {categoryColor[entry.category] ?? '#7a7a9e'}">{entry.category}</span>
+              <span style="color: {categoryColor[entry.category] ?? 'var(--color-text-dim)'}">{entry.category}</span>
               &mdash; {entry.text}
             </div>
           {/each}
@@ -144,8 +144,8 @@
     line-height: 18px;
   }
   .update-badge.available {
-    color: #22c55e;
-    border: 1px solid #22c55e;
+    color: var(--color-neon-green);
+    border: 1px solid var(--color-neon-green);
     border-radius: 0;
     position: relative;
   }
@@ -155,8 +155,8 @@
     right: -3px;
     width: 7px;
     height: 7px;
-    background: #22c55e;
-    border: 1px solid var(--color-bg-secondary, #0d0d14);
+    background: var(--color-neon-green);
+    border: 1px solid var(--color-bg-primary);
     animation: pulse-dot 2s ease-in-out infinite;
   }
   @keyframes pulse-dot {
@@ -164,7 +164,7 @@
     50% { opacity: 0.4; }
   }
   .update-badge.updating {
-    color: #eab308;
+    color: var(--color-neon-yellow);
     cursor: default;
     animation: pulse 1.5s ease-in-out infinite;
   }
@@ -197,9 +197,9 @@
     margin-top: 2px;
   }
   .dialog-new-badge {
-    color: #22c55e;
+    color: var(--color-neon-green);
     font-size: 10px;
-    border: 1px solid #22c55e;
+    border: 1px solid var(--color-neon-green);
     padding: 2px 6px;
     letter-spacing: 0.5px;
     border-radius: 0;
@@ -232,14 +232,14 @@
   }
   .dialog-warning summary {
     cursor: pointer;
-    color: #eab308;
+    color: var(--color-neon-yellow);
     font-size: 11px;
   }
   .dialog-warning p {
     margin: 8px 0 0;
   }
   .dialog-warning code {
-    background: rgba(255,255,255,0.05);
+    background: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
     padding: 1px 4px;
   }
   .warning-who {
@@ -254,20 +254,20 @@
     cursor: pointer;
   }
   .warning-dismiss input {
-    accent-color: #22c55e;
+    accent-color: var(--color-neon-green);
     border-radius: 0;
     -webkit-appearance: none;
     appearance: none;
     width: 12px;
     height: 12px;
-    border: 1px solid #4a4a6e;
+    border: 1px solid var(--color-border-subtle);
     background: transparent;
     cursor: pointer;
     position: relative;
   }
   .warning-dismiss input:checked {
-    border-color: #22c55e;
-    background: #22c55e;
+    border-color: var(--color-neon-green);
+    background: var(--color-neon-green);
   }
   .warning-dismiss input:checked::after {
     content: '';
@@ -276,7 +276,7 @@
     left: 3px;
     width: 4px;
     height: 7px;
-    border: solid #0d0d14;
+    border: solid var(--color-bg-primary);
     border-width: 0 1.5px 1.5px 0;
     transform: rotate(45deg);
   }
@@ -290,8 +290,8 @@
     flex: 1;
     padding: 8px 0;
     text-align: center;
-    border: 1px solid #22c55e;
-    color: #22c55e;
+    border: 1px solid var(--color-neon-green);
+    color: var(--color-neon-green);
     background: transparent;
     cursor: pointer;
     font-family: var(--font-mono);
@@ -301,7 +301,7 @@
     border-radius: 0;
   }
   .btn-update:hover {
-    background: rgba(34, 197, 94, 0.1);
+    background: color-mix(in srgb, var(--color-neon-green) 10%, transparent);
   }
   .btn-later {
     padding: 8px 12px;

@@ -74,17 +74,17 @@
   }
 
   .tier-internal {
-    border-color: rgba(0, 229, 255, 0.3);
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
     color: var(--color-neon-cyan);
   }
 
   .tier-sampling {
-    border-color: rgba(34, 255, 136, 0.3);
+    border-color: color-mix(in srgb, var(--color-neon-green) 30%, transparent);
     color: var(--color-neon-green);
   }
 
   .tier-passthrough {
-    border-color: rgba(251, 191, 36, 0.3);
+    border-color: color-mix(in srgb, var(--color-neon-yellow) 30%, transparent);
     color: var(--color-neon-yellow);
   }
 

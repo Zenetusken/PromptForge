@@ -217,7 +217,7 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(6, 6, 12, 0.8);
+    background: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
     display: flex;
     align-items: flex-start;
     justify-content: center;

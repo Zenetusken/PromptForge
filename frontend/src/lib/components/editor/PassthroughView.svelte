@@ -169,7 +169,7 @@
   }
 
   .guide-btn:hover {
-    background: rgba(251, 191, 36, 0.06);
+    background: color-mix(in srgb, var(--color-neon-yellow) 6%, transparent);
   }
 
   .cancel-btn {
@@ -259,7 +259,7 @@
   }
 
   .copy-btn:hover:not(:disabled) {
-    background: rgba(251, 191, 36, 0.06);
+    background: color-mix(in srgb, var(--color-neon-yellow) 6%, transparent);
     transform: translateY(-1px);
   }
 
@@ -329,7 +329,7 @@
   }
 
   .result-textarea:focus {
-    border-color: rgba(251, 191, 36, 0.3);
+    border-color: color-mix(in srgb, var(--color-neon-yellow) 30%, transparent);
   }
 
   .save-bar {
@@ -361,7 +361,7 @@
   }
 
   .summary-input:focus {
-    border-color: rgba(251, 191, 36, 0.3);
+    border-color: color-mix(in srgb, var(--color-neon-yellow) 30%, transparent);
   }
 
   .save-btn {
@@ -383,7 +383,7 @@
 
   .save-btn:hover:not(:disabled) {
     transform: translateY(-1px);
-    background: rgba(251, 191, 36, 0.06);
+    background: color-mix(in srgb, var(--color-neon-yellow) 6%, transparent);
   }
 
   .save-btn:active:not(:disabled) {

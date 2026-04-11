@@ -7,6 +7,7 @@
   import { tick } from 'svelte';
 
   let scrollContainer: HTMLDivElement | undefined = $state();
+  let turnsCollapsed = $state(false);
 
   // Last 3 turns expanded by default
   let expandedSet = $state<Set<string>>(new Set());
@@ -22,11 +23,15 @@
     expandedSet = newSet;
   });
 
-  // Auto-scroll on new turn
+  // Auto-scroll on new turn (skip when turns are collapsed — scrollContainer is unmounted)
   let prevTurnCount = $state(0);
   $effect(() => {
     const count = refinementStore.turns.length;
-    if (count > prevTurnCount && scrollContainer) {
+    if (turnsCollapsed || !scrollContainer) {
+      prevTurnCount = count;
+      return;
+    }
+    if (count > prevTurnCount) {
       tick().then(() => {
         scrollContainer?.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
       });
@@ -63,9 +68,12 @@
 <div class="refinement-timeline">
   <!-- Header — only visible when turns exist -->
   {#if refinementStore.turns.length > 0}
-    <div class="timeline-header">
-      <span class="section-heading">REFINEMENT</span>
-      {#if refinementStore.branches.length > 1}
+    <div class="timeline-header" class:no-bottom-border={turnsCollapsed}>
+      <button class="heading-toggle" onclick={() => turnsCollapsed = !turnsCollapsed} aria-expanded={!turnsCollapsed}>
+        <span class="toggle-indicator">{turnsCollapsed ? '▸' : '▾'}</span>
+        <span class="section-heading">REFINEMENT</span>
+      </button>
+      {#if !turnsCollapsed && refinementStore.branches.length > 1}
         <BranchSwitcher
           branches={refinementStore.branches}
           activeBranchId={refinementStore.activeBranchId ?? ''}
@@ -77,24 +85,26 @@
       {/if}
     </div>
 
-    <div class="timeline-scroll" bind:this={scrollContainer}>
-      <div class="turns-list">
-        {#each refinementStore.turns as turn (turn.id)}
-          <RefinementTurnCard
-            {turn}
-            isExpanded={expandedSet.has(turn.id)}
-            isSelected={refinementStore.selectedVersion?.id === turn.id}
-            onToggle={() => toggleExpanded(turn.id)}
-            onSelect={() => refinementStore.selectVersion(turn)}
-          />
-        {/each}
+    {#if !turnsCollapsed}
+      <div class="timeline-scroll" bind:this={scrollContainer}>
+        <div class="turns-list">
+          {#each refinementStore.turns as turn (turn.id)}
+            <RefinementTurnCard
+              {turn}
+              isExpanded={expandedSet.has(turn.id)}
+              isSelected={refinementStore.selectedVersion?.id === turn.id}
+              onToggle={() => toggleExpanded(turn.id)}
+              onSelect={() => refinementStore.selectVersion(turn)}
+            />
+          {/each}
+        </div>
       </div>
-    </div>
+    {/if}
   {/if}
 
   <!-- Input area -->
   <div class="timeline-footer">
-    {#if refinementStore.status === 'refining'}
+    {#if refinementStore.status === 'refining' && refinementStore.turns.length === 0}
       <span class="status-indicator">refining...</span>
     {/if}
     {#if refinementStore.suggestions.length > 0}
@@ -133,12 +143,39 @@
     flex-shrink: 0;
   }
 
+  .timeline-header.no-bottom-border {
+    border-bottom: none;
+  }
+
+  .heading-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .heading-toggle:hover .section-heading {
+    color: var(--color-text-primary);
+  }
+
+  .heading-toggle:focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 30%, transparent);
+    outline-offset: 2px;
+  }
+
   .section-heading {
     font-size: 10px;
     font-family: var(--font-display);
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: var(--color-text-dim);
+    color: var(--tier-accent, var(--color-text-dim));
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .status-indicator {

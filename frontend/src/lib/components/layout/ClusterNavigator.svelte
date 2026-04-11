@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { ClusterNode } from '$lib/api/clusters';
   import { clustersStore, isOrphanNode, type StateFilter } from '$lib/stores/clusters.svelte';
   import { editorStore, PROMPT_TAB_ID } from '$lib/stores/editor.svelte';
@@ -63,8 +64,19 @@
   let expandedId = $state<string | null>(null);
 
   // Sync expandedId with store selection (topology clicks, dismiss, etc.)
+  // After updating, scroll the row into view so cross-tab selection (History → Clusters,
+  // Topology → Clusters) always surfaces the selected cluster in the navigator.
   $effect(() => {
-    expandedId = clustersStore.selectedClusterId;
+    const id = clustersStore.selectedClusterId;
+    expandedId = id;
+    if (id) {
+      tick().then(() => {
+        const el = document.querySelector(`[data-cluster-id="${id}"]`);
+        if (el && typeof el.scrollIntoView === 'function') {
+          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      });
+    }
   });
 
   // Proven Templates section — pinned regardless of state filter.
@@ -323,6 +335,7 @@
             <button
               class="family-row"
               class:family-row--expanded={expandedId === family.id}
+              data-cluster-id={family.id}
               onclick={() => toggleExpand(family)}
               style="--state-color: {stateColor(family.state)};"
             >
@@ -771,7 +784,7 @@
     width: 8px;
     height: 8px;
     flex-shrink: 0;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-primary) 15%, transparent);
   }
 
   .domain-label {
@@ -860,7 +873,7 @@
     padding: 2px 6px 4px 16px;
     border: 1px solid var(--color-border-subtle);
     border-top: none;
-    background: var(--color-bg-card, rgba(6, 6, 12, 0.5));
+    background: var(--color-bg-card, color-mix(in srgb, var(--color-bg-primary) 50%, transparent));
   }
 
   .detail-note {

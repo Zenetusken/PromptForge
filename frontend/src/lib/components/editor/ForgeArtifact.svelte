@@ -10,12 +10,23 @@
   let copied = $state(false);
   let showOriginal = $state(false);
   let renderMarkdown = $state(true);
+  let changesCollapsed = $state(true);
+  let contextCollapsed = $state(true);
 
   // Use per-tab cached result if available, fall back to global forgeStore.result
   const result = $derived(editorStore.activeResult ?? forgeStore.result);
 
   // F6: Tab-aware feedback — read from per-tab cache when viewing a cached tab
   const feedback = $derived(editorStore.activeFeedback ?? forgeStore.feedback);
+
+  // Retrieval diagnostics from context_sources.enrichment_meta.curated_retrieval
+  const curatedRetrieval = $derived.by(() => {
+    const meta = result?.context_sources?.enrichment_meta as Record<string, unknown> | undefined;
+    return meta?.curated_retrieval as Record<string, unknown> | undefined;
+  });
+  const hasContextDiagnostics = $derived(
+    curatedRetrieval != null && (curatedRetrieval.files_included as number) > 0
+  );
 
   // The displayed prompt: original, selected refinement version, or latest optimized
   const displayPrompt = $derived.by(() => {
@@ -141,15 +152,93 @@
       {/if}
     </div>
 
-    <!-- Changes summary -->
+    <!-- Changes summary — collapsible, default collapsed for space optimization -->
     {#if result.changes_summary}
       <div class="changes-section">
-        <div class="changes-header">
+        <button class="changes-toggle" onclick={() => changesCollapsed = !changesCollapsed} aria-expanded={!changesCollapsed}>
+          <span class="toggle-indicator">{changesCollapsed ? '▸' : '▾'}</span>
           <span class="section-title">CHANGES</span>
-        </div>
-        <div class="changes-body">
-          <MarkdownRenderer content={result.changes_summary} class="changes-md" />
-        </div>
+        </button>
+        {#if !changesCollapsed}
+          <div class="changes-body">
+            <MarkdownRenderer content={result.changes_summary} class="changes-md" />
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Context diagnostics — shows retrieval quality for codebase-aware optimizations -->
+    {#if hasContextDiagnostics && curatedRetrieval}
+      {@const files = (curatedRetrieval.files ?? []) as Array<{path: string; score: number; content_chars?: number}>}
+      {@const nearMisses = (curatedRetrieval.near_misses ?? []) as Array<{path: string; score: number}>}
+      {@const totalIndexed = (curatedRetrieval.total_files_indexed ?? 0) as number}
+      {@const budgetUsed = (curatedRetrieval.budget_used_chars ?? 0) as number}
+      {@const budgetMax = (curatedRetrieval.budget_max_chars ?? 0) as number}
+      {@const budgetPct = budgetMax > 0 ? (budgetUsed / budgetMax * 100) : 0}
+      {@const stopReason = (curatedRetrieval.stop_reason ?? null) as string | null}
+      {@const diversityExcluded = (curatedRetrieval.diversity_excluded ?? 0) as number}
+      {@const hasDiagnostics = budgetMax > 0}
+      <div class="changes-section">
+        <button class="changes-toggle" onclick={() => contextCollapsed = !contextCollapsed} aria-expanded={!contextCollapsed}>
+          <span class="toggle-indicator">{contextCollapsed ? '▸' : '▾'}</span>
+          <span class="section-title">CONTEXT</span>
+          <span class="context-summary">
+            {files.length}/{totalIndexed} files{#if hasDiagnostics} &middot; {budgetPct.toFixed(0)}% budget{/if}
+          </span>
+        </button>
+        {#if !contextCollapsed}
+          <div class="context-body">
+            {#if hasDiagnostics}
+              <div class="context-stats">
+                <span class="context-stat">
+                  <span class="stat-label">budget</span>
+                  <span class="stat-value">{(budgetUsed / 1000).toFixed(1)}K / {(budgetMax / 1000).toFixed(0)}K</span>
+                </span>
+                {#if stopReason}
+                  <span class="context-stat">
+                    <span class="stat-label">stop</span>
+                    <span class="stat-value" class:stat-warn={stopReason === 'budget'}>
+                      {stopReason === 'budget' ? 'budget exhausted' : stopReason === 'relevance_exhausted' ? 'all relevant included' : stopReason}
+                    </span>
+                  </span>
+                {/if}
+                {#if diversityExcluded > 0}
+                  <span class="context-stat">
+                    <span class="stat-label">diversity</span>
+                    <span class="stat-value">{diversityExcluded} displaced</span>
+                  </span>
+                {/if}
+              </div>
+            {/if}
+
+            <div class="context-file-list">
+              <div class="context-list-heading">SELECTED</div>
+              {#each files as file, i}
+                <div class="context-file-row">
+                  <span class="context-file-rank">{i + 1}</span>
+                  <span class="context-file-score" style="color: {file.score >= 0.5 ? 'var(--color-neon-green)' : file.score >= 0.35 ? 'var(--color-neon-cyan)' : 'var(--color-text-dim)'};">{file.score.toFixed(3)}</span>
+                  <span class="context-file-path">{file.path}</span>
+                  {#if file.content_chars != null && file.content_chars > 0}
+                    <span class="context-file-chars">{file.content_chars}</span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+
+            {#if nearMisses.length > 0}
+              <div class="context-file-list">
+                <div class="context-list-heading">NEAR MISSES</div>
+                {#each nearMisses as miss}
+                  <div class="context-file-row context-file-row--miss">
+                    <span class="context-file-rank">&mdash;</span>
+                    <span class="context-file-score">{miss.score.toFixed(3)}</span>
+                    <span class="context-file-path">{miss.path}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
     {/if}
 
@@ -209,7 +298,7 @@
   .artifact-repo-context {
     font-size: 10px;
     color: var(--color-text-dim);
-    padding: 0 8px 4px;
+    padding: 0 6px 4px;
   }
 
 
@@ -244,25 +333,39 @@
   .changes-section {
     flex-shrink: 0;
     border-bottom: 1px solid var(--color-border-subtle);
-    max-height: 200px;
-    overflow: auto;
     display: flex;
     flex-direction: column;
   }
 
-  .changes-header {
+  .changes-toggle {
     display: flex;
     align-items: center;
+    gap: 4px;
     height: 22px;
     padding: 0 6px;
     background: var(--color-bg-secondary);
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
     flex-shrink: 0;
+    width: 100%;
+    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .changes-toggle:hover {
+    background: var(--color-bg-hover);
+  }
+
+  .changes-toggle:focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 30%, transparent);
+    outline-offset: -1px;
   }
 
   .changes-body {
     overflow: auto;
+    max-height: 178px;
     padding: 4px 6px;
-    flex: 1;
   }
 
   .changes-body :global(.changes-md) {
@@ -330,5 +433,103 @@
   .feedback-icon {
     font-size: 8px;
     line-height: 1;
+  }
+
+  /* ---- Context diagnostics ---- */
+  .context-summary {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--color-text-dim);
+    margin-left: auto;
+  }
+
+  .context-body {
+    padding: 6px;
+    border-top: 1px solid var(--color-border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .context-stats {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .context-stat {
+    display: flex;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+  }
+
+  .stat-label {
+    color: var(--color-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .stat-value {
+    color: var(--color-text-secondary);
+  }
+
+  .stat-warn {
+    color: var(--color-neon-yellow);
+  }
+
+  .context-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .context-list-heading {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--color-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 0;
+  }
+
+  .context-file-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    padding: 1px 0;
+  }
+
+  .context-file-row--miss {
+    opacity: 0.5;
+  }
+
+  .context-file-rank {
+    width: 16px;
+    text-align: right;
+    color: var(--color-text-dim);
+    flex-shrink: 0;
+  }
+
+  .context-file-score {
+    width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .context-file-path {
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .context-file-chars {
+    margin-left: auto;
+    color: var(--color-text-dim);
+    flex-shrink: 0;
   }
 </style>

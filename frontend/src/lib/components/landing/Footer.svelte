@@ -97,7 +97,7 @@
   }
 
   .footer__link:hover { color: var(--color-text-primary); }
-  .footer__link:focus-visible { outline: 1px solid rgba(0, 229, 255, 0.3); outline-offset: 2px; }
+  .footer__link:focus-visible { outline: 1px solid color-mix(in srgb, var(--color-neon-cyan) 30%, transparent); outline-offset: 2px; }
 
   .footer__bottom {
     display: flex;
@@ -134,5 +134,5 @@
   }
 
   .footer__github:hover { color: var(--color-text-primary); }
-  .footer__github:focus-visible { outline: 1px solid rgba(0, 229, 255, 0.3); outline-offset: 2px; }
+  .footer__github:focus-visible { outline: 1px solid color-mix(in srgb, var(--color-neon-cyan) 30%, transparent); outline-offset: 2px; }
 </style>

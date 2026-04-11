@@ -57,7 +57,7 @@
   }
 
   .variant-cli {
-    border-color: rgba(0, 229, 255, 0.3);
+    border-color: color-mix(in srgb, var(--color-neon-cyan) 30%, transparent);
     color: var(--color-neon-cyan);
   }
 

@@ -407,8 +407,6 @@
     flex-direction: column;
     height: 100%;
     background: color-mix(in srgb, var(--color-bg-primary) 80%, transparent);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
     border-top: 1px solid color-mix(in srgb, var(--color-neon-purple) 15%, transparent);
     font-family: var(--font-mono);
     overflow: hidden;
@@ -644,7 +642,7 @@
     font-family: var(--font-mono);
     font-size: 9px;
     color: var(--color-text-secondary);
-    transition: background 100ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: background 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .ap-row-summary:hover {

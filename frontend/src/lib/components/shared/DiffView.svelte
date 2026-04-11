@@ -347,11 +347,11 @@
 
   /* Unified row backgrounds */
   .diff-row--removed {
-    background: rgba(255, 51, 102, 0.06);
+    background: color-mix(in srgb, var(--color-neon-red) 6%, transparent);
   }
 
   .diff-row--added {
-    background: rgba(0, 229, 255, 0.06);
+    background: color-mix(in srgb, var(--color-neon-cyan) 6%, transparent);
   }
 
   .diff-row--equal {
@@ -435,14 +435,14 @@
   }
 
   .word--removed {
-    background: rgba(255, 51, 102, 0.15);
+    background: color-mix(in srgb, var(--color-neon-red) 15%, transparent);
     color: var(--color-neon-red);
     text-decoration: line-through;
-    text-decoration-color: rgba(255, 51, 102, 0.4);
+    text-decoration-color: color-mix(in srgb, var(--color-neon-red) 40%, transparent);
   }
 
   .word--added {
-    background: rgba(0, 229, 255, 0.12);
+    background: color-mix(in srgb, var(--color-neon-cyan) 12%, transparent);
     color: var(--color-neon-cyan);
   }
 
@@ -518,11 +518,11 @@
   }
 
   .cell--removed {
-    background: rgba(255, 51, 102, 0.06);
+    background: color-mix(in srgb, var(--color-neon-red) 6%, transparent);
   }
 
   .cell--added {
-    background: rgba(0, 229, 255, 0.06);
+    background: color-mix(in srgb, var(--color-neon-cyan) 6%, transparent);
   }
 
   .cell--empty {
@@ -539,11 +539,11 @@
 
   /* ---- Changed rows in split (both sides modified) ---- */
   .diff-row--changed .cell--removed {
-    background: rgba(255, 51, 102, 0.06);
+    background: color-mix(in srgb, var(--color-neon-red) 6%, transparent);
   }
 
   .diff-row--changed .cell--added {
-    background: rgba(0, 229, 255, 0.06);
+    background: color-mix(in srgb, var(--color-neon-cyan) 6%, transparent);
   }
 
   /* ---- Left marker in split ---- */

@@ -976,6 +976,11 @@
   {/if}
   {#if clustersStore.taxonomyLoading}
     <div class="topology-loading">Loading taxonomy...</div>
+  {:else if !clustersStore.taxonomyError && clustersStore.filteredTaxonomyTree.length === 0}
+    <div class="topology-empty">
+      <span class="topology-empty-label">No clusters yet</span>
+      <span class="topology-empty-hint">Forge a prompt to start building the taxonomy</span>
+    </div>
   {/if}
   {#if clustersStore.taxonomyError}
     <div class="topology-error" role="alert" aria-live="polite">{clustersStore.taxonomyError}</div>
@@ -1046,5 +1051,29 @@
 
   .topology-error {
     color: var(--color-neon-red);
+  }
+
+  .topology-empty {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    pointer-events: none;
+  }
+
+  .topology-empty-label {
+    color: var(--color-text-dim);
+    font-size: 12px;
+    font-family: var(--font-mono);
+  }
+
+  .topology-empty-hint {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
   }
 </style>

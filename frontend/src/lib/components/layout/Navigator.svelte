@@ -138,7 +138,16 @@
   let historyItems = $state<HistoryItem[]>([]);
   let historyError = $state<string | null>(null);
   let historyLoaded = $state(false);
+  let historyHasMore = $state(false);
+  let historyNextOffset = $state<number | null>(null);
+  let historyLoadingMore = $state(false);
+  let historyProjectFilter = $state<string | null>(null);
   let completedItems = $derived(historyItems.filter(i => i.status === 'completed'));
+  let filteredCompletedItems = $derived(
+    historyProjectFilter
+      ? completedItems.filter(i => i.project_id === historyProjectFilter)
+      : completedItems
+  );
 
   // ---- Settings panel state ----
   let settings = $state<SettingsResponse | null>(null);
@@ -245,9 +254,27 @@
 
   // Auto-refresh history when real-time events arrive from any source
   $effect(() => {
-    const handler = () => { historyLoaded = false; };
+    const handler = () => {
+      historyLoaded = false;
+      historyHasMore = false;
+      historyNextOffset = null;
+    };
     window.addEventListener('optimization-event', handler);
     return () => window.removeEventListener('optimization-event', handler);
+  });
+
+  // Inline update for feedback — update the row's feedback_rating in place
+  // instead of triggering a full history re-fetch via optimization-event.
+  $effect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail?.optimization_id || !detail?.rating) return;
+      historyItems = historyItems.map(h =>
+        h.id === detail.optimization_id ? { ...h, feedback_rating: detail.rating } : h
+      );
+    };
+    window.addEventListener('feedback-event', handler);
+    return () => window.removeEventListener('feedback-event', handler);
   });
 
   // React to strategy file changes (created/modified/deleted on disk)
@@ -316,6 +343,8 @@
       getHistory({ limit: 50, sort_by: 'created_at', sort_order: 'desc' })
         .then((resp) => {
           historyItems = resp.items;
+          historyHasMore = resp.has_more;
+          historyNextOffset = resp.next_offset ?? null;
           historyError = null;
           historyLoaded = true;
         })
@@ -344,6 +373,8 @@
   $effect(() => {
     if (forgeStore.status === 'complete') {
       historyLoaded = false;
+      historyHasMore = false;
+      historyNextOffset = null;
     }
   });
 
@@ -361,6 +392,20 @@
       forgeStore.prompt = item.raw_prompt;
       forgeStore.status = 'idle';
     }
+  }
+
+  async function loadMoreHistory() {
+    if (!historyHasMore || historyNextOffset == null || historyLoadingMore) return;
+    historyLoadingMore = true;
+    try {
+      const resp = await getHistory({ limit: 50, offset: historyNextOffset, sort_by: 'created_at', sort_order: 'desc' });
+      historyItems = [...historyItems, ...resp.items];
+      historyHasMore = resp.has_more;
+      historyNextOffset = resp.next_offset ?? null;
+    } catch {
+      // Keep current list, user can retry
+    }
+    historyLoadingMore = false;
   }
 
   function selectStrategy(id: string) {
@@ -481,6 +526,18 @@
     <div class="panel">
       <header class="panel-header">
         <span class="section-heading">History</span>
+        {#if projects.length > 0}
+          <select
+            class="history-project-select"
+            value={historyProjectFilter ?? ''}
+            onchange={(e) => { historyProjectFilter = (e.target as HTMLSelectElement).value || null; }}
+          >
+            <option value="">All projects</option>
+            {#each projects as proj (proj.id)}
+              <option value={proj.id}>{proj.label}</option>
+            {/each}
+          </select>
+        {/if}
       </header>
       <div class="panel-body">
         {#if historyError}
@@ -495,7 +552,7 @@
         {:else if historyItems.length === 0}
           <p class="empty-note">No optimizations yet.</p>
         {:else}
-          {#each completedItems as item (item.id)}
+          {#each filteredCompletedItems as item (item.id)}
             {#if renamingOptId === item.id}
               <div class="row-item history-row" style="--accent: {taxonomyColor(item.domain)};">
                 <span class="row-prompt-line">
@@ -574,8 +631,17 @@
               </button>
             {/if}
           {/each}
-          {#if completedItems.length === 0}
-            <p class="empty-note">No completed optimizations yet.</p>
+          {#if filteredCompletedItems.length === 0}
+            <p class="empty-note">{historyProjectFilter ? 'No optimizations for this project.' : 'No completed optimizations yet.'}</p>
+          {/if}
+          {#if historyHasMore}
+            <button
+              class="load-more-btn"
+              onclick={loadMoreHistory}
+              disabled={historyLoadingMore}
+            >
+              {historyLoadingMore ? 'Loading...' : 'Load more'}
+            </button>
           {/if}
         {/if}
       </div>
@@ -665,6 +731,20 @@
                     {githubStore.indexStatus.status} ({githubStore.indexStatus.file_count} files)
                   </span>
                 </div>
+                {#if githubStore.indexStatus.synthesis_status}
+                  <div class="data-row"
+                    use:tooltip={githubStore.indexStatus.synthesis_error ?? 'Haiku architectural synthesis'}
+                  >
+                    <span class="data-label">Synthesis</span>
+                    <span class="data-value"
+                      class:data-value--cyan={githubStore.indexStatus.synthesis_status === 'ready'}
+                      class:data-value--amber={githubStore.indexStatus.synthesis_status === 'running' || githubStore.indexStatus.synthesis_status === 'pending'}
+                      class:data-value--red={githubStore.indexStatus.synthesis_status === 'error'}
+                    >
+                      {githubStore.indexStatus.synthesis_status}
+                    </span>
+                  </div>
+                {/if}
               {/if}
               {#if githubStore.linkedRepo.linked_at}
                 <div class="data-row">
@@ -1611,6 +1691,59 @@
     color: var(--accent, var(--color-neon-cyan));
   }
 
+  .load-more-btn {
+    display: block;
+    width: 100%;
+    padding: 6px 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-dim);
+    background: transparent;
+    border: none;
+    border-top: 1px solid var(--color-border-subtle);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: color 200ms cubic-bezier(0.16, 1, 0.3, 1),
+                background 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .load-more-btn:hover:not(:disabled) {
+    color: var(--tier-accent, var(--color-neon-cyan));
+    background: var(--color-bg-hover);
+  }
+
+  .load-more-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  /* ---- History project filter dropdown ---- */
+  .history-project-select {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: var(--color-text-dim);
+    background: transparent;
+    border: 1px solid var(--color-border-subtle);
+    padding: 1px 4px;
+    cursor: pointer;
+    outline: none;
+    max-width: 120px;
+    text-overflow: ellipsis;
+    transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .history-project-select:hover,
+  .history-project-select:focus {
+    color: var(--color-text-primary);
+    border-color: var(--tier-accent, var(--color-neon-cyan));
+  }
+
+  .history-project-select option {
+    background: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+  }
 
   .row-prompt-line {
     display: flex;
@@ -2247,6 +2380,8 @@
     border-color: var(--color-neon-yellow);
   }
   .data-value--cyan { color: var(--tier-accent, var(--color-neon-cyan)); }
+  .data-value--amber { color: var(--color-neon-yellow, #f5a623); }
+  .data-value--red { color: var(--color-neon-red, #ff2255); }
 
   /* File tree */
   .file-tree {
