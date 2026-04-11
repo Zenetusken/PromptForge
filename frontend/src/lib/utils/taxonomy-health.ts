@@ -198,7 +198,7 @@ function capitalize(s: string): string {
 // Context-aware insight text for the topology info panel
 // ---------------------------------------------------------------------------
 
-export type PanelMode = 'system' | 'cluster' | 'domain';
+export type PanelMode = 'system' | 'cluster' | 'domain' | 'project';
 
 export interface PanelInsightInput {
   mode: PanelMode;

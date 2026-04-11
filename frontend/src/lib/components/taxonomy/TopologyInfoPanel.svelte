@@ -1,6 +1,6 @@
 <script lang="ts">
   import { clustersStore } from '$lib/stores/clusters.svelte';
-  import { qHealthColor } from '$lib/utils/colors';
+  import { qHealthColor, taxonomyColor } from '$lib/utils/colors';
   import { assessTaxonomyHealth, generatePanelInsight } from '$lib/utils/taxonomy-health';
   import type { PanelMode } from '$lib/utils/taxonomy-health';
   import { TAXONOMY_TOOLTIPS, TOPOLOGY_PANEL_TOOLTIPS } from '$lib/utils/metric-tooltips';
@@ -20,6 +20,7 @@
   // Determine panel mode
   const mode: PanelMode = $derived.by(() => {
     if (!selectedId || !detail) return 'system';
+    if (detail.state === 'project') return 'project';
     if (detail.state === 'domain') return 'domain';
     return 'cluster';
   });
@@ -65,6 +66,16 @@
   const domainBelowFloor = $derived(
     domainChildren.filter(c => c.coherence != null && c.coherence < 0.5).length
   );
+
+  // Project-mode computed values
+  const projectDomains = $derived(
+    (detail?.children ?? []).filter(c => c.state === 'domain')
+  );
+  const projectDomainCount = $derived(projectDomains.length);
+  const projectClusterCount = $derived(
+    projectDomains.reduce((sum, d) => sum + (d.member_count ?? 0), 0)
+  );
+  const projectOptCount = $derived(detail?.optimizations?.length ?? 0);
 
   // Insight text
   const insight = $derived(generatePanelInsight({
@@ -131,6 +142,11 @@
         <span class="ip-domain-name">{detail.label.toUpperCase()}</span>
         <span class="ip-member-count">{domainChildCount} clusters</span>
       </div>
+    {:else if mode === 'project' && detail}
+      <div class="ip-identity-row">
+        <span class="ip-domain-name">{detail.label.includes('/') ? detail.label.split('/').pop() : detail.label}</span>
+        <span class="ip-member-count">{projectDomainCount}d · {projectClusterCount}c</span>
+      </div>
     {/if}
   </div>
 
@@ -187,6 +203,23 @@
         <span class="ip-cell-label">MEMBERS</span>
         <span class="ip-cell-value">{domainTotalMembers}</span>
       </div>
+    {:else if mode === 'project' && detail}
+      <div class="ip-cell" use:tooltip={'Domain nodes under this project'}>
+        <span class="ip-cell-label">DOMAINS</span>
+        <span class="ip-cell-value">{projectDomainCount}</span>
+      </div>
+      <div class="ip-cell" use:tooltip={'Active clusters across all domains'}>
+        <span class="ip-cell-label">CLUSTERS</span>
+        <span class="ip-cell-value">{projectClusterCount}</span>
+      </div>
+      <div class="ip-cell" use:tooltip={'Recent optimizations in this project'}>
+        <span class="ip-cell-label">OPTS</span>
+        <span class="ip-cell-value">{projectOptCount}</span>
+      </div>
+      <div class="ip-cell" use:tooltip={'Average score across project optimizations'}>
+        <span class="ip-cell-label">SCORE</span>
+        <span class="ip-cell-value ip-cell-value-green">{avgScore != null ? avgScore.toFixed(1) : '--'}</span>
+      </div>
     {/if}
   </div>
 
@@ -221,6 +254,15 @@
         {#each taskCounts.slice(0, 4) as [type, count]}
           <div class="ip-task-seg" style="flex: {count}" use:tooltip={`${type}: ${count} members`}>
             {#if count > 2}<span>{type.slice(0, 3)}</span>{/if}
+          </div>
+        {/each}
+      </div>
+    {:else if mode === 'project' && projectDomains.length > 0}
+      <div class="ip-bar-label">DOMAINS</div>
+      <div class="ip-blend-bar">
+        {#each projectDomains as domain}
+          <div class="ip-blend-seg" style="flex: {Math.max(1, domain.member_count)}; background: {taxonomyColor(domain.label)};">
+            {#if domain.member_count > 3}<span>{domain.label}</span>{/if}
           </div>
         {/each}
       </div>
