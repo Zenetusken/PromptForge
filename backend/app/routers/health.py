@@ -112,6 +112,7 @@ async def _probe_service(
     *,
     method: str = "GET",
     payload: dict | None = None,
+    headers: dict[str, str] | None = None,
     timeout: float = _PROBE_TIMEOUT,
 ) -> ServiceStatus:
     """Probe a service endpoint and return its status."""
@@ -122,12 +123,12 @@ async def _probe_service(
         async with httpx.AsyncClient() as client:
             if method == "POST":
                 resp = await asyncio.wait_for(
-                    client.post(url, json=payload, timeout=timeout),
+                    client.post(url, json=payload, headers=headers, timeout=timeout),
                     timeout=timeout + 1.0,
                 )
             else:
                 resp = await asyncio.wait_for(
-                    client.get(url, timeout=timeout),
+                    client.get(url, headers=headers, timeout=timeout),
                     timeout=timeout + 1.0,
                 )
         latency = int((time.monotonic() - t0) * 1000)
@@ -152,10 +153,13 @@ async def _probe_all_services() -> tuple[dict[str, ServiceStatus], dict[str, Ser
         "http://127.0.0.1:8000/api/health?probes=false",
     )
     frontend_probe = _probe_service("http://127.0.0.1:5199/")
+    # MCP Streamable HTTP transport requires Accept with both JSON and SSE,
+    # otherwise the server returns 406 Not Acceptable.
     mcp_probe = _probe_service(
         "http://127.0.0.1:8001/mcp",
         method="POST",
         payload={"jsonrpc": "2.0", "method": "ping", "id": 1},
+        headers={"Accept": "application/json, text/event-stream"},
     )
 
     # Cross-service probes
