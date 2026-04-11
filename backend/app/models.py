@@ -151,6 +151,7 @@ class PromptCluster(Base):
         Index("ix_prompt_cluster_created_at", created_at.desc()),
         Index(
             "uq_prompt_cluster_domain_label",
+            "parent_id",
             "label",
             unique=True,
             sqlite_where=text("state = 'domain'"),

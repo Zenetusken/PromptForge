@@ -27,16 +27,35 @@ async def test_integrity_passes_clean_tree(db, mock_embedding):
 
 @pytest.mark.asyncio
 async def test_duplicate_domain_labels_blocked_by_db(db, mock_embedding):
-    """Partial unique index prevents two domain nodes with the same label."""
+    """Composite unique index prevents two domain nodes with the same label under the same parent."""
     from sqlalchemy.exc import IntegrityError
 
-    db.add(PromptCluster(label="backend", state="domain", domain="backend", persistence=1.0))
+    # Create a project node to serve as shared parent
+    project = PromptCluster(label="test-project", state="project", domain="general", persistence=1.0)
+    db.add(project)
+    await db.flush()
+
+    db.add(PromptCluster(label="backend", state="domain", domain="backend", persistence=1.0, parent_id=project.id))
     await db.commit()
 
-    db.add(PromptCluster(label="backend", state="domain", domain="backend", persistence=1.0))
+    # Same label + same parent → blocked by UNIQUE(parent_id, label) WHERE state='domain'
+    db.add(PromptCluster(label="backend", state="domain", domain="backend", persistence=1.0, parent_id=project.id))
     with pytest.raises(IntegrityError):
         await db.flush()
     await db.rollback()
+
+
+@pytest.mark.asyncio
+async def test_same_domain_label_allowed_under_different_projects(db, mock_embedding):
+    """Same domain label under different projects is allowed (multi-project support)."""
+    proj_a = PromptCluster(label="project-a", state="project", domain="general", persistence=1.0)
+    proj_b = PromptCluster(label="project-b", state="project", domain="general", persistence=1.0)
+    db.add_all([proj_a, proj_b])
+    await db.flush()
+
+    db.add(PromptCluster(label="backend", state="domain", domain="backend", persistence=1.0, parent_id=proj_a.id))
+    db.add(PromptCluster(label="backend", state="domain", domain="backend", persistence=1.0, parent_id=proj_b.id))
+    await db.commit()  # Should NOT raise — different parents
 
 
 @pytest.mark.asyncio
