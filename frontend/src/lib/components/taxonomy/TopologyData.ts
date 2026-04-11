@@ -125,6 +125,20 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
     }
   }
 
+  // Pre-compute aggregate member count per project node (sum of domain children).
+  // Project nodes size by their descendant optimizations, not their raw member_count
+  // (which tracks optimization count, not structural children).
+  const projectChildMembers = new Map<string, number>();
+  for (const node of visibleNodes) {
+    if (node.state === 'project') {
+      const childDomains = visibleNodes.filter(n => n.parent_id === node.id && n.state === 'domain');
+      const projectSum = childDomains.reduce(
+        (sum, d) => sum + (domainChildMembers.get(d.id) ?? d.member_count ?? 0), 0
+      );
+      projectChildMembers.set(node.id, projectSum);
+    }
+  }
+
   for (const node of visibleNodes) {
     // Position: UMAP coords scaled to scene units, or hash-based fallback.
     // UMAP outputs ~[-1, 1]; multiply by 10 for comfortable spacing.
@@ -133,10 +147,12 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
     const y = node.umap_y != null ? node.umap_y * UMAP_SCALE : hashFloat(node.id, 1) * 20 - 10;
     const z = node.umap_z != null ? node.umap_z * UMAP_SCALE : hashFloat(node.id, 2) * 20 - 10;
 
-    // Size: domain nodes aggregate children's members; clusters use their own.
-    const memberInput = node.state === 'domain'
-      ? domainChildMembers.get(node.id) ?? 1
-      : node.member_count + node.usage_count * 0.5;
+    // Size: structural nodes aggregate descendants; clusters use their own.
+    const memberInput = node.state === 'project'
+      ? projectChildMembers.get(node.id) ?? 1
+      : node.state === 'domain'
+        ? domainChildMembers.get(node.id) ?? 1
+        : node.member_count + node.usage_count * 0.5;
     const raw = Math.log2(Math.max(1, memberInput));
     let size = Math.max(0.6, Math.min(3.0, raw * 0.5));
 

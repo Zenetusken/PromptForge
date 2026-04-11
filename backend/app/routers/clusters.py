@@ -431,26 +431,46 @@ async def get_cluster_detail(
             )
             meta_patterns = meta_result.scalars().all()
 
-        # Linked optimizations — query by direct cluster_id assignment (hot-path),
-        # not the OptimizationPattern join table (which only covers explicit pattern
-        # relationships, missing the majority of cluster members).
-        opt_result = await db.execute(
-            select(Optimization)
-            .where(Optimization.cluster_id == cluster_id)
-            .order_by(Optimization.created_at.desc())
-            .limit(50)
-        )
+        # Linked optimizations — for project nodes, query by project_id;
+        # for clusters/domains, query by cluster_id (hot-path assignment).
+        is_project_node = node.get("state") == "project"
+        if is_project_node:
+            opt_result = await db.execute(
+                select(Optimization)
+                .where(Optimization.project_id == cluster_id)
+                .order_by(Optimization.created_at.desc())
+                .limit(50)
+            )
+        else:
+            opt_result = await db.execute(
+                select(Optimization)
+                .where(Optimization.cluster_id == cluster_id)
+                .order_by(Optimization.created_at.desc())
+                .limit(50)
+            )
         optimizations = opt_result.scalars().all()
 
         # ADR-005 Phase 2A: per-project member breakdown
-        project_counts_q = await db.execute(
-            select(Optimization.project_id, func.count())
-            .where(Optimization.cluster_id == cluster_id)
-            .group_by(Optimization.project_id)
-        )
-        member_counts_by_project = {
-            (pid or "legacy"): count for pid, count in project_counts_q.all()
-        }
+        if is_project_node:
+            # For project nodes, count optimizations by domain
+            project_counts_q = await db.execute(
+                select(Optimization.domain, func.count())
+                .where(Optimization.project_id == cluster_id)
+                .group_by(Optimization.domain)
+            )
+            member_counts_by_project = {
+                (domain or "general"): count
+                for domain, count in project_counts_q.all()
+            }
+        else:
+            project_counts_q = await db.execute(
+                select(Optimization.project_id, func.count())
+                .where(Optimization.cluster_id == cluster_id)
+                .group_by(Optimization.project_id)
+            )
+            member_counts_by_project = {
+                (pid or "legacy"): count for pid, count in project_counts_q.all()
+            }
 
         node_data = {k: v for k, v in node.items() if k not in ("children", "breadcrumb")}
 
