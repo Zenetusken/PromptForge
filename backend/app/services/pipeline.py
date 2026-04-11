@@ -418,7 +418,7 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------------
             auto_injected_patterns: list[InjectedPattern] = []
             auto_injected_cluster_ids: list[str] = []
-            if taxonomy_engine is not None and not applied_pattern_ids:
+            if taxonomy_engine is not None:
                 try:
                     auto_injected_patterns, auto_injected_cluster_ids = (
                         await self._auto_inject_patterns(

@@ -301,6 +301,7 @@ async def auto_inject_patterns(
                             domain=cluster_domain or "general",
                             similarity=round(relevance, 2),
                             cluster_id=mp.cluster_id,
+                            source_id=mp.id,
                         ))
                         cc_count += 1
                 except (ValueError, TypeError) as _cc_exc:
@@ -428,6 +429,33 @@ async def auto_inject_patterns(
                     db.expunge(prov)
                     logger.warning(
                         "GlobalPattern provenance failed (expunged): %s", prov_exc,
+                    )
+
+    # ADR-005: provenance for cross-cluster injections
+    # Uses same flush+expunge safety pattern as above
+    if optimization_id:
+        from app.models import OptimizationPattern
+
+        for ip in injected:
+            if ip.source != "global" and ip.source_id and ip.cluster_id not in cluster_ids:
+                # Cross-cluster pattern — not already covered by topic provenance
+                try:
+                    cc_prov = OptimizationPattern(
+                        optimization_id=optimization_id,
+                        cluster_id=ip.cluster_id,
+                        meta_pattern_id=ip.source_id,
+                        relationship="injected",
+                        similarity=ip.similarity,
+                    )
+                    db.add(cc_prov)
+                    await db.flush()
+                except Exception as cc_prov_exc:
+                    try:
+                        db.expunge(cc_prov)
+                    except Exception:
+                        pass
+                    logger.warning(
+                        "Cross-cluster provenance failed (expunged): %s", cc_prov_exc,
                     )
 
     # Detailed injection chain log for observability

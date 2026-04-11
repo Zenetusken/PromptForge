@@ -676,29 +676,29 @@ async def run_sampling_pipeline(
     # ------------------------------------------------------------------
     auto_injected_patterns: list[InjectedPattern] = []
     auto_injected_cluster_ids: list[str] = []
-    if not applied_pattern_ids:
-        try:
-            from app.services.taxonomy import get_engine as _get_inject_engine
+    # Always auto-inject; merges with explicit patterns via format_injected_patterns()
+    try:
+        from app.services.taxonomy import get_engine as _get_inject_engine
 
-            _inject_engine = _get_inject_engine()
-            if _inject_engine is not None:
-                async with async_session_factory() as _inject_db:
-                    # NOTE: optimization_id is intentionally NOT passed here.
-                    # Injection provenance records are written explicitly in the
-                    # persist block below (~line 1031) using the same DB session
-                    # as the Optimization record, avoiding FK violations.
-                    auto_injected_patterns, auto_injected_cluster_ids = (
-                        await auto_inject_patterns(
-                            raw_prompt=prompt,
-                            taxonomy_engine=_inject_engine,
-                            db=_inject_db,
-                            trace_id=trace_id,
-                        )
+        _inject_engine = _get_inject_engine()
+        if _inject_engine is not None:
+            async with async_session_factory() as _inject_db:
+                # NOTE: optimization_id is intentionally NOT passed here.
+                # Injection provenance records are written explicitly in the
+                # persist block below (~line 1031) using the same DB session
+                # as the Optimization record, avoiding FK violations.
+                auto_injected_patterns, auto_injected_cluster_ids = (
+                    await auto_inject_patterns(
+                        raw_prompt=prompt,
+                        taxonomy_engine=_inject_engine,
+                        db=_inject_db,
+                        trace_id=trace_id,
                     )
-                if auto_injected_patterns:
-                    context_sources["cluster_injection"] = True
-        except Exception as exc:
-            logger.warning("Sampling auto-injection failed (non-fatal): %s", exc)
+                )
+            if auto_injected_patterns:
+                context_sources["cluster_injection"] = True
+    except Exception as exc:
+        logger.warning("Sampling auto-injection failed (non-fatal): %s", exc)
 
     # Pre-compute prompt embedding once for strategy recommendation + few-shot
     _prompt_embedding = None

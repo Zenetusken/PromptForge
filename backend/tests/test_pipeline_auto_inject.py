@@ -329,10 +329,10 @@ class TestPipelineAutoInjectionIntegration:
         event_names = [e.event for e in events]
         assert "context_injected" not in event_names
 
-    async def test_no_auto_injection_when_applied_pattern_ids_provided(
+    async def test_auto_injection_runs_alongside_explicit_pattern_ids(
         self, orchestrator, mock_provider, db_session
     ):
-        """When user provides explicit applied_pattern_ids, auto-injection is skipped."""
+        """When user provides explicit applied_pattern_ids, auto-injection still runs."""
         mock_provider.complete_parsed.side_effect = [
             self._make_analysis(),
             self._make_optimization(),
@@ -362,10 +362,8 @@ class TestPipelineAutoInjectionIntegration:
             ):
                 events.append(event)
 
-        # _auto_inject_patterns should never have been called
-        inject_mock.assert_not_called()
-        event_names = [e.event for e in events]
-        assert "context_injected" not in event_names
+        # Auto-injection runs even with explicit patterns — they are merged
+        inject_mock.assert_called_once()
 
     async def test_cluster_injection_added_to_context_sources(
         self, orchestrator, mock_provider, db_session
