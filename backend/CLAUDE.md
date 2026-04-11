@@ -23,7 +23,7 @@ Everything backend developers need. For project overview, see root `CLAUDE.md`. 
 **Domain**: `domain_resolver.py` (cached DB lookup, replaces `VALID_DOMAINS`, runtime `add_label()` for sub-domain registration), `domain_signal_loader.py` (keyword signals from domain metadata)
 **Patterns**: `pattern_injection.py` (`auto_inject_patterns()` with composite fusion + cross-cluster injection + GlobalPattern injection at 1.3x boost), `prompt_lifecycle.py` (state promotion, quality pruning, usage decay, orphan backfill)
 **Projects** (ADR-005): `project_service.py` (`ensure_project_for_repo()` — never renames Legacy, creates new project per repo, accepts `target_project_id` for explicit selection; `resolve_project_id()` — repo→LinkedRepo→project chain). `global_patterns.py` (promotion/validation/retention lifecycle, Phase 4.5 in warm path)
-**Infrastructure**: `event_bus.py` (in-process pub/sub), `event_notification.py` (cross-process HTTP POST), `trace_logger.py` (per-phase JSONL, daily rotation), `taxonomy/event_logger.py` (decision JSONL + ring buffer + SSE, singleton via `get_event_logger()`), `mcp_session_file.py` (read/write/staleness)
+**Infrastructure**: `event_bus.py` (in-process pub/sub), `event_notification.py` (cross-process HTTP POST), `trace_logger.py` (per-phase JSONL, daily rotation), `taxonomy/event_logger.py` (decision JSONL + ring buffer + SSE, singleton via `get_event_logger()`), `mcp_session_file.py` (read/write/staleness), `orphan_recovery.py` (orphan detection + recovery + exponential backoff, module-level `recovery_service` singleton, piggybacked on warm-path timer)
 **Feedback**: `feedback_service.py` (CRUD + adaptation update), `adaptation_tracker.py` (strategy affinity, degenerate detection)
 **GitHub**: `github_service.py` (Fernet encrypt/decrypt), `github_client.py` (raw API, explicit token param)
 **Preferences**: `preferences.py` (file-based JSON, frozen snapshot per pipeline run, effort levels: `low`|`medium`|`high`|`max`)
@@ -53,7 +53,7 @@ Model IDs centralized in `config.py`: `MODEL_SONNET` (`claude-sonnet-4-6`), `MOD
 | `settings.py` | `GET /api/settings` (read-only) |
 | `github_auth.py` | Device Flow: request_device_code, poll_device_code. Callback: login, callback. Common: me, logout |
 | `github_repos.py` | `GET /api/repos`, link, linked, unlink, tree, files, branches, index-status, reindex |
-| `health.py` | `GET /api/health` (provider, tiers, scores, errors, domain_count) |
+| `health.py` | `GET /api/health` (provider, tiers, scores, errors, domain_count, injection_stats, injection_effectiveness, recovery, global_patterns, project_count) |
 | `events.py` | `GET /api/events` (SSE), `POST /api/events/_publish` (cross-process) |
 | `domains.py` | `GET /api/domains`, `POST /api/domains/{id}/promote` |
 | `seed.py` | `POST /api/seed` (batch seeding), `GET /api/seed/agents` (agent metadata for UI) |

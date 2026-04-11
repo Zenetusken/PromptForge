@@ -28,7 +28,7 @@ export interface SceneNode {
 
 /** Opacity by lifecycle state and active filter.
  *  - null filter ("all" tab): candidates at 40%, everything else 100%
- *  - filter with matches: matching nodes 100%, domains 50%, rest 25% (ghosted)
+ *  - filter with matches: matching nodes 100%, structural (domain/project) 50%, rest 25% (ghosted)
  *  - filter with NO matches: same as "all" — dimming everything to highlight
  *    nothing is pointless UX. The navigator list already says "0 clusters".
  *
@@ -41,7 +41,7 @@ function stateOpacity(state: string, stateFilter: string | null, hasMatches: boo
     // "all" tab or empty filter — candidates translucent, everything else full.
     return state === 'candidate' ? 0.4 : 1.0;
   }
-  // Filtered tab with matches — matching nodes glow, rest ghosted
+  // Filtered tab with matches — matching nodes glow, structural nodes semi-visible, rest ghosted
   if (state === stateFilter) return 1.0;
   if (state === 'domain' || state === 'project') return 0.5;
   return 0.25;

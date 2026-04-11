@@ -220,7 +220,7 @@
       const group = new THREE.Group();
       group.position.set(...node.position);
       const isStructural = node.state === 'domain' || node.state === 'project';
-      group.userData = { isDomain: isStructural };
+      group.userData = { isStructural };
 
       // Fill: dark tinted interior (structural nodes slightly darker = edge-dominant)
       // Non-structural nodes: modulate fill scalar by avgScore for saturation encoding
@@ -391,7 +391,7 @@
         // Show labels for clusters with 5+ members, domains, and templates at mid zoom
         const midLabelIds = new Set(
           visibleNodes
-            .filter(n => n.state === 'template' || n.state === 'domain' || (flatNodeMap.get(n.id)?.member_count ?? 0) >= 5)
+            .filter(n => n.state === 'template' || n.state === 'domain' || n.state === 'project' || (flatNodeMap.get(n.id)?.member_count ?? 0) >= 5)
             .map(n => n.id)
         );
         labels.setVisibleFor(midLabelIds);
@@ -419,7 +419,7 @@
     // setBaseScale snaps physics to the authoritative data on each rebuild.
     if (clusterPhysics) {
       for (const node of data.nodes) {
-        if (node.state !== 'domain') {
+        if (node.state !== 'domain' && node.state !== 'project') {
           clusterPhysics.setBaseScale(node.id, node.size);
         }
       }
@@ -823,7 +823,7 @@
 
       // Apply dim factor to all materials in the group.
       // Cluster: fill (0.9) + wire (coherence-based). Domain: fill (0.9) + edges (0.9) + points (0.95).
-      const isDomain = group.userData?.isDomain === true;
+      const isStructural = group.userData?.isStructural === true;
       for (let i = 0; i < group.children.length; i++) {
         const child = group.children[i];
         const mat = (child as THREE.Mesh | THREE.LineSegments | THREE.Points).material as
@@ -832,7 +832,7 @@
         let baseOpacity: number;
         if (i === 0) {
           baseOpacity = node.opacity * 0.9;              // fill (both types)
-        } else if (isDomain) {
+        } else if (isStructural) {
           baseOpacity = node.opacity * (i === 2 ? 0.95 : 0.9); // edges or points
         } else {
           baseOpacity = node.opacity * (0.5 + 0.5 * node.coherence); // cluster wire (coherence)

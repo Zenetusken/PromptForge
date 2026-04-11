@@ -304,7 +304,7 @@ async def _resolve_or_create_domain(
     Search order:
     1. Domain matching *domain_label* under the project
     2. "general" domain under the project
-    3. Auto-bootstrap: create a new "general" domain under the project
+    3. Auto-bootstrap: create a new "general" domain with OKLab color
     """
     if not project_id:
         return None
