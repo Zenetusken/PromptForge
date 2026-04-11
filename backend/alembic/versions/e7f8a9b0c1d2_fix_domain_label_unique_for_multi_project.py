@@ -22,10 +22,12 @@ depends_on = None
 def upgrade() -> None:
     # Drop the old index (label-only)
     op.drop_index("uq_prompt_cluster_domain_label", table_name="prompt_cluster")
-    # Create composite index (parent_id + label) for multi-project support
+    # Create composite index (COALESCE(parent_id,'') + label) for multi-project.
+    # COALESCE ensures NULL parent_ids are treated as equal for uniqueness
+    # (SQLite treats NULL != NULL in unique indexes).
     op.execute(
         "CREATE UNIQUE INDEX uq_prompt_cluster_domain_label "
-        "ON prompt_cluster (parent_id, label) WHERE state = 'domain'"
+        "ON prompt_cluster (COALESCE(parent_id, ''), label) WHERE state = 'domain'"
     )
 
 

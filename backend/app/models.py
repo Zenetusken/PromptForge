@@ -149,6 +149,8 @@ class PromptCluster(Base):
         Index("ix_prompt_cluster_state_label", "state", "label"),
         Index("ix_prompt_cluster_persistence", "persistence"),
         Index("ix_prompt_cluster_created_at", created_at.desc()),
+        # NOTE: Actual DB index uses COALESCE(parent_id, '') for NULL safety.
+        # SQLAlchemy Index() can't express COALESCE — see migration e7f8a9b0c1d2.
         Index(
             "uq_prompt_cluster_domain_label",
             "parent_id",

@@ -2917,7 +2917,10 @@ async def phase_refresh(
                             else:
                                 _created += 1
 
-                        # Prune excess: keep highest-value patterns, cap total
+                        # Hard-cap prune: keep highest-value patterns, delete excess.
+                        # Sorted by (source_count desc, recency desc) — low-count
+                        # singletons pruned first, then consolidated patterns if
+                        # still over the cap.
                         _pruned = 0
                         prune_q = await db.execute(
                             select(MetaPattern).where(
@@ -2935,9 +2938,8 @@ async def phase_refresh(
                                 reverse=True,
                             )
                             for stale in sorted_by_value[MAX_PATTERNS_PER_CLUSTER:]:
-                                if stale.source_count <= 1:
-                                    await db.delete(stale)
-                                    _pruned += 1
+                                await db.delete(stale)
+                                _pruned += 1
 
                     # Track extraction state
                     node.cluster_metadata = write_meta(

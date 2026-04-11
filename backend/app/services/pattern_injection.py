@@ -368,53 +368,50 @@ async def auto_inject_patterns(
 
     # ------------------------------------------------------------------
     # Persist injection provenance when optimization_id is available.
+    # Three provenance types: topic-based, cross-cluster, and global.
     # Uses flush() to eagerly detect constraint violations — if provenance
     # fails, the pending objects are expunged so the main Optimization
     # commit is not affected.
     # ------------------------------------------------------------------
-    if optimization_id and cluster_ids:
-        try:
-            from app.models import OptimizationPattern
-
-            pending: list[OptimizationPattern] = []
-            for cid in cluster_ids:
-                record = OptimizationPattern(
-                    optimization_id=optimization_id,
-                    cluster_id=cid,
-                    relationship="injected",
-                    similarity=similarity_map.get(cid),
-                )
-                db.add(record)
-                pending.append(record)
-            await db.flush()
-            global _injection_provenance_successes  # noqa: PLW0603
-            _injection_provenance_successes += 1
-            logger.info(
-                "Injection provenance: %d records for opt=%s clusters=[%s]. trace_id=%s",
-                len(pending), optimization_id[:8],
-                ", ".join(cid[:8] for cid in cluster_ids), trace_id,
-            )
-        except Exception as exc:
-            # Expunge failed records so they don't poison the main commit
-            for record in pending:
-                try:
-                    db.expunge(record)
-                except Exception:
-                    pass
-            global _injection_provenance_failures  # noqa: PLW0603
-            _injection_provenance_failures += 1
-            logger.warning(
-                "Injection provenance failed (non-fatal, expunged): %s trace_id=%s",
-                exc, trace_id,
-            )
-
-    # ADR-005 Phase 2B: provenance for global injections
-    # Uses same flush+expunge safety pattern as cluster provenance above
     if optimization_id:
         from app.models import OptimizationPattern
 
+        global _injection_provenance_successes  # noqa: PLW0603
+        global _injection_provenance_failures  # noqa: PLW0603
+        _prov_ok = 0
+        _prov_fail = 0
+
+        # 1. Topic-based provenance (cluster matches from embedding index)
+        if cluster_ids:
+            try:
+                pending: list[OptimizationPattern] = []
+                for cid in cluster_ids:
+                    record = OptimizationPattern(
+                        optimization_id=optimization_id,
+                        cluster_id=cid,
+                        relationship="injected",
+                        similarity=similarity_map.get(cid),
+                    )
+                    db.add(record)
+                    pending.append(record)
+                await db.flush()
+                _prov_ok += len(pending)
+            except Exception as exc:
+                for record in pending:
+                    try:
+                        db.expunge(record)
+                    except Exception:
+                        pass
+                _prov_fail += 1
+                logger.warning(
+                    "Topic provenance failed (expunged): %s trace_id=%s",
+                    exc, trace_id,
+                )
+
+        # 2. Cross-cluster + global provenance (from injected patterns list)
         for ip in injected:
             if ip.source == "global" and ip.source_id:
+                # GlobalPattern injection
                 try:
                     prov = OptimizationPattern(
                         optimization_id=optimization_id,
@@ -425,21 +422,18 @@ async def auto_inject_patterns(
                     )
                     db.add(prov)
                     await db.flush()
+                    _prov_ok += 1
                 except Exception as prov_exc:
-                    db.expunge(prov)
+                    try:
+                        db.expunge(prov)
+                    except Exception:
+                        pass
+                    _prov_fail += 1
                     logger.warning(
                         "GlobalPattern provenance failed (expunged): %s", prov_exc,
                     )
-
-    # ADR-005: provenance for cross-cluster injections
-    # Uses same flush+expunge safety pattern as above
-    if optimization_id:
-        from app.models import OptimizationPattern
-
-        _cc_prov_ok = 0
-        for ip in injected:
-            if ip.source != "global" and ip.source_id and ip.cluster_id not in cluster_ids:
-                # Cross-cluster pattern — not already covered by topic provenance
+            elif ip.source_id and ip.cluster_id not in cluster_ids:
+                # Cross-cluster injection (not already covered by topic provenance)
                 try:
                     cc_prov = OptimizationPattern(
                         optimization_id=optimization_id,
@@ -450,18 +444,24 @@ async def auto_inject_patterns(
                     )
                     db.add(cc_prov)
                     await db.flush()
-                    _cc_prov_ok += 1
+                    _prov_ok += 1
                 except Exception as cc_prov_exc:
                     try:
                         db.expunge(cc_prov)
                     except Exception:
                         pass
-                    _injection_provenance_failures += 1
+                    _prov_fail += 1
                     logger.warning(
                         "Cross-cluster provenance failed (expunged): %s", cc_prov_exc,
                     )
-        if _cc_prov_ok:
-            _injection_provenance_successes += _cc_prov_ok
+
+        _injection_provenance_successes += _prov_ok
+        _injection_provenance_failures += _prov_fail
+        if _prov_ok:
+            logger.info(
+                "Injection provenance: %d records for opt=%s. trace_id=%s",
+                _prov_ok, optimization_id[:8], trace_id,
+            )
 
     # Detailed injection chain log for observability
     if cluster_meta:
