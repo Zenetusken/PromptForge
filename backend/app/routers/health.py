@@ -88,6 +88,9 @@ class HealthResponse(BaseModel):
     injection_stats: dict[str, int] = Field(
         default_factory=dict, description="Pattern injection provenance counts.",
     )
+    injection_effectiveness: dict | None = Field(
+        default=None, description="Score lift: injected vs non-injected optimizations.",
+    )
     global_patterns: dict[str, int] = Field(default_factory=dict)
     # Cross-service probe results (only populated when probes=True)
     services: dict[str, ServiceStatus] | None = Field(
@@ -332,6 +335,11 @@ async def health_check(
     except Exception:
         pass
 
+    # Injection effectiveness — cached on app.state by warm path
+    injection_effectiveness: dict | None = getattr(
+        request.app.state, "injection_effectiveness", None
+    )
+
     # Cross-service probes (skip when called as self-check to prevent recursion)
     services_result = None
     cross_service_result = None
@@ -363,6 +371,7 @@ async def health_check(
         domain_ceiling=DOMAIN_COUNT_CEILING,
         project_count=project_count,
         injection_stats=injection_stats,
+        injection_effectiveness=injection_effectiveness,
         global_patterns={
             "active": gp_active,
             "demoted": gp_demoted,

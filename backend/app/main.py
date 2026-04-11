@@ -1174,6 +1174,10 @@ async def lifespan(app: FastAPI):
                                 result.operations_attempted,
                                 result.snapshot_id,
                             )
+                        # Cache injection effectiveness for health endpoint
+                        eff = getattr(engine, "_injection_effectiveness", None)
+                        if eff:
+                            app.state.injection_effectiveness = eff
                         # Lifecycle service gets its own session
                         async with async_session_factory() as lifecycle_db:
                             lifecycle = PromptLifecycleService()

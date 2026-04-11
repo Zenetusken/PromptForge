@@ -4,9 +4,19 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Added
+- **Injection effectiveness measurement** — warm path Phase 4 now computes mean score lift for pattern-injected vs non-injected optimizations. Logged as `injection_effectiveness` taxonomy event and surfaced in `GET /api/health` response
+
+### Changed
+- **GlobalPattern promotion unlocked for single-project** — removed hard `MIN_PROJECTS=2` gate that blocked all global pattern promotion. Cluster breadth (≥5 clusters) is now the sole quality gate; cross-project count remains as an observability metric
+- **Phase 4 refresh preserves pattern history** — replaced delete-all-then-recreate with incremental merge + excess pruning (`MAX_PATTERNS_PER_CLUSTER=15`). `source_count` now accumulates organically across refresh cycles instead of resetting to 1
+- **Auto-injection runs alongside explicit patterns** — `auto_inject_patterns()` now fires even when the user has explicit `applied_pattern_ids`, merging both sources. Previously, explicit selection completely disabled auto-injection
+- **Cross-cluster injection threshold lowered** — `CROSS_CLUSTER_MIN_SOURCE_COUNT` reduced from 3 to 2, widening the pattern supply pipeline
+
 ### Fixed
 - **MCP server 406 flood from health probes** — backend health endpoint's cross-service MCP probe now sends the required `Accept: application/json, text/event-stream` header. Previously, `httpx`'s default `Accept: */*` failed the Streamable HTTP transport's strict Accept validation, generating ~1 spurious 406 response per minute (139/day)
 - **Warm path no-op cycling** — empty dirty set was coerced to `None` (interpreted as "scan all"), causing 28+ full 7-phase warm cycles per day with 0 operations. Now short-circuits immediately when no clusters are dirty. Also excluded `candidate_evaluation` trigger from re-firing the warm path timer (self-re-trigger from Phase 0.5)
+- **Cross-cluster injection provenance** — cross-cluster pattern injections now create `OptimizationPattern` records with `source_id` and proper provenance tracking. Previously, only topic-based and global injections were tracked
 
 ## v0.3.28 — 2026-04-11
 

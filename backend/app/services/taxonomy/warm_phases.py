@@ -3218,7 +3218,6 @@ async def phase_refresh(
         if inj_mean is not None and base_mean is not None and inj_n >= 5 and base_n >= 5:
             lift = float(inj_mean) - float(base_mean)
             try:
-                from app.services.taxonomy.event_logger import get_event_logger
                 get_event_logger().log_decision(
                     path="warm", op="injection_effectiveness", decision="computed",
                     context={
