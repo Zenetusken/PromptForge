@@ -460,6 +460,11 @@ class ContextEnrichmentService:
                     "budget_max_chars": result.budget_max_chars,
                     "diversity_excluded": result.diversity_excluded_count,
                     "near_misses": result.near_misses,
+                    # Source-type balance diagnostics
+                    "budget_skip_count": result.budget_skip_count,
+                    "code_files": result.code_files_included,
+                    "doc_files": result.doc_files_included,
+                    "doc_deferred": result.doc_deferred_count,
                 }
                 return result.context_text, meta
             return None, {"status": "empty", "files_included": 0}

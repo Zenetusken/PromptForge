@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     INDEX_DOMAIN_BOOST: float = Field(
         default=1.3, description="Similarity multiplier for files matching the detected domain.",
     )
+    INDEX_CURATED_DOC_CAP_RATIO: float = Field(
+        default=0.35,
+        description="Maximum fraction of curated retrieval slots for documentation files.",
+    )
 
     # --- Network ---
     TRUSTED_PROXIES: str = Field(

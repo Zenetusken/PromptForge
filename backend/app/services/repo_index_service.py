@@ -91,6 +91,11 @@ class CuratedCodebaseContext:
     budget_max_chars: int = 0
     diversity_excluded_count: int = 0
     near_misses: list[dict] = field(default_factory=list)  # next 5 files after cutoff
+    # Source-type balance diagnostics
+    budget_skip_count: int = 0
+    doc_files_included: int = 0
+    code_files_included: int = 0
+    doc_deferred_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +371,61 @@ _DOMAIN_PATH_PATTERNS: dict[str, list[str]] = {
     "devops": ["docker", "ci/", ".github/workflows/"],
     "security": ["auth", "security/", "middleware/"],
 }
+
+
+# ---------------------------------------------------------------------------
+# Source-type classification for curated retrieval balance
+# ---------------------------------------------------------------------------
+
+_DOC_EXTENSIONS = frozenset({".md", ".txt", ".rst", ".adoc"})
+_DOC_DIRS = ("docs/", "doc/", "plans/", "adr/", "rfcs/", "decisions/")
+_CONFIG_EXTENSIONS = frozenset({".yaml", ".yml", ".json", ".toml", ".cfg", ".ini"})
+
+
+def _classify_source_type(file_path: str) -> str:
+    """Classify a file as ``'code'``, ``'docs'``, or ``'config'``.
+
+    Used to enforce source-type diversity in curated retrieval so that
+    plan/ADR/doc files don't crowd out implementation code.
+    """
+    lower = file_path.lower()
+    ext = lower[lower.rfind("."):] if "." in lower else ""
+    # Docs: markdown-like extensions OR anything under known doc directories
+    if ext in _DOC_EXTENSIONS or any(d in lower for d in _DOC_DIRS):
+        return "docs"
+    # Config: structured data formats (not under docs/)
+    if ext in _CONFIG_EXTENSIONS:
+        return "config"
+    # Code: everything else with an indexable extension
+    if ext in _INDEXABLE_EXTENSIONS:
+        return "code"
+    return "config"
+
+
+# ---------------------------------------------------------------------------
+# Markdown reference extraction for doc-aware import-graph expansion
+# ---------------------------------------------------------------------------
+
+# Backtick-wrapped file paths with known directory prefixes
+_MD_PATH_RE = re.compile(
+    r"`((?:backend|frontend|src|app|lib)/[a-zA-Z0-9_/.-]+\.\w+)`",
+)
+
+
+def _extract_markdown_references(content: str) -> list[str]:
+    """Extract backtick-wrapped file-path references from markdown content.
+
+    Conservative: only matches paths starting with known directory prefixes
+    (``backend/``, ``frontend/``, ``src/``, ``app/``, ``lib/``).  This avoids
+    false positives from inline code examples or prose references.
+    """
+    if not content:
+        return []
+    return [m.group(1) for m in _MD_PATH_RE.finditer(content)]
+
+
+# Bounded scan window for skip-and-continue packing
+_MAX_BUDGET_SKIPS = 5
 
 
 # Module-level constants for test file detection (avoid per-call reconstruction)
@@ -744,10 +804,13 @@ class RepoIndexService:
         # Re-sort by boosted score
         boosted.sort(key=lambda x: x[1], reverse=True)
 
-        # Diversity selection: max N per directory
+        # Diversity selection: max N per directory + source-type balance
+        doc_cap_ratio = settings.INDEX_CURATED_DOC_CAP_RATIO
         dir_counts: dict[str, int] = {}
         selected: list[tuple[int, float]] = []
+        deferred_docs: list[tuple[int, float]] = []
         diversity_excluded = 0
+        doc_selected = 0
         for idx, score in boosted:
             path = rows[idx].file_path
             directory = path.rsplit("/", 1)[0] if "/" in path else ""
@@ -755,7 +818,22 @@ class RepoIndexService:
                 diversity_excluded += 1
                 continue
             dir_counts[directory] = dir_counts.get(directory, 0) + 1
+
+            # Source-type soft cap: defer excess docs so code files get slots
+            if _classify_source_type(path) == "docs":
+                total_so_far = len(selected) + 1
+                if (
+                    len(selected) >= 2
+                    and (doc_selected + 1) > total_so_far * doc_cap_ratio
+                ):
+                    deferred_docs.append((idx, score))
+                    continue
+                doc_selected += 1
             selected.append((idx, score))
+
+        # Re-insert deferred docs at the end — available for packing if
+        # budget allows after code files, just deprioritized.
+        selected.extend(deferred_docs)
 
         if not selected:
             return None
@@ -763,23 +841,26 @@ class RepoIndexService:
         logger.info(
             "curated_context: repo=%s query_len=%d indexed=%d "
             "above_threshold=%d cross_domain_cut=%d below_base_cut=%d "
-            "diversity_excluded=%d selected=%d top=%.3f "
+            "diversity_excluded=%d doc_deferred=%d selected=%d top=%.3f "
             "fetch=%.0fms search=%.0fms",
             repo_full_name, len(query), len(rows),
             len(boosted), cross_domain_filtered, below_base_filtered,
-            diversity_excluded, len(selected),
+            diversity_excluded, len(deferred_docs), len(selected),
             selected[0][1] if selected else 0.0,
             fetch_ms, search_ms,
         )
 
         # ------------------------------------------------------------------
-        # Unified budget packing: similarity + import-graph interleaved
+        # Unified budget packing: similarity + dependency expansion
         # ------------------------------------------------------------------
-        # Strategy: include the top similarity file first, then its imports,
-        # then the next similarity file, then its imports, etc.  This
-        # ensures high-value dependency files (models.py, github_client.py)
-        # get packed before low-scoring similarity tail files (0.20-0.25)
-        # that share vocabulary but aren't functionally related.
+        # Strategy: include the top similarity file first, then its
+        # dependencies (code imports or markdown file-path references),
+        # then the next similarity file, then its dependencies, etc.
+        #
+        # Skip-and-continue: when a file doesn't fit the remaining budget,
+        # skip it and try the next one (up to _MAX_BUDGET_SKIPS consecutive
+        # skips).  This prevents a single oversized file from wasting half
+        # the budget when smaller high-value files would still fit.
         # ------------------------------------------------------------------
 
         path_to_row_idx = {r.file_path: i for i, r in enumerate(rows)}
@@ -787,38 +868,60 @@ class RepoIndexService:
         parts: list[str] = []
         total_chars = 0
         files_included = 0
-        graph_expanded = 0
+        graph_from_imports = 0
+        graph_from_doc_refs = 0
+        doc_files_packed = 0
+        code_files_packed = 0
+        budget_skip_count = 0
         top_score = selected[0][1] if selected else 0.0
         selected_files_meta: list[dict] = []
         stop_reason = "relevance_exhausted"
 
         def _pack_file(row_: RepoFileIndex, score_: float, source_: str) -> bool:
-            """Try to add a file to the budget. Returns True if added."""
-            nonlocal total_chars, files_included, graph_expanded, stop_reason
+            """Try to add a file to the budget.  Returns True if added.
+
+            Pure budget check — does NOT set ``stop_reason``.  The caller
+            decides the final stop reason based on how the loop terminates.
+            """
+            nonlocal total_chars, files_included
+            nonlocal graph_from_imports, graph_from_doc_refs
+            nonlocal doc_files_packed, code_files_packed
             body = row_.content or row_.outline or ""
             if not body:
                 return False
-            label = f"relevance: {score_:.2f}" if source_ != "import-graph" else "import-graph"
+            label = (
+                f"relevance: {score_:.2f}"
+                if source_ not in ("import-graph", "doc-ref")
+                else source_
+            )
             header = f"## {row_.file_path} ({label})"
             entry = f"{header}\n```\n{body}\n```" if row_.content else f"{header}\n{body}"
             if total_chars + len(entry) > effective_max:
-                stop_reason = "budget"
                 return False
             parts.append(entry)
             total_chars += len(entry)
             files_included += 1
             included_paths.add(row_.file_path)
             if source_ == "import-graph":
-                graph_expanded += 1
+                graph_from_imports += 1
+            elif source_ == "doc-ref":
+                graph_from_doc_refs += 1
+            st = _classify_source_type(row_.file_path)
+            if st == "docs":
+                doc_files_packed += 1
+            elif st == "code":
+                code_files_packed += 1
             if len(selected_files_meta) < 30:
                 selected_files_meta.append({
                     "path": row_.file_path,
                     "score": round(score_, 3),
                     "content_chars": len(body),
                     "source": source_,
+                    "source_type": st,
                 })
             return True
 
+        budget_skips = 0
         for idx, score in selected:
             row = rows[idx]
             if row.file_path in included_paths:
@@ -826,30 +929,48 @@ class RepoIndexService:
             # Pack this similarity-ranked file
             source = "full" if row.content else "outline"
             if not _pack_file(row, score, source):
-                break  # budget exhausted
+                budget_skips += 1
+                budget_skip_count += 1
+                if budget_skips >= _MAX_BUDGET_SKIPS:
+                    stop_reason = "budget"
+                    break
+                continue  # skip oversized file, try next
+            budget_skips = 0  # reset on successful pack
 
-            # Immediately expand its imports before moving to the next
-            # similarity file — this prioritizes direct dependencies over
-            # tangentially-related files further down the similarity list.
+            # Expand dependencies: code imports for .py/.ts, backtick
+            # file-path references for docs.  Dependencies are packed
+            # before moving to the next similarity-ranked file so that
+            # high-value transitive files (models.py, github_client.py)
+            # take priority over low-scoring similarity tail files.
             if row.content:
-                import_paths = _extract_import_paths(row.file_path, row.content)
-                for imp in import_paths:
-                    if imp in included_paths:
+                is_doc = _classify_source_type(row.file_path) == "docs"
+                if is_doc:
+                    ref_paths = _extract_markdown_references(row.content)
+                else:
+                    ref_paths = _extract_import_paths(row.file_path, row.content)
+                ref_source = "doc-ref" if is_doc else "import-graph"
+                for ref in ref_paths:
+                    if ref in included_paths:
                         continue
-                    imp_row_idx = path_to_row_idx.get(imp)
-                    if imp_row_idx is None:
+                    ref_row_idx = path_to_row_idx.get(ref)
+                    if ref_row_idx is None:
                         continue
-                    imp_row = rows[imp_row_idx]
-                    if not _pack_file(imp_row, 0.0, "import-graph"):
-                        break  # budget exhausted — stop expanding this file's imports
-                if stop_reason == "budget":
-                    break  # budget hit during import expansion
+                    ref_row = rows[ref_row_idx]
+                    _pack_file(ref_row, 0.0, ref_source)
+                    # Don't break on ref failure — skip and continue
 
+        graph_expanded = graph_from_imports + graph_from_doc_refs
         if graph_expanded:
             logger.info(
-                "curated_import_graph: expanded %d files from imports of %d ranked files",
+                "curated_import_graph: expanded %d files "
+                "(from_imports=%d from_doc_refs=%d) "
+                "of %d ranked files",
                 graph_expanded,
-                sum(1 for m in selected_files_meta if m.get("source") != "import-graph"),
+                graph_from_imports, graph_from_doc_refs,
+                sum(
+                    1 for m in selected_files_meta
+                    if m.get("source") not in ("import-graph", "doc-ref")
+                ),
             )
 
         # Near misses: next 5 similarity-ranked files that weren't included
@@ -877,10 +998,12 @@ class RepoIndexService:
 
         curated_total_ms = (time.monotonic() - t_curated_start) * 1000
         logger.info(
-            "curated_retrieval_detail: files=%d (sim=%d graph=%d) "
+            "curated_retrieval_detail: files=%d (code=%d docs=%d) "
+            "graph=%d (imports=%d doc_refs=%d) skips=%d "
             "budget=%d/%d (%.0f%%) stop=%s near_misses=%d total=%.0fms",
-            files_included,
-            files_included - graph_expanded, graph_expanded,
+            files_included, code_files_packed, doc_files_packed,
+            graph_expanded, graph_from_imports, graph_from_doc_refs,
+            budget_skip_count,
             total_chars, effective_max,
             total_chars / max(effective_max, 1) * 100,
             stop_reason, len(near_misses), curated_total_ms,
@@ -898,6 +1021,10 @@ class RepoIndexService:
             budget_max_chars=effective_max,
             diversity_excluded_count=diversity_excluded,
             near_misses=near_misses,
+            budget_skip_count=budget_skip_count,
+            doc_files_included=doc_files_packed,
+            code_files_included=code_files_packed,
+            doc_deferred_count=len(deferred_docs),
         )
         # Cache result
         _curated_cache[cache_key] = (time.time(), result)
