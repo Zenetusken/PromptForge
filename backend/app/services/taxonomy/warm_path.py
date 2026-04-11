@@ -426,8 +426,29 @@ async def execute_warm_path(
     else:
         dirty_ids, dirty_by_project = engine.snapshot_dirty_set_with_projects()
         if not dirty_ids:
-            dirty_ids = None
-            dirty_by_project = None
+            # Nothing changed since last cycle — skip the entire warm path.
+            # Previously, empty set was coerced to None (="scan all"), causing
+            # full 7-phase no-op cycles every 5 minutes even when idle.
+            logger.debug("Warm path skipped — no dirty clusters (age=%d)", engine._warm_path_age)
+            try:
+                get_event_logger().log_decision(
+                    path="warm", op="skip", decision="no_dirty_clusters",
+                    context={"warm_path_age": engine._warm_path_age},
+                )
+            except RuntimeError:
+                pass
+            # Still increment age so periodic gates (global patterns) advance.
+            engine._warm_path_age += 1
+            return WarmPathResult(
+                snapshot_id="skipped",
+                q_baseline=None,
+                q_final=None,
+                phase_results=[],
+                operations_attempted=0,
+                operations_accepted=0,
+                deadlock_breaker_used=False,
+                deadlock_breaker_phase=None,
+            )
 
     # Phase 3A: scheduling mode decision
     _total_dirty_count = len(dirty_ids) if dirty_ids is not None else None  # before scoping

@@ -888,8 +888,10 @@ async def lifespan(app: FastAPI):
                     # hot-path events (new optimization clustered) and domain
                     # creation.  Warm/cold path events must NOT re-trigger
                     # the warm path or it creates an infinite cascade loop.
+                    # candidate_evaluation fires from within warm path Phase
+                    # 0.5 — excluding it prevents self-re-triggering.
                     trigger = event.get("data", {}).get("trigger", "")
-                    if trigger not in ("warm_path", "cold_path"):
+                    if trigger not in ("warm_path", "cold_path", "candidate_evaluation"):
                         _warm_path_pending.set()
         except asyncio.CancelledError:
             logger.info("Taxonomy extraction listener shutting down")
@@ -1161,7 +1163,9 @@ async def lifespan(app: FastAPI):
                             PromptLifecycleService,
                         )
                         result = await engine.run_warm_path(async_session_factory)
-                        if result:
+                        if result and result.snapshot_id == "skipped":
+                            logger.debug("Warm path skipped — no dirty clusters")
+                        elif result:
                             logger.info(
                                 "Warm path completed: q=%.4f baseline=%.4f ops=%d/%d snapshot=%s",
                                 result.q_system or 0.0,

@@ -4,6 +4,10 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Fixed
+- **MCP server 406 flood from health probes** — backend health endpoint's cross-service MCP probe now sends the required `Accept: application/json, text/event-stream` header. Previously, `httpx`'s default `Accept: */*` failed the Streamable HTTP transport's strict Accept validation, generating ~1 spurious 406 response per minute (139/day)
+- **Warm path no-op cycling** — empty dirty set was coerced to `None` (interpreted as "scan all"), causing 28+ full 7-phase warm cycles per day with 0 operations. Now short-circuits immediately when no clusters are dirty. Also excluded `candidate_evaluation` trigger from re-firing the warm path timer (self-re-trigger from Phase 0.5)
+
 ## v0.3.28 — 2026-04-11
 
 ### Added
