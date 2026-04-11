@@ -48,6 +48,7 @@ from app.services.taxonomy._constants import (
     FORCED_SPLIT_COHERENCE_FLOOR,
     FORCED_SPLIT_MIN_MEMBERS,
     LABEL_COHERENCE_SPLIT_SIGNAL,
+    MAX_PATTERNS_PER_CLUSTER,
     MEGA_CLUSTER_MEMBER_FLOOR,
     MERGE_BACK_GRACE_MINUTES,
     SPLIT_COHERENCE_EXEMPT,
@@ -258,6 +259,7 @@ class RefreshResult:
     """Result from Phase 4 — stale label/pattern refresh."""
 
     clusters_refreshed: int = 0
+    injection_effectiveness: dict | None = None
 
 
 @dataclass
@@ -2900,18 +2902,34 @@ async def phase_refresh(
                         new_pattern_texts = []
 
                     if new_pattern_texts:
-                        old_patterns = await db.execute(
-                            select(MetaPattern).where(
-                                MetaPattern.cluster_id == node.id
-                            )
-                        )
-                        for old_mp in old_patterns.scalars():
-                            await db.delete(old_mp)
-
+                        # Merge new extractions into existing patterns
+                        # (dedup at cosine >= 0.82 via merge_meta_pattern).
+                        # Previously deleted all patterns first, destroying
+                        # source_count history and preventing consolidation.
                         for text in new_pattern_texts:
                             await merge_meta_pattern(
                                 db, node.id, text, engine._embedding,
                             )
+
+                        # Prune excess: keep highest-value patterns, cap total
+                        prune_q = await db.execute(
+                            select(MetaPattern).where(
+                                MetaPattern.cluster_id == node.id
+                            )
+                        )
+                        all_existing = list(prune_q.scalars().all())
+                        if len(all_existing) > MAX_PATTERNS_PER_CLUSTER:
+                            sorted_by_value = sorted(
+                                all_existing,
+                                key=lambda mp: (
+                                    mp.source_count,
+                                    mp.updated_at or mp.created_at,
+                                ),
+                                reverse=True,
+                            )
+                            for stale in sorted_by_value[MAX_PATTERNS_PER_CLUSTER:]:
+                                if stale.source_count <= 1:
+                                    await db.delete(stale)
 
                     # Track extraction state
                     node.cluster_metadata = write_meta(
@@ -3164,6 +3182,68 @@ async def phase_refresh(
         logger.warning(
             "Global source count computation failed (non-fatal): %s", gsc_exc
         )
+
+    # --- Injection effectiveness measurement ---
+    # Compare mean scores of pattern-injected vs non-injected optimizations.
+    # Purely observational — no behavior changes.
+    try:
+        from app.models import OptimizationPattern
+
+        injected_scores_q = await db.execute(
+            select(func.avg(Optimization.overall_score), func.count())
+            .where(
+                Optimization.overall_score.isnot(None),
+                Optimization.id.in_(
+                    select(OptimizationPattern.optimization_id)
+                    .where(OptimizationPattern.relationship.in_(["injected", "global_injected"]))
+                    .distinct()
+                ),
+            )
+        )
+        inj_mean, inj_n = injected_scores_q.one()
+
+        baseline_scores_q = await db.execute(
+            select(func.avg(Optimization.overall_score), func.count())
+            .where(
+                Optimization.overall_score.isnot(None),
+                Optimization.id.notin_(
+                    select(OptimizationPattern.optimization_id)
+                    .where(OptimizationPattern.relationship.in_(["injected", "global_injected"]))
+                    .distinct()
+                ),
+            )
+        )
+        base_mean, base_n = baseline_scores_q.one()
+
+        if inj_mean is not None and base_mean is not None and inj_n >= 5 and base_n >= 5:
+            lift = float(inj_mean) - float(base_mean)
+            try:
+                from app.services.taxonomy.event_logger import get_event_logger
+                get_event_logger().log_decision(
+                    path="warm", op="injection_effectiveness", decision="computed",
+                    context={
+                        "injected_mean": round(float(inj_mean), 2),
+                        "baseline_mean": round(float(base_mean), 2),
+                        "lift": round(lift, 2),
+                        "injected_n": inj_n,
+                        "baseline_n": base_n,
+                    },
+                )
+            except RuntimeError:
+                pass
+            logger.info(
+                "Injection effectiveness: injected=%.2f (n=%d) baseline=%.2f (n=%d) lift=%+.2f",
+                float(inj_mean), inj_n, float(base_mean), base_n, lift,
+            )
+            result.injection_effectiveness = {
+                "injected_mean": round(float(inj_mean), 2),
+                "baseline_mean": round(float(base_mean), 2),
+                "lift": round(lift, 2),
+                "injected_n": inj_n,
+                "baseline_n": base_n,
+            }
+    except Exception as eff_exc:
+        logger.debug("Injection effectiveness computation failed (non-fatal): %s", eff_exc)
 
     return result
 

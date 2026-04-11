@@ -582,6 +582,9 @@ async def execute_warm_path(
             "Phase 4 (refresh): clusters_refreshed=%d",
             refresh_result.clusters_refreshed,
         )
+        # Cache injection effectiveness on engine for health endpoint
+        if refresh_result.injection_effectiveness:
+            engine._injection_effectiveness = refresh_result.injection_effectiveness
 
     # ------------------------------------------------------------------
     # Phase 4.5: Global Pattern Promotion + Validation (ADR-005 Phase 2B)
