@@ -134,12 +134,12 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Pattern extraction** — reusable techniques extracted from successful optimizations, stored as meta-patterns per cluster
 - **Cross-cluster injection** — universal techniques injected across topic boundaries, ranked by composite relevance
 - **Global pattern tier** — durable cross-project patterns promoted from meta-pattern siblings spanning 2+ projects, injected with 1.3x relevance boost. Validated with demotion/re-promotion hysteresis, 500 retention cap
-- **Adaptive scheduling** — linear regression boundary with all-dirty vs round-robin mode. Only changed clusters processed in split/merge phases. Starvation guard prevents project neglect
+- **Adaptive scheduling** — linear regression boundary with all-dirty vs per-project budget mode. Proportional quotas (min floor=3), per-project starvation guard, observable via `snapshot()`. Only changed clusters processed in split/merge phases
 - **3D taxonomy visualization** — Three.js interactive topology with LOD tiers, diegetic UI, state filter tabs, click-to-focus navigation, force-directed layout
 
 ### Developer Integration (First Vertical)
-- **GitHub integration** — zero-config Device Flow OAuth (no secrets, no callback URL). Link a repo, browse files, and get codebase-aware optimization. Background indexing builds semantic file outlines + Haiku architectural synthesis on link/reindex
-- **Two-layer codebase context** — cached explore synthesis (architectural overview, once per repo) + per-prompt curated retrieval (semantic file search, 30K char cap). Zero request-time LLM calls for context — all tiers receive identical pre-computed context
+- **GitHub integration** — zero-config Device Flow OAuth (no secrets, no callback URL). Link a repo, browse files, and get codebase-aware optimization. Background indexing with incremental refresh builds semantic file embeddings + Haiku architectural synthesis
+- **Three-layer codebase context** — cached explore synthesis (architectural overview, once per repo) + per-prompt curated retrieval (full source delivery, 80K char cap, import-graph + doc-ref expansion, source-type balanced) + performance signals. Background incremental refresh keeps the index current. Zero request-time LLM calls — all tiers receive identical pre-computed context
 - **MCP server** — use from any MCP-compatible IDE (VS Code, Claude Code, etc.)
 - **VS Code bridge extension** — MCP Copilot Bridge for sampling-based optimization through the IDE's own LLM
 - **Passthrough mode** — IDE's own LLM does the optimization; server provides context + heuristic analysis + hybrid scoring
@@ -151,7 +151,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Session persistence** — page refresh restores your last optimization
 - **Markdown rendering** — optimized prompts rendered with brand-compliant markdown
 - **Production diff viewer** — unified and split modes with word-level highlighting
-- **Real-time events** — SSE-based event bus with toast notifications
+- **Real-time events** — SSE-based event bus with toast notifications, connection health monitoring (latency percentiles, degradation detection, exponential backoff reconnection)
 - **Taxonomy Activity panel** — live feed of all taxonomy decision events with filters and expandable context
 - **Pattern suggestion on paste** — cosine-searches active clusters, suggests matches with 1-click apply
 - **Tier-aware UI** — accent color adapts to active routing tier (CLI/API, sampling, passthrough)
@@ -199,13 +199,13 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (~180s, 1932 tests)
+# Backend tests (~150s, 2008 tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
 # Frontend type check
 cd frontend && npx svelte-check
 
-# Frontend tests (969 tests)
+# Frontend tests (1028 tests)
 cd frontend && npm test
 
 # Frontend build
