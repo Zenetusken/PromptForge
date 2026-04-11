@@ -183,6 +183,10 @@ class OrphanRecoveryService:
             return False
 
         # --- Compute embeddings (CPU/model inference, no DB writes) ---
+        # NOTE: This duplicates the embedding logic in engine.process_optimization().
+        # The duplication is intentional — recovery is decoupled from process_optimization
+        # to avoid re-entering a function whose session rolled back. If the embedding
+        # pipeline changes, update both sites.
         embedding_svc = engine._embedding
         raw_emb = await embedding_svc.aembed_single(opt.raw_prompt)
 
@@ -211,19 +215,21 @@ class OrphanRecoveryService:
             if existing_cluster and existing_cluster.state == "archived":
                 opt.cluster_id = None
 
-        # Assign cluster if needed
+        # Assign cluster if needed — acquire engine lock to prevent
+        # concurrent centroid/embedding-index mutations with hot path.
         if not opt.cluster_id:
             domain_primary, _ = parse_domain(opt.domain or "general")
-            cluster = await assign_cluster(
-                db=db,
-                embedding=raw_emb,
-                label=opt.intent_label or "general",
-                domain=domain_primary,
-                task_type=opt.task_type or "general",
-                overall_score=opt.overall_score,
-                embedding_index=engine._embedding_index,
-                project_id=opt.project_id,
-            )
+            async with engine._lock:
+                cluster = await assign_cluster(
+                    db=db,
+                    embedding=raw_emb,
+                    label=opt.intent_label or "general",
+                    domain=domain_primary,
+                    task_type=opt.task_type or "general",
+                    overall_score=opt.overall_score,
+                    embedding_index=engine._embedding_index,
+                    project_id=opt.project_id,
+                )
             opt.cluster_id = cluster.id
             engine.mark_dirty(cluster.id, project_id=opt.project_id)
 

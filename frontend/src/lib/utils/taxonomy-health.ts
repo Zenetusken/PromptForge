@@ -289,6 +289,10 @@ export function generatePanelInsight(input: PanelInsightInput): string {
     return capitalize(parts.join('. ')) + '.';
   }
 
+  if (mode === 'project') {
+    return 'Project workspace — select a domain to explore clusters.';
+  }
+
   return '';
 }
 

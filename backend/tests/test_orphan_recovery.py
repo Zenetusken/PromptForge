@@ -59,7 +59,10 @@ def _mock_engine() -> MagicMock:
     Returns different embeddings for each call so the transformation
     vector (optimized - raw) is non-zero.
     """
+    import asyncio
+
     engine = MagicMock()
+    engine._lock = asyncio.Lock()
     engine._embedding = AsyncMock()
     # Return different embeddings on successive calls (raw, optimized)
     engine._embedding.aembed_single = AsyncMock(
