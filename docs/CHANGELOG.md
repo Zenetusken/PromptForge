@@ -4,28 +4,40 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
-### Fixed
-- **Explore synthesis silently failing** — `RepoIndexMeta.explore_synthesis` reported `present: false` despite successful file indexing because Haiku synthesis errors were swallowed. Added `synthesis_status` and `synthesis_error` columns to track synthesis lifecycle (pending/running/ready/skipped/error). Errors are now persisted instead of silently returning None
-- **CLI provider argument overflow on large repos** — `ClaudeCLIProvider` passed user_message as a command-line argument, hitting OS `ARG_MAX` limit for explore prompts with 500+ files (`[Errno 7] Argument list too long`). User message now piped via stdin, and `OSError` is caught as a non-retryable `ProviderError`
-- **SuggestionChips tests failing after collapsible toggle redesign** — tests now expand the SUGGESTIONS toggle before asserting chip content
-- **connectionState getter returning 'ready' while indexing** — added 'pending' and 'indexing' to in-progress status list so `connectionState` correctly returns 'linked' until indexing completes
-- **Polling breaking after first API response** — `pollIndexStatus()` now checks actual in-progress states (pending/indexing/building) instead of only the client-side 'building' placeholder
-- **Curated retrieval errors swallowed** — `_query_index_context` logged failures at `debug` level with no metadata. Now returns `status` field (`ready`/`empty`/`error`) with error message, logged at `warning` level
-- **Project nodes missing from cluster tree** — `get_tree()` state filter listed 6 states but omitted `"project"`, causing project nodes to be invisible in the topology and Navigator. All domain→project parent links were broken in the UI
+## v0.3.27 — 2026-04-11
 
 ### Added
-- **Synthesis status in index-status endpoint** — `GET /api/github/repos/index-status` now returns `synthesis_status` and `synthesis_error` fields, distinguishing between not-indexed, indexed-without-synthesis, and fully-ready states
-- **Synthesis status in Navigator** — Info tab shows color-coded synthesis status (cyan=ready, amber=pending/running, red=error) with error tooltip
-- **History project filter** — tab bar above history list filters optimizations by linked project. Matches ClusterNavigator state-tab aesthetics
-- **History pagination** — "Load more" button appends next 50 items when total exceeds initial page. Resets on SSE invalidation
+- **Full source context delivery** — curated retrieval now delivers actual file source code to the optimizer instead of 500-char outlines. `RepoFileIndex.content` column stores full file content during indexing
+- **Import-graph expansion** — after selecting top files by embedding similarity, the retrieval pipeline parses their import statements and pulls in dependency files (e.g., `models.py` from `repo_index_service.py`). Interleaved budget packing ensures dependencies get priority over low-scoring similarity tail files
+- **Test file exclusion** — `_is_test_file()` removes test/spec/benchmark/fixture files from the index (39% reduction for typical codebases). Covers Python, TypeScript, Jest, Vitest, Playwright, Cypress patterns
+- **Cross-domain noise filter** — files from a known domain different from the prompt's domain face a stricter 0.30 similarity floor (vs 0.20 base), eliminating frontend noise in backend prompts
+- **Performance signals** — strategy performance by domain+task_type, anti-pattern hints (strategies averaging below 5.5), and domain vocabulary keywords injected into the optimizer at ~150 tokens cost
+- **Context diagnostic panel** — collapsible CONTEXT section in the ForgeArtifact result view showing selected files with scores, import-graph expansions, budget utilization, stop reason, and near misses
+- **Pipeline observability** — structured logging at 5 stages: curated retrieval (with cross-domain/diversity stats), import-graph expansion, retrieval detail (budget/timing), enrichment assembly (total context size), and optimizer injection (per-component char breakdown)
+- **History project filter** — compact `<select>` dropdown in History panel header filters optimizations by linked project
+- **History pagination** — "Load more" button appends next 50 items. Resets on SSE invalidation
 - **Topology empty state** — Pattern Graph shows guidance message when taxonomy has no clusters
 - **Cross-tab cluster scroll-to** — selecting a cluster from History or Topology scrolls the ClusterNavigator to the matching row
+- **Synthesis status in Navigator** — Info tab shows color-coded synthesis status (cyan=ready, amber=pending/running, red=error)
+- **`init.sh reload-mcp`** — restarts only the MCP server (faster than full restart, requires `/mcp` reconnect)
 
 ### Changed
-- **Background synthesis logic deduplicated** — extracted `_run_explore_synthesis()` shared helper used by both `link_repo` and `reindex_repo` background tasks
-- **Brand compliance** — replaced 60+ hardcoded `rgba()` and hex color values across 15 component files with `color-mix(in srgb, var(--token) N%, transparent)` design tokens. Removed 5 `backdrop-filter: blur()` instances. Normalized 3 transition timing outliers (500ms→300ms, 100ms→200ms)
-- **Feedback inline update** — `feedback_submitted` SSE now updates history row `feedback_rating` in place instead of triggering a full history re-fetch
-- **Explore file ranking uses pre-computed index embeddings** — `CodebaseExplorer._rank_files()` now queries `RepoFileIndex` embeddings (path + docstring + structure) instead of creating ephemeral path-only embeddings. Falls back to path-embedding for unindexed files or when no index exists
+- **Scoring formula v3** — rebalanced dimension weights: faithfulness 0.25→0.26, clarity/specificity 0.20→0.22, conciseness 0.20→0.15. Conciseness brevity-bias fixed ("SHORT IS NOT CONCISE" calibration), faithfulness originality-bias fixed, structure scores format-match not format-presence
+- **Optimizer prompt tuning** — task-type depth scaling (specs/agentic=high detail, bug fixes=low), "maximize useful detail, not brevity" principle, dynamic format based on scope and risk surface
+- **Brand compliance** — replaced 60+ hardcoded `rgba()` and hex values across 15 components with `color-mix()` design tokens. Removed 5 `backdrop-filter: blur()` instances. Normalized transition timing outliers
+- **Curated retrieval cap raised** — `INDEX_CURATED_MAX_CHARS` 30K→80K, `INDEX_OUTLINE_MAX_CHARS` 500→2000, `INDEX_CURATED_MIN_SIMILARITY` 0.30→0.20
+- **Heuristic analysis for all tiers** — runs for internal/sampling tiers (not just passthrough) to provide domain detection for cross-domain retrieval filtering
+- **Explore file ranking uses pre-computed index embeddings** — `CodebaseExplorer._rank_files()` queries `RepoFileIndex` embeddings instead of creating ephemeral path-only embeddings
+- **Feedback inline update** — `feedback_submitted` SSE updates history row in place instead of full re-fetch
+- **Background synthesis deduplicated** — extracted `_run_explore_synthesis()` shared helper
+
+### Fixed
+- **Intent labels with parenthetical qualifiers** — Haiku appending "(Fully)", "(Complete)" etc. Fixed via analyze.md instruction + `_TRAILING_PAREN_RE` safety net in `validate_intent_label()`
+- **Explore synthesis silently failing** — added `synthesis_status`/`synthesis_error` columns to track lifecycle
+- **CLI provider argument overflow** — user_message piped via stdin instead of CLI arg (prevents `ARG_MAX` on large repos)
+- **Inspector shows project names** instead of count for multi-project clusters
+- **connectionState returning 'ready' while indexing** — added pending/indexing to in-progress status list
+- **Project nodes missing from cluster tree** — `get_tree()` state filter now includes `"project"` state
 
 ## v0.3.25 — 2026-04-10
 
