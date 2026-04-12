@@ -38,13 +38,14 @@ export const EDGE_DEPTH_FRAGMENT = /* glsl */ `
 /** Create uniforms for the edge depth shader.
  *  Camera range: starts at z=80, auto-focuses to ~60, zoom range 3-200.
  *  Proportional model: far edges render at (1 - maxReduction) of base opacity.
- *  With maxReduction=0.6: near=full base, far=40% of base. */
+ *  With maxReduction=0.25: near=full base, far=75% of base — subtle depth cue
+ *  that doesn't compete with density opacity for visibility control. */
 export function createEdgeDepthUniforms(color: number, baseOpacity: number) {
   return {
     uColor: { value: new THREE.Color(color) },
     uBaseOpacity: { value: baseOpacity },
     uNearDist: { value: 30.0 },
     uFarDist: { value: 120.0 },
-    uMaxReduction: { value: 0.6 },
+    uMaxReduction: { value: 0.25 },
   };
 }
