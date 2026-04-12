@@ -31,13 +31,16 @@ export const EDGE_DEPTH_FRAGMENT = /* glsl */ `
   }
 `;
 
-/** Create uniforms for the edge depth shader. */
+/** Create uniforms for the edge depth shader.
+ *  Camera range: starts at z=80, auto-focuses to ~60, zoom range 3-200.
+ *  Near/far set so edges in the current view fade gently — foreground at
+ *  full opacity, background at reduced but still visible opacity. */
 export function createEdgeDepthUniforms(color: number, baseOpacity: number) {
   return {
     uColor: { value: new THREE.Color(color) },
     uBaseOpacity: { value: baseOpacity },
-    uNearDist: { value: 10.0 },
-    uFarDist: { value: 80.0 },
-    uMinOpacity: { value: 0.03 },
+    uNearDist: { value: 30.0 },
+    uFarDist: { value: 120.0 },
+    uMinOpacity: { value: 0.06 },
   };
 }
