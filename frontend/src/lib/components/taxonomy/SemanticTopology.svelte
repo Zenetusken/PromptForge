@@ -31,8 +31,11 @@
   const INJECTION_EDGE_COLOR = 0xff9500; // warm gold/amber
 
   /** Suppress hierarchical edges shorter than this (scene units).
-   *  Spatial proximity already communicates the parent-child relationship. */
-  const EDGE_PROXIMITY_THRESHOLD = 12.0;
+   *  Spatial proximity already communicates the parent-child relationship.
+   *  UMAP parent-child distances are typically 3-8 units (domain nodes sit
+   *  at children's centroid); the force sim settles children at ~9 units.
+   *  Threshold of 5.0 only hides edges where nodes nearly overlap. */
+  const EDGE_PROXIMITY_THRESHOLD = 5.0;
 
   /** Segments per bezier curve for hierarchical edges.
    *  Used by buildCurvePositions and callers for index construction. */
