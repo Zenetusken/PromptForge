@@ -67,7 +67,7 @@ describe('buildSceneData', () => {
     const result = buildSceneData(flat);
     // 1 hierarchical edge only (different domains → no similarity edge)
     expect(result.edges).toHaveLength(1);
-    expect(result.edges[0]).toEqual({ from: 'parent', to: 'child', type: 'hierarchical' });
+    expect(result.edges[0]).toMatchObject({ from: 'parent', to: 'child', type: 'hierarchical' });
   });
 
   it('produces no similarity or injection edges when not passed', () => {
@@ -235,6 +235,33 @@ describe('buildSceneData — state-based visual encoding', () => {
     const { nodes } = buildSceneData([makeNode()]);
     expect(nodes[0]).toHaveProperty('opacity');
     expect(typeof nodes[0].opacity).toBe('number');
+  });
+});
+
+describe('buildSceneData — edge distance', () => {
+  it('computes distance on hierarchical edges', () => {
+    const parent = makeNode({
+      id: 'parent', state: 'domain',
+      umap_x: 0, umap_y: 0, umap_z: 0,
+    });
+    const child = makeNode({
+      id: 'child', parent_id: 'parent',
+      umap_x: 0.3, umap_y: 0.4, umap_z: 0,
+    });
+    const { edges } = buildSceneData([parent, child]);
+    const hier = edges.find(e => e.type === 'hierarchical')!;
+    expect(hier.distance).toBeDefined();
+    // UMAP_SCALE=10, so positions are (0,0,0) and (3,4,0), distance = 5
+    expect(hier.distance).toBeCloseTo(5.0, 1);
+  });
+
+  it('does not set distance on similarity edges', () => {
+    const a = makeNode({ id: 'a' });
+    const b = makeNode({ id: 'b' });
+    const simEdges = [{ from_id: 'a', to_id: 'b', similarity: 0.8 }];
+    const { edges } = buildSceneData([a, b], simEdges);
+    const sim = edges.find(e => e.type === 'similarity')!;
+    expect(sim.distance).toBeUndefined();
   });
 });
 

@@ -29,6 +29,10 @@
   const SIMILARITY_EDGE_COLOR = parseInt(stateColor('template').replace('#', ''), 16);
   const INJECTION_EDGE_COLOR = 0xff9500; // warm gold/amber
 
+  /** Suppress hierarchical edges shorter than this (scene units).
+   *  Spatial proximity already communicates the parent-child relationship. */
+  const EDGE_PROXIMITY_THRESHOLD = 12.0;
+
   // Edge groups — persisted across rebuilds for visibility toggle
   let similarityEdgeGroup: THREE.Group | null = null;
   let injectionEdgeGroup: THREE.Group | null = null;
@@ -303,13 +307,13 @@
     // domain parent is at the edge of a visibility threshold.
     const edgePositions: number[] = [];
     for (const edge of data.edges) {
+      if (edge.type !== 'hierarchical') continue;
       const from = _sceneNodeMap.get(edge.from);
       const to = _sceneNodeMap.get(edge.to);
       if (!from || !to) continue;
-      const isHierarchical = edge.type === 'hierarchical';
-      if (isHierarchical || (from.visible && to.visible)) {
-        edgePositions.push(...from.position, ...to.position);
-      }
+      // Suppress short edges — spatial proximity already shows the relationship
+      if (edge.distance != null && edge.distance < EDGE_PROXIMITY_THRESHOLD) continue;
+      edgePositions.push(...from.position, ...to.position);
     }
 
     if (edgePositions.length > 0) {
@@ -643,7 +647,8 @@
                    const from = _sceneNodeMap.get(edge.from);
                    const to = _sceneNodeMap.get(edge.to);
                    if (!from || !to) continue;
-                   if (edge.type === 'hierarchical' || (from.visible && to.visible)) {
+                   if (edge.type === 'hierarchical') {
+                     if (edge.distance != null && edge.distance < EDGE_PROXIMITY_THRESHOLD) continue;
                      edgePositions.push(...from.position, ...to.position);
                    }
                  }

@@ -78,6 +78,7 @@ export interface SceneEdge {
   from: string;
   to: string;
   type: 'hierarchical' | 'similarity' | 'injection';
+  distance?: number; // euclidean distance between endpoints (hierarchical only)
 }
 
 export interface SceneData {
@@ -190,6 +191,18 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
     // Hierarchical edges from parent_id
     if (node.parent_id) {
       edges.push({ from: node.parent_id, to: node.id, type: 'hierarchical' });
+    }
+  }
+
+  // Compute distances for hierarchical edges (proximity suppression in renderer)
+  const positionById = new Map(nodes.map(n => [n.id, n.position]));
+  for (const edge of edges) {
+    if (edge.type !== 'hierarchical') continue;
+    const fp = positionById.get(edge.from);
+    const tp = positionById.get(edge.to);
+    if (fp && tp) {
+      const dx = fp[0] - tp[0], dy = fp[1] - tp[1], dz = fp[2] - tp[2];
+      edge.distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
   }
 
