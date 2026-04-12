@@ -34,6 +34,10 @@
    *  Spatial proximity already communicates the parent-child relationship. */
   const EDGE_PROXIMITY_THRESHOLD = 12.0;
 
+  /** Segments per bezier curve for hierarchical edges.
+   *  Used by buildCurvePositions and callers for index construction. */
+  const CURVE_SEGMENTS = 12;
+
   // Edge groups — persisted across rebuilds for visibility toggle
   let similarityEdgeGroup: THREE.Group | null = null;
   let injectionEdgeGroup: THREE.Group | null = null;
@@ -168,8 +172,7 @@
     arcIndex: number,
     arcTotal: number,
   ): Float32Array {
-    const SEGMENTS = 12;
-    const positions = new Float32Array((SEGMENTS + 1) * 3);
+    const positions = new Float32Array((CURVE_SEGMENTS + 1) * 3);
 
     // Midpoint
     const mx = (start[0] + end[0]) / 2;
@@ -182,13 +185,20 @@
     const dz = end[2] - start[2];
     const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
 
-    // Perpendicular offset — use cross product with up vector
-    // If edge is near-vertical, use right vector instead
-    const upX = 0, upY = 1, upZ = 0;
-    let px = dy * upZ - dz * upY;
-    let py = dz * upX - dx * upZ;
-    let pz = dx * upY - dy * upX;
-    const pLen = Math.sqrt(px * px + py * py + pz * pz) || 1;
+    // Perpendicular offset — cross product with up vector (0,1,0).
+    // If edge is near-vertical, fallback to right vector (1,0,0).
+    let px = -dz;   // dy*0 - dz*1
+    let py = 0;     // dz*0 - dx*0
+    let pz = dx;    // dx*1 - dy*0
+    let pLen = Math.sqrt(px * px + py * py + pz * pz);
+    if (pLen < 0.001) {
+      // Edge is near-vertical — cross with right vector (1,0,0) instead
+      // cross((dx,dy,dz), (1,0,0)) = (0, dz, -dy)
+      px = 0;
+      py = dz;
+      pz = -dy;
+      pLen = Math.sqrt(py * py + pz * pz) || 1;
+    }
     px /= pLen; py /= pLen; pz /= pLen;
 
     // Fan offset: spread siblings apart. Center index = 0 offset.
@@ -200,8 +210,8 @@
     const ctrlZ = mz + pz * arcMagnitude;
 
     // Quadratic bezier: B(t) = (1-t)²·start + 2(1-t)t·ctrl + t²·end
-    for (let i = 0; i <= SEGMENTS; i++) {
-      const t = i / SEGMENTS;
+    for (let i = 0; i <= CURVE_SEGMENTS; i++) {
+      const t = i / CURVE_SEGMENTS;
       const t1 = 1 - t;
       positions[i * 3]     = t1 * t1 * start[0] + 2 * t1 * t * ctrlX + t * t * end[0];
       positions[i * 3 + 1] = t1 * t1 * start[1] + 2 * t1 * t * ctrlY + t * t * end[1];
@@ -392,7 +402,6 @@
 
     const hierarchicalGroup = new THREE.Group();
     hierarchicalGroup.userData = { isInterClusterEdgeGroup: true };
-    const CURVE_SEGMENTS = 12;
     for (const [parentId, edges] of edgesByParent) {
       if (edges.length === 0) continue;
       const childCount = childCountByParent.get(parentId) ?? 1;
@@ -763,13 +772,12 @@
                     const allPositions: number[] = [];
                     const allIndices: number[] = [];
                     let vertexOffset = 0;
-                    const SEGMENTS = 12;
                     for (let arcIdx = 0; arcIdx < hierEdges.length; arcIdx++) {
                       const e = hierEdges[arcIdx];
                       const curvePos = buildCurvePositions(e.from, e.to, arcIdx, hierEdges.length);
                       for (let i = 0; i < curvePos.length; i++) allPositions.push(curvePos[i]);
-                      for (let i = 0; i < SEGMENTS; i++) allIndices.push(vertexOffset + i, vertexOffset + i + 1);
-                      vertexOffset += SEGMENTS + 1;
+                      for (let i = 0; i < CURVE_SEGMENTS; i++) allIndices.push(vertexOffset + i, vertexOffset + i + 1);
+                      vertexOffset += CURVE_SEGMENTS + 1;
                     }
                     ls.geometry.setAttribute('position', new THREE.Float32BufferAttribute(allPositions, 3));
                     ls.geometry.setIndex(allIndices);
