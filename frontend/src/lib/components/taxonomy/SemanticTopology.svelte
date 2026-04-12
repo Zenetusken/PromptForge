@@ -888,6 +888,40 @@
     });
   });
 
+  // Focus-reveal: on hover, brighten the hovered node's family edges,
+  // dim everything else. On hover-clear, restore density-based opacities.
+  $effect(() => {
+    const hovered = hoveredNodeId;
+    if (!renderer || !sceneData) return;
+
+    // Find the hovered node's parent (for family matching)
+    const hoveredNode = hovered ? sceneData.nodes.find(n => n.id === hovered) : null;
+    const familyParentId = hoveredNode?.parentId ?? null;
+    // If hovered node IS a domain/project, its "family" is itself as parent
+    const isStructural = hoveredNode?.state === 'domain' || hoveredNode?.state === 'project';
+    const activeParent = isStructural ? hovered : familyParentId;
+
+    renderer.scene.traverse((obj) => {
+      if (!(obj instanceof THREE.LineSegments)) return;
+      const ud = obj.userData;
+      if (!ud?.isInterClusterEdge) return;
+
+      const base = (ud.baseOpacity as number) ?? 0.4;
+
+      if (!hovered) {
+        // No hover — restore to base opacity (or dimmed if domain highlight active)
+        const dimActive = clustersStore.highlightedDomain != null;
+        (obj.material as THREE.LineBasicMaterial).opacity = dimActive ? base * 0.25 : base;
+        return;
+      }
+
+      // Hover active — brighten family, dim the rest
+      const edgeParent = ud.parentId as string | undefined;
+      const isFamilyEdge = edgeParent != null && edgeParent === activeParent;
+      (obj.material as THREE.LineBasicMaterial).opacity = isFamilyEdge ? Math.min(base * 2.5, 0.6) : base * 0.15;
+    });
+  });
+
   // Sync external family selection → highlight node
   $effect(() => {
     const externalId = clustersStore.selectedClusterId;
