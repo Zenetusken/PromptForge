@@ -3,7 +3,7 @@
   import { clustersStore } from '$lib/stores/clusters.svelte';
 
   import { TopologyRenderer, type LODTier } from './TopologyRenderer';
-  import { buildSceneData, assignLodVisibility, type SceneData } from './TopologyData';
+  import { buildSceneData, assignLodVisibility, computeHierarchicalOpacity, type SceneData } from './TopologyData';
   import { TopologyInteraction } from './TopologyInteraction';
   import { TopologyLabels } from './TopologyLabels';
   import { settleForces } from './TopologyWorker';
@@ -21,6 +21,7 @@
   import { BeamPool } from './BeamPool';
   import { ClusterPhysics } from './ClusterPhysics';
   import { createRippleUniforms, RIPPLE_VERTEX_SHADER, RIPPLE_FRAGMENT_SHADER } from './BeamShader';
+  import { EDGE_DEPTH_VERTEX, EDGE_DEPTH_FRAGMENT, createEdgeDepthUniforms } from './EdgeShader';
   import { buildNodeMap } from './TopologyData';
 
   // Resolved at module level to avoid per-frame allocations
@@ -28,6 +29,17 @@
   const EDGE_COLOR = parseInt(stateColor('archived').replace('#', ''), 16);
   const SIMILARITY_EDGE_COLOR = parseInt(stateColor('template').replace('#', ''), 16);
   const INJECTION_EDGE_COLOR = 0xff9500; // warm gold/amber
+
+  /** Suppress hierarchical edges shorter than this (scene units).
+   *  Spatial proximity already communicates the parent-child relationship. */
+  const EDGE_PROXIMITY_THRESHOLD = 12.0;
+
+  /** Segments per bezier curve for hierarchical edges.
+   *  Used by buildCurvePositions and callers for index construction. */
+  const CURVE_SEGMENTS = 12;
+
+  /** Endpoint pair for hierarchical edge curve building. */
+  interface HierEdge { from: [number, number, number]; to: [number, number, number] }
 
   // Edge groups — persisted across rebuilds for visibility toggle
   let similarityEdgeGroup: THREE.Group | null = null;
@@ -108,6 +120,9 @@
   let _removeDomainRotation: (() => void) | null = null;
   let _removeFormationAnim: (() => void) | null = null;
 
+  // Persisted edge grouping — shared between rebuildScene and formation rebuild
+  let _edgesByParent: Map<string, HierEdge[]> = new Map();
+
   // External highlight tracking (for family selection sync)
   let _highlightedId: string | null = null;
   let _highlightedColor: number | null = null;
@@ -142,6 +157,89 @@
     }
     _highlightedId = null;
     _highlightedColor = null;
+  }
+
+  /** Set opacity on an edge material — handles both LineBasicMaterial and ShaderMaterial. */
+  function setEdgeOpacity(obj: THREE.LineSegments, value: number): void {
+    const mat = obj.material as any;
+    if (mat.uniforms?.uBaseOpacity) {
+      mat.uniforms.uBaseOpacity.value = value;
+    } else {
+      mat.opacity = value;
+    }
+  }
+
+  /** Merge multiple curved edges into a single geometry's position + index arrays.
+   *  Used by both initial rebuildScene and formation animation rebuild. */
+  function buildMergedCurveGeometry(edges: HierEdge[]): { positions: number[]; indices: number[] } {
+    const positions: number[] = [];
+    const indices: number[] = [];
+    let offset = 0;
+    for (let i = 0; i < edges.length; i++) {
+      const cp = buildCurvePositions(edges[i].from, edges[i].to, i, edges.length);
+      for (let j = 0; j < cp.length; j++) positions.push(cp[j]);
+      for (let j = 0; j < CURVE_SEGMENTS; j++) indices.push(offset + j, offset + j + 1);
+      offset += CURVE_SEGMENTS + 1;
+    }
+    return { positions, indices };
+  }
+
+  /** Build curved edge geometry from start→end with a perpendicular arc.
+   *  The midpoint is offset perpendicular to the edge direction, creating
+   *  a gentle arc. `arcIndex` and `arcTotal` spread siblings into a fan. */
+  function buildCurvePositions(
+    start: [number, number, number],
+    end: [number, number, number],
+    arcIndex: number,
+    arcTotal: number,
+  ): Float32Array {
+    const positions = new Float32Array((CURVE_SEGMENTS + 1) * 3);
+
+    // Midpoint
+    const mx = (start[0] + end[0]) / 2;
+    const my = (start[1] + end[1]) / 2;
+    const mz = (start[2] + end[2]) / 2;
+
+    // Edge direction
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const dz = end[2] - start[2];
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+
+    // Perpendicular offset — cross product with up vector (0,1,0).
+    // If edge is near-vertical, fallback to right vector (1,0,0).
+    let px = -dz;   // dy*0 - dz*1
+    let py = 0;     // dz*0 - dx*0
+    let pz = dx;    // dx*1 - dy*0
+    let pLen = Math.sqrt(px * px + py * py + pz * pz);
+    if (pLen < 0.001) {
+      // Edge is near-vertical — cross with right vector (1,0,0) instead
+      // cross((dx,dy,dz), (1,0,0)) = (0, dz, -dy)
+      px = 0;
+      py = dz;
+      pz = -dy;
+      pLen = Math.sqrt(py * py + pz * pz) || 1;
+    }
+    px /= pLen; py /= pLen; pz /= pLen;
+
+    // Fan offset: spread siblings apart. Center index = 0 offset.
+    const spread = arcTotal > 1 ? (arcIndex - (arcTotal - 1) / 2) / arcTotal : 0;
+    const arcMagnitude = len * 0.15 + spread * len * 0.2;
+
+    const ctrlX = mx + px * arcMagnitude;
+    const ctrlY = my + py * arcMagnitude;
+    const ctrlZ = mz + pz * arcMagnitude;
+
+    // Quadratic bezier: B(t) = (1-t)²·start + 2(1-t)t·ctrl + t²·end
+    for (let i = 0; i <= CURVE_SEGMENTS; i++) {
+      const t = i / CURVE_SEGMENTS;
+      const t1 = 1 - t;
+      positions[i * 3]     = t1 * t1 * start[0] + 2 * t1 * t * ctrlX + t * t * end[0];
+      positions[i * 3 + 1] = t1 * t1 * start[1] + 2 * t1 * t * ctrlY + t * t * end[1];
+      positions[i * 3 + 2] = t1 * t1 * start[2] + 2 * t1 * t * ctrlZ + t * t * end[2];
+    }
+
+    return positions;
   }
 
   function rebuildScene(data: SceneData): void {
@@ -297,33 +395,54 @@
     // Build node map once — used for edge building, beam targeting, and edge group opacity
     _sceneNodeMap = buildNodeMap(data.nodes);
 
-    // Build edges — hierarchical edges (parent→child) are always drawn
-    // if both endpoints exist in the scene, regardless of LOD visibility.
-    // This prevents child clusters from appearing "orphaned" when their
-    // domain parent is at the edge of a visibility threshold.
-    const edgePositions: number[] = [];
+    // Group hierarchical edges by parent — proximity-suppressed edges excluded.
+    // Persisted in _edgesByParent so the formation animation rebuild can
+    // reconstruct curves from settled positions without re-scanning all edges.
+    _edgesByParent = new Map<string, HierEdge[]>();
     for (const edge of data.edges) {
+      if (edge.type !== 'hierarchical') continue;
       const from = _sceneNodeMap.get(edge.from);
       const to = _sceneNodeMap.get(edge.to);
       if (!from || !to) continue;
-      const isHierarchical = edge.type === 'hierarchical';
-      if (isHierarchical || (from.visible && to.visible)) {
-        edgePositions.push(...from.position, ...to.position);
-      }
+      if (edge.distance != null && edge.distance < EDGE_PROXIMITY_THRESHOLD) continue;
+      let bucket = _edgesByParent.get(edge.from);
+      if (!bucket) { bucket = []; _edgesByParent.set(edge.from, bucket); }
+      bucket.push({ from: from.position, to: to.position });
     }
 
-    if (edgePositions.length > 0) {
-      const edgeGeometry = new THREE.BufferGeometry();
-      edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-      const edgeMaterial = new THREE.LineBasicMaterial({
-        color: EDGE_COLOR,
-        transparent: true,
-        opacity: 0.4,
-      });
-      const lines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-      lines.userData = { isInterClusterEdge: true };
-      renderer.scene.add(lines);
+    // Count total children per parent (including proximity-suppressed ones)
+    // so opacity scales by actual density, not by visible-edge count
+    const childCountByParent = new Map<string, number>();
+    for (const edge of data.edges) {
+      if (edge.type !== 'hierarchical') continue;
+      childCountByParent.set(edge.from, (childCountByParent.get(edge.from) ?? 0) + 1);
     }
+
+    const hierarchicalGroup = new THREE.Group();
+    hierarchicalGroup.userData = { isInterClusterEdgeGroup: true };
+    for (const [parentId, edges] of _edgesByParent) {
+      if (edges.length === 0) continue;
+      const childCount = childCountByParent.get(parentId) ?? 1;
+      const opacity = computeHierarchicalOpacity(childCount);
+      const { positions: curvePositions, indices: curveIndices } = buildMergedCurveGeometry(edges);
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(curvePositions, 3));
+      geo.setIndex(curveIndices);
+
+      const uniforms = createEdgeDepthUniforms(EDGE_COLOR, opacity);
+      const mat = new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: EDGE_DEPTH_VERTEX,
+        fragmentShader: EDGE_DEPTH_FRAGMENT,
+        transparent: true,
+        depthWrite: false,
+      });
+      const lines = new THREE.LineSegments(geo, mat);
+      lines.userData = { isInterClusterEdge: true, baseOpacity: opacity, parentId };
+      hierarchicalGroup.add(lines);
+    }
+    renderer.scene.add(hierarchicalGroup);
 
     // Similarity + injection edges — shared builder, separate groups with toggles
     similarityEdgeGroup = buildEdgeGroup(data, _sceneNodeMap, {
@@ -591,11 +710,9 @@
         rebuildScene(sceneData);
 
         // Hide edges during formation to prevent visual clutter
-        let hierarchicalLinesMesh: any = null;
-        renderer?.scene.children.forEach(c => {
-           if (c.userData.isInterClusterEdge) hierarchicalLinesMesh = c;
+        renderer?.scene.traverse((obj) => {
+          if (obj.userData?.isInterClusterEdgeGroup) obj.visible = false;
         });
-        if (hierarchicalLinesMesh) hierarchicalLinesMesh.visible = false;
         if (similarityEdgeGroup) similarityEdgeGroup.visible = false;
         if (injectionEdgeGroup) injectionEdgeGroup.visible = false;
 
@@ -636,22 +753,25 @@
               _removeFormationAnim?.();
               _removeFormationAnim = null;
 
-              // Re-enable edges and update geometry
-              if (hierarchicalLinesMesh && _sceneNodeMap) {
-                 const edgePositions: number[] = [];
-                 for (const edge of formSceneData.edges) {
-                   const from = _sceneNodeMap.get(edge.from);
-                   const to = _sceneNodeMap.get(edge.to);
-                   if (!from || !to) continue;
-                   if (edge.type === 'hierarchical' || (from.visible && to.visible)) {
-                     edgePositions.push(...from.position, ...to.position);
-                   }
-                 }
-                 if (edgePositions.length > 0) {
-                   hierarchicalLinesMesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-                 }
-                 hierarchicalLinesMesh.visible = true;
-              }
+              // Re-enable hierarchical edges — rebuild curves from settled positions.
+              // Uses _edgesByParent (persisted from rebuildScene) to avoid re-scanning
+              // all edges. Node positions were lerped to settled values above, so
+              // _sceneNodeMap positions are already at their final locations.
+              renderer?.scene.traverse((obj) => {
+                if (obj.userData?.isInterClusterEdgeGroup) {
+                  for (const child of (obj as THREE.Group).children) {
+                    const ls = child as THREE.LineSegments;
+                    const parentId = ls.userData?.parentId as string | undefined;
+                    if (!parentId) continue;
+                    const edges = _edgesByParent.get(parentId);
+                    if (!edges || edges.length === 0) continue;
+                    const { positions, indices } = buildMergedCurveGeometry(edges);
+                    ls.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    ls.geometry.setIndex(indices);
+                  }
+                  obj.visible = true;
+                }
+              });
               if (similarityEdgeGroup) similarityEdgeGroup.visible = clustersStore.showSimilarityEdges;
               if (injectionEdgeGroup) injectionEdgeGroup.visible = clustersStore.showInjectionEdges;
            }
@@ -852,12 +972,47 @@
       if (!(obj instanceof THREE.LineSegments)) return;
       const ud = obj.userData;
       if (ud?.isInterClusterEdge) {
-        (obj.material as THREE.LineBasicMaterial).opacity = dimActive ? 0.1 : 0.4;
+        const base = (ud.baseOpacity as number) ?? 0.4;
+        setEdgeOpacity(obj, dimActive ? base * 0.25 : base);
       } else if (ud?.isSimilarityEdge || ud?.isInjectionEdge) {
         const mat = obj.material as THREE.LineBasicMaterial;
         const base = ud.baseOpacity as number;
         mat.opacity = dimActive ? base * 0.25 : base;
       }
+    });
+  });
+
+  // Focus-reveal: on hover, brighten the hovered node's family edges,
+  // dim everything else. On hover-clear, restore density-based opacities.
+  $effect(() => {
+    const hovered = hoveredNodeId;
+    if (!renderer || !sceneData) return;
+
+    // Find the hovered node's parent (for family matching)
+    const hoveredNode = hovered ? sceneData.nodes.find(n => n.id === hovered) : null;
+    const familyParentId = hoveredNode?.parentId ?? null;
+    // If hovered node IS a domain/project, its "family" is itself as parent
+    const isStructural = hoveredNode?.state === 'domain' || hoveredNode?.state === 'project';
+    const activeParent = isStructural ? hovered : familyParentId;
+
+    renderer.scene.traverse((obj) => {
+      if (!(obj instanceof THREE.LineSegments)) return;
+      const ud = obj.userData;
+      if (!ud?.isInterClusterEdge) return;
+
+      const base = (ud.baseOpacity as number) ?? 0.4;
+
+      if (!hovered) {
+        // No hover — restore to base opacity (or dimmed if domain highlight active)
+        const dimActive = clustersStore.highlightedDomain != null;
+        setEdgeOpacity(obj, dimActive ? base * 0.25 : base);
+        return;
+      }
+
+      // Hover active — brighten family, dim the rest
+      const edgeParent = ud.parentId as string | undefined;
+      const isFamilyEdge = edgeParent != null && edgeParent === activeParent;
+      setEdgeOpacity(obj, isFamilyEdge ? Math.min(base * 2.5, 0.6) : base * 0.15);
     });
   });
 

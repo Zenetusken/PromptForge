@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { buildSceneData, assignLodVisibility, type SceneNode } from './TopologyData';
+import { buildSceneData, assignLodVisibility, computeHierarchicalOpacity, type SceneNode } from './TopologyData';
 import type { ClusterNode } from '$lib/api/clusters';
 import { domainStore } from '$lib/stores/domains.svelte';
 
@@ -67,7 +67,7 @@ describe('buildSceneData', () => {
     const result = buildSceneData(flat);
     // 1 hierarchical edge only (different domains → no similarity edge)
     expect(result.edges).toHaveLength(1);
-    expect(result.edges[0]).toEqual({ from: 'parent', to: 'child', type: 'hierarchical' });
+    expect(result.edges[0]).toMatchObject({ from: 'parent', to: 'child', type: 'hierarchical' });
   });
 
   it('produces no similarity or injection edges when not passed', () => {
@@ -238,6 +238,33 @@ describe('buildSceneData — state-based visual encoding', () => {
   });
 });
 
+describe('buildSceneData — edge distance', () => {
+  it('computes distance on hierarchical edges', () => {
+    const parent = makeNode({
+      id: 'parent', state: 'domain',
+      umap_x: 0, umap_y: 0, umap_z: 0,
+    });
+    const child = makeNode({
+      id: 'child', parent_id: 'parent',
+      umap_x: 0.3, umap_y: 0.4, umap_z: 0,
+    });
+    const { edges } = buildSceneData([parent, child]);
+    const hier = edges.find(e => e.type === 'hierarchical')!;
+    expect(hier.distance).toBeDefined();
+    // UMAP_SCALE=10, so positions are (0,0,0) and (3,4,0), distance = 5
+    expect(hier.distance).toBeCloseTo(5.0, 1);
+  });
+
+  it('does not set distance on similarity edges', () => {
+    const a = makeNode({ id: 'a' });
+    const b = makeNode({ id: 'b' });
+    const simEdges = [{ from_id: 'a', to_id: 'b', similarity: 0.8 }];
+    const { edges } = buildSceneData([a, b], simEdges);
+    const sim = edges.find(e => e.type === 'similarity')!;
+    expect(sim.distance).toBeUndefined();
+  });
+});
+
 describe('buildSceneData — quality encoding', () => {
   beforeEach(() => {
     domainStore._reset();
@@ -260,5 +287,23 @@ describe('buildSceneData — quality encoding', () => {
     const { nodes } = buildSceneData([withScore, withNull]);
     expect(nodes.find(n => n.id === 'a')!.avgScore).toBe(7.5);
     expect(nodes.find(n => n.id === 'b')!.avgScore).toBeNull();
+  });
+});
+
+describe('computeHierarchicalOpacity', () => {
+  it('returns full opacity for small domains (≤5 children)', () => {
+    expect(computeHierarchicalOpacity(1)).toBeCloseTo(0.4);
+    expect(computeHierarchicalOpacity(3)).toBeCloseTo(0.4);
+    expect(computeHierarchicalOpacity(5)).toBeCloseTo(0.4);
+  });
+
+  it('reduces opacity for dense domains', () => {
+    expect(computeHierarchicalOpacity(10)).toBeCloseTo(0.2);
+    expect(computeHierarchicalOpacity(20)).toBeCloseTo(0.1);
+  });
+
+  it('handles zero/negative gracefully', () => {
+    expect(computeHierarchicalOpacity(0)).toBeCloseTo(0.4);
+    expect(computeHierarchicalOpacity(-1)).toBeCloseTo(0.4);
   });
 });

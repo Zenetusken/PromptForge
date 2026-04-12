@@ -78,6 +78,7 @@ export interface SceneEdge {
   from: string;
   to: string;
   type: 'hierarchical' | 'similarity' | 'injection';
+  distance?: number; // euclidean distance between endpoints (hierarchical only)
 }
 
 export interface SceneData {
@@ -193,6 +194,18 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
     }
   }
 
+  // Compute distances for hierarchical edges (proximity suppression in renderer)
+  const positionById = new Map(nodes.map(n => [n.id, n.position]));
+  for (const edge of edges) {
+    if (edge.type !== 'hierarchical') continue;
+    const fp = positionById.get(edge.from);
+    const tp = positionById.get(edge.to);
+    if (fp && tp) {
+      const dx = fp[0] - tp[0], dy = fp[1] - tp[1], dz = fp[2] - tp[2];
+      edge.distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+  }
+
   // Optional edge layers — build node lookup once for both
   const nodeIdSet = (similarityEdges || injectionEdges)
     ? new Set(nodes.map(n => n.id))
@@ -237,6 +250,20 @@ export function buildNodeMap(nodes: SceneNode[]): Map<string, SceneNode> {
     map.set(node.id, node);
   }
   return map;
+}
+
+/**
+ * Compute per-edge opacity for hierarchical edges based on parent child count.
+ * Dense domains (many children) get lighter edges; sparse domains keep full opacity.
+ * Formula: base * min(1, CAP / childCount)
+ * With base=0.4, CAP=5: 3 children → 0.4, 10 children → 0.2, 20 children → 0.1.
+ */
+const DENSITY_OPACITY_BASE = 0.4;
+const DENSITY_OPACITY_CAP = 5;
+
+export function computeHierarchicalOpacity(childCount: number): number {
+  if (childCount <= 0) return DENSITY_OPACITY_BASE;
+  return DENSITY_OPACITY_BASE * Math.min(1.0, DENSITY_OPACITY_CAP / childCount);
 }
 
 /** Deterministic float from string hash (0..1). */
