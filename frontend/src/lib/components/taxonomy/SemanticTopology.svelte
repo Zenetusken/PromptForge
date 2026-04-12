@@ -433,7 +433,12 @@
       geo.setAttribute('position', new THREE.Float32BufferAttribute(curvePositions, 3));
       geo.setIndex(curveIndices);
 
-      const uniforms = createEdgeDepthUniforms(EDGE_COLOR, opacity);
+      // Inherit parent domain's color — edges fan out in the domain's hue
+      const parentNode = _sceneNodeMap.get(parentId);
+      const edgeColor = parentNode
+        ? parseInt(parentNode.color.replace('#', ''), 16)
+        : EDGE_COLOR;
+      const uniforms = createEdgeDepthUniforms(edgeColor, opacity);
       const mat = new THREE.ShaderMaterial({
         uniforms,
         vertexShader: EDGE_DEPTH_VERTEX,
