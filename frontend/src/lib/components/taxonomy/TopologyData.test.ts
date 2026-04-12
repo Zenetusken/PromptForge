@@ -291,19 +291,20 @@ describe('buildSceneData — quality encoding', () => {
 });
 
 describe('computeHierarchicalOpacity', () => {
-  it('returns full opacity for small domains (≤5 children)', () => {
-    expect(computeHierarchicalOpacity(1)).toBeCloseTo(0.4);
-    expect(computeHierarchicalOpacity(3)).toBeCloseTo(0.4);
-    expect(computeHierarchicalOpacity(5)).toBeCloseTo(0.4);
+  // Base=0.55, CAP=6. Depth shader applies additional proportional reduction.
+  it('returns full opacity for small domains (≤6 children)', () => {
+    expect(computeHierarchicalOpacity(1)).toBeCloseTo(0.55);
+    expect(computeHierarchicalOpacity(3)).toBeCloseTo(0.55);
+    expect(computeHierarchicalOpacity(6)).toBeCloseTo(0.55);
   });
 
   it('reduces opacity for dense domains', () => {
-    expect(computeHierarchicalOpacity(10)).toBeCloseTo(0.2);
-    expect(computeHierarchicalOpacity(20)).toBeCloseTo(0.1);
+    expect(computeHierarchicalOpacity(12)).toBeCloseTo(0.275);
+    expect(computeHierarchicalOpacity(20)).toBeCloseTo(0.165);
   });
 
   it('handles zero/negative gracefully', () => {
-    expect(computeHierarchicalOpacity(0)).toBeCloseTo(0.4);
-    expect(computeHierarchicalOpacity(-1)).toBeCloseTo(0.4);
+    expect(computeHierarchicalOpacity(0)).toBeCloseTo(0.55);
+    expect(computeHierarchicalOpacity(-1)).toBeCloseTo(0.55);
   });
 });

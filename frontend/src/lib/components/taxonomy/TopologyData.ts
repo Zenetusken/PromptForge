@@ -256,10 +256,12 @@ export function buildNodeMap(nodes: SceneNode[]): Map<string, SceneNode> {
  * Compute per-edge opacity for hierarchical edges based on parent child count.
  * Dense domains (many children) get lighter edges; sparse domains keep full opacity.
  * Formula: base * min(1, CAP / childCount)
- * With base=0.4, CAP=5: 3 children → 0.4, 10 children → 0.2, 20 children → 0.1.
+ * With base=0.55, CAP=6: 3 children → 0.55, 12 children → 0.275, 20 children → 0.165.
+ * Base is higher than a standalone 0.4 because the depth shader applies an
+ * additional proportional reduction (up to 60% at far distance).
  */
-const DENSITY_OPACITY_BASE = 0.4;
-const DENSITY_OPACITY_CAP = 5;
+const DENSITY_OPACITY_BASE = 0.55;
+const DENSITY_OPACITY_CAP = 6;
 
 export function computeHierarchicalOpacity(childCount: number): number {
   if (childCount <= 0) return DENSITY_OPACITY_BASE;

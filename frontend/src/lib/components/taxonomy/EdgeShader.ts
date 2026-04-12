@@ -20,27 +20,31 @@ export const EDGE_DEPTH_FRAGMENT = /* glsl */ `
   uniform float uBaseOpacity;
   uniform float uNearDist;
   uniform float uFarDist;
-  uniform float uMinOpacity;
+  uniform float uMaxReduction;
 
   varying float vDepth;
 
   void main() {
+    // Proportional attenuation — depth reduces base opacity by up to
+    // uMaxReduction (e.g. 0.6 = at most 60% dimmer at far distance).
+    // This preserves density-opacity as the dominant control and prevents
+    // the double-reduction problem (density * depth → near-zero).
     float t = clamp((vDepth - uNearDist) / (uFarDist - uNearDist), 0.0, 1.0);
-    float opacity = mix(uBaseOpacity, uMinOpacity, t);
+    float opacity = uBaseOpacity * (1.0 - t * uMaxReduction);
     gl_FragColor = vec4(uColor, opacity);
   }
 `;
 
 /** Create uniforms for the edge depth shader.
  *  Camera range: starts at z=80, auto-focuses to ~60, zoom range 3-200.
- *  Near/far set so edges in the current view fade gently — foreground at
- *  full opacity, background at reduced but still visible opacity. */
+ *  Proportional model: far edges render at (1 - maxReduction) of base opacity.
+ *  With maxReduction=0.6: near=full base, far=40% of base. */
 export function createEdgeDepthUniforms(color: number, baseOpacity: number) {
   return {
     uColor: { value: new THREE.Color(color) },
     uBaseOpacity: { value: baseOpacity },
     uNearDist: { value: 30.0 },
     uFarDist: { value: 120.0 },
-    uMinOpacity: { value: 0.06 },
+    uMaxReduction: { value: 0.6 },
   };
 }
