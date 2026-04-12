@@ -252,6 +252,20 @@ export function buildNodeMap(nodes: SceneNode[]): Map<string, SceneNode> {
   return map;
 }
 
+/**
+ * Compute per-edge opacity for hierarchical edges based on parent child count.
+ * Dense domains (many children) get lighter edges; sparse domains keep full opacity.
+ * Formula: base * min(1, CAP / childCount)
+ * With base=0.4, CAP=5: 3 children → 0.4, 10 children → 0.2, 20 children → 0.1.
+ */
+const DENSITY_OPACITY_BASE = 0.4;
+const DENSITY_OPACITY_CAP = 5;
+
+export function computeHierarchicalOpacity(childCount: number): number {
+  if (childCount <= 0) return DENSITY_OPACITY_BASE;
+  return DENSITY_OPACITY_BASE * Math.min(1.0, DENSITY_OPACITY_CAP / childCount);
+}
+
 /** Deterministic float from string hash (0..1). */
 function hashFloat(str: string, seed: number): number {
   let h = seed * 2654435761;

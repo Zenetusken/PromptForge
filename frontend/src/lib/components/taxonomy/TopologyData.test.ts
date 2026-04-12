@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { buildSceneData, assignLodVisibility, type SceneNode } from './TopologyData';
+import { buildSceneData, assignLodVisibility, computeHierarchicalOpacity, type SceneNode } from './TopologyData';
 import type { ClusterNode } from '$lib/api/clusters';
 import { domainStore } from '$lib/stores/domains.svelte';
 
@@ -287,5 +287,23 @@ describe('buildSceneData — quality encoding', () => {
     const { nodes } = buildSceneData([withScore, withNull]);
     expect(nodes.find(n => n.id === 'a')!.avgScore).toBe(7.5);
     expect(nodes.find(n => n.id === 'b')!.avgScore).toBeNull();
+  });
+});
+
+describe('computeHierarchicalOpacity', () => {
+  it('returns full opacity for small domains (≤5 children)', () => {
+    expect(computeHierarchicalOpacity(1)).toBeCloseTo(0.4);
+    expect(computeHierarchicalOpacity(3)).toBeCloseTo(0.4);
+    expect(computeHierarchicalOpacity(5)).toBeCloseTo(0.4);
+  });
+
+  it('reduces opacity for dense domains', () => {
+    expect(computeHierarchicalOpacity(10)).toBeCloseTo(0.2);
+    expect(computeHierarchicalOpacity(20)).toBeCloseTo(0.1);
+  });
+
+  it('handles zero/negative gracefully', () => {
+    expect(computeHierarchicalOpacity(0)).toBeCloseTo(0.4);
+    expect(computeHierarchicalOpacity(-1)).toBeCloseTo(0.4);
   });
 });

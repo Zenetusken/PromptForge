@@ -3,7 +3,7 @@
   import { clustersStore } from '$lib/stores/clusters.svelte';
 
   import { TopologyRenderer, type LODTier } from './TopologyRenderer';
-  import { buildSceneData, assignLodVisibility, type SceneData } from './TopologyData';
+  import { buildSceneData, assignLodVisibility, computeHierarchicalOpacity, type SceneData } from './TopologyData';
   import { TopologyInteraction } from './TopologyInteraction';
   import { TopologyLabels } from './TopologyLabels';
   import { settleForces } from './TopologyWorker';
@@ -305,29 +305,45 @@
     // if both endpoints exist in the scene, regardless of LOD visibility.
     // This prevents child clusters from appearing "orphaned" when their
     // domain parent is at the edge of a visibility threshold.
-    const edgePositions: number[] = [];
+    // Group hierarchical edges by parent for density-adaptive opacity
+    const edgesByParent = new Map<string, number[]>();
     for (const edge of data.edges) {
       if (edge.type !== 'hierarchical') continue;
       const from = _sceneNodeMap.get(edge.from);
       const to = _sceneNodeMap.get(edge.to);
       if (!from || !to) continue;
-      // Suppress short edges — spatial proximity already shows the relationship
       if (edge.distance != null && edge.distance < EDGE_PROXIMITY_THRESHOLD) continue;
-      edgePositions.push(...from.position, ...to.position);
+      const bucket = edgesByParent.get(edge.from) ?? [];
+      bucket.push(...from.position, ...to.position);
+      edgesByParent.set(edge.from, bucket);
     }
 
-    if (edgePositions.length > 0) {
-      const edgeGeometry = new THREE.BufferGeometry();
-      edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-      const edgeMaterial = new THREE.LineBasicMaterial({
+    // Count total visible children per parent (including proximity-suppressed ones)
+    // so opacity scales by actual density, not by visible-edge count
+    const childCountByParent = new Map<string, number>();
+    for (const edge of data.edges) {
+      if (edge.type !== 'hierarchical') continue;
+      childCountByParent.set(edge.from, (childCountByParent.get(edge.from) ?? 0) + 1);
+    }
+
+    const hierarchicalGroup = new THREE.Group();
+    hierarchicalGroup.userData = { isInterClusterEdgeGroup: true };
+    for (const [parentId, positions] of edgesByParent) {
+      if (positions.length === 0) continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const childCount = childCountByParent.get(parentId) ?? 1;
+      const opacity = computeHierarchicalOpacity(childCount);
+      const mat = new THREE.LineBasicMaterial({
         color: EDGE_COLOR,
         transparent: true,
-        opacity: 0.4,
+        opacity,
       });
-      const lines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-      lines.userData = { isInterClusterEdge: true };
-      renderer.scene.add(lines);
+      const lines = new THREE.LineSegments(geo, mat);
+      lines.userData = { isInterClusterEdge: true, baseOpacity: opacity, parentId };
+      hierarchicalGroup.add(lines);
     }
+    renderer.scene.add(hierarchicalGroup);
 
     // Similarity + injection edges — shared builder, separate groups with toggles
     similarityEdgeGroup = buildEdgeGroup(data, _sceneNodeMap, {
@@ -595,11 +611,9 @@
         rebuildScene(sceneData);
 
         // Hide edges during formation to prevent visual clutter
-        let hierarchicalLinesMesh: any = null;
-        renderer?.scene.children.forEach(c => {
-           if (c.userData.isInterClusterEdge) hierarchicalLinesMesh = c;
+        renderer?.scene.traverse((obj) => {
+          if (obj.userData?.isInterClusterEdgeGroup) obj.visible = false;
         });
-        if (hierarchicalLinesMesh) hierarchicalLinesMesh.visible = false;
         if (similarityEdgeGroup) similarityEdgeGroup.visible = false;
         if (injectionEdgeGroup) injectionEdgeGroup.visible = false;
 
@@ -640,23 +654,30 @@
               _removeFormationAnim?.();
               _removeFormationAnim = null;
 
-              // Re-enable edges and update geometry
-              if (hierarchicalLinesMesh && _sceneNodeMap) {
-                 const edgePositions: number[] = [];
-                 for (const edge of formSceneData.edges) {
-                   const from = _sceneNodeMap.get(edge.from);
-                   const to = _sceneNodeMap.get(edge.to);
-                   if (!from || !to) continue;
-                   if (edge.type === 'hierarchical') {
-                     if (edge.distance != null && edge.distance < EDGE_PROXIMITY_THRESHOLD) continue;
-                     edgePositions.push(...from.position, ...to.position);
-                   }
-                 }
-                 if (edgePositions.length > 0) {
-                   hierarchicalLinesMesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
-                 }
-                 hierarchicalLinesMesh.visible = true;
-              }
+              // Re-enable hierarchical edges — rebuild geometry with settled positions
+              renderer?.scene.traverse((obj) => {
+                if (obj.userData?.isInterClusterEdgeGroup) {
+                  // Rebuild each child LineSegments with settled positions
+                  for (const child of (obj as THREE.Group).children) {
+                    const ls = child as THREE.LineSegments;
+                    const parentId = ls.userData?.parentId;
+                    if (!parentId || !_sceneNodeMap) continue;
+                    const positions: number[] = [];
+                    for (const edge of formSceneData.edges) {
+                      if (edge.type !== 'hierarchical' || edge.from !== parentId) continue;
+                      const from = _sceneNodeMap.get(edge.from);
+                      const to = _sceneNodeMap.get(edge.to);
+                      if (!from || !to) continue;
+                      if (edge.distance != null && edge.distance < EDGE_PROXIMITY_THRESHOLD) continue;
+                      positions.push(...from.position, ...to.position);
+                    }
+                    if (positions.length > 0) {
+                      ls.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    }
+                  }
+                  obj.visible = true;
+                }
+              });
               if (similarityEdgeGroup) similarityEdgeGroup.visible = clustersStore.showSimilarityEdges;
               if (injectionEdgeGroup) injectionEdgeGroup.visible = clustersStore.showInjectionEdges;
            }
@@ -857,7 +878,8 @@
       if (!(obj instanceof THREE.LineSegments)) return;
       const ud = obj.userData;
       if (ud?.isInterClusterEdge) {
-        (obj.material as THREE.LineBasicMaterial).opacity = dimActive ? 0.1 : 0.4;
+        const base = (ud.baseOpacity as number) ?? 0.4;
+        (obj.material as THREE.LineBasicMaterial).opacity = dimActive ? base * 0.25 : base;
       } else if (ud?.isSimilarityEdge || ud?.isInjectionEdge) {
         const mat = obj.material as THREE.LineBasicMaterial;
         const base = ud.baseOpacity as number;
