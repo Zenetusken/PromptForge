@@ -25,7 +25,6 @@ export interface SceneNode {
   domain: string;          // primary domain (e.g. "backend", "general")
   memberCount: number;     // member_count from API
   isSubDomain: boolean;    // true for domain nodes whose parent is also a domain
-  parentDomainLabel: string | null;  // parent domain label for sub-domains (label stripping)
 }
 
 /** Opacity by lifecycle state and active filter.
@@ -153,15 +152,6 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
       .filter(n => n.state === 'domain' && n.parent_id != null && domainIds.has(n.parent_id))
       .map(n => n.id)
   );
-  // Map sub-domain ID → parent domain label (for label stripping)
-  const subDomainParentLabel = new Map<string, string>();
-  for (const id of subDomainIds) {
-    const sub = domainNodesById.get(id);
-    if (sub?.parent_id) {
-      const parent = domainNodesById.get(sub.parent_id);
-      if (parent?.label) subDomainParentLabel.set(id, parent.label);
-    }
-  }
 
   for (const node of visibleNodes) {
     // Position: UMAP coords scaled to scene units, or hash-based fallback.
@@ -209,7 +199,6 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
       domain: parsePrimaryDomain(node.domain),
       memberCount: node.member_count,
       isSubDomain: subDomainIds.has(node.id),
-      parentDomainLabel: subDomainParentLabel.get(node.id) ?? null,
     });
 
     // Hierarchical edges from parent_id

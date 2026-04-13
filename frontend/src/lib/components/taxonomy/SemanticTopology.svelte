@@ -15,7 +15,7 @@
   import { triggerRecluster } from '$lib/api/clusters';
   import { addToast } from '$lib/stores/toast.svelte';
   import { stateColor } from '$lib/utils/colors';
-  import { parsePrimaryDomain, parseSubDomainLabel } from '$lib/utils/formatting';
+  import { parsePrimaryDomain } from '$lib/utils/formatting';
   import type { ClusterNode } from '$lib/api/clusters';
   import { BeamPool } from './BeamPool';
   import { ClusterPhysics } from './ClusterPhysics';
@@ -507,10 +507,7 @@
         isMid && text.length > 14 ? text.slice(0, 14).trimEnd() + '\u2026' : text;
       for (const node of data.nodes) {
         if (!node.visible) continue;
-        const displayLabel = node.isSubDomain && node.parentDomainLabel
-          ? parseSubDomainLabel(node.label, node.parentDomainLabel)
-          : node.label;
-        const sprite = labels.getOrCreate(node.id, truncLabel(displayLabel), node.color);
+        const sprite = labels.getOrCreate(node.id, truncLabel(node.label), node.color);
         sprite.position.set(node.position[0], node.position[1] + node.size + 0.5, node.position[2]);
         if (node.state === 'template') {
           templateSprites.push(sprite);

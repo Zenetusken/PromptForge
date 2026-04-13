@@ -25,7 +25,7 @@
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/shared/ScoreSparkline.svelte';
   import { PHASE_LABELS, DIMENSION_LABELS } from '$lib/utils/dimensions';
-  import { formatScore, isPassthroughResult, trendInfo, formatRelativeTime, parseSubDomainLabel } from '$lib/utils/formatting';
+  import { formatScore, isPassthroughResult, trendInfo, formatRelativeTime } from '$lib/utils/formatting';
 
   // Tab-aware result: use per-tab cached data when available, fall back to global forge state
   const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
@@ -191,7 +191,7 @@
                 {selectedParentDomainLabel}
               </button>
               <span class="breadcrumb-separator">›</span>
-              <span class="breadcrumb-current">{parseSubDomainLabel(clustersStore.clusterDetail?.label ?? '', selectedParentDomainLabel)}</span>
+              <span class="breadcrumb-current">{clustersStore.clusterDetail?.label ?? ''}</span>
             </div>
           {/if}
 
@@ -230,7 +230,7 @@
                 onclick={startRename}
                 use:tooltip={family.label}
                 aria-label="Click to rename: {family.label}"
-              >{selectedIsSubDomain && selectedParentDomainLabel ? parseSubDomainLabel(family.label, selectedParentDomainLabel) : family.label}</button>
+              >{family.label}</button>
             {/if}
             {#if selectedIsSubDomain && selectedParentDomainLabel}
               <span

@@ -6,7 +6,7 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
   import { scoreColor, taxonomyColor, stateColor } from '$lib/utils/colors';
-  import { formatScore, formatRelativeTime, parsePrimaryDomain, parseSubDomainLabel } from '$lib/utils/formatting';
+  import { formatScore, formatRelativeTime, parsePrimaryDomain } from '$lib/utils/formatting';
   import { getOptimization } from '$lib/api/client';
   import { tooltip } from '$lib/actions/tooltip';
   import { CLUSTER_NAV_TOOLTIPS } from '$lib/utils/ui-tooltips';
@@ -170,7 +170,7 @@
           subGroup = {
             id: clusterParentId,
             label: subLabel,
-            displayLabel: parseSubDomainLabel(subLabel, subInfo.parentLabel),
+            displayLabel: subLabel,
             clusters: [],
           };
           result[topDomain].subDomains.push(subGroup);

@@ -1992,9 +1992,11 @@ class TaxonomyEngine:
                 if isinstance(raw_label, BaseException) or not raw_label or raw_label == "Unnamed Cluster":
                     continue
 
-                # Format: parent-qualifier (e.g., "saas-pricing")
+                # Sub-domain label: qualifier only (no parent prefix).
+                # "async system reliability" → "async-system-reliability"
+                # The parent relationship is expressed via parent_id, not label prefix.
                 qualifier = raw_label.lower().replace(" ", "-")[:30]
-                sub_label = f"{domain_node.label}-{qualifier}"
+                sub_label = qualifier
 
                 if sub_label in existing_labels:
                     continue
@@ -2019,22 +2021,23 @@ class TaxonomyEngine:
                     # Override centroid from seed (flush may have cleared it)
                     sub_node.centroid_embedding = group["centroid"].astype(np.float32).tobytes()
 
-                    # Re-parent clusters whose members predominantly belong to this group
+                    # Re-parent clusters: set domain to PARENT domain label
+                    # so strategy intelligence queries find them under "backend"
                     reparented = 0
                     for cid in group["cluster_ids"]:
                         cluster = await db.get(PromptCluster, cid)
                         if cluster and cluster.state not in EXCLUDED_STRUCTURAL_STATES:
                             cluster.parent_id = sub_node.id
-                            cluster.domain = sub_label
+                            cluster.domain = domain_node.label
                             reparented += 1
 
-                    # Update optimization domain for reparented clusters
+                    # Update optimization domain to parent domain for strategy intel
                     if reparented:
                         from sqlalchemy import update as sa_update
                         await db.execute(
                             sa_update(Optimization)
                             .where(Optimization.cluster_id.in_(group["cluster_ids"]))
-                            .values(domain=sub_label)
+                            .values(domain=domain_node.label)
                         )
 
                     # Position sub-domain near its children
