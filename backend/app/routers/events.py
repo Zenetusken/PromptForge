@@ -31,6 +31,32 @@ async def publish_event(body: InternalEventRequest, request: Request) -> OkRespo
     synced first and handles local event publishing (avoiding duplicates).
     All other event types are published directly to the bus.
     """
+    # E1b: Cross-process classification agreement bridge.
+    # Internal counter updates only — no SSE broadcast, no event bus publish.
+    if body.event_type == "classification_agreement_record":
+        try:
+            from app.services.classification_agreement import get_classification_agreement
+            get_classification_agreement().record(
+                heuristic_task_type=body.data.get("heuristic_task_type", ""),
+                heuristic_domain=body.data.get("heuristic_domain", ""),
+                llm_task_type=body.data.get("llm_task_type", ""),
+                llm_domain=body.data.get("llm_domain", ""),
+                prompt_snippet=body.data.get("prompt_snippet", ""),
+            )
+        except Exception as _ca_exc:
+            logger.warning("Cross-process classification_agreement record failed: %s", _ca_exc)
+        return OkResponse()
+    if body.event_type == "classification_agreement_strategy_intel":
+        try:
+            from app.services.classification_agreement import get_classification_agreement
+            get_classification_agreement().record_strategy_intel(
+                had_intel=body.data.get("had_intel", False),
+            )
+        except Exception as _si_exc:
+            logger.warning("Cross-process strategy_intel record failed: %s", _si_exc)
+        return OkResponse()
+
+    # General event routing — publish to in-process event bus for SSE delivery.
     if body.event_type == "routing_state_changed":
         routing = getattr(request.app.state, "routing", None)
         if routing:
@@ -73,28 +99,6 @@ async def publish_event(body: InternalEventRequest, request: Request) -> OkRespo
                 "Failed to mirror taxonomy_activity to ring buffer: %s",
                 _mirror_exc,
             )
-
-    # E1b: Cross-process classification agreement bridge
-    if body.event_type == "classification_agreement_record":
-        try:
-            from app.services.classification_agreement import get_classification_agreement
-            get_classification_agreement().record(
-                heuristic_task_type=body.data.get("heuristic_task_type", ""),
-                heuristic_domain=body.data.get("heuristic_domain", ""),
-                llm_task_type=body.data.get("llm_task_type", ""),
-                llm_domain=body.data.get("llm_domain", ""),
-                prompt_snippet=body.data.get("prompt_snippet", ""),
-            )
-        except Exception as _ca_exc:
-            logger.warning("Cross-process classification_agreement record failed: %s", _ca_exc)
-    elif body.event_type == "classification_agreement_strategy_intel":
-        try:
-            from app.services.classification_agreement import get_classification_agreement
-            get_classification_agreement().record_strategy_intel(
-                had_intel=body.data.get("had_intel", False),
-            )
-        except Exception as _si_exc:
-            logger.warning("Cross-process strategy_intel record failed: %s", _si_exc)
 
     return OkResponse()
 
