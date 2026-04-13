@@ -6,7 +6,7 @@
   import { forgeStore } from '$lib/stores/forge.svelte';
   import { addToast } from '$lib/stores/toast.svelte';
   import { scoreColor, taxonomyColor, stateColor } from '$lib/utils/colors';
-  import { formatScore, formatRelativeTime, parsePrimaryDomain } from '$lib/utils/formatting';
+  import { formatScore, formatRelativeTime, parsePrimaryDomain, parseSubDomainLabel } from '$lib/utils/formatting';
   import { getOptimization } from '$lib/api/client';
   import { tooltip } from '$lib/actions/tooltip';
   import { CLUSTER_NAV_TOOLTIPS } from '$lib/utils/ui-tooltips';
@@ -36,6 +36,26 @@
 
   // Derive families from the store's filtered tree (orphans + state filter already applied)
   const allFamilies = $derived(clustersStore.filteredTaxonomyTree);
+
+  // Build a map of sub-domain node IDs → their parent domain info.
+  // Sub-domains are domain-state nodes whose parent_id points to another domain-state node.
+  const subDomainParentMap = $derived.by<Map<string, { parentLabel: string; parentId: string }>>(() => {
+    const map = new Map<string, { parentLabel: string; parentId: string }>();
+    const domainNodesById = new Map<string, ClusterNode>();
+    for (const n of allFamilies) {
+      if (n.state === 'domain') domainNodesById.set(n.id, n);
+    }
+    for (const n of allFamilies) {
+      if (n.state === 'domain' && n.parent_id) {
+        const parent = domainNodesById.get(n.parent_id);
+        if (parent && parent.state === 'domain') {
+          map.set(n.id, { parentLabel: parent.label, parentId: parent.id });
+        }
+      }
+    }
+    return map;
+  });
+
   const families = $derived(allFamilies.slice(0, pageLimit));
   const hasMore = $derived(pageLimit < allFamilies.length);
   const loaded = $derived(!clustersStore.taxonomyLoading || allFamilies.length > 0);
@@ -110,20 +130,69 @@
   );
 
 
-  // Group filtered families by primary domain (ignores qualifier from "primary: qualifier").
-  // Project nodes get their own group keyed by label, not by domain field.
-  let grouped = $derived(
-    filteredFamilies.reduce<Record<string, ClusterNode[]>>((acc, f) => {
-      const d = f.state === 'project' ? `project:${f.label}` : parsePrimaryDomain(f.domain);
-      if (!acc[d]) acc[d] = [];
-      acc[d].push(f);
-      return acc;
-    }, {})
-  );
+  // Hierarchical domain grouping — sub-domains nest under their parent domain.
+  interface SubDomainGroup {
+    id: string;
+    label: string;
+    displayLabel: string;
+    clusters: ClusterNode[];
+  }
+  interface DomainGroup {
+    directClusters: ClusterNode[];
+    subDomains: SubDomainGroup[];
+    totalCount: number;
+  }
+
+  let hierarchicalGrouped = $derived.by<Record<string, DomainGroup>>(() => {
+    const result: Record<string, DomainGroup> = {};
+    const subDomainIds = new Set(subDomainParentMap.keys());
+
+    for (const f of filteredFamilies) {
+      if (f.state === 'project') {
+        const key = `project:${f.label}`;
+        if (!result[key]) result[key] = { directClusters: [], subDomains: [], totalCount: 0 };
+        result[key].directClusters.push(f);
+        result[key].totalCount++;
+        continue;
+      }
+
+      const clusterParentId = f.parent_id;
+
+      if (clusterParentId && subDomainIds.has(clusterParentId)) {
+        const subInfo = subDomainParentMap.get(clusterParentId)!;
+        const topDomain = parsePrimaryDomain(subInfo.parentLabel);
+        if (!result[topDomain]) result[topDomain] = { directClusters: [], subDomains: [], totalCount: 0 };
+
+        let subGroup = result[topDomain].subDomains.find(s => s.id === clusterParentId);
+        if (!subGroup) {
+          const subNode = allFamilies.find(n => n.id === clusterParentId);
+          const subLabel = subNode?.label ?? clusterParentId;
+          subGroup = {
+            id: clusterParentId,
+            label: subLabel,
+            displayLabel: parseSubDomainLabel(subLabel, subInfo.parentLabel),
+            clusters: [],
+          };
+          result[topDomain].subDomains.push(subGroup);
+        }
+        subGroup.clusters.push(f);
+        result[topDomain].totalCount++;
+      } else {
+        const d = parsePrimaryDomain(f.domain);
+        if (!result[d]) result[d] = { directClusters: [], subDomains: [], totalCount: 0 };
+        result[d].directClusters.push(f);
+        result[d].totalCount++;
+      }
+    }
+
+    return result;
+  });
 
   // Sort domains by cluster count (descending) — most populated first
   let domains = $derived(
-    Object.keys(grouped).sort((a, b) => grouped[b].length - grouped[a].length)
+    Object.keys(hierarchicalGrouped).sort(
+      (a, b) => hierarchicalGrouped[b].totalCount - hierarchicalGrouped[a].totalCount
+    )
   );
 
   // Ensure tree is loaded on mount (idempotent — store uses generation counter).
@@ -175,6 +244,15 @@
 
   function setStateFilter(f: StateFilter) {
     clustersStore.setStateFilter(f);
+  }
+
+  let collapsedSubDomains = $state(new Set<string>());
+
+  function toggleSubDomain(subDomainId: string) {
+    const next = new Set(collapsedSubDomains);
+    if (next.has(subDomainId)) next.delete(subDomainId);
+    else next.add(subDomainId);
+    collapsedSubDomains = next;
   }
 
   const OPT_DISPLAY_LIMIT = 8;
@@ -319,8 +397,9 @@
         </div>
       {/if}
 
-      <!-- Domain groups (filtered) -->
+      <!-- Domain groups (filtered) — hierarchical with nested sub-domains -->
       {#each domains as domain (domain)}
+        {@const group = hierarchicalGrouped[domain]}
         <div class="domain-group">
           <button
             class="domain-header"
@@ -330,9 +409,10 @@
           >
             <span class="domain-dot" style="background: {taxonomyColor(domain.startsWith('project:') ? 'general' : domain)};"></span>
             <span class="domain-label">{domain.startsWith('project:') ? domain.slice(8) : domain}</span>
-            <span class="domain-count">{grouped[domain].length}</span>
+            <span class="domain-count">{group.totalCount}</span>
           </button>
-          {#each grouped[domain] as family (family.id)}
+          <!-- Direct clusters (not in any sub-domain) -->
+          {#each group.directClusters as family (family.id)}
             <button
               class="family-row"
               class:family-row--expanded={expandedId === family.id}
@@ -405,6 +485,94 @@
                   </div>
                 {/if}
               </div>
+            {/if}
+          {/each}
+          <!-- Sub-domain groups (nested under parent domain) -->
+          {#each group.subDomains as sub (sub.id)}
+            <button
+              class="subdomain-header"
+              onclick={() => toggleSubDomain(sub.id)}
+            >
+              <span class="subdomain-chevron">{collapsedSubDomains.has(sub.id) ? '\u25B8' : '\u25BE'}</span>
+              <span class="subdomain-label">{sub.displayLabel}</span>
+              <span class="subdomain-count">{sub.clusters.length}</span>
+            </button>
+            {#if !collapsedSubDomains.has(sub.id)}
+              {#each sub.clusters as family (family.id)}
+                <button
+                  class="family-row family-row--subdomain"
+                  class:family-row--expanded={expandedId === family.id}
+                  data-cluster-id={family.id}
+                  onclick={() => toggleExpand(family)}
+                  style="--state-color: {stateColor(family.state)};"
+                >
+                  <span class="family-label">{family.label}</span>
+                  <span class="family-badges">
+                    <span class="member-count font-mono" use:tooltip={`${family.member_count} ${family.member_count === 1 ? 'member' : 'members'}`}>{family.member_count}m</span>
+                    <span
+                      class="badge-usage font-mono"
+                      class:badge-usage--active={family.usage_count > 0}
+                      use:tooltip={CLUSTER_NAV_TOOLTIPS.usage_count}
+                    >{family.usage_count}</span>
+                    <span
+                      class="badge-score font-mono"
+                      style="color: {scoreColor(family.avg_score)};"
+                      use:tooltip={CLUSTER_NAV_TOOLTIPS.avg_score}
+                    >
+                      {formatScore(family.avg_score)}
+                    </span>
+                  </span>
+                </button>
+                {#if expandedId === family.id}
+                  <div class="family-detail">
+                    {#if clustersStore.clusterDetailLoading}
+                      <p class="detail-note">Loading...</p>
+                    {:else if clustersStore.clusterDetail}
+                      <div class="detail-stats">
+                        <span style="color: {stateColor(clustersStore.clusterDetail.state)}">{clustersStore.clusterDetail.state}</span>
+                        <span>{clustersStore.clusterDetail.member_count} members</span>
+                        {#if clustersStore.clusterDetail.preferred_strategy}
+                          <span>{clustersStore.clusterDetail.preferred_strategy}</span>
+                        {/if}
+                      </div>
+                      {#if clustersStore.clusterDetail.optimizations.length > 0}
+                        {@const allOpts = clustersStore.clusterDetail.optimizations}
+                        {@const visibleOpts = allOpts.slice(0, OPT_DISPLAY_LIMIT)}
+                        <div class="linked-opts">
+                          {#each visibleOpts as opt (opt.id)}
+                            <button
+                              class="linked-opt-row"
+                              onclick={() => openLinkedOpt(opt.trace_id, opt.id)}
+                              use:tooltip={opt.raw_prompt}
+                            >
+                              <span class="linked-opt-label">{opt.intent_label || (opt.raw_prompt ? opt.raw_prompt.slice(0, 40) + '..' : 'Untitled')}</span>
+                              {#if opt.created_at}
+                                <span class="linked-opt-time font-mono">{formatRelativeTime(opt.created_at)}</span>
+                              {/if}
+                              <span
+                                class="linked-opt-score font-mono"
+                                style="color: {scoreColor(opt.overall_score)};"
+                              >{formatScore(opt.overall_score)}</span>
+                            </button>
+                          {/each}
+                          {#if allOpts.length > OPT_DISPLAY_LIMIT}
+                            <p class="detail-note">{allOpts.length - OPT_DISPLAY_LIMIT} more in Inspector</p>
+                          {/if}
+                        </div>
+                      {:else}
+                        <p class="detail-note">No linked optimizations yet.</p>
+                      {/if}
+                    {:else if clustersStore.clusterDetailError}
+                      <p class="detail-note">Failed to load detail.</p>
+                    {:else}
+                      <div class="skeleton-row">
+                        <div class="skeleton-bar skeleton-wide"></div>
+                        <div class="skeleton-bar skeleton-narrow"></div>
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              {/each}
             {/if}
           {/each}
         </div>
@@ -805,6 +973,49 @@
     flex-shrink: 0;
   }
 
+  /* ---- Sub-domain headers ---- */
+  .subdomain-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    height: 18px;
+    padding: 0 6px 0 12px;
+    background: transparent;
+    border: none;
+    border-left: 2px solid color-mix(in srgb, var(--color-text-dim) 30%, transparent);
+    cursor: pointer;
+    margin-top: 2px;
+  }
+
+  .subdomain-header:hover {
+    background: var(--color-bg-hover);
+  }
+
+  .subdomain-chevron {
+    font-size: 8px;
+    color: var(--color-text-dim);
+    width: 10px;
+  }
+
+  .subdomain-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--color-text-dim);
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    text-align: left;
+  }
+
+  .subdomain-count {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--color-text-dim);
+  }
+
   /* ---- Family rows ---- */
   .family-row {
     display: flex;
@@ -839,6 +1050,10 @@
     border-color: transparent;
     border-left-color: var(--state-color, var(--tier-accent, var(--color-neon-cyan)));
     background: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 4%, transparent);
+  }
+
+  .family-row--subdomain {
+    padding-left: 24px;
   }
 
   .family-label {
