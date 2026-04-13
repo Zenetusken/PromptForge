@@ -43,11 +43,11 @@ The enrichment engine consolidated 7 layers into 4 active context sources, gated
 
 ### 1.3 Execution Tiers
 
-| Tier | LLM Location | Caller Gate | Full Pipeline | Context Layers |
-|------|-------------|-------------|---------------|----------------|
-| **Internal** | Local (CLI/API key) | REST or MCP | Yes (3 phases) | All 7 |
-| **Sampling** | IDE LLM via MCP | MCP only | Yes (3 phases via tool calling) | All 7 |
-| **Passthrough** | External (user's LLM) | REST or MCP | No (assembled template returned) | All 7 (embedded in template) |
+| Tier | LLM Location | Caller Gate | Full Pipeline | Context Sources |
+|------|-------------|-------------|---------------|-----------------|
+| **Internal** | Local (CLI/API key) | REST or MCP | Yes (3 phases) | 4 (profile-gated) |
+| **Sampling** | IDE LLM via MCP | MCP only | Yes (3 phases via tool calling) | 4 (profile-gated) |
+| **Passthrough** | External (user's LLM) | REST or MCP | No (assembled template returned) | 4 (embedded in template) |
 
 ### 1.4 Entry Points
 
@@ -197,6 +197,8 @@ At full enrichment, the context window consumption is:
 
 ## 5. Recommended Architecture: Tier-Adapted Enrichment
 
+> **Shipped in v0.3.30.** The profiles below were implemented as `select_enrichment_profile()` in `context_enrichment.py`. L1-L7 nomenclature in the tables is pre-consolidation — see the Post-Consolidation Architecture table at the top for current source names. L4+L6 → `strategy_intelligence`, L1 → fallback within `codebase_context`, L7 → within `applied_patterns` pipeline.
+
 ### 5.1 Core Principle
 
 **Match enrichment depth to the use case, not the tier.**
@@ -271,7 +273,7 @@ This is a pure function of observable state — no new preferences required.
 
 ---
 
-## 6. Consolidation Recommendations
+## 6. Consolidation Recommendations (All Shipped in v0.3.30)
 
 ### 6.1 Merge: L6 Performance Signals + L4 Adaptation State → "Strategy Intelligence"
 
@@ -504,8 +506,6 @@ Effective fusion: 1-signal → 3-signal → 4-signal
 
 ## Appendix C: Decision Log
 
-| Date | Decision | Rationale |
-|------|----------|-----------|
 | Date | Decision | Rationale | Status |
 |------|----------|-----------|--------|
 | 2026-04-12 | Do NOT merge L5 (Patterns) and L7 (Few-shots) | Cross-vertical knowledge transfer via GlobalPatterns requires L5 independence. ADR-005/006 alignment. | Validated |
@@ -513,6 +513,6 @@ Effective fusion: 1-signal → 3-signal → 4-signal
 | 2026-04-12 | Collapse L1 (Workspace) into L3 (Codebase) | L1 is a strict subset of L3a when repo is linked. Fallback-only role doesn't justify independent layer. | **Shipped** — Phase 3 |
 | 2026-04-12 | Task-gate L3b (Curated Retrieval) for non-coding | 40% context window for zero-value codebase files on writing/creative prompts. Heuristic task type gates this. | **Shipped** — Phase 1 |
 | 2026-04-12 | Introduce enrichment profiles (A/B/C) | One-size-fits-all enrichment wastes budget. Profile selection is a pure function of observable state. | **Shipped** — Phase 4 |
-| 2026-04-12 | Heuristic analyzer refresh needed | Task-gating and profile selection depend on accurate `task_type` classification. "Design a webhook system" misclassified as `creative` instead of `coding`. See [Heuristic Analyzer Refresh](heuristic-analyzer-refresh.md). | Planned — P0 |
-| 2026-04-12 | Prompt-context divergence detection needed | PostgreSQL prompt vs SQLite codebase produced wrong-stack output. See [Heuristic Analyzer Refresh](heuristic-analyzer-refresh.md) section 5 + improvement 1d. | Planned — P1 |
-| 2026-04-12 | Full action items roadmap created | 12 action items across 5 phases (A-E) with dependency tracking. See [Enrichment Consolidation Action Items](enrichment-consolidation-action-items.md). | Active |
+| 2026-04-12 | Heuristic analyzer refresh needed | Task-gating and profile selection depend on accurate `task_type` classification. "Design a webhook system" misclassified as `creative` instead of `coding`. See [Heuristic Analyzer Refresh](heuristic-analyzer-refresh.md). | **Shipped** — v0.3.30 (A1+A2+A3+A4) |
+| 2026-04-12 | Prompt-context divergence detection needed | PostgreSQL prompt vs SQLite codebase produced wrong-stack output. See [Heuristic Analyzer Refresh](heuristic-analyzer-refresh.md) section 5 + improvement 1d. | **Shipped** — v0.3.30 (B1+B2) |
+| 2026-04-12 | Full action items roadmap created | 12 action items across 5 phases (A-E) with dependency tracking. See [Enrichment Consolidation Action Items](enrichment-consolidation-action-items.md). | Sprint 2 complete, Sprint 3 remaining |
