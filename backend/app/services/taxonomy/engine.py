@@ -1911,8 +1911,12 @@ class TaxonomyEngine:
                 group_embs = [embs_raw[i] for i in group_indices]
                 group_coherence = compute_pairwise_coherence(group_embs)
 
-                # Group must be more coherent than the parent domain's mean
-                if group_coherence <= mean_coh:
+                # Coherence gate: group must demonstrate internal focus.
+                # - Coherence path (low parent mean): group must beat parent
+                # - Cluster-count path (high parent mean): use absolute floor
+                #   since sub-groups can't exceed an already-coherent parent
+                coherence_floor = min(mean_coh, SUB_DOMAIN_COHERENCE_CEILING)
+                if group_coherence <= coherence_floor:
                     continue
 
                 # Compute centroid

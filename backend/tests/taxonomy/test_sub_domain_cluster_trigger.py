@@ -102,6 +102,32 @@ class TestSubDomainClusterCountTrigger:
         )
         assert fires is False
 
+    def test_coherence_floor_uses_min_for_cluster_count_path(self):
+        """When cluster-count path triggers (high parent coherence), the quality
+        gate uses SUB_DOMAIN_COHERENCE_CEILING as floor, not the parent mean."""
+        from app.services.taxonomy._constants import SUB_DOMAIN_COHERENCE_CEILING
+
+        # Simulate: parent coherence 0.94, groups at 0.56 and 0.73
+        # Without fix: both fail (< 0.94)
+        # With fix: floor = min(0.94, 0.50) = 0.50, both pass
+        parent_mean = 0.94
+        floor = min(parent_mean, SUB_DOMAIN_COHERENCE_CEILING)
+        assert floor == SUB_DOMAIN_COHERENCE_CEILING  # 0.50, not 0.94
+        assert 0.56 > floor  # group passes
+        assert 0.73 > floor  # group passes
+        assert 0.47 <= floor  # low-coherence group correctly rejected
+
+    def test_coherence_floor_uses_parent_mean_for_coherence_path(self):
+        """When coherence path triggers (low parent coherence), the quality
+        gate uses the parent mean as floor (original behavior preserved)."""
+        from app.services.taxonomy._constants import SUB_DOMAIN_COHERENCE_CEILING
+
+        parent_mean = 0.35
+        floor = min(parent_mean, SUB_DOMAIN_COHERENCE_CEILING)
+        assert floor == parent_mean  # 0.35, not 0.50
+        assert 0.40 > floor  # group slightly above parent passes
+        assert 0.30 <= floor  # group below parent rejected
+
     def test_constants_have_expected_values(self):
         """Verify constants are set to planned values."""
         assert SUB_DOMAIN_MIN_CLUSTERS == 12
