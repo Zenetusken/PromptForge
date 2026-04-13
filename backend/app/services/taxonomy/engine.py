@@ -2051,7 +2051,7 @@ class TaxonomyEngine:
                     # Update resolver cache so hot-path can use sub-domain immediately
                     try:
                         from app.services.domain_resolver import get_domain_resolver
-                        get_domain_resolver().add_label(sub_label)
+                        get_domain_resolver().add_label(sub_label, parent_label=domain_node.label)
                     except (ValueError, Exception):
                         pass  # Resolver not initialized (unlikely during warm path)
 

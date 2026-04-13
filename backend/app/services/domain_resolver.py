@@ -48,6 +48,7 @@ class DomainResolver:
 
     def __init__(self) -> None:
         self._domain_labels: set[str] = set()
+        self._sub_domain_parent: dict[str, str] = {}  # sub-domain label → parent domain label
         self._cache: dict[str, str] = {}
         self._signal_loader = None
 
@@ -55,21 +56,43 @@ class DomainResolver:
     def domain_labels(self) -> set[str]:
         return set(self._domain_labels)
 
-    def add_label(self, label: str) -> None:
-        """Register a new domain label at runtime (e.g., after sub-domain discovery)."""
+    def add_label(self, label: str, *, parent_label: str | None = None) -> None:
+        """Register a new domain label at runtime (e.g., after sub-domain discovery).
+
+        Args:
+            label: The domain/sub-domain label.
+            parent_label: If this is a sub-domain, its parent domain label.
+                When set, resolve() maps this label to the parent domain.
+        """
         self._domain_labels.add(label.lower())
+        if parent_label:
+            self._sub_domain_parent[label.lower()] = parent_label.lower()
         self._cache.pop(label.lower(), None)  # Evict stale cache entry
 
     async def load(self, db: AsyncSession) -> None:
         result = await db.execute(
-            select(PromptCluster.label).where(PromptCluster.state == "domain")
+            select(PromptCluster.id, PromptCluster.label, PromptCluster.parent_id)
+            .where(PromptCluster.state == "domain")
         )
-        self._domain_labels = {row[0] for row in result}
+        rows = result.all()
+        self._domain_labels = {r[1] for r in rows}
+        # Build sub-domain → parent domain map for Optimization.domain resolution.
+        # Sub-domains (parent_id points to another domain) resolve to the parent
+        # so strategy intelligence queries find them under the top-level domain.
+        domain_ids = {r[0] for r in rows}
+        id_to_label = {r[0]: r[1] for r in rows}
+        self._sub_domain_parent = {}
+        for row_id, label, parent_id in rows:
+            if parent_id and parent_id in domain_ids:
+                self._sub_domain_parent[label] = id_to_label[parent_id]
         self._cache.clear()
         # Attach signal loader for cross-validation
         from app.services.domain_signal_loader import get_signal_loader
         self._signal_loader = get_signal_loader()
-        logger.info("DomainResolver loaded %d domain labels", len(self._domain_labels))
+        logger.info(
+            "DomainResolver loaded %d domain labels (%d sub-domains)",
+            len(self._domain_labels), len(self._sub_domain_parent),
+        )
 
     async def resolve(
         self,
@@ -96,12 +119,15 @@ class DomainResolver:
                 return self._cache[primary]
 
             # Known domain label — accept regardless of confidence.
+            # Sub-domain labels are mapped to their parent domain for
+            # Optimization.domain storage (strategy intelligence queries).
             if primary in self._domain_labels:
+                resolved = self._sub_domain_parent.get(primary, primary)
                 # Layer 1: log signal divergence for observability
                 if self._signal_loader and raw_prompt:
-                    self._log_signal_divergence(primary, raw_prompt)
-                self._cache[primary] = primary
-                return primary
+                    self._log_signal_divergence(resolved, raw_prompt)
+                self._cache[primary] = resolved
+                return resolved
 
             # Unknown domain: blend signal confidence for gate decision
             blended = confidence
