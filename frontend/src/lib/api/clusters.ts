@@ -32,6 +32,7 @@ export interface ClusterNode {
   blend_w_optimized: number | null;
   blend_w_transform: number | null;
   split_failures: number;
+  meta_pattern_count: number;
   created_at: string | null;
   // Only populated by getClusterDetail
   children?: ClusterNode[];
@@ -194,10 +195,11 @@ export async function getClusterTemplates(params?: { offset?: number; limit?: nu
   return apiFetch(`/clusters/templates${qs ? '?' + qs : ''}`);
 }
 
-export const matchPattern = (prompt_text: string) =>
+export const matchPattern = (prompt_text: string, signal?: AbortSignal) =>
   apiFetch<ClusterMatchResponse>('/clusters/match', {
     method: 'POST',
     body: JSON.stringify({ prompt_text }),
+    signal,
   });
 
 export const updateCluster = (clusterId: string, updates: { intent_label?: string; state?: string }) =>

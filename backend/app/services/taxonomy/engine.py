@@ -2645,7 +2645,21 @@ class TaxonomyEngine:
             query = query.where(PromptCluster.persistence >= min_persistence)
         result = await db.execute(query)
         nodes = result.scalars().all()
-        return [self._node_to_dict(n) for n in nodes]
+
+        # Precompute meta-pattern counts per cluster (single GROUP BY query)
+        from app.models import MetaPattern
+        pattern_count_q = await db.execute(
+            select(MetaPattern.cluster_id, func.count().label("cnt"))
+            .group_by(MetaPattern.cluster_id)
+        )
+        pattern_counts = dict(pattern_count_q.all())
+
+        tree = []
+        for n in nodes:
+            d = self._node_to_dict(n)
+            d["meta_pattern_count"] = pattern_counts.get(n.id, 0)
+            tree.append(d)
+        return tree
 
     async def get_node(
         self,

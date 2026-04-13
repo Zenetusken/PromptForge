@@ -268,6 +268,28 @@
               {/each}
             </div>
 
+            <!-- Applied pattern texts — shows which patterns the LLM received -->
+            {#if enrichmentMeta?.applied_pattern_texts}
+              {@const patternTexts = enrichmentMeta.applied_pattern_texts as { text: string; source: string; cluster_label?: string; similarity?: number; source_count?: number }[]}
+              {#if patternTexts.length > 0}
+                <div class="enrichment-patterns">
+                  <span class="enrichment-patterns-heading">Injected Patterns ({patternTexts.length})</span>
+                  <ul class="enrichment-pattern-list">
+                    {#each patternTexts as p}
+                      <li>
+                        <span class="ep-text">{p.text}</span>
+                        {#if p.cluster_label}
+                          <span class="ep-source">{p.cluster_label}</span>
+                        {:else if p.source === 'explicit'}
+                          <span class="ep-source">selected</span>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              {/if}
+            {/if}
+
             <!-- Retrieval diagnostics row -->
             {#if curatedRetrieval || enrichmentMeta?.explore_synthesis || enrichmentMeta?.combined_context_chars != null}
               <div class="enrichment-diagnostics">
@@ -783,6 +805,45 @@
 
   .enrichment-row--active .enrichment-label {
     color: var(--color-text-secondary);
+  }
+
+  .enrichment-patterns {
+    padding-top: 4px;
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .enrichment-patterns-heading {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    letter-spacing: 0.05em;
+  }
+
+  .enrichment-pattern-list {
+    list-style: none;
+    padding: 0;
+    margin: 3px 0 0;
+  }
+
+  .enrichment-pattern-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 1px 0;
+  }
+
+  .ep-text {
+    font-size: 9px;
+    color: var(--color-text-secondary);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ep-source {
+    font-size: 8px;
+    color: var(--color-text-muted);
+    font-style: italic;
+    flex-shrink: 0;
   }
 
   .enrichment-diagnostics {

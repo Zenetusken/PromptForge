@@ -56,7 +56,7 @@ def _get_engine(request: Request) -> TaxonomyEngine:
 
 class MatchRequest(BaseModel):
     prompt_text: str = Field(
-        ..., min_length=10,
+        ..., min_length=10, max_length=8000,
         description="Prompt text to match against existing clusters.",
     )
 
@@ -532,8 +532,55 @@ async def update_cluster(
 
     if body.state is not None:
         old_state = cluster.state
+
+        # Quality gate: template promotion requires proven quality + usage
+        if body.state == "template" and old_state != "template":
+            _score = cluster.avg_score or 0
+            _members = cluster.member_count or 0
+            _usage = cluster.usage_count or 0
+            if _score < 6.0:
+                raise HTTPException(
+                    422,
+                    f"Template promotion requires avg_score >= 6.0 (current: {_score:.1f})",
+                )
+            if _members < 3 and _usage < 1:
+                raise HTTPException(
+                    422,
+                    f"Template promotion requires 3+ members or 1+ usage (members: {_members}, usage: {_usage})",
+                )
+
         cluster.state = body.state
+
+        # Set promoted_at for state upgrades — always update on template
+        # promotion (even mature→template), and on first mature promotion.
+        _is_upgrade = (
+            (body.state == "template" and old_state != "template")
+            or (body.state == "mature" and old_state not in ("mature", "template"))
+        )
+        if _is_upgrade:
+            from datetime import datetime, timezone
+            cluster.promoted_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
         logger.info("Cluster state changed: id=%s '%s' -> '%s'", cluster_id, old_state, body.state)
+
+        # Log taxonomy event for observability
+        try:
+            from app.services.taxonomy.event_logger import get_event_logger
+            get_event_logger().log_decision(
+                op="state_change",
+                cluster_id=cluster_id,
+                decision=f"{old_state}_to_{body.state}",
+                context={
+                    "old_state": old_state,
+                    "new_state": body.state,
+                    "source": "manual",
+                    "avg_score": cluster.avg_score,
+                    "member_count": cluster.member_count,
+                    "usage_count": cluster.usage_count,
+                },
+            )
+        except RuntimeError:
+            pass  # Event logger not initialized — non-fatal
 
     try:
         await db.commit()
@@ -559,8 +606,9 @@ async def match_cluster(
     request: Request,
     body: MatchRequest,
     db: AsyncSession = Depends(get_db),
+    _rate: None = Depends(RateLimit(lambda: "30/minute")),
 ) -> ClusterMatchResponse:
-    """Hierarchical similarity check for auto-suggestion on paste."""
+    """Hierarchical similarity check for live pattern suggestion."""
     try:
         engine = _get_engine(request)
         result = await engine.match_prompt(body.prompt_text, db=db)

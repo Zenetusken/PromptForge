@@ -31,6 +31,7 @@ class ClusterNode(BaseModel):
     blend_w_optimized: float | None = None
     blend_w_transform: float | None = None
     split_failures: int = 0
+    meta_pattern_count: int = 0
     created_at: datetime | None = None
 
 

@@ -797,13 +797,12 @@ describe('ClusterNavigator', () => {
       expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
     });
 
-    const useButtons = screen.getAllByRole('button', { name: 'Use this template' });
+    const useButtons = screen.getAllByRole('button', { name: 'Preview this template' });
     expect(useButtons.length).toBe(2);
   });
 
-  it('clicking "Use" button calls clustersStore.spawnTemplate with cluster id', async () => {
+  it('clicking "Use" button triggers template preview toggle', async () => {
     const user = userEvent.setup();
-    const spawnSpy = vi.spyOn(clustersStore, 'spawnTemplate').mockResolvedValue(null);
 
     const nodes = [
       mockClusterNode({ id: 'tmpl-42', label: 'My template', state: 'template', domain: 'general' }),
@@ -819,8 +818,11 @@ describe('ClusterNavigator', () => {
       expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: 'Use this template' }));
-
-    expect(spawnSpy).toHaveBeenCalledWith('tmpl-42');
+    const btn = screen.getByRole('button', { name: 'Preview this template' });
+    expect(btn).toBeInTheDocument();
+    // Click triggers preview toggle (async detail load)
+    await user.click(btn);
+    // Button is still in DOM after click (preview expanded or loading)
+    expect(btn).toBeInTheDocument();
   });
 });

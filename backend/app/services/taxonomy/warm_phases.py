@@ -252,6 +252,24 @@ class ReconcileResult:
     zombies_archived: int = 0
     leaked_patterns_cleaned: int = 0
     outliers_ejected: int = 0
+    templates_demoted: int = 0
+    templates_archived: int = 0
+
+
+def _log_template_event(
+    cluster_id: str, decision: str, context: dict,
+) -> None:
+    """Log a template lifecycle event via TaxonomyEventLogger (non-fatal)."""
+    try:
+        get_event_logger().log_decision(
+            path="warm",
+            op="template_lifecycle",
+            cluster_id=cluster_id,
+            decision=decision,
+            context=context,
+        )
+    except RuntimeError:
+        pass
 
 
 @dataclass
@@ -1504,6 +1522,60 @@ async def phase_reconcile(
             "OptimizationPattern repair failed (non-fatal): %s",
             stale_op_exc,
         )
+
+    # --- Template health check: demote degraded or empty templates ---
+    # Templates can degrade via merges, member reassignment, or score drift.
+    # Demotion threshold 5.5 provides 0.5-point hysteresis below the 6.0
+    # manual promotion gate, preventing promote-demote oscillation.
+    _TEMPLATE_DEMOTE_SCORE = 5.5
+    _TEMPLATE_DEMOTE_COHERENCE = 0.4
+    try:
+        template_nodes = [n for n in live_nodes if n.state == "template"]
+        for tpl in template_nodes:
+            _tpl_score = tpl.avg_score or 0
+            _tpl_coh = tpl.coherence or 0
+            _tpl_members = tpl.member_count or 0
+            _tpl_usage = tpl.usage_count or 0
+
+            if _tpl_members == 0 and _tpl_usage == 0:
+                # Empty + unused → archive
+                tpl.state = "archived"
+                result.templates_archived += 1
+                logger.info(
+                    "Template archived (empty+unused): id=%s label=%s",
+                    tpl.id, tpl.label,
+                )
+                _log_template_event(tpl.id, "template_archived_empty", {
+                    "member_count": _tpl_members, "usage_count": _tpl_usage,
+                })
+            elif _tpl_members == 0:
+                # Ghost template: no members but patterns still referenced
+                tpl.state = "mature"
+                result.templates_demoted += 1
+                logger.info(
+                    "Template demoted (ghost, 0 members): id=%s label=%s usage=%d",
+                    tpl.id, tpl.label, _tpl_usage,
+                )
+                _log_template_event(tpl.id, "template_demoted", {
+                    "reason": "ghost", "member_count": 0, "usage_count": _tpl_usage,
+                })
+            elif _tpl_score < _TEMPLATE_DEMOTE_SCORE or _tpl_coh < _TEMPLATE_DEMOTE_COHERENCE:
+                # Quality degraded below demotion threshold
+                tpl.state = "mature"
+                result.templates_demoted += 1
+                logger.info(
+                    "Template demoted (quality): id=%s label=%s score=%.1f coherence=%.3f",
+                    tpl.id, tpl.label, _tpl_score, _tpl_coh,
+                )
+                _log_template_event(tpl.id, "template_demoted", {
+                    "reason": "quality", "avg_score": _tpl_score,
+                    "coherence": _tpl_coh, "threshold_score": _TEMPLATE_DEMOTE_SCORE,
+                    "threshold_coherence": _TEMPLATE_DEMOTE_COHERENCE,
+                })
+        if result.templates_demoted or result.templates_archived:
+            await db.flush()
+    except Exception as tpl_exc:
+        logger.warning("Template health check failed (non-fatal): %s", tpl_exc)
 
     return result
 
@@ -3272,6 +3344,29 @@ async def phase_refresh(
             }
     except Exception as eff_exc:
         logger.debug("Injection effectiveness computation failed (non-fatal): %s", eff_exc)
+
+    # --- Recompute preferred_strategy for template-state clusters ---
+    # Strategy affinity is only updated on hot path (per-optimization), so
+    # after merges/splits/retires it can be stale for days.  Recompute here
+    # for templates so navigator rows always show current best strategy.
+    try:
+        from app.services.prompt_lifecycle import PromptLifecycleService
+
+        _lifecycle = PromptLifecycleService()
+        tpl_q = await db.execute(
+            select(PromptCluster.id).where(PromptCluster.state == "template")
+        )
+        tpl_ids = [r[0] for r in tpl_q.all()]
+        for tid in tpl_ids:
+            try:
+                await _lifecycle.update_strategy_affinity(db, tid)
+            except Exception:
+                pass  # non-fatal per-cluster
+        if tpl_ids:
+            await db.flush()
+            logger.debug("Recomputed preferred_strategy for %d templates", len(tpl_ids))
+    except Exception as strat_exc:
+        logger.debug("Template strategy recomputation failed (non-fatal): %s", strat_exc)
 
     return result
 

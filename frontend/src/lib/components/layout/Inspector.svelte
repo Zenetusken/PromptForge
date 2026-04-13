@@ -297,13 +297,21 @@
 
           <!-- State transition actions -->
           {#if family.state === 'active' || family.state === 'mature'}
-            {@const canPromote = family.member_count >= 3 || family.usage_count >= 1}
+            {@const canPromote = (family.avg_score ?? 0) >= 6.0 && (family.member_count >= 3 || family.usage_count >= 1)}
             <button
               class="action-btn action-btn--primary"
               onclick={() => promoteCluster('template')}
               disabled={promoteSaving || !canPromote}
               use:tooltip={canPromote ? INSPECTOR_TOOLTIPS.promote : INSPECTOR_TOOLTIPS.promote_blocked}
             >Promote to template</button>
+          {/if}
+          {#if family.state === 'template'}
+            <button
+              class="action-btn"
+              onclick={() => promoteCluster('active')}
+              disabled={promoteSaving}
+              use:tooltip={INSPECTOR_TOOLTIPS.demote}
+            >Demote to active</button>
           {/if}
           {#if family.state === 'archived' && family.member_count > 0}
             <button
@@ -314,6 +322,19 @@
             >Unarchive</button>
           {/if}
 
+          <!-- Template usage stats -->
+          {#if family.state === 'template' && family.usage_count > 0}
+            <div class="family-section">
+              <div class="section-heading" style="margin-bottom: 4px;">Template Stats</div>
+              <div class="template-stats-row">
+                <span class="stat-item">Applied to <strong>{family.usage_count}</strong> optimizations</span>
+                {#if family.meta_patterns.length > 0}
+                  <span class="stat-item"><strong>{family.meta_patterns.length}</strong> proven patterns</span>
+                {/if}
+              </div>
+            </div>
+          {/if}
+
           <!-- Meta-patterns (context-aware by node state) -->
           {#if family.meta_patterns.length > 0}
             <div class="family-section">
@@ -322,6 +343,8 @@
                   Top Patterns ({family.member_count} {family.member_count === 1 ? 'cluster' : 'clusters'})
                 {:else if family.state === 'archived'}
                   Meta-patterns (archived)
+                {:else if family.state === 'template'}
+                  Proven Patterns
                 {:else}
                   Meta-patterns
                 {/if}
@@ -330,7 +353,7 @@
                 {#each dedupe(family.meta_patterns) as mp (mp.id)}
                   <div class="pattern-item">
                     <span class="pattern-text">{mp.pattern_text}</span>
-                    <span class="source-badge" use:tooltip={CLUSTER_TOOLTIPS.source_count}>{mp.source_count}</span>
+                    <span class="source-badge" use:tooltip={CLUSTER_TOOLTIPS.source_count}>{mp.source_count}{#if family.state === 'template' && family.member_count > 0} ({Math.round(mp.source_count / family.member_count * 100)}%){/if}</span>
                   </div>
                 {/each}
               </div>
@@ -1131,6 +1154,19 @@
   }
 
   /* Meta-patterns list */
+  .template-stats-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 10px;
+    color: var(--color-text-secondary);
+  }
+
+  .stat-item strong {
+    color: var(--color-neon-cyan);
+    font-weight: 600;
+  }
+
   .pattern-list {
     display: flex;
     flex-direction: column;

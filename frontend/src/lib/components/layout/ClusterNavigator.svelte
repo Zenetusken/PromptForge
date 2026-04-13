@@ -267,16 +267,66 @@
     }
   }
 
-  async function useTemplate(clusterId: string) {
-    const result = await clustersStore.spawnTemplate(clusterId);
-    if (result) {
-      forgeStore.prompt = result.prompt;
-      if (result.strategy) forgeStore.strategy = result.strategy;
-      editorStore.activeTabId = PROMPT_TAB_ID;
-      addToast('created', `Template loaded: ${result.label}`);
-    } else {
-      addToast('deleted', 'Failed to load template');
+  // Template preview card state
+  let expandedTemplateId = $state<string | null>(null);
+  let templatePreview = $state<{ prompt: string; strategy: string | null; label: string; patternIds: string[]; patterns: { text: string; source_count: number }[] } | null>(null);
+  let templatePreviewLoading = $state(false);
+
+  async function toggleTemplatePreview(clusterId: string) {
+    if (expandedTemplateId === clusterId) {
+      expandedTemplateId = null;
+      templatePreview = null;
+      return;
     }
+    expandedTemplateId = clusterId;
+    templatePreviewLoading = true;
+    try {
+      const { getClusterDetail } = await import('$lib/api/clusters');
+      const detail = await getClusterDetail(clusterId);
+      if (!detail?.optimizations?.length) {
+        addToast('deleted', 'Template has no optimizations');
+        expandedTemplateId = null;
+        templatePreviewLoading = false;
+        return;
+      }
+      const best = detail.optimizations.reduce((a, b) =>
+        (b.overall_score ?? 0) > (a.overall_score ?? 0) ? b : a
+      );
+      templatePreview = {
+        prompt: best.raw_prompt ?? '',
+        strategy: detail.preferred_strategy ?? null,
+        label: detail.label,
+        patternIds: (detail.meta_patterns ?? []).map((p) => p.id),
+        patterns: (detail.meta_patterns ?? []).map((p) => ({ text: p.pattern_text, source_count: p.source_count })),
+      };
+    } catch {
+      addToast('deleted', 'Failed to load template preview');
+      expandedTemplateId = null;
+    }
+    templatePreviewLoading = false;
+  }
+
+  function loadTemplatePromptAndPatterns() {
+    if (!templatePreview) return;
+    forgeStore.prompt = templatePreview.prompt;
+    if (templatePreview.strategy) forgeStore.strategy = templatePreview.strategy;
+    if (templatePreview.patternIds.length > 0) {
+      forgeStore.appliedPatternIds = templatePreview.patternIds;
+      forgeStore.appliedPatternLabel = templatePreview.label;
+    }
+    editorStore.activeTabId = PROMPT_TAB_ID;
+    addToast('created', `Template loaded: ${templatePreview.label}`);
+    expandedTemplateId = null;
+    templatePreview = null;
+  }
+
+  function applyTemplatePatternsOnly() {
+    if (!templatePreview || templatePreview.patternIds.length === 0) return;
+    forgeStore.appliedPatternIds = templatePreview.patternIds;
+    forgeStore.appliedPatternLabel = templatePreview.label;
+    addToast('created', `${templatePreview.patternIds.length} patterns from "${templatePreview.label}" will be applied`);
+    expandedTemplateId = null;
+    templatePreview = null;
   }
 </script>
 
@@ -369,7 +419,7 @@
       <!-- Proven Templates section -->
       {#if templateClusters.length > 0}
         <div class="templates-section">
-          <div class="templates-heading">PROVEN TEMPLATES</div>
+          <div class="templates-heading">PROVEN TEMPLATES <span class="badge-neon">{templateClusters.length}</span></div>
           {#each templateClusters as cluster (cluster.id)}
             <div class="template-row">
               <div class="template-info">
@@ -381,6 +431,12 @@
                     <span class="badge-score font-mono" style="color: {scoreColor(cluster.avg_score)};">{formatScore(cluster.avg_score)}</span>
                   {/if}
                   <span class="badge-neon" use:tooltip={CLUSTER_NAV_TOOLTIPS.members_badge}>{cluster.member_count}</span>
+                  {#if cluster.meta_pattern_count}
+                    <span class="badge-dim" use:tooltip={'Proven patterns extracted from this template'}>{cluster.meta_pattern_count} patterns</span>
+                  {/if}
+                  {#if cluster.usage_count}
+                    <span class="badge-dim" use:tooltip={'Times this template\'s patterns were applied'}>{cluster.usage_count}× used</span>
+                  {/if}
                   {#if cluster.preferred_strategy}
                     <span class="template-strategy">{cluster.preferred_strategy}</span>
                   {/if}
@@ -388,11 +444,44 @@
               </div>
               <button
                 class="use-template-btn"
-                onclick={() => useTemplate(cluster.id)}
+                onclick={() => toggleTemplatePreview(cluster.id)}
                 use:tooltip={CLUSTER_NAV_TOOLTIPS.use_template}
-                aria-label="Use this template"
-              >Use</button>
+                aria-label="Preview this template"
+              >{expandedTemplateId === cluster.id ? '×' : 'Use'}</button>
             </div>
+            {#if expandedTemplateId === cluster.id}
+              <div class="template-preview">
+                {#if templatePreviewLoading}
+                  <p class="preview-loading">Loading preview...</p>
+                {:else if templatePreview}
+                  {#if templatePreview.patterns.length > 0}
+                    <div class="preview-section">
+                      <span class="preview-heading">PATTERNS</span>
+                      <ul class="preview-patterns">
+                        {#each templatePreview.patterns as p}
+                          <li>
+                            <span class="pattern-text">{p.text}</span>
+                            <span class="pattern-count">{p.source_count}×</span>
+                          </li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/if}
+                  {#if templatePreview.prompt}
+                    <div class="preview-section">
+                      <span class="preview-heading">BEST PROMPT</span>
+                      <p class="preview-prompt">{templatePreview.prompt.length > 200 ? templatePreview.prompt.slice(0, 200) + '...' : templatePreview.prompt}</p>
+                    </div>
+                  {/if}
+                  <div class="preview-actions">
+                    <button class="action-btn action-btn--primary" onclick={loadTemplatePromptAndPatterns}>Load Prompt + Patterns</button>
+                    {#if templatePreview.patternIds.length > 0}
+                      <button class="action-btn" onclick={applyTemplatePatternsOnly}>Apply Patterns Only</button>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/if}
           {/each}
         </div>
       {/if}
@@ -863,6 +952,115 @@
 
   .use-template-btn:active {
     border-color: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 20%, transparent);
+  }
+
+  /* ---- Template preview card ---- */
+  .template-preview {
+    padding: 6px 8px;
+    margin: 0 4px 4px 4px;
+    border: 1px solid var(--color-border-subtle);
+    background: color-mix(in srgb, var(--color-bg-surface) 60%, transparent);
+  }
+
+  .preview-loading {
+    font-size: 10px;
+    color: var(--color-text-muted);
+    font-style: italic;
+  }
+
+  .preview-section {
+    margin-bottom: 6px;
+  }
+
+  .preview-heading {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    letter-spacing: 0.08em;
+    margin-bottom: 3px;
+  }
+
+  .preview-patterns {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .preview-patterns li {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    padding: 1px 0;
+  }
+
+  .pattern-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pattern-count {
+    font-size: 9px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    flex-shrink: 0;
+  }
+
+  .preview-prompt {
+    font-size: 10px;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 80px;
+    overflow: hidden;
+  }
+
+  .preview-actions {
+    display: flex;
+    flex-direction: column;
+    margin: 6px -8px -6px;  /* flush to preview card edges */
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .preview-actions .action-btn {
+    width: 100%;
+    height: 26px;
+    font-size: 10px;
+    font-weight: 600;
+    text-align: center;
+    border: none;
+    border-bottom: 1px solid var(--color-border-subtle);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: color 150ms, background 150ms;
+  }
+
+  .preview-actions .action-btn:last-child {
+    border-bottom: none;
+  }
+
+  .preview-actions .action-btn:hover {
+    color: var(--color-text-primary);
+    background: var(--color-bg-hover);
+  }
+
+  .preview-actions .action-btn--primary {
+    color: var(--color-neon-cyan);
+  }
+
+  .preview-actions .action-btn--primary:hover {
+    background: color-mix(in srgb, var(--color-neon-cyan) 10%, transparent);
+  }
+
+  .badge-dim {
+    font-size: 9px;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
   }
 
   /* ---- Column headers ---- */

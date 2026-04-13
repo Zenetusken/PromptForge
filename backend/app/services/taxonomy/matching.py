@@ -11,7 +11,9 @@ engine state.  The TaxonomyEngine delegates to these functions from
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -37,10 +39,46 @@ logger = logging.getLogger(__name__)
 
 DOMAIN_ALIGNMENT_FLOOR = 0.35
 
-# Pattern matching thresholds (Spec Section 7.2, 7.4)
-FAMILY_MATCH_THRESHOLD = 0.72
-CLUSTER_MATCH_THRESHOLD = 0.60
-CANDIDATE_THRESHOLD = 0.80
+# Pattern matching thresholds — calibrated for raw (non-fused) embeddings.
+# Raw prompt-to-centroid cosine similarity is ~0.15-0.20 lower than fused,
+# because centroids are averaged cluster embeddings (blurred by member diversity).
+# Fusion was removed from match_prompt() for cross-process consistency
+# (MCP and backend produce identical results with raw embeddings).
+FAMILY_MATCH_THRESHOLD = 0.55
+CLUSTER_MATCH_THRESHOLD = 0.45
+CANDIDATE_THRESHOLD = 0.65
+
+# ---------------------------------------------------------------------------
+# Embedding cache — avoids re-embedding identical prompts during rapid typing
+# ---------------------------------------------------------------------------
+
+_EMBEDDING_CACHE: dict[str, tuple[np.ndarray, float]] = {}
+_EMBEDDING_CACHE_MAX = 50
+_EMBEDDING_CACHE_TTL = 300  # seconds
+
+
+def _cache_key(text: str) -> str:
+    return hashlib.md5(text[:500].encode()).hexdigest()
+
+
+def _get_cached_embedding(text: str) -> np.ndarray | None:
+    key = _cache_key(text)
+    entry = _EMBEDDING_CACHE.get(key)
+    if entry is None:
+        return None
+    emb, ts = entry
+    if time.monotonic() - ts > _EMBEDDING_CACHE_TTL:
+        del _EMBEDDING_CACHE[key]
+        return None
+    return emb
+
+
+def _put_cached_embedding(text: str, emb: np.ndarray) -> None:
+    if len(_EMBEDDING_CACHE) >= _EMBEDDING_CACHE_MAX:
+        oldest_key = min(_EMBEDDING_CACHE, key=lambda k: _EMBEDDING_CACHE[k][1])
+        del _EMBEDDING_CACHE[oldest_key]
+    _EMBEDDING_CACHE[_cache_key(text)] = (emb, time.monotonic())
+
 
 # ---------------------------------------------------------------------------
 # Public data-transfer objects
@@ -94,25 +132,28 @@ async def match_prompt(
     """
     from app.services.taxonomy.quality import suggestion_threshold
 
-    # 1. Embed the prompt text
-    query_emb = await embedding_service.aembed_single(prompt_text)
+    # 1. Embed the prompt text (with LRU cache for rapid typing)
+    cached = _get_cached_embedding(prompt_text)
+    if cached is not None:
+        query_emb = cached
+    else:
+        query_emb = await embedding_service.aembed_single(prompt_text)
+        _put_cached_embedding(prompt_text, query_emb)
 
-    # Phase 2: Composite fusion for similarity search (fallback to raw on failure)
-    from app.services.taxonomy import get_engine
-    from app.services.taxonomy.fusion import resolve_fused_embedding
+    # Use raw embedding for matching — composite fusion depends on process-local
+    # engine state (embedding_index, transformation_index) which diverges between
+    # the backend and MCP processes. Raw embedding is deterministic: same prompt
+    # always produces the same search vector regardless of which process runs it.
+    # Fusion is still used by auto_inject_patterns() during optimization, where
+    # the caller controls which engine instance is used.
+    search_emb = query_emb
+    _fusion_used = False
 
-    engine = get_engine()
-    try:
-        search_emb = await resolve_fused_embedding(
-            prompt_text, query_emb, embedding_service, engine, db,
-            phase="pattern_injection",
-        )
-    except Exception as fusion_exc:
-        logger.warning(
-            "Composite fusion failed, falling back to raw embedding: %s",
-            fusion_exc,
-        )
-        search_emb = query_emb
+    # Diagnostic tracking — record best scores for no-match logging
+    _best_family_score: float = 0.0
+    _best_family_threshold: float = 0.0
+    _best_cluster_score: float = 0.0
+    _best_cluster_threshold: float = 0.0
 
     # ------------------------------------------------------------------
     # Level 1: Family-level search
@@ -181,6 +222,11 @@ async def match_prompt(
                 else:
                     threshold = FAMILY_MATCH_THRESHOLD
 
+                # Track best score for diagnostics
+                if score > _best_family_score:
+                    _best_family_score = score
+                    _best_family_threshold = threshold
+
                 if score >= threshold:
                     # Load meta-patterns for this cluster
                     mp_result = await db.execute(
@@ -247,6 +293,11 @@ async def match_prompt(
                     threshold = suggestion_threshold(
                         base=CLUSTER_MATCH_THRESHOLD, coherence=coherence
                     )
+
+                    # Track best score for diagnostics
+                    if score > _best_cluster_score:
+                        _best_cluster_score = score
+                        _best_cluster_threshold = threshold
 
                     if score >= threshold:
                         # Aggregate meta-patterns from top-3 child families
@@ -323,9 +374,18 @@ async def match_prompt(
                         break
 
     # ------------------------------------------------------------------
-    # No match at any level — create a "none" result
+    # No match at any level — create a "none" result with diagnostics
     # ------------------------------------------------------------------
     if result is None:
+        logger.info(
+            "match_prompt: no match found — "
+            "best_family=%.3f (threshold=%.3f) best_cluster=%.3f (threshold=%.3f) "
+            "fusion=%s prompt_len=%d",
+            _best_family_score, _best_family_threshold,
+            _best_cluster_score, _best_cluster_threshold,
+            "fused" if _fusion_used else "raw",
+            len(prompt_text),
+        )
         result = PatternMatch(
             cluster=None,
             meta_patterns=[],

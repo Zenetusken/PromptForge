@@ -161,17 +161,48 @@ class TestClusterUpdate:
 
     @pytest.mark.asyncio
     async def test_update_cluster_state(self, app_client, db_session):
-        """PATCH /api/clusters/{id} updates state."""
+        """PATCH /api/clusters/{id} updates state when quality gates met."""
         cluster = PromptCluster(
-            id="c3", label="test", state="active", domain="backend",
+            id="c3-promote-ok", label="test", state="active", domain="backend",
             task_type="coding", centroid_embedding=b'\x00' * 384,
+            member_count=5, avg_score=7.5, usage_count=2,
         )
         db_session.add(cluster)
         await db_session.commit()
 
-        resp = await app_client.patch("/api/clusters/c3", json={"state": "template"})
+        resp = await app_client.patch("/api/clusters/c3-promote-ok", json={"state": "template"})
         assert resp.status_code == 200
         assert resp.json()["state"] == "template"
+
+    @pytest.mark.asyncio
+    async def test_template_promotion_blocked_low_score(self, app_client, db_session):
+        """PATCH /api/clusters/{id} rejects template promotion when score too low."""
+        cluster = PromptCluster(
+            id="c4-low-score", label="low-score", state="active", domain="backend",
+            task_type="coding", centroid_embedding=b'\x00' * 384,
+            member_count=5, avg_score=4.0, usage_count=2,
+        )
+        db_session.add(cluster)
+        await db_session.commit()
+
+        resp = await app_client.patch("/api/clusters/c4-low-score", json={"state": "template"})
+        assert resp.status_code == 422
+        assert "avg_score" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_template_promotion_blocked_no_members(self, app_client, db_session):
+        """PATCH /api/clusters/{id} rejects template promotion without members or usage."""
+        cluster = PromptCluster(
+            id="c5-no-members", label="empty", state="active", domain="backend",
+            task_type="coding", centroid_embedding=b'\x00' * 384,
+            member_count=1, avg_score=8.0, usage_count=0,
+        )
+        db_session.add(cluster)
+        await db_session.commit()
+
+        resp = await app_client.patch("/api/clusters/c5-no-members", json={"state": "template"})
+        assert resp.status_code == 422
+        assert "members" in resp.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_update_cluster_not_found(self, app_client, db_session):
