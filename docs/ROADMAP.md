@@ -232,6 +232,10 @@ Living document tracking planned improvements. Items are prioritized but not sch
 - **Hybrid override** — run heuristic classifier in parallel with LLM, prefer heuristic when confidence is high and LLM disagrees
 - **Agentic verification** — post-classification agent reviews the domain assignment against the prompt content and corrects mismatches
 
+**Heuristic classifier refresh (2026-04-12):** Enrichment consolidation work revealed keyword collision failures in the zero-LLM heuristic analyzer — "Design a webhook system" classified as `creative` instead of `coding` because "Design" triggers the creative keyword (weight 0.7). Cascading impact: strategy intelligence, curated retrieval gating, and enrichment profile selection all depend on accurate heuristic `task_type`. P0 fixes: compound keyword signals + technical verb disambiguation. Full analysis: [`docs/heuristic-analyzer-refresh.md`](heuristic-analyzer-refresh.md). Related: [Context Injection Use-Case Matrix](context-injection-use-case-matrix.md) Appendix C decision log.
+
+**Prompt–context divergence detection (2026-04-12):** E2E testing revealed that when a prompt explicitly names a technology (e.g., "PostgreSQL") that conflicts with the linked codebase's actual stack (SQLite/aiosqlite), the optimizer silently adopts the prompt's technology with no conflict flag. The 86K chars of codebase context become dead weight. Requires a reconciliation layer in the enrichment pipeline that detects tech stack mismatches (database engine, framework, language) and injects a `<divergence-alert>` for the optimizer to acknowledge. Must distinguish genuine conflicts from legitimate additions ("add Redis") and planned migrations ("migrate to PostgreSQL"). P1 priority. Spec: [`docs/heuristic-analyzer-refresh.md`](heuristic-analyzer-refresh.md) section 5 + improvement 1d.
+
 **Removed (v0.3.8-dev):** "fullstack" seed domain — was causing LLM misclassification. Will be discovered organically when users optimize prompts that genuinely span both frontend and backend equally.
 
 ### Pipeline progress visualization
