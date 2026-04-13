@@ -25,7 +25,7 @@
   import ScoreCard from '$lib/components/shared/ScoreCard.svelte';
   import ScoreSparkline from '$lib/components/shared/ScoreSparkline.svelte';
   import { PHASE_LABELS, DIMENSION_LABELS } from '$lib/utils/dimensions';
-  import { formatScore, isPassthroughResult, trendInfo, formatRelativeTime } from '$lib/utils/formatting';
+  import { formatScore, isPassthroughResult, trendInfo, formatRelativeTime, parseSubDomainLabel } from '$lib/utils/formatting';
 
   // Tab-aware result: use per-tab cached data when available, fall back to global forge state
   const activeResult = $derived(editorStore.activeResult ?? forgeStore.result);
@@ -127,6 +127,23 @@
     window.addEventListener('feedback-event', handler);
     return () => window.removeEventListener('feedback-event', handler);
   });
+
+  // Sub-domain detection: check if selected domain's parent is also a domain
+  const selectedIsSubDomain = $derived.by(() => {
+    const detail = clustersStore.clusterDetail;
+    if (!detail || detail.state !== 'domain') return false;
+    const tree = clustersStore.taxonomyTree;
+    return tree.some(n => n.id === detail.parent_id && n.state === 'domain');
+  });
+
+  const selectedParentDomainLabel = $derived.by(() => {
+    if (!selectedIsSubDomain) return null;
+    const detail = clustersStore.clusterDetail;
+    if (!detail) return null;
+    const tree = clustersStore.taxonomyTree;
+    const parent = tree.find(n => n.id === detail.parent_id);
+    return parent?.label ?? null;
+  });
 </script>
 
 <aside
@@ -159,6 +176,24 @@
 
         {:else if clustersStore.clusterDetail}
           {@const family = clustersStore.clusterDetail}
+
+          <!-- Sub-domain breadcrumb: shown when selected domain's parent is also a domain -->
+          {#if selectedIsSubDomain && selectedParentDomainLabel}
+            <div class="subdomain-breadcrumb">
+              <button class="breadcrumb-parent" onclick={() => {
+                const tree = clustersStore.taxonomyTree;
+                const detail = clustersStore.clusterDetail;
+                if (detail?.parent_id) {
+                  const parent = tree.find(n => n.id === detail.parent_id);
+                  if (parent) clustersStore.selectCluster(parent.id);
+                }
+              }}>
+                {selectedParentDomainLabel}
+              </button>
+              <span class="breadcrumb-separator">›</span>
+              <span class="breadcrumb-current">{parseSubDomainLabel(clustersStore.clusterDetail?.label ?? '', selectedParentDomainLabel)}</span>
+            </div>
+          {/if}
 
           <!-- Family header -->
           <div class="family-header">
@@ -1214,5 +1249,37 @@
   .action-btn--primary:hover {
     border-color: var(--tier-accent, var(--color-neon-cyan));
     background: color-mix(in srgb, var(--tier-accent, var(--color-neon-cyan)) 8%, transparent);
+  }
+
+  /* Sub-domain breadcrumb */
+  .subdomain-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    font-size: 9px;
+  }
+
+  .breadcrumb-parent {
+    color: var(--color-text-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 9px;
+    padding: 0;
+  }
+
+  .breadcrumb-parent:hover {
+    color: var(--tier-accent, var(--color-neon-cyan));
+  }
+
+  .breadcrumb-separator {
+    color: var(--color-text-dim);
+  }
+
+  .breadcrumb-current {
+    color: var(--color-text-secondary);
   }
 </style>
