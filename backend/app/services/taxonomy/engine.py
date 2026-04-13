@@ -2206,7 +2206,21 @@ class TaxonomyEngine:
             )
         )
         existing_colors = [row[0] for row in color_q.all() if row[0]]
-        color_hex = compute_max_distance_color(existing_colors)
+        if parent_domain_id:
+            # Sub-domain: derive color from parent's base (same hue, darker)
+            from app.services.taxonomy.coloring import derive_sub_domain_color
+            parent_color_q = await db.execute(
+                select(PromptCluster.color_hex).where(PromptCluster.id == parent_domain_id)
+            )
+            parent_color = parent_color_q.scalar()
+            color_hex = (
+                derive_sub_domain_color(parent_color)
+                if parent_color
+                else compute_max_distance_color(existing_colors)
+            )
+        else:
+            # Top-level domain: maximally distinct from all existing
+            color_hex = compute_max_distance_color(existing_colors)
 
         # Extract TF-IDF keywords from seed cluster
         keywords: list = []

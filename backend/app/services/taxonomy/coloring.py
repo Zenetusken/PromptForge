@@ -109,6 +109,18 @@ def hex_to_oklab(hex_color: str) -> tuple[float, float, float]:
     return L_out, a_out, b_out
 
 
+def derive_sub_domain_color(parent_hex: str) -> str:
+    """Derive a sub-domain color from its parent domain's base color.
+
+    Preserves hue (a/b channels) and shifts lightness down by 0.12 for
+    visual subordination. The result is a perceptually darker variant of
+    the same color family.
+    """
+    L, a, b = hex_to_oklab(parent_hex)
+    L_sub = max(0.40, min(0.85, L - 0.12))
+    return oklab_to_hex(L_sub, a, b)
+
+
 # ---------------------------------------------------------------------------
 # Color generation from UMAP position
 # ---------------------------------------------------------------------------
