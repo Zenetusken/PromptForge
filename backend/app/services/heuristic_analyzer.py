@@ -180,6 +180,14 @@ _TASK_TYPE_SIGNALS: dict[str, list[tuple[str, float]]] = {
     ],
 }
 
+# Static compound signals: extracted once at module load, preserved on every dynamic update.
+# These solve structural language patterns ("design a system" = coding, not creative)
+# that TF-IDF cannot discover from single-word tokenization.
+_STATIC_COMPOUND_SIGNALS: dict[str, list[tuple[str, float]]] = {
+    task_type: [(kw, w) for kw, w in keywords if " " in kw]
+    for task_type, keywords in _TASK_TYPE_SIGNALS.items()
+}
+
 # --- A4: Confidence-gated LLM fallback thresholds ---
 _LLM_CLASSIFICATION_CONFIDENCE_GATE = 0.5  # heuristic confidence below this triggers check
 _LLM_CLASSIFICATION_MARGIN_GATE = 0.2      # margin between top 2 categories below this triggers LLM
@@ -207,6 +215,7 @@ _KEYWORD_PATTERNS: dict[str, re.Pattern[str]] = {}
 
 def _precompile_keyword_patterns() -> None:
     """Pre-compile regex for all single-word task_type signals at module load."""
+    _KEYWORD_PATTERNS.clear()
     for keywords in _TASK_TYPE_SIGNALS.values():
         for keyword, _weight in keywords:
             kw = keyword.lower()
@@ -217,6 +226,35 @@ def _precompile_keyword_patterns() -> None:
 
 
 _precompile_keyword_patterns()
+
+
+def set_task_type_signals(dynamic_signals: dict[str, list[tuple[str, float]]]) -> None:
+    """Merge dynamic single-word signals with static compound signals.
+
+    Called by warm-path Phase 4.75 and backend/MCP lifespan.
+    Validates input, merges, clears + rebuilds pattern cache.
+    """
+    if not dynamic_signals:
+        logger.warning("set_task_type_signals: empty dict — keeping current signals")
+        return
+    for task_type, keywords in dynamic_signals.items():
+        if not isinstance(keywords, list):
+            logger.warning("set_task_type_signals: invalid keywords for %s — aborting", task_type)
+            return
+    merged: dict[str, list[tuple[str, float]]] = {}
+    for task_type in set(list(dynamic_signals.keys()) + list(_STATIC_COMPOUND_SIGNALS.keys())):
+        compounds = _STATIC_COMPOUND_SIGNALS.get(task_type, [])
+        singles = dynamic_signals.get(task_type, [])
+        merged[task_type] = compounds + singles
+    global _TASK_TYPE_SIGNALS
+    _TASK_TYPE_SIGNALS = merged
+    _precompile_keyword_patterns()
+    logger.info(
+        "TaskTypeSignals: merged %d task types, %d total keywords (%d compound + %d dynamic)",
+        len(merged), sum(len(v) for v in merged.values()),
+        sum(len(v) for v in _STATIC_COMPOUND_SIGNALS.values()),
+        sum(len(v) for v in dynamic_signals.values()),
+    )
 
 
 def _classify_domain(scored: dict[str, float]) -> str:
