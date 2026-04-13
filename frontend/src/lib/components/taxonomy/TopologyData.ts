@@ -24,6 +24,7 @@ export interface SceneNode {
   avgScore: number | null; // [1, 10] → color saturation
   domain: string;          // primary domain (e.g. "backend", "general")
   memberCount: number;     // member_count from API
+  isSubDomain: boolean;    // true for domain nodes whose parent is also a domain
 }
 
 /** Opacity by lifecycle state and active filter.
@@ -54,8 +55,9 @@ function stateOpacity(state: string, stateFilter: string | null, hasMatches: boo
  *
  * Note: the final size is clamped to MAX_NODE_SIZE after applying
  * this multiplier, so structural nodes can't blow past the visual budget. */
-function stateSizeMultiplier(state: string): number {
-  if (state === 'domain' || state === 'project') return 1.3;
+function stateSizeMultiplier(state: string, isSubDomain: boolean = false): number {
+  if (state === 'project') return 1.3;
+  if (state === 'domain') return isSubDomain ? 1.0 : 1.3;
   if (state === 'template') return 1.3;
   if (state === 'mature') return 1.15;
   return 1.0;
@@ -142,6 +144,14 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
     }
   }
 
+  // Detect sub-domain nodes: state="domain" with parent_id pointing to another domain node
+  const domainIds = new Set(visibleNodes.filter(n => n.state === 'domain').map(n => n.id));
+  const subDomainIds = new Set(
+    visibleNodes
+      .filter(n => n.state === 'domain' && n.parent_id != null && domainIds.has(n.parent_id))
+      .map(n => n.id)
+  );
+
   for (const node of visibleNodes) {
     // Position: UMAP coords scaled to scene units, or hash-based fallback.
     // UMAP outputs ~[-1, 1]; multiply by 10 for comfortable spacing.
@@ -168,7 +178,8 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
 
     // Final size: apply state multiplier then clamp to prevent domain
     // nodes from overwhelming the scene (volume scales as r³).
-    const finalSize = Math.min(MAX_NODE_SIZE, size * stateSizeMultiplier(node.state));
+    const isSubDomain = subDomainIds.has(node.id);
+    const finalSize = Math.min(MAX_NODE_SIZE, size * stateSizeMultiplier(node.state, isSubDomain));
     const nodeOpacity = stateOpacity(node.state, effectiveFilter, hasFilterMatches);
 
     nodes.push({
@@ -186,6 +197,7 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
       avgScore: node.avg_score ?? null,
       domain: parsePrimaryDomain(node.domain),
       memberCount: node.member_count,
+      isSubDomain: subDomainIds.has(node.id),
     });
 
     // Hierarchical edges from parent_id

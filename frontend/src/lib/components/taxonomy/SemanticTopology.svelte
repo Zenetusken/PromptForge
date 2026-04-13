@@ -313,6 +313,24 @@
     const domainPointsGeo = new THREE.BufferGeometry();
     domainPointsGeo.setAttribute('position', new THREE.Float32BufferAttribute(vertArray, 3));
 
+    // SUB-DOMAIN NODES: Octahedron — intermediate structural nodes between
+    // domains (dodecahedron) and clusters (icosahedron).
+    const subDomainFillGeo = new THREE.OctahedronGeometry(1, 2);
+    const subDomainEdgesBase = new THREE.OctahedronGeometry(1, 0);
+    const subDomainEdgesGeo = new THREE.EdgesGeometry(subDomainEdgesBase, 1);
+    const subDomainVertPositions = subDomainEdgesBase.getAttribute('position');
+    const subDomainUniqueVerts = new Map<string, [number, number, number]>();
+    for (let i = 0; i < subDomainVertPositions.count; i++) {
+      const x = subDomainVertPositions.getX(i);
+      const y = subDomainVertPositions.getY(i);
+      const z = subDomainVertPositions.getZ(i);
+      const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
+      if (!subDomainUniqueVerts.has(key)) subDomainUniqueVerts.set(key, [x, y, z]);
+    }
+    const subDomainVertArray = new Float32Array([...subDomainUniqueVerts.values()].flat());
+    const subDomainPointsGeo = new THREE.BufferGeometry();
+    subDomainPointsGeo.setAttribute('position', new THREE.Float32BufferAttribute(subDomainVertArray, 3));
+
     const domainGroups: THREE.Group[] = [];
     for (const node of data.nodes) {
       if (!node.visible) continue;
@@ -320,6 +338,7 @@
       const group = new THREE.Group();
       group.position.set(...node.position);
       const isStructural = node.state === 'domain' || node.state === 'project';
+      const isSubDomain = (node as any).isSubDomain === true;
       group.userData = { isStructural };
 
       // Fill: dark tinted interior (structural nodes slightly darker = edge-dominant)
@@ -333,7 +352,8 @@
         transparent: true,
         opacity: node.opacity * 0.9,
       });
-      const fill = new THREE.Mesh(isStructural ? domainFillGeo : clusterFillGeo, fillMat);
+      const fillGeo = isSubDomain ? subDomainFillGeo : isStructural ? domainFillGeo : clusterFillGeo;
+      const fill = new THREE.Mesh(fillGeo, fillMat);
       fill.scale.setScalar(node.size);
       group.add(fill); // child 0: fill
 
@@ -344,7 +364,7 @@
           transparent: true,
           opacity: node.opacity * 0.9,
         });
-        const edges = new THREE.LineSegments(domainEdgesGeo, edgeMat);
+        const edges = new THREE.LineSegments(isSubDomain ? subDomainEdgesGeo : domainEdgesGeo, edgeMat);
         edges.scale.setScalar(node.size);
         group.add(edges); // child 1: edges
 
@@ -356,7 +376,7 @@
           opacity: node.opacity * 0.95,
           sizeAttenuation: true,
         });
-        const points = new THREE.Points(domainPointsGeo, pointsMat);
+        const points = new THREE.Points(isSubDomain ? subDomainPointsGeo : domainPointsGeo, pointsMat);
         points.scale.setScalar(node.size);
         group.add(points); // child 2: vertex points
 
