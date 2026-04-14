@@ -843,32 +843,33 @@ class ContextEnrichmentService:
                 "char_count": len(explore_synthesis) if explore_synthesis else 0,
             }
 
-            # 2a-gate. Repo relevance gate — skip codebase context when the
-            # prompt is semantically unrelated to the linked repo (same tech
-            # stack but different project).  Only fires when synthesis exists
-            # (can't compute relevance without it).
+            # 2a-gate. Hybrid repo relevance gate — skip codebase context
+            # when the prompt is semantically unrelated to the linked repo
+            # (same tech stack but different project).  Two-stage: cosine
+            # floor + domain entity overlap.  Only fires when synthesis
+            # exists (can't compute relevance without it).
             _repo_relevance_skipped = False
             if explore_synthesis:
-                from app.services.pipeline_constants import REPO_RELEVANCE_GATE
-
                 try:
-                    relevance = await compute_repo_relevance(
+                    relevance, relevance_info = await compute_repo_relevance(
                         raw_prompt, explore_synthesis, self._embedding_service,
                     )
                     enrichment_meta_dict["repo_relevance_score"] = round(relevance, 3)
+                    enrichment_meta_dict["repo_relevance_info"] = relevance_info
 
-                    if relevance < REPO_RELEVANCE_GATE:
+                    if relevance_info["decision"] == "skip":
                         logger.info(
-                            "repo_relevance_gate: score=%.3f < %.2f, "
-                            "skipping codebase context (repo=%s)",
-                            relevance, REPO_RELEVANCE_GATE, repo_full_name,
+                            "repo_relevance_gate: cosine=%.3f domain_overlap=%d "
+                            "reason=%s, skipping codebase context (repo=%s)",
+                            relevance, relevance_info["domain_overlap"],
+                            relevance_info["reason"], repo_full_name,
                         )
                         enrichment_meta_dict["repo_relevance_skipped"] = True
                         explore_synthesis = None
                         _repo_relevance_skipped = True
                 except Exception:
                     logger.debug(
-                        "repo_relevance_gate: embedding failed, proceeding without gate",
+                        "repo_relevance_gate: failed, proceeding without gate",
                         exc_info=True,
                     )
                     enrichment_meta_dict["repo_relevance_error"] = True

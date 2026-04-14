@@ -876,72 +876,31 @@ class TestDivergenceDetection:
 
 
 # ---------------------------------------------------------------------------
-# B0: Repo relevance gate
+# B0: Repo relevance gate (integration)
 # ---------------------------------------------------------------------------
 
 
 class TestRepoRelevanceGate:
-    """Verify compute_repo_relevance and its integration in enrich()."""
+    """Verify hybrid repo relevance gate integration in enrich()."""
 
     @pytest.mark.asyncio
-    async def test_compute_repo_relevance_low(self):
-        """Orthogonal vectors → low relevance score."""
+    async def test_gate_fires(self, db, tmp_path):
+        """Synthesis has domain terms, prompt does NOT → gate fires (skip)."""
         import numpy as np
 
-        mock_es = AsyncMock()
-        # Simulate orthogonal embeddings (unrelated prompt and synthesis)
-        prompt_vec = np.zeros(384, dtype=np.float32)
-        prompt_vec[0] = 1.0
-        synth_vec = np.zeros(384, dtype=np.float32)
-        synth_vec[1] = 1.0
-        mock_es.aembed_single = AsyncMock(side_effect=[prompt_vec, synth_vec])
-
-        score = await compute_repo_relevance(
-            "Build a task management system",
-            "Project Synthesis is a RAG optimization platform",
-            mock_es,
-        )
-        assert score < 0.1  # near-orthogonal
-
-    @pytest.mark.asyncio
-    async def test_compute_repo_relevance_high(self):
-        """Similar vectors → high relevance score."""
-        import numpy as np
-
-        mock_es = AsyncMock()
-        # Simulate similar embeddings (prompt about the linked project)
-        vec = np.random.default_rng(42).random(384).astype(np.float32)
-        vec /= np.linalg.norm(vec)  # L2-normalize
-        # Add small noise for the second vector
-        noise = np.random.default_rng(99).random(384).astype(np.float32) * 0.1
-        vec2 = vec + noise
-        vec2 /= np.linalg.norm(vec2)
-        mock_es.aembed_single = AsyncMock(side_effect=[vec, vec2])
-
-        score = await compute_repo_relevance(
-            "Fix the taxonomy warm path clustering",
-            "Project Synthesis is a RAG optimization platform with taxonomy",
-            mock_es,
-        )
-        assert score > 0.8  # highly similar
-
-    @pytest.mark.asyncio
-    async def test_gate_fires_skips_codebase_context(self, db, tmp_path):
-        """When relevance is below threshold, codebase context is skipped."""
-        import numpy as np
-
-        # Seed enough optimizations to pass cold-start threshold
         for _ in range(10):
             await _seed_optimization(db, "auto", "coding", "backend", 7.0)
         await db.commit()
 
         mock_es = AsyncMock()
-        # Return orthogonal vectors for prompt vs synthesis
-        prompt_vec = np.zeros(384, dtype=np.float32)
-        prompt_vec[0] = 1.0
-        synth_vec = np.zeros(384, dtype=np.float32)
-        synth_vec[1] = 1.0
-        mock_es.aembed_single = AsyncMock(side_effect=[prompt_vec, synth_vec])
+        # Moderate cosine (above floor) but no domain overlap
+        rng = np.random.default_rng(42)
+        base = rng.random(384).astype(np.float32)
+        base /= np.linalg.norm(base)
+        noise = rng.random(384).astype(np.float32) * 0.5
+        vec2 = base + noise
+        vec2 /= np.linalg.norm(vec2)
+        mock_es.aembed_single = AsyncMock(side_effect=[base, vec2])
 
         service = ContextEnrichmentService(
             prompts_dir=tmp_path,
@@ -952,9 +911,11 @@ class TestRepoRelevanceGate:
             github_client=AsyncMock(),
         )
 
-        # Patch _get_explore_synthesis to return a fake synthesis
         service._get_explore_synthesis = AsyncMock(
-            return_value="Project Synthesis is a RAG platform with taxonomy clustering.",
+            return_value=(
+                "taxonomy taxonomy taxonomy clustering clustering clustering "
+                "enrichment enrichment enrichment"
+            ),
         )
 
         result = await service.enrich(
@@ -966,13 +927,13 @@ class TestRepoRelevanceGate:
 
         meta = dict(result.enrichment_meta)
         assert meta.get("repo_relevance_skipped") is True
-        assert meta["repo_relevance_score"] < 0.40
+        assert meta["repo_relevance_info"]["decision"] == "skip"
         assert result.codebase_context is None
         assert meta["curated_retrieval"]["status"] == "skipped_repo_relevance"
 
     @pytest.mark.asyncio
-    async def test_gate_passes_injects_codebase_context(self, db, tmp_path):
-        """When relevance is above threshold, codebase context flows normally."""
+    async def test_gate_passes(self, db, tmp_path):
+        """Synthesis has domain terms AND prompt includes them → gate passes."""
         import numpy as np
 
         for _ in range(10):
@@ -980,13 +941,13 @@ class TestRepoRelevanceGate:
         await db.commit()
 
         mock_es = AsyncMock()
-        # Return similar vectors (prompt is about the linked project)
-        vec = np.random.default_rng(42).random(384).astype(np.float32)
-        vec /= np.linalg.norm(vec)
-        noise = np.random.default_rng(99).random(384).astype(np.float32) * 0.05
-        vec2 = vec + noise
+        rng = np.random.default_rng(42)
+        base = rng.random(384).astype(np.float32)
+        base /= np.linalg.norm(base)
+        noise = rng.random(384).astype(np.float32) * 0.3
+        vec2 = base + noise
         vec2 /= np.linalg.norm(vec2)
-        mock_es.aembed_single = AsyncMock(side_effect=[vec, vec2])
+        mock_es.aembed_single = AsyncMock(side_effect=[base, vec2])
 
         service = ContextEnrichmentService(
             prompts_dir=tmp_path,
@@ -998,11 +959,14 @@ class TestRepoRelevanceGate:
         )
 
         service._get_explore_synthesis = AsyncMock(
-            return_value="Project Synthesis is a RAG platform with taxonomy clustering.",
+            return_value=(
+                "taxonomy taxonomy taxonomy clustering clustering clustering "
+                "enrichment enrichment enrichment"
+            ),
         )
 
         result = await service.enrich(
-            raw_prompt="Fix the taxonomy warm path clustering in the RAG platform",
+            raw_prompt="Fix the taxonomy clustering enrichment warm path",
             tier="internal", db=db,
             repo_full_name="project-synthesis/ProjectSynthesis",
             repo_branch="main",
@@ -1010,19 +974,18 @@ class TestRepoRelevanceGate:
 
         meta = dict(result.enrichment_meta)
         assert meta.get("repo_relevance_skipped") is None
-        assert meta["repo_relevance_score"] > 0.40
+        assert meta["repo_relevance_info"]["decision"] == "pass"
         # Codebase context includes at least the synthesis text
         assert result.codebase_context is not None
 
     @pytest.mark.asyncio
-    async def test_no_synthesis_gate_does_not_fire(self, db, tmp_path):
-        """When synthesis is absent, gate cannot fire — curated proceeds normally."""
+    async def test_no_synthesis(self, db, tmp_path):
+        """When synthesis is absent, gate cannot fire — no relevance_info key."""
         for _ in range(10):
             await _seed_optimization(db, "auto", "coding", "backend", 7.0)
         await db.commit()
 
         service = _build_service(tmp_path)
-        # _get_explore_synthesis returns None (repo not indexed yet)
         service._get_explore_synthesis = AsyncMock(return_value=None)
 
         result = await service.enrich(
@@ -1033,13 +996,12 @@ class TestRepoRelevanceGate:
         )
 
         meta = dict(result.enrichment_meta)
-        # Gate should not have fired — no relevance score recorded
-        assert "repo_relevance_score" not in meta
+        assert "repo_relevance_info" not in meta
         assert meta.get("repo_relevance_skipped") is None
 
     @pytest.mark.asyncio
-    async def test_embedding_failure_proceeds_without_gate(self, db, tmp_path):
-        """When embedding service throws, gate fails open — codebase context injected."""
+    async def test_embedding_failure(self, db, tmp_path):
+        """When embedding throws, gate fails open — no relevance_info key."""
         for _ in range(10):
             await _seed_optimization(db, "auto", "coding", "backend", 7.0)
         await db.commit()
@@ -1057,7 +1019,10 @@ class TestRepoRelevanceGate:
         )
 
         service._get_explore_synthesis = AsyncMock(
-            return_value="Project Synthesis is a RAG platform with taxonomy clustering.",
+            return_value=(
+                "taxonomy taxonomy taxonomy clustering clustering clustering "
+                "enrichment enrichment enrichment"
+            ),
         )
 
         result = await service.enrich(
@@ -1068,11 +1033,9 @@ class TestRepoRelevanceGate:
         )
 
         meta = dict(result.enrichment_meta)
-        # Gate should not have fired — embedding failed
-        assert "repo_relevance_score" not in meta
+        assert "repo_relevance_info" not in meta
         assert meta.get("repo_relevance_skipped") is None
         assert meta.get("repo_relevance_error") is True
-        # Codebase context should still be injected (fail-open)
         assert result.codebase_context is not None
 
 
