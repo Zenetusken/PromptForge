@@ -347,17 +347,16 @@ async def match_prompt(
                         scored_families.sort(key=lambda x: x[1], reverse=True)
                         top_families = [f for f, _ in scored_families[:3]]
 
-                        # Gather meta-patterns from these families
-                        cluster_ids = [f.id for f in top_families]
-                        if cluster_ids:
-                            mp_result = await db.execute(
-                                select(MetaPattern).where(
-                                    MetaPattern.cluster_id.in_(cluster_ids)
-                                )
+                        # Gather meta-patterns from child families.
+                        # If the matched node is a leaf (no children), load
+                        # patterns directly from the node itself.
+                        cluster_ids = [f.id for f in top_families] if top_families else [node.id]
+                        mp_result = await db.execute(
+                            select(MetaPattern).where(
+                                MetaPattern.cluster_id.in_(cluster_ids)
                             )
-                            all_meta_patterns = list(mp_result.scalars().all())
-                        else:
-                            all_meta_patterns = []
+                        )
+                        all_meta_patterns = list(mp_result.scalars().all())
 
                         # Deduplicate at cosine 0.82
                         deduped = _deduplicate_meta_patterns(all_meta_patterns)

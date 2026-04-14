@@ -175,7 +175,7 @@ class ClusterStore {
         const resp = await matchPattern(trimmed, signal);
         this._lastMatchedText = trimmed;
 
-        if (resp.match) {
+        if (resp.match && resp.match.meta_patterns.length > 0) {
           // Don't re-show a skipped suggestion for the same cluster
           if (this._skippedClusterId === resp.match.cluster.id) return;
           this.suggestion = resp.match;
