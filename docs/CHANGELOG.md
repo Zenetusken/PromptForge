@@ -2,6 +2,11 @@
 
 All notable changes to Project Synthesis. Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## Unreleased
+
+### Added
+- **Repo relevance gate (hybrid)** — two-tier gate prevents same-stack-different-project codebase contamination: cosine floor (`REPO_RELEVANCE_FLOOR = 0.20`) for clearly unrelated prompts, domain entity overlap check above the floor via `extract_domain_vocab()` (requires `REPO_DOMAIN_MIN_OVERLAP = 1` project-specific term). Extracts domain vocabulary from explore synthesis by filtering generic programming terms (~110) and tech aliases. Tracked in `enrichment_meta` as `repo_relevance_score`, `repo_relevance_info` (cosine, domain_overlap, domain_matches, decision, reason), and `repo_relevance_skipped`
+
 ## v0.3.31 — 2026-04-13
 
 ### Added
