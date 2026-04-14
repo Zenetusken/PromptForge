@@ -1131,3 +1131,106 @@ class TestDomainVocabExtraction:
         assert vocab == frozenset()
         vocab2 = extract_domain_vocab(None)  # type: ignore[arg-type]
         assert vocab2 == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# B0: Hybrid repo relevance
+# ---------------------------------------------------------------------------
+
+
+class TestHybridRelevance:
+    """Verify hybrid compute_repo_relevance (cosine + domain entity overlap)."""
+
+    @pytest.mark.asyncio
+    async def test_low_cosine_zero_entities_skips(self):
+        """Orthogonal vectors → skip with reason 'below_floor'."""
+        import numpy as np
+
+        mock_es = AsyncMock()
+        prompt_vec = np.zeros(384, dtype=np.float32)
+        prompt_vec[0] = 1.0
+        synth_vec = np.zeros(384, dtype=np.float32)
+        synth_vec[1] = 1.0
+        mock_es.aembed_single = AsyncMock(side_effect=[prompt_vec, synth_vec])
+
+        score, info = await compute_repo_relevance(
+            "Build a task management system",
+            "Project Synthesis is a RAG optimization platform",
+            mock_es,
+        )
+        assert score < 0.1
+        assert info["decision"] == "skip"
+        assert info["reason"] == "below_floor"
+
+    @pytest.mark.asyncio
+    async def test_mid_cosine_with_entities_passes(self):
+        """Moderate cosine + domain term in prompt → pass."""
+        import numpy as np
+
+        mock_es = AsyncMock()
+        # Create vectors with moderate similarity (~0.5)
+        rng = np.random.default_rng(42)
+        base = rng.random(384).astype(np.float32)
+        base /= np.linalg.norm(base)
+        noise = rng.random(384).astype(np.float32) * 0.8
+        vec2 = base + noise
+        vec2 /= np.linalg.norm(vec2)
+        mock_es.aembed_single = AsyncMock(side_effect=[base, vec2])
+
+        score, info = await compute_repo_relevance(
+            "Fix the taxonomy clustering issue in the warm path",
+            "taxonomy taxonomy taxonomy clustering clustering clustering "
+            "enrichment enrichment enrichment",
+            mock_es,
+        )
+        assert score >= 0.20  # above floor
+        assert info["decision"] == "pass"
+        assert info["reason"] == "domain_match"
+        assert info["domain_overlap"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_high_cosine_zero_entities_skips(self):
+        """High cosine but no domain terms in prompt → skip, no_domain_overlap."""
+        import numpy as np
+
+        mock_es = AsyncMock()
+        vec = np.random.default_rng(42).random(384).astype(np.float32)
+        vec /= np.linalg.norm(vec)
+        noise = np.random.default_rng(99).random(384).astype(np.float32) * 0.1
+        vec2 = vec + noise
+        vec2 /= np.linalg.norm(vec2)
+        mock_es.aembed_single = AsyncMock(side_effect=[vec, vec2])
+
+        score, info = await compute_repo_relevance(
+            "Build a REST API for user management",
+            "xyzwidget xyzwidget xyzwidget foobarbaz foobarbaz foobarbaz "
+            "quuxmachine quuxmachine quuxmachine",
+            mock_es,
+        )
+        assert score > 0.8
+        assert info["decision"] == "skip"
+        assert info["reason"] == "no_domain_overlap"
+
+    @pytest.mark.asyncio
+    async def test_returns_domain_matches_in_info(self):
+        """Matched domain terms appear in info['domain_matches']."""
+        import numpy as np
+
+        mock_es = AsyncMock()
+        rng = np.random.default_rng(42)
+        base = rng.random(384).astype(np.float32)
+        base /= np.linalg.norm(base)
+        noise = rng.random(384).astype(np.float32) * 0.3
+        vec2 = base + noise
+        vec2 /= np.linalg.norm(vec2)
+        mock_es.aembed_single = AsyncMock(side_effect=[base, vec2])
+
+        score, info = await compute_repo_relevance(
+            "Update the taxonomy enrichment pipeline",
+            "taxonomy taxonomy taxonomy enrichment enrichment enrichment "
+            "pipeline pipeline pipeline coherence coherence coherence",
+            mock_es,
+        )
+        assert isinstance(info["domain_matches"], list)
+        assert "taxonomy" in info["domain_matches"]
+        assert "enrichment" in info["domain_matches"]

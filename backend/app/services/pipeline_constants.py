@@ -71,6 +71,15 @@ VALID_TASK_TYPES: frozenset[str] = frozenset(
 # Below this threshold, the pipeline overrides the selected strategy to "auto".
 CONFIDENCE_GATE = 0.7
 
+# Hybrid repo relevance gate (cosine + domain entity overlap).
+# Floor: skip immediately when cosine similarity is below this threshold —
+# the prompt is clearly unrelated to the linked repo.
+REPO_RELEVANCE_FLOOR = 0.20
+# Minimum number of domain-specific terms from the synthesis that must appear
+# in the prompt for the gate to pass.  Prevents same-tech-stack-different-project
+# false positives that cosine alone cannot catch.
+REPO_DOMAIN_MIN_OVERLAP = 1
+
 # Lower threshold for domain override — wrong domain only affects clustering,
 # not optimization quality.
 DOMAIN_CONFIDENCE_GATE = 0.6

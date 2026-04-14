@@ -153,27 +153,75 @@ async def compute_repo_relevance(
     raw_prompt: str,
     explore_synthesis: str,
     embedding_service: Any,
-) -> float:
-    """Semantic relevance between a prompt and the linked repo's architecture.
+) -> tuple[float, dict[str, Any]]:
+    """Hybrid relevance between a prompt and the linked repo's architecture.
 
-    Computes cosine similarity between the prompt embedding and the explore
-    synthesis embedding.  Returns a float in [0.0, 1.0] — higher means the
-    prompt is more likely *about* the linked project rather than merely sharing
-    the same tech stack.
+    Two-stage gate:
+
+    1. **Cosine floor** — if cosine similarity between prompt and synthesis
+       embeddings is below ``REPO_RELEVANCE_FLOOR`` (0.20), skip immediately.
+    2. **Domain entity overlap** — extract domain vocabulary from the synthesis
+       and check how many domain-specific terms appear in the prompt.  At least
+       ``REPO_DOMAIN_MIN_OVERLAP`` (1) matches are required to pass.
+
+    Returns a ``(cosine, info)`` tuple where *info* contains diagnostic keys:
+    ``cosine``, ``domain_overlap``, ``domain_matches`` (max 10),
+    ``domain_vocab_size``, ``decision`` (``"pass"`` / ``"skip"``), and
+    ``reason`` (``"below_floor"`` / ``"domain_match"`` / ``"no_domain_overlap"``).
 
     Used by :func:`ContextEnrichmentService.enrich` to gate codebase context
-    injection.  When the score falls below ``REPO_RELEVANCE_GATE`` the pipeline
-    skips synthesis + curated retrieval, preventing unrelated projects from
-    inheriting the linked repo's internal patterns.
+    injection, preventing unrelated projects from inheriting the linked repo's
+    internal patterns.
     """
     import numpy as np
 
+    from app.services.pipeline_constants import (
+        REPO_DOMAIN_MIN_OVERLAP,
+        REPO_RELEVANCE_FLOOR,
+    )
+
     prompt_vec = await embedding_service.aembed_single(raw_prompt)
     synth_vec = await embedding_service.aembed_single(explore_synthesis)
-    return float(
+    cosine = float(
         np.dot(prompt_vec, synth_vec)
         / (np.linalg.norm(prompt_vec) * np.linalg.norm(synth_vec) + 1e-9)
     )
+
+    # Stage 1: cosine floor — clearly unrelated prompts
+    if cosine < REPO_RELEVANCE_FLOOR:
+        return cosine, {
+            "cosine": round(cosine, 4),
+            "domain_overlap": 0,
+            "domain_matches": [],
+            "domain_vocab_size": 0,
+            "decision": "skip",
+            "reason": "below_floor",
+        }
+
+    # Stage 2: domain entity overlap
+    domain_vocab = extract_domain_vocab(explore_synthesis)
+    prompt_lower = raw_prompt.lower()
+    matches = [w for w in domain_vocab if w in prompt_lower]
+    overlap = len(matches)
+
+    if overlap >= REPO_DOMAIN_MIN_OVERLAP:
+        return cosine, {
+            "cosine": round(cosine, 4),
+            "domain_overlap": overlap,
+            "domain_matches": sorted(matches)[:10],
+            "domain_vocab_size": len(domain_vocab),
+            "decision": "pass",
+            "reason": "domain_match",
+        }
+
+    return cosine, {
+        "cosine": round(cosine, 4),
+        "domain_overlap": 0,
+        "domain_matches": [],
+        "domain_vocab_size": len(domain_vocab),
+        "decision": "skip",
+        "reason": "no_domain_overlap",
+    }
 
 
 # ---------------------------------------------------------------------------
