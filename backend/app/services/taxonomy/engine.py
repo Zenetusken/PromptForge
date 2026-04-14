@@ -1659,7 +1659,7 @@ class TaxonomyEngine:
             general_children_q = await db.execute(
                 select(PromptCluster).where(
                     PromptCluster.parent_id == general_node.id,
-                    PromptCluster.state.in_(["active", "mature"]),
+                    PromptCluster.state.in_(["active", "mature", "template"]),
                 )
             )
             general_children = list(general_children_q.scalars().all())

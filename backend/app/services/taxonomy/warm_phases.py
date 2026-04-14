@@ -1139,13 +1139,23 @@ async def phase_reconcile(
                 result.member_counts_fixed += 1
 
         # Re-parent clusters whose domain field doesn't match their parent
-        # domain node. This catches clusters that were classified into a
-        # sub-domain but hot-path assigned them under a different domain.
-        domain_id_by_label: dict[str, str] = {
-            dn.label: dn.id for dn in (await db.execute(
-                select(PromptCluster).where(PromptCluster.state == "domain")
-            )).scalars().all()
-        }
+        # domain node. This catches clusters assigned under the wrong domain
+        # (e.g., under "general" when domain="backend").
+        # Sub-domain children are NOT re-parented — a cluster with domain=backend
+        # parented under a backend sub-domain is correctly placed.
+        all_domain_nodes = (await db.execute(
+            select(PromptCluster).where(PromptCluster.state == "domain")
+        )).scalars().all()
+        domain_id_by_label: dict[str, str] = {dn.label: dn.id for dn in all_domain_nodes}
+        # Build set of domain IDs that are sub-domains of each top-level domain
+        sub_domain_ids_by_parent: dict[str, set[str]] = {}
+        for dn in all_domain_nodes:
+            if dn.parent_id and dn.parent_id in {d.id for d in all_domain_nodes}:
+                # This is a sub-domain — find its parent domain label
+                parent_dn = next((d for d in all_domain_nodes if d.id == dn.parent_id), None)
+                if parent_dn:
+                    sub_domain_ids_by_parent.setdefault(parent_dn.label, set()).add(dn.id)
+
         misparented_q = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
@@ -1153,23 +1163,27 @@ async def phase_reconcile(
             )
         )
         for cluster in misparented_q.scalars().all():
-            correct_parent = domain_id_by_label.get(cluster.domain)
-            if correct_parent and cluster.parent_id != correct_parent:
-                # Verify the current parent is a domain node (not a sub-domain
-                # that legitimately parents this cluster)
-                current_parent_state = (await db.execute(
-                    select(PromptCluster.state, PromptCluster.label)
-                    .where(PromptCluster.id == cluster.parent_id)
-                )).first()
-                if current_parent_state and current_parent_state.state == "domain":
-                    # Current parent is a domain but not the right one
-                    logger.info(
-                        "Re-parenting cluster '%s' from '%s' to '%s' (domain=%s)",
-                        cluster.label, current_parent_state.label,
-                        cluster.domain, cluster.domain,
-                    )
-                    cluster.parent_id = correct_parent
-                    result.member_counts_fixed += 1
+            correct_top_domain_id = domain_id_by_label.get(cluster.domain)
+            if not correct_top_domain_id or cluster.parent_id == correct_top_domain_id:
+                continue
+            # Skip if cluster is under a sub-domain of its top-level domain
+            # (e.g., domain=backend, parent=async-system-reliability which is a sub-domain of backend)
+            valid_sub_ids = sub_domain_ids_by_parent.get(cluster.domain, set())
+            if cluster.parent_id in valid_sub_ids:
+                continue
+            # Current parent is a different domain — re-parent
+            current_parent = (await db.execute(
+                select(PromptCluster.state, PromptCluster.label)
+                .where(PromptCluster.id == cluster.parent_id)
+            )).first()
+            if current_parent and current_parent.state == "domain":
+                logger.info(
+                    "Re-parenting cluster '%s' from '%s' to '%s' (domain=%s)",
+                    cluster.label, current_parent.label,
+                    cluster.domain, cluster.domain,
+                )
+                cluster.parent_id = correct_top_domain_id
+                result.member_counts_fixed += 1
 
         # Reconcile domain node member_count (child cluster count by parent_id)
         domain_q2 = await db.execute(

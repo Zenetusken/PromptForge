@@ -127,8 +127,9 @@ async def match_prompt(
     3. If no leaf match, search parent clusters -- if cosine >= cluster_threshold -> cluster match
     4. No match at any level -> return None
 
-    Cold-start: candidate families use strict 0.80 threshold (Spec 7.4).
+    Cold-start: candidate families use strict 0.65 threshold (Spec 7.4).
     Thresholds adapt per-cluster coherence (Spec 7.9).
+    Raw embeddings (no fusion) for cross-process consistency.
     """
     from app.services.taxonomy.quality import suggestion_threshold
 
@@ -156,11 +157,14 @@ async def match_prompt(
     _best_cluster_threshold: float = 0.0
 
     # ------------------------------------------------------------------
-    # Level 1: Family-level search
+    # Level 1: Family-level search (leaf clusters only, not structural nodes)
     # ------------------------------------------------------------------
+    from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
+
     result = await db.execute(
         select(PromptCluster).where(
-            PromptCluster.parent_id.isnot(None)
+            PromptCluster.parent_id.isnot(None),
+            PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
         )
     )
     families = list(result.scalars().all())
@@ -253,7 +257,7 @@ async def match_prompt(
     if result is None:
         node_result = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.in_(["active", "candidate"])
+                PromptCluster.state.in_(["active", "candidate", "mature", "template"])
             )
         )
         all_nodes = list(node_result.scalars().all())
