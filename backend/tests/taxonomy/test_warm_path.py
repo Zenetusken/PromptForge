@@ -19,6 +19,7 @@ from app.services.taxonomy.warm_path import (
     WarmPathResult,
     _run_speculative_phase,
     _update_phase_rejection_counters,
+    execute_maintenance_phases,
     execute_warm_path,
 )
 from app.services.taxonomy.warm_phases import PhaseResult
@@ -401,3 +402,118 @@ async def test_execute_warm_path_on_empty_db(db, mock_embedding, mock_provider):
     assert result.operations_accepted <= result.operations_attempted
     # q_system backward-compat
     assert result.q_system == result.q_final
+
+
+# ---------------------------------------------------------------------------
+# execute_maintenance_phases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_execute_maintenance_phases_calls_discover_and_audit(db, mock_embedding, mock_provider):
+    """execute_maintenance_phases runs discover, archive, and audit in order."""
+    from app.services.taxonomy.engine import TaxonomyEngine
+
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+    call_order: list[str] = []
+
+    async def fake_discover(eng, session):
+        call_order.append("discover")
+        from app.services.taxonomy.warm_phases import DiscoverResult
+        return DiscoverResult()
+
+    async def fake_archive(eng, session):
+        call_order.append("archive")
+        return 0
+
+    async def fake_audit(eng, session, phase_results, q_baseline):
+        call_order.append("audit")
+        from app.services.taxonomy.warm_phases import AuditResult
+        return AuditResult(snapshot_id="maint-snap", q_final=0.5)
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db
+
+    with (
+        patch("app.services.taxonomy.warm_path.phase_discover", fake_discover),
+        patch("app.services.taxonomy.warm_path.phase_archive_empty_sub_domains", fake_archive),
+        patch("app.services.taxonomy.warm_path.phase_audit", fake_audit),
+    ):
+        result = await execute_maintenance_phases(engine, session_factory)
+
+    assert call_order == ["discover", "archive", "audit"]
+    assert result.snapshot_id == "maint-snap"
+    assert result.operations_attempted == 0
+    assert result.operations_accepted == 0
+
+
+@pytest.mark.asyncio
+async def test_execute_maintenance_phases_sets_retry_on_discover_failure(
+    db, mock_embedding, mock_provider
+):
+    """When phase_discover raises, _maintenance_pending is set for retry."""
+    from app.services.taxonomy.engine import TaxonomyEngine
+
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+    assert engine._maintenance_pending is False
+
+    async def failing_discover(eng, session):
+        raise Exception("database is locked")
+
+    async def fake_archive(eng, session):
+        return 0
+
+    async def fake_audit(eng, session, phase_results, q_baseline):
+        from app.services.taxonomy.warm_phases import AuditResult
+        return AuditResult(snapshot_id="maint-fail", q_final=0.5)
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db
+
+    with (
+        patch("app.services.taxonomy.warm_path.phase_discover", failing_discover),
+        patch("app.services.taxonomy.warm_path.phase_archive_empty_sub_domains", fake_archive),
+        patch("app.services.taxonomy.warm_path.phase_audit", fake_audit),
+    ):
+        result = await execute_maintenance_phases(engine, session_factory)
+
+    assert engine._maintenance_pending is True
+    assert result.snapshot_id == "maint-fail"
+
+
+@pytest.mark.asyncio
+async def test_execute_maintenance_phases_clears_retry_on_success(
+    db, mock_embedding, mock_provider
+):
+    """Successful discovery clears the _maintenance_pending flag."""
+    from app.services.taxonomy.engine import TaxonomyEngine
+
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+    engine._maintenance_pending = True
+
+    async def ok_discover(eng, session):
+        from app.services.taxonomy.warm_phases import DiscoverResult
+        return DiscoverResult()
+
+    async def fake_archive(eng, session):
+        return 0
+
+    async def fake_audit(eng, session, phase_results, q_baseline):
+        from app.services.taxonomy.warm_phases import AuditResult
+        return AuditResult(snapshot_id="maint-ok", q_final=0.5)
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db
+
+    with (
+        patch("app.services.taxonomy.warm_path.phase_discover", ok_discover),
+        patch("app.services.taxonomy.warm_path.phase_archive_empty_sub_domains", fake_archive),
+        patch("app.services.taxonomy.warm_path.phase_audit", fake_audit),
+    ):
+        result = await execute_maintenance_phases(engine, session_factory)
+
+    assert engine._maintenance_pending is False
+    assert result.snapshot_id == "maint-ok"

@@ -33,6 +33,7 @@ from app.services.taxonomy.quality import is_non_regressive
 from app.services.taxonomy.warm_phases import (
     PhaseResult,
     _record_domain_split_block,
+    phase_archive_empty_sub_domains,
     phase_audit,
     phase_discover,
     phase_evaluate_candidates,
@@ -396,6 +397,120 @@ def _update_phase_rejection_counters(
 # ---------------------------------------------------------------------------
 
 
+async def execute_maintenance_phases(
+    engine: TaxonomyEngine,
+    session_factory: SessionFactory,
+    phase_results: list[PhaseResult] | None = None,
+    q_baseline: float | None = None,
+) -> WarmPathResult:
+    """Run maintenance phases independently of the dirty-cluster lifecycle.
+
+    Phases: 5 (Discover), 5.5 (Archive sub-domains), 6 (Audit).
+    These phases scan the complete taxonomy state and do not depend on
+    dirty clusters.  Phase 5 is wrapped in try/except — on transient
+    failure (e.g. SQLite lock), ``engine._maintenance_pending`` is set
+    so the next warm cycle retries immediately.
+
+    Args:
+        engine: TaxonomyEngine instance.
+        session_factory: Async context manager yielding fresh AsyncSession.
+        phase_results: Speculative phase results from the lifecycle group
+            (empty list if running maintenance-only on an idle cycle).
+        q_baseline: Q baseline from lifecycle Phase 0 (None if idle cycle).
+
+    Returns:
+        WarmPathResult with audit snapshot.
+    """
+    if phase_results is None:
+        phase_results = []
+
+    # ------------------------------------------------------------------
+    # Phase 5: Discover — fresh session, always commits
+    # ADR-005: Full scan — domain discovery needs complete cluster state
+    # ------------------------------------------------------------------
+    try:
+        async with session_factory() as db:
+            discover_result = await phase_discover(engine, db)
+            await db.commit()
+            logger.info(
+                "Phase 5 (discover): domains=%d candidates=%d",
+                discover_result.domains_created,
+                discover_result.candidates_detected,
+            )
+            # Success — clear retry flag
+            engine._maintenance_pending = False
+    except Exception as discover_exc:
+        logger.warning(
+            "Phase 5 (discover) failed — will retry next cycle: %s",
+            discover_exc,
+        )
+        engine._maintenance_pending = True
+        try:
+            get_event_logger().log_decision(
+                path="warm", op="discover",
+                decision="discover_failed_will_retry",
+                context={"error": str(discover_exc)},
+            )
+        except RuntimeError:
+            pass
+
+    # ------------------------------------------------------------------
+    # Phase 5.5: Archive empty sub-domains — fresh session, always commits
+    # ------------------------------------------------------------------
+    try:
+        async with session_factory() as db:
+            sub_domains_archived = await phase_archive_empty_sub_domains(engine, db)
+            await db.commit()
+            if sub_domains_archived:
+                logger.info(
+                    "Phase 5.5 (sub-domain cleanup): archived=%d",
+                    sub_domains_archived,
+                )
+    except Exception as archive_exc:
+        logger.warning("Phase 5.5 (archive sub-domains) failed (non-fatal): %s", archive_exc)
+
+    # ------------------------------------------------------------------
+    # Phase 6: Audit — fresh session, creates snapshot
+    # ADR-005: Full scan — audit/snapshot needs complete cluster state
+    # ------------------------------------------------------------------
+    async with session_factory() as db:
+        audit_result = await phase_audit(
+            engine, db, phase_results, q_baseline,
+        )
+        await db.commit()
+        logger.info(
+            "Phase 6 (audit): snapshot=%s q_final=%.4f deadlock=%s",
+            audit_result.snapshot_id,
+            audit_result.q_final or 0.0,
+            audit_result.deadlock_breaker_used,
+        )
+
+    # ------------------------------------------------------------------
+    # Snapshot pruning — tiered retention policy
+    # ------------------------------------------------------------------
+    try:
+        async with session_factory() as db:
+            from app.services.taxonomy.snapshot import prune_snapshots
+            pruned = await prune_snapshots(db)
+            if pruned:
+                logger.info("Pruned %d old snapshots via retention policy", pruned)
+    except Exception as prune_exc:
+        logger.warning("Snapshot pruning failed (non-fatal): %s", prune_exc)
+
+    engine._invalidate_stats_cache()
+
+    return WarmPathResult(
+        snapshot_id=audit_result.snapshot_id,
+        q_baseline=q_baseline,
+        q_final=audit_result.q_final,
+        phase_results=phase_results,
+        operations_attempted=sum(pr.ops_attempted for pr in phase_results),
+        operations_accepted=sum(pr.ops_accepted for pr in phase_results),
+        deadlock_breaker_used=audit_result.deadlock_breaker_used,
+        deadlock_breaker_phase=audit_result.deadlock_breaker_phase,
+    )
+
+
 async def execute_warm_path(
     engine: TaxonomyEngine,
     session_factory: SessionFactory,
@@ -688,7 +803,6 @@ async def execute_warm_path(
     # any that are still warranted.
     # ------------------------------------------------------------------
     async with session_factory() as db:
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         sub_domains_archived = await phase_archive_empty_sub_domains(engine, db)
         await db.commit()
         if sub_domains_archived:
