@@ -143,6 +143,10 @@ async def test_execute_warm_path_phases_called_in_order(db, mock_embedding, mock
         from app.services.taxonomy.warm_phases import DiscoverResult
         return DiscoverResult()
 
+    async def fake_archive_sub_domains(eng, session):
+        call_order.append("archive_sub_domains")
+        return 0
+
     async def fake_audit(eng, session, phase_results, q_baseline):
         call_order.append("audit")
         from app.services.taxonomy.warm_phases import AuditResult
@@ -159,6 +163,7 @@ async def test_execute_warm_path_phases_called_in_order(db, mock_embedding, mock
         patch("app.services.taxonomy.warm_path.phase_retire", fake_retire),
         patch("app.services.taxonomy.warm_path.phase_refresh", fake_refresh),
         patch("app.services.taxonomy.warm_path.phase_discover", fake_discover),
+        patch("app.services.taxonomy.warm_path.phase_archive_empty_sub_domains", fake_archive_sub_domains),
         patch("app.services.taxonomy.warm_path.phase_audit", fake_audit),
     ):
         result = await execute_warm_path(engine, session_factory)
@@ -170,6 +175,7 @@ async def test_execute_warm_path_phases_called_in_order(db, mock_embedding, mock
         "retire",
         "refresh",
         "discover",
+        "archive_sub_domains",
         "audit",
     ], f"Phase order wrong: {call_order}"
     assert result.snapshot_id == "snap-test"

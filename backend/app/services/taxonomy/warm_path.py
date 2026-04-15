@@ -784,84 +784,25 @@ async def execute_warm_path(
         logger.warning("Phase 4.75 (task-type signals) failed (non-fatal): %s", _tt_exc)
 
     # ------------------------------------------------------------------
-    # Phase 5: Discover — fresh session, always commits
-    # ADR-005: Full scan — domain discovery needs complete cluster state
+    # Maintenance group: Phases 5, 5.5, 6 + snapshot pruning
+    # Delegated to execute_maintenance_phases() which handles discovery
+    # retry and error isolation independently.
     # ------------------------------------------------------------------
-    async with session_factory() as db:
-        discover_result = await phase_discover(engine, db)
-        await db.commit()
-        logger.info(
-            "Phase 5 (discover): domains=%d candidates=%d",
-            discover_result.domains_created,
-            discover_result.candidates_detected,
-        )
-
-    # ------------------------------------------------------------------
-    # Phase 5.5: Archive empty sub-domains — fresh session, always commits
-    # Sub-domains orphaned by cold path or child dissolution are garbage-
-    # collected here, after Phase 5 discovery has had a chance to re-create
-    # any that are still warranted.
-    # ------------------------------------------------------------------
-    async with session_factory() as db:
-        sub_domains_archived = await phase_archive_empty_sub_domains(engine, db)
-        await db.commit()
-        if sub_domains_archived:
-            logger.info(
-                "Phase 5.5 (sub-domain cleanup): archived=%d",
-                sub_domains_archived,
-            )
-
-    # ------------------------------------------------------------------
-    # Phase 6: Audit — fresh session, creates snapshot
-    # ADR-005: Full scan — audit/snapshot needs complete cluster state
-    # ------------------------------------------------------------------
-    async with session_factory() as db:
-        audit_result = await phase_audit(
-            engine, db, all_phase_results, q_baseline,
-        )
-        await db.commit()
-        logger.info(
-            "Phase 6 (audit): snapshot=%s q_final=%.4f deadlock=%s",
-            audit_result.snapshot_id,
-            audit_result.q_final or 0.0,
-            audit_result.deadlock_breaker_used,
-        )
-
-    # ------------------------------------------------------------------
-    # Snapshot pruning — tiered retention policy (own session + commit).
-    # prune_snapshots() keeps 0-24h: all, 1-30d: best/day, 30+d: best/week.
-    # ------------------------------------------------------------------
-    try:
-        async with session_factory() as db:
-            from app.services.taxonomy.snapshot import prune_snapshots
-            pruned = await prune_snapshots(db)
-            if pruned:
-                logger.info("Pruned %d old snapshots via retention policy", pruned)
-    except Exception as prune_exc:
-        logger.warning("Snapshot pruning failed (non-fatal): %s", prune_exc)
-
-    # ------------------------------------------------------------------
-    # Finalize: invalidate cache (warm_path_age already incremented
-    # by phase_audit; _invalidate_stats_cache also called there but
-    # we call again defensively in case audit was skipped on error).
-    # ------------------------------------------------------------------
-    engine._invalidate_stats_cache()
+    maint_result = await execute_maintenance_phases(
+        engine, session_factory,
+        phase_results=all_phase_results,
+        q_baseline=q_baseline,
+    )
 
     # Merge audit-level deadlock info with per-phase deadlock info
-    final_deadlock_used = deadlock_used or audit_result.deadlock_breaker_used
-    final_deadlock_phase = deadlock_phase or audit_result.deadlock_breaker_phase
-
-    # Aggregate totals
-    total_attempted = sum(pr.ops_attempted for pr in all_phase_results)
-    total_accepted = sum(pr.ops_accepted for pr in all_phase_results)
+    final_deadlock_used = deadlock_used or maint_result.deadlock_breaker_used
+    final_deadlock_phase = deadlock_phase or maint_result.deadlock_breaker_phase
 
     # ADR-005: Record cycle measurement for adaptive scheduling.
-    # Only record dirty-only cycles — full-scan cycles (dirty_ids=None) lack
-    # a meaningful dirty_count and would corrupt Phase 3 regression analysis.
     _cycle_duration_ms = int((_time.monotonic() - _cycle_start) * 1000)
     if _total_dirty_count is not None:
         engine._scheduler.record(
-            dirty_count=_total_dirty_count,  # total pre-scoping, not budget-scoped subset
+            dirty_count=_total_dirty_count,
             duration_ms=_cycle_duration_ms,
         )
     logger.debug(
@@ -880,7 +821,6 @@ async def execute_warm_path(
             remaining = cids - _processed
             if remaining:
                 _reinjected_projects += 1
-                # Map "legacy" back to None to match _dirty_set convention
                 raw_pid = None if pid == "legacy" else pid
                 for cid in remaining:
                     engine.mark_dirty(cid, project_id=raw_pid)
@@ -893,12 +833,12 @@ async def execute_warm_path(
             )
 
     return WarmPathResult(
-        snapshot_id=audit_result.snapshot_id,
+        snapshot_id=maint_result.snapshot_id,
         q_baseline=q_baseline,
-        q_final=audit_result.q_final,
+        q_final=maint_result.q_final,
         phase_results=all_phase_results,
-        operations_attempted=total_attempted,
-        operations_accepted=total_accepted,
+        operations_attempted=sum(pr.ops_attempted for pr in all_phase_results),
+        operations_accepted=sum(pr.ops_accepted for pr in all_phase_results),
         deadlock_breaker_used=final_deadlock_used,
         deadlock_breaker_phase=final_deadlock_phase,
     )
