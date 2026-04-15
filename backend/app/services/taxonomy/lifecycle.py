@@ -383,6 +383,24 @@ async def attempt_merge(
             loser.id,
             total,
         )
+
+        # Log cross-sub-domain merge for observability
+        if loser.parent_id and survivor.parent_id and loser.parent_id != survivor.parent_id:
+            try:
+                from app.services.taxonomy.event_logger import get_event_logger
+                get_event_logger().log_decision(
+                    path="warm", op="merge", decision="cross_sub_domain",
+                    cluster_id=survivor.id,
+                    context={
+                        "survivor_label": survivor.label,
+                        "survivor_parent": str(survivor.parent_id),
+                        "loser_label": loser.label,
+                        "loser_parent": str(loser.parent_id),
+                    },
+                )
+            except RuntimeError:
+                pass
+
         return survivor
 
     except Exception:
