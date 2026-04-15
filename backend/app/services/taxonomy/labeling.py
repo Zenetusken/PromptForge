@@ -161,8 +161,8 @@ async def generate_qualifier_vocabulary(
 
     Calls Haiku to analyze cluster labels and produce keyword groups that
     capture the domain's specializations.  Returns a dictionary mapping
-    qualifier names to keyword lists, in the same format as the static
-    ``_DOMAIN_QUALIFIERS`` entries.
+    qualifier names to keyword lists (e.g., ``{"growth": ["metrics", "kpi", ...]}`)
+    stored in domain node ``cluster_metadata["generated_qualifiers"]``.
 
     Args:
         provider: LLM provider (Haiku).  None = return empty dict.
