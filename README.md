@@ -130,7 +130,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Hybrid scoring** — LLM scores blended with heuristic analysis + z-score normalization against historical distribution. Divergence flags when LLM and heuristic disagree by >2.5 points
 
 ### Knowledge Engine
-- **Evolutionary taxonomy** — self-organizing hierarchical clustering with multi-project isolation. Project → domain → sub-domain → cluster → optimizations. Organic domain and sub-domain discovery from user behavior via signal-driven qualifier detection with three-tier vocabulary (static, LLM-generated, dynamic TF-IDF)
+- **Evolutionary taxonomy** — self-organizing hierarchical clustering with multi-project isolation. Project → domain → sub-domain → cluster → optimizations. Fully organic sub-domain discovery from user behavior via Haiku-generated qualifier vocabulary with three-source signal cascade (domain_raw, intent_label, TF-IDF). Sub-domain lifecycle: re-evaluation every warm cycle, graceful dissolution at low consistency (reparents clusters, merges meta-patterns — prompts never lost), automatic re-discovery when signals recover
 - **Pattern extraction** — reusable techniques extracted from successful optimizations, stored as meta-patterns per cluster
 - **Cross-cluster injection** — universal techniques injected across topic boundaries, ranked by composite relevance
 - **Global pattern tier** — durable patterns promoted from meta-pattern siblings spanning 5+ clusters (single-project OK), injected with 1.3x relevance boost. Validated with demotion/re-promotion hysteresis, 500 retention cap. Injection effectiveness tracked in health endpoint
@@ -207,7 +207,7 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (2177 tests)
+# Backend tests (2201 tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
 # Frontend type check

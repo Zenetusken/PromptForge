@@ -4,12 +4,45 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.35 — 2026-04-15
+
+### Added
+- **Warm path maintenance decoupling** — split `execute_warm_path()` into lifecycle group (Phases 0–4, dirty-cluster-gated) and maintenance group (Phases 5–6, cadence-gated). Maintenance phases run every `MAINTENANCE_CYCLE_INTERVAL` (6) warm cycles (~30 min) or immediately when retrying after transient failure via `_maintenance_pending` flag. Fixes Phase 5 (discovery) being silently skipped when no dirty clusters exist
+- **Fully organic sub-domain vocabulary** — deleted static `_DOMAIN_QUALIFIERS` dict (9 domains, ~80 curated keywords). All domains now get Haiku-generated vocabulary from cluster labels via `generate_qualifier_vocabulary()`. Vocabulary cached in `cluster_metadata["generated_qualifiers"]`, served to hot path via `DomainSignalLoader.get_qualifiers()`. Cross-process coherence: `load()` populates qualifier cache from DB for MCP server
+- **Sub-domain lifecycle management** — removed permanent discovery lock (`if existing_sub_count > 0: continue`). Domains with existing sub-domains are now re-evaluated every Phase 5 cycle. New sub-domains form alongside existing ones. `_reevaluate_sub_domains()` dissolves sub-domains with qualifier consistency below 25% (hysteresis: creation at 40–60%, dissolution at 25%). Dissolution reparents clusters to top-level domain, merges meta-patterns into parent (not deleted), frees label for future re-discovery
+- **Sub-domain flip-flop prevention** — `dissolved_this_cycle` set blocks same-cycle re-creation of dissolved labels. Labels freed for future cycles only
+- **Shared qualifier matching utility** — `DomainSignalLoader.find_best_qualifier()` static method eliminates duplicate keyword-hit logic between `_enrich_domain_qualifier()` and engine.py Source 2
+- **Health endpoint qualifier stats** — `qualifier_vocab` field with `qualifier_cache_hits/misses`, `domains_with_vocab`, `last_qualifier_refresh`
+- **DomainResolver.remove_label()** — clears dissolved sub-domain labels from resolver cache to prevent stale resolution
+- **Cross-sub-domain merge observability** — `merge/cross_sub_domain` event logged when merge winner and loser are in different sub-domains
+- **HNSW fallback resilience** — `EmbeddingIndex.rebuild()` catches HNSW backend build failures and falls back to numpy. HNSW tests skip on platforms where hnswlib is non-functional (Python 3.14)
+
+### Changed
+- **Enrichment threshold** — `SUB_DOMAIN_QUALIFIER_MIN_KEYWORD_HITS` lowered from 2 to 1. Domain is already confirmed by classification — single keyword hit is sufficient for qualifier selection
+- **Child scan expansion** — `_propose_sub_domains()` scans clusters under existing sub-domains (not just direct domain children). Fixes qualifier counts missing optimizations reparented under sub-domains
+- **Phase 5.5 meta-pattern handling** — changed from DELETE to UPDATE (merge into parent domain), consistent with Phase 5 dissolution and preventing `OptimizationPattern` FK orphaning
+- **Warm path module docstring** — updated to document lifecycle vs maintenance group architecture
+- **`sub_domain_signal_scan` event** — gains `vocab_source: "organic"` field in context
+- **Backend test count** — 2201 tests (up from 2177)
+
+### Fixed
+- **Phase 5 skipped on idle warm cycles** — the dirty-cluster early-exit gate (`warm_path.py:428`) was too aggressive, skipping maintenance phases even when no dirty clusters existed. Phase 5 now runs independently via cadence gate
+- **Phase 5 transient failure not retried** — SQLite `database is locked` during sub-domain creation caused Phase 5 to fail silently with no retry on subsequent cycles. `_maintenance_pending` flag now triggers immediate retry
+- **Multi-word dynamic keyword normalization** — `known_qualifiers` stored "api gateway" but Source 1 validation checked "api-gateway". Both forms now stored for consistent matching
+- **`SUB_DOMAIN_QUALIFIER_MIN_KEYWORD_HITS` dead code** — constant was defined but never imported. Now used in both `_enrich_domain_qualifier()` and engine.py Source 2
+- **Stale "static vocab" references** — replaced all `_DOMAIN_QUALIFIERS`, `has_static_vocab`, and "static vocabulary" references with organic vocabulary terminology
+
+### Removed
+- **`_DOMAIN_QUALIFIERS` static dict** — 48 lines of curated keyword groups across 9 domains. Replaced by fully organic Haiku-generated vocabulary
+- **Permanent sub-domain discovery lock** — `if existing_sub_count > 0: continue` guard that prevented new sub-domains from forming alongside existing ones
+- **`sub_domain_domain_skipped` event** — replaced by `sub_domain_domain_reevaluated` (domains with existing sub-domains are now re-evaluated, not skipped)
+
 ## v0.3.34 — 2026-04-15
 
 ### Added
 - **Signal-driven sub-domain discovery** — replaced HDBSCAN-based sub-domain discovery with a deterministic three-source qualifier pipeline: (1) domain_raw sub-qualifiers via `parse_domain()`, (2) intent_label matching against qualifier vocabulary, (3) raw_prompt matching against dynamic TF-IDF signal_keywords. Adaptive consistency threshold `max(40%, 60% - 0.4% * members)`, minimum 2-cluster breadth guard, full observability with 8 event types per warm cycle
-- **Qualifier enrichment** — heuristic analyzer enriches domain classification with sub-qualifiers via `_enrich_domain_qualifier()` using `_DOMAIN_QUALIFIERS` vocabulary (9 domains: backend, frontend, devops, saas, database, security, fullstack, data). Runs on every prompt at zero LLM cost
-- **LLM-generated qualifier vocabulary** — Haiku analyzes a domain's cluster labels and generates qualifier keyword groups automatically for domains without static vocabulary. Cached in `cluster_metadata["generated_qualifiers"]`, refreshed when cluster count changes by ≥30%. One LLM call per domain, not per optimization
+- **Qualifier enrichment** — heuristic analyzer enriches domain classification with sub-qualifiers via `_enrich_domain_qualifier()`. Runs on every prompt at zero LLM cost
+- **LLM-generated qualifier vocabulary** — Haiku analyzes a domain's cluster labels and generates qualifier keyword groups. Cached in `cluster_metadata["generated_qualifiers"]`, refreshed when cluster count changes by ≥30%. One LLM call per domain, not per optimization. (v0.3.35: became the sole vocabulary source — static `_DOMAIN_QUALIFIERS` removed)
 - **Sub-domain archival phase** (Phase 5.5) — garbage-collects empty and single-child sub-domains after 1h grace period. Reparents children to top-level domain before archiving. Runs after Phase 5 discovery
 - **Sub-domain color derivation** — sub-domain nodes derive color from parent domain (same hue, darker in OKLab). Parent color auto-assigned if NULL at creation time
 - **Tree integrity check 8** — detects empty sub-domain nodes as violations, logged as errors for observability
