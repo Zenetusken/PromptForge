@@ -129,3 +129,96 @@ async def _apply_continuity_anchor(current_label: str, new_label: str) -> str:
     except Exception as exc:
         logger.debug("Continuity anchor check failed (non-fatal): %s", exc)
         return new_label  # fail-open: accept new label
+
+
+# ---------------------------------------------------------------------------
+# Dynamic qualifier vocabulary generation
+# ---------------------------------------------------------------------------
+
+
+class _QualifierGroup(BaseModel):
+    """A single qualifier group with its name and keywords."""
+
+    model_config = {"extra": "forbid"}
+    name: str = Field(description="Short qualifier name (1-2 words, lowercase, e.g. 'growth', 'onboarding').")
+    keywords: list[str] = Field(description="5-10 lowercase keywords that signal this specialization.")
+
+
+class _QualifierVocabulary(BaseModel):
+    """Generated qualifier vocabulary for a domain."""
+
+    model_config = {"extra": "forbid"}
+    groups: list[_QualifierGroup] = Field(description="3-6 qualifier groups covering the domain's specializations.")
+
+
+async def generate_qualifier_vocabulary(
+    provider: LLMProvider | None,
+    domain_label: str,
+    cluster_labels: list[tuple[str, int]],
+    model: str,
+) -> dict[str, list[str]]:
+    """Generate a qualifier vocabulary from a domain's cluster structure.
+
+    Calls Haiku to analyze cluster labels and produce keyword groups that
+    capture the domain's specializations.  Returns a dictionary mapping
+    qualifier names to keyword lists, in the same format as the static
+    ``_DOMAIN_QUALIFIERS`` entries.
+
+    Args:
+        provider: LLM provider (Haiku).  None = return empty dict.
+        domain_label: The domain name (e.g., "saas").
+        cluster_labels: List of (cluster_label, member_count) tuples.
+        model: Model ID to use.
+
+    Returns:
+        Qualifier vocabulary dict, e.g. ``{"growth": ["metrics", "kpi", ...], ...}``.
+        Empty dict on failure.
+    """
+    if not provider or len(cluster_labels) < 3:
+        return {}
+
+    cluster_block = "\n".join(
+        f"- {label} ({count} members)" for label, count in cluster_labels
+    )
+
+    try:
+        result = await call_provider_with_retry(
+            provider,
+            model=model,
+            system_prompt=(
+                "You are a taxonomy analyst. Given a list of clusters within a domain, "
+                "identify 3-6 thematic specializations and for each produce a short name "
+                "(1-2 lowercase words) and 5-10 lowercase keywords that signal that "
+                "specialization in a user's prompt. Keywords should be specific enough "
+                "to distinguish specializations from each other within this domain. "
+                "Do not include the domain name itself as a keyword."
+            ),
+            user_message=(
+                f"Domain: {domain_label}\n\n"
+                f"Clusters:\n{cluster_block}\n\n"
+                f"Generate qualifier groups for this domain's specializations."
+            ),
+            output_format=_QualifierVocabulary,
+        )
+
+        vocab: dict[str, list[str]] = {}
+        for group in result.groups:
+            name = group.name.strip().lower().replace(" ", "-")[:20]
+            keywords = [kw.strip().lower() for kw in group.keywords if kw.strip()]
+            if name and len(keywords) >= 3:
+                vocab[name] = keywords
+
+        if vocab:
+            logger.info(
+                "Generated qualifier vocabulary for '%s': %d groups (%s)",
+                domain_label,
+                len(vocab),
+                ", ".join(f"{k}({len(v)}kw)" for k, v in vocab.items()),
+            )
+        return vocab
+    except Exception as exc:
+        logger.warning(
+            "Qualifier vocabulary generation failed for '%s' (non-fatal): %s",
+            domain_label, exc,
+        )
+        return {}
