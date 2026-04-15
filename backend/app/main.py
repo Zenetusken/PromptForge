@@ -1186,9 +1186,18 @@ async def lifespan(app: FastAPI):
                             PromptLifecycleService,
                         )
                         result = await engine.run_warm_path(async_session_factory)
-                        if result and result.snapshot_id == "skipped":
-                            logger.debug("Warm path skipped — no dirty clusters")
-                        elif result:
+                        if result is None:
+                            logger.debug("Warm path skipped — lock held")
+                        elif result.snapshot_id == "skipped":
+                            logger.debug("Warm path skipped — no dirty clusters, maintenance off-cadence")
+                        elif result.q_baseline is None and result.snapshot_id != "skipped":
+                            # Maintenance-only cycle (no Phase 0, so no q_baseline)
+                            logger.info(
+                                "Warm path maintenance-only: q=%.4f snapshot=%s",
+                                result.q_system or 0.0,
+                                result.snapshot_id,
+                            )
+                        else:
                             logger.info(
                                 "Warm path completed: q=%.4f baseline=%.4f ops=%d/%d snapshot=%s",
                                 result.q_system or 0.0,
