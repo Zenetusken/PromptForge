@@ -685,9 +685,9 @@ describe('ClusterNavigator', () => {
     // Click the "active" tab
     await user.click(screen.getByRole('tab', { name: 'active' }));
 
-    // Only active-state family should be visible
+    // ACT filter shows all living states (active + mature + template + candidate)
     expect(screen.getByText('Active cluster')).toBeInTheDocument();
-    expect(screen.queryByText('Mature cluster')).not.toBeInTheDocument();
+    expect(screen.getByText('Mature cluster')).toBeInTheDocument();
     expect(screen.queryByText('Archived cluster')).not.toBeInTheDocument();
 
     // The "active" tab should now be selected
@@ -713,11 +713,11 @@ describe('ClusterNavigator', () => {
       expect(screen.getByText('Active cluster')).toBeInTheDocument();
     });
 
-    // Filter down to active only
+    // Filter down to active — now shows all living states including mature
     await user.click(screen.getByRole('tab', { name: 'active' }));
-    expect(screen.queryByText('Mature cluster')).not.toBeInTheDocument();
+    expect(screen.getByText('Mature cluster')).toBeInTheDocument();
 
-    // Reset to All
+    // Reset to All — same result
     await user.click(screen.getByRole('tab', { name: 'All' }));
     expect(screen.getByText('Active cluster')).toBeInTheDocument();
     expect(screen.getByText('Mature cluster')).toBeInTheDocument();
@@ -739,7 +739,8 @@ describe('ClusterNavigator', () => {
     await waitFor(() => {
       expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
     });
-    expect(screen.getByText('Chain-of-thought template')).toBeInTheDocument();
+    // Template appears in both PROVEN TEMPLATES section and domain group
+    expect(screen.getAllByText('Chain-of-thought template').length).toBeGreaterThanOrEqual(1);
   });
 
   it('does not render PROVEN TEMPLATES section when no template clusters exist', async () => {
@@ -759,7 +760,7 @@ describe('ClusterNavigator', () => {
     expect(screen.queryByText('PROVEN TEMPLATES')).not.toBeInTheDocument();
   });
 
-  it('template clusters do not appear in the domain-grouped list in "All" view', async () => {
+  it('template clusters appear in both PROVEN TEMPLATES section and domain group', async () => {
     const nodes = [
       mockClusterNode({ id: 'tmpl-1', label: 'Template cluster', state: 'template', domain: 'general' }),
       mockClusterNode({ id: 'fam-1', label: 'Regular cluster', state: 'active', domain: 'backend' }),
@@ -774,11 +775,10 @@ describe('ClusterNavigator', () => {
     await waitFor(() => {
       // Template appears in the Proven Templates section
       expect(screen.getByText('PROVEN TEMPLATES')).toBeInTheDocument();
-      expect(screen.getByText('Template cluster')).toBeInTheDocument();
     });
 
-    // "Template cluster" should appear exactly once (in the templates section, not again in domain groups)
-    expect(screen.getAllByText('Template cluster').length).toBe(1);
+    // Template cluster appears in both PROVEN TEMPLATES and its domain group
+    expect(screen.getAllByText('Template cluster').length).toBe(2);
   });
 
   it('renders "Use" button for each template cluster', async () => {
