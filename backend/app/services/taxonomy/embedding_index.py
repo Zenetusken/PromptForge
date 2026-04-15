@@ -458,7 +458,18 @@ class EmbeddingIndex:
             self._next_label = len(new_ids)
             self._tombstones.clear()
             self._last_rebuild_matrix = matrix.copy()
-            self._backend.build(matrix, len(new_ids))
+            try:
+                self._backend.build(matrix, len(new_ids))
+            except Exception as build_exc:
+                if isinstance(self._backend, _HnswBackend):
+                    logger.warning(
+                        "HNSW backend build failed — falling back to numpy: %s",
+                        build_exc,
+                    )
+                    self._backend = _NumpyBackend(dim=self._dim)
+                    self._backend.build(matrix, len(new_ids))
+                else:
+                    raise
 
         logger.info("EmbeddingIndex rebuilt: %d centroids", len(new_ids))
 

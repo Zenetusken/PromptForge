@@ -18,6 +18,23 @@ from app.services.taxonomy.embedding_index import (
     _NumpyBackend,
 )
 
+# hnswlib may not be functional on all platforms (e.g., Python 3.14 CI runners).
+# Tests requiring a working HNSW backend are skipped when hnswlib is broken.
+_hnswlib_works = True
+try:
+    import hnswlib
+
+    _test_idx = hnswlib.Index(space="cosine", dim=4)
+    _test_idx.init_index(max_elements=10, ef_construction=10, M=4)
+    del _test_idx
+except Exception:
+    _hnswlib_works = False
+
+requires_hnswlib = pytest.mark.skipif(
+    not _hnswlib_works,
+    reason="hnswlib is not functional on this platform",
+)
+
 DIM = 4
 
 
@@ -54,6 +71,7 @@ class TestBelowThreshold:
 
 
 class TestAtOrAboveThreshold:
+    @requires_hnswlib
     @pytest.mark.asyncio
     async def test_at_threshold_uses_hnsw(self, index):
         """At exactly HNSW_CLUSTER_THRESHOLD, HNSW backend is selected."""
@@ -61,6 +79,7 @@ class TestAtOrAboveThreshold:
         await index.rebuild(centroids)
         assert isinstance(index._backend, _HnswBackend)
 
+    @requires_hnswlib
     @pytest.mark.asyncio
     async def test_above_threshold_uses_hnsw(self, index):
         """Above HNSW_CLUSTER_THRESHOLD, HNSW backend is selected."""
@@ -70,6 +89,7 @@ class TestAtOrAboveThreshold:
 
 
 class TestBackendSwitching:
+    @requires_hnswlib
     @pytest.mark.asyncio
     async def test_numpy_to_hnsw_on_rebuild(self, index):
         """Rebuild from small to large switches numpy -> HNSW."""
@@ -81,6 +101,7 @@ class TestBackendSwitching:
         await index.rebuild(large)
         assert isinstance(index._backend, _HnswBackend)
 
+    @requires_hnswlib
     @pytest.mark.asyncio
     async def test_hnsw_to_numpy_on_rebuild(self, index):
         """Rebuild from large to small switches HNSW -> numpy."""
@@ -92,6 +113,7 @@ class TestBackendSwitching:
         await index.rebuild(small)
         assert isinstance(index._backend, _NumpyBackend)
 
+    @requires_hnswlib
     @pytest.mark.asyncio
     async def test_rebuild_empty_resets_to_numpy(self, index):
         """Rebuilding with empty centroids resets to numpy."""
@@ -121,6 +143,7 @@ class TestUpsertDoesNotSwitchBackend:
         assert isinstance(index._backend, _NumpyBackend)
         assert index.size == HNSW_CLUSTER_THRESHOLD + 10
 
+    @requires_hnswlib
     @pytest.mark.asyncio
     async def test_upsert_keeps_hnsw(self, index):
         """After rebuild selects HNSW, upserts continue on HNSW."""
@@ -138,6 +161,7 @@ class TestUpsertDoesNotSwitchBackend:
 
 
 class TestSearchConsistencyAcrossBackends:
+    @requires_hnswlib
     @pytest.mark.asyncio
     async def test_search_works_after_switch_to_hnsw(self, index):
         """After switching to HNSW, search still returns correct results."""
