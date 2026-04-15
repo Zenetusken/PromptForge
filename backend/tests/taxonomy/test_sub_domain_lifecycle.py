@@ -70,8 +70,9 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_archive_empty_sub_domain(self, db):
         """An empty sub-domain older than the idle threshold is archived."""
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         from unittest.mock import MagicMock
+
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
@@ -84,7 +85,8 @@ class TestSubDomainArchival:
         await db.flush()
 
         sub = _make_domain("async-patterns", parent_id=parent.id)
-        sub.created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=SUB_DOMAIN_ARCHIVAL_IDLE_HOURS + 1)
+        idle_hours = SUB_DOMAIN_ARCHIVAL_IDLE_HOURS + 1
+        sub.created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=idle_hours)
         db.add(sub)
         await db.flush()
 
@@ -97,8 +99,9 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_sub_domain_with_multiple_children(self, db):
         """A sub-domain with 2+ active child clusters is NOT archived."""
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         from unittest.mock import MagicMock
+
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
@@ -128,8 +131,9 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_archive_single_child_sub_domain(self, db):
         """A sub-domain with exactly 1 child is a 1:1 wrapper — archived."""
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         from unittest.mock import MagicMock
+
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
@@ -160,8 +164,9 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_young_sub_domain(self, db):
         """A sub-domain younger than the idle threshold is NOT archived."""
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         from unittest.mock import MagicMock
+
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
@@ -185,8 +190,9 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_seed_domain(self, db):
         """Seed domains are never auto-archived."""
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         from unittest.mock import MagicMock
+
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
@@ -210,8 +216,9 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_top_level_domain(self, db):
         """Top-level domains (parent_id=None) are never archived by this phase."""
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         from unittest.mock import MagicMock
+
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
@@ -233,8 +240,9 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_sub_domain_with_optimizations(self, db):
         """A sub-domain with directly assigned optimizations is NOT archived."""
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         from unittest.mock import MagicMock
+
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
@@ -267,9 +275,11 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_meta_patterns_cleaned_on_archival(self, db):
         """MetaPatterns owned by the sub-domain are deleted on archival."""
-        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
         from unittest.mock import MagicMock
-        from sqlalchemy import select, func
+
+        from sqlalchemy import func, select
+
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
@@ -314,7 +324,7 @@ class TestSubDomainCreationGuard:
     @pytest.mark.asyncio
     async def test_skip_discovery_when_sub_domains_exist(self, db):
         """_propose_sub_domains() should skip a domain that already has sub-domains."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         # Create a parent domain that would normally trigger discovery
         parent = _make_domain("backend")
@@ -370,7 +380,6 @@ class TestColdPathSubDomainPreservation:
             select(PromptCluster).where(PromptCluster.state == "domain")
         )
         all_domain_nodes = list(domain_q.scalars().all())
-        domain_node_map = {dn.label: dn.id for dn in all_domain_nodes}
         domain_id_to_label = {dn.id: dn.label for dn in all_domain_nodes}
 
         sub_domain_ids_by_domain: dict[str, set[str]] = {}
@@ -380,7 +389,6 @@ class TestColdPathSubDomainPreservation:
                 sub_domain_ids_by_domain.setdefault(parent_label, set()).add(dn.id)
 
         # Run the repair logic
-        correct_parent = domain_node_map.get(cluster.domain)
         valid_subs = sub_domain_ids_by_domain.get(cluster.domain, set())
 
         # Cluster is under a valid sub-domain — should be preserved
@@ -436,7 +444,7 @@ class TestTreeIntegrityEmptySubDomain:
     @pytest.mark.asyncio
     async def test_detects_empty_sub_domain(self, db):
         """Empty sub-domains are reported as violations."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         parent = _make_domain("backend")
         db.add(parent)
@@ -475,7 +483,7 @@ class TestTreeIntegrityEmptySubDomain:
     @pytest.mark.asyncio
     async def test_non_empty_sub_domain_passes(self, db):
         """Sub-domains with children are not flagged."""
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
 
         parent = _make_domain("backend")
         db.add(parent)
