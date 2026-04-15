@@ -541,9 +541,38 @@ async def execute_warm_path(
     else:
         dirty_ids, dirty_by_project = engine.snapshot_dirty_set_with_projects()
         if not dirty_ids:
-            # Nothing changed since last cycle — skip the entire warm path.
-            # Previously, empty set was coerced to None (="scan all"), causing
-            # full 7-phase no-op cycles every 5 minutes even when idle.
+            # Nothing changed since last cycle — skip speculative phases.
+            # But maintenance phases (discover, archive, audit) run on
+            # their own cadence or when retrying after a transient failure.
+            from app.services.taxonomy._constants import MAINTENANCE_CYCLE_INTERVAL
+
+            cadence_gate = (engine._warm_path_age % MAINTENANCE_CYCLE_INTERVAL == 0)
+            should_maintain = cadence_gate or engine._maintenance_pending
+
+            if should_maintain:
+                logger.info(
+                    "Warm path: no dirty clusters but running maintenance "
+                    "(cadence=%s pending=%s age=%d)",
+                    cadence_gate, engine._maintenance_pending, engine._warm_path_age,
+                )
+                try:
+                    get_event_logger().log_decision(
+                        path="warm", op="maintenance",
+                        decision="maintenance_on_idle",
+                        context={
+                            "warm_path_age": engine._warm_path_age,
+                            "cadence_gate": cadence_gate,
+                            "retry_pending": engine._maintenance_pending,
+                        },
+                    )
+                except RuntimeError:
+                    pass
+
+                # NOTE: do NOT increment _warm_path_age here — phase_audit()
+                # inside execute_maintenance_phases() does it unconditionally.
+                return await execute_maintenance_phases(engine, session_factory)
+
+            # Neither cadence nor retry — skip entirely
             logger.debug("Warm path skipped — no dirty clusters (age=%d)", engine._warm_path_age)
             try:
                 get_event_logger().log_decision(
@@ -552,7 +581,6 @@ async def execute_warm_path(
                 )
             except RuntimeError:
                 pass
-            # Still increment age so periodic gates (global patterns) advance.
             engine._warm_path_age += 1
             return WarmPathResult(
                 snapshot_id="skipped",

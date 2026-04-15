@@ -1,6 +1,7 @@
 """Tests for warm path dirty-set integration."""
 
-from unittest.mock import MagicMock
+from contextlib import asynccontextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -59,3 +60,129 @@ async def test_maintenance_pending_flag_lifecycle():
     # Can be cleared
     engine._maintenance_pending = False
     assert engine._maintenance_pending is False
+
+
+@pytest.mark.asyncio
+async def test_idle_cycle_runs_maintenance_on_cadence(db):
+    """When no dirty clusters exist, maintenance runs every MAINTENANCE_CYCLE_INTERVAL cycles."""
+    from app.services.taxonomy._constants import MAINTENANCE_CYCLE_INTERVAL
+    from app.services.taxonomy.engine import TaxonomyEngine
+    from app.services.taxonomy.warm_path import execute_warm_path
+
+    mock_embedding = MagicMock()
+    mock_provider = MagicMock()
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+
+    # Simulate age at the cadence boundary
+    engine._warm_path_age = MAINTENANCE_CYCLE_INTERVAL
+
+    maintenance_called = []
+
+    async def fake_maintenance(eng, sf, phase_results=None, q_baseline=None):
+        maintenance_called.append(True)
+        from app.services.taxonomy.warm_path import WarmPathResult
+        return WarmPathResult(
+            snapshot_id="maint-idle",
+            q_baseline=None, q_final=0.5,
+            phase_results=[], operations_attempted=0,
+            operations_accepted=0, deadlock_breaker_used=False,
+            deadlock_breaker_phase=None,
+        )
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db
+
+    with patch(
+        "app.services.taxonomy.warm_path.execute_maintenance_phases",
+        fake_maintenance,
+    ):
+        result = await execute_warm_path(engine, session_factory)
+
+    assert len(maintenance_called) == 1
+    assert result.snapshot_id == "maint-idle"
+
+
+@pytest.mark.asyncio
+async def test_idle_cycle_skips_maintenance_off_cadence(db):
+    """When no dirty clusters and not on cadence, maintenance is skipped."""
+    from app.services.taxonomy._constants import MAINTENANCE_CYCLE_INTERVAL
+    from app.services.taxonomy.engine import TaxonomyEngine
+    from app.services.taxonomy.warm_path import execute_warm_path
+
+    mock_embedding = MagicMock()
+    mock_provider = MagicMock()
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+
+    # Off-cadence age (not a multiple of interval)
+    engine._warm_path_age = MAINTENANCE_CYCLE_INTERVAL + 1
+
+    maintenance_called = []
+
+    async def fake_maintenance(eng, sf, phase_results=None, q_baseline=None):
+        maintenance_called.append(True)
+        from app.services.taxonomy.warm_path import WarmPathResult
+        return WarmPathResult(
+            snapshot_id="should-not-run",
+            q_baseline=None, q_final=None,
+            phase_results=[], operations_attempted=0,
+            operations_accepted=0, deadlock_breaker_used=False,
+            deadlock_breaker_phase=None,
+        )
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db
+
+    with patch(
+        "app.services.taxonomy.warm_path.execute_maintenance_phases",
+        fake_maintenance,
+    ):
+        result = await execute_warm_path(engine, session_factory)
+
+    assert len(maintenance_called) == 0
+    assert result.snapshot_id == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_idle_cycle_runs_maintenance_on_retry(db):
+    """When _maintenance_pending is True, idle cycle runs maintenance regardless of cadence."""
+    from app.services.taxonomy._constants import MAINTENANCE_CYCLE_INTERVAL
+    from app.services.taxonomy.engine import TaxonomyEngine
+    from app.services.taxonomy.warm_path import execute_warm_path
+
+    mock_embedding = MagicMock()
+    mock_provider = MagicMock()
+    engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+
+    # Off-cadence, but pending retry
+    engine._warm_path_age = MAINTENANCE_CYCLE_INTERVAL + 1
+    engine._maintenance_pending = True
+
+    maintenance_called = []
+
+    async def fake_maintenance(eng, sf, phase_results=None, q_baseline=None):
+        maintenance_called.append(True)
+        # Simulate successful discovery clearing the flag
+        eng._maintenance_pending = False
+        from app.services.taxonomy.warm_path import WarmPathResult
+        return WarmPathResult(
+            snapshot_id="maint-retry",
+            q_baseline=None, q_final=0.5,
+            phase_results=[], operations_attempted=0,
+            operations_accepted=0, deadlock_breaker_used=False,
+            deadlock_breaker_phase=None,
+        )
+
+    @asynccontextmanager
+    async def session_factory():
+        yield db
+
+    with patch(
+        "app.services.taxonomy.warm_path.execute_maintenance_phases",
+        fake_maintenance,
+    ):
+        result = await execute_warm_path(engine, session_factory)
+
+    assert len(maintenance_called) == 1
+    assert result.snapshot_id == "maint-retry"
