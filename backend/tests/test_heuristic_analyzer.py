@@ -640,3 +640,73 @@ class TestLLMFallbackGating:
         # The summary should be a valid string (doesn't need to mention fallback explicitly)
         assert "coding" in summary
         assert "backend" in summary
+
+
+# ---------------------------------------------------------------------------
+# Organic qualifier vocabulary tests (Task 3)
+# ---------------------------------------------------------------------------
+
+
+def test_enrich_domain_qualifier_uses_organic_vocab():
+    """_enrich_domain_qualifier reads from DomainSignalLoader, not static dict."""
+    from unittest.mock import MagicMock, patch
+
+    from app.services.heuristic_analyzer import _enrich_domain_qualifier
+
+    # Create a mock loader with organic vocab
+    mock_loader = MagicMock()
+    mock_loader.get_qualifiers.return_value = {
+        "growth": ["metrics", "kpi", "dashboard"],
+        "pricing": ["tier", "billing"],
+    }
+
+    with patch("app.services.heuristic_analyzer.get_signal_loader", return_value=mock_loader):
+        result = _enrich_domain_qualifier("saas", "analyze our saas metrics dashboard")
+
+    assert result == "saas: growth"
+    mock_loader.get_qualifiers.assert_called_once_with("saas")
+
+
+def test_enrich_domain_qualifier_returns_plain_on_empty_cache():
+    """When loader has no vocab for domain, return plain domain unchanged."""
+    from unittest.mock import MagicMock, patch
+
+    from app.services.heuristic_analyzer import _enrich_domain_qualifier
+
+    mock_loader = MagicMock()
+    mock_loader.get_qualifiers.return_value = {}
+
+    with patch("app.services.heuristic_analyzer.get_signal_loader", return_value=mock_loader):
+        result = _enrich_domain_qualifier("saas", "some saas prompt")
+
+    assert result == "saas"
+
+
+def test_enrich_domain_qualifier_single_keyword_hit_suffices():
+    """With threshold=1, a single keyword hit enriches the domain."""
+    from unittest.mock import MagicMock, patch
+
+    from app.services.heuristic_analyzer import _enrich_domain_qualifier
+
+    mock_loader = MagicMock()
+    mock_loader.get_qualifiers.return_value = {
+        "pricing": ["subscription", "billing", "tier"],
+    }
+
+    with patch("app.services.heuristic_analyzer.get_signal_loader", return_value=mock_loader):
+        # Only one keyword hit: "subscription"
+        result = _enrich_domain_qualifier("saas", "manage saas subscription lifecycle")
+
+    assert result == "saas: pricing"
+
+
+def test_enrich_domain_qualifier_no_loader_returns_plain():
+    """When get_signal_loader() returns None, return plain domain."""
+    from unittest.mock import patch
+
+    from app.services.heuristic_analyzer import _enrich_domain_qualifier
+
+    with patch("app.services.heuristic_analyzer.get_signal_loader", return_value=None):
+        result = _enrich_domain_qualifier("saas", "saas metrics dashboard")
+
+    assert result == "saas"
