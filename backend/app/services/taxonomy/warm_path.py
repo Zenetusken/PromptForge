@@ -682,6 +682,22 @@ async def execute_warm_path(
         )
 
     # ------------------------------------------------------------------
+    # Phase 5.5: Archive empty sub-domains — fresh session, always commits
+    # Sub-domains orphaned by cold path or child dissolution are garbage-
+    # collected here, after Phase 5 discovery has had a chance to re-create
+    # any that are still warranted.
+    # ------------------------------------------------------------------
+    async with session_factory() as db:
+        from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
+        sub_domains_archived = await phase_archive_empty_sub_domains(engine, db)
+        await db.commit()
+        if sub_domains_archived:
+            logger.info(
+                "Phase 5.5 (sub-domain cleanup): archived=%d",
+                sub_domains_archived,
+            )
+
+    # ------------------------------------------------------------------
     # Phase 6: Audit — fresh session, creates snapshot
     # ADR-005: Full scan — audit/snapshot needs complete cluster state
     # ------------------------------------------------------------------

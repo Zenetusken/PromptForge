@@ -1218,23 +1218,17 @@ async def phase_reconcile(
                 project_node.member_count = child_domain_count
                 result.member_counts_fixed += 1
 
-            # Repair self-referencing parent_id links on children.
-            self_ref_q = await db.execute(
-                select(PromptCluster).where(
-                    PromptCluster.domain == domain_node.label,
-                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
-                    PromptCluster.id == PromptCluster.parent_id,
-                )
+        # Fix domain nodes missing UMAP coordinates.
+        # Separate loop — must cover ALL domain nodes (including sub-domains),
+        # not just project nodes.
+        umap_domain_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.umap_x.is_(None),
             )
-            for child in self_ref_q.scalars().all():
-                child.parent_id = domain_node.id
-                result.member_counts_fixed += 1
-
-            # Fix domain nodes missing UMAP coordinates
-            if (domain_node.umap_x is None
-                    or domain_node.umap_y is None
-                    or domain_node.umap_z is None):
-                await engine._set_domain_umap_from_children(db, domain_node)
+        )
+        for dn_umap in umap_domain_q.scalars():
+            await engine._set_domain_umap_from_children(db, dn_umap)
 
         if (result.member_counts_fixed
                 or result.coherence_updated
@@ -3598,7 +3592,7 @@ async def phase_discover(
         # A3: Auto-enrich domain signals from newly discovered domains
         await _auto_enrich_domain_signals(db, new_domains)
 
-    # --- Sub-domain discovery (intra-domain HDBSCAN) ---
+    # --- Sub-domain discovery (signal-driven qualifiers) ---
     try:
         new_sub_domains = await engine._propose_sub_domains(db)
         if new_sub_domains:
@@ -3660,6 +3654,191 @@ async def phase_discover(
         )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 5.5 — Archive empty sub-domains
+# ---------------------------------------------------------------------------
+
+
+async def phase_archive_empty_sub_domains(
+    engine: TaxonomyEngine,
+    db: AsyncSession,
+) -> int:
+    """Archive sub-domain nodes that have 0 active children and 0 optimizations.
+
+    Sub-domains are domain nodes whose ``parent_id`` points to another domain
+    node.  When the cold path re-parents their children to the top-level
+    domain and the warm path fails to re-discover them (label dedup), they
+    become permanent empty shells.  This function garbage-collects them.
+
+    Safety checks (all must pass before archival):
+
+    * Node is ``state="domain"`` with ``parent_id`` pointing to another
+      domain node (= sub-domain, not a top-level domain)
+    * ``source != "seed"`` in ``cluster_metadata``
+    * Age ≥ ``SUB_DOMAIN_ARCHIVAL_IDLE_HOURS`` (default 24 h)
+    * 0 non-structural children by ``parent_id``
+    * 0 ``Optimization`` rows referencing ``cluster_id``
+
+    Returns count of sub-domains archived.
+    """
+    from app.services.taxonomy._constants import SUB_DOMAIN_ARCHIVAL_IDLE_HOURS
+
+    try:
+        from app.services.taxonomy.event_logger import get_event_logger
+    except RuntimeError:
+        get_event_logger = None  # type: ignore[assignment]
+
+    # Gather all domain node IDs
+    domain_q = await db.execute(
+        select(PromptCluster.id).where(PromptCluster.state == "domain")
+    )
+    domain_ids = set(domain_q.scalars().all())
+
+    # Query sub-domains: domain nodes whose parent_id is another domain
+    sub_q = await db.execute(
+        select(PromptCluster).where(
+            PromptCluster.state == "domain",
+            PromptCluster.parent_id.in_(domain_ids),
+        )
+    )
+    sub_domains = list(sub_q.scalars().all())
+    if not sub_domains:
+        return 0
+
+    cutoff = _utcnow() - timedelta(hours=SUB_DOMAIN_ARCHIVAL_IDLE_HOURS)
+    archived = 0
+
+    for sub in sub_domains:
+        # Skip seed domains
+        meta = read_meta(sub.cluster_metadata)
+        if meta.get("source") == "seed":
+            continue
+
+        # Age gate — don't archive freshly created sub-domains.
+        # _utcnow() returns naive UTC (matches SQLAlchemy DateTime round-trip),
+        # so created_at must also be naive for comparison.
+        created = sub.created_at
+        if created is not None:
+            if isinstance(created, str):
+                try:
+                    created = datetime.fromisoformat(created)
+                except (ValueError, TypeError):
+                    created = None
+            if created is not None and created.tzinfo is not None:
+                created = created.replace(tzinfo=None)
+        if created and created > cutoff:
+            continue
+
+        # Count non-structural children
+        child_count = (await db.execute(
+            select(func.count()).where(
+                PromptCluster.parent_id == sub.id,
+                PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
+            )
+        )).scalar() or 0
+        if child_count > 1:
+            continue  # Genuine multi-cluster sub-domain — keep
+
+        # Single-child sub-domains are 1:1 wrappers that add hierarchy
+        # depth without navigational value.  Archive them so the child
+        # reparents to the top-level domain.  The sub-domain will be
+        # re-created by signal-driven discovery when a second cluster
+        # with the same qualifier appears.
+        if child_count == 1:
+            # Reparent the single child to the top-level domain
+            child_q = await db.execute(
+                select(PromptCluster).where(
+                    PromptCluster.parent_id == sub.id,
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
+                )
+            )
+            single_child = child_q.scalars().first()
+            if single_child and sub.parent_id:
+                single_child.parent_id = sub.parent_id
+                logger.info(
+                    "Reparented '%s' from single-child sub-domain '%s' to '%s'",
+                    single_child.label, sub.label,
+                    (await db.execute(
+                        select(PromptCluster.label).where(PromptCluster.id == sub.parent_id)
+                    )).scalar() or "unknown",
+                )
+            # Fall through to archival below
+
+        # Count optimizations directly assigned (should always be 0 for domains)
+        if child_count == 0:
+            opt_count = (await db.execute(
+                select(func.count()).where(Optimization.cluster_id == sub.id)
+            )).scalar() or 0
+            if opt_count > 0:
+                continue
+
+        # --- All safety checks passed — archive ---
+
+        # Look up parent label for logging
+        parent_label = "unknown"
+        if sub.parent_id:
+            parent_q = await db.execute(
+                select(PromptCluster.label).where(PromptCluster.id == sub.parent_id)
+            )
+            parent_label = parent_q.scalar() or "unknown"
+
+        age_hours = 0
+        if created:
+            age_hours = int((_utcnow() - created).total_seconds() / 3600)
+
+        # Set archived state and zero all metrics
+        sub.state = "archived"
+        sub.archived_at = _utcnow()
+        sub.member_count = 0
+        sub.usage_count = 0
+        sub.avg_score = None
+        sub.weighted_member_sum = 0.0
+        sub.scored_count = 0
+
+        # Delete MetaPatterns owned by this sub-domain
+        await db.execute(
+            delete(MetaPattern).where(MetaPattern.cluster_id == sub.id)
+        )
+
+        # Remove from in-memory indices
+        try:
+            engine.embedding_index.remove(sub.id)
+        except (KeyError, ValueError):
+            pass
+        try:
+            engine.transformation_index.remove(sub.id)
+        except (KeyError, ValueError, AttributeError):
+            pass
+        try:
+            engine.optimized_index.remove(sub.id)
+        except (KeyError, ValueError, AttributeError):
+            pass
+
+        archived += 1
+        logger.info(
+            "Archived empty sub-domain '%s' (age=%dh, parent='%s')",
+            sub.label, age_hours, parent_label,
+        )
+
+        try:
+            if get_event_logger:
+                get_event_logger().log_decision(
+                    path="warm",
+                    op="archive",
+                    decision="sub_domain_archived",
+                    cluster_id=sub.id,
+                    context={
+                        "label": sub.label,
+                        "parent_domain": parent_label,
+                        "age_hours": age_hours,
+                    },
+                )
+        except RuntimeError:
+            pass
+
+    return archived
 
 
 # ---------------------------------------------------------------------------

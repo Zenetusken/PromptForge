@@ -470,30 +470,50 @@ async def execute_cold_path(
     # Step 12: Restore domain->cluster parent_id links
     # ------------------------------------------------------------------
     # HDBSCAN may have set parent_ids to HDBSCAN group leaders or
-    # created self-references. Every non-domain cluster must have
+    # created self-references.  Every non-domain cluster must have
     # parent_id pointing to its domain node (looked up by domain field).
-    # Note: clusters in sub-domains get re-parented to the top-level domain
-    # here because cluster.domain stores the parent domain (e.g., "backend"),
-    # not the sub-domain qualifier. Sub-domain hierarchy is re-discovered
-    # by the warm-path's _propose_sub_domains() in subsequent cycles.
+    #
+    # Sub-domain preservation: clusters already parented to a valid
+    # sub-domain of their top-level domain keep that link.  Without
+    # this, the cold path would rip all children from sub-domains,
+    # leaving them permanently empty (since label dedup prevents
+    # re-discovery by _propose_sub_domains).
     domain_node_map: dict[str, str] = {}  # domain_label -> domain_node_id
+    domain_id_to_label: dict[str, str] = {}
     domain_q = await db.execute(
         select(PromptCluster).where(PromptCluster.state == "domain")
     )
-    for dn in domain_q.scalars().all():
+    all_domain_nodes_cold = list(domain_q.scalars().all())
+    for dn in all_domain_nodes_cold:
         domain_node_map[dn.label] = dn.id
+        domain_id_to_label[dn.id] = dn.label
+
+    # Build sub-domain lookup: parent_domain_label -> {sub_domain_node_ids}
+    sub_domain_ids_by_domain: dict[str, set[str]] = {}
+    for dn in all_domain_nodes_cold:
+        if dn.parent_id and dn.parent_id in domain_id_to_label:
+            parent_label = domain_id_to_label[dn.parent_id]
+            sub_domain_ids_by_domain.setdefault(parent_label, set()).add(dn.id)
 
     parent_repairs = 0
     for node in all_nodes:
         if node.state == "domain":
             continue
         correct_parent = domain_node_map.get(node.domain)
-        if correct_parent and node.parent_id != correct_parent:
+        if not correct_parent:
+            # Unknown domain -> general fallback
+            general_id = domain_node_map.get("general")
+            if general_id and node.parent_id != general_id:
+                node.parent_id = general_id
+                parent_repairs += 1
+            continue
+        # If already under a valid sub-domain of the correct top-level
+        # domain, preserve that link instead of flattening to top-level.
+        valid_subs = sub_domain_ids_by_domain.get(node.domain, set())
+        if node.parent_id in valid_subs:
+            continue
+        if node.parent_id != correct_parent:
             node.parent_id = correct_parent
-            parent_repairs += 1
-        elif not correct_parent and node.parent_id != domain_node_map.get("general"):
-            # Fallback: unknown domain -> general
-            node.parent_id = domain_node_map.get("general")
             parent_repairs += 1
     if parent_repairs:
         logger.info(
