@@ -188,6 +188,9 @@ async def test_execute_maintenance_phases_sets_retry_on_discover_failure(
     async def failing_discover(eng, session):
         raise Exception("database is locked")
 
+    async def fake_archive(eng, session):
+        return 0
+
     async def fake_audit(eng, session, phase_results, q_baseline):
         from app.services.taxonomy.warm_phases import AuditResult
         return AuditResult(snapshot_id="maint-fail", q_final=0.5)
@@ -198,6 +201,7 @@ async def test_execute_maintenance_phases_sets_retry_on_discover_failure(
 
     with (
         patch("app.services.taxonomy.warm_path.phase_discover", failing_discover),
+        patch("app.services.taxonomy.warm_path.phase_archive_empty_sub_domains", fake_archive),
         patch("app.services.taxonomy.warm_path.phase_audit", fake_audit),
     ):
         result = await execute_maintenance_phases(engine, session_factory)
@@ -587,13 +591,16 @@ This is the core fix: when no dirty clusters exist, the warm path now checks whe
 
 - [ ] **Step 1: Write the failing test — idle cycle runs maintenance on cadence**
 
-Add to `backend/tests/taxonomy/test_warm_path_dirty.py`:
+Add these imports to the top of `backend/tests/taxonomy/test_warm_path_dirty.py`, merging with the existing `from unittest.mock import MagicMock` line:
 
 ```python
 from contextlib import asynccontextmanager
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch  # add 'patch' to existing MagicMock import
+```
 
+Then append the tests:
 
+```python
 @pytest.mark.asyncio
 async def test_idle_cycle_runs_maintenance_on_cadence(db):
     """When no dirty clusters exist, maintenance runs every MAINTENANCE_CYCLE_INTERVAL cycles."""
@@ -758,7 +765,8 @@ Replace the block at lines 428-451 in `execute_warm_path()` with:
                 except RuntimeError:
                     pass
 
-                engine._warm_path_age += 1
+                # NOTE: do NOT increment _warm_path_age here — phase_audit()
+                # inside execute_maintenance_phases() does it unconditionally.
                 return await execute_maintenance_phases(engine, session_factory)
 
             # Neither cadence nor retry — skip entirely
@@ -817,7 +825,8 @@ In `main.py`, the warm path timer currently logs "skipped — no dirty clusters"
                             logger.debug("Warm path skipped — lock held")
                         elif result.snapshot_id == "skipped":
                             logger.debug("Warm path skipped — no dirty clusters, maintenance off-cadence")
-                        elif result.operations_attempted == 0 and result.snapshot_id != "skipped":
+                        elif result.q_baseline is None and result.snapshot_id != "skipped":
+                            # Maintenance-only cycle (no Phase 0, so no q_baseline)
                             logger.info(
                                 "Warm path maintenance-only: q=%.4f snapshot=%s",
                                 result.q_system or 0.0,
@@ -866,12 +875,15 @@ TaxonomyEngine at runtime (uses TYPE_CHECKING only).
 Two execution groups:
 
 **Lifecycle group** (dirty-cluster-gated):
-  0.  Reconcile   — fresh session, always commits, then compute Q_baseline
-  0.5 Evaluate    — candidate promotion/rejection
-  1.  Split/Emerge — speculative (Q gate)
-  2.  Merge        — speculative (Q gate)
-  3.  Retire       — speculative (Q gate)
-  4.  Refresh      — fresh session, always commits
+  0.   Reconcile    — fresh session, always commits, then compute Q_baseline
+  0.5  Evaluate     — candidate promotion/rejection
+  1.   Split/Emerge — speculative (Q gate)
+  2.   Merge        — speculative (Q gate)
+  3.   Retire       — speculative (Q gate)
+  4.   Refresh      — fresh session, always commits
+  4.25 Sub-domain pattern aggregation
+  4.5  Global pattern promotion/validation (periodic gate)
+  4.75 Task-type signal refresh
 
 **Maintenance group** (cadence-gated, independent of dirty clusters):
   5.  Discover     — fresh session, try/except with retry flag
