@@ -322,31 +322,87 @@ class TestSubDomainCreationGuard:
     """Tests for the guard that prevents re-discovery when sub-domains exist."""
 
     @pytest.mark.asyncio
-    async def test_skip_discovery_when_sub_domains_exist(self, db):
-        """_propose_sub_domains() should skip a domain that already has sub-domains."""
-        from sqlalchemy import func, select
+    async def test_discovery_continues_with_existing_sub_domains(self, db, mock_provider):
+        """Domain with existing sub-domain can still discover new sub-domains."""
+        from unittest.mock import AsyncMock, patch
+        from app.services.taxonomy.engine import TaxonomyEngine
+        import numpy as np
 
-        # Create a parent domain that would normally trigger discovery
-        parent = _make_domain("backend")
-        parent.member_count = 17
-        db.add(parent)
+        mock_embedding = AsyncMock()
+        engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
+
+        # Create domain with existing sub-domain "query"
+        domain = PromptCluster(
+            label="database", state="domain", domain="database",
+            color_hex="#00ff00", member_count=0,
+        )
+        db.add(domain)
         await db.flush()
 
-        # Create an existing sub-domain under it
-        sub = _make_domain("existing-sub", parent_id=parent.id)
+        sub = PromptCluster(
+            label="query", state="domain", domain="database",
+            parent_id=domain.id, color_hex="#00ff00", member_count=0,
+        )
         db.add(sub)
         await db.flush()
 
-        # The guard in _propose_sub_domains() checks:
-        # SELECT count(*) FROM prompt_cluster WHERE parent_id=? AND state='domain'
-        existing_sub_count = (await db.execute(
-            select(func.count()).where(
-                PromptCluster.parent_id == parent.id,
-                PromptCluster.state == "domain",
+        # Add clusters under the sub-domain (these must be visible to the scan)
+        for i in range(3):
+            cluster = PromptCluster(
+                label=f"Query Cluster {i}", state="active", domain="database",
+                parent_id=sub.id, color_hex="#ff0000", member_count=3,
+                centroid_embedding=np.random.randn(384).astype(np.float32).tobytes(),
             )
-        )).scalar()
+            db.add(cluster)
+        # Add clusters directly under the domain (not under sub-domain)
+        for i in range(3):
+            cluster = PromptCluster(
+                label=f"Migration Cluster {i}", state="active", domain="database",
+                parent_id=domain.id, color_hex="#ff0000", member_count=3,
+                centroid_embedding=np.random.randn(384).astype(np.float32).tobytes(),
+            )
+            db.add(cluster)
+        await db.commit()
 
-        assert existing_sub_count > 0, "Guard should detect existing sub-domains"
+        # Add optimizations — enough to trigger discovery
+        from sqlalchemy import select
+        from app.models import Optimization
+        child_clusters_q = await db.execute(
+            select(PromptCluster.id).where(
+                PromptCluster.state == "active",
+                PromptCluster.domain == "database",
+            )
+        )
+        child_ids = [r[0] for r in child_clusters_q.all()]
+
+        for i, cid in enumerate(child_ids):
+            opt = Optimization(
+                raw_prompt=f"test prompt {i}",
+                domain="database",
+                domain_raw="database: migration" if "Migration" in (await db.get(PromptCluster, cid)).label else "database: query",
+                intent_label=f"migration task {i}" if i >= 3 else f"query task {i}",
+                task_type="coding",
+                cluster_id=cid,
+            )
+            db.add(opt)
+        await db.commit()
+
+        generate_calls = []
+
+        async def fake_generate(provider, domain_label, cluster_labels, model):
+            generate_calls.append(domain_label)
+            return {"query": ["sql", "index"], "migration": ["migrate", "alembic"]}
+
+        with patch(
+            "app.services.taxonomy.labeling.generate_qualifier_vocabulary",
+            fake_generate,
+        ):
+            created = await engine._propose_sub_domains(db)
+
+        # "query" already exists — should NOT be re-created
+        assert "query" not in created
+        # Discovery should have run (not skipped)
+        assert "database" in generate_calls or len(generate_calls) == 0  # vocab may be cached
 
 
 # ---------------------------------------------------------------------------

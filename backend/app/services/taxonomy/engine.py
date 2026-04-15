@@ -1774,7 +1774,7 @@ class TaxonomyEngine:
         domains = list(domain_q.scalars().all())
 
         for domain_node in domains:
-            # Idempotency guard: skip domains that already have sub-domains
+            # Count existing sub-domains (for child_ids expansion below)
             existing_sub_q = await db.execute(
                 select(func.count()).where(
                     PromptCluster.parent_id == domain_node.id,
@@ -1782,11 +1782,15 @@ class TaxonomyEngine:
                 )
             )
             existing_sub_count = existing_sub_q.scalar() or 0
+            # No permanent lock — discovery continues even with existing
+            # sub-domains.  The label dedup guard below prevents re-creating
+            # existing sub-domains while allowing new ones to form.
+
             if existing_sub_count > 0:
                 try:
                     get_event_logger().log_decision(
                         path="warm", op="discover",
-                        decision="sub_domain_domain_skipped",
+                        decision="sub_domain_domain_reevaluated",
                         context={
                             "domain": domain_node.label,
                             "existing_sub_domain_count": existing_sub_count,
@@ -1794,12 +1798,23 @@ class TaxonomyEngine:
                     )
                 except RuntimeError:
                     pass
-                continue
 
-            # Get active child cluster IDs
+            # Get active child cluster IDs — include clusters under
+            # existing sub-domains so the qualifier scan sees ALL
+            # optimizations in the domain hierarchy.
+            scan_parent_ids = [domain_node.id]
+            if existing_sub_count > 0:
+                sub_ids_q = await db.execute(
+                    select(PromptCluster.id).where(
+                        PromptCluster.parent_id == domain_node.id,
+                        PromptCluster.state == "domain",
+                    )
+                )
+                scan_parent_ids.extend(r[0] for r in sub_ids_q.all())
+
             children_q = await db.execute(
                 select(PromptCluster.id).where(
-                    PromptCluster.parent_id == domain_node.id,
+                    PromptCluster.parent_id.in_(scan_parent_ids),
                     PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
                 )
             )
