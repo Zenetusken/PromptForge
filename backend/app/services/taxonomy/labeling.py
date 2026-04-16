@@ -12,6 +12,7 @@ are rejected in favor of the existing label.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -136,6 +137,16 @@ async def _apply_continuity_anchor(current_label: str, new_label: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class ClusterVocabContext:
+    """Enriched per-cluster context for vocabulary generation."""
+
+    label: str
+    member_count: int
+    intent_labels: list[str] = field(default_factory=list)
+    qualifier_distribution: dict[str, int] = field(default_factory=dict)
+
+
 class _QualifierGroup(BaseModel):
     """A single qualifier group with its name and keywords."""
 
@@ -154,49 +165,82 @@ class _QualifierVocabulary(BaseModel):
 async def generate_qualifier_vocabulary(
     provider: LLMProvider | None,
     domain_label: str,
-    cluster_labels: list[tuple[str, int]],
+    cluster_contexts: list[ClusterVocabContext],
+    similarity_matrix: list[list[float]] | None,
     model: str,
 ) -> dict[str, list[str]]:
     """Generate a qualifier vocabulary from a domain's cluster structure.
 
-    Calls Haiku to analyze cluster labels and produce keyword groups that
-    capture the domain's specializations.  Returns a dictionary mapping
-    qualifier names to keyword lists (e.g., ``{"growth": ["metrics", "kpi", ...]}`)
-    stored in domain node ``cluster_metadata["generated_qualifiers"]``.
+    Calls Haiku to analyze enriched per-cluster context (label, member count,
+    member intent labels, existing qualifier distribution) alongside a pairwise
+    centroid similarity matrix, and produces keyword groups that capture the
+    domain's specializations. Returns a dictionary mapping qualifier names to
+    keyword lists (e.g., ``{"growth": ["metrics", "kpi", ...]}``) stored in
+    domain node ``cluster_metadata["generated_qualifiers"]``.
 
     Args:
         provider: LLM provider (Haiku).  None = return empty dict.
         domain_label: The domain name (e.g., "saas").
-        cluster_labels: List of (cluster_label, member_count) tuples.
+        cluster_contexts: Per-cluster enriched context (label, member_count,
+            intent_labels, qualifier_distribution). Order must match
+            ``similarity_matrix`` rows/columns.
+        similarity_matrix: Optional NxN pairwise cosine matrix of cluster
+            centroids. None = no geometric context rendered.
         model: Model ID to use.
 
     Returns:
         Qualifier vocabulary dict, e.g. ``{"growth": ["metrics", "kpi", ...], ...}``.
         Empty dict on failure.
     """
-    if not provider or len(cluster_labels) < 2:
+    if not provider or len(cluster_contexts) < 2:
         return {}
 
-    cluster_block = "\n".join(
-        f"- {label} ({count} members)" for label, count in cluster_labels
-    )
+    lines = []
+    for i, ctx in enumerate(cluster_contexts):
+        parts = [f'- C{i+1}: "{ctx.label}" ({ctx.member_count} members)']
+        if ctx.intent_labels:
+            parts.append(f"  Intents: {', '.join(ctx.intent_labels[:10])}")
+        if ctx.qualifier_distribution:
+            dist = ', '.join(
+                f'{q}({c})' for q, c in sorted(
+                    ctx.qualifier_distribution.items(), key=lambda x: -x[1]
+                )[:5]
+            )
+            parts.append(f"  Existing qualifiers: {dist}")
+        lines.append('\n'.join(parts))
+    cluster_block = '\n'.join(lines)
+
+    # Render similarity matrix if available (>= 2 clusters)
+    matrix_block = ""
+    if similarity_matrix and len(similarity_matrix) >= 2:
+        matrix_lines = ["Cluster similarity (cosine):"]
+        for i in range(len(similarity_matrix)):
+            for j in range(i + 1, len(similarity_matrix)):
+                sim = similarity_matrix[i][j]
+                hint = " (very similar)" if sim > 0.7 else " (distinct)" if sim < 0.3 else ""
+                matrix_lines.append(f"  C{i+1}↔C{j+1}: {sim:.2f}{hint}")
+        matrix_block = '\n'.join(matrix_lines)
 
     try:
         result = await call_provider_with_retry(
             provider,
             model=model,
             system_prompt=(
-                "You are a taxonomy analyst. Given a list of clusters within a domain, "
-                "identify 3-6 thematic specializations and for each produce a short name "
+                "You are a taxonomy analyst. Given clusters within a domain with their "
+                "member intents, existing qualifier signals, and pairwise embedding similarity, "
+                "identify 3-6 thematic specializations. For each, produce a short name "
                 "(1-2 lowercase words) and 5-10 lowercase keywords that signal that "
-                "specialization in a user's prompt. Keywords should be specific enough "
-                "to distinguish specializations from each other within this domain. "
+                "specialization in a user's prompt. Keywords should DISCRIMINATE between "
+                "groups — choose words that appear in one specialization but not others. "
+                "Use the similarity matrix to guide grouping: clusters with cosine > 0.7 "
+                "should typically belong to the same group. "
                 "Do not include the domain name itself as a keyword."
             ),
             user_message=(
                 f"Domain: {domain_label}\n\n"
                 f"Clusters:\n{cluster_block}\n\n"
-                f"Generate qualifier groups for this domain's specializations."
+                + (f"{matrix_block}\n\n" if matrix_block else "")
+                + "Generate qualifier groups for this domain's specializations."
             ),
             output_format=_QualifierVocabulary,
         )
