@@ -452,7 +452,7 @@ class TestSubDomainCreationGuard:
 
         generate_calls = []
 
-        async def fake_generate(provider, domain_label, cluster_labels, model):
+        async def fake_generate(provider, domain_label, cluster_contexts, similarity_matrix, model):
             generate_calls.append(domain_label)
             return {"query": ["sql", "index"], "migration": ["migrate", "alembic"]}
 
@@ -729,7 +729,7 @@ class TestSignalDrivenCreation:
 
         generate_calls = []
 
-        async def fake_generate(provider, domain_label, cluster_labels, model):
+        async def fake_generate(provider, domain_label, cluster_contexts, similarity_matrix, model):
             generate_calls.append(domain_label)
             return {"growth": ["metrics", "kpi"], "pricing": ["tier", "billing"]}
 
