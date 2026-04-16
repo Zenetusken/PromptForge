@@ -1867,16 +1867,108 @@ class TaxonomyEngine:
 
                 _vocab_start = _vocab_time.monotonic()
                 cluster_info_q = await db.execute(
-                    select(PromptCluster.label, PromptCluster.member_count).where(
+                    select(
+                        PromptCluster.id,
+                        PromptCluster.label,
+                        PromptCluster.member_count,
+                        PromptCluster.centroid_embedding,
+                    ).where(
                         PromptCluster.id.in_(child_ids),
                     )
                 )
-                cluster_info = [(r[0], r[1] or 0) for r in cluster_info_q.all()]
+                cluster_rows = cluster_info_q.all()
+
+                from app.services.taxonomy.labeling import ClusterVocabContext
+
+                cluster_contexts: list[ClusterVocabContext]
+                similarity_matrix: list[list[float]] | None = None
+                try:
+                    from collections import Counter as _Counter
+
+                    # Query intent_labels and domain_raw for enrichment
+                    opt_enrichment_q = await db.execute(
+                        select(
+                            Optimization.cluster_id,
+                            Optimization.intent_label,
+                            Optimization.domain_raw,
+                        ).where(
+                            Optimization.cluster_id.in_(child_ids),
+                        )
+                    )
+                    opt_rows = opt_enrichment_q.all()
+
+                    intents_by_cluster: dict[str, _Counter[str]] = {}
+                    qualifiers_by_cluster: dict[str, _Counter[str]] = {}
+                    for cid, intent, domain_raw in opt_rows:
+                        if intent:
+                            intents_by_cluster.setdefault(cid, _Counter())[intent.lower()] += 1
+                        if domain_raw and ':' in domain_raw:
+                            _, q = parse_domain(domain_raw)
+                            if q:
+                                qualifiers_by_cluster.setdefault(cid, _Counter())[q] += 1
+
+                    # Compute centroid similarity matrix (sparse-filled for missing centroids)
+                    centroid_vecs: list[np.ndarray] = []
+                    centroid_indices: list[int] = []
+                    for i, (cid, label, mc, centroid_bytes) in enumerate(cluster_rows):
+                        if centroid_bytes:
+                            vec = np.frombuffer(centroid_bytes, dtype=np.float32)
+                            norm = np.linalg.norm(vec)
+                            if norm > 1e-9:
+                                centroid_vecs.append(vec / norm)
+                                centroid_indices.append(i)
+
+                    if len(centroid_vecs) >= 2:
+                        mat = np.vstack(centroid_vecs)
+                        sim = (mat @ mat.T).tolist()
+                        n = len(cluster_rows)
+                        similarity_matrix = [[0.0] * n for _ in range(n)]
+                        for si, ri in enumerate(centroid_indices):
+                            for sj, rj in enumerate(centroid_indices):
+                                similarity_matrix[ri][rj] = sim[si][sj]
+
+                    # Build ClusterVocabContext list
+                    cluster_contexts = []
+                    for cid, label, mc, _centroid in cluster_rows:
+                        intent_counter = intents_by_cluster.get(cid, _Counter())
+                        top_intents = [intent for intent, _ in intent_counter.most_common(10)]
+                        qual_counter = qualifiers_by_cluster.get(cid, _Counter())
+                        qual_dist = dict(qual_counter.most_common(5))
+                        cluster_contexts.append(ClusterVocabContext(
+                            label=label,
+                            member_count=mc or 0,
+                            intent_labels=top_intents,
+                            qualifier_distribution=qual_dist,
+                        ))
+                except Exception as enrich_exc:
+                    logger.warning(
+                        "Vocab enrichment failed for '%s' (falling back to labels): %s",
+                        domain_node.label, enrich_exc,
+                    )
+                    cluster_contexts = [
+                        ClusterVocabContext(label=r[1], member_count=r[2] or 0)
+                        for r in cluster_rows
+                    ]
+                    similarity_matrix = None
+                    try:
+                        get_event_logger().log_decision(
+                            path="warm", op="discover",
+                            decision="vocab_enrichment_fallback",
+                            context={
+                                "domain": domain_node.label,
+                                "reason": "query_failed",
+                                "error": str(enrich_exc)[:200],
+                            },
+                        )
+                    except RuntimeError:
+                        pass
+
                 try:
                     generated = await generate_qualifier_vocabulary(
                         provider=self._provider,
                         domain_label=domain_node.label,
-                        cluster_labels=cluster_info,
+                        cluster_contexts=cluster_contexts,
+                        similarity_matrix=similarity_matrix,
                         model=settings.MODEL_HAIKU,
                     )
                 except Exception as gen_exc:
