@@ -2019,6 +2019,7 @@ async def phase_split_emerge(
             child_fam_ids_fam = []
             opt_idx = getattr(engine, "_optimized_index", None)
             trans_idx = getattr(engine, "_transformation_index", None)
+            qual_idx = getattr(engine, "_qualifier_index", None)
             for f in node_families:
                 try:
                     emb = np.frombuffer(
@@ -2026,11 +2027,13 @@ async def phase_split_emerge(
                     )
                     opt_vec = opt_idx.get_vector(f.id) if opt_idx else None
                     trans_vec = trans_idx.get_vector(f.id) if trans_idx else None
+                    qual_vec = qual_idx.get_vector(f.id) if qual_idx else None
                     child_embs_fam.append(emb)
                     child_blended_fam.append(blend_embeddings(
                         raw=emb,
                         optimized=opt_vec,
                         transformation=trans_vec,
+                        qualifier=qual_vec,
                     ))
                     child_fam_ids_fam.append(f.id)
                 except (ValueError, TypeError) as _fs_exc:
@@ -2162,6 +2165,7 @@ async def phase_merge(
     now_merge = _utcnow()
     opt_idx = getattr(engine, "_optimized_index", None)
     trans_idx = getattr(engine, "_transformation_index", None)
+    qual_idx = getattr(engine, "_qualifier_index", None)
     if len(active_nodes) >= 2:
         centroids = []
         blended_centroids = []
@@ -2188,11 +2192,13 @@ async def phase_merge(
                 c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
                 opt_vec = opt_idx.get_vector(n.id) if opt_idx else None
                 trans_vec = trans_idx.get_vector(n.id) if trans_idx else None
+                qual_vec = qual_idx.get_vector(n.id) if qual_idx else None
                 centroids.append(c)
                 blended_centroids.append(blend_embeddings(
                     raw=c,
                     optimized=opt_vec,
                     transformation=trans_vec,
+                    qualifier=qual_vec,
                 ))
                 valid_nodes.append(n)
             except (ValueError, TypeError) as _gm_exc:
@@ -2452,11 +2458,13 @@ async def phase_merge(
                             raw=emb_a,
                             optimized=opt_idx.get_vector(survivor.id) if opt_idx else None,
                             transformation=trans_idx.get_vector(survivor.id) if trans_idx else None,
+                            qualifier=qual_idx.get_vector(survivor.id) if qual_idx else None,
                         )
                         blend_b = blend_embeddings(
                             raw=emb_b,
                             optimized=opt_idx.get_vector(loser.id) if opt_idx else None,
                             transformation=trans_idx.get_vector(loser.id) if trans_idx else None,
+                            qualifier=qual_idx.get_vector(loser.id) if qual_idx else None,
                         )
                         sim = cosine_similarity(blend_a, blend_b)
                     except (ValueError, TypeError):
@@ -2528,11 +2536,13 @@ async def phase_merge(
                                 raw=emb_i,
                                 optimized=opt_idx.get_vector(remaining[i].id) if opt_idx else None,
                                 transformation=trans_idx.get_vector(remaining[i].id) if trans_idx else None,
+                                qualifier=qual_idx.get_vector(remaining[i].id) if qual_idx else None,
                             )
                             blend_j = blend_embeddings(
                                 raw=emb_j,
                                 optimized=opt_idx.get_vector(remaining[j].id) if opt_idx else None,
                                 transformation=trans_idx.get_vector(remaining[j].id) if trans_idx else None,
+                                qualifier=qual_idx.get_vector(remaining[j].id) if qual_idx else None,
                             )
                             sim = cosine_similarity(blend_i, blend_j)
                         except (ValueError, TypeError):
@@ -3408,6 +3418,69 @@ async def phase_refresh(
             logger.debug("Recomputed preferred_strategy for %d templates", len(tpl_ids))
     except Exception as strat_exc:
         logger.debug("Template strategy recomputation failed (non-fatal): %s", strat_exc)
+
+    # --- Phase 4 qualifier embedding backfill ---
+    # Optimizations that were created before the qualifier_embedding column
+    # was added (or before the hot path generated them) have NULL
+    # qualifier_embedding.  Backfill up to 50 per cycle by extracting
+    # domain_raw qualifier keywords, embedding them, and storing the result.
+    _qualifier_backfill_cap = 50
+    try:
+        from sqlalchemy import and_
+
+        from app.services.domain_signal_loader import get_signal_loader
+
+        _ql = get_signal_loader()
+        if _ql and engine._embedding:
+            # Query optimizations with NULL qualifier_embedding where domain_raw
+            # contains ":" (i.e., has a qualifier sub-part like "backend: auth")
+            backfill_q = await db.execute(
+                select(Optimization)
+                .where(
+                    and_(
+                        Optimization.qualifier_embedding.is_(None),
+                        Optimization.domain_raw.contains(":"),
+                    )
+                )
+                .order_by(Optimization.created_at.desc())
+                .limit(_qualifier_backfill_cap)
+            )
+            backfill_opts = list(backfill_q.scalars().all())
+
+            backfilled = 0
+            for _opt in backfill_opts:
+                try:
+                    domain_primary, domain_qualifier = parse_domain(_opt.domain_raw or "")
+                    if not domain_qualifier:
+                        continue
+                    qualifiers = _ql.get_qualifiers(domain_primary)
+                    keywords = qualifiers.get(domain_qualifier)
+                    if not keywords:
+                        continue
+                    cache_key = "|".join(sorted(keywords))
+                    cached = _ql.get_cached_qualifier_embedding(cache_key)
+                    if cached is not None:
+                        qualifier_emb = cached
+                    else:
+                        qualifier_text = " ".join(keywords)
+                        qualifier_emb = await engine._embedding.aembed_single(qualifier_text)
+                        _ql.cache_qualifier_embedding(cache_key, qualifier_emb)
+                    _opt.qualifier_embedding = qualifier_emb.astype(np.float32).tobytes()
+                    backfilled += 1
+                except Exception as _qb_exc:
+                    logger.warning(
+                        "Qualifier backfill failed for opt %s (non-fatal): %s",
+                        _opt.id, _qb_exc,
+                    )
+
+            if backfilled:
+                await db.flush()
+                logger.info(
+                    "Qualifier embedding backfill: %d optimizations updated",
+                    backfilled,
+                )
+    except Exception as qbf_exc:
+        logger.warning("Qualifier embedding backfill failed (non-fatal): %s", qbf_exc)
 
     return result
 

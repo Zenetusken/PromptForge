@@ -226,9 +226,11 @@ async def execute_cold_path(
     blended_embeddings: list[np.ndarray] = []
     opt_idx = getattr(engine, "_optimized_index", None)
     trans_idx = getattr(engine, "_transformation_index", None)
+    qual_idx = getattr(engine, "_qualifier_index", None)
     for i, f in enumerate(valid_families):
         opt_vec = opt_idx.get_vector(f.id) if opt_idx else None
         trans_vec = trans_idx.get_vector(f.id) if trans_idx else None
+        qual_vec = qual_idx.get_vector(f.id) if qual_idx else None
 
         # Adaptive blend: downweight optimized signal when output coherence
         # is low — divergent outputs make the optimized embedding mean
@@ -247,6 +249,7 @@ async def execute_cold_path(
                 w_raw=w_raw,
                 w_optimized=w_opt,
                 w_transform=CLUSTERING_BLEND_W_TRANSFORM,
+                qualifier=qual_vec,
             )
         )
 
@@ -456,8 +459,10 @@ async def execute_cold_path(
                 # Blend leftover node's embedding for UMAP consistency
                 opt_vec = opt_idx.get_vector(leftover_node.id) if opt_idx else None
                 trans_vec = trans_idx.get_vector(leftover_node.id) if trans_idx else None
+                qual_vec = qual_idx.get_vector(leftover_node.id) if qual_idx else None
                 node_umap_embeddings.append(
-                    blend_embeddings(raw=emb, optimized=opt_vec, transformation=trans_vec)
+                    blend_embeddings(raw=emb, optimized=opt_vec, transformation=trans_vec,
+                                     qualifier=qual_vec)
                 )
                 all_nodes.append(leftover_node)
             except (ValueError, TypeError) as _lo_exc:
@@ -1253,6 +1258,7 @@ async def execute_umap_projection(
 
     opt_idx = getattr(engine, "_optimized_index", None)
     trans_idx = getattr(engine, "_transformation_index", None)
+    qual_idx = getattr(engine, "_qualifier_index", None)
 
     for c in all_clusters:
         if not c.centroid_embedding:
@@ -1261,7 +1267,9 @@ async def execute_umap_projection(
             raw = np.frombuffer(c.centroid_embedding, dtype=np.float32)
             opt_vec = opt_idx.get_vector(c.id) if opt_idx else None
             trans_vec = trans_idx.get_vector(c.id) if trans_idx else None
-            blended = blend_embeddings(raw=raw, optimized=opt_vec, transformation=trans_vec)
+            qual_vec = qual_idx.get_vector(c.id) if qual_idx else None
+            blended = blend_embeddings(raw=raw, optimized=opt_vec, transformation=trans_vec,
+                                       qualifier=qual_vec)
         except (ValueError, TypeError):
             continue
 

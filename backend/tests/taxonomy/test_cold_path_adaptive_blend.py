@@ -29,10 +29,10 @@ def test_high_output_coherence_keeps_default_weights():
     """When output coherence >= 0.5, default weights are used."""
     # output_coherence=0.8 → no scaling applied
     w_opt = CLUSTERING_BLEND_W_OPTIMIZED  # 0.20
-    w_raw = CLUSTERING_BLEND_W_RAW  # 0.65
+    w_raw = CLUSTERING_BLEND_W_RAW  # 0.55 (reduced from 0.65 to make room for qualifier)
 
     assert w_opt == 0.20
-    assert w_raw == 0.65
+    assert w_raw == 0.55
 
 
 def test_missing_output_coherence_keeps_default_weights():
