@@ -174,7 +174,7 @@ async def generate_qualifier_vocabulary(
         Qualifier vocabulary dict, e.g. ``{"growth": ["metrics", "kpi", ...], ...}``.
         Empty dict on failure.
     """
-    if not provider or len(cluster_labels) < 3:
+    if not provider or len(cluster_labels) < 2:
         return {}
 
     cluster_block = "\n".join(

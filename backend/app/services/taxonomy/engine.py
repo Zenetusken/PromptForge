@@ -1821,7 +1821,86 @@ class TaxonomyEngine:
         )
         existing_labels = {r[0].lower() for r in existing_q.all() if r[0]}
 
-        # Find domains to evaluate
+        # --- Vocabulary generation pass: ALL domains including "general" ---
+        # Every domain gets organic qualifier vocabulary. This is decoupled
+        # from sub-domain discovery (which skips "general") because vocab is
+        # useful for hot-path enrichment regardless of sub-domain formation.
+        all_domain_q = await db.execute(
+            select(PromptCluster).where(PromptCluster.state == "domain")
+        )
+        all_domains = list(all_domain_q.scalars().all())
+        for domain_node in all_domains:
+            # Get child cluster IDs for this domain (direct children only)
+            child_q = await db.execute(
+                select(PromptCluster.id).where(
+                    PromptCluster.parent_id == domain_node.id,
+                    PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
+                )
+            )
+            child_ids = [r[0] for r in child_q.all()]
+            if len(child_ids) < 2:
+                continue  # need ≥2 clusters for meaningful vocab
+
+            meta = read_meta(domain_node.cluster_metadata)
+            cached_vocab = meta.get("generated_qualifiers")
+            cached_cluster_count = meta.get("generated_qualifiers_cluster_count", 0)
+            current_cluster_count = len(child_ids)
+
+            is_first_generation = not cached_vocab
+            stale = (
+                is_first_generation
+                or abs(current_cluster_count - cached_cluster_count)
+                > max(2, cached_cluster_count * 0.3)
+            )
+            if stale and self._provider:
+                import time as _vocab_time
+
+                from app.services.taxonomy.labeling import generate_qualifier_vocabulary
+
+                _vocab_start = _vocab_time.monotonic()
+                cluster_info_q = await db.execute(
+                    select(PromptCluster.label, PromptCluster.member_count).where(
+                        PromptCluster.id.in_(child_ids),
+                    )
+                )
+                cluster_info = [(r[0], r[1] or 0) for r in cluster_info_q.all()]
+                try:
+                    generated = await generate_qualifier_vocabulary(
+                        provider=self._provider,
+                        domain_label=domain_node.label,
+                        cluster_labels=cluster_info,
+                        model=settings.MODEL_HAIKU,
+                    )
+                except Exception as gen_exc:
+                    generated = {}
+                    logger.warning("Vocab generation failed for '%s': %s", domain_node.label, gen_exc)
+
+                _vocab_ms = round((_vocab_time.monotonic() - _vocab_start) * 1000, 1)
+
+                if generated:
+                    domain_node.cluster_metadata = write_meta(
+                        domain_node.cluster_metadata,
+                        generated_qualifiers=generated,
+                        generated_qualifiers_cluster_count=current_cluster_count,
+                    )
+                    try:
+                        from app.services.domain_signal_loader import get_signal_loader
+                        loader = get_signal_loader()
+                        if loader:
+                            loader.refresh_qualifiers(domain_node.label, generated)
+                    except Exception:
+                        pass
+            elif cached_vocab and isinstance(cached_vocab, dict):
+                # Push existing cached vocab to DomainSignalLoader
+                try:
+                    from app.services.domain_signal_loader import get_signal_loader
+                    loader = get_signal_loader()
+                    if loader:
+                        loader.refresh_qualifiers(domain_node.label, cached_vocab)
+                except Exception:
+                    pass
+
+        # --- Sub-domain discovery pass: non-general domains only ---
         domain_q = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.state == "domain",
@@ -1913,151 +1992,13 @@ class TaxonomyEngine:
             if total_opts < SUB_DOMAIN_QUALIFIER_MIN_MEMBERS:
                 continue
 
-            # Build qualifier vocabulary: LLM-generated (all domains) → dynamic (TF-IDF)
-            # Always start with empty dict — organic generation fills it for every domain.
-            domain_qualifiers: dict[str, list[str]] = {}
-
-            # Generate vocab from cluster labels via Haiku for ALL domains.
-            # Cached in cluster_metadata["generated_qualifiers"] and refreshed
-            # when cluster count changes significantly.
+            # Read qualifier vocabulary — already generated in the vocab pass above.
+            # Falls back to cached metadata if available.
             meta = read_meta(domain_node.cluster_metadata)
+            domain_qualifiers: dict[str, list[str]] = {}
             cached_vocab = meta.get("generated_qualifiers")
-            cached_cluster_count = meta.get("generated_qualifiers_cluster_count", 0)
-            current_cluster_count = len(child_ids)
-
-            # Regenerate if no cache or cluster count changed by ≥30%
-            is_first_generation = not cached_vocab
-            stale = (
-                is_first_generation
-                or abs(current_cluster_count - cached_cluster_count)
-                > max(2, cached_cluster_count * 0.3)
-            )
-            if stale and self._provider:
-                import time as _vocab_time
-
-                from app.services.taxonomy.labeling import generate_qualifier_vocabulary
-
-                _vocab_start = _vocab_time.monotonic()
-
-                # Gather cluster labels with member counts for LLM context
-                cluster_info_q = await db.execute(
-                    select(PromptCluster.label, PromptCluster.member_count).where(
-                        PromptCluster.id.in_(child_ids),
-                    )
-                )
-                cluster_info = [
-                    (r[0], r[1] or 0) for r in cluster_info_q.all()
-                ]
-                try:
-                    generated = await generate_qualifier_vocabulary(
-                        provider=self._provider,
-                        domain_label=domain_node.label,
-                        cluster_labels=cluster_info,
-                        model=settings.MODEL_HAIKU,
-                    )
-                except Exception as gen_exc:
-                    generated = {}
-                    logger.warning(
-                        "Vocab generation failed for '%s': %s",
-                        domain_node.label, gen_exc,
-                    )
-                    self._maintenance_pending = True
-                    try:
-                        get_event_logger().log_decision(
-                            path="warm", op="discover",
-                            decision="vocab_generation_failed",
-                            context={
-                                "domain": domain_node.label,
-                                "error": str(gen_exc)[:200],
-                                "fallback": "cached" if cached_vocab else "none",
-                            },
-                        )
-                    except RuntimeError:
-                        pass
-
-                _vocab_ms = round((_vocab_time.monotonic() - _vocab_start) * 1000, 1)
-
-                if generated:
-                    old_groups = len(cached_vocab) if cached_vocab and isinstance(cached_vocab, dict) else 0
-                    domain_qualifiers = generated
-                    # Cache in metadata for future cycles
-                    domain_node.cluster_metadata = write_meta(
-                        domain_node.cluster_metadata,
-                        generated_qualifiers=generated,
-                        generated_qualifiers_cluster_count=current_cluster_count,
-                    )
-                    # Emit the appropriate event: first generation vs refresh
-                    _event_decision = "vocab_generated" if is_first_generation else "vocab_refreshed"
-                    _event_context: dict = {
-                        "domain": domain_node.label,
-                        "groups": len(generated),
-                        "total_keywords": sum(len(kws) for kws in generated.values()),
-                        "cluster_count": current_cluster_count,
-                        "generation_ms": _vocab_ms,
-                    }
-                    if not is_first_generation:
-                        _event_context["reason"] = "cluster_count_changed"
-                        _event_context["old_groups"] = old_groups
-                        _event_context["new_groups"] = len(generated)
-                    try:
-                        get_event_logger().log_decision(
-                            path="warm", op="discover",
-                            decision=_event_decision,
-                            context=_event_context,
-                        )
-                    except RuntimeError:
-                        pass
-                elif not generated and is_first_generation and not cached_vocab:
-                    # Generation failed AND no cached vocab — domain has no vocab at all
-                    try:
-                        get_event_logger().log_decision(
-                            path="warm", op="discover",
-                            decision="vocab_unavailable",
-                            context={
-                                "domain": domain_node.label,
-                                "reason": "generation_failed_no_cache",
-                            },
-                        )
-                    except RuntimeError:
-                        pass
-
-            if not domain_qualifiers and cached_vocab and isinstance(cached_vocab, dict):
+            if cached_vocab and isinstance(cached_vocab, dict):
                 domain_qualifiers = cached_vocab
-                try:
-                    get_event_logger().log_decision(
-                        path="warm", op="discover",
-                        decision="vocab_fallback_to_cache",
-                        context={
-                            "domain": domain_node.label,
-                            "cached_groups": len(cached_vocab),
-                        },
-                    )
-                except RuntimeError:
-                    pass
-
-            # Push vocab to DomainSignalLoader for hot-path enrichment
-            if domain_qualifiers:
-                try:
-                    from app.services.domain_signal_loader import get_signal_loader
-                    loader = get_signal_loader()
-                    if loader:
-                        loader.refresh_qualifiers(domain_node.label, domain_qualifiers)
-                        try:
-                            get_event_logger().log_decision(
-                                path="warm", op="discover",
-                                decision="vocab_cache_propagated",
-                                context={
-                                    "domain": domain_node.label,
-                                    "qualifier_count": len(domain_qualifiers),
-                                },
-                            )
-                        except RuntimeError:
-                            pass
-                except Exception as cache_exc:
-                    logger.warning(
-                        "Failed to propagate vocab to DomainSignalLoader for '%s': %s",
-                        domain_node.label, cache_exc,
-                    )
 
             # Load dynamic signal_keywords from domain node metadata.
             # These are TF-IDF-extracted keywords already on every domain node,
