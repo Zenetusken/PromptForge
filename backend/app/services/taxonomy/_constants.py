@@ -128,6 +128,15 @@ SUB_DOMAIN_ARCHIVAL_IDLE_HOURS: int = 1
 SUB_DOMAIN_DISSOLUTION_CONSISTENCY_FLOOR: float = 0.25
 SUB_DOMAIN_DISSOLUTION_MIN_AGE_HOURS: int = 6  # don't dissolve freshly created sub-domains
 
+# ---------------------------------------------------------------------------
+# Domain dissolution — graceful re-grouping when domains lose relevance.
+# Domains have stricter guards than sub-domains: higher age gate, member
+# ceiling, and sub-domain anchor rule.  Aligns with ADR-006 vision that
+# seed domains are bootstrapping data, not permanent fixtures.
+DOMAIN_DISSOLUTION_CONSISTENCY_FLOOR: float = 0.15   # well below 60% creation threshold (45pt hysteresis)
+DOMAIN_DISSOLUTION_MIN_AGE_HOURS: int = 48            # domains earn permanence through time
+DOMAIN_DISSOLUTION_MEMBER_CEILING: int = 5             # large domains don't dissolve on consistency alone
+
 
 # ---------------------------------------------------------------------------
 # Maintenance phase cadence
