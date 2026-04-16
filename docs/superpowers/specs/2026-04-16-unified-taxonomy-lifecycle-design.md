@@ -1,6 +1,6 @@
 # Unified Taxonomy Lifecycle: Domain + Sub-Domain Discovery and Dissolution
 
-**Goal:** Unify domain and sub-domain lifecycle into a shared organic system where both levels use the same three-source signal cascade, organic vocabulary, re-evaluation, and graceful dissolution. Remove seed domain protection so the taxonomy is fully organic from day one. Aligns with ADR-006 (Universal Prompt Engine).
+**Goal:** Unify domain and sub-domain lifecycle into a shared organic system with re-evaluation and graceful dissolution at both hierarchy levels. Remove seed domain protection so the taxonomy is fully organic from day one. Aligns with ADR-006 (Universal Prompt Engine).
 
 **Problem:** Domain discovery and sub-domain discovery are currently separate mechanisms with different signal sources, different lifecycle rules, and asymmetric behavior. Domains are created from "general" using only `domain_raw` primary labels, never re-evaluated, never dissolved, and seed domains are permanently protected. This means:
 - A comic book artist's taxonomy permanently shows "backend", "devops", "security" even with zero matching prompts
@@ -8,27 +8,32 @@
 - Domain classification errors are permanent — misclassified prompts stay in the wrong domain with no correction mechanism
 - The domain lifecycle is fundamentally different from the sub-domain lifecycle, despite solving the same problem at different hierarchy levels
 
-**Solution:** Extract a shared lifecycle core that handles both domain and sub-domain re-evaluation with parameterized thresholds. Add domain dissolution with bottom-up sub-domain anchoring. Remove seed domain protection. The only permanent node is "general" (structural root).
+**Solution:** Extract a shared dissolution core (`_dissolve_node()`) that handles both domain and sub-domain dissolution with parameterized targets. Add domain re-evaluation and dissolution with bottom-up sub-domain anchoring. Remove seed domain protection. The only permanent node is "general" (structural root).
 
 ---
 
 ## Architecture
 
-### Shared Lifecycle Core
+### Signal Sources by Hierarchy Level
 
-Domain and sub-domain lifecycle are the **same algorithm at different hierarchy levels**: scan a parent's children, check qualifier consistency against a threshold, create or dissolve nodes based on signal strength.
+Domain and sub-domain lifecycle use **different signal sources** appropriate to their level in the hierarchy:
 
-**`_reevaluate_node()`** — shared method on `TaxonomyEngine` for both domain and sub-domain re-evaluation:
+**Domain-level consistency** (is this prompt correctly classified as "backend"?):
+- **Source 1 only:** Parse `domain_raw` for primary domain label. This is the authoritative signal — the LLM/heuristic analyzer already classified the prompt into a domain. The organic vocabulary (qualifier keywords like "auth", "api") is for sub-qualifier detection, not domain membership validation.
+
+**Sub-domain-level consistency** (is this "backend" prompt specifically about "auth"?):
+- **Three-source cascade:** domain_raw qualifier parse + intent_label keyword match + TF-IDF signal_keywords. Sub-qualifiers require richer signals because they're finer-grained classifications within an already-confirmed domain.
+
+### Shared Dissolution Core
+
+`_dissolve_node()` — shared method for both domain and sub-domain dissolution:
 
 ```
-Input:  node, parent_node, vocabulary, thresholds, dissolution_target
-Output: dissolved: bool
+Input:  node, dissolution_target, existing_labels, clear_signal_loader: bool
+Output: {clusters_reparented, meta_patterns_merged}
 ```
 
-Uses the same three-source cascade for consistency checking:
-- Source 1: `domain_raw` qualifier parse
-- Source 2: `intent_label` keyword match against organic vocabulary
-- Source 3: (sub-domains only) TF-IDF signal_keywords
+Handles: reparent clusters, reparent any direct optimizations, merge meta-patterns (UPDATE not DELETE), archive node, clear all 4 indices, clear DomainResolver, optionally clear DomainSignalLoader (domain-level only), discard from existing_labels.
 
 ### Parameterized Thresholds
 
@@ -36,11 +41,13 @@ Uses the same three-source cascade for consistency checking:
 |-----------|--------|-----------|
 | Creation consistency | 60% fixed (`DOMAIN_DISCOVERY_CONSISTENCY`) | `max(40%, 60% - 0.4% * members)` adaptive |
 | Dissolution floor | `DOMAIN_DISSOLUTION_CONSISTENCY_FLOOR` = 0.15 | `SUB_DOMAIN_DISSOLUTION_CONSISTENCY_FLOOR` = 0.25 |
+| Consistency signal | Source 1 only (domain_raw primary label) | Three-source cascade (domain_raw qualifier + intent_label + TF-IDF) |
 | Age gate | `DOMAIN_DISSOLUTION_MIN_AGE_HOURS` = 48 | `SUB_DOMAIN_DISSOLUTION_MIN_AGE_HOURS` = 6 |
-| Member floor | `DOMAIN_DISSOLUTION_MAX_MEMBERS` = 5 (must be ≤ this AND below consistency floor) | None |
+| Member ceiling | `DOMAIN_DISSOLUTION_MEMBER_CEILING` = 5 (must be ≤ this AND below consistency floor) | None |
 | Sub-node anchor | Cannot dissolve while sub-domains exist | N/A |
 | "general" protection | Permanent — never dissolves | N/A |
 | Dissolution target | "general" domain node | Parent domain node |
+| Signal loader cleanup | Yes — remove domain from `DomainSignalLoader._signals` | No |
 
 ### Hysteresis Gaps (prevent flip-flop)
 
@@ -55,21 +62,28 @@ Uses the same three-source cascade for consistency checking:
 
 **ALL prerequisites must be true for dissolution:**
 
-1. **Not "general"** — permanent structural root
-2. **No surviving sub-domains** — bottom-up dependency. Sub-domains dissolve first through their own re-evaluation. If any sub-domain passes its consistency check, the parent domain is structurally anchored and cannot dissolve.
+1. **Not "general"** — permanent structural root (all per-project "general" nodes are protected, including empty ones)
+2. **No surviving sub-domains** — bottom-up dependency. Sub-domains dissolve first through their own re-evaluation. If any sub-domain passes its consistency check, the parent domain is structurally anchored and cannot dissolve. The anchor check queries the current DB session AFTER sub-domain dissolution has run (both execute in the same `phase_discover` session, so uncommitted sub-domain archival is visible via SQLAlchemy's identity map).
 3. **Age ≥ 48 hours** — domains earn permanence through time
-4. **Consistency below 15%** — using the three-source cascade (domain_raw + intent_label keyword match against organic vocabulary). Well below the 60% creation threshold.
-5. **Member count ≤ 5** — large domains don't dissolve on consistency alone. A 30-cluster domain with a temporary consistency dip is experiencing vocabulary drift, not invalidity. The member floor prevents catastrophic churn.
+4. **Consistency below 15%** — using Source 1 only (domain_raw primary label count / total optimizations). Well below the 60% creation threshold.
+5. **Member count ≤ 5** (`DOMAIN_DISSOLUTION_MEMBER_CEILING`) — `member_count` on the domain node represents direct child clusters (reconciled by Phase 0). Large domains don't dissolve on consistency alone. The member ceiling check fires AFTER the sub-domain anchor check — a domain with 3 direct clusters but a healthy sub-domain with 20 clusters is anchor-protected regardless.
 
 **On dissolution (prompts never lost):**
 - All child clusters reparented to "general" (keep optimizations + meta-patterns)
+- Any optimizations with `cluster_id` pointing to the domain node reparented to "general" (defensive)
 - Meta-patterns merged into "general" domain node (UPDATE, not DELETE)
 - `DomainResolver.remove_label()` clears domain from resolution cache
-- `DomainSignalLoader` qualifier cache cleared for the domain
+- `DomainSignalLoader.remove_domain()` clears domain from classification signals and qualifier cache (new API)
 - Domain node archived (`state="archived"`, zeroed metrics)
 - Indices cleared (embedding, transformation, optimized, qualifier)
 - Label freed for future re-discovery
 - `dissolved_this_cycle` prevents same-cycle re-creation
+
+**Classification-resolution mismatch after dissolution (intentional):**
+When a domain like "backend" dissolves, the `DomainSignalLoader` no longer has its signals. BUT: if another project still has an active "backend" domain, `DomainSignalLoader.load()` picks up its signals (cross-project singleton). If NO project has "backend", new prompts' heuristic classification may still emit `domain_raw="backend"` (from the LLM's training data, not from DomainSignalLoader). The DomainResolver maps this to "general" (unknown domain label). These prompts accumulate under "general" with `domain_raw="backend"`, which triggers `_propose_domains()` to re-discover "backend" when consistency threshold is met. **This is intentional** — it's the organic re-discovery mechanism.
+
+**Domain Groundhog Day prevention:**
+Dissolved domains whose clusters retain strong `domain_raw` signals may be re-created on the next cycle by `_propose_domains()`. The `dissolved_this_cycle` set prevents same-cycle re-creation. Cross-cycle re-creation is acceptable and expected — the 48-hour age gate on dissolution ensures the re-created domain survives long enough to prove itself or accumulate real membership. The 45-point hysteresis gap (60% creation vs 15% dissolution) means a domain that re-creates at 60%+ consistency will not dissolve unless it drops below 15%, providing strong damping.
 
 ---
 
@@ -99,7 +113,7 @@ Phase 5 (discover) execution order:
   1. Vocabulary generation pass
      - ALL domains including "general"
      - Generates/refreshes organic Haiku vocabulary
-     - Already implemented (separate pass before discovery)
+     - Extracted as standalone _generate_domain_vocabularies()
 
   2. Sub-domain re-evaluation (bottom-up)
      - For each non-general domain with existing sub-domains
@@ -108,13 +122,16 @@ Phase 5 (discover) execution order:
 
   3. Domain re-evaluation
      - For each non-general domain (including seeds)
-     - Skip if domain has surviving sub-domains (anchor rule)
+     - Skip if domain has surviving sub-domains (anchor rule — queries
+       current session state AFTER step 2 dissolution, within same DB session)
      - Skip if "general" (permanent)
      - Dissolve domains below 15% consistency AND ≤5 members AND ≥48h old
+     - Uses Source 1 only (domain_raw primary label)
 
   4. Domain discovery
      - Scan "general" children for new domain candidates
      - Create domain when ≥3 members, ≥0.3 coherence, ≥60% consistency
+     - Uses Source 1 only (domain_raw primary label — existing behavior)
      - Post-discovery re-parenting sweep (existing behavior)
 
   5. Sub-domain discovery
@@ -132,37 +149,29 @@ Steps 4→5: creation order — domains form from "general" before sub-domains f
 
 ### Current code structure (separate, asymmetric):
 - `_propose_domains()` — domain creation only, `domain_raw` primary label only, no re-evaluation
-- `_propose_sub_domains()` — sub-domain creation + re-evaluation + dissolution, three-source cascade
-- `_reevaluate_sub_domains()` — sub-domain consistency check + dissolution
+- `_propose_sub_domains()` — vocab gen + sub-domain creation + re-evaluation + dissolution, three-source cascade
+- `_reevaluate_sub_domains()` — sub-domain consistency check + dissolution (inline logic)
 
 ### New code structure (unified, symmetric):
 
 | Method | Responsibility |
 |--------|---------------|
-| `_reevaluate_node()` | **Shared core** — consistency check via three-source cascade, parameterized thresholds. Returns whether the node should dissolve. Used by both domain and sub-domain re-evaluation. |
-| `_dissolve_node()` | **Shared core** — reparent clusters, merge meta-patterns, archive node, clear indices/caches. Parameterized by dissolution target (parent domain or "general"). Used by both. |
-| `_reevaluate_domains()` | Domain-specific wrapper — iterates non-general domains, checks sub-domain anchor + member floor + age gate, calls `_reevaluate_node()` + `_dissolve_node()`. |
-| `_reevaluate_sub_domains()` | **Existing** — refactored to call `_reevaluate_node()` + `_dissolve_node()` instead of inline logic. |
-| `_propose_domains()` | **Existing** — domain creation from "general". Gains three-source cascade (currently domain_raw only). |
-| `_propose_sub_domains()` | **Existing** — sub-domain creation. Already uses three-source cascade. |
+| `_generate_domain_vocabularies()` | **Extracted** from `_propose_sub_domains()` — generates/refreshes organic vocabulary for ALL domains. Called first in Phase 5. |
+| `_dissolve_node()` | **Shared core** — reparent clusters + direct optimizations, merge meta-patterns, archive node, clear all 4 indices, clear resolver. Parameterized: `dissolution_target` (parent domain or "general"), `clear_signal_loader` (True for domains, False for sub-domains). Returns `{clusters_reparented, meta_patterns_merged}`. |
+| `_reevaluate_domains()` | Domain-specific wrapper — iterates non-general domains, checks "general" protection + sub-domain anchor + member ceiling + age gate + Source 1 consistency, calls `_dissolve_node()`. |
+| `_reevaluate_sub_domains()` | **Existing** — refactored to call `_dissolve_node()` instead of inline dissolution logic. Still uses three-source cascade for consistency. |
+| `_propose_domains()` | **Existing** — domain creation from "general". No signal source changes (Source 1 is correct for domain-level discovery). |
+| `_propose_sub_domains()` | **Existing** — sub-domain creation. Vocab generation extracted out. Still uses three-source cascade. |
 
-### Code deduplication
+### DomainSignalLoader API addition
 
-The dissolution logic currently lives inline in `_reevaluate_sub_domains()` (~40 lines: reparent clusters, merge meta-patterns, archive node, clear indices, clear resolver, log event). The new `_dissolve_node()` extracts this into a shared method called by both domain and sub-domain dissolution.
+Add `remove_domain(label: str)` method:
+- Removes from `_signals` (keyword weights)
+- Removes from `_patterns` (compiled regexes for that domain's keywords)
+- Removes from `_qualifier_cache` (organic vocabulary)
+- Invalidates `_qualifier_embedding_cache` (embeddings may reference removed keywords)
 
-The consistency check logic (three-source cascade: parse domain_raw → keyword match → TF-IDF) is currently in `_reevaluate_sub_domains()` and `_propose_sub_domains()`. The new `_reevaluate_node()` extracts the consistency calculation into a shared method.
-
----
-
-## Domain Discovery Enhancement
-
-`_propose_domains()` currently uses only `domain_raw` primary labels to discover new domains from "general". This should be enhanced to also use the three-source cascade for consistency, matching the sub-domain discovery approach:
-
-- **Source 1 (primary — existing):** Parse `domain_raw` for primary domain label (e.g., "backend" from "backend: auth")
-- **Source 2 (new):** Match `intent_label` against the "general" domain's organic vocabulary keywords
-- **Source 3 (new):** Match `raw_prompt` against "general" domain's `signal_keywords` TF-IDF
-
-This makes domain discovery symmetric with sub-domain discovery — both use the same signal quality.
+This is called by `_dissolve_node()` when `clear_signal_loader=True` (domain dissolution only).
 
 ---
 
@@ -172,9 +181,9 @@ This makes domain discovery symmetric with sub-domain discovery — both use the
 
 | Path | Op | Decision | Context |
 |------|----|----------|---------|
-| `warm` | `discover` | `domain_reevaluated` | `{domain, consistency_pct, floor_pct, member_count, member_floor, has_sub_domains, passed: bool}` |
+| `warm` | `discover` | `domain_reevaluated` | `{domain, consistency_pct, floor_pct, member_count, member_ceiling, has_sub_domains, passed: bool}` |
 | `warm` | `discover` | `domain_dissolved` | `{domain, consistency_pct, floor_pct, clusters_reparented, meta_patterns_merged, reason}` |
-| `warm` | `discover` | `domain_dissolution_blocked` | `{domain, reason: "has_sub_domains"\|"too_young"\|"above_member_floor"\|"is_general", detail}` |
+| `warm` | `discover` | `domain_dissolution_blocked` | `{domain, reason: "has_sub_domains"\|"too_young"\|"above_member_ceiling"\|"is_general", detail}` |
 
 Existing events retained:
 - `sub_domain_reevaluated`, `sub_domain_dissolved` — sub-domain lifecycle
@@ -198,9 +207,9 @@ Extend health response with domain lifecycle stats:
 
 | Component | Failure Mode | Handling |
 |-----------|-------------|----------|
-| `_reevaluate_node()` consistency check | DB error loading optimizations | WARNING log, skip node, continue |
 | `_dissolve_node()` reparenting | Individual cluster reparent fails | Log, continue with remaining clusters |
 | `_dissolve_node()` meta-pattern merge | UPDATE fails | WARNING log, continue (patterns remain on archived node — not lost) |
+| `_dissolve_node()` signal loader removal | remove_domain() fails | WARNING log, continue (stale signals cleared on next load()) |
 | Domain re-evaluation loop | Single domain fails | Log, continue to next domain (no cascade failure) |
 | Sub-domain anchor check | DB error counting sub-domains | Assume sub-domains exist (safe side — skip dissolution) |
 
@@ -210,13 +219,14 @@ Extend health response with domain lifecycle stats:
 
 ## Invariants
 
-- "general" never dissolves — permanent structural root per project
+- "general" never dissolves — permanent structural root per project (including empty "general" nodes)
 - Prompts are never lost — dissolution reparents clusters (with all optimizations) and merges meta-patterns
 - Bottom-up only — sub-domains dissolve before their parent domain can dissolve
 - Flip-flop prevention — `dissolved_this_cycle` blocks same-cycle re-creation at both levels
 - Hysteresis — creation thresholds are significantly higher than dissolution floors at both levels
 - Domain dissolution requires BOTH low consistency AND low member count — prevents catastrophic churn for large domains
-- `DomainResolver` and `DomainSignalLoader` caches cleared on dissolution — new prompts don't resolve to archived domains
+- `DomainResolver` and `DomainSignalLoader` caches cleared on domain dissolution — new prompts don't resolve to archived domains
+- Classification-resolution mismatch after domain dissolution is intentional — enables organic re-discovery
 
 ---
 
@@ -224,30 +234,33 @@ Extend health response with domain lifecycle stats:
 
 | File | Change |
 |------|--------|
-| `backend/app/services/taxonomy/engine.py` | Add `_reevaluate_node()`, `_dissolve_node()` shared methods. Add `_reevaluate_domains()`. Refactor `_reevaluate_sub_domains()` to use shared core. Enhance `_propose_domains()` with three-source cascade. Remove `source="seed"` protection. |
-| `backend/app/services/taxonomy/_constants.py` | Add `DOMAIN_DISSOLUTION_CONSISTENCY_FLOOR = 0.15`, `DOMAIN_DISSOLUTION_MIN_AGE_HOURS = 48`, `DOMAIN_DISSOLUTION_MAX_MEMBERS = 5` |
-| `backend/app/services/taxonomy/warm_phases.py` | Update `phase_discover()` execution order: sub-domain reeval → domain reeval → domain discovery → vocab gen → sub-domain discovery. Remove `source="seed"` protection from `phase_archive_empty_sub_domains()`. |
+| `backend/app/services/taxonomy/engine.py` | Extract `_generate_domain_vocabularies()`. Add `_dissolve_node()` shared method. Add `_reevaluate_domains()`. Refactor `_reevaluate_sub_domains()` to use `_dissolve_node()`. Remove `source="seed"` protection. |
+| `backend/app/services/taxonomy/_constants.py` | Add `DOMAIN_DISSOLUTION_CONSISTENCY_FLOOR = 0.15`, `DOMAIN_DISSOLUTION_MIN_AGE_HOURS = 48`, `DOMAIN_DISSOLUTION_MEMBER_CEILING = 5` |
+| `backend/app/services/taxonomy/warm_phases.py` | Update `phase_discover()` execution order: vocab gen → sub-domain reeval → domain reeval → domain discovery → sub-domain discovery. Remove `source="seed"` protection from `phase_archive_empty_sub_domains()`. |
+| `backend/app/services/domain_signal_loader.py` | Add `remove_domain(label)` method (clears signals, patterns, qualifier cache, embedding cache for that domain) |
 | `backend/app/routers/health.py` | Add `domain_lifecycle` stats field |
-| `backend/tests/taxonomy/test_sub_domain_lifecycle.py` | Add domain dissolution tests (anchor rule, member floor, age gate, seed dissolution, "general" protection). Update seed protection tests. |
+| `backend/tests/taxonomy/test_sub_domain_lifecycle.py` | Add domain dissolution tests, seed dissolution tests, update seed protection tests |
 
 ---
 
 ## Testing Strategy
 
 ### Unit Tests
-- `_reevaluate_node()` — consistent domain passes, inconsistent domain fails, three-source cascade matching
-- `_dissolve_node()` — reparenting to target, meta-pattern merge, index cleanup, resolver/loader cache clearing
-- `_reevaluate_domains()` — sub-domain anchor blocks dissolution, member floor blocks dissolution, age gate blocks dissolution, "general" never dissolves
+- `_dissolve_node()` — reparenting to "general", reparenting to parent domain, meta-pattern merge, index cleanup, resolver clearing, signal loader clearing
+- `_reevaluate_domains()` — sub-domain anchor blocks dissolution, member ceiling blocks dissolution, age gate blocks dissolution, "general" never dissolves, Source 1 consistency check
+- `DomainSignalLoader.remove_domain()` — signals removed, patterns cleared, qualifier cache cleared
 
 ### Integration Tests
 - Full Phase 5 cycle: sub-domain dissolves → parent domain now eligible → domain dissolves → clusters in "general"
-- Seed domain dissolution: empty seed domain archived after 48h
+- Seed domain dissolution: empty seed domain archived after 48h with ≤5 members
 - Seed domain survival: seed domain with active prompts survives indefinitely
-- Large domain protection: domain with 30 clusters and low consistency does NOT dissolve (member floor)
+- Large domain protection: domain with 30 clusters and low consistency does NOT dissolve (member ceiling)
 - Bottom-up cascade: domain with healthy sub-domain is anchored even with low parent consistency
 - Flip-flop prevention: dissolved domain not re-created in same cycle
+- **Domain Groundhog Day:** dissolved domain's clusters in "general" → re-discovered next cycle → verify 48h age gate prevents immediate re-dissolution
+- **Mass dissolution:** ALL seed domains dissolve (fresh install, no matching prompts after 48h) → all clusters in "general" → system operates correctly with general-only taxonomy
 
 ### Regression Tests
-- Existing sub-domain lifecycle tests pass (refactored to use shared core)
-- Existing domain discovery tests pass (`_propose_domains()` enhanced, not replaced)
+- Existing sub-domain lifecycle tests pass (refactored to use shared `_dissolve_node()`)
+- Existing domain discovery tests pass (`_propose_domains()` unchanged)
 - "general" domain never dissolved regardless of content
