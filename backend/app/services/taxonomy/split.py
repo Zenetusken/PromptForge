@@ -64,7 +64,7 @@ async def split_cluster(
     node: PromptCluster,
     engine: TaxonomyEngine,
     db: AsyncSession,
-    opt_rows: list[tuple[str, bytes, bytes | None, bytes | None]],
+    opt_rows: list[tuple[str, bytes, bytes | None, bytes | None, bytes | None]],
     log_path: str = "warm",
 ) -> SplitResult:
     """Split a cluster into sub-clusters using member-level HDBSCAN.
@@ -74,7 +74,8 @@ async def split_cluster(
         engine: TaxonomyEngine instance (for provider, indices).
         db: Active async session (caller manages commit/rollback).
         opt_rows: Pre-fetched (opt_id, embedding_bytes, optimized_bytes,
-                  transformation_bytes) tuples for this cluster's members.
+                  transformation_bytes, qualifier_bytes) tuples for this
+                  cluster's members.
 
     Returns:
         SplitResult indicating success and what was created.
@@ -83,7 +84,7 @@ async def split_cluster(
     child_embs: list[np.ndarray] = []       # raw (for centroid storage)
     child_blended: list[np.ndarray] = []    # blended (for HDBSCAN)
     child_opt_ids: list[str] = []
-    for opt_id, emb_bytes, opt_bytes, trans_bytes in opt_rows:
+    for opt_id, emb_bytes, opt_bytes, trans_bytes, qual_bytes in opt_rows:
         try:
             raw = np.frombuffer(emb_bytes, dtype=np.float32).copy()
             opt_emb = (
@@ -94,9 +95,14 @@ async def split_cluster(
                 np.frombuffer(trans_bytes, dtype=np.float32).copy()
                 if trans_bytes else None
             )
+            qual_emb = (
+                np.frombuffer(qual_bytes, dtype=np.float32).copy()
+                if qual_bytes else None
+            )
             child_embs.append(raw)
             child_blended.append(blend_embeddings(
                 raw=raw, optimized=opt_emb, transformation=trans_emb,
+                qualifier=qual_emb,
             ))
             child_opt_ids.append(opt_id)
         except (ValueError, TypeError) as _emb_exc:

@@ -37,6 +37,7 @@ from app.config import settings
 from app.models import Optimization, PromptCluster
 from app.services.taxonomy._constants import (
     CLUSTERING_BLEND_W_OPTIMIZED,
+    CLUSTERING_BLEND_W_QUALIFIER,
     CLUSTERING_BLEND_W_TRANSFORM,
     EXCLUDED_STRUCTURAL_STATES,
     MEGA_CLUSTER_MEMBER_FLOOR,
@@ -239,7 +240,7 @@ async def execute_cold_path(
         out_coh = read_meta(f.cluster_metadata).get("output_coherence")
         if out_coh is not None and out_coh < 0.5:
             w_opt = CLUSTERING_BLEND_W_OPTIMIZED * max(0.25, out_coh / 0.5)
-        w_raw = 1.0 - w_opt - CLUSTERING_BLEND_W_TRANSFORM
+        w_raw = 1.0 - w_opt - CLUSTERING_BLEND_W_TRANSFORM - CLUSTERING_BLEND_W_QUALIFIER
 
         blended_embeddings.append(
             blend_embeddings(

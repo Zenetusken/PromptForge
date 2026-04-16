@@ -1299,6 +1299,10 @@ async def phase_reconcile(
                 await engine._embedding_index.remove(node.id)
                 await engine._transformation_index.remove(node.id)
                 await engine._optimized_index.remove(node.id)
+                try:
+                    await engine._qualifier_index.remove(node.id)
+                except (KeyError, ValueError, AttributeError):
+                    pass
 
         if zombie_ids:
             try:
@@ -1668,8 +1672,8 @@ async def phase_split_emerge(
         n.id for n in active_nodes
         if (n.member_count or 0) >= FORCED_SPLIT_MIN_MEMBERS
     ]
-    # Cache: (opt_id, raw_bytes, optimized_bytes | None, transformation_bytes | None)
-    _split_emb_cache: dict[str, list[tuple[str, bytes, bytes | None, bytes | None]]] = {}
+    # Cache: (opt_id, raw_bytes, optimized_bytes | None, transformation_bytes | None, qualifier_bytes | None)
+    _split_emb_cache: dict[str, list[tuple[str, bytes, bytes | None, bytes | None, bytes | None]]] = {}
     if _split_candidate_ids:
         _split_emb_q = await db.execute(
             select(
@@ -1678,15 +1682,16 @@ async def phase_split_emerge(
                 Optimization.embedding,
                 Optimization.optimized_embedding,
                 Optimization.transformation_embedding,
+                Optimization.qualifier_embedding,
             ).where(
                 Optimization.cluster_id.in_(_split_candidate_ids),
                 Optimization.embedding.isnot(None),
             )
         )
-        for opt_id, cid, emb_bytes, opt_bytes, trans_bytes in _split_emb_q.all():
+        for opt_id, cid, emb_bytes, opt_bytes, trans_bytes, qual_bytes in _split_emb_q.all():
             if emb_bytes is not None:
                 _split_emb_cache.setdefault(cid, []).append(
-                    (opt_id, emb_bytes, opt_bytes, trans_bytes)
+                    (opt_id, emb_bytes, opt_bytes, trans_bytes, qual_bytes)
                 )
 
     for node in active_nodes:
@@ -2361,6 +2366,10 @@ async def phase_merge(
                     await engine._embedding_index.remove(loser.id)
                     await engine._transformation_index.remove(loser.id)
                     await engine._optimized_index.remove(loser.id)
+                    try:
+                        await engine._qualifier_index.remove(loser.id)
+                    except (KeyError, ValueError, AttributeError):
+                        pass
                     embedding_index_mutations += 2
                     # ADR-005: survivor needs re-evaluation
                     engine.mark_dirty(
@@ -2504,6 +2513,10 @@ async def phase_merge(
                             await engine._embedding_index.remove(loser.id)
                             await engine._transformation_index.remove(loser.id)
                             await engine._optimized_index.remove(loser.id)
+                            try:
+                                await engine._qualifier_index.remove(loser.id)
+                            except (KeyError, ValueError, AttributeError):
+                                pass
                             embedding_index_mutations += 2
                             # ADR-005: survivor needs re-evaluation
                             engine.mark_dirty(
@@ -2621,6 +2634,10 @@ async def phase_merge(
                                 await engine._embedding_index.remove(small.id)
                                 await engine._transformation_index.remove(small.id)
                                 await engine._optimized_index.remove(small.id)
+                                try:
+                                    await engine._qualifier_index.remove(small.id)
+                                except (KeyError, ValueError, AttributeError):
+                                    pass
                                 embedding_index_mutations += 2
                                 # ADR-005: survivor needs re-evaluation
                                 engine.mark_dirty(
@@ -2689,6 +2706,10 @@ async def phase_retire(
                 await engine._embedding_index.remove(node.id)
                 await engine._transformation_index.remove(node.id)
                 await engine._optimized_index.remove(node.id)
+                try:
+                    await engine._qualifier_index.remove(node.id)
+                except (KeyError, ValueError, AttributeError):
+                    pass
                 embedding_index_mutations += 1
                 try:
                     get_event_logger().log_decision(
@@ -2793,6 +2814,10 @@ async def phase_retire(
         await engine._embedding_index.remove(node.id)
         await engine._transformation_index.remove(node.id)
         await engine._optimized_index.remove(node.id)
+        try:
+            await engine._qualifier_index.remove(node.id)
+        except (KeyError, ValueError, AttributeError):
+            pass
         embedding_index_mutations += 1
 
         # Clean up dissolved cluster's MetaPatterns inline — don't defer
@@ -3896,6 +3921,10 @@ async def phase_archive_empty_sub_domains(
             pass
         try:
             engine.optimized_index.remove(sub.id)
+        except (KeyError, ValueError, AttributeError):
+            pass
+        try:
+            engine.qualifier_index.remove(sub.id)
         except (KeyError, ValueError, AttributeError):
             pass
 
