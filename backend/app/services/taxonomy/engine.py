@@ -71,7 +71,8 @@ logger = logging.getLogger(__name__)
 # Vocabulary quality metric constants (post-generation observability)
 # ---------------------------------------------------------------------------
 
-_VOCAB_QUALITY_POOR_THRESHOLD = 0.1  # quality below this triggers WARNING log
+_VOCAB_QUALITY_POOR_THRESHOLD = 0.1  # quality below this triggers WARNING log (poor)
+_VOCAB_QUALITY_ACCEPTABLE_THRESHOLD = 0.3  # quality in [poor, this) triggers WARNING log (acceptable)
 _VOCAB_OVERLAP_REPORT_THRESHOLD = 0.7  # include overlapping_pair in event only when pairwise > this
 _VOCAB_ZERO_NORM_EPS = 1e-9  # zero-norm guard for embeddings
 _VOCAB_QUALITY_SCORES_MAXLEN = 500  # rolling window for engine._vocab_quality_scores
@@ -1929,24 +1930,59 @@ class TaxonomyEngine:
                     # Haiku into treating unknown geometry as orthogonal).
                     centroid_vecs: list[np.ndarray] = []
                     centroid_indices: list[int] = []
-                    for i, (cid, label, mc, centroid_bytes) in enumerate(cluster_rows):
-                        if centroid_bytes:
-                            vec = np.frombuffer(centroid_bytes, dtype=np.float32)
-                            norm = np.linalg.norm(vec)
-                            if norm > 1e-9:
-                                centroid_vecs.append(vec / norm)
-                                centroid_indices.append(i)
+                    try:
+                        for i, (cid, label, mc, centroid_bytes) in enumerate(cluster_rows):
+                            if centroid_bytes:
+                                vec = np.frombuffer(centroid_bytes, dtype=np.float32)
+                                norm = np.linalg.norm(vec)
+                                if norm > _VOCAB_ZERO_NORM_EPS:
+                                    centroid_vecs.append(vec / norm)
+                                    centroid_indices.append(i)
 
-                    if len(centroid_vecs) >= 2:
-                        mat = np.vstack(centroid_vecs)
-                        sim = (mat @ mat.T).tolist()
-                        n = len(cluster_rows)
-                        similarity_matrix = [
-                            [None] * n for _ in range(n)  # type: ignore[list-item]
-                        ]
-                        for si, ri in enumerate(centroid_indices):
-                            for sj, rj in enumerate(centroid_indices):
-                                similarity_matrix[ri][rj] = sim[si][sj]
+                        if len(centroid_vecs) >= 2:
+                            mat = np.vstack(centroid_vecs)
+                            sim = (mat @ mat.T).tolist()
+                            n = len(cluster_rows)
+                            similarity_matrix = [
+                                [None] * n for _ in range(n)  # type: ignore[list-item]
+                            ]
+                            for si, ri in enumerate(centroid_indices):
+                                for sj, rj in enumerate(centroid_indices):
+                                    similarity_matrix[ri][rj] = sim[si][sj]
+                        else:
+                            # No or only 1 valid centroid — Haiku gets no geometric context.
+                            similarity_matrix = None
+                            try:
+                                get_event_logger().log_decision(
+                                    path="warm", op="discover",
+                                    decision="vocab_enrichment_fallback",
+                                    context={
+                                        "domain": domain_node.label,
+                                        "reason": "no_centroids",
+                                        "centroid_count": len(centroid_vecs),
+                                        "cluster_count": len(cluster_rows),
+                                    },
+                                )
+                            except RuntimeError:
+                                pass
+                    except Exception as matrix_exc:
+                        logger.warning(
+                            "Vocab matrix computation failed for '%s': %s",
+                            domain_node.label, matrix_exc,
+                        )
+                        similarity_matrix = None
+                        try:
+                            get_event_logger().log_decision(
+                                path="warm", op="discover",
+                                decision="vocab_enrichment_fallback",
+                                context={
+                                    "domain": domain_node.label,
+                                    "reason": "matrix_failed",
+                                    "error": str(matrix_exc)[:200],
+                                },
+                            )
+                        except RuntimeError:
+                            pass
 
                     # Build ClusterVocabContext list
                     cluster_contexts = []
@@ -2062,6 +2098,14 @@ class TaxonomyEngine:
                             if _quality_score < _VOCAB_QUALITY_POOR_THRESHOLD:
                                 logger.warning(
                                     "Vocab quality poor for '%s': score=%.2f (max_pairwise=%.2f between %s)",
+                                    domain_node.label, _quality_score,
+                                    _max_pairwise if _max_pairwise is not None else float('nan'),
+                                    _overlapping_pair,
+                                )
+                            elif _quality_score < _VOCAB_QUALITY_ACCEPTABLE_THRESHOLD:
+                                logger.warning(
+                                    "Vocab quality acceptable (overlapping groups) for '%s': "
+                                    "score=%.2f (max_pairwise=%.2f between %s)",
                                     domain_node.label, _quality_score,
                                     _max_pairwise if _max_pairwise is not None else float('nan'),
                                     _overlapping_pair,
