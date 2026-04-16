@@ -3191,8 +3191,6 @@ class TaxonomyEngine:
         suggestions = []
         for domain in stale.scalars():
             meta = read_meta(domain.cluster_metadata)
-            if meta["source"] == "seed":
-                continue
             # Skip sub-domains — handled by phase_archive_empty_sub_domains()
             if domain.parent_id and domain.parent_id in domain_id_set:
                 continue
@@ -3219,8 +3217,6 @@ class TaxonomyEngine:
         )
         for domain in domains.scalars():
             meta = read_meta(domain.cluster_metadata)
-            if meta["source"] == "seed":
-                continue
             gen_count = meta["signal_member_count_at_generation"]
             if gen_count == 0:
                 continue
