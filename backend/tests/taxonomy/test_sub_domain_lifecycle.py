@@ -1273,3 +1273,101 @@ class TestDomainDissolution:
         dissolved = await engine._reevaluate_domains(db, existing_labels)
         # Empty domain with 0 members and old enough → dissolves
         assert "fullstack" in dissolved
+
+
+class TestEnrichedVocabulary:
+    """Tests for enriched vocabulary generation (quality metric + context)."""
+
+    @pytest.mark.asyncio
+    async def test_quality_metric_orthogonal_groups(self):
+        """Orthogonal group embeddings should produce quality score near 1.0."""
+        vecs = np.array([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ], dtype=np.float32)
+        pairwise = vecs @ vecs.T
+        max_pairwise = max(
+            pairwise[i][j]
+            for i in range(len(vecs))
+            for j in range(i + 1, len(vecs))
+        )
+        quality = round(1.0 - max_pairwise, 4)
+        assert quality == pytest.approx(1.0, abs=1e-4)
+
+    @pytest.mark.asyncio
+    async def test_quality_metric_identical_groups(self):
+        """Identical group embeddings should produce quality score 0.0."""
+        v = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        vecs = np.vstack([v, v, v])
+        pairwise = vecs @ vecs.T
+        max_pairwise = max(
+            pairwise[i][j]
+            for i in range(len(vecs))
+            for j in range(i + 1, len(vecs))
+        )
+        quality = round(1.0 - max_pairwise, 4)
+        assert quality == pytest.approx(0.0, abs=1e-4)
+
+    @pytest.mark.asyncio
+    async def test_cluster_vocab_context_construction(self):
+        """ClusterVocabContext constructs correctly with all fields."""
+        from app.services.taxonomy.labeling import ClusterVocabContext
+        ctx = ClusterVocabContext(
+            label="api design",
+            member_count=15,
+            intent_labels=["rest api", "graphql api", "rest api"],
+            qualifier_distribution={"rest": 8, "graphql": 4},
+        )
+        assert ctx.label == "api design"
+        assert ctx.member_count == 15
+        assert len(ctx.intent_labels) == 3
+        assert ctx.qualifier_distribution["rest"] == 8
+
+    @pytest.mark.asyncio
+    async def test_cluster_vocab_context_defaults(self):
+        """ClusterVocabContext has sensible defaults for optional fields."""
+        from app.services.taxonomy.labeling import ClusterVocabContext
+        ctx = ClusterVocabContext(label="x", member_count=0)
+        assert ctx.intent_labels == []
+        assert ctx.qualifier_distribution == {}
+
+    @pytest.mark.asyncio
+    async def test_generate_vocabulary_below_minimum_returns_empty(self):
+        """With < 2 clusters, returns empty dict (no LLM call)."""
+        from app.services.taxonomy.labeling import (
+            ClusterVocabContext,
+            generate_qualifier_vocabulary,
+        )
+
+        class FailProvider:
+            async def messages(self, **kwargs):
+                raise AssertionError("provider should not be called")
+
+        result = await generate_qualifier_vocabulary(
+            provider=FailProvider(),
+            domain_label="x",
+            cluster_contexts=[ClusterVocabContext(label="only", member_count=1)],
+            similarity_matrix=None,
+            model="test-model",
+        )
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_generate_vocabulary_no_provider_returns_empty(self):
+        """With no provider, returns empty dict."""
+        from app.services.taxonomy.labeling import (
+            ClusterVocabContext,
+            generate_qualifier_vocabulary,
+        )
+        result = await generate_qualifier_vocabulary(
+            provider=None,
+            domain_label="x",
+            cluster_contexts=[
+                ClusterVocabContext(label="a", member_count=5),
+                ClusterVocabContext(label="b", member_count=5),
+            ],
+            similarity_matrix=None,
+            model="test-model",
+        )
+        assert result == {}
