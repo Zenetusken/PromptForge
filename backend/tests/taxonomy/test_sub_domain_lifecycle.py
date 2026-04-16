@@ -71,14 +71,19 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_archive_empty_sub_domain(self, db):
         """An empty sub-domain older than the idle threshold is archived."""
-        from unittest.mock import MagicMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
+        engine.embedding_index.remove = AsyncMock()
         engine.transformation_index = MagicMock()
+        engine.transformation_index.remove = AsyncMock()
         engine.optimized_index = MagicMock()
+        engine.optimized_index.remove = AsyncMock()
+        engine.qualifier_index = MagicMock()
+        engine.qualifier_index.remove = AsyncMock()
 
         # Create parent domain + empty sub-domain
         parent = _make_domain("backend")
@@ -100,14 +105,19 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_sub_domain_with_multiple_children(self, db):
         """A sub-domain with 2+ active child clusters is NOT archived."""
-        from unittest.mock import MagicMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
+        engine.embedding_index.remove = AsyncMock()
         engine.transformation_index = MagicMock()
+        engine.transformation_index.remove = AsyncMock()
         engine.optimized_index = MagicMock()
+        engine.optimized_index.remove = AsyncMock()
+        engine.qualifier_index = MagicMock()
+        engine.qualifier_index.remove = AsyncMock()
 
         parent = _make_domain("backend")
         db.add(parent)
@@ -132,14 +142,19 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_archive_single_child_sub_domain(self, db):
         """A sub-domain with exactly 1 child is a 1:1 wrapper — archived."""
-        from unittest.mock import MagicMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
+        engine.embedding_index.remove = AsyncMock()
         engine.transformation_index = MagicMock()
+        engine.transformation_index.remove = AsyncMock()
         engine.optimized_index = MagicMock()
+        engine.optimized_index.remove = AsyncMock()
+        engine.qualifier_index = MagicMock()
+        engine.qualifier_index.remove = AsyncMock()
 
         parent = _make_domain("backend")
         db.add(parent)
@@ -165,14 +180,19 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_young_sub_domain(self, db):
         """A sub-domain younger than the idle threshold is NOT archived."""
-        from unittest.mock import MagicMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
+        engine.embedding_index.remove = AsyncMock()
         engine.transformation_index = MagicMock()
+        engine.transformation_index.remove = AsyncMock()
         engine.optimized_index = MagicMock()
+        engine.optimized_index.remove = AsyncMock()
+        engine.qualifier_index = MagicMock()
+        engine.qualifier_index.remove = AsyncMock()
 
         parent = _make_domain("backend")
         db.add(parent)
@@ -191,14 +211,19 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_seed_domain(self, db):
         """Seed domains are never auto-archived."""
-        from unittest.mock import MagicMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
+        engine.embedding_index.remove = AsyncMock()
         engine.transformation_index = MagicMock()
+        engine.transformation_index.remove = AsyncMock()
         engine.optimized_index = MagicMock()
+        engine.optimized_index.remove = AsyncMock()
+        engine.qualifier_index = MagicMock()
+        engine.qualifier_index.remove = AsyncMock()
 
         parent = _make_domain("backend")
         db.add(parent)
@@ -217,14 +242,19 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_top_level_domain(self, db):
         """Top-level domains (parent_id=None) are never archived by this phase."""
-        from unittest.mock import MagicMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
+        engine.embedding_index.remove = AsyncMock()
         engine.transformation_index = MagicMock()
+        engine.transformation_index.remove = AsyncMock()
         engine.optimized_index = MagicMock()
+        engine.optimized_index.remove = AsyncMock()
+        engine.qualifier_index = MagicMock()
+        engine.qualifier_index.remove = AsyncMock()
 
         # Top-level domain with 0 children, old — still should NOT be archived
         top = _make_domain("abandoned")
@@ -241,14 +271,19 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_skip_sub_domain_with_optimizations(self, db):
         """A sub-domain with directly assigned optimizations is NOT archived."""
-        from unittest.mock import MagicMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from app.services.taxonomy.warm_phases import phase_archive_empty_sub_domains
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
+        engine.embedding_index.remove = AsyncMock()
         engine.transformation_index = MagicMock()
+        engine.transformation_index.remove = AsyncMock()
         engine.optimized_index = MagicMock()
+        engine.optimized_index.remove = AsyncMock()
+        engine.qualifier_index = MagicMock()
+        engine.qualifier_index.remove = AsyncMock()
 
         parent = _make_domain("backend")
         db.add(parent)
@@ -276,7 +311,7 @@ class TestSubDomainArchival:
     @pytest.mark.asyncio
     async def test_meta_patterns_cleaned_on_archival(self, db):
         """MetaPatterns owned by the sub-domain are deleted on archival."""
-        from unittest.mock import MagicMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from sqlalchemy import func, select
 
@@ -284,8 +319,13 @@ class TestSubDomainArchival:
 
         engine = MagicMock()
         engine.embedding_index = MagicMock()
+        engine.embedding_index.remove = AsyncMock()
         engine.transformation_index = MagicMock()
+        engine.transformation_index.remove = AsyncMock()
         engine.optimized_index = MagicMock()
+        engine.optimized_index.remove = AsyncMock()
+        engine.qualifier_index = MagicMock()
+        engine.qualifier_index.remove = AsyncMock()
 
         parent = _make_domain("backend")
         db.add(parent)

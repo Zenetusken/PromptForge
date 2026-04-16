@@ -3910,21 +3910,21 @@ async def phase_archive_empty_sub_domains(
                 delete(MetaPattern).where(MetaPattern.cluster_id == sub.id)
             )
 
-        # Remove from in-memory indices
+        # Remove from in-memory indices (async methods — must be awaited)
         try:
-            engine.embedding_index.remove(sub.id)
+            await engine.embedding_index.remove(sub.id)
         except (KeyError, ValueError):
             pass
         try:
-            engine.transformation_index.remove(sub.id)
+            await engine.transformation_index.remove(sub.id)
         except (KeyError, ValueError, AttributeError):
             pass
         try:
-            engine.optimized_index.remove(sub.id)
+            await engine.optimized_index.remove(sub.id)
         except (KeyError, ValueError, AttributeError):
             pass
         try:
-            engine.qualifier_index.remove(sub.id)
+            await engine.qualifier_index.remove(sub.id)
         except (KeyError, ValueError, AttributeError):
             pass
 
