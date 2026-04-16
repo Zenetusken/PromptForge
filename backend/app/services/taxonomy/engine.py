@@ -332,6 +332,9 @@ class TaxonomyEngine:
         self._provider_resolver = provider_resolver
         self._prompt_loader = PromptLoader(PROMPTS_DIR)
         self._embedding_index = EmbeddingIndex(dim=384)
+        # Post-generation vocabulary quality scores — observability only.
+        # Populated by vocab generation pass; read by health endpoint (Task 5).
+        self._vocab_quality_scores: list[float] = []
         from app.services.taxonomy.transformation_index import TransformationIndex
         self._transformation_index = TransformationIndex(dim=384)
         from app.services.taxonomy.qualifier_index import QualifierIndex
@@ -1980,6 +1983,67 @@ class TaxonomyEngine:
                 _vocab_ms = round((_vocab_time.monotonic() - _vocab_start) * 1000, 1)
 
                 if generated:
+                    # --- Post-generation vocabulary quality metric (observability only) ---
+                    _quality_score: float | None = None
+                    _max_pairwise: float | None = None
+                    _overlapping_pair: list[str] | None = None
+                    try:
+                        import time as _qm_time
+                        _qm_start = _qm_time.monotonic()
+
+                        group_embeddings: dict[str, np.ndarray] = {}
+                        for gname, gkws in generated.items():
+                            if not gkws:
+                                continue
+                            emb = await self._embedding.aembed_single(" ".join(gkws))
+                            emb_norm = np.linalg.norm(emb)
+                            if emb_norm > 1e-9:
+                                group_embeddings[gname] = emb / emb_norm
+
+                        if len(group_embeddings) >= 2:
+                            names = list(group_embeddings.keys())
+                            vecs = np.vstack([group_embeddings[n] for n in names])
+                            pairwise = vecs @ vecs.T
+                            _max_pairwise = -1.0
+                            for i in range(len(names)):
+                                for j in range(i + 1, len(names)):
+                                    if pairwise[i][j] > _max_pairwise:
+                                        _max_pairwise = float(pairwise[i][j])
+                                        _overlapping_pair = [names[i], names[j]]
+                            _quality_score = round(1.0 - _max_pairwise, 4)
+
+                        _qm_ms = round((_qm_time.monotonic() - _qm_start) * 1000, 1)
+
+                        if _quality_score is not None:
+                            self._vocab_quality_scores.append(_quality_score)
+                            try:
+                                get_event_logger().log_decision(
+                                    path="warm", op="discover",
+                                    decision="vocab_quality_assessed",
+                                    context={
+                                        "domain": domain_node.label,
+                                        "quality_score": _quality_score,
+                                        "max_pairwise_cosine": round(_max_pairwise, 4) if _max_pairwise is not None else None,
+                                        "overlapping_pair": _overlapping_pair if (_max_pairwise is not None and _max_pairwise > 0.7) else None,
+                                        "quality_ms": _qm_ms,
+                                    },
+                                )
+                            except RuntimeError:
+                                pass
+
+                            if _quality_score < 0.1:
+                                logger.warning(
+                                    "Vocab quality poor for '%s': score=%.2f (max_pairwise=%.2f between %s)",
+                                    domain_node.label, _quality_score,
+                                    _max_pairwise if _max_pairwise is not None else float('nan'),
+                                    _overlapping_pair,
+                                )
+                    except Exception as qm_exc:
+                        logger.warning(
+                            "Vocab quality metric failed for '%s': %s",
+                            domain_node.label, qm_exc,
+                        )
+
                     domain_node.cluster_metadata = write_meta(
                         domain_node.cluster_metadata,
                         generated_qualifiers=generated,
