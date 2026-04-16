@@ -60,22 +60,54 @@ async def run_global_pattern_phase(
         "evicted": 0,
     }
 
+    # Each sub-step runs in its own SAVEPOINT so an autoflush failure
+    # in one step does not discard the work of the others.  The outer
+    # session commit (in warm_path.py) still applies all released
+    # savepoints atomically.
+
     # Step 1: Discover and promote
-    promoted, updated = await _discover_promotion_candidates(db)
-    stats["promoted"] = promoted
-    stats["updated"] = updated
+    try:
+        async with db.begin_nested():
+            promoted, updated = await _discover_promotion_candidates(db)
+        stats["promoted"] = promoted
+        stats["updated"] = updated
+    except Exception as exc:
+        root_cause = getattr(exc, "orig", None) or getattr(exc, "__cause__", None)
+        logger.warning(
+            "Phase 4.5 step 1 (promote) failed: %s | root_cause=%r", exc, root_cause,
+        )
 
     # Step 2: Validate existing
-    demoted, re_promoted, retired = await _validate_existing_patterns(db)
-    stats["demoted"] = demoted
-    stats["re_promoted"] = re_promoted
-    stats["retired"] = retired
+    try:
+        async with db.begin_nested():
+            demoted, re_promoted, retired = await _validate_existing_patterns(db)
+        stats["demoted"] = demoted
+        stats["re_promoted"] = re_promoted
+        stats["retired"] = retired
+    except Exception as exc:
+        root_cause = getattr(exc, "orig", None) or getattr(exc, "__cause__", None)
+        logger.warning(
+            "Phase 4.5 step 2 (validate) failed: %s | root_cause=%r", exc, root_cause,
+        )
 
     # Step 3: Enforce retention cap
-    evicted = await _enforce_retention_cap(db)
-    stats["evicted"] = evicted
+    try:
+        async with db.begin_nested():
+            evicted = await _enforce_retention_cap(db)
+        stats["evicted"] = evicted
+    except Exception as exc:
+        root_cause = getattr(exc, "orig", None) or getattr(exc, "__cause__", None)
+        logger.warning(
+            "Phase 4.5 step 3 (cap) failed: %s | root_cause=%r", exc, root_cause,
+        )
 
-    await db.flush()
+    try:
+        await db.flush()
+    except Exception as exc:
+        root_cause = getattr(exc, "orig", None) or getattr(exc, "__cause__", None)
+        logger.warning(
+            "Phase 4.5 final flush failed: %s | root_cause=%r", exc, root_cause,
+        )
     return stats
 
 

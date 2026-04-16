@@ -820,7 +820,11 @@ async def execute_warm_path(
                         gp_stats.get("evicted", 0),
                     )
         except Exception as gp_exc:
-            logger.warning("Phase 4.5 (global patterns) failed (non-fatal): %s", gp_exc)
+            root_cause = getattr(gp_exc, "orig", None) or getattr(gp_exc, "__cause__", None)
+            logger.warning(
+                "Phase 4.5 (global patterns) failed (non-fatal): %s | root_cause=%r",
+                gp_exc, root_cause,
+            )
 
     # ------------------------------------------------------------------
     # Phase 4.75: Task-type signal refresh
