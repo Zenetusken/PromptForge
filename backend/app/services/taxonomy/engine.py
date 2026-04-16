@@ -334,6 +334,8 @@ class TaxonomyEngine:
         self._embedding_index = EmbeddingIndex(dim=384)
         from app.services.taxonomy.transformation_index import TransformationIndex
         self._transformation_index = TransformationIndex(dim=384)
+        from app.services.taxonomy.qualifier_index import QualifierIndex
+        self._qualifier_index = QualifierIndex(dim=384)
         from app.services.taxonomy.optimized_index import OptimizedEmbeddingIndex
         self._optimized_index = OptimizedEmbeddingIndex(dim=384)
         # Lock gates concurrent hot-path writes to shared centroid state.
@@ -421,6 +423,11 @@ class TaxonomyEngine:
         """In-memory transformation vector search index."""
         return self._transformation_index
 
+    @property
+    def qualifier_index(self):
+        """In-memory qualifier vector search index."""
+        return self._qualifier_index
+
     # ------------------------------------------------------------------
     # Index cache management
     # ------------------------------------------------------------------
@@ -446,6 +453,21 @@ class TaxonomyEngine:
                 logger.info("TransformationIndex cache not available — will populate via hot path")
         except Exception as ti_exc:
             logger.warning("TransformationIndex warm-load failed (non-fatal): %s", ti_exc)
+
+        # QualifierIndex
+        try:
+            qi_loaded = await self._qualifier_index.load_cache(
+                data_dir / "qualifier_index.pkl"
+            )
+            if qi_loaded:
+                logger.info(
+                    "QualifierIndex warm-loaded from cache: %d vectors",
+                    self._qualifier_index.size,
+                )
+            else:
+                logger.info("QualifierIndex cache not available — will populate via hot path")
+        except Exception as qi_exc:
+            logger.warning("QualifierIndex warm-load failed (non-fatal): %s", qi_exc)
 
         # OptimizedEmbeddingIndex
         try:
@@ -556,6 +578,34 @@ class TaxonomyEngine:
                 if t_norm > 1e-9:
                     transform = transform / t_norm
                 opt.transformation_embedding = transform.astype(np.float32).tobytes()
+
+            # 1d. Compute qualifier embedding from organic vocabulary
+            qualifier_emb = None
+            try:
+                domain_primary_raw, domain_qualifier = parse_domain(opt.domain_raw or "")
+                if domain_qualifier:
+                    from app.services.domain_signal_loader import get_signal_loader
+                    loader = get_signal_loader()
+                    if loader:
+                        qualifiers = loader.get_qualifiers(domain_primary_raw)
+                        keywords = qualifiers.get(domain_qualifier)
+                        if keywords:
+                            cache_key = "|".join(sorted(keywords))
+                            cached = loader.get_cached_qualifier_embedding(cache_key)
+                            if cached is not None:
+                                qualifier_emb = cached
+                            else:
+                                qualifier_text = " ".join(keywords)
+                                qualifier_emb = await self._embedding.aembed_single(qualifier_text)
+                                loader.cache_qualifier_embedding(cache_key, qualifier_emb)
+                            opt.qualifier_embedding = qualifier_emb.astype(np.float32).tobytes()
+                            loader._qualifier_embeddings_generated += 1
+                        else:
+                            loader._qualifier_embeddings_skipped += 1
+                    # else: no loader — cold start, skip silently
+                # else: no qualifier in domain_raw, skip silently
+            except Exception as qe:
+                logger.warning("Qualifier embedding failed (non-fatal): %s", qe)
 
             # 2. Find or create PromptCluster
             # Use the RESOLVED domain (opt.domain) for cluster assignment — this
@@ -717,6 +767,13 @@ class TaxonomyEngine:
                         "OptimizedEmbeddingIndex upsert failed for cluster %s: %s",
                         cluster.id, oi_exc,
                     )
+
+            # 3d. Update QualifierIndex
+            if qualifier_emb is not None:
+                try:
+                    await self._qualifier_index.upsert(cluster.id, qualifier_emb)
+                except Exception as qi_exc:
+                    logger.warning("QualifierIndex upsert failed: %s", qi_exc)
 
             # 3. Extract meta-patterns
             meta_texts = await extract_meta_patterns(

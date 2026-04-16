@@ -1021,6 +1021,16 @@ async def execute_cold_path(
             "OptimizedEmbeddingIndex cache save failed (non-fatal): %s", oi_cache_exc
         )
 
+    # Persist QualifierIndex cache to disk for fast startup recovery
+    try:
+        await engine._qualifier_index.save_cache(
+            DATA_DIR / "qualifier_index.pkl"
+        )
+    except Exception as qi_cache_exc:
+        logger.warning(
+            "QualifierIndex cache save failed (non-fatal): %s", qi_cache_exc
+        )
+
     # Create snapshot — commits all pending node updates AND the
     # snapshot in a single transaction
     engine._invalidate_stats_cache()
