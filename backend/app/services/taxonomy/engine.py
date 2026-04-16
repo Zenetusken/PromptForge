@@ -2628,8 +2628,6 @@ class TaxonomyEngine:
         Returns:
             List of dissolved sub-domain labels.
         """
-        from sqlalchemy import update as _sa_update
-
         from app.services.taxonomy._constants import (
             SUB_DOMAIN_DISSOLUTION_CONSISTENCY_FLOOR,
             SUB_DOMAIN_DISSOLUTION_MIN_AGE_HOURS,
@@ -2764,68 +2762,14 @@ class TaxonomyEngine:
             if consistency >= SUB_DOMAIN_DISSOLUTION_CONSISTENCY_FLOOR:
                 continue  # healthy — keep
 
-            # --- Dissolve: reparent children to top-level domain ---
-            reparented = 0
-            for child_id in child_ids:
-                child = await db.get(PromptCluster, child_id)
-                if child and child.state not in EXCLUDED_STRUCTURAL_STATES:
-                    child.parent_id = domain_node.id
-                    reparented += 1
-
-            # --- Safety: reparent any optimizations directly on the sub-domain ---
-            # By architecture, domain nodes shouldn't have optimizations assigned
-            # to them, but if any exist they must not be orphaned.
-            await db.execute(
-                _sa_update(Optimization)
-                .where(Optimization.cluster_id == sub.id)
-                .values(cluster_id=domain_node.id)
+            # --- Dissolve via shared method ---
+            result = await self._dissolve_node(
+                db, sub, dissolution_target_id=domain_node.id,
+                existing_labels=existing_labels,
+                clear_signal_loader=False,
             )
-
-            # --- Merge meta-patterns: reassign cluster_id from sub to parent ---
-            mp_result = await db.execute(
-                _sa_update(MetaPattern)
-                .where(MetaPattern.cluster_id == sub.id)
-                .values(cluster_id=domain_node.id)
-            )
-            patterns_merged = mp_result.rowcount
-
-            # --- Archive the sub-domain node ---
-            sub.state = "archived"
-            sub.archived_at = now
-            sub.member_count = 0
-            sub.usage_count = 0
-            sub.avg_score = None
-            sub.weighted_member_sum = 0.0
-            sub.scored_count = 0
-
-            # Remove from in-memory indices
-            try:
-                self.embedding_index.remove(sub.id)
-            except (KeyError, ValueError):
-                pass
-            try:
-                self.transformation_index.remove(sub.id)
-            except (KeyError, ValueError, AttributeError):
-                pass
-            try:
-                self.optimized_index.remove(sub.id)
-            except (KeyError, ValueError, AttributeError):
-                pass
-
-            # Remove from existing_labels so it can be re-discovered in FUTURE cycles.
-            # The dissolved_this_cycle set (returned to caller) prevents same-cycle
-            # re-creation, which would cause a flip-flop loop.
-            existing_labels.discard(sub_qualifier)
-
-            # Clear from DomainResolver cache so new optimizations don't resolve
-            # to the (now-archived) sub-domain label.
-            try:
-                from app.services.domain_resolver import get_domain_resolver
-                resolver = get_domain_resolver()
-                if resolver:
-                    resolver.remove_label(sub.label)
-            except (ValueError, Exception):
-                pass
+            reparented = result["clusters_reparented"]
+            patterns_merged = result["meta_patterns_merged"]
 
             dissolved.append(sub.label)
 

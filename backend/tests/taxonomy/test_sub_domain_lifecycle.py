@@ -766,9 +766,11 @@ def _make_engine(mock_provider):
     engine = TaxonomyEngine(embedding_service=mock_embedding, provider=mock_provider)
     # Provide stub indices via private backing attrs so remove() calls are no-ops.
     # embedding_index / transformation_index / optimized_index are read-only properties.
-    engine._embedding_index = MagicMock()
-    engine._transformation_index = MagicMock()
-    engine._optimized_index = MagicMock()
+    # remove() must be AsyncMock because _dissolve_node() awaits idx.remove().
+    for attr in ("_embedding_index", "_transformation_index", "_optimized_index"):
+        mock_idx = MagicMock()
+        mock_idx.remove = AsyncMock()
+        setattr(engine, attr, mock_idx)
     return engine
 
 
