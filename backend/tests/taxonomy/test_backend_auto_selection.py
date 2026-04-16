@@ -8,6 +8,9 @@ Covers:
 - upsert() does NOT trigger backend switch (only rebuild)
 """
 
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -19,14 +22,21 @@ from app.services.taxonomy.embedding_index import (
 )
 
 # hnswlib may not be functional on all platforms (e.g., Python 3.14 CI runners).
-# Tests requiring a working HNSW backend are skipped when hnswlib is broken.
-_hnswlib_works = True
+# The .so extension can crash with SIGILL (illegal instruction) during import —
+# a C-level signal that Python's try/except cannot catch. We probe in a
+# subprocess to detect this safely without killing the test runner.
+_HNSWLIB_PROBE = (
+    "import hnswlib; idx = hnswlib.Index(space='cosine', dim=4);"
+    " idx.init_index(max_elements=10, ef_construction=10, M=4)"
+)
+_hnswlib_works = False
 try:
-    import hnswlib
-
-    _test_idx = hnswlib.Index(space="cosine", dim=4)
-    _test_idx.init_index(max_elements=10, ef_construction=10, M=4)
-    del _test_idx
+    _probe = subprocess.run(
+        [sys.executable, "-c", _HNSWLIB_PROBE],
+        capture_output=True,
+        timeout=10,
+    )
+    _hnswlib_works = _probe.returncode == 0
 except Exception:
     _hnswlib_works = False
 
