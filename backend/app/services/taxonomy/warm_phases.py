@@ -3664,9 +3664,70 @@ async def phase_discover(
     """Domain discovery, candidate detection, risk monitoring, and tree
     integrity repair.
 
+    Execution order:
+      1. Sub-domain re-evaluation (bottom-up dissolution before parent eval)
+      2. Domain re-evaluation (dissolve degraded top-level domains)
+      3. Domain discovery (propose new domains from general sub-populations)
+      4. Sub-domain discovery (signal-driven qualifier promotion)
+      5. Candidate detection, risk monitoring, tree integrity (unchanged)
+
     Orchestrates calls to the engine's domain management methods.
     """
     result = DiscoverResult()
+
+    # --- Sub-domain re-evaluation (bottom-up — dissolve before parent eval) ---
+    dissolved_sub_domains: list[str] = []
+    try:
+        existing_labels_q = await db.execute(
+            select(PromptCluster.label).where(PromptCluster.state == "domain")
+        )
+        existing_labels = {r[0].lower() for r in existing_labels_q.all() if r[0]}
+
+        # Find domains with existing sub-domains
+        domain_nodes_q = await db.execute(
+            select(PromptCluster).where(
+                PromptCluster.state == "domain",
+                PromptCluster.label != "general",
+            )
+        )
+        for domain_node in domain_nodes_q.scalars():
+            sub_count_q = await db.execute(
+                select(func.count()).where(
+                    PromptCluster.parent_id == domain_node.id,
+                    PromptCluster.state == "domain",
+                )
+            )
+            if (sub_count_q.scalar() or 0) > 0:
+                try:
+                    dissolved = await engine._reevaluate_sub_domains(
+                        db, domain_node, existing_labels,
+                    )
+                    if dissolved:
+                        dissolved_sub_domains.extend(dissolved)
+                        logger.info(
+                            "Sub-domain re-evaluation dissolved %d under '%s': %s",
+                            len(dissolved), domain_node.label, dissolved,
+                        )
+                except Exception as sub_reeval_exc:
+                    logger.warning(
+                        "Sub-domain re-evaluation failed for '%s' (non-fatal): %s",
+                        domain_node.label, sub_reeval_exc,
+                    )
+    except Exception as reeval_exc:
+        logger.warning("Sub-domain re-evaluation pass failed (non-fatal): %s", reeval_exc)
+        existing_labels = set()
+
+    # --- Domain re-evaluation (after sub-domain dissolution — same session) ---
+    dissolved_domains: list[str] = []
+    try:
+        dissolved_domains = await engine._reevaluate_domains(db, existing_labels)
+        if dissolved_domains:
+            logger.info(
+                "Domain re-evaluation dissolved %d domains: %s",
+                len(dissolved_domains), dissolved_domains,
+            )
+    except Exception as domain_reeval_exc:
+        logger.warning("Domain re-evaluation failed (non-fatal): %s", domain_reeval_exc)
 
     # --- Domain discovery (ADR-004) ---
     new_domains = await engine._propose_domains(db)
@@ -3750,6 +3811,13 @@ async def phase_discover(
         logger.warning(
             "Tree integrity check failed (non-fatal): %s", integrity_exc
         )
+
+    logger.info(
+        "Phase 5 summary: domains_created=%d sub_domains_dissolved=%d domains_dissolved=%d",
+        result.domains_created,
+        len(dissolved_sub_domains),
+        len(dissolved_domains),
+    )
 
     return result
 
