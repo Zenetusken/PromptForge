@@ -315,7 +315,8 @@ class TestDecayTowardDefaults:
     """decay_toward_defaults drifts weights back to phase defaults."""
 
     def test_single_step_moves_toward_defaults(self):
-        current = PhaseWeights(0.20, 0.20, 0.20, 0.20, 0.20)  # uniform, not default (analysis default is 0.55/0.15/0.10/0.15/0.05)
+        # uniform, not default (analysis default is 0.55/0.15/0.10/0.15/0.05)
+        current = PhaseWeights(0.20, 0.20, 0.20, 0.20, 0.20)
         decayed = decay_toward_defaults(current, "analysis")
 
         # w_topic should increase toward 0.55
@@ -442,9 +443,12 @@ class TestScoreCorrelatedTarget:
 
     def _default_profile(self) -> dict[str, dict[str, float]]:
         return {
-            "analysis": {"w_topic": 0.55, "w_transform": 0.15, "w_output": 0.10, "w_pattern": 0.15, "w_qualifier": 0.05},
-            "optimization": {"w_topic": 0.18, "w_transform": 0.30, "w_output": 0.22, "w_pattern": 0.20, "w_qualifier": 0.10},
-            "pattern_injection": {"w_topic": 0.22, "w_transform": 0.22, "w_output": 0.18, "w_pattern": 0.28, "w_qualifier": 0.10},
+            "analysis": {"w_topic": 0.55, "w_transform": 0.15, "w_output": 0.10, "w_pattern": 0.15,
+                "w_qualifier": 0.05},
+            "optimization": {"w_topic": 0.18, "w_transform": 0.30, "w_output": 0.22, "w_pattern": 0.20,
+                "w_qualifier": 0.10},
+            "pattern_injection": {"w_topic": 0.22, "w_transform": 0.22, "w_output": 0.18, "w_pattern": 0.28,
+                "w_qualifier": 0.10},
             "scoring": {"w_topic": 0.13, "w_transform": 0.18, "w_output": 0.42, "w_pattern": 0.20, "w_qualifier": 0.07},
         }
 
@@ -478,9 +482,12 @@ class TestScoreCorrelatedTarget:
 
         default = self._default_profile()
         alt = {
-            "analysis": {"w_topic": 0.20, "w_transform": 0.40, "w_output": 0.20, "w_pattern": 0.15, "w_qualifier": 0.05},
-            "optimization": {"w_topic": 0.18, "w_transform": 0.30, "w_output": 0.22, "w_pattern": 0.20, "w_qualifier": 0.10},
-            "pattern_injection": {"w_topic": 0.22, "w_transform": 0.22, "w_output": 0.18, "w_pattern": 0.28, "w_qualifier": 0.10},
+            "analysis": {"w_topic": 0.20, "w_transform": 0.40, "w_output": 0.20, "w_pattern": 0.15,
+                "w_qualifier": 0.05},
+            "optimization": {"w_topic": 0.18, "w_transform": 0.30, "w_output": 0.22, "w_pattern": 0.20,
+                "w_qualifier": 0.10},
+            "pattern_injection": {"w_topic": 0.22, "w_transform": 0.22, "w_output": 0.18, "w_pattern": 0.28,
+                "w_qualifier": 0.10},
             "scoring": {"w_topic": 0.13, "w_transform": 0.18, "w_output": 0.42, "w_pattern": 0.20, "w_qualifier": 0.07},
         }
         # 9 mediocre with defaults, 1 excellent with alt profile
@@ -520,7 +527,8 @@ class TestScoreCorrelatedTarget:
 
         # Extreme profile with near-zero weights
         extreme = {
-            "analysis": {"w_topic": 0.93, "w_transform": 0.01, "w_output": 0.01, "w_pattern": 0.01, "w_qualifier": 0.04},
+            "analysis": {"w_topic": 0.93, "w_transform": 0.01, "w_output": 0.01, "w_pattern": 0.01,
+                "w_qualifier": 0.04},
         }
         profiles = [(9.0, extreme)] * 15
         result = compute_score_correlated_target(profiles)
@@ -536,10 +544,12 @@ class TestScoreCorrelatedTarget:
         from app.services.taxonomy.fusion import compute_score_correlated_target
 
         low_profile = {
-            "analysis": {"w_topic": 0.10, "w_transform": 0.65, "w_output": 0.10, "w_pattern": 0.10, "w_qualifier": 0.05},
+            "analysis": {"w_topic": 0.10, "w_transform": 0.65, "w_output": 0.10, "w_pattern": 0.10,
+                "w_qualifier": 0.05},
         }
         high_profile = {
-            "analysis": {"w_topic": 0.55, "w_transform": 0.15, "w_output": 0.10, "w_pattern": 0.15, "w_qualifier": 0.05},
+            "analysis": {"w_topic": 0.55, "w_transform": 0.15, "w_output": 0.10, "w_pattern": 0.15,
+                "w_qualifier": 0.05},
         }
         # 5 low scorers with extreme profile, 5 high scorers with default
         profiles = [(2.0, low_profile)] * 5 + [(9.0, high_profile)] * 5
@@ -554,7 +564,8 @@ class TestScoreCorrelatedTarget:
         from app.services.taxonomy.fusion import compute_score_correlated_target
 
         full = self._default_profile()
-        partial = {"analysis": {"w_topic": 0.30, "w_transform": 0.30, "w_output": 0.20, "w_pattern": 0.15, "w_qualifier": 0.05}}
+        partial = {"analysis": {"w_topic": 0.30, "w_transform": 0.30, "w_output": 0.20, "w_pattern": 0.15,
+            "w_qualifier": 0.05}}
         # Mix of full and partial profiles at the same score
         profiles = [(7.0, full)] * 6 + [(7.0, partial)] * 6
         result = compute_score_correlated_target(profiles)
