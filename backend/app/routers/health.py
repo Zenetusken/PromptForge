@@ -417,6 +417,18 @@ async def health_check(
     except Exception:
         pass
 
+    # Merge engine-side vocab quality scores into qualifier_vocab
+    try:
+        _engine = getattr(request.app.state, "taxonomy_engine", None)
+        scores = getattr(_engine, "_vocab_quality_scores", None) if _engine else None
+        if scores:
+            qualifier_vocab_stats = qualifier_vocab_stats or {}
+            qualifier_vocab_stats["avg_vocab_quality"] = round(
+                sum(scores) / len(scores), 4
+            )
+    except Exception:
+        pass
+
     # Domain lifecycle stats
     domain_lifecycle_stats: dict | None = None
     try:
