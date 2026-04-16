@@ -370,6 +370,14 @@ class TaxonomyEngine:
         self._maintenance_pending: bool = False
         # Injection effectiveness — cached by warm path Phase 4, read by health endpoint.
         self._injection_effectiveness: dict | None = None
+        # Domain lifecycle stats — read by health endpoint
+        self._domain_lifecycle_stats: dict = {
+            "domains_reevaluated": 0,
+            "domains_dissolved": 0,
+            "seeds_remaining": 0,
+            "dissolution_blocked": 0,
+            "last_domain_reeval": None,
+        }
 
     def mark_dirty(self, cluster_id: str, project_id: str | None = None) -> None:
         """Mark a cluster as needing warm-path processing."""

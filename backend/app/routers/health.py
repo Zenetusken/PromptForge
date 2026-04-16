@@ -98,6 +98,9 @@ class HealthResponse(BaseModel):
     qualifier_vocab: dict | None = Field(
         default=None, description="Organic qualifier vocabulary cache stats.",
     )
+    domain_lifecycle: dict | None = Field(
+        default=None, description="Domain dissolution lifecycle stats.",
+    )
     global_patterns: dict[str, int] = Field(default_factory=dict)
     # Cross-service probe results (only populated when probes=True)
     services: dict[str, ServiceStatus] | None = Field(
@@ -414,6 +417,15 @@ async def health_check(
     except Exception:
         pass
 
+    # Domain lifecycle stats
+    domain_lifecycle_stats: dict | None = None
+    try:
+        _engine = getattr(request.app.state, "taxonomy_engine", None)
+        if _engine:
+            domain_lifecycle_stats = getattr(_engine, "_domain_lifecycle_stats", None)
+    except Exception:
+        pass
+
     # Cross-service probes (skip when called as self-check to prevent recursion)
     services_result = None
     cross_service_result = None
@@ -452,6 +464,7 @@ async def health_check(
         recovery=recovery_metrics,
         classification_agreement=agreement_data,
         qualifier_vocab=qualifier_vocab_stats,
+        domain_lifecycle=domain_lifecycle_stats,
         global_patterns={
             "active": gp_active,
             "demoted": gp_demoted,
