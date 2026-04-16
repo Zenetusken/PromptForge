@@ -234,3 +234,34 @@ def test_qualifier_embedding_cache_invalidation():
     # Refresh invalidates cache
     loader.refresh_qualifiers("saas", {"growth": ["metrics", "kpi", "new"]})
     assert loader.get_cached_qualifier_embedding("growth|metrics|kpi") is None
+
+
+def test_remove_domain_clears_signals():
+    """remove_domain() clears signals, patterns, qualifier cache, and embedding cache."""
+    from app.services.domain_signal_loader import DomainSignalLoader
+
+    loader = DomainSignalLoader()
+    # Populate signals
+    loader.register_signals("backend", [("api", 0.9), ("server", 0.8)])
+    # Populate qualifier cache
+    loader.refresh_qualifiers("backend", {"auth": ["login", "password"]})
+    # Populate embedding cache
+    import numpy as np
+    loader.cache_qualifier_embedding("login|password", np.zeros(4, dtype=np.float32))
+
+    assert "backend" in loader.signals
+    assert loader.get_qualifiers("backend") != {}
+
+    loader.remove_domain("backend")
+
+    assert "backend" not in loader.signals
+    assert loader.get_qualifiers("backend") == {}
+    assert loader.get_cached_qualifier_embedding("login|password") is None
+
+
+def test_remove_domain_nonexistent_is_safe():
+    """remove_domain() on unknown domain does not raise."""
+    from app.services.domain_signal_loader import DomainSignalLoader
+
+    loader = DomainSignalLoader()
+    loader.remove_domain("nonexistent")  # should not raise

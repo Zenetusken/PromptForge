@@ -337,6 +337,25 @@ class DomainSignalLoader:
         """Clear all cached qualifier embeddings (called on vocab refresh)."""
         self._qualifier_embedding_cache.clear()
 
+    def remove_domain(self, label: str) -> None:
+        """Remove all cached data for a domain (called on domain dissolution).
+
+        Clears keyword signals, compiled patterns, organic qualifier vocabulary,
+        and qualifier embedding cache for the specified domain. Safe to call
+        with a label that doesn't exist.
+        """
+        lbl = label.strip().lower()
+        removed_signals = len(self._signals.pop(lbl, []))
+        self._qualifier_cache.pop(lbl, None)
+        # Rebuild patterns without the removed domain's keywords
+        self._precompile_patterns()
+        # Clear embedding cache (may contain embeddings referencing removed keywords)
+        self.invalidate_qualifier_embedding_cache()
+        logger.info(
+            "remove_domain: domain=%s signals_removed=%d",
+            lbl, removed_signals,
+        )
+
     @staticmethod
     def find_best_qualifier(
         text: str, qualifiers: dict[str, list[str]],
