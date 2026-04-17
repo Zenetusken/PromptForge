@@ -1067,4 +1067,108 @@ describe('SemanticTopology — readiness ring overlay', () => {
       { timeout: 500 },
     );
   });
+
+  it('cancels in-flight ring tweens on unmount', async () => {
+    // Bug (C1): SemanticTopology's onMount cleanup closure disposes the
+    // renderer / beamPool / labels and removes the billboard callback, but
+    // NEVER cancels the in-flight `TweenHandle` instances stored on
+    // `_readinessRings` entries. A tier transition starts an RAF chain that
+    // writes `material.color.copy(...).lerp(...)` on a material whose
+    // underlying GL resource is about to be released by `renderer.dispose()`.
+    // A mid-tween unmount therefore leaks the RAF loop AND invites a
+    // use-after-free on the disposed material (the exact hazard the tween
+    // comment at lines 32-34 claims to guard against via cancellation).
+    //
+    // Contract: on unmount, every active `entry.tween.cancel()` MUST fire.
+    // Since `tweenRingColor`'s cancel path is the ONLY call site of
+    // `cancelAnimationFrame` in this component, spying on the global is a
+    // direct, non-brittle probe — any delta after unmount proves tweens
+    // were cancelled.
+    const domainNode = (tier: 'guarded' | 'critical') => ({
+      id: 'd1',
+      position: [0, 0, 0] as [number, number, number],
+      color: '#b44aff',
+      size: 2,
+      opacity: 1,
+      persistence: 1,
+      state: 'domain' as const,
+      label: 'backend',
+      visible: true,
+      coherence: 0.5,
+      avgScore: 7,
+      domain: 'backend',
+      memberCount: 10,
+      isSubDomain: false,
+      readinessTier: tier,
+    });
+
+    _sceneOverride.value = { nodes: [domainNode('guarded')], edges: [] };
+
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    clustersStore.taxonomyTree = [
+      {
+        id: 'd1',
+        label: 'backend',
+        state: 'domain',
+        domain: 'backend',
+        member_count: 10,
+        parent_id: null,
+      } as any,
+    ];
+
+    const { container, unmount } = render(SemanticTopology);
+    await new Promise((r) => setTimeout(r, 50));
+    clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+    // Wait for the first ring build. Marker presence is the build-done signal.
+    await vi.waitFor(() => {
+      const marker = container.querySelector('[data-readiness-ring="d1"]');
+      expect(marker).toBeTruthy();
+      expect(marker?.getAttribute('data-readiness-tier')).toBe('guarded');
+    });
+
+    // Install spies AFTER the first build so RAF ids from the initial scene
+    // setup don't pollute the capture. Track every RAF id allocated between
+    // the tier flip and unmount — these are the candidate tween ids that
+    // a correct cleanup must cancel.
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame');
+    const cancelSpy = vi.spyOn(window, 'cancelAnimationFrame');
+
+    try {
+      // Flip tier → triggers `tweenRingColor(...)` inside `rebuildScene`,
+      // which immediately calls `requestAnimationFrame(step)` and stores the
+      // returned `TweenHandle` on `_readinessRings.get('d1').tween`.
+      _sceneOverride.value = { nodes: [domainNode('critical')], edges: [] };
+      clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+      // Confirm the rebuild landed AND the tween actually started (RAF was
+      // requested). If this fails, the test setup never armed a tween and a
+      // "cancel didn't fire" assertion below would be meaningless.
+      await vi.waitFor(() => {
+        const marker = container.querySelector('[data-readiness-ring="d1"]');
+        expect(marker?.getAttribute('data-readiness-tier')).toBe('critical');
+        expect(rafSpy).toHaveBeenCalled();
+      });
+
+      const cancelCountBeforeUnmount = cancelSpy.mock.calls.length;
+
+      // Unmount the component. Under the fix, the onMount cleanup iterates
+      // `_readinessRings` and invokes `entry.tween?.cancel()` on each live
+      // entry — each cancel() that finds a still-active RAF id calls
+      // `cancelAnimationFrame(rafId)`. Under the bug, the cleanup disposes
+      // the renderer WITHOUT cancelling tweens; cancelAnimationFrame is
+      // never invoked for the tween RAF and the closure leaks.
+      unmount();
+
+      const cancelCountAfterUnmount = cancelSpy.mock.calls.length;
+
+      // Under the fix: at least one cancelAnimationFrame call during unmount
+      // (the in-flight tween's RAF). Under the bug: delta === 0.
+      expect(cancelCountAfterUnmount).toBeGreaterThan(cancelCountBeforeUnmount);
+    } finally {
+      rafSpy.mockRestore();
+      cancelSpy.mockRestore();
+    }
+  });
 });
