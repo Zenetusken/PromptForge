@@ -61,6 +61,10 @@ DEFAULTS: dict[str, Any] = {
         "pattern_injection": {"w_topic": 0.25, "w_transform": 0.25, "w_output": 0.20, "w_pattern": 0.30},
         "scoring": {"w_topic": 0.15, "w_transform": 0.20, "w_output": 0.45, "w_pattern": 0.20},
     },
+    "domain_readiness_notifications": {
+        "enabled": False,
+        "muted_domain_ids": [],
+    },
 }
 
 _PIPELINE_TOGGLES = (
