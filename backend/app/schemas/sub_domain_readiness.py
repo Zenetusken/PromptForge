@@ -133,3 +133,46 @@ class DomainReadinessReport(BaseModel):
     stability: DomainStabilityReport
     emergence: SubDomainEmergenceReport
     computed_at: datetime
+
+
+class ReadinessSnapshot(BaseModel):
+    """One persisted observation of a domain's readiness state."""
+
+    ts: datetime = Field(description="UTC observation time")
+    domain_id: str
+    domain_label: str
+    consistency: float = Field(ge=0.0, le=1.0)
+    dissolution_risk: float = Field(ge=0.0, le=1.0)
+    stability_tier: StabilityTier
+    emergence_tier: EmergenceTier
+    top_candidate_gap: float | None = Field(
+        default=None,
+        description="threshold - top_candidate.consistency; None when no candidates",
+    )
+    member_count: int = Field(ge=0)
+    total_opts: int = Field(ge=0)
+
+
+class ReadinessHistoryPoint(BaseModel):
+    """One time-series point — either a raw snapshot or a bucket mean."""
+
+    ts: datetime
+    consistency: float
+    dissolution_risk: float
+    top_candidate_gap: float | None
+    stability_tier: StabilityTier
+    emergence_tier: EmergenceTier
+    is_bucket_mean: bool = Field(
+        default=False,
+        description="True when this point is an hourly bucket aggregate",
+    )
+
+
+class ReadinessHistoryResponse(BaseModel):
+    """Time-series response for a single domain."""
+
+    domain_id: str
+    domain_label: str
+    window: Literal["24h", "7d", "30d"]
+    bucketed: bool = Field(description="True when hourly bucket means were applied")
+    points: list[ReadinessHistoryPoint]
