@@ -362,12 +362,12 @@ async def unlink_repo(
 async def get_repo_tree(
     owner: str,
     repo: str,
+    request: Request,
     branch: str = Query("main"),
-    request: Request | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Get recursive file tree for a repository."""
-    _session_id, token = await _get_session_token(request, db)  # type: ignore[arg-type]
+    _session_id, token = await _get_session_token(request, db)
     client = GitHubClient()
     try:
         tree = await client.get_tree(token, f"{owner}/{repo}", branch)
@@ -381,12 +381,12 @@ async def get_file_content(
     owner: str,
     repo: str,
     path: str,
+    request: Request,
     branch: str = Query("main"),
-    request: Request | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Read a single file from a repository."""
-    _session_id, token = await _get_session_token(request, db)  # type: ignore[arg-type]
+    _session_id, token = await _get_session_token(request, db)
     client = GitHubClient()
     try:
         content = await client.get_file_content(token, f"{owner}/{repo}", path, ref=branch)
@@ -401,11 +401,11 @@ async def get_file_content(
 async def list_branches(
     owner: str,
     repo: str,
-    request: Request | None = None,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """List branches for a repository."""
-    _session_id, token = await _get_session_token(request, db)  # type: ignore[arg-type]
+    _session_id, token = await _get_session_token(request, db)
     client = GitHubClient()
     try:
         branches = await client.list_branches(token, f"{owner}/{repo}")
