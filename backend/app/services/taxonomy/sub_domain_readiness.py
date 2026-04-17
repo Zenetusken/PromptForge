@@ -414,7 +414,9 @@ async def compute_sub_domain_emergence(
 
     ready = not (below_min or below_threshold or single_cluster)
 
-    blocked_reason: Literal["no_candidates", "below_threshold", "insufficient_members", "single_cluster", "none"] | None = None
+    blocked_reason: (
+        Literal["no_candidates", "below_threshold", "insufficient_members", "single_cluster", "none"] | None
+    ) = None
     if not ready:
         if below_min:
             blocked_reason = "insufficient_members"
