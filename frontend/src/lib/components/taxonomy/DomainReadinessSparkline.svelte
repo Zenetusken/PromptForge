@@ -1,11 +1,15 @@
 <script lang="ts">
   /**
-   * DomainReadinessSparkline — fetches 24h readiness history for a single
-   * domain and renders a peer sparkline (consistency or gap) via
-   * `ScoreSparkline`. Sits alongside `DomainStabilityMeter` /
-   * `SubDomainEmergenceList` in `TopologyInfoPanel.svelte` so those
-   * components keep their slim `report: DomainStabilityReport` /
-   * `report: SubDomainEmergenceReport` Props contracts untouched.
+   * DomainReadinessSparkline — 24h trend peer component for the readiness row.
+   *
+   * Fetches a single domain's readiness history and renders either the
+   * consistency series or the top-candidate gap series via `ScoreSparkline`.
+   * Sits in `TopologyInfoPanel.ip-readiness` alongside `DomainStabilityMeter`
+   * / `SubDomainEmergenceList` so those components keep their slim
+   * `report: DomainStabilityReport` / `report: SubDomainEmergenceReport`
+   * Props contracts untouched.
+   *
+   * Plan: docs/superpowers/plans/2026-04-17-readiness-time-series.md (Task 13).
    */
   import ScoreSparkline from '$lib/components/shared/ScoreSparkline.svelte';
   import {
@@ -41,13 +45,15 @@
     };
   });
 
-  // Oldest → newest, drop nulls (gap can be null when no candidates)
-  const scores = $derived(
-    [...historyPoints]
-      .reverse()
-      .map((p) => (metric === 'consistency' ? p.consistency : p.top_candidate_gap))
-      .filter((v): v is number => v != null),
-  );
+  // API returns newest-first; sparkline expects oldest → newest.
+  // `gap` can be null when no candidates exist — filter those out.
+  const scores = $derived.by(() => {
+    const ordered = [...historyPoints].reverse();
+    const raw = ordered.map((p) =>
+      metric === 'consistency' ? p.consistency : p.top_candidate_gap,
+    );
+    return raw.filter((v): v is number => v != null);
+  });
 
   const ariaLabel = $derived(
     metric === 'consistency'
@@ -59,12 +65,14 @@
 {#if scores.length >= 2}
   <span class="drs" aria-label={ariaLabel}>
     <ScoreSparkline
-      scores={scores}
+      {scores}
       width={120}
       height={20}
-      baseline={baseline}
-      minRange={0.10}
+      {baseline}
+      minRange={0.1}
     />
+    <!-- minRange=0.1 prevents a zero-scale flatline when consistency/gap
+         values are tightly clustered across the 24h window. -->
   </span>
 {/if}
 
