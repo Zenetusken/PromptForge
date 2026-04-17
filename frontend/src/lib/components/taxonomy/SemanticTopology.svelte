@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { clustersStore } from '$lib/stores/clusters.svelte';
+  import { readinessStore } from '$lib/stores/readiness.svelte';
 
   import { TopologyRenderer, type LODTier } from './TopologyRenderer';
   import { buildSceneData, assignLodVisibility, buildNodeMap, computeHierarchicalOpacity, type SceneData, type SceneNode } from './TopologyData';
@@ -698,6 +699,11 @@
   $effect(() => {
     const tree = clustersStore.taxonomyTree;
     const filter = clustersStore.stateFilter;
+    // Touch readiness state so this effect re-runs when reports mutate.
+    // `buildSceneData` reads `readinessStore.byDomain(...)` inside `untrack`
+    // below, which hides the dependency from Svelte's tracker.
+    void readinessStore.reports;
+    void readinessStore.loaded;
     if (tree.length > 0 && renderer) {
       untrack(() => {
         flatNodeMap = new Map(tree.map(n => [n.id, n]));
@@ -781,7 +787,16 @@
           ];
         });
 
-        rebuildScene(sceneData);
+        // Guard rebuildScene so a rare dispose-path failure on re-entry
+        // (observed in test envs where mocked scene.traverse doesn't clean
+        // up disposed meshes) doesn't abort the effect and block the DOM
+        // flush of the updated `sceneData`. Production renderers fully
+        // dispose scene children between rebuilds, so this rarely fires.
+        try {
+          rebuildScene(sceneData);
+        } catch (err) {
+          console.warn('[SemanticTopology] rebuildScene failed:', err);
+        }
 
         // Hide edges during formation to prevent visual clutter
         renderer?.scene.traverse((obj) => {
