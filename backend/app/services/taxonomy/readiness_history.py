@@ -22,6 +22,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from pydantic import ValidationError
+
 from app.config import DATA_DIR
 from app.schemas.sub_domain_readiness import (
     DomainReadinessReport,
@@ -135,7 +137,21 @@ def _bucket_key_hour(ts: datetime) -> datetime:
 
 
 def _bucket_points(snapshots: list[ReadinessSnapshot]) -> list[ReadinessHistoryPoint]:
-    """Average snapshots within each hour bucket; tiers come from the latest in bucket."""
+    """Collapse hourly buckets of snapshots into single aggregate points.
+
+    Aggregation semantics (documented for downstream consumers):
+
+    * ``consistency``, ``dissolution_risk``, ``top_candidate_gap`` → arithmetic
+      mean across the bucket (``top_candidate_gap`` skips ``None`` entries;
+      returns ``None`` only when every snapshot in the bucket lacks a gap).
+    * ``stability_tier`` / ``emergence_tier`` → **tier of the LATEST snapshot
+      in the bucket** (by ``ts``), not a tier derived from the mean.  This
+      preserves the most recent classification without duplicating the upstream
+      tier-threshold logic in ``compute_domain_stability()`` /
+      ``compute_sub_domain_emergence()``.  UI renderers that need a
+      mean-derived tier should recompute locally from the returned means.
+    * Output is ordered newest-bucket first to match ``_raw_points``.
+    """
     buckets: dict[datetime, list[ReadinessSnapshot]] = {}
     for s in snapshots:
         buckets.setdefault(_bucket_key_hour(s.ts), []).append(s)
@@ -209,7 +225,12 @@ async def query_history(
                         continue
                     if row.get("domain_id") != domain_id:
                         continue
-                    snap = ReadinessSnapshot.model_validate(row)
+                    try:
+                        snap = ReadinessSnapshot.model_validate(row)
+                    except ValidationError:
+                        # Stale schema row (older snapshot layout or manual edit).
+                        # Skip silently — observability never blocks on history gaps.
+                        continue
                     if snap.ts < cutoff:
                         continue
                     snapshots.append(snap)
