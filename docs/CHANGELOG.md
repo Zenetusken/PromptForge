@@ -9,6 +9,15 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 - Readiness time-series: per-domain JSONL snapshots written every warm-path Phase 5, retained 30 days.
 - `GET /api/domains/{id}/readiness/history?window=24h|7d|30d` — windowed trajectory with hourly bucket means for windows ≥ 7d.
 - `DomainReadinessSparkline` peer component rendered from `TopologyInfoPanel` — 24h consistency sparkline beside `DomainStabilityMeter` and 24h gap-to-threshold trendline beside `SubDomainEmergenceList`. Existing meter Props contracts unchanged.
+- Tier-crossing detector for domain readiness with 2-cycle hysteresis and per-domain cooldown — oscillations within the pending streak reset the counter so a single stray observation never fires a transition.
+- `domain_readiness_changed` SSE event published on confirmed tier transitions across both axes (stability `healthy`↔`guarded`↔`critical`, emergence `inert`↔`warming`↔`ready`). Stable wire shape documented as `DomainReadinessChangedEvent`: 9 fields including `axis`, `from_tier`, `to_tier`, `consistency`, `gap_to_threshold`, `would_dissolve`, and ISO-8601 `ts`.
+- `domain_readiness_notifications` preference with `enabled` gate (default off) and `muted_domain_ids[]` per-domain mute list. Validate + sanitize accept only `bool` / `list[str]` shapes; corrupt entries are replaced with defaults instead of rejected.
+- `toastStore.info()` variant for informational (cyan) toasts with an optional `dismissMs` override, complementing the existing `success` / `warning` / `error` / `add()` API.
+- Readiness-notification SSE dispatcher — surfaces `domain_readiness_changed` events as coloured toasts gated by the preference + per-domain mute list. Severity mapping: `would_dissolve` or stability→critical renders red, stability→guarded renders yellow, everything else routes through the new `info()` variant.
+- Per-row mute toggle in `DomainReadinessPanel` — bell / bell-off glyph with `aria-pressed`, accessible `aria-label`, optimistic preference update with inverse-toggle rollback on API failure. Keyboard-navigable without intercepting row-select activation.
+
+### Changed
+- `DomainReadinessPanel` rows migrated from `<button>` to `<div role="button" tabindex="0">` so the nested mute button no longer violates the no-nested-interactive-element HTML rule. Keyboard handling: Enter activates without `preventDefault` (preserves native form semantics), Space activates with `preventDefault` (blocks page scroll). Child `aria-pressed` button stops propagation so toggling mute never fires row selection.
 
 ## v0.3.37 — 2026-04-17
 
