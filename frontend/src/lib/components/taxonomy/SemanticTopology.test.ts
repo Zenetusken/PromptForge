@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock topology modules before any imports that could trigger WebGL
 vi.mock('./TopologyRenderer', () => {
@@ -47,10 +47,15 @@ vi.mock('./TopologyWorker', () => ({
   }),
 }));
 
+// Shared mutable scene override — tests can assign to _sceneOverride to
+// force specific buildSceneData output. Reset in beforeEach.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _sceneOverride: { value: any | null } = { value: null };
 vi.mock('./TopologyData', () => ({
-  buildSceneData: () => ({ nodes: [], edges: [] }),
+  buildSceneData: () => _sceneOverride.value ?? { nodes: [], edges: [] },
   assignLodVisibility: () => {},
   buildNodeMap: () => new Map(),
+  computeHierarchicalOpacity: () => 0.4,
 }));
 
 vi.mock('./BeamPool', () => {
@@ -239,5 +244,110 @@ describe('SemanticTopology', () => {
       expect(errorEl?.textContent).toBe('Connection failed');
       expect(errorEl?.getAttribute('role')).toBe('alert');
     });
+  });
+});
+
+describe('SemanticTopology — readiness ring overlay', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    clustersStore._reset();
+    const { readinessStore } = await import('$lib/stores/readiness.svelte');
+    readinessStore.reports = [];
+    readinessStore.loaded = false;
+    _sceneOverride.value = null;
+  });
+
+  afterEach(() => {
+    _sceneOverride.value = null;
+  });
+
+  it('renders an invisible data-readiness-ring marker per domain node with a tier', async () => {
+    _sceneOverride.value = {
+      nodes: [
+        {
+          id: 'd1',
+          position: [0, 0, 0] as [number, number, number],
+          color: '#b44aff',
+          size: 2,
+          opacity: 1,
+          persistence: 1,
+          state: 'domain',
+          label: 'backend',
+          visible: true,
+          coherence: 0.5,
+          avgScore: 7,
+          domain: 'backend',
+          memberCount: 10,
+          isSubDomain: false,
+          readinessTier: 'guarded' as const,
+        },
+      ],
+      edges: [],
+    };
+
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    clustersStore.taxonomyTree = [
+      {
+        id: 'd1',
+        label: 'backend',
+        state: 'domain',
+        domain: 'backend',
+        member_count: 10,
+        parent_id: null,
+      } as any,
+    ];
+
+    const { container } = render(SemanticTopology);
+
+    await vi.waitFor(() => {
+      const markers = container.querySelectorAll('[data-readiness-ring="d1"]');
+      expect(markers.length).toBe(1);
+      expect(markers[0].getAttribute('data-readiness-tier')).toBe('guarded');
+    });
+  });
+
+  it('does not render a marker on non-domain nodes', async () => {
+    _sceneOverride.value = {
+      nodes: [
+        {
+          id: 'c1',
+          position: [0, 0, 0] as [number, number, number],
+          color: '#b44aff',
+          size: 1,
+          opacity: 1,
+          persistence: 1,
+          state: 'active',
+          label: 'cluster',
+          visible: true,
+          coherence: 0.5,
+          avgScore: 6,
+          domain: 'backend',
+          memberCount: 5,
+          isSubDomain: false,
+        },
+      ],
+      edges: [],
+    };
+
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    clustersStore.taxonomyTree = [
+      {
+        id: 'c1',
+        label: 'cluster',
+        state: 'active',
+        domain: 'backend',
+        member_count: 5,
+        parent_id: null,
+      } as any,
+    ];
+
+    const { container } = render(SemanticTopology);
+
+    await new Promise((r) => setTimeout(r, 50));
+    const markers = container.querySelectorAll('[data-readiness-ring]');
+    expect(markers.length).toBe(0);
   });
 });
