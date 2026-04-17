@@ -128,7 +128,11 @@
 
   // Per-domain readiness ring registry — disposed + cleared on each rebuildScene.
   // Sits alongside other scene-registry state so the lifecycle is obvious.
-  const _readinessRings: Map<string, { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial; unsubscribe: () => void }> = new Map();
+  // Billboarding is driven by a single animation callback (`_removeReadinessBillboard`)
+  // that iterates this map each frame — mirrors the `_removeDomainRotation` pattern
+  // so the two per-frame scene loops look and dispose identically.
+  const _readinessRings: Map<string, { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial }> = new Map();
+  let _removeReadinessBillboard: (() => void) | null = null;
 
   // Flat node lookup for mid-LOD label logic and domain highlight
   let flatNodeMap: Map<string, ClusterNode> = new Map();
@@ -284,12 +288,15 @@
 
     // Dispose + remove previous readiness rings before scene-clear so the
     // stale meshes don't leak through the disposed-geometry traversal.
+    // Unsubscribe the billboard callback FIRST so it cannot fire against a
+    // half-disposed mesh (use-after-free guard).
     // Guard dispose() lookups: in some test environments THREE is mocked
     // with minimal stubs where `mesh.geometry`/`material` may be null or
     // lack a `dispose` method. Production renderers always have real
     // THREE.js instances — these guards are defensive and cheap.
+    _removeReadinessBillboard?.();
+    _removeReadinessBillboard = null;
     for (const entry of _readinessRings.values()) {
-      entry.unsubscribe();
       if (typeof entry.mesh.geometry?.dispose === 'function') {
         entry.mesh.geometry.dispose();
       }
@@ -432,6 +439,7 @@
     // `hasReadinessRing`). Brand spec: 1px contour, no glow, no emissive —
     // MeshBasicMaterial with depthWrite:false is sufficient to sit over the
     // dodecahedron silhouette without z-fighting.
+    const camera = renderer.camera;
     for (const node of data.nodes) {
       if (!node.visible) continue;
       if (!hasReadinessRing(node)) continue;
@@ -452,23 +460,28 @@
       });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(...node.position);
-      // Billboard toward camera at build time so the first frame is correct
-      // without waiting for the animation tick.
-      if (renderer.camera?.position) {
-        mesh.lookAt(renderer.camera.position as unknown as THREE.Vector3);
-      }
+      // Billboard toward camera at build time so the first frame after
+      // rebuildScene paints correctly — the per-frame callback below runs
+      // between `controls.update()` and `renderer.render()` on subsequent
+      // frames, but the first render after a rebuild could paint before
+      // the next animation tick otherwise.
+      if (camera?.position) mesh.lookAt(camera.position);
       renderer.scene.add(mesh);
-      // Per-frame billboard: OrbitControls rotates the camera around the
-      // scene, so a one-time lookAt goes stale. Re-orient each frame.
-      // Capture a non-null reference for the closure (renderer field is
-      // TopologyRenderer | null at the call site).
-      const r = renderer;
-      const unsubscribe = r.addAnimationCallback(() => {
-        if (r.camera?.position) {
-          mesh.lookAt(r.camera.position as unknown as THREE.Vector3);
+      _readinessRings.set(node.id, { mesh, material: mat });
+    }
+
+    // Per-frame billboard — one callback iterates all rings, mirroring the
+    // `_removeDomainRotation` pattern. OrbitControls rotates the camera
+    // around the scene, so a one-time lookAt goes stale; re-orient each
+    // frame. Unsubscribe at rebuildScene entry (above) prevents accumulation
+    // and prevents use-after-free on freshly disposed meshes.
+    if (_readinessRings.size > 0) {
+      _removeReadinessBillboard = renderer.addAnimationCallback(() => {
+        if (!camera?.position) return;
+        for (const entry of _readinessRings.values()) {
+          entry.mesh.lookAt(camera.position);
         }
       });
-      _readinessRings.set(node.id, { mesh, material: mat, unsubscribe });
     }
 
     // Domain rotation: ~1 revolution per 50s at 60fps
@@ -1194,6 +1207,8 @@
       _removeFormationAnim?.();
       _removeFormationAnim = null;
       _removeDomainRotation?.();
+      _removeReadinessBillboard?.();
+      _removeReadinessBillboard = null;
       ro.disconnect();
       interaction?.dispose();
       labels?.dispose();

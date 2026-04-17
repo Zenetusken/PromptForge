@@ -582,6 +582,109 @@ describe('SemanticTopology — readiness ring overlay', () => {
     );
   });
 
+  it('unregisters the billboard callback when a rebuild drops all rings', async () => {
+    // Contract: `_readinessRings` map is rebuilt each `rebuildScene`. When
+    // a rebuild yields zero rings (e.g. all domain reports disappeared),
+    // the per-frame billboard callback must be unsubscribed so stale
+    // closures don't linger in `addAnimationCallback`'s internal array.
+    // Regression guard — without the unsubscribe, ticking a frame would
+    // still invoke the old callback, even after the ring entries are
+    // cleared from the map.
+    const THREE = await import('three');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const MeshProto = (THREE as any).Mesh.prototype;
+    const lookAtSpy = vi.spyOn(MeshProto, 'lookAt');
+
+    try {
+      // First build: one ring. Triggers billboard callback registration.
+      _sceneOverride.value = {
+        nodes: [
+          {
+            id: 'd1',
+            position: [0, 0, 0] as [number, number, number],
+            color: '#b44aff',
+            size: 2,
+            opacity: 1,
+            persistence: 1,
+            state: 'domain',
+            label: 'backend',
+            visible: true,
+            coherence: 0.5,
+            avgScore: 7,
+            domain: 'backend',
+            memberCount: 10,
+            isSubDomain: false,
+            readinessTier: 'guarded' as const,
+          },
+        ],
+        edges: [],
+      };
+
+      const { clustersStore } = await import('$lib/stores/clusters.svelte');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      clustersStore.taxonomyTree = [
+        {
+          id: 'd1',
+          label: 'backend',
+          state: 'domain',
+          domain: 'backend',
+          member_count: 10,
+          parent_id: null,
+        } as any,
+      ];
+
+      const { container } = render(SemanticTopology);
+      await new Promise((r) => setTimeout(r, 50));
+      clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+      await vi.waitFor(() => {
+        expect(container.querySelectorAll('[data-readiness-ring="d1"]').length).toBe(1);
+      });
+
+      // Sanity: callback is registered and fires per frame.
+      expect(_animationCallbacks.length).toBeGreaterThan(0);
+
+      // Rebuild with zero rings — domain node's readinessTier is gone.
+      _sceneOverride.value = {
+        nodes: [
+          {
+            id: 'd1',
+            position: [0, 0, 0] as [number, number, number],
+            color: '#b44aff',
+            size: 2,
+            opacity: 1,
+            persistence: 1,
+            state: 'domain',
+            label: 'backend',
+            visible: true,
+            coherence: 0.5,
+            avgScore: 7,
+            domain: 'backend',
+            memberCount: 10,
+            isSubDomain: false,
+            // readinessTier dropped on purpose
+          },
+        ],
+        edges: [],
+      };
+      clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+      await vi.waitFor(() => {
+        expect(container.querySelectorAll('[data-readiness-ring]').length).toBe(0);
+      });
+
+      // Snapshot post-cleanup, then tick. The billboard callback must NOT
+      // fire — only non-ring callbacks (e.g. domain rotation) should run.
+      // Since the ring's mesh is disposed, any stale callback would invoke
+      // `lookAt` on it — we assert the delta is zero.
+      const afterCleanup = lookAtSpy.mock.calls.length;
+      for (let i = 0; i < 5; i++) _tickFrame();
+      expect(lookAtSpy.mock.calls.length - afterCleanup).toBe(0);
+    } finally {
+      lookAtSpy.mockRestore();
+    }
+  });
+
   it('re-orients ring meshes per animation frame, not just at build', async () => {
     // Bug: SemanticTopology calls `mesh.lookAt(camera.position)` once at ring
     // build time (rebuildScene) and never again. OrbitControls rotation is
