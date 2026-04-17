@@ -231,7 +231,7 @@ class PreferencesService:
                     "falling back to %s",
                     muted, notif_default["muted_domain_ids"],
                 )
-                notif["muted_domain_ids"] = list(notif_default["muted_domain_ids"])
+                notif["muted_domain_ids"] = copy.deepcopy(notif_default["muted_domain_ids"])
 
     @staticmethod
     def _validate(prefs: dict[str, Any]) -> None:

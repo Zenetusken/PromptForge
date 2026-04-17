@@ -544,3 +544,14 @@ class TestDomainReadinessNotifications:
         }))
         prefs = svc.load()
         assert prefs["domain_readiness_notifications"]["muted_domain_ids"] == []
+
+    def test_validate_rejects_non_dict_notifications_section(
+        self, svc: PreferencesService
+    ) -> None:
+        """Guards the `not isinstance(notif, dict)` branch of `_validate`."""
+        prefs = svc.load()
+        prefs["domain_readiness_notifications"] = "garbage"
+        with pytest.raises(
+            ValueError, match="domain_readiness_notifications.*expected dict"
+        ):
+            svc.save(prefs)
