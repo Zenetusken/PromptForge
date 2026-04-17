@@ -171,13 +171,40 @@ vi.mock('three', () => {
     unproject() { return this; }
     getWorldPosition(target: Vector3) { return target; }
   }
+  // Semantic Color mock: `set(hex)`, `copy(other)`, and `lerp(to, t)` mutate
+  // numeric r/g/b channels so tests can observe interpolated values. Required
+  // by the tween-supersede test below (otherwise all color writes are no-ops
+  // and the snap-back bug is unobservable). Other tests don't read r/g/b so
+  // this remains compatible.
   class Color {
     r = 0; g = 0; b = 0;
-    constructor() {}
-    copy() { return this; }
-    set() { return this; }
-    setHex() { return this; }
-    lerp() { return this; }
+    constructor(input?: string | number) {
+      if (typeof input === 'string') this.set(input);
+      else if (typeof input === 'number') this.setHex(input);
+    }
+    copy(other: Color) { this.r = other.r; this.g = other.g; this.b = other.b; return this; }
+    clone() { const c = new Color(); c.r = this.r; c.g = this.g; c.b = this.b; return c; }
+    set(hex: string) {
+      if (typeof hex === 'string' && hex.startsWith('#')) {
+        const n = parseInt(hex.slice(1), 16);
+        this.r = ((n >> 16) & 0xff) / 255;
+        this.g = ((n >> 8) & 0xff) / 255;
+        this.b = (n & 0xff) / 255;
+      }
+      return this;
+    }
+    setHex(n: number) {
+      this.r = ((n >> 16) & 0xff) / 255;
+      this.g = ((n >> 8) & 0xff) / 255;
+      this.b = (n & 0xff) / 255;
+      return this;
+    }
+    lerp(to: Color, t: number) {
+      this.r = this.r + (to.r - this.r) * t;
+      this.g = this.g + (to.g - this.g) * t;
+      this.b = this.b + (to.b - this.b) * t;
+      return this;
+    }
     multiplyScalar() { return this; }
   }
   class Quaternion {
@@ -218,6 +245,13 @@ vi.mock('three', () => {
     constructor(params?: { opacity?: number; transparent?: boolean; color?: unknown }) {
       if (params?.opacity != null) this.opacity = params.opacity;
       if (params?.transparent != null) this.transparent = params.transparent;
+      // Copy constructor-provided color so `material.color` reflects the
+      // initial hex. Without this, `new MeshBasicMaterial({color: new Color('#eab308')})`
+      // would silently drop the hex and `material.color` would stay at (0,0,0),
+      // which breaks any test that reads initial material color values.
+      if (params?.color instanceof Color) {
+        this.color.copy(params.color as Color);
+      }
     }
   }
   class ShaderMaterial {
@@ -1169,6 +1203,214 @@ describe('SemanticTopology — readiness ring overlay', () => {
     } finally {
       rafSpy.mockRestore();
       cancelSpy.mockRestore();
+    }
+  });
+
+  it('preserves rendered color across rapid tier changes (no snap-back)', async () => {
+    // Bug (I1): when a tier transition is superseded by a second tier change
+    // BEFORE the first tween finishes, the new tween is built from
+    // `readinessTierColor(existing.lastTier)` — i.e. the PURE hex of the
+    // previous tier, not the material's currently-rendered interpolated
+    // color. The next RAF then executes `material.color.copy(from).lerp(to, 0)`
+    // which SNAPS the ring to `from` (the previous tier's pure color),
+    // visible as a single-frame backward color flash before the new
+    // transition begins.
+    //
+    // Contract: after a mid-flight supersede, tween 2's first step MUST NOT
+    // reset the rendered color to the pure color of tier B. The new tween's
+    // `from` has to be the material's live color at supersede time (a
+    // mid-interpolation value between pure A and pure B), not `pureB`.
+    //
+    // This test controls `requestAnimationFrame` + `performance.now` so tween
+    // 1 can be advanced to the middle of its duration, then drives tween 2's
+    // first step and asserts the material is NOT at pure tier B.
+    const THREE = await import('three');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ColorClass = (THREE as any).Color;
+    const { readinessTierColor } = await import('./readiness-tier');
+
+    // Controllable RAF queue — each `requestAnimationFrame(cb)` pushes into
+    // `rafQueue` and returns an id; `drainRaf(now)` sets `performance.now()`
+    // return value and invokes the queued callbacks in order. Matches the
+    // existing `_tickFrame` pattern used elsewhere in this file.
+    let currentNow = 1000;
+    const rafQueue: Array<{ id: number; cb: (t: number) => void }> = [];
+    let nextRafId = 1;
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      const id = nextRafId++;
+      rafQueue.push({ id, cb: cb as (t: number) => void });
+      return id;
+    });
+    const cancelSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      const idx = rafQueue.findIndex((e) => e.id === id);
+      if (idx >= 0) rafQueue.splice(idx, 1);
+    });
+    const perfSpy = vi.spyOn(performance, 'now').mockImplementation(() => currentNow);
+    const drainRaf = (now: number) => {
+      currentNow = now;
+      const batch = rafQueue.splice(0);
+      for (const entry of batch) entry.cb(now);
+    };
+
+    const domainNode = (tier: 'guarded' | 'critical' | 'ready') => ({
+      id: 'd1',
+      position: [0, 0, 0] as [number, number, number],
+      color: '#b44aff',
+      size: 2,
+      opacity: 1,
+      persistence: 1,
+      state: 'domain' as const,
+      label: 'backend',
+      visible: true,
+      coherence: 0.5,
+      avgScore: 7,
+      domain: 'backend',
+      memberCount: 10,
+      isSubDomain: false,
+      readinessTier: tier,
+    });
+
+    _sceneOverride.value = { nodes: [domainNode('guarded')], edges: [] };
+
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    clustersStore.taxonomyTree = [
+      {
+        id: 'd1',
+        label: 'backend',
+        state: 'domain',
+        domain: 'backend',
+        member_count: 10,
+        parent_id: null,
+      } as any,
+    ];
+
+    try {
+      const { container } = render(SemanticTopology);
+      await new Promise((r) => setTimeout(r, 50));
+      clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+      // Wait for initial build. Material starts at pure `guarded` color.
+      await vi.waitFor(() => {
+        const marker = container.querySelector('[data-readiness-ring="d1"]');
+        expect(marker?.getAttribute('data-readiness-tier')).toBe('guarded');
+      });
+
+      // Reach the ring material via the scene capture.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const lastScene = (globalThis as any).__semTopLastScene as
+        | { children: unknown[] }
+        | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ringGroup = lastScene!.children.find((c: any) =>
+        c?.userData?.isReadinessRingGroup === true,
+      ) as { children: unknown[] } | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ring = ringGroup!.children.find((c: any) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        c instanceof (THREE as any).Mesh &&
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        c.geometry instanceof (THREE as any).RingGeometry,
+      ) as { material: { color: { r: number; g: number; b: number } } };
+      expect(ring).toBeDefined();
+
+      // Sanity: material starts at the pure guarded color.
+      const pureGuarded = new ColorClass(readinessTierColor('guarded'));
+      const pureCritical = new ColorClass(readinessTierColor('critical'));
+      const pureReady = new ColorClass(readinessTierColor('ready'));
+      expect(ring.material.color.r).toBeCloseTo(pureGuarded.r, 5);
+      expect(ring.material.color.g).toBeCloseTo(pureGuarded.g, 5);
+      expect(ring.material.color.b).toBeCloseTo(pureGuarded.b, 5);
+
+      // --- Tween 1: guarded → critical ---------------------------------
+      _sceneOverride.value = { nodes: [domainNode('critical')], edges: [] };
+      clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+      await vi.waitFor(() => {
+        const marker = container.querySelector('[data-readiness-ring="d1"]');
+        expect(marker?.getAttribute('data-readiness-tier')).toBe('critical');
+      });
+
+      // Advance tween 1 to the MIDDLE of its 320ms duration. With
+      // `_CUBIC(0.5) = 1 - 0.125 = 0.875`, the material is now ~87.5% of
+      // the way from pure guarded to pure critical. It is not pure
+      // critical (that would be t=1) and it is not pure guarded (t=0).
+      drainRaf(1160); // start=1000 → t=(1160-1000)/320=0.5
+      // Enqueue for next step (tween 1 requested another RAF because t<1)
+      // is deliberately LEFT in the queue — the supersede below will
+      // cancel it and queue tween 2 in its place.
+
+      const midR = ring.material.color.r;
+      const midG = ring.material.color.g;
+      const midB = ring.material.color.b;
+      // Mid color must actually be between the two pure tiers; if it's
+      // equal to either, the test setup isn't exercising the tween and
+      // the supersede assertion below would be vacuous.
+      const distFromCritical = Math.hypot(
+        midR - pureCritical.r,
+        midG - pureCritical.g,
+        midB - pureCritical.b,
+      );
+      const distFromGuarded = Math.hypot(
+        midR - pureGuarded.r,
+        midG - pureGuarded.g,
+        midB - pureGuarded.b,
+      );
+      expect(distFromCritical).toBeGreaterThan(0.01);
+      expect(distFromGuarded).toBeGreaterThan(0.01);
+
+      // --- Supersede: critical → ready (tween 2) ------------------------
+      // This mutates `existing.lastTier` to 'ready' inside rebuildScene.
+      // Under the bug, tween 2 is built with `from = pureCritical` (the
+      // previous lastTier's pure color), NOT the material's current
+      // (midR,midG,midB). Tween 2 will then enqueue its first RAF step.
+      _sceneOverride.value = { nodes: [domainNode('ready')], edges: [] };
+      clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+      await vi.waitFor(() => {
+        const marker = container.querySelector('[data-readiness-ring="d1"]');
+        expect(marker?.getAttribute('data-readiness-tier')).toBe('ready');
+      });
+
+      // Drain the queued RAF at the SAME timestamp supersede captured as
+      // its `start`, so tween 2's first step sees t=0. At t=0,
+      // `material.color.copy(from).lerp(to, 0) === from`. Under the bug,
+      // `from = pureCritical` — the material SNAPS backward. Under the
+      // fix, `from` is the material's live color at supersede (≈mid),
+      // so this step is a no-op visually.
+      drainRaf(currentNow); // t=0 for tween 2
+
+      // The critical assertion: material MUST NOT have snapped to pure
+      // critical. If it did, `from` was sourced from `lastTier`'s pure
+      // color instead of the live material color — the I1 bug.
+      const postSnapDistFromCritical = Math.hypot(
+        ring.material.color.r - pureCritical.r,
+        ring.material.color.g - pureCritical.g,
+        ring.material.color.b - pureCritical.b,
+      );
+      // Under the fix: material equals (midR,midG,midB) — far from pure
+      // critical. Under the bug: material equals pureCritical exactly,
+      // making `postSnapDistFromCritical ≈ 0`.
+      expect(postSnapDistFromCritical).toBeGreaterThan(0.01);
+
+      // Stronger: material should still be approximately the pre-supersede
+      // mid color. This locks in the intended semantics — tween 2 must
+      // start from the currently-rendered color, not from any pure hex.
+      expect(ring.material.color.r).toBeCloseTo(midR, 5);
+      expect(ring.material.color.g).toBeCloseTo(midG, 5);
+      expect(ring.material.color.b).toBeCloseTo(midB, 5);
+
+      // And neither pure color is the answer here.
+      const postSnapDistFromReady = Math.hypot(
+        ring.material.color.r - pureReady.r,
+        ring.material.color.g - pureReady.g,
+        ring.material.color.b - pureReady.b,
+      );
+      expect(postSnapDistFromReady).toBeGreaterThan(0.01);
+    } finally {
+      rafSpy.mockRestore();
+      cancelSpy.mockRestore();
+      perfSpy.mockRestore();
     }
   });
 });
