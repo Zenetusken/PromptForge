@@ -509,7 +509,7 @@ async def execute_maintenance_phases(
                 last_prune = getattr(engine, "_readiness_pruned_on", None)
                 if last_prune != today:
                     removed = prune_old_snapshots()
-                    engine._readiness_pruned_on = today  # type: ignore[attr-defined]
+                    engine._readiness_pruned_on = today
                     if removed:
                         logger.info(
                             "readiness history pruned: %d files", removed,
