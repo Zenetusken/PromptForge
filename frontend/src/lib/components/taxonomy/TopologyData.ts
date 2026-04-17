@@ -104,6 +104,14 @@ const LOD_THRESHOLDS: Record<LODTier, number> = {
 /**
  * Convert flat taxonomy node list into scene-ready nodes and edges.
  * Backend `get_tree` returns a flat list — we build edges from `parent_id`.
+ *
+ * Domain nodes (including sub-domains) are additionally decorated with an
+ * optional `readinessTier` sourced from `readinessStore`. The store read is a
+ * synchronous derived-map lookup (no IO, no side effects) so the function
+ * remains a pure transform of `(flatNodes, edges, filter, readinessSnapshot)`
+ * at call time. When the store is unloaded or lacks a matching report, the
+ * field stays undefined and the consumer (`SemanticTopology`) simply omits
+ * the contour ring — decoration is purely additive.
  */
 export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: SimilarityEdge[], injectionEdges?: InjectionEdge[], stateFilter?: string | null): SceneData {
   const nodes: SceneNode[] = [];
@@ -205,7 +213,12 @@ export function buildSceneData(flatNodes: ClusterNode[], similarityEdges?: Simil
       isSubDomain: subDomainIds.has(node.id),
     };
 
-    // Decorate domain nodes with composite readiness tier when a report exists.
+    // Decorate domain nodes (top-level and sub-domain) with composite
+    // readiness tier when a matching report exists. `readinessStore.byDomain`
+    // is a derived O(1) map lookup — no IO — so the surrounding function
+    // stays pure relative to `(flatNodes, readinessSnapshot)`. When the store
+    // is unloaded (empty `reports`) or the domain has no report yet, the
+    // field stays undefined and the ring is omitted by `SemanticTopology`.
     if (node.state === 'domain') {
       const report = readinessStore.byDomain(node.id);
       if (report) {

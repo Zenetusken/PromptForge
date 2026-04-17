@@ -387,4 +387,49 @@ describe('buildSceneData — readiness tier decoration', () => {
     const { nodes } = buildSceneData(tree);
     expect(nodes.find((n) => n.id === 'd1')?.readinessTier).toBeUndefined();
   });
+
+  it('decorates sub-domain nodes (state=domain parented to another domain) when a report exists', () => {
+    // Sub-domains are `state="domain"` nodes whose parent is also a domain.
+    // The decoration gate is `state === 'domain'`, so sub-domains receive
+    // a tier when the readiness store has a matching report — the ring
+    // consumer in SemanticTopology applies the same gate.
+    readinessStore.reports = [
+      makeReadinessReport({ domain_id: 'd1' }),
+      makeReadinessReport({ domain_id: 'sub1', domain_label: 'backend: auth' }),
+    ];
+    readinessStore.loaded = true;
+
+    const tree = [
+      makeNode({ id: 'd1', state: 'domain', domain: 'backend' }),
+      makeNode({ id: 'sub1', state: 'domain', domain: 'backend', parent_id: 'd1' }),
+    ];
+    const { nodes } = buildSceneData(tree);
+    const subDomain = nodes.find((n) => n.id === 'sub1');
+    expect(subDomain?.isSubDomain).toBe(true);
+    expect(subDomain?.readinessTier).toBe('guarded');
+  });
+
+  it('keys reports by domain node id, not by label or position', () => {
+    // Guards against a regression where an unrelated report leaks onto a
+    // different domain node. Only the node whose id matches report.domain_id
+    // should receive the decoration.
+    readinessStore.reports = [makeReadinessReport({ domain_id: 'other' })];
+    readinessStore.loaded = true;
+
+    const tree = [makeNode({ id: 'd1', state: 'domain', domain: 'backend' })];
+    const { nodes } = buildSceneData(tree);
+    expect(nodes.find((n) => n.id === 'd1')?.readinessTier).toBeUndefined();
+  });
+
+  it('leaves readinessTier undefined when the readiness store is unloaded', () => {
+    // Explicit invariant: an unloaded store (loaded=false, reports=[]) must
+    // not crash and must leave the tier absent — the UI degrades to the
+    // pre-readiness visualization until the first snapshot arrives.
+    expect(readinessStore.loaded).toBe(false);
+    expect(readinessStore.reports).toHaveLength(0);
+
+    const tree = [makeNode({ id: 'd1', state: 'domain', domain: 'backend' })];
+    const { nodes } = buildSceneData(tree);
+    expect(nodes.find((n) => n.id === 'd1')?.readinessTier).toBeUndefined();
+  });
 });
