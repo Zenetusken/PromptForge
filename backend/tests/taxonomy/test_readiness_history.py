@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -13,7 +13,10 @@ from app.schemas.sub_domain_readiness import (
     DomainStabilityReport,
     SubDomainEmergenceReport,
 )
-from app.services.taxonomy.readiness_history import record_snapshot
+from app.services.taxonomy.readiness_history import (
+    query_history,
+    record_snapshot,
+)
 
 
 def _build_report(
@@ -90,3 +93,48 @@ async def test_record_snapshot_writes_jsonl_row(tmp_path: Path) -> None:
     assert row["member_count"] == 30
     assert row["total_opts"] == 100
     assert "ts" in row
+
+
+@pytest.mark.asyncio
+async def test_query_history_24h_returns_raw_points(tmp_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    # Three snapshots: now, 1h ago, 25h ago (last is outside 24h window)
+    for delta_h, cons in [(0, 0.42), (1, 0.40), (25, 0.30)]:
+        ts = now - timedelta(hours=delta_h)
+        snap = _build_report(consistency=cons)
+        snap = snap.model_copy(update={"computed_at": ts})
+        await record_snapshot(snap, base_dir=tmp_path)
+
+    response = await query_history(
+        domain_id="d1",
+        domain_label="backend",
+        window="24h",
+        base_dir=tmp_path,
+    )
+    assert response.window == "24h"
+    assert response.bucketed is False
+    assert len(response.points) == 2
+    # Newest first ordering
+    assert response.points[0].consistency == 0.42
+    assert response.points[1].consistency == 0.40
+
+
+@pytest.mark.asyncio
+async def test_query_history_7d_buckets_to_hourly_means(tmp_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    # Three snapshots within the same hour bucket → one mean point
+    for delta_min, cons in [(0, 0.40), (15, 0.50), (45, 0.60)]:
+        ts = now - timedelta(minutes=delta_min)
+        snap = _build_report(consistency=cons).model_copy(update={"computed_at": ts})
+        await record_snapshot(snap, base_dir=tmp_path)
+
+    response = await query_history(
+        domain_id="d1",
+        domain_label="backend",
+        window="7d",
+        base_dir=tmp_path,
+    )
+    assert response.bucketed is True
+    assert len(response.points) == 1
+    assert response.points[0].is_bucket_mean is True
+    assert response.points[0].consistency == pytest.approx(0.50, abs=0.001)
