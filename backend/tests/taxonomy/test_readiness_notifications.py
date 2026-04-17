@@ -105,3 +105,25 @@ def test_detect_crossings_independently_tracks_stability_axis():
     assert fired[0]["axis"] == "stability"
     assert fired[0]["from_tier"] == "healthy"
     assert fired[0]["to_tier"] == "guarded"
+
+
+def test_detect_crossings_oscillation_resets_hysteresis_counter():
+    """A tier bouncing back to stable mid-streak must reset the pending count,
+    so the next candidate tier needs a fresh HYSTERESIS_CYCLES run to fire.
+    This is the core anti-bounce property the hysteresis gate exists for.
+    """
+    # Baseline: inert
+    _detect_crossings(_report(emergence="inert"), now=0.0)
+    # First warming observation — pending count = 1, not yet firing
+    assert _detect_crossings(_report(emergence="warming"), now=10.0) == []
+    # Bounce back to inert — pending streak must clear
+    assert _detect_crossings(_report(emergence="inert"), now=20.0) == []
+    # Single warming observation again — if the streak had NOT reset, this
+    # would be count=2 and fire.  With reset, it must stay silent.
+    assert _detect_crossings(_report(emergence="warming"), now=30.0) == []
+    # Second consecutive warming — now (and only now) the crossing fires.
+    fired = _detect_crossings(_report(emergence="warming"), now=40.0)
+    assert len(fired) == 1
+    assert fired[0]["axis"] == "emergence"
+    assert fired[0]["from_tier"] == "inert"
+    assert fired[0]["to_tier"] == "warming"

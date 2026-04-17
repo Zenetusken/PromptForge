@@ -756,7 +756,8 @@ _EVENT_DEBOUNCE_SECONDS = 5.0
 class TierCrossing(TypedDict):
     """Stable payload shape for a single tier-axis crossing.
 
-    Consumed by ``_detect_crossings`` and (in Task 4) by ``_publish_crossings``.
+    Produced by ``_detect_crossings``; consumed (in a follow-up cycle) by
+    ``_publish_crossings`` to populate the ``domain_readiness_changed`` event.
     """
 
     axis: Literal["emergence", "stability"]
