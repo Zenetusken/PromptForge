@@ -1077,6 +1077,19 @@
       }
     }
 
+    // Readiness rings are parented to the SCENE ROOT, not the domain group,
+    // so the per-group sweep above misses them. Mirror the dim factor here
+    // keyed by node id: the highlighted domain stays bright (1.0), all
+    // others dim to 0.15 — matching the dodecahedron factor on line 1053.
+    for (const [id, entry] of _readinessRings) {
+      const ringNode = sceneData.nodes.find((n) => n.id === id);
+      if (!ringNode) continue;
+      const ringDimFactor =
+        highlightDomain == null || id === highlightDomain ? 1.0 : 0.15;
+      entry.material.opacity =
+        ringNode.opacity * READINESS_RING_OPACITY_FACTOR * ringDimFactor;
+    }
+
     // Dim all edge types (preserve domain node EdgesGeometry outlines)
     const dimActive = highlightDomain != null;
     renderer.scene.traverse((obj) => {
