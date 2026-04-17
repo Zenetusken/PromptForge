@@ -1,4 +1,4 @@
-export type ToastAction = 'created' | 'modified' | 'deleted';
+export type ToastAction = 'created' | 'modified' | 'deleted' | 'info';
 
 export interface ToastItem {
   id: string;
@@ -11,6 +11,7 @@ const ACTION_CONFIG: Record<ToastAction, { symbol: string; color: string }> = {
   created: { symbol: '+', color: 'var(--color-neon-green)' },
   modified: { symbol: '~', color: 'var(--color-neon-yellow)' },
   deleted: { symbol: '-', color: 'var(--color-neon-red)' },
+  info: { symbol: 'i', color: 'var(--color-neon-cyan)' },
 };
 
 const MAX_VISIBLE = 3;
@@ -37,6 +38,25 @@ class ToastStore {
     this._timers.set(id, setTimeout(() => this.dismiss(id), DISMISS_MS));
   }
 
+  info(message: string, opts?: { dismissMs?: number }): void {
+    const config = ACTION_CONFIG.info;
+    const id = `toast-${Date.now()}-${_counter++}`;
+
+    // Evict oldest if at capacity
+    while (this.toasts.length >= MAX_VISIBLE) {
+      const oldest = this.toasts[0];
+      this._clearTimer(oldest.id);
+      this.toasts = this.toasts.slice(1);
+    }
+
+    this.toasts = [...this.toasts, { id, symbol: config.symbol, message, color: config.color }];
+    const ms =
+      opts && typeof opts.dismissMs === 'number' && Number.isFinite(opts.dismissMs) && opts.dismissMs > 0
+        ? opts.dismissMs
+        : DISMISS_MS;
+    this._timers.set(id, setTimeout(() => this.dismiss(id), ms));
+  }
+
   dismiss(id: string): void {
     this._clearTimer(id);
     this.toasts = this.toasts.filter(t => t.id !== id);
@@ -60,3 +80,4 @@ class ToastStore {
 
 export const toastStore = new ToastStore();
 export const addToast = (action: ToastAction, message: string) => toastStore.add(action, message);
+export const addInfoToast = (message: string, opts?: { dismissMs?: number }) => toastStore.info(message, opts);
