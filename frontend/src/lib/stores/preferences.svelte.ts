@@ -39,6 +39,9 @@ const DEFAULTS: Preferences = {
   domain_readiness_notifications: { enabled: false, muted_domain_ids: [] },
 };
 
+/** User-visible toast surfaced when `toggleDomainMute()` rolls back. */
+const MUTE_TOGGLE_ERROR_MESSAGE = 'Failed to update mute preference';
+
 class PreferencesStore {
   prefs = $state<Preferences>(structuredClone(DEFAULTS));
   loading = $state(false);
@@ -98,9 +101,20 @@ class PreferencesStore {
   }
 
   /**
-   * Optimistically toggle a domain's mute membership then persist via PATCH.
-   * Bails out when the store is still loading. On failure, restores the
-   * snapshot and surfaces a deleted-action toast.
+   * Optimistically toggle a domain's membership in
+   * `domain_readiness_notifications.muted_domain_ids`, then persist via PATCH.
+   *
+   * Contract:
+   *   - Guard: bails out as a no-op while `this.loading === true` so we never
+   *     race an in-flight `init()` PATCH response that would clobber the
+   *     optimistic mutation.
+   *   - Snapshot: captures the muted list by value (`[...arr]`) so the
+   *     rollback branch cannot alias the optimistic reference.
+   *   - Optimistic: mutates local state *before* awaiting PATCH — UI updates
+   *     immediately.
+   *   - Rollback: on PATCH rejection, restores the pre-toggle list and
+   *     surfaces a `'deleted'` toast. Swallows the error (matches the
+   *     rest-of-store pattern where `update()` also never re-throws).
    */
   async toggleDomainMute(domainId: string): Promise<void> {
     if (this.loading) return;
@@ -122,7 +136,7 @@ class PreferencesStore {
         ...this.prefs.domain_readiness_notifications,
         muted_domain_ids: snapshot,
       };
-      toastStore.add('deleted', 'Failed to update mute preference');
+      toastStore.add('deleted', MUTE_TOGGLE_ERROR_MESSAGE);
     }
   }
 

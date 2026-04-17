@@ -133,21 +133,40 @@
   }
 
   function onRowKey(event: KeyboardEvent, report: DomainReadinessReport) {
-    if (event.key === 'Enter' || event.key === ' ') {
+    // Space scrolls the page by default on a div[role="button"]; suppress it
+    // so activation matches <button> semantics. Enter has no scroll side
+    // effect, so leave it alone per WAI-ARIA authoring guidance.
+    if (event.key === ' ') {
       event.preventDefault();
+      select(report);
+    } else if (event.key === 'Enter') {
       select(report);
     }
   }
 
-  function isMuted(domainId: string): boolean {
-    return preferencesStore.prefs.domain_readiness_notifications.muted_domain_ids.includes(
-      domainId,
-    );
-  }
+  /**
+   * O(1) mute lookup. Recomputes reactively whenever the backing array is
+   * replaced (optimistic toggles) or mutated in place (external updates via
+   * `preferencesStore.prefs.domain_readiness_notifications.muted_domain_ids =
+   * [...]`). Reading `.length` inside the derivation ensures the derived
+   * remains subscribed even if the reference is reused across writes.
+   */
+  const mutedSet = $derived.by(() => {
+    const ids = preferencesStore.prefs.domain_readiness_notifications.muted_domain_ids;
+    void ids.length;
+    return new Set(ids);
+  });
 
   function onToggleMute(event: MouseEvent, report: DomainReadinessReport) {
     event.stopPropagation();
     void preferencesStore.toggleDomainMute(report.domain_id);
+  }
+
+  /** Accessible name for the row as a whole (the role="button" container). */
+  function rowAriaLabel(r: DomainReadinessReport, muted: boolean): string {
+    const cons = Math.round(r.stability.consistency * 100);
+    const mute = muted ? ', notifications muted' : '';
+    return `${r.domain_label} — stability ${r.stability.tier} ${cons}%, emergence ${r.emergence.tier}${mute}`;
   }
 
   function onRefresh() {
@@ -192,12 +211,13 @@
         {@const consistencyPct = Math.round(r.stability.consistency * 100)}
         {@const thresholdPct = Math.round(r.emergence.threshold * 100)}
         {@const isEmpty = r.emergence.total_opts === 0}
-        {@const muted = isMuted(r.domain_id)}
+        {@const muted = mutedSet.has(r.domain_id)}
         <div
           role="button"
           tabindex="0"
           class="drp-row"
           class:drp-row--empty={isEmpty}
+          aria-label={rowAriaLabel(r, muted)}
           onclick={() => select(r)}
           onkeydown={(e) => onRowKey(e, r)}
           use:tooltip={`${r.domain_label} — stability ${r.stability.tier} (${consistencyPct}%), emergence ${r.emergence.tier} (threshold ${thresholdPct}%)`}
@@ -234,7 +254,7 @@
               ? `Unmute notifications for ${r.domain_label}`
               : `Mute notifications for ${r.domain_label}`}
             onclick={(e) => onToggleMute(e, r)}
-          >{muted ? '\u{1F515}' : '\u{1F514}'}</button>
+          ><span aria-hidden="true">{muted ? '\u{1F515}' : '\u{1F514}'}</span></button>
         </div>
       {/each}
     </div>

@@ -209,4 +209,67 @@ describe('DomainReadinessPanel — mute toggle (Cycle 6)', () => {
     ) as HTMLButtonElement;
     expect(unmutedBtn.classList.contains('drp-mute--active')).toBe(false);
   });
+
+  it('row exposes an aria-label combining domain, stability, and emergence state', () => {
+    // Without an accessible name, a div[role="button"] reads only its inner
+    // text — which on this panel is a grid of numbers. Lock the label format
+    // so screen-reader users get the same summary sighted users get via the
+    // tooltip.
+    preferencesStore.prefs.domain_readiness_notifications = {
+      enabled: true,
+      muted_domain_ids: ['dom-a'],
+    };
+    const { container } = render(DomainReadinessPanel);
+    const rows = container.querySelectorAll<HTMLDivElement>('div.drp-row[role="button"]');
+    expect(rows.length).toBe(2);
+    const labels = Array.from(rows).map((r) => r.getAttribute('aria-label') ?? '');
+    // Muted domain announces the mute state; unmuted does not.
+    expect(labels.some((l) => l.includes('backend') && l.includes('notifications muted'))).toBe(true);
+    expect(labels.some((l) => l.includes('security') && !l.includes('notifications muted'))).toBe(true);
+  });
+
+  it('Space on a row activates select() and preventDefaults the page scroll', async () => {
+    const onSelect = vi.fn();
+    const { container } = render(DomainReadinessPanel, { props: { onSelect } });
+    const row = container.querySelector<HTMLDivElement>('div.drp-row[role="button"]');
+    expect(row).not.toBeNull();
+
+    // Directly dispatch a KeyboardEvent so we can inspect defaultPrevented.
+    const spaceEvent = new KeyboardEvent('keydown', {
+      key: ' ',
+      bubbles: true,
+      cancelable: true,
+    });
+    row!.dispatchEvent(spaceEvent);
+    expect(spaceEvent.defaultPrevented).toBe(true);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('Enter on a row activates select() without calling preventDefault', async () => {
+    const onSelect = vi.fn();
+    const { container } = render(DomainReadinessPanel, { props: { onSelect } });
+    const row = container.querySelector<HTMLDivElement>('div.drp-row[role="button"]');
+    expect(row).not.toBeNull();
+
+    const enterEvent = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    row!.dispatchEvent(enterEvent);
+    expect(enterEvent.defaultPrevented).toBe(false);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it('mute button glyph is aria-hidden so the accessible name is not duplicated', () => {
+    preferencesStore.prefs.domain_readiness_notifications = {
+      enabled: true,
+      muted_domain_ids: [],
+    };
+    const { container } = render(DomainReadinessPanel);
+    const btn = container.querySelector<HTMLButtonElement>('button.drp-mute');
+    expect(btn).not.toBeNull();
+    const glyph = btn!.querySelector('span[aria-hidden="true"]');
+    expect(glyph).not.toBeNull();
+  });
 });
