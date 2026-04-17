@@ -42,7 +42,7 @@
    *  can otherwise outlive the ring they animate (use-after-free). */
   function tweenRingColor(
     material: THREE.MeshBasicMaterial,
-    fromHex: string,
+    fromColor: string | THREE.Color,
     toHex: string,
     durationMs = 320,
   ): TweenHandle {
@@ -50,7 +50,10 @@
       material.color.set(toHex);
       return { cancel: () => {} };
     }
-    const from = new THREE.Color(fromHex);
+    const from =
+      typeof fromColor === 'string'
+        ? new THREE.Color(fromColor)
+        : fromColor.clone();
     const to = new THREE.Color(toHex);
     const start = performance.now();
     let rafId = 0;
@@ -543,7 +546,7 @@
           existing.tween?.cancel();
           existing.tween = tweenRingColor(
             existing.material,
-            readinessTierColor(existing.lastTier),
+            existing.material.color,
             readinessTierColor(tier),
           );
           existing.lastTier = tier;
