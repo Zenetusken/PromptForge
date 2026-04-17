@@ -1233,7 +1233,7 @@ class ContextEnrichmentService:
 
             # 2. Auto-inject via full taxonomy pipeline (composite fusion,
             #    cross-cluster, GlobalPattern 1.3x boost — no provenance recording)
-            auto_injected = []
+            auto_injected: list = []
             if self._taxonomy_engine:
                 try:
                     import uuid as _uuid

@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from app.config import PROMPTS_DIR
 from app.schemas.seed import SeedOutput
@@ -53,7 +53,7 @@ async def handle_seed(
 
     if routing is not None:
         from app.services.routing import RoutingContext
-        caller = "mcp" if ctx is not None else "rest"
+        caller: Literal["mcp", "rest"] = "mcp" if ctx is not None else "rest"
         decision = routing.resolve(RoutingContext(caller=caller))
         tier = decision.tier
         provider = decision.provider
@@ -220,7 +220,7 @@ async def handle_seed(
     try:
         results = await run_batch(
             prompts=generated_prompts,
-            provider=provider,
+            provider=provider,  # type: ignore[arg-type]
             prompt_loader=PromptLoader(PROMPTS_DIR),
             embedding_service=EmbeddingService(),
             max_parallel=max_parallel,

@@ -43,7 +43,7 @@ async def prune_audit_log(db: AsyncSession, retention_days: int = 90) -> int:
         delete(AuditLog).where(AuditLog.timestamp < cutoff)
     )
     await db.commit()
-    deleted = result.rowcount
+    deleted = result.rowcount  # type: ignore[attr-defined]
     if deleted:
         logger.info("Pruned %d audit log entries older than %d days", deleted, retention_days)
     return deleted

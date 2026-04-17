@@ -98,7 +98,7 @@ async def _run_explore_synthesis(
                     prompt_loader=PromptLoader(PROMPTS_DIR),
                     github_client=gc,
                     embedding_service=es,
-                    provider=provider,
+                    provider=provider,  # type: ignore[arg-type]
                     repo_index_service=RepoIndexService(db, gc, es),
                 )
                 synthesis = await explorer.explore(
@@ -328,7 +328,7 @@ async def get_linked(
     return LinkedRepoResponse(
         full_name=linked.full_name,
         default_branch=linked.default_branch,
-        branch=linked.branch,
+        branch=linked.branch or linked.default_branch,
         language=linked.language,
         linked_at=linked.linked_at.isoformat() if linked.linked_at else None,
         project_node_id=linked.project_node_id,
@@ -363,11 +363,11 @@ async def get_repo_tree(
     owner: str,
     repo: str,
     branch: str = Query("main"),
-    request: Request = None,
+    request: Request | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Get recursive file tree for a repository."""
-    _session_id, token = await _get_session_token(request, db)
+    _session_id, token = await _get_session_token(request, db)  # type: ignore[arg-type]
     client = GitHubClient()
     try:
         tree = await client.get_tree(token, f"{owner}/{repo}", branch)
@@ -382,11 +382,11 @@ async def get_file_content(
     repo: str,
     path: str,
     branch: str = Query("main"),
-    request: Request = None,
+    request: Request | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Read a single file from a repository."""
-    _session_id, token = await _get_session_token(request, db)
+    _session_id, token = await _get_session_token(request, db)  # type: ignore[arg-type]
     client = GitHubClient()
     try:
         content = await client.get_file_content(token, f"{owner}/{repo}", path, ref=branch)
@@ -401,11 +401,11 @@ async def get_file_content(
 async def list_branches(
     owner: str,
     repo: str,
-    request: Request = None,
+    request: Request | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """List branches for a repository."""
-    _session_id, token = await _get_session_token(request, db)
+    _session_id, token = await _get_session_token(request, db)  # type: ignore[arg-type]
     client = GitHubClient()
     try:
         branches = await client.list_branches(token, f"{owner}/{repo}")

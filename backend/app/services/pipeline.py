@@ -315,7 +315,7 @@ class PipelineOrchestrator:
             # Upgrade "general" to a specific type when strong keywords are present
             effective_task_type = semantic_upgrade_general(analysis.task_type, raw_prompt)
             if effective_task_type != analysis.task_type:
-                analysis.task_type = effective_task_type
+                analysis.task_type = effective_task_type  # type: ignore[assignment]
 
             logger.info(
                 "Domain resolution: raw='%s' confidence=%.2f (analyzer=%.2f) trace_id=%s",
@@ -513,10 +513,10 @@ class PipelineOrchestrator:
                 try:
                     from app.models import MetaPattern
 
-                    result = await db.execute(
+                    mp_q_result = await db.execute(
                         select(MetaPattern).where(MetaPattern.id.in_(applied_pattern_ids))
                     )
-                    patterns = result.scalars().all()
+                    patterns = mp_q_result.scalars().all()
                     if patterns:
                         lines = [
                             f"- {p.pattern_text}" for p in patterns

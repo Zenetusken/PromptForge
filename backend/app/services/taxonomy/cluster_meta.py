@@ -95,13 +95,19 @@ _COERCE: dict[str, type] = {
 }
 
 
-def read_meta(raw: dict[str, Any] | None) -> ClusterMeta:
-    """Return a typed copy of cluster_metadata with defaults filled.
+def read_meta(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a dict copy of cluster_metadata with defaults filled.
 
     Coerces integer fields to ``int`` so downstream comparisons
     (e.g. ``split_failures >= 3``) never raise ``TypeError``.
 
     Mutable defaults (lists) are shallow-copied to prevent aliasing.
+
+    Note: we return ``dict[str, Any]`` rather than the ``ClusterMeta``
+    TypedDict so readers may look up arbitrary keys (for forward-
+    compatibility with new metadata fields) without triggering
+    ``typeddict-item`` errors. ``ClusterMeta`` remains the schema-of-
+    record documentation for known keys.
     """
     meta: dict[str, Any] = dict(raw) if raw else {}
     for key, default in _DEFAULTS.items():
@@ -114,13 +120,13 @@ def read_meta(raw: dict[str, Any] | None) -> ClusterMeta:
             meta[key] = target_type(meta[key])
         except (ValueError, TypeError):
             meta[key] = _DEFAULTS[key]
-    return meta  # type: ignore[return-value]
+    return meta
 
 
 def write_meta(
     existing: dict[str, Any] | None,
     **updates: Any,
-) -> ClusterMeta:
+) -> dict[str, Any]:
     """Merge updates into existing cluster_metadata, returning a new dict.
 
     Replaces the scattered ``{**(node.cluster_metadata or {}), key: val}``
@@ -129,4 +135,4 @@ def write_meta(
     """
     meta = dict(existing) if existing else {}
     meta.update(updates)
-    return meta  # type: ignore[return-value]
+    return meta

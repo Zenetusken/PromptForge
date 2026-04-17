@@ -1,12 +1,19 @@
-"""SQLAlchemy models — all tables for the application."""
+"""SQLAlchemy models — all tables for the application.
+
+Uses SQLAlchemy 2.0 ``Mapped[]`` typed declarative: class-level attributes
+declare runtime types, and the ORM binds them to ``mapped_column(...)``.
+Instance access returns the annotated Python type (not ``Column[X]``), which
+eliminates the descriptor-typing drift that previously required dozens of
+``# type: ignore`` comments across the service layer.
+"""
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import (
     JSON,
     Boolean,
-    Column,
     DateTime,
     Float,
     ForeignKey,
@@ -17,7 +24,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, backref, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, backref, mapped_column, relationship
 
 
 def _utcnow() -> datetime:
@@ -37,111 +44,123 @@ class Base(DeclarativeBase):
 class Optimization(Base):
     __tablename__ = "optimizations"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    raw_prompt = Column(Text, nullable=False)
-    optimized_prompt = Column(Text, nullable=True)
-    task_type = Column(String, nullable=True)
-    strategy_used = Column(String, nullable=True)
-    changes_summary = Column(Text, nullable=True)
-    score_clarity = Column(Float, nullable=True)
-    score_specificity = Column(Float, nullable=True)
-    score_structure = Column(Float, nullable=True)
-    score_faithfulness = Column(Float, nullable=True)
-    score_conciseness = Column(Float, nullable=True)
-    overall_score = Column(Float, nullable=True)
-    provider = Column(String, nullable=True)
-    model_used = Column(String, nullable=True)
-    models_by_phase = Column(JSON, nullable=True)
-    scoring_mode = Column(String, nullable=True)  # independent / self_rated
-    duration_ms = Column(Integer, nullable=True)
-    repo_full_name = Column(String, nullable=True)
-    codebase_context_snapshot = Column(Text, nullable=True)
-    status = Column(String, default="completed", nullable=False)  # completed / failed / interrupted
-    routing_tier = Column(String, nullable=True)  # internal / sampling / passthrough
-    trace_id = Column(String, nullable=True)
-    tokens_total = Column(Integer, nullable=True)
-    tokens_by_phase = Column(JSON, nullable=True)
-    context_sources = Column(JSON, nullable=True)
-    original_scores = Column(JSON, nullable=True)
-    score_deltas = Column(JSON, nullable=True)
-    intent_label = Column(String, nullable=True)
-    domain = Column(String, nullable=True)
-    embedding = Column(LargeBinary, nullable=True)
-    optimized_embedding = Column(LargeBinary, nullable=True)
-    transformation_embedding = Column(LargeBinary, nullable=True)
-    qualifier_embedding = Column(LargeBinary, nullable=True)  # 384-dim float32 qualifier signal
-    phase_weights_json = Column(JSON, nullable=True)
-    cluster_id = Column(String, ForeignKey("prompt_cluster.id"), nullable=True)
-    project_id = Column(String(36), nullable=True, index=True)  # ADR-005: denormalized project FK
-    domain_raw = Column(String, nullable=True)
-    heuristic_flags = Column(JSON, nullable=True)
-    improvement_score = Column(Float, nullable=True)  # Weighted delta score (0-10)
-    suggestions = Column(JSON, nullable=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    raw_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    optimized_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    strategy_used: Mapped[str | None] = mapped_column(String, nullable=True)
+    changes_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    score_clarity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_specificity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_structure: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_faithfulness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_conciseness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    overall_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    model_used: Mapped[str | None] = mapped_column(String, nullable=True)
+    models_by_phase: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    scoring_mode: Mapped[str | None] = mapped_column(String, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    repo_full_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    codebase_context_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="completed", nullable=False)
+    routing_tier: Mapped[str | None] = mapped_column(String, nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    tokens_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_by_phase: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    context_sources: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    original_scores: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    score_deltas: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    intent_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    domain: Mapped[str | None] = mapped_column(String, nullable=True)
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    optimized_embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    transformation_embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    qualifier_embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    phase_weights_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    cluster_id: Mapped[str | None] = mapped_column(String, ForeignKey("prompt_cluster.id"), nullable=True)
+    project_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    domain_raw: Mapped[str | None] = mapped_column(String, nullable=True)
+    heuristic_flags: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    improvement_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    suggestions: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class Feedback(Base):
     __tablename__ = "feedbacks"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    optimization_id = Column(String, ForeignKey("optimizations.id"), nullable=False)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    rating = Column(String, nullable=False)  # thumbs_up / thumbs_down
-    comment = Column(Text, nullable=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    optimization_id: Mapped[str] = mapped_column(String, ForeignKey("optimizations.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    rating: Mapped[str] = mapped_column(String, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class StrategyAffinity(Base):
     __tablename__ = "strategy_affinities"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    task_type = Column(String, nullable=False)
-    strategy = Column(String, nullable=False)
-    thumbs_up = Column(Integer, default=0, nullable=False)
-    thumbs_down = Column(Integer, default=0, nullable=False)
-    approval_rate = Column(Float, default=0.0, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    task_type: Mapped[str] = mapped_column(String, nullable=False)
+    strategy: Mapped[str] = mapped_column(String, nullable=False)
+    thumbs_up: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    thumbs_down: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    approval_rate: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=False,
+    )
 
 
 class PromptCluster(Base):
     """Unified prompt cluster — replaces PatternFamily + TaxonomyNode."""
     __tablename__ = "prompt_cluster"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    parent_id = Column(String, ForeignKey("prompt_cluster.id"), nullable=True, index=True)
-    label = Column(String, nullable=False, default="")
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    parent_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("prompt_cluster.id"), nullable=True, index=True,
+    )
+    label: Mapped[str] = mapped_column(String, nullable=False, default="")
     # States: candidate|active|mature|template|domain|project|archived
-    state = Column(String(20), nullable=False, default="active")
-    domain = Column(String(50), nullable=False, default="general")
-    task_type = Column(String(50), nullable=False, default="general")
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    domain: Mapped[str] = mapped_column(String(50), nullable=False, default="general")
+    task_type: Mapped[str] = mapped_column(String(50), nullable=False, default="general")
 
-    centroid_embedding = Column(LargeBinary, nullable=True)
-    member_count = Column(Integer, nullable=False, default=0)
-    weighted_member_sum = Column(Float, default=0.0, nullable=False, server_default="0.0")
-    scored_count = Column(Integer, nullable=False, default=0)
-    usage_count = Column(Integer, nullable=False, default=0)
-    avg_score = Column(Float, nullable=True)
+    centroid_embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    member_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    weighted_member_sum: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False, server_default="0.0",
+    )
+    scored_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    coherence = Column(Float, nullable=True)
-    separation = Column(Float, nullable=True)
-    stability = Column(Float, nullable=True, default=0.0)
-    persistence = Column(Float, nullable=True, default=0.5)
+    coherence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    separation: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stability: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.0)
+    persistence: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.5)
 
-    umap_x = Column(Float, nullable=True)
-    umap_y = Column(Float, nullable=True)
-    umap_z = Column(Float, nullable=True)
-    color_hex = Column(String(7), nullable=True)
+    umap_x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    umap_y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    umap_z: Mapped[float | None] = mapped_column(Float, nullable=True)
+    color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
 
-    preferred_strategy = Column(String(50), nullable=True)
-    cluster_metadata = Column(JSON, nullable=True)
-    prune_flag_count = Column(Integer, nullable=False, default=0)
-    last_used_at = Column(DateTime, nullable=True)
-    promoted_at = Column(DateTime, nullable=True)
-    archived_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=_utcnow)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    preferred_strategy: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    cluster_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    prune_flag_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow,
+    )
 
     # Relationships
-    children = relationship("PromptCluster", backref=backref("parent", remote_side="PromptCluster.id"), lazy="select")
+    children = relationship(
+        "PromptCluster",
+        backref=backref("parent", remote_side="PromptCluster.id"),
+        lazy="select",
+    )
     meta_patterns = relationship("MetaPattern", back_populates="cluster", lazy="select")
 
     __table_args__ = (
@@ -162,18 +181,23 @@ class PromptCluster(Base):
     )
 
 
-
 class MetaPattern(Base):
     __tablename__ = "meta_patterns"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    cluster_id = Column(String, ForeignKey("prompt_cluster.id"), nullable=False, index=True)
-    pattern_text = Column(Text, nullable=False)
-    embedding = Column(LargeBinary, nullable=True)
-    source_count = Column(Integer, default=1, nullable=False)
-    global_source_count = Column(Integer, default=0, nullable=False, server_default="0")
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    cluster_id: Mapped[str] = mapped_column(
+        String, ForeignKey("prompt_cluster.id"), nullable=False, index=True,
+    )
+    pattern_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    source_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    global_source_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=False,
+    )
 
     cluster = relationship("PromptCluster", back_populates="meta_patterns")
 
@@ -181,14 +205,22 @@ class MetaPattern(Base):
 class OptimizationPattern(Base):
     __tablename__ = "optimization_patterns"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    optimization_id = Column(String, ForeignKey("optimizations.id"), nullable=False)
-    cluster_id = Column(String, ForeignKey("prompt_cluster.id"), nullable=False)
-    meta_pattern_id = Column(String, ForeignKey("meta_patterns.id"), nullable=True)
-    global_pattern_id = Column(String(36), ForeignKey("global_patterns.id"), nullable=True)
-    relationship = Column(String(20), nullable=False, default="source")
-    similarity = Column(Float, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    optimization_id: Mapped[str] = mapped_column(
+        String, ForeignKey("optimizations.id"), nullable=False,
+    )
+    cluster_id: Mapped[str] = mapped_column(
+        String, ForeignKey("prompt_cluster.id"), nullable=False,
+    )
+    meta_pattern_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("meta_patterns.id"), nullable=True,
+    )
+    global_pattern_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("global_patterns.id"), nullable=True,
+    )
+    relationship: Mapped[str] = mapped_column(String(20), nullable=False, default="source")
+    similarity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     __table_args__ = (
         Index("ix_optimization_pattern_opt_rel", "optimization_id", "relationship"),
@@ -199,30 +231,30 @@ class OptimizationPattern(Base):
 class TaxonomySnapshot(Base):
     __tablename__ = "taxonomy_snapshots"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    trigger = Column(String, nullable=False)  # 'warm_path' | 'cold_path' | 'manual'
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    trigger: Mapped[str] = mapped_column(String, nullable=False)
 
     # System-wide metrics
-    q_system = Column(Float, nullable=False)
-    q_coherence = Column(Float, nullable=False)
-    q_separation = Column(Float, nullable=False)
-    q_coverage = Column(Float, nullable=False)
-    q_dbcv = Column(Float, default=0.0, nullable=False)
-    q_health = Column(Float, nullable=True)  # member-weighted composite health
+    q_system: Mapped[float] = mapped_column(Float, nullable=False)
+    q_coherence: Mapped[float] = mapped_column(Float, nullable=False)
+    q_separation: Mapped[float] = mapped_column(Float, nullable=False)
+    q_coverage: Mapped[float] = mapped_column(Float, nullable=False)
+    q_dbcv: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    q_health: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # What changed
-    operations = Column(Text, default="[]", nullable=False)  # JSON list
-    nodes_created = Column(Integer, default=0, nullable=False)
-    nodes_retired = Column(Integer, default=0, nullable=False)
-    nodes_merged = Column(Integer, default=0, nullable=False)
-    nodes_split = Column(Integer, default=0, nullable=False)
+    operations: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    nodes_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    nodes_retired: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    nodes_merged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    nodes_split: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Recovery
-    tree_state = Column(Text, nullable=True)  # JSON: node IDs + parent edges
+    tree_state: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Legacy flag — marks snapshots from pre-PromptCluster era
-    legacy = Column(Boolean, nullable=False, default=False)
+    legacy: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("ix_taxonomy_snapshot_created_at", created_at.desc()),
@@ -239,17 +271,17 @@ class GlobalPattern(Base):
 
     __tablename__ = "global_patterns"
 
-    id = Column(String(36), primary_key=True, default=_uuid)
-    pattern_text = Column(Text, nullable=False)
-    embedding = Column(LargeBinary, nullable=True)  # 384-dim float32
-    source_cluster_ids = Column(JSON, nullable=False, default=list)
-    source_project_ids = Column(JSON, nullable=False, default=list)
-    cross_project_count = Column(Integer, nullable=False, default=0)
-    global_source_count = Column(Integer, nullable=False, default=0)
-    avg_cluster_score = Column(Float, nullable=True)
-    promoted_at = Column(DateTime, nullable=False, default=_utcnow)
-    last_validated_at = Column(DateTime, nullable=False, default=_utcnow)
-    state = Column(String(20), nullable=False, default="active")  # active|demoted|retired
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    pattern_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    source_cluster_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    source_project_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    cross_project_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    global_source_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_cluster_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    promoted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    last_validated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
 
 
 # --- Ported tables (GitHub/Embedding) ---
@@ -258,46 +290,50 @@ class GlobalPattern(Base):
 class GitHubToken(Base):
     __tablename__ = "github_tokens"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    session_id = Column(String, nullable=False, unique=True)
-    token_encrypted = Column(LargeBinary, nullable=False)  # Fernet-encrypted, matches v2
-    token_type = Column(String, default="oauth", nullable=False)
-    github_user_id = Column(String, nullable=True)
-    github_login = Column(String, nullable=True)
-    avatar_url = Column(String, nullable=True)
-    refresh_token_encrypted = Column(LargeBinary, nullable=True)
-    refresh_token_expires_at = Column(DateTime, nullable=True)
-    expires_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    token_encrypted: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    token_type: Mapped[str] = mapped_column(String, default="oauth", nullable=False)
+    github_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    github_login: Mapped[str | None] = mapped_column(String, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    refresh_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    refresh_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=False,
+    )
 
 
 class LinkedRepo(Base):
     __tablename__ = "linked_repos"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    session_id = Column(String, nullable=False)
-    full_name = Column(String, nullable=False)  # matches v2 column name
-    default_branch = Column(String, default="main", nullable=False)
-    branch = Column(String, nullable=True)  # active working branch (distinct from default)
-    language = Column(String, nullable=True)
-    linked_at = Column(DateTime, default=_utcnow, nullable=False)  # matches v2 column name
-    project_node_id = Column(String(36), ForeignKey("prompt_cluster.id"), nullable=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String, nullable=False)
+    full_name: Mapped[str] = mapped_column(String, nullable=False)
+    default_branch: Mapped[str] = mapped_column(String, default="main", nullable=False)
+    branch: Mapped[str | None] = mapped_column(String, nullable=True)
+    language: Mapped[str | None] = mapped_column(String, nullable=True)
+    linked_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    project_node_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("prompt_cluster.id"), nullable=True,
+    )
 
 
 class RepoFileIndex(Base):
     __tablename__ = "repo_file_index"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    repo_full_name = Column(String, nullable=False, index=True)
-    branch = Column(String, nullable=False)
-    file_path = Column(String, nullable=False)
-    file_sha = Column(String, nullable=True)
-    file_size_bytes = Column(Integer, nullable=True)
-    content = Column(Text, nullable=True)  # full file source for curated context delivery
-    outline = Column(Text, nullable=True)
-    embedding = Column(LargeBinary, nullable=True)  # numpy bytes (384*4=1536), matches v2
-    updated_at = Column(DateTime, default=_utcnow, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    repo_full_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    branch: Mapped[str] = mapped_column(String, nullable=False)
+    file_path: Mapped[str] = mapped_column(String, nullable=False)
+    file_sha: Mapped[str | None] = mapped_column(String, nullable=True)
+    file_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     __table_args__ = (
         Index(
@@ -311,20 +347,24 @@ class RepoFileIndex(Base):
 class RepoIndexMeta(Base):
     __tablename__ = "repo_index_meta"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    repo_full_name = Column(String, nullable=False)
-    branch = Column(String, nullable=False)
-    status = Column(String, default="pending", nullable=False)
-    file_count = Column(Integer, default=0, nullable=False)
-    head_sha = Column(String, nullable=True)
-    error_message = Column(Text, nullable=True)
-    indexed_at = Column(DateTime, nullable=True)
-    expires_at = Column(DateTime, nullable=True)
-    explore_synthesis = Column(Text, nullable=True)  # cached Haiku architectural synthesis
-    synthesis_status = Column(String, default="pending", server_default="pending", nullable=False)
-    synthesis_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    repo_full_name: Mapped[str] = mapped_column(String, nullable=False)
+    branch: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
+    file_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    head_sha: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    explore_synthesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synthesis_status: Mapped[str] = mapped_column(
+        String, default="pending", server_default="pending", nullable=False,
+    )
+    synthesis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=False,
+    )
 
     __table_args__ = (
         Index("idx_repo_index_meta_repo_branch", "repo_full_name", "branch", unique=True),
@@ -337,30 +377,36 @@ class RepoIndexMeta(Base):
 class RefinementBranch(Base):
     __tablename__ = "refinement_branches"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    optimization_id = Column(String, ForeignKey("optimizations.id"), nullable=False)
-    parent_branch_id = Column(String, nullable=True)
-    forked_at_version = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    optimization_id: Mapped[str] = mapped_column(
+        String, ForeignKey("optimizations.id"), nullable=False,
+    )
+    parent_branch_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    forked_at_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 
 class RefinementTurn(Base):
     __tablename__ = "refinement_turns"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    optimization_id = Column(String, ForeignKey("optimizations.id"), nullable=False)
-    version = Column(Integer, nullable=False)
-    branch_id = Column(String, ForeignKey("refinement_branches.id"), nullable=False)
-    parent_version = Column(Integer, nullable=True)
-    refinement_request = Column(Text, nullable=True)
-    prompt = Column(Text, nullable=False)
-    scores = Column(JSON, nullable=True)
-    deltas = Column(JSON, nullable=True)
-    deltas_from_original = Column(JSON, nullable=True)
-    strategy_used = Column(String, nullable=True)
-    suggestions = Column(JSON, nullable=True)
-    trace_id = Column(String, nullable=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    optimization_id: Mapped[str] = mapped_column(
+        String, ForeignKey("optimizations.id"), nullable=False,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    branch_id: Mapped[str] = mapped_column(
+        String, ForeignKey("refinement_branches.id"), nullable=False,
+    )
+    parent_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    refinement_request: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    scores: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    deltas: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    deltas_from_original: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    strategy_used: Mapped[str | None] = mapped_column(String, nullable=True)
+    suggestions: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
 
 # --- Security audit trail ---
@@ -369,10 +415,12 @@ class AuditLog(Base):
     """Security audit trail for sensitive operations."""
     __tablename__ = "audit_log"
 
-    id = Column(String, primary_key=True, default=_uuid)
-    timestamp = Column(DateTime, default=_utcnow, nullable=False, index=True)
-    action = Column(String, nullable=False, index=True)
-    actor_ip = Column(String, nullable=True)
-    actor_session = Column(String, nullable=True)
-    detail = Column(JSON, nullable=True)
-    outcome = Column(String, nullable=False, default="success")
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, nullable=False, index=True,
+    )
+    action: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    actor_ip: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_session: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    outcome: Mapped[str] = mapped_column(String, nullable=False, default="success")

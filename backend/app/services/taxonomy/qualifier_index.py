@@ -205,13 +205,13 @@ class QualifierIndex:
         import pickle
 
         async with self._lock:
-            data = {"matrix": self._matrix, "ids": list(self._ids)}
+            data: dict[str, object] = {"matrix": self._matrix, "ids": list(self._ids)}
         try:
             with open(cache_path, "wb") as f:
                 pickle.dump(data, f)
             logger.info(
                 "QualifierIndex cache saved: %d entries -> %s",
-                len(data["ids"]),
+                len(data["ids"]),  # type: ignore[arg-type]
                 cache_path,
             )
         except Exception as exc:

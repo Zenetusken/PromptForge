@@ -343,9 +343,9 @@ async def update_optimization(
         await db.commit()
         # Publish event so SSE subscribers (Navigator, ActivityPanel) update
         try:
-            from app.services.event_bus import EventBus
+            from app.services.event_bus import event_bus
 
-            await EventBus.publish("optimization_updated", {
+            event_bus.publish("optimization_updated", {
                 "id": opt.id,
                 "trace_id": opt.trace_id,
                 "intent_label": opt.intent_label,
@@ -375,7 +375,7 @@ def _serialize_optimization(opt: Optimization, *, cluster_id: str | None = None)
     """Serialize an Optimization record to the standard API shape."""
     return OptimizationDetail(
         id=opt.id,
-        trace_id=opt.trace_id,
+        trace_id=opt.trace_id or "",
         raw_prompt=opt.raw_prompt,
         optimized_prompt=opt.optimized_prompt,
         task_type=opt.task_type,
@@ -653,7 +653,7 @@ async def passthrough_save(
     opt.original_scores = original_scores
     opt.score_deltas = deltas
     opt.scoring_mode = scoring_mode
-    opt.heuristic_flags = heuristic_flags if heuristic_flags else None
+    opt.heuristic_flags = heuristic_flags if heuristic_flags else None  # type: ignore[assignment]
 
     # Generate heuristic suggestions (zero-LLM)
     from app.services.heuristic_analyzer import HeuristicAnalyzer
@@ -662,7 +662,7 @@ async def passthrough_save(
     suggestions = generate_heuristic_suggestions(
         dimension_scores=optimized_scores or {},
         weaknesses=_analysis.weaknesses,
-        strategy_used=effective_strategy,
+        strategy_used=effective_strategy or "auto",
     )
     opt.suggestions = suggestions
 

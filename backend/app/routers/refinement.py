@@ -107,7 +107,7 @@ async def refine(
         }
         initial = await ref_svc.create_initial_turn(
             opt.id,
-            opt.optimized_prompt,
+            opt.optimized_prompt or "",
             scores_dict,
             opt.strategy_used or "auto",
         )
@@ -224,7 +224,7 @@ async def get_versions(
             detail="Optimization not found.",
         )
 
-    ref_svc = RefinementService(db=db, provider=None, prompts_dir=PROMPTS_DIR)
+    ref_svc = RefinementService(db=db, provider=None, prompts_dir=PROMPTS_DIR)  # type: ignore[arg-type]
     turns = await ref_svc.get_versions(optimization_id, branch_id=branch_id)
 
     return {
@@ -268,7 +268,7 @@ async def rollback(
             detail="Optimization not found.",
         )
 
-    ref_svc = RefinementService(db=db, provider=None, prompts_dir=PROMPTS_DIR)
+    ref_svc = RefinementService(db=db, provider=None, prompts_dir=PROMPTS_DIR)  # type: ignore[arg-type]
 
     try:
         new_branch = await ref_svc.rollback(optimization_id, to_version=body.to_version)

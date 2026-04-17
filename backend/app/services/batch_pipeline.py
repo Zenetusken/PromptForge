@@ -160,7 +160,7 @@ async def run_single_prompt(
         # Semantic upgrade gate (matches pipeline.py)
         effective_task_type = semantic_upgrade_general(analysis.task_type, raw_prompt)
         if effective_task_type != analysis.task_type:
-            analysis.task_type = effective_task_type
+            analysis.task_type = effective_task_type  # type: ignore[assignment]
 
         # Domain resolution (matches pipeline.py hot path)
         effective_domain = analysis.domain or "general"
@@ -795,7 +795,7 @@ async def batch_taxonomy_assign(
     async with session_factory() as db:
         for pending in completed:
             try:
-                embedding = np.frombuffer(pending.embedding, dtype=np.float32)
+                embedding = np.frombuffer(pending.embedding, dtype=np.float32)  # type: ignore[arg-type]
                 cluster = await assign_cluster(
                     db=db,
                     embedding=embedding,

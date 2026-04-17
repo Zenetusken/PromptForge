@@ -122,7 +122,7 @@ def score_to_centroid_weight(score: float | None) -> float:
 
 
 def merge_score_into_cluster(
-    cluster: object,
+    cluster: PromptCluster,
     incoming_score: float | None,
 ) -> None:
     """Incorporate a single optimization's score into a cluster's running mean.
@@ -433,7 +433,7 @@ async def assign_cluster(
 
         for c_row in clusters:
             try:
-                c = np.frombuffer(c_row.centroid_embedding, dtype=np.float32)
+                c = np.frombuffer(c_row.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
                 if c.shape[0] != embedding.shape[0]:
                     logger.warning(
                         "Skipping cluster '%s' — centroid dim %d != expected %d",
@@ -532,7 +532,7 @@ async def assign_cluster(
                         # score 3.0 → 0.20, score 5.0 → 0.35, score 7.0 → 0.59, score 9.0 → 0.85
                         score_weight = score_to_centroid_weight(overall_score)
                         old_centroid = np.frombuffer(
-                            matched.centroid_embedding, dtype=np.float32
+                            matched.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                         )
                         # Fallback for pre-migration clusters where
                         # weighted_member_sum is 0.0 — use member_count
@@ -632,7 +632,7 @@ async def assign_cluster(
             cross_centroids: list[np.ndarray] = []
             for c_row in cross_project_candidates:
                 try:
-                    c = np.frombuffer(c_row.centroid_embedding, dtype=np.float32)
+                    c = np.frombuffer(c_row.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
                     if c.shape[0] == embedding.shape[0]:
                         cross_centroids.append(c)
                         cross_valid.append(c_row)
@@ -672,7 +672,7 @@ async def assign_cluster(
                             # Cross-project merge accepted — update centroid
                             score_weight = score_to_centroid_weight(overall_score)
                             old_centroid = np.frombuffer(
-                                c_matched.centroid_embedding, dtype=np.float32
+                                c_matched.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                             )
                             weighted_sum = (
                                 getattr(c_matched, "weighted_member_sum", None)
@@ -765,7 +765,7 @@ async def assign_cluster(
             ):
                 try:
                     sib_emb = np.frombuffer(
-                        c_row.centroid_embedding, dtype=np.float32
+                        c_row.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                     )
                     sibling_data.append(
                         (sib_emb, c_row.umap_x, c_row.umap_y, c_row.umap_z)
@@ -1240,7 +1240,7 @@ async def compute_pattern_centroid(
         )
         for p in parent_result.scalars().all():
             try:
-                c = np.frombuffer(p.centroid_embedding, dtype=np.float32)
+                c = np.frombuffer(p.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
                 vecs.append(c)
             except (ValueError, TypeError) as _pc_exc:
                 logger.warning(
@@ -1253,7 +1253,7 @@ async def compute_pattern_centroid(
     root_clusters = [c for c in clusters if not c.parent_id]
     for rc in root_clusters:
         try:
-            c = np.frombuffer(rc.centroid_embedding, dtype=np.float32)
+            c = np.frombuffer(rc.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
             vecs.append(c)
         except (ValueError, TypeError) as _rc_exc:
             logger.warning(

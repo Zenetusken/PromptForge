@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 # Type alias for the cross-process notification callback.
 # Signature: (event_type: str, payload: dict) -> None
 # The callback is responsible for scheduling async work if needed.
-CrossProcessNotify = Callable[[str, dict], None]
+CrossProcessNotify = Callable[[str, Any], None]
 
 
 class RoutingStatePayload(TypedDict):
@@ -582,7 +582,7 @@ class RoutingManager:
                                     file_fresh = file_elapsed < _dc_staleness
                                 except (ValueError, TypeError):
                                     pass
-                            if file_fresh:
+                            if file_fresh and data:
                                 try:
                                     fresh_activity = datetime.fromisoformat(
                                         data["last_activity"],

@@ -503,7 +503,7 @@ async def poll_device_code(
     return DevicePollResponse(
         status="success",
         user=GitHubUserResponse(
-            login=user.get("login"),
+            login=user.get("login") or "",
             avatar_url=user.get("avatar_url"),
         ),
     )

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import random
+from typing import Any
 
 import numpy as np
 from scipy.linalg import orthogonal_procrustes
@@ -96,7 +97,7 @@ class UMAPProjector:
 
     def __init__(self, random_state: int = 42) -> None:
         self._random_state = random_state
-        self._model: object | None = None
+        self._model: Any = None
 
     # ------------------------------------------------------------------
     # Public API

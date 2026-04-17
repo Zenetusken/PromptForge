@@ -27,7 +27,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from sqlalchemy import delete, func, select, update
@@ -507,7 +507,7 @@ async def phase_evaluate_candidates(
 
     # Track outcomes per parent_id for split_fully_reversed detection
     # Maps parent_id → {promoted: int, rejected: int}
-    parent_outcomes: dict[str, dict[str, int]] = {}
+    parent_outcomes: dict[str, dict[str, Any]] = {}
 
     # Exclude ALL candidate IDs from reassignment targets — prevents
     # rejected members from being reassigned to a sibling candidate
@@ -944,7 +944,7 @@ async def phase_reconcile(
             .where(Optimization.cluster_id.isnot(None))
             .group_by(Optimization.cluster_id)
         )
-        actual_counts = dict(count_q.all())
+        actual_counts: dict[str, int] = dict(count_q.all())  # type: ignore[arg-type]
 
         # Batch-load all optimization embeddings + scores grouped by cluster_id.
         all_emb_q = await db.execute(
@@ -1440,7 +1440,7 @@ async def phase_reconcile(
             repaired = 0
             for orphan in semi_orphans:
                 try:
-                    emb = np.frombuffer(orphan.embedding, dtype=np.float32)
+                    emb = np.frombuffer(orphan.embedding, dtype=np.float32)  # type: ignore[arg-type]
                     matches = engine._embedding_index.search(emb, k=1, threshold=0.25)
                     if matches:
                         new_cid, _sim = matches[0]
@@ -2028,7 +2028,7 @@ async def phase_split_emerge(
             for f in node_families:
                 try:
                     emb = np.frombuffer(
-                        f.centroid_embedding, dtype=np.float32
+                        f.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                     )
                     opt_vec = opt_idx.get_vector(f.id) if opt_idx else None
                     trans_vec = trans_idx.get_vector(f.id) if trans_idx else None
@@ -2194,7 +2194,7 @@ async def phase_merge(
                 except (ValueError, TypeError):
                     pass
             try:
-                c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
+                c = np.frombuffer(n.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
                 opt_vec = opt_idx.get_vector(n.id) if opt_idx else None
                 trans_vec = trans_idx.get_vector(n.id) if trans_idx else None
                 qual_vec = qual_idx.get_vector(n.id) if qual_idx else None
@@ -2227,11 +2227,11 @@ async def phase_merge(
             norms = np.linalg.norm(mat, axis=1, keepdims=True)
             norms = np.where(norms == 0, 1.0, norms)
             mat_norm = mat / norms
-            sim = mat_norm @ mat_norm.T
-            np.fill_diagonal(sim, -1)
+            sim_matrix_mg = mat_norm @ mat_norm.T
+            np.fill_diagonal(sim_matrix_mg, -1)
 
-            best_i, best_j = np.unravel_index(np.argmax(sim), sim.shape)
-            best_score = float(sim[best_i, best_j])
+            best_i, best_j = np.unravel_index(np.argmax(sim_matrix_mg), sim_matrix_mg.shape)
+            best_score = float(sim_matrix_mg[best_i, best_j])
 
             merge_node_a = valid_nodes[int(best_i)]
             merge_node_b = valid_nodes[int(best_j)]
@@ -2358,7 +2358,7 @@ async def phase_merge(
                     await _detect_merge_back(db, _loser_merge_until, merged, loser.id)
                     # Update embedding index: upsert winner, remove loser
                     winner_centroid = np.frombuffer(
-                        merged.centroid_embedding, dtype=np.float32
+                        merged.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                     )
                     await engine._embedding_index.upsert(
                         merged.id, winner_centroid
@@ -2458,10 +2458,10 @@ async def phase_merge(
                     # Use blended centroids for consistency with global merge.
                     try:
                         emb_a = np.frombuffer(
-                            survivor.centroid_embedding, dtype=np.float32
+                            survivor.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                         )
                         emb_b = np.frombuffer(
-                            loser.centroid_embedding, dtype=np.float32
+                            loser.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                         )
                         blend_a = blend_embeddings(
                             raw=emb_a,
@@ -2475,7 +2475,7 @@ async def phase_merge(
                             transformation=trans_idx.get_vector(loser.id) if trans_idx else None,
                             qualifier=qual_idx.get_vector(loser.id) if qual_idx else None,
                         )
-                        sim = cosine_similarity(blend_a, blend_b)
+                        sim = float(cosine_similarity(blend_a, blend_b))
                     except (ValueError, TypeError):
                         sim = 0.0
                     combined_mc = max(
@@ -2505,7 +2505,7 @@ async def phase_merge(
                             )
                             await _detect_merge_back(db, _loser_merge_until_lbl, merged, loser.id)
                             winner_centroid = np.frombuffer(
-                                merged.centroid_embedding, dtype=np.float32
+                                merged.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                             )
                             await engine._embedding_index.upsert(
                                 merged.id, winner_centroid
@@ -2538,11 +2538,11 @@ async def phase_merge(
                         # Use blended centroids for consistency with global merge.
                         try:
                             emb_i = np.frombuffer(
-                                remaining[i].centroid_embedding,
+                                remaining[i].centroid_embedding,  # type: ignore[arg-type]
                                 dtype=np.float32,
                             )
                             emb_j = np.frombuffer(
-                                remaining[j].centroid_embedding,
+                                remaining[j].centroid_embedding,  # type: ignore[arg-type]
                                 dtype=np.float32,
                             )
                             blend_i = blend_embeddings(
@@ -2557,7 +2557,7 @@ async def phase_merge(
                                 transformation=trans_idx.get_vector(remaining[j].id) if trans_idx else None,
                                 qualifier=qual_idx.get_vector(remaining[j].id) if qual_idx else None,
                             )
-                            sim = cosine_similarity(blend_i, blend_j)
+                            sim = float(cosine_similarity(blend_i, blend_j))
                         except (ValueError, TypeError):
                             continue
                         both_active = (
@@ -2625,7 +2625,7 @@ async def phase_merge(
                                 )
                                 await _detect_merge_back(db, _loser_merge_until_emb, merged, small.id)
                                 winner_centroid = np.frombuffer(
-                                    merged.centroid_embedding,
+                                    merged.centroid_embedding,  # type: ignore[arg-type]
                                     dtype=np.float32,
                                 )
                                 await engine._embedding_index.upsert(
@@ -3012,6 +3012,8 @@ async def phase_refresh(
                             },
                         )
                         from app.providers.base import call_provider_with_retry
+                        if engine._provider is None:
+                            continue
                         async with _extraction_sem:
                             response = await call_provider_with_retry(
                                 engine._provider,
@@ -3047,13 +3049,15 @@ async def phase_refresh(
             # get processed.
             for i, (node, member_texts, sample_opts) in enumerate(stale_clusters):
                 try:
-                    new_label = labels[i]
-                    if isinstance(new_label, BaseException):
+                    raw_label: Any = labels[i]
+                    if isinstance(raw_label, BaseException):
                         logger.warning(
                             "Label generation failed for cluster %s: %s",
-                            node.id, new_label,
+                            node.id, raw_label,
                         )
                         new_label = None
+                    else:
+                        new_label = raw_label
                     if new_label and new_label != "Unnamed Cluster":
                         node.label = new_label
 
@@ -3305,16 +3309,16 @@ async def phase_refresh(
                 PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
             )
         )
-        all_patterns = list(all_patterns_q.scalars().all())
+        all_meta_patterns: list[MetaPattern] = list(all_patterns_q.scalars().all())
 
-        if len(all_patterns) >= 2:
+        if len(all_meta_patterns) >= 2:
             # Build embedding matrix + cluster_id mapping
             pattern_embs: list[np.ndarray] = []
             pattern_cluster_ids: list[str] = []
             valid_patterns: list[MetaPattern] = []
-            for mp in all_patterns:
+            for mp in all_meta_patterns:
                 try:
-                    emb = np.frombuffer(mp.embedding, dtype=np.float32).copy()
+                    emb = np.frombuffer(mp.embedding, dtype=np.float32).copy()  # type: ignore[arg-type]
                     if emb.shape[0] == 384:
                         pattern_embs.append(emb)
                         pattern_cluster_ids.append(mp.cluster_id)
@@ -3352,8 +3356,8 @@ async def phase_refresh(
                     "Computed global_source_count for %d meta-patterns",
                     len(valid_patterns),
                 )
-        elif len(all_patterns) == 1:
-            all_patterns[0].global_source_count = 1
+        elif len(all_meta_patterns) == 1:
+            all_meta_patterns[0].global_source_count = 1
             await db.flush()
     except Exception as gsc_exc:
         logger.warning(
@@ -3997,18 +4001,17 @@ async def phase_archive_empty_sub_domains(
         )
 
         try:
-            if get_event_logger:
-                get_event_logger().log_decision(
-                    path="warm",
-                    op="archive",
-                    decision="sub_domain_archived",
-                    cluster_id=sub.id,
-                    context={
-                        "label": sub.label,
-                        "parent_domain": parent_label,
-                        "age_hours": age_hours,
-                    },
-                )
+            get_event_logger().log_decision(
+                path="warm",
+                op="archive",
+                decision="sub_domain_archived",
+                cluster_id=sub.id,
+                context={
+                    "label": sub.label,
+                    "parent_domain": parent_label,
+                    "age_hours": age_hours,
+                },
+            )
         except RuntimeError:
             pass
 

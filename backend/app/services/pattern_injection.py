@@ -222,7 +222,7 @@ async def auto_inject_patterns(
                     PromptCluster.id.in_(cluster_ids)
                 )
             )
-            cluster_meta: dict[str, tuple[str, str]] = {
+            cluster_meta = {
                 row.id: (row.label or "unnamed", row.domain or "general")
                 for row in cluster_result
             }
@@ -376,7 +376,7 @@ async def auto_inject_patterns(
             gp_count = 0
             for gp in gp_q.scalars():
                 try:
-                    gp_emb = np.frombuffer(gp.embedding, dtype=np.float32)
+                    gp_emb = np.frombuffer(gp.embedding, dtype=np.float32)  # type: ignore[arg-type]
                     sim = float(np.dot(prompt_embedding, gp_emb) / (
                         np.linalg.norm(prompt_embedding) * np.linalg.norm(gp_emb) + 1e-9
                     ))

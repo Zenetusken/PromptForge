@@ -334,9 +334,14 @@ async def split_cluster(
         await db.flush()
 
         # Interpolate UMAP position from positioned siblings or parent
-        siblings = []
+        siblings: list[tuple[np.ndarray, float, float, float]] = []
         for existing in new_children:
-            if existing.umap_x is not None and existing.centroid_embedding:
+            if (
+                existing.umap_x is not None
+                and existing.umap_y is not None
+                and existing.umap_z is not None
+                and existing.centroid_embedding
+            ):
                 sib_emb = np.frombuffer(
                     existing.centroid_embedding, dtype=np.float32
                 )
@@ -347,7 +352,7 @@ async def split_cluster(
             pos = interpolate_position(centroid, siblings)
             if pos:
                 child_node.umap_x, child_node.umap_y, child_node.umap_z = pos
-        elif node.umap_x is not None:
+        elif node.umap_x is not None and node.umap_y is not None and node.umap_z is not None:
             child_node.umap_x = node.umap_x + random.uniform(-0.5, 0.5)
             child_node.umap_y = node.umap_y + random.uniform(-0.5, 0.5)
             child_node.umap_z = node.umap_z + random.uniform(-0.5, 0.5)
@@ -471,7 +476,7 @@ async def split_cluster(
 
     # Upsert children into embedding index
     for child in new_children:
-        c_emb = np.frombuffer(child.centroid_embedding, dtype=np.float32)
+        c_emb = np.frombuffer(child.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
         await engine._embedding_index.upsert(child.id, c_emb)
 
     # Reassign noise to nearest child
@@ -500,7 +505,7 @@ async def split_cluster(
             n_emb = np.frombuffer(n_bytes, dtype=np.float32)
             best_c, best_s = None, -1.0
             for ch in new_children:
-                c_emb = np.frombuffer(ch.centroid_embedding, dtype=np.float32)
+                c_emb = np.frombuffer(ch.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
                 s = cosine_similarity(n_emb, c_emb)
                 if s > best_s:
                     best_s, best_c = s, ch
@@ -530,7 +535,7 @@ async def split_cluster(
         for ch in new_children:
             try:
                 child_centroids.append(
-                    np.frombuffer(ch.centroid_embedding, dtype=np.float32)
+                    np.frombuffer(ch.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
                 )
             except (ValueError, TypeError) as _cc_exc:
                 logger.warning(
@@ -544,8 +549,8 @@ async def split_cluster(
                 if i == j:
                     continue
                 sim = float(np.dot(
-                    child_centroids[i] / max(np.linalg.norm(child_centroids[i]), 1e-9),
-                    other_c / max(np.linalg.norm(other_c), 1e-9),
+                    child_centroids[i] / max(float(np.linalg.norm(child_centroids[i])), 1e-9),
+                    other_c / max(float(np.linalg.norm(other_c)), 1e-9),
                 ))
                 dist = 1.0 - sim
                 if dist < min_dist:
@@ -566,7 +571,7 @@ async def split_cluster(
                 try:
                     oe = np.frombuffer(oe_bytes, dtype=np.float32)
                     if oe.shape[0] == 384:
-                        opt_embs.append(oe / max(np.linalg.norm(oe), 1e-9))
+                        opt_embs.append(oe / max(float(np.linalg.norm(oe)), 1e-9))
                 except (ValueError, TypeError):
                     continue
             if len(opt_embs) >= 2:

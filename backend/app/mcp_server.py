@@ -60,7 +60,7 @@ try:
 
     _orig_validate_session = StreamableHTTPServerTransport._validate_session
 
-    async def _patched_validate_session(self, request, send):  # type: ignore[override]
+    async def _patched_validate_session(self, request, send):
         """Accept GET requests without session ID (SSE reconnection)."""
         from starlette.requests import Request as _Req
 
@@ -70,7 +70,7 @@ try:
                 return True
         return await _orig_validate_session(self, request, send)
 
-    StreamableHTTPServerTransport._validate_session = _patched_validate_session  # type: ignore[assignment]
+    StreamableHTTPServerTransport._validate_session = _patched_validate_session  # type: ignore[method-assign]
     logger.debug("Patched StreamableHTTPServerTransport._validate_session for SSE reconnection")
 except Exception:
     logger.warning("Could not patch StreamableHTTPServerTransport — SSE reconnection may not work", exc_info=True)
@@ -90,7 +90,7 @@ try:
 
     _orig_handle_stateful = StreamableHTTPSessionManager._handle_stateful_request
 
-    async def _patched_handle_stateful(self, scope, receive, send):  # type: ignore[override]
+    async def _patched_handle_stateful(self, scope, receive, send):
         """Release _session_creation_lock before handle_request to prevent SSE deadlock."""
         from http import HTTPStatus
         from uuid import uuid4
@@ -135,7 +135,7 @@ try:
                 async def run_server(
                     *, task_status: anyio.abc.TaskStatus[None] = anyio.TASK_STATUS_IGNORED,
                 ) -> None:
-                    async with http_transport.connect() as streams:  # type: ignore[union-attr]
+                    async with http_transport.connect() as streams:
                         read_stream, write_stream = streams
                         task_status.started()
                         try:
@@ -148,16 +148,16 @@ try:
                         except Exception as exc:
                             logger.error(
                                 "Session %s crashed: %s",
-                                http_transport.mcp_session_id,  # type: ignore[union-attr]
+                                http_transport.mcp_session_id,
                                 exc,
                                 exc_info=True,
                             )
                         finally:
-                            sid = http_transport.mcp_session_id  # type: ignore[union-attr]
+                            sid = http_transport.mcp_session_id
                             if (
                                 sid
                                 and sid in _instances
-                                and not http_transport.is_terminated  # type: ignore[union-attr]
+                                and not http_transport.is_terminated
                             ):
                                 logger.info("Cleaning up crashed session %s", sid)
                                 del _instances[sid]
@@ -184,7 +184,7 @@ try:
         )
         await response(scope, receive, send)
 
-    StreamableHTTPSessionManager._handle_stateful_request = _patched_handle_stateful  # type: ignore[assignment]
+    StreamableHTTPSessionManager._handle_stateful_request = _patched_handle_stateful  # type: ignore[method-assign]
     logger.debug("Patched StreamableHTTPSessionManager._handle_stateful_request — SSE lock fix")
 except Exception:
     logger.warning(
@@ -872,7 +872,7 @@ def _patched_streamable_http_app(**kwargs):
     return app
 
 
-mcp.streamable_http_app = _patched_streamable_http_app
+mcp.streamable_http_app = _patched_streamable_http_app  # type: ignore[method-assign]
 
 
 # ---------------------------------------------------------------------------

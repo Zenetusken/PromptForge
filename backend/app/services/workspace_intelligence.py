@@ -53,10 +53,10 @@ class WorkspaceIntelligence:
         cache_key = frozenset(str(r) for r in roots)
         cached = self._cache.get(cache_key)
         if cached is not None:
-            profile, cached_at = cached
+            cached_profile, cached_at = cached
             if time.monotonic() - cached_at < _WORKSPACE_CACHE_TTL:
                 logger.debug("Workspace profile cache hit for %d roots", len(roots))
-                return profile
+                return cached_profile
             logger.debug("Workspace profile cache expired for %d roots", len(roots))
 
         logger.debug("Analyzing %d workspace roots: %s", len(roots), [str(r) for r in roots])

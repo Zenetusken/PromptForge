@@ -600,7 +600,7 @@ async def build_composite_query(
         embeddings = []
         for row in result.scalars().all():
             try:
-                embeddings.append(np.frombuffer(row, dtype=np.float32).copy())
+                embeddings.append(np.frombuffer(row, dtype=np.float32).copy())  # type: ignore[arg-type]
             except (ValueError, TypeError):
                 continue
         if embeddings:

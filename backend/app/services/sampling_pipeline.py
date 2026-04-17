@@ -436,7 +436,7 @@ def _build_analysis_from_text(
     intent_label = validate_intent_label(intent_label, raw_prompt)
 
     return AnalysisResult(
-        task_type=task_type,
+        task_type=task_type,  # type: ignore[arg-type]
         weaknesses=weaknesses[:5],
         strengths=strengths[:5],
         selected_strategy=default_strategy,
@@ -632,7 +632,7 @@ async def run_sampling_pipeline(
     # Upgrade "general" to a specific type when strong keywords are present
     effective_task_type = semantic_upgrade_general(analysis.task_type, prompt)
     if effective_task_type != analysis.task_type:
-        analysis.task_type = effective_task_type
+        analysis.task_type = effective_task_type  # type: ignore[assignment]
 
     # Resolve domain via domain nodes (replaces hardcoded VALID_DOMAINS whitelist)
     _raw_domain = getattr(analysis, "domain", None) or "general"
@@ -1349,7 +1349,7 @@ async def run_sampling_analyze(ctx: Context, prompt: str) -> dict:
     # Upgrade "general" to a specific type when strong keywords are present
     _upgraded_task_type = semantic_upgrade_general(analysis.task_type, prompt)
     if _upgraded_task_type != analysis.task_type:
-        analysis.task_type = _upgraded_task_type
+        analysis.task_type = _upgraded_task_type  # type: ignore[assignment]
 
     try:
         from app.tools._shared import get_domain_resolver

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -165,7 +166,7 @@ class PromptLifecycleService:
     async def curate(
         self,
         db: AsyncSession,
-        embedding_index: object | None = None,
+        embedding_index: Any = None,
     ) -> dict:
         """Run curation checks on all clusters.
 
@@ -253,7 +254,7 @@ class PromptLifecycleService:
     def _archive_cluster(
         cluster: PromptCluster,
         now: datetime,
-        embedding_index: object | None,
+        embedding_index: Any,
     ) -> None:
         """Centralized archival: state + metrics + embedding index cleanup.
 

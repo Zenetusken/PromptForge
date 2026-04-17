@@ -62,6 +62,9 @@ async def handle_analyze(
         logger.info("synthesis_analyze: tier=passthrough — rejecting (analysis requires provider)")
         raise ValueError("Analysis requires a local provider or MCP sampling capability.")
 
+    if provider is None:
+        raise ValueError("No LLM provider available.")
+
     start = time.monotonic()
     logger.info(
         "synthesis_analyze: tier=internal provider=%s prompt_len=%d",

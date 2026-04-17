@@ -5,6 +5,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import AsyncGenerator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class EventBus:
         self._sequence: int = 0
         self._replay_buffer: deque[dict] = deque(maxlen=_REPLAY_BUFFER_SIZE)
 
-    def publish(self, event_type: str, data: dict) -> None:
+    def publish(self, event_type: str, data: dict | Any) -> None:
         if self._shutting_down:
             return
         self._sequence += 1

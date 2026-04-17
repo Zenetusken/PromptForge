@@ -143,7 +143,7 @@ async def _discover_promotion_candidates(db: AsyncSession) -> tuple[int, int]:
     # Build lookup: id -> (pattern, embedding)
     emb_cache: dict[str, np.ndarray] = {}
     for mp in all_patterns:
-        emb_cache[mp.id] = np.frombuffer(mp.embedding, dtype=np.float32).copy()
+        emb_cache[mp.id] = np.frombuffer(mp.embedding, dtype=np.float32).copy()  # type: ignore[arg-type]
 
     # Pre-load existing GlobalPatterns for dedup
     gp_stmt = select(GlobalPattern).where(
@@ -153,7 +153,7 @@ async def _discover_promotion_candidates(db: AsyncSession) -> tuple[int, int]:
     gp_result = await db.execute(gp_stmt)
     existing_gps = list(gp_result.scalars().all())
     gp_embs: list[tuple[GlobalPattern, np.ndarray]] = [
-        (gp, np.frombuffer(gp.embedding, dtype=np.float32).copy())
+        (gp, np.frombuffer(gp.embedding, dtype=np.float32).copy())  # type: ignore[arg-type]
         for gp in existing_gps
     ]
 
@@ -213,7 +213,7 @@ async def _discover_promotion_candidates(db: AsyncSession) -> tuple[int, int]:
                 and cluster.state not in EXCLUDED_STRUCTURAL_STATES
                 and (cluster.avg_score or 0) >= GLOBAL_PATTERN_PROMOTION_MIN_SCORE
             ):
-                avg_scores.append(cluster.avg_score)
+                avg_scores.append(cluster.avg_score or 0.0)
 
         if len(avg_scores) < GLOBAL_PATTERN_PROMOTION_MIN_CLUSTERS:
             continue

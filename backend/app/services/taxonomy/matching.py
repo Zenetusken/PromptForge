@@ -161,13 +161,13 @@ async def match_prompt(
     # ------------------------------------------------------------------
     from app.services.taxonomy._constants import EXCLUDED_STRUCTURAL_STATES
 
-    result = await db.execute(
+    families_result = await db.execute(
         select(PromptCluster).where(
             PromptCluster.parent_id.isnot(None),
             PromptCluster.state.notin_(EXCLUDED_STRUCTURAL_STATES),
         )
     )
-    families = list(result.scalars().all())
+    families = list(families_result.scalars().all())
 
     result: PatternMatch | None = None
 
@@ -179,7 +179,7 @@ async def match_prompt(
 
         for f in families:
             try:
-                c = np.frombuffer(f.centroid_embedding, dtype=np.float32)
+                c = np.frombuffer(f.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
                 if c.shape[0] != query_emb.shape[0]:
                     continue
                 centroids.append(c)
@@ -268,7 +268,7 @@ async def match_prompt(
 
             for n in all_nodes:
                 try:
-                    c = np.frombuffer(n.centroid_embedding, dtype=np.float32)
+                    c = np.frombuffer(n.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
                     if c.shape[0] != query_emb.shape[0]:
                         continue
                     node_centroids.append(c)
@@ -334,7 +334,8 @@ async def match_prompt(
                         for fam in candidate_families:
                             try:
                                 fc = np.frombuffer(
-                                    fam.centroid_embedding, dtype=np.float32
+                                    fam.centroid_embedding,  # type: ignore[arg-type]
+                                    dtype=np.float32,
                                 )
                                 if fc.shape[0] != search_emb.shape[0]:
                                     continue
@@ -564,7 +565,7 @@ async def map_domain(
     centroids: list[np.ndarray] = []
     for node in nodes:
         try:
-            c = np.frombuffer(node.centroid_embedding, dtype=np.float32)
+            c = np.frombuffer(node.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
             if c.shape[0] != query_emb.shape[0]:
                 logger.warning(
                     "PromptCluster '%s' centroid dim %d != query dim %d — skipped",

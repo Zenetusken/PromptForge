@@ -243,8 +243,8 @@ async def attempt_merge(
         # score-weight that produced it (weighted_member_sum), not the
         # unweighted count.  Falls back to member_count for pre-migration
         # clusters where weighted_member_sum is 0.0 or None.
-        emb_a = np.frombuffer(node_a.centroid_embedding, dtype=np.float32).copy()
-        emb_b = np.frombuffer(node_b.centroid_embedding, dtype=np.float32).copy()
+        emb_a = np.frombuffer(node_a.centroid_embedding, dtype=np.float32).copy()  # type: ignore[arg-type]
+        emb_b = np.frombuffer(node_b.centroid_embedding, dtype=np.float32).copy()  # type: ignore[arg-type]
         wms_a = node_a.weighted_member_sum or float(count_a) or 1.0
         wms_b = node_b.weighted_member_sum or float(count_b) or 1.0
         wms_total = wms_a + wms_b
@@ -323,7 +323,7 @@ async def attempt_merge(
                 )
                 .values(domain=survivor.domain)
             )
-            domain_migrated = _dm.rowcount
+            domain_migrated = _dm.rowcount  # type: ignore[attr-defined]
 
         # Atomically migrate OptimizationPattern join records to survivor.
         # Without this, OP records become stale (pointing to archived loser),
@@ -336,10 +336,10 @@ async def attempt_merge(
             .values(cluster_id=survivor.id)
         )
 
-        if opt_result.rowcount:
+        if opt_result.rowcount:  # type: ignore[attr-defined]
             logger.info(
                 "merge: reassigned %d optimizations + %d OP records from '%s' to '%s'%s",
-                opt_result.rowcount, op_result.rowcount, loser.label, survivor.label,
+                opt_result.rowcount, op_result.rowcount, loser.label, survivor.label,  # type: ignore[attr-defined]
                 f" (domain migrated: {domain_migrated})" if domain_migrated else "",
             )
 
@@ -359,7 +359,7 @@ async def attempt_merge(
             for mp in loser_patterns:
                 try:
                     await merge_meta_pattern(
-                        db, survivor.id, mp.pattern_text, embedding_svc,
+                        db, survivor.id, mp.pattern_text, embedding_svc,  # type: ignore[arg-type]
                     )
                     moved += 1
                 except Exception:
@@ -634,7 +634,7 @@ async def attempt_retire(
                 )
                 .values(domain=target_sibling.domain)
             )
-            domain_migrated = _dm.rowcount
+            domain_migrated = _dm.rowcount  # type: ignore[attr-defined]
 
         # Atomically migrate OP records (same fix as attempt_merge)
         from app.models import OptimizationPattern
@@ -643,9 +643,9 @@ async def attempt_retire(
             .where(OptimizationPattern.cluster_id == node.id)
             .values(cluster_id=target_sibling.id)
         )
-        if opt_result.rowcount:
+        if opt_result.rowcount:  # type: ignore[attr-defined]
             target_sibling.member_count = (
-                (target_sibling.member_count or 0) + opt_result.rowcount
+                (target_sibling.member_count or 0) + opt_result.rowcount  # type: ignore[attr-defined]
             )
             # Transfer weighted_member_sum from retiring node to sibling
             target_sibling.weighted_member_sum = (
@@ -663,7 +663,7 @@ async def attempt_retire(
             target_sibling.avg_score = merged_avg
             logger.info(
                 "retire: reassigned %d optimizations to '%s' (member_count now %d)%s",
-                opt_result.rowcount, target_sibling.label,
+                opt_result.rowcount, target_sibling.label,  # type: ignore[attr-defined]
                 target_sibling.member_count,
                 f" (domain migrated: {domain_migrated})" if domain_migrated else "",
             )
@@ -681,7 +681,7 @@ async def attempt_retire(
             logger.info("retire: deleted %d orphaned meta-patterns", len(orphan_patterns))
 
         # Mark target sibling as pattern-stale (inherited members need re-extraction)
-        if opt_result.rowcount:
+        if opt_result.rowcount:  # type: ignore[attr-defined]
             from app.services.taxonomy.cluster_meta import write_meta as _wm
 
             target_sibling.cluster_metadata = _wm(
@@ -718,7 +718,7 @@ async def attempt_retire(
             sibling_target_id=target_sibling.id,
             sibling_label=target_sibling.label,
             families_reparented=families_moved,
-            optimizations_reassigned=opt_result.rowcount,
+            optimizations_reassigned=opt_result.rowcount,  # type: ignore[attr-defined]
         )
 
     except Exception:

@@ -680,7 +680,7 @@ class RepoIndexService:
         query_vec: np.ndarray = await self._es.aembed_single(query)
 
         corpus_vecs = [
-            np.frombuffer(row.embedding, dtype=np.float32) for row in rows
+            np.frombuffer(row.embedding, dtype=np.float32) for row in rows  # type: ignore[arg-type]
         ]
 
         ranked: list[tuple[int, float]] = self._es.cosine_search(
@@ -772,14 +772,14 @@ class RepoIndexService:
 
         # Fetch all indexed files
         t_fetch = time.monotonic()
-        result = await self._db.execute(
+        fetch_result = await self._db.execute(
             select(RepoFileIndex).where(
                 RepoFileIndex.repo_full_name == repo_full_name,
                 RepoFileIndex.branch == branch,
                 RepoFileIndex.embedding.isnot(None),
             )
         )
-        rows = result.scalars().all()
+        rows = fetch_result.scalars().all()
         if not rows:
             return None
         fetch_ms = (time.monotonic() - t_fetch) * 1000
@@ -787,7 +787,7 @@ class RepoIndexService:
         # Semantic search
         t_search = time.monotonic()
         query_vec = await self._es.aembed_single(query)
-        corpus_vecs = [np.frombuffer(r.embedding, dtype=np.float32) for r in rows]
+        corpus_vecs = [np.frombuffer(r.embedding, dtype=np.float32) for r in rows]  # type: ignore[arg-type]
         ranked = self._es.cosine_search(query_vec, corpus_vecs, top_k=len(rows))
         search_ms = (time.monotonic() - t_search) * 1000
 

@@ -191,8 +191,8 @@ async def lifespan(app: FastAPI):
     try:
         from app.database import async_session_factory
         from app.services.adaptation_tracker import AdaptationTracker
-        async with async_session_factory() as db:
-            tracker = AdaptationTracker(db)
+        async with async_session_factory() as db:  # type: ignore[assignment]
+            tracker = AdaptationTracker(db)  # type: ignore[arg-type]
             await tracker.cleanup_orphaned_affinities()
     except Exception as exc:
         logger.debug("Strategy affinity cleanup skipped: %s", exc)
@@ -201,8 +201,8 @@ async def lifespan(app: FastAPI):
     try:
         from app.database import async_session_factory
         from app.services.gc import run_startup_gc
-        async with async_session_factory() as db:
-            await run_startup_gc(db)
+        async with async_session_factory() as db:  # type: ignore[assignment]
+            await run_startup_gc(db)  # type: ignore[arg-type]
     except Exception as exc:
         logger.debug("Startup GC skipped: %s", exc)
 
@@ -1330,7 +1330,7 @@ async def lifespan(app: FastAPI):
 
         from app.database import async_session_factory
         from app.models import Optimization
-        async with async_session_factory() as db:
+        async with async_session_factory() as db:  # type: ignore[assignment]
             await db.execute(
                 update(Optimization)
                 .where(Optimization.status == "running")

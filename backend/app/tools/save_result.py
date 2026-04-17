@@ -176,7 +176,7 @@ async def handle_save_result(
             opt.model_used = model or "external"
             opt.models_by_phase = {"optimize": model or "external"}
             opt.scoring_mode = scoring_mode
-            opt.heuristic_flags = heuristic_flags if heuristic_flags else None
+            opt.heuristic_flags = heuristic_flags if heuristic_flags else None  # type: ignore[assignment]
             opt.suggestions = suggestions
             opt.status = "completed"
             if context_snapshot:

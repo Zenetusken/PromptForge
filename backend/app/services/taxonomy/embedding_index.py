@@ -16,6 +16,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -91,7 +92,7 @@ class _HnswBackend:
 
     def __init__(self, dim: int):
         self._dim = dim
-        self._index = None
+        self._index: Any = None
 
     def build(self, matrix: np.ndarray, count: int) -> None:
         import hnswlib
@@ -250,12 +251,13 @@ class EmbeddingIndex:
         tombstones = self._tombstones
 
         # Build compact list of active (non-tombstoned) labels
-        active_labels = []
-        active_ids = []
+        active_labels: list[int] = []
+        active_ids: list[str] = []
         for label in range(len(ids)):
-            if label not in tombstones and ids[label] is not None:
+            _id_val = ids[label]
+            if label not in tombstones and _id_val is not None:
                 active_labels.append(label)
-                active_ids.append(ids[label])
+                active_ids.append(_id_val)
 
         n = len(active_labels)
         if n < 2:
@@ -354,11 +356,13 @@ class EmbeddingIndex:
                     _best_id[:8] if _best_id and _best_id != "?" else "?",
                 )
 
-        return [
-            (ids[label], score)
-            for label, score in raw_results
-            if label < len(ids) and ids[label] is not None
-        ]
+        results: list[tuple[str, float]] = []
+        for label, score in raw_results:
+            if label < len(ids):
+                _id = ids[label]
+                if _id is not None:
+                    results.append((_id, score))
+        return results
 
     # -- upsert --
 
@@ -597,7 +601,7 @@ class EmbeddingIndex:
                 pickle.dump(data, f)
             logger.info(
                 "EmbeddingIndex cache saved: %d entries → %s",
-                len(data["ids"]),
+                len(data["ids"]),  # type: ignore[arg-type]
                 cache_path,
             )
         except Exception as exc:

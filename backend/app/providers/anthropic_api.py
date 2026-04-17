@@ -152,7 +152,7 @@ class AnthropicAPIProvider(LLMProvider):
             _raise_provider_error(exc)
 
         self._track_usage(response)
-        return response.parsed_output
+        return response.parsed_output  # type: ignore[return-value]
 
     async def complete_parsed_streaming(
         self,
@@ -183,7 +183,7 @@ class AnthropicAPIProvider(LLMProvider):
             _raise_provider_error(exc)
 
         self._track_usage(response, streaming=True)
-        return response.parsed_output
+        return response.parsed_output  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------

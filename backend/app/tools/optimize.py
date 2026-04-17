@@ -199,7 +199,7 @@ async def handle_optimize(
         # optimization_start already has the prefix — forward without double-prefixing.
         forward_verbatim = {"optimization_start"}
 
-        result = None
+        pipeline_result: dict | None = None
         # Resolve domain resolver for the internal pipeline
         try:
             from app.tools._shared import get_domain_resolver
@@ -209,7 +209,7 @@ async def handle_optimize(
 
         async for event in orchestrator.run(
             raw_prompt=prompt,
-            provider=decision.provider,
+            provider=decision.provider,  # type: ignore[arg-type]
             db=db,
             strategy_override=effective_strategy if effective_strategy != "auto" else None,
             codebase_context=enrichment.codebase_context,
@@ -228,13 +228,13 @@ async def handle_optimize(
             elif event.event in forward_verbatim:
                 await notify_event_bus(event.event, event.data)
             if event.event == "optimization_complete":
-                result = event.data
+                pipeline_result = event.data
             elif event.event == "error":
                 error_msg = event.data.get("error", "Pipeline failed")
                 logger.error("synthesis_optimize pipeline error: %s", error_msg)
                 raise ValueError(error_msg)
 
-        if not result:
+        if not pipeline_result:
             raise ValueError(
                 "Pipeline completed but produced no result. Check server logs for details."
             )
@@ -242,19 +242,19 @@ async def handle_optimize(
         elapsed_ms = int((time.monotonic() - start) * 1000)
         logger.info(
             "synthesis_optimize completed in %dms: optimization_id=%s strategy=%s",
-            elapsed_ms, result.get("id", ""), result.get("strategy_used", ""),
+            elapsed_ms, pipeline_result.get("id", ""), pipeline_result.get("strategy_used", ""),
         )
 
         # Notify backend event bus (MCP runs in a separate process)
         await notify_event_bus("optimization_created", {
-            "id": result.get("id", ""),
-            "trace_id": result.get("trace_id", ""),
-            "task_type": result.get("task_type", ""),
-            "intent_label": result.get("intent_label", "general"),
-            "domain": result.get("domain", "general"),
-            "domain_raw": result.get("domain_raw", "general"),
-            "strategy_used": result.get("strategy_used", ""),
-            "overall_score": result.get("overall_score"),
+            "id": pipeline_result.get("id", ""),
+            "trace_id": pipeline_result.get("trace_id", ""),
+            "task_type": pipeline_result.get("task_type", ""),
+            "intent_label": pipeline_result.get("intent_label", "general"),
+            "domain": pipeline_result.get("domain", "general"),
+            "domain_raw": pipeline_result.get("domain_raw", "general"),
+            "strategy_used": pipeline_result.get("strategy_used", ""),
+            "overall_score": pipeline_result.get("overall_score"),
             "provider": decision.provider_name,
             "status": "completed",
         })
@@ -262,22 +262,22 @@ async def handle_optimize(
         return OptimizeOutput(
             status="completed",
             pipeline_mode="internal",
-            optimization_id=result.get("id", ""),
-            optimized_prompt=result.get("optimized_prompt", ""),
-            task_type=result.get("task_type", ""),
-            strategy_used=result.get("strategy_used", ""),
-            changes_summary=result.get("changes_summary", ""),
-            scores=result.get("optimized_scores", result.get("scores", {})),
-            original_scores=result.get("original_scores", {}),
-            score_deltas=result.get("score_deltas", {}),
-            scoring_mode=result.get("scoring_mode", "independent"),
-            suggestions=result.get("suggestions", []),
-            warnings=result.get("warnings", []),
-            model_used=result.get("model_used"),
-            models_by_phase=result.get("models_by_phase"),
-            intent_label=result.get("intent_label"),
-            domain=result.get("domain"),
-            trace_id=result.get("trace_id"),
+            optimization_id=pipeline_result.get("id", ""),
+            optimized_prompt=pipeline_result.get("optimized_prompt", ""),
+            task_type=pipeline_result.get("task_type", ""),
+            strategy_used=pipeline_result.get("strategy_used", ""),
+            changes_summary=pipeline_result.get("changes_summary", ""),
+            scores=pipeline_result.get("optimized_scores", pipeline_result.get("scores", {})),
+            original_scores=pipeline_result.get("original_scores", {}),
+            score_deltas=pipeline_result.get("score_deltas", {}),
+            scoring_mode=pipeline_result.get("scoring_mode", "independent"),
+            suggestions=pipeline_result.get("suggestions", []),
+            warnings=pipeline_result.get("warnings", []),
+            model_used=pipeline_result.get("model_used"),
+            models_by_phase=pipeline_result.get("models_by_phase"),
+            intent_label=pipeline_result.get("intent_label"),
+            domain=pipeline_result.get("domain"),
+            trace_id=pipeline_result.get("trace_id"),
         )
 
 

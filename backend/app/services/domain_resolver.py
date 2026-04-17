@@ -16,6 +16,7 @@ Copyright 2025-2026 Project Synthesis contributors.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +51,7 @@ class DomainResolver:
         self._domain_labels: set[str] = set()
         self._sub_domain_parent: dict[str, str] = {}  # sub-domain label → parent domain label
         self._cache: dict[str, str] = {}
-        self._signal_loader = None
+        self._signal_loader: Any = None
 
     @property
     def domain_labels(self) -> set[str]:

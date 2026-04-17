@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +46,10 @@ _PUBLISH_URL = "http://127.0.0.1:8000/api/events/_publish"
 
 # Reusable httpx client — avoids per-call connection overhead for
 # high-frequency events like optimization_status (~10 calls per pipeline).
-_httpx_client: object = None  # httpx.AsyncClient, lazily initialized
+_httpx_client: Any = None  # httpx.AsyncClient, lazily initialized
 
 
-def _get_client() -> object:
+def _get_client() -> Any:
     """Lazy-init a module-level reusable httpx client."""
     global _httpx_client
     if _httpx_client is None or _httpx_client.is_closed:

@@ -184,6 +184,7 @@ async def _probe_all_services(
         payload={"event_type": "_health_check", "data": {}},
     )
 
+    results: list[ServiceStatus]
     if mcp_connected:
         # MCP Streamable HTTP transport requires Accept with both JSON and SSE,
         # otherwise the server returns 406 Not Acceptable.
@@ -194,13 +195,13 @@ async def _probe_all_services(
             headers={"Accept": "application/json, text/event-stream"},
         )
         try:
-            results = await asyncio.wait_for(
+            results = list(await asyncio.wait_for(
                 asyncio.gather(
                     backend_probe, frontend_probe, mcp_probe,
                     fe_to_be_probe, mcp_to_be_probe,
                 ),
                 timeout=_OVERALL_TIMEOUT,
-            )
+            ))
         except asyncio.TimeoutError:
             timeout_status = ServiceStatus(status="timeout", error="Overall deadline exceeded")
             results = [timeout_status] * 5
@@ -210,13 +211,13 @@ async def _probe_all_services(
     else:
         # No active MCP session — skip the probe to avoid 400 noise
         try:
-            results = await asyncio.wait_for(
+            results = list(await asyncio.wait_for(
                 asyncio.gather(
                     backend_probe, frontend_probe,
                     fe_to_be_probe, mcp_to_be_probe,
                 ),
                 timeout=_OVERALL_TIMEOUT,
-            )
+            ))
         except asyncio.TimeoutError:
             timeout_status = ServiceStatus(status="timeout", error="Overall deadline exceeded")
             results = [timeout_status] * 4
@@ -360,7 +361,7 @@ async def health_check(
             score_health = ScoreHealth(
                 last_n_mean=overall["mean"],
                 last_n_stddev=overall["stddev"],
-                count=overall["count"],
+                count=int(overall["count"]),
                 clustering_warning=clustering_warning,
             )
 

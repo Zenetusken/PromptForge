@@ -183,7 +183,7 @@ async def execute_cold_path(
     family_by_id: dict[str, PromptCluster] = {}
     for f in families:
         try:
-            emb = np.frombuffer(f.centroid_embedding, dtype=np.float32)
+            emb = np.frombuffer(f.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
             embeddings.append(emb)
             valid_families.append(f)
             family_by_id[f.id] = f
@@ -322,8 +322,8 @@ async def execute_cold_path(
     # ------------------------------------------------------------------
     # Steps 7-10: Process each HDBSCAN cluster
     # ------------------------------------------------------------------
-    for cid in range(cluster_result.n_clusters):
-        mask = cluster_result.labels == cid
+    for label_idx in range(cluster_result.n_clusters):
+        mask = cluster_result.labels == label_idx
         cluster_fam_ids = [
             valid_families[i].id for i in range(len(valid_families)) if mask[i]
         ]
@@ -351,7 +351,7 @@ async def execute_cold_path(
             for nid, existing in existing_nodes.items():
                 try:
                     ex_emb = np.frombuffer(
-                        existing.centroid_embedding, dtype=np.float32
+                        existing.centroid_embedding, dtype=np.float32  # type: ignore[arg-type]
                     )
                     sim = cosine_similarity(centroid, ex_emb)
                     if sim > best_sim:
@@ -433,8 +433,8 @@ async def execute_cold_path(
         # Collect blended centroid for UMAP — cluster_result.centroids are
         # mean of blended embeddings (what HDBSCAN clustered on), so UMAP
         # will reflect the same relationships that drove clustering.
-        if cid < len(cluster_result.centroids):
-            node_umap_embeddings.append(cluster_result.centroids[cid])
+        if label_idx < len(cluster_result.centroids):
+            node_umap_embeddings.append(cluster_result.centroids[label_idx])
         else:
             node_umap_embeddings.append(centroid)  # fallback to raw
         all_nodes.append(node)
@@ -545,7 +545,7 @@ async def execute_cold_path(
         .where(Optimization.cluster_id.isnot(None))
         .group_by(Optimization.cluster_id)
     )
-    actual_counts = dict(count_q.all())
+    actual_counts: dict[str, int] = dict(count_q.all())  # type: ignore[arg-type]
 
     # Step 14: Reconcile avg_score and scored_count
     score_q = await db.execute(
@@ -577,8 +577,9 @@ async def execute_cold_path(
         dn_q = await db.execute(
             select(PromptCluster).where(PromptCluster.id == dn_id)
         )
-        dn = dn_q.scalar_one_or_none()
-        if dn:
+        dn_opt = dn_q.scalar_one_or_none()
+        if dn_opt is not None:
+            dn = dn_opt
             child_count = (await db.execute(
                 select(sa_func.count()).where(
                     PromptCluster.domain == dn_label,
@@ -886,7 +887,7 @@ async def execute_cold_path(
     index_centroids: dict[str, np.ndarray] = {}
     for n in active_after:
         try:
-            emb = np.frombuffer(n.centroid_embedding, dtype=np.float32)
+            emb = np.frombuffer(n.centroid_embedding, dtype=np.float32)  # type: ignore[arg-type]
             if emb.shape[0] == 384:
                 index_centroids[n.id] = emb
         except (ValueError, TypeError) as _idx_exc:
@@ -904,7 +905,7 @@ async def execute_cold_path(
             engine._embedding_index.size,
         )
         # Also repopulate engine's cluster->project cache
-        engine._cluster_project_cache = dict(cluster_project_ids)
+        engine._cluster_project_cache = {k: v for k, v in cluster_project_ids.items() if v is not None}
     except Exception as rebuild_exc:
         logger.warning(
             "EmbeddingIndex rebuild failed (non-fatal): %s", rebuild_exc
@@ -1107,13 +1108,14 @@ async def execute_cold_path(
                         Optimization.embedding,
                         Optimization.optimized_embedding,
                         Optimization.transformation_embedding,
+                        Optimization.qualifier_embedding,
                     ).where(
                         Optimization.cluster_id == mc.id,
                         Optimization.embedding.isnot(None),
                     )
                 )
-                mc_opt_rows = [
-                    (r[0], r[1], r[2], r[3]) for r in mc_opt_q.all()
+                mc_opt_rows: list[tuple[str, bytes, bytes | None, bytes | None, bytes | None]] = [
+                    (r[0], r[1], r[2], r[3], r[4]) for r in mc_opt_q.all()
                 ]
 
                 if len(mc_opt_rows) < MEGA_CLUSTER_MEMBER_FLOOR:

@@ -385,7 +385,7 @@ def spectral_split(
             best_k = k
             best_labels = labels
 
-    if best_labels is None or best_sil < silhouette_gate:
+    if best_labels is None or best_k is None or best_sil < silhouette_gate:
         logger.debug(
             "spectral_split: no valid partition (best_sil=%.4f, gate=%.4f)",
             best_sil, silhouette_gate,
@@ -456,7 +456,7 @@ def batch_cluster(
     )
     hdb.fit(mat)
 
-    labels: np.ndarray = hdb.labels_
+    labels = hdb.labels_
     unique_labels = set(labels.tolist())
     cluster_ids = sorted(x for x in unique_labels if x >= 0)
     n_clusters = len(cluster_ids)

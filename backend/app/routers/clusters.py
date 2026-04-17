@@ -429,7 +429,7 @@ async def get_cluster_detail(
                 .where(MetaPattern.cluster_id == cluster_id)
                 .order_by(MetaPattern.source_count.desc())
             )
-            meta_patterns = meta_result.scalars().all()
+            meta_patterns = list(meta_result.scalars().all())
 
         # Linked optimizations — for project nodes, query by project_id;
         # for clusters/domains, query by cluster_id (hot-path assignment).
@@ -485,7 +485,7 @@ async def get_cluster_detail(
             optimizations=[
                 LinkedOptimization(
                     id=o.id,
-                    trace_id=o.trace_id,
+                    trace_id=o.trace_id or "",
                     raw_prompt=(o.raw_prompt or "")[:100],
                     intent_label=o.intent_label,
                     overall_score=o.overall_score,

@@ -53,7 +53,7 @@ def deduplicate_prompts(
         norms = np.where(norms == 0, 1.0, norms)
         mat_norm = mat / norms
 
-        keep = []
+        keep: list[int] = []
         for i in range(len(prompts)):
             is_dup = False
             for j in keep:
@@ -119,7 +119,7 @@ class SeedOrchestrator:
                 "task_types": ", ".join(agent.task_types),
                 "phase_context": ", ".join(agent.phase_context),
             }
-            user_message = self._prompt_loader.render("seed.md", variables)
+            user_message = self._prompt_loader.render("seed.md", variables)  # type: ignore[arg-type]
 
             try:
                 from pydantic import BaseModel, Field
@@ -127,6 +127,8 @@ class SeedOrchestrator:
                 class PromptList(BaseModel):
                     prompts: list[str] = Field(description="List of generated prompt strings")
 
+                if self._provider is None:
+                    raise RuntimeError("No provider available for seed generation")
                 result = await call_provider_with_retry(
                     self._provider,
                     model=settings.MODEL_HAIKU,

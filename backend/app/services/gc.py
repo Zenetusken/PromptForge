@@ -167,7 +167,7 @@ async def _gc_orphan_meta_patterns(db: AsyncSession) -> int:
             )
         )
     )
-    count = result.rowcount
+    count = result.rowcount  # type: ignore[attr-defined]
     if count > 0:
         logger.info("GC: deleted %d orphan meta_patterns", count)
     return count
