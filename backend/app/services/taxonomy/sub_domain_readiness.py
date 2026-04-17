@@ -46,6 +46,8 @@ from app.services.taxonomy._constants import (
     DOMAIN_DISSOLUTION_MEMBER_CEILING,
     DOMAIN_DISSOLUTION_MIN_AGE_HOURS,
     EXCLUDED_STRUCTURAL_STATES,
+    READINESS_CROSSING_COOLDOWN_SECONDS,
+    READINESS_CROSSING_HYSTERESIS_CYCLES,
     SUB_DOMAIN_MIN_CLUSTER_BREADTH,
     SUB_DOMAIN_QUALIFIER_CONSISTENCY_HIGH,
     SUB_DOMAIN_QUALIFIER_CONSISTENCY_LOW,
@@ -747,6 +749,123 @@ async def compute_all_domain_readiness(
 
 _event_debounce: dict[str, float] = {}
 _EVENT_DEBOUNCE_SECONDS = 5.0
+
+
+@dataclass
+class _TierHistoryEntry:
+    """Per-domain rolling state for crossing detection.
+
+    ``stable_*_tier`` is the last tier we considered "settled" (i.e., observed
+    at least HYSTERESIS_CYCLES times in a row).  ``pending_*_tier`` and
+    ``pending_*_count`` track the streak of a candidate new tier.  A crossing
+    fires when ``pending_count`` reaches HYSTERESIS_CYCLES *and* the cooldown
+    window has elapsed since the last fire for that axis.
+    """
+
+    stable_emergence_tier: str | None = None
+    pending_emergence_tier: str | None = None
+    pending_emergence_count: int = 0
+    last_emergence_fire_at: float = 0.0
+
+    stable_stability_tier: str | None = None
+    pending_stability_tier: str | None = None
+    pending_stability_count: int = 0
+    last_stability_fire_at: float = 0.0
+
+
+_tier_history: dict[str, _TierHistoryEntry] = {}
+
+
+def _process_axis_crossing(
+    *,
+    entry: _TierHistoryEntry,
+    axis: Literal["emergence", "stability"],
+    new_tier: str,
+    now: float,
+) -> dict | None:
+    """Update entry for one axis; return crossing dict if one fires."""
+    if axis == "emergence":
+        stable_attr = "stable_emergence_tier"
+        pending_attr = "pending_emergence_tier"
+        count_attr = "pending_emergence_count"
+        last_attr = "last_emergence_fire_at"
+    else:
+        stable_attr = "stable_stability_tier"
+        pending_attr = "pending_stability_tier"
+        count_attr = "pending_stability_count"
+        last_attr = "last_stability_fire_at"
+
+    stable_tier = getattr(entry, stable_attr)
+    if stable_tier is None:
+        # First observation — record baseline, no crossing.
+        setattr(entry, stable_attr, new_tier)
+        setattr(entry, pending_attr, None)
+        setattr(entry, count_attr, 0)
+        return None
+
+    if new_tier == stable_tier:
+        # No transition; clear any in-flight pending state.
+        setattr(entry, pending_attr, None)
+        setattr(entry, count_attr, 0)
+        return None
+
+    # Different from stable tier — accumulate pending streak.
+    pending = getattr(entry, pending_attr)
+    if pending == new_tier:
+        setattr(entry, count_attr, getattr(entry, count_attr) + 1)
+    else:
+        setattr(entry, pending_attr, new_tier)
+        setattr(entry, count_attr, 1)
+
+    if getattr(entry, count_attr) < READINESS_CROSSING_HYSTERESIS_CYCLES:
+        return None
+
+    # Cooldown: skip if we fired for this axis recently.  Promote stable
+    # and clear pending so the cooldown still covers any future re-cross.
+    last_fire = getattr(entry, last_attr)
+    if last_fire > 0.0 and now - last_fire < READINESS_CROSSING_COOLDOWN_SECONDS:
+        setattr(entry, stable_attr, new_tier)
+        setattr(entry, pending_attr, None)
+        setattr(entry, count_attr, 0)
+        return None
+
+    crossing = {
+        "axis": axis,
+        "from_tier": stable_tier,
+        "to_tier": new_tier,
+    }
+    setattr(entry, stable_attr, new_tier)
+    setattr(entry, pending_attr, None)
+    setattr(entry, count_attr, 0)
+    setattr(entry, last_attr, now)
+    return crossing
+
+
+def _detect_crossings(
+    report: DomainReadinessReport,
+    *,
+    now: float,
+) -> list[dict]:
+    """Compare report tiers against history; return crossings that fired.
+
+    Each crossing dict has keys: axis, from_tier, to_tier.
+    Side effect: mutates ``_tier_history`` for the report's domain.
+    """
+    entry = _tier_history.setdefault(report.domain_id, _TierHistoryEntry())
+    crossings: list[dict] = []
+    for crossing in (
+        _process_axis_crossing(
+            entry=entry, axis="emergence",
+            new_tier=report.emergence.tier, now=now,
+        ),
+        _process_axis_crossing(
+            entry=entry, axis="stability",
+            new_tier=report.stability.tier, now=now,
+        ),
+    ):
+        if crossing is not None:
+            crossings.append(crossing)
+    return crossings
 
 
 def _maybe_emit_events(

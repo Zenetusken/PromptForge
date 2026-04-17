@@ -226,6 +226,16 @@ DOMAIN_SPLIT_HASH_TTL_HOURS = 6
 MERGE_BACK_GRACE_MINUTES = 30
 
 
+# ---------------------------------------------------------------------------
+# Readiness crossing notifications — proactive tier transitions.
+# A crossing fires only after the new tier has been observed at least
+# READINESS_CROSSING_HYSTERESIS_CYCLES consecutive times (suppresses 1-cycle
+# spikes around the warming/ready boundary).  Same-axis re-fires are
+# suppressed for READINESS_CROSSING_COOLDOWN_SECONDS per domain.
+READINESS_CROSSING_HYSTERESIS_CYCLES: int = 2
+READINESS_CROSSING_COOLDOWN_SECONDS: float = 600.0  # 10 minutes
+
+
 def _utcnow() -> datetime:
     """Naive UTC timestamp — matches SQLAlchemy DateTime() round-trip on SQLite.
 
