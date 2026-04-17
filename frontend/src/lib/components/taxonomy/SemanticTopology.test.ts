@@ -16,10 +16,31 @@ vi.mock('./TopologyRenderer', () => {
   class TopologyRenderer {
     scene = {
       children: [] as unknown[],
-      add: () => {},
-      remove: () => {},
-      traverse: () => {},
+      add(obj: unknown) { this.children.push(obj); },
+      remove(obj: unknown) {
+        const idx = this.children.indexOf(obj);
+        if (idx >= 0) this.children.splice(idx, 1);
+      },
+      traverse(fn: (obj: unknown) => void) {
+        // Walk all direct children, recursing into any child with its own
+        // `children` array (Group-like). Enough for the production code
+        // paths that traverse for edge opacity sweeps and ring dimming.
+        const walk = (node: unknown) => {
+          fn(node);
+          const kids = (node as { children?: unknown[] })?.children;
+          if (Array.isArray(kids)) for (const k of kids) walk(k);
+        };
+        for (const c of this.children) walk(c);
+      },
     };
+    constructor() {
+      // Expose the scene so tests can read root-level meshes (e.g.
+      // readiness rings added via `renderer.scene.add(mesh)`). Each test
+      // renders a fresh component → a fresh renderer → a fresh scene,
+      // and we always capture the most recent one.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__semTopLastScene = this.scene;
+    }
     camera = { position: { distanceTo: () => 80 }, quaternion: { angleTo: () => 0 }, up: { clone: () => ({ negate: () => ({ multiplyScalar: () => ({}) }) }) } };
     start = () => {};
     dispose = () => {};
@@ -168,8 +189,14 @@ vi.mock('three', () => {
     rotation = { y: 0 };
     userData: Record<string, unknown> = {};
     scale = { setScalar: () => {} };
-    add() {}
-    remove() {}
+    add(child: unknown) {
+      this.children.push(child);
+      (child as { parent?: unknown }).parent = this;
+    }
+    remove(child: unknown) {
+      const idx = this.children.indexOf(child);
+      if (idx >= 0) this.children.splice(idx, 1);
+    }
   }
   class _GeomBase {
     getAttribute() {
@@ -181,10 +208,20 @@ vi.mock('three', () => {
   class DodecahedronGeometry extends _GeomBase {}
   class EdgesGeometry extends _GeomBase {}
   class RingGeometry extends _GeomBase {}
-  class MeshBasicMaterial { color = new Color(); opacity = 1; transparent = false; }
+  class MeshBasicMaterial {
+    color = new Color();
+    opacity = 1;
+    transparent = false;
+    dispose() {}
+    constructor(params?: { opacity?: number; transparent?: boolean; color?: unknown }) {
+      if (params?.opacity != null) this.opacity = params.opacity;
+      if (params?.transparent != null) this.transparent = params.transparent;
+    }
+  }
   class ShaderMaterial {
     uniforms: Record<string, { value: unknown }> = {};
     isShaderMaterial = true;
+    dispose() {}
   }
   class Mesh {
     position = new Vector3();
@@ -196,6 +233,10 @@ vi.mock('three', () => {
     frustumCulled = true;
     geometry: unknown = null;
     lookAt() {}
+    constructor(geometry?: unknown, material?: unknown) {
+      if (geometry !== undefined) this.geometry = geometry;
+      if (material !== undefined) this.material = material;
+    }
   }
   const _emptyArray = new Float32Array(0);
   class BufferAttribute {
@@ -212,15 +253,19 @@ vi.mock('three', () => {
     dispose() {}
   }
   class Float32BufferAttribute {}
-  class LineBasicMaterial {}
-  class LineDashedMaterial {}
-  class PointsMaterial {}
+  class LineBasicMaterial { opacity = 1; dispose() {} }
+  class LineDashedMaterial { opacity = 1; dispose() {} }
+  class PointsMaterial { opacity = 1; dispose() {} }
   class LineSegments {
     scale = { setScalar: () => {} };
     userData: Record<string, unknown> = {};
     material: unknown = null;
     geometry: unknown = null;
     computeLineDistances() {}
+    constructor(geometry?: unknown, material?: unknown) {
+      if (geometry !== undefined) this.geometry = geometry;
+      if (material !== undefined) this.material = material;
+    }
   }
   class Points {
     scale = { setScalar: () => {} };
@@ -771,5 +816,168 @@ describe('SemanticTopology — readiness ring overlay', () => {
     } finally {
       lookAtSpy.mockRestore();
     }
+  });
+
+  it('dims readiness ring opacity in lockstep with its parent domain when another domain is highlighted', async () => {
+    // Bug: the domain-highlight dim effect (SemanticTopology.svelte ~line
+    // 1039) rewrites `mat.opacity` on each domain group's direct children
+    // (fill / edges / points) to `baseOpacity * 0.15` when the node does
+    // NOT match `clustersStore.highlightedDomain`. Readiness rings are
+    // parented to `renderer.scene` at the root (see `scene.add(mesh)` at
+    // line ~469), NOT to the domain group — so the current sweep misses
+    // them entirely. Result: domain A's dodecahedron dims to 0.15× but
+    // its readiness ring stays at its bright built-time opacity.
+    //
+    // Correct fix (per reviewer): either parent rings under their domain
+    // group so they inherit the group sweep, OR extend the highlight
+    // effect to iterate `_readinessRings` by node id and apply the same
+    // dim factor. Either fix MUST produce the invariant tested here:
+    // when domain B is highlighted, domain A's ring is dimmed and
+    // domain B's ring keeps its base opacity.
+    const THREE = await import('three');
+    // Two visible domain nodes, each with a readinessTier → each produces
+    // its own ring mesh that the production code `scene.add()`s at scene
+    // root. The mock scene.add captures them in `scene.children`.
+    _sceneOverride.value = {
+      nodes: [
+        {
+          id: 'd1',
+          position: [0, 0, 0] as [number, number, number],
+          color: '#b44aff',
+          size: 2,
+          opacity: 1,
+          persistence: 1,
+          state: 'domain',
+          label: 'backend',
+          visible: true,
+          coherence: 0.5,
+          avgScore: 7,
+          domain: 'backend',
+          memberCount: 10,
+          isSubDomain: false,
+          readinessTier: 'guarded' as const,
+        },
+        {
+          id: 'd2',
+          position: [5, 0, 0] as [number, number, number],
+          color: '#ff4895',
+          size: 2,
+          opacity: 1,
+          persistence: 1,
+          state: 'domain',
+          label: 'frontend',
+          visible: true,
+          coherence: 0.5,
+          avgScore: 8,
+          domain: 'frontend',
+          memberCount: 12,
+          isSubDomain: false,
+          readinessTier: 'healthy' as const,
+        },
+      ],
+      edges: [],
+    };
+
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    clustersStore.taxonomyTree = [
+      {
+        id: 'd1',
+        label: 'backend',
+        state: 'domain',
+        domain: 'backend',
+        member_count: 10,
+        parent_id: null,
+      } as any,
+      {
+        id: 'd2',
+        label: 'frontend',
+        state: 'domain',
+        domain: 'frontend',
+        member_count: 12,
+        parent_id: null,
+      } as any,
+    ];
+
+    const { container } = render(SemanticTopology);
+    await new Promise((r) => setTimeout(r, 50));
+    clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+    // Wait for scene build — both ring markers present in DOM.
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll('[data-readiness-ring]').length).toBe(2);
+    });
+
+    // Reach the component's renderer scene via the `__semTopLastScene`
+    // capture installed by the `TopologyRenderer` mock constructor. Every
+    // fresh `render(SemanticTopology)` overwrites this with the newest
+    // scene — we rely on it here to read the root-level ring meshes.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lastScene = (globalThis as any).__semTopLastScene as
+      | { children: unknown[] }
+      | undefined;
+    expect(lastScene).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const RingGeometryClass = (THREE as any).RingGeometry;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const MeshBasicMaterialClass = (THREE as any).MeshBasicMaterial;
+
+    const sceneChildren = lastScene!.children;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rings = sceneChildren.filter((c: any) =>
+      c instanceof (THREE as any).Mesh && c.geometry instanceof RingGeometryClass,
+    ) as Array<{ material: { opacity: number } }>;
+    expect(rings.length).toBe(2);
+
+    // The production ring-build loop at SemanticTopology.svelte:443 iterates
+    // `data.nodes` in order, so rings[0] corresponds to d1 (first in the
+    // scene override) and rings[1] corresponds to d2. `scene.add` on our
+    // mocked scene preserves insertion order via `children.push`.
+    const ringD1 = rings[0];
+    const ringD2 = rings[1];
+    expect(ringD1.material).toBeInstanceOf(MeshBasicMaterialClass);
+    expect(ringD2.material).toBeInstanceOf(MeshBasicMaterialClass);
+
+    // Built-time opacity: node.opacity (=1) * READINESS_RING_OPACITY_FACTOR (=0.9).
+    const BASE = 1 * 0.9;
+    expect(ringD1.material.opacity).toBeCloseTo(BASE, 5);
+    expect(ringD2.material.opacity).toBeCloseTo(BASE, 5);
+
+    // Sanity: find d1's domain group (first Group in scene.children whose
+    // first child is the dodecahedron fill). Its fill material opacity is
+    // rewritten by the existing dim effect — if this DOESN'T dim, the
+    // test environment isn't running the effect at all and the ring
+    // assertion below would be testing nothing. Guarding against a false
+    // negative in the assertion.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const GroupClass = (THREE as any).Group;
+    const groups = sceneChildren.filter((c: any) => c instanceof GroupClass) as Array<{
+      userData: { isStructural?: boolean };
+      children: Array<{ material: { opacity: number } }>;
+    }>;
+    const d1Group = groups[0];
+    const d1Fill = d1Group.children[0];
+    const fillBaseOpacity = d1Fill.material.opacity; // = 1 * 0.9 = 0.9
+
+    // Highlight d2 → the dim sweep MUST dim d1's ring to BASE*0.15.
+    clustersStore.highlightedDomain = 'd2';
+
+    // Wait for the existing dim sweep to dim d1's dodecahedron fill.
+    // This proves the effect runs; if the ring material ALSO dims we'd
+    // have no bug. The fail below proves the ring is orphaned from the
+    // sweep.
+    await vi.waitFor(
+      () => {
+        expect(d1Fill.material.opacity).toBeLessThan(fillBaseOpacity * 0.5);
+      },
+      { timeout: 500 },
+    );
+
+    // The actual bug: d1's readiness ring opacity MUST also drop in
+    // lockstep. Currently the dim effect never visits `_readinessRings`,
+    // so this opacity stays at its bright built-time value (~0.9).
+    expect(ringD1.material.opacity).toBeLessThan(0.3);
+    // d2 (highlighted) keeps its base opacity.
+    expect(ringD2.material.opacity).toBeCloseTo(BASE, 5);
   });
 });
