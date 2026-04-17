@@ -1,6 +1,7 @@
 """Tests for readiness tier-crossing detection + notification emission."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 import pytest
@@ -11,6 +12,7 @@ from app.schemas.sub_domain_readiness import (
     DomainStabilityReport,
     SubDomainEmergenceReport,
 )
+from app.services.event_bus import event_bus
 from app.services.taxonomy.sub_domain_readiness import (
     _detect_crossings,
     clear_cache,
@@ -127,3 +129,45 @@ def test_detect_crossings_oscillation_resets_hysteresis_counter():
     assert fired[0]["axis"] == "emergence"
     assert fired[0]["from_tier"] == "inert"
     assert fired[0]["to_tier"] == "warming"
+
+
+@pytest.mark.asyncio
+async def test_publish_crossings_emits_event_bus_event():
+    """End-to-end: calling `_publish_crossings` after a qualifying streak
+    publishes a `domain_readiness_changed` event exactly once.
+    """
+    from app.services.taxonomy import sub_domain_readiness as r
+
+    # Subscribe first so we capture the publish synchronously.
+    received: list[dict] = []
+
+    async def _drain():
+        async for payload in event_bus.subscribe():
+            received.append(payload)
+            if len(received) >= 1:
+                return
+
+    drain_task = asyncio.create_task(_drain())
+    # Give the subscriber a chance to register.
+    await asyncio.sleep(0)
+
+    # Sequence: inert (baseline) → warming (pending) → warming (satisfies hysteresis).
+    r._publish_crossings(_report(emergence="inert"), now=0.0)
+    r._publish_crossings(_report(emergence="warming"), now=10.0)
+    r._publish_crossings(_report(emergence="warming"), now=20.0)
+
+    # Wait for the SSE bus to deliver (bounded).
+    try:
+        await asyncio.wait_for(drain_task, timeout=1.0)
+    except asyncio.TimeoutError:
+        drain_task.cancel()
+        raise
+
+    assert len(received) == 1
+    envelope = received[0]
+    assert envelope["event"] == "domain_readiness_changed"
+    body = envelope["data"]
+    assert body["domain_id"] == "d1"
+    assert body["axis"] == "emergence"
+    assert body["from_tier"] == "inert"
+    assert body["to_tier"] == "warming"
