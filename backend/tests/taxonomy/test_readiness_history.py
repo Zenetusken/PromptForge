@@ -151,8 +151,12 @@ def test_prune_old_snapshots_drops_files_past_retention(tmp_path: Path) -> None:
     from app.services.taxonomy._constants import READINESS_HISTORY_RETENTION_DAYS
 
     now = datetime.now(timezone.utc)
-    keep = tmp_path / f"snapshots-{(now - timedelta(days=5)).strftime('%Y-%m-%d')}.jsonl"
-    drop = tmp_path / f"snapshots-{(now - timedelta(days=READINESS_HISTORY_RETENTION_DAYS + 2)).strftime('%Y-%m-%d')}.jsonl"
+    keep_day = (now - timedelta(days=5)).strftime("%Y-%m-%d")
+    drop_day = (
+        now - timedelta(days=READINESS_HISTORY_RETENTION_DAYS + 2)
+    ).strftime("%Y-%m-%d")
+    keep = tmp_path / f"snapshots-{keep_day}.jsonl"
+    drop = tmp_path / f"snapshots-{drop_day}.jsonl"
     keep.write_text("{}\n")
     drop.write_text("{}\n")
 
