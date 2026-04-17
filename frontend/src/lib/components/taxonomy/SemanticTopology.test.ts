@@ -51,12 +51,22 @@ vi.mock('./TopologyWorker', () => ({
 // force specific buildSceneData output. Reset in beforeEach.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _sceneOverride: { value: any | null } = { value: null };
-vi.mock('./TopologyData', () => ({
-  buildSceneData: () => _sceneOverride.value ?? { nodes: [], edges: [] },
-  assignLodVisibility: () => {},
-  buildNodeMap: () => new Map(),
-  computeHierarchicalOpacity: () => 0.4,
-}));
+// When `true`, the mock delegates to the real `buildSceneData`. This is used
+// by reactivity tests that must exercise the production scene-builder (which
+// reads `readinessStore`) to expose missing reactive dependencies.
+const _useRealBuildSceneData: { value: boolean } = { value: false };
+vi.mock('./TopologyData', async () => {
+  const actual = await vi.importActual<typeof import('./TopologyData')>('./TopologyData');
+  return {
+    buildSceneData: (...args: Parameters<typeof actual.buildSceneData>) => {
+      if (_useRealBuildSceneData.value) return actual.buildSceneData(...args);
+      return _sceneOverride.value ?? { nodes: [], edges: [] };
+    },
+    assignLodVisibility: () => {},
+    buildNodeMap: () => new Map(),
+    computeHierarchicalOpacity: () => 0.4,
+  };
+});
 
 vi.mock('./BeamPool', () => {
   class BeamPool {
@@ -279,10 +289,12 @@ describe('SemanticTopology — readiness ring overlay', () => {
     readinessStore.reports = [];
     readinessStore.loaded = false;
     _sceneOverride.value = null;
+    _useRealBuildSceneData.value = false;
   });
 
   afterEach(() => {
     _sceneOverride.value = null;
+    _useRealBuildSceneData.value = false;
   });
 
   it('renders an invisible data-readiness-ring marker per domain node with a tier', async () => {
@@ -427,5 +439,127 @@ describe('SemanticTopology — readiness ring overlay', () => {
     await new Promise((r) => setTimeout(r, 50));
     const markers = container.querySelectorAll('[data-readiness-ring]');
     expect(markers.length).toBe(0);
+  });
+
+  it('re-renders ring markers when readinessStore reports mutate without a taxonomy change', async () => {
+    // This test exercises the REAL buildSceneData so the production
+    // reactivity chain — `$effect` depends on readinessStore reads — is
+    // exercised honestly. The bug: `buildSceneData` is invoked inside
+    // `untrack(...)` in SemanticTopology's tree-watch effect, so Svelte
+    // never registers `readinessStore.reports` as a dependency. When a
+    // report mutates without a taxonomy change, the ring marker stays on
+    // the stale tier.
+    _useRealBuildSceneData.value = true;
+
+    const buildReport = (
+      stabilityTier: 'healthy' | 'guarded' | 'critical',
+    ) => ({
+      domain_id: 'd1',
+      domain_label: 'backend',
+      member_count: 10,
+      stability: {
+        consistency: 0.5,
+        dissolution_floor: 0.15,
+        hysteresis_creation_threshold: 0.6,
+        age_hours: 100,
+        min_age_hours: 48,
+        member_count: 10,
+        member_ceiling: 5,
+        sub_domain_count: 0,
+        total_opts: 10,
+        guards: {
+          general_protected: false,
+          has_sub_domain_anchor: false,
+          age_eligible: true,
+          above_member_ceiling: true,
+          consistency_above_floor: stabilityTier !== 'critical',
+        },
+        tier: stabilityTier,
+        dissolution_risk: stabilityTier === 'critical' ? 0.9 : 0.2,
+        would_dissolve: stabilityTier === 'critical',
+      },
+      emergence: {
+        threshold: 0.6,
+        threshold_formula: 'adaptive',
+        min_member_count: 8,
+        total_opts: 10,
+        top_candidate: null,
+        gap_to_threshold: null,
+        ready: false,
+        blocked_reason: 'no_candidates' as const,
+        runner_ups: [],
+        tier: 'inert' as const,
+      },
+      computed_at: new Date().toISOString(),
+    });
+
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    const { readinessStore } = await import('$lib/stores/readiness.svelte');
+
+    // Seed a minimal taxonomy tree with one domain node whose umap coords
+    // keep the builder happy. Seed readiness with a 'guarded' report so
+    // the first render produces a marker with tier="guarded".
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    clustersStore.taxonomyTree = [
+      {
+        id: 'd1',
+        parent_id: null,
+        label: 'backend',
+        state: 'domain',
+        domain: 'backend',
+        task_type: 'general',
+        persistence: 1.0,
+        coherence: 0.5,
+        separation: null,
+        stability: null,
+        member_count: 10,
+        usage_count: 0,
+        avg_score: 7,
+        color_hex: null,
+        umap_x: 0,
+        umap_y: 0,
+        umap_z: 0,
+        preferred_strategy: null,
+        output_coherence: null,
+        blend_w_raw: null,
+        blend_w_optimized: null,
+        blend_w_transform: null,
+        split_failures: 0,
+        meta_pattern_count: 0,
+        created_at: null,
+      } as any,
+    ];
+    readinessStore.reports = [buildReport('guarded')];
+    readinessStore.loaded = true;
+
+    const { container } = render(SemanticTopology);
+
+    // Nudge the tree-watch $effect — reassigning taxonomyTree is how the
+    // other tests in this block trigger the initial scene build.
+    await new Promise((r) => setTimeout(r, 50));
+    clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+    await vi.waitFor(() => {
+      const markers = container.querySelectorAll('[data-readiness-ring="d1"]');
+      expect(markers.length).toBe(1);
+      expect(markers[0].getAttribute('data-readiness-tier')).toBe('guarded');
+    });
+
+    // Mutate ONLY the readiness store — no taxonomyTree change, no
+    // stateFilter change. `composeReadinessTier` now returns 'critical'.
+    // If the `$effect` tracked readinessStore.reports properly, it would
+    // re-run and the marker would flip to tier="critical". Under the bug,
+    // `untrack(...)` swallows the dependency so the scene is never rebuilt
+    // and the marker stays on the stale 'guarded' tier.
+    readinessStore.reports = [buildReport('critical')];
+
+    await vi.waitFor(
+      () => {
+        const markers = container.querySelectorAll('[data-readiness-ring="d1"]');
+        expect(markers.length).toBe(1);
+        expect(markers[0].getAttribute('data-readiness-tier')).toBe('critical');
+      },
+      { timeout: 500 },
+    );
   });
 });
