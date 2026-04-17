@@ -886,12 +886,80 @@ def _detect_crossings(
     return crossings
 
 
+def _publish_crossings(
+    report: DomainReadinessReport,
+    *,
+    now: float,
+) -> None:
+    """Detect tier crossings; publish event_bus event + JSONL log per crossing.
+
+    Synchronous by design: ``event_bus.publish()`` is sync (it just enqueues
+    onto subscriber asyncio.Queues).  Called from both async and sync code
+    paths — no loop required.
+
+    The event is ALWAYS emitted when a crossing fires (machine-readable for
+    automation/logs).  Frontend toast is gated by the user's notifications
+    preference and per-domain mute list — those gates live in the frontend.
+    """
+    from app.services.event_bus import event_bus
+
+    crossings = _detect_crossings(report, now=now)
+    if not crossings:
+        return
+
+    for crossing in crossings:
+        payload = {
+            "domain_id": report.domain_id,
+            "domain_label": report.domain_label,
+            "axis": crossing["axis"],
+            "from_tier": crossing["from_tier"],
+            "to_tier": crossing["to_tier"],
+            "consistency": round(report.stability.consistency, 3),
+            "gap_to_threshold": (
+                round(report.emergence.gap_to_threshold, 3)
+                if report.emergence.gap_to_threshold is not None
+                else None
+            ),
+            "would_dissolve": report.stability.would_dissolve,
+            "ts": report.computed_at.isoformat(),
+        }
+        try:
+            event_bus.publish("domain_readiness_changed", payload)
+        except Exception:
+            pass
+        try:
+            get_event_logger().log_decision(
+                path="api",
+                op="readiness",
+                decision="domain_readiness_changed",
+                cluster_id=report.domain_id,
+                context=payload,
+            )
+        except RuntimeError:
+            pass
+
+
 def _maybe_emit_events(
     domain_node: PromptCluster,
     report: DomainReadinessReport,
     now: float,
 ) -> None:
-    """Emit observability events at most once every 5 seconds per domain."""
+    """Emit observability events.
+
+    - Tier crossings run on EVERY computation (hysteresis + cooldown guard
+      against spam) — must not be suppressed by the 5s debounce applied to
+      routine readiness logs.
+    - The per-computation `sub_domain_readiness_computed` /
+      `domain_stability_computed` decisions are debounced (one entry per 5s
+      per domain).
+    """
+    # 1. Crossing detection — always runs, never debounced.
+    try:
+        _publish_crossings(report, now=now)
+    except Exception:
+        pass
+
+    # 2. Routine readiness log — debounced.
     last = _event_debounce.get(domain_node.id, 0.0)
     if now - last < _EVENT_DEBOUNCE_SECONDS:
         return
