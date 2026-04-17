@@ -1331,6 +1331,21 @@
       _removeDomainRotation?.();
       _removeReadinessBillboard?.();
       _removeReadinessBillboard = null;
+      // Cancel in-flight tier tweens before disposing materials (use-after-free guard).
+      for (const entry of _readinessRings.values()) {
+        entry.tween?.cancel();
+        if (typeof entry.mesh.geometry?.dispose === 'function') {
+          entry.mesh.geometry.dispose();
+        }
+        if (typeof entry.material?.dispose === 'function') {
+          entry.material.dispose();
+        }
+      }
+      _readinessRings.clear();
+      if (_readinessRingGroup) {
+        renderer?.scene.remove(_readinessRingGroup);
+        _readinessRingGroup = null;
+      }
       ro.disconnect();
       interaction?.dispose();
       labels?.dispose();
