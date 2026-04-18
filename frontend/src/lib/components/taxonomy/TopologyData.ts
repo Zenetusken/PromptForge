@@ -61,9 +61,15 @@ function stateOpacity(state: string, stateFilter: string | null, hasMatches: boo
     // "all" tab or empty filter — candidates translucent, everything else full.
     return state === 'candidate' ? 0.4 : 1.0;
   }
-  // Filtered tab with matches — matching nodes glow, structural nodes semi-visible, rest ghosted
+  // Filtered tab with matches — matching nodes glow, structural nodes semi-visible, rest ghosted.
+  // `template` joins `domain`/`project` as structural because templates are architecturally
+  // cross-cutting (spawned from mature clusters, referenced across state filters) and their
+  // sprite labels are force-visible via the template-sprite pass in `SemanticTopology.svelte`.
+  // Leaving templates at 0.25 triggered the `nodeOpacity < 0.5` blank-label branch below,
+  // which made the 3D scene sprite render empty text and the hover chip fall back to the
+  // domain name instead of the cluster label.
   if (state === stateFilter) return 1.0;
-  if (state === 'domain' || state === 'project') return 0.5;
+  if (state === 'domain' || state === 'project' || state === 'template') return 0.5;
   return 0.25;
 }
 

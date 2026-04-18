@@ -271,6 +271,29 @@ describe('buildSceneData — state-based visual encoding', () => {
     expect(nodes[0].opacity).toBe(1.0);
   });
 
+  it('template nodes keep structural opacity (>= 0.5) and label in a non-template state filter', () => {
+    // Regression: in the "active" tab, template clusters used to be ghosted
+    // to 0.25 alongside every other non-matching state, which triggered the
+    // `nodeOpacity < 0.5` branch that blanks SceneNode.label. The 3D scene
+    // force-shows template sprites, but the sprite text was empty so the
+    // cyan sphere floated anonymously and the hover chip fell back to the
+    // domain name ("SECURITY"). Templates are architecturally structural
+    // (like domain/project nodes) so they deserve the same 0.5 floor.
+    const active = makeNode({ id: 'act', state: 'active', domain: 'security' });
+    const template = makeNode({ id: 'tmpl', state: 'template', label: 'JWT Token Lifestyle', domain: 'security' });
+    const { nodes } = buildSceneData([active, template], undefined, undefined, 'active');
+    const t = nodes.find((n) => n.id === 'tmpl')!;
+    expect(t.opacity).toBeGreaterThanOrEqual(0.5);
+    expect(t.label).toBe('JWT Token Lifestyle');
+  });
+
+  it('template nodes in their matching filter remain at full opacity', () => {
+    const template = makeNode({ id: 'tmpl', state: 'template', label: 'JWT' });
+    const { nodes } = buildSceneData([template], undefined, undefined, 'template');
+    expect(nodes[0].opacity).toBe(1.0);
+    expect(nodes[0].label).toBe('JWT');
+  });
+
   it('template state nodes get color #00e5ff regardless of color_hex', () => {
     const withHex = makeNode({ id: 'a', state: 'template', color_hex: '#b44aff' });
     const withNull = makeNode({ id: 'b', state: 'template', color_hex: null });
