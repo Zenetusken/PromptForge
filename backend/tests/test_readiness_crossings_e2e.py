@@ -6,6 +6,14 @@ reset) lives in ``tests/taxonomy/test_readiness_notifications.py``; here we
 only assert that a qualifying tier crossing produces a single, correctly
 shaped ``domain_readiness_changed`` payload on the shared bus, and that a
 non-crossing observation produces nothing.
+
+The subscriber is registered synchronously against ``event_bus._subscribers``
+rather than via the ``subscribe()`` async generator: ``asyncio.create_task``
+offers no guarantee about when the generator body runs, and scheduler
+behavior varies across Python versions (3.12 vs 3.14) — that made the
+previous "start task, sleep(0), publish" pattern flaky in CI.  Direct queue
+registration removes the race entirely; we're testing the detector + bus
+contract, not the generator's consumer ergonomics.
 """
 from __future__ import annotations
 
@@ -71,57 +79,57 @@ def _reset_state():
     clear_cache()
 
 
-async def _collect_one(queue: asyncio.Queue, event_type: str) -> dict:
-    """Consume from the bus via ``subscribe()`` until we see ``event_type``.
+def _register_bus_subscriber() -> asyncio.Queue:
+    """Register a subscriber queue synchronously against the live event bus.
 
-    The shared bus can carry noise from other tests/subsystems — filter so we
-    assert on the first matching event, not arbitrarily the first event.
+    ``event_bus.subscribe()`` is an async generator — registration is gated
+    on the event loop actually advancing the generator past its first
+    ``self._subscribers.add(queue)`` line.  For tests we just want a queue on
+    the bus *right now* so the next synchronous ``publish()`` writes into it.
     """
-    async for envelope in event_bus.subscribe():
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+    event_bus._subscribers.add(queue)  # type: ignore[attr-defined]
+    return queue
+
+
+def _drain_matching(
+    queue: asyncio.Queue, event_type: str, max_events: int = 50
+) -> dict | None:
+    """Pop up to ``max_events`` from ``queue`` (non-blocking); return first
+    envelope whose ``event`` field equals ``event_type``, else ``None``.
+
+    The shared bus can carry noise from other tests/subsystems — filter so
+    we assert on the right event, not arbitrarily the first enqueued one.
+    """
+    for _ in range(max_events):
+        try:
+            envelope = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return None
         if envelope.get("event") == event_type:
-            await queue.put(envelope)
             return envelope
-
-
-async def _wait_for_subscriber(prior: int, timeout: float = 1.0) -> None:
-    """Block until the subscriber count grows past *prior*.
-
-    Necessary because ``asyncio.create_task`` does not guarantee when the
-    async generator body runs — ``subscriber_count`` is the only deterministic
-    signal that ``self._subscribers.add(queue)`` has executed. Interpreter
-    scheduling changed between 3.12 and 3.14 so a single ``sleep(0)`` is no
-    longer enough.
-    """
-    deadline = asyncio.get_event_loop().time() + timeout
-    while event_bus.subscriber_count <= prior:
-        if asyncio.get_event_loop().time() > deadline:
-            raise AssertionError(
-                f"subscriber never registered (count stayed at {prior}) — "
-                "test infra broken"
-            )
-        await asyncio.sleep(0.01)
+    return None
 
 
 async def test_publish_crossings_delivers_payload_through_event_bus():
     """Sequence that satisfies hysteresis on the stability axis must publish
     a single ``domain_readiness_changed`` event with the full 9-field shape.
     """
-    queue: asyncio.Queue = asyncio.Queue()
-    prior_subs = event_bus.subscriber_count
-    drain_task = asyncio.create_task(_collect_one(queue, "domain_readiness_changed"))
-    # Deterministically wait for subscriber to register before publishing.
-    await _wait_for_subscriber(prior_subs)
-
-    # Baseline (healthy) → guarded (pending) → guarded (fires).
-    _publish_crossings(_report(stability="healthy"), now=0.0)
-    _publish_crossings(_report(stability="guarded"), now=10.0)
-    _publish_crossings(_report(stability="guarded"), now=20.0)
-
+    queue = _register_bus_subscriber()
     try:
-        envelope = await asyncio.wait_for(queue.get(), timeout=1.0)
-    finally:
-        drain_task.cancel()
+        # Baseline (healthy) → guarded (pending) → guarded (fires).
+        _publish_crossings(_report(stability="healthy"), now=0.0)
+        _publish_crossings(_report(stability="guarded"), now=10.0)
+        _publish_crossings(_report(stability="guarded"), now=20.0)
 
+        envelope = _drain_matching(queue, "domain_readiness_changed")
+    finally:
+        event_bus._subscribers.discard(queue)  # type: ignore[attr-defined]
+
+    assert envelope is not None, (
+        "expected domain_readiness_changed event on bus; "
+        f"queue held {queue.qsize()} other events"
+    )
     assert envelope["event"] == "domain_readiness_changed"
     body = envelope["data"]
     # All 9 documented fields are present.
@@ -141,17 +149,16 @@ async def test_publish_crossings_delivers_payload_through_event_bus():
 
 async def test_publish_crossings_no_event_when_no_crossing():
     """Two consecutive reports with identical tiers must not publish."""
-    queue: asyncio.Queue = asyncio.Queue()
-    prior_subs = event_bus.subscriber_count
-    drain_task = asyncio.create_task(_collect_one(queue, "domain_readiness_changed"))
-    await _wait_for_subscriber(prior_subs)
-
-    # Two identical healthy/inert observations — baseline record, no crossing.
-    _publish_crossings(_report(stability="healthy"), now=0.0)
-    _publish_crossings(_report(stability="healthy"), now=10.0)
-
+    queue = _register_bus_subscriber()
     try:
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(queue.get(), timeout=0.1)
+        _publish_crossings(_report(stability="healthy"), now=0.0)
+        _publish_crossings(_report(stability="healthy"), now=10.0)
+
+        envelope = _drain_matching(queue, "domain_readiness_changed")
     finally:
-        drain_task.cancel()
+        event_bus._subscribers.discard(queue)  # type: ignore[attr-defined]
+
+    assert envelope is None, (
+        "unexpected domain_readiness_changed event published for "
+        "no-transition sequence"
+    )
