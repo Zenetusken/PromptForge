@@ -35,6 +35,10 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+def _uuid_hex() -> str:
+    return uuid.uuid4().hex
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -120,13 +124,17 @@ class PromptCluster(Base):
         String, ForeignKey("prompt_cluster.id"), nullable=True, index=True,
     )
     label: Mapped[str] = mapped_column(String, nullable=False, default="")
-    # States: candidate|active|mature|template|domain|project|archived
+    # States: candidate|active|mature|domain|project|archived
+    # (legacy 'template' still tolerated by read-side _LegacyClusterState — see services/taxonomy/event_logger.py)
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     domain: Mapped[str] = mapped_column(String(50), nullable=False, default="general")
     task_type: Mapped[str] = mapped_column(String(50), nullable=False, default="general")
 
     centroid_embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     member_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    template_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     weighted_member_sum: Mapped[float] = mapped_column(
         Float, default=0.0, nullable=False, server_default="0.0",
     )
@@ -424,3 +432,58 @@ class AuditLog(Base):
     actor_session: Mapped[str | None] = mapped_column(String, nullable=True)
     detail: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     outcome: Mapped[str] = mapped_column(String, nullable=False, default="success")
+
+
+class PromptTemplate(Base):
+    """Immutable frozen template snapshot.
+
+    See docs/superpowers/specs/2026-04-18-template-architecture-design.md
+    §Architecture §Data model.
+    """
+    __tablename__ = "prompt_templates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+
+    source_cluster_id: Mapped[str | None] = mapped_column(
+        ForeignKey("prompt_cluster.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    source_optimization_id: Mapped[str | None] = mapped_column(
+        ForeignKey("optimizations.id", ondelete="SET NULL"), nullable=True,
+    )
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("prompt_cluster.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    strategy: Mapped[str | None] = mapped_column(String, nullable=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    pattern_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    domain_label: Mapped[str] = mapped_column(String, nullable=False)
+
+    promoted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    retired_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_template_source_optimization_live",
+            "source_cluster_id", "source_optimization_id",
+            unique=True,
+            sqlite_where=text(
+                "source_cluster_id IS NOT NULL "
+                "AND source_optimization_id IS NOT NULL "
+                "AND retired_at IS NULL"
+            ),
+        ),
+        Index(
+            "idx_template_project_domain_active",
+            "project_id", "domain_label", "promoted_at",
+            sqlite_where=text("retired_at IS NULL"),
+        ),
+    )
