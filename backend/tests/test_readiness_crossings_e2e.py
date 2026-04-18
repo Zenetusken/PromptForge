@@ -83,14 +83,34 @@ async def _collect_one(queue: asyncio.Queue, event_type: str) -> dict:
             return envelope
 
 
+async def _wait_for_subscriber(prior: int, timeout: float = 1.0) -> None:
+    """Block until the subscriber count grows past *prior*.
+
+    Necessary because ``asyncio.create_task`` does not guarantee when the
+    async generator body runs — ``subscriber_count`` is the only deterministic
+    signal that ``self._subscribers.add(queue)`` has executed. Interpreter
+    scheduling changed between 3.12 and 3.14 so a single ``sleep(0)`` is no
+    longer enough.
+    """
+    deadline = asyncio.get_event_loop().time() + timeout
+    while event_bus.subscriber_count <= prior:
+        if asyncio.get_event_loop().time() > deadline:
+            raise AssertionError(
+                f"subscriber never registered (count stayed at {prior}) — "
+                "test infra broken"
+            )
+        await asyncio.sleep(0.01)
+
+
 async def test_publish_crossings_delivers_payload_through_event_bus():
     """Sequence that satisfies hysteresis on the stability axis must publish
     a single ``domain_readiness_changed`` event with the full 9-field shape.
     """
     queue: asyncio.Queue = asyncio.Queue()
+    prior_subs = event_bus.subscriber_count
     drain_task = asyncio.create_task(_collect_one(queue, "domain_readiness_changed"))
-    # Yield so the subscriber registers before publishing.
-    await asyncio.sleep(0)
+    # Deterministically wait for subscriber to register before publishing.
+    await _wait_for_subscriber(prior_subs)
 
     # Baseline (healthy) → guarded (pending) → guarded (fires).
     _publish_crossings(_report(stability="healthy"), now=0.0)
@@ -122,8 +142,9 @@ async def test_publish_crossings_delivers_payload_through_event_bus():
 async def test_publish_crossings_no_event_when_no_crossing():
     """Two consecutive reports with identical tiers must not publish."""
     queue: asyncio.Queue = asyncio.Queue()
+    prior_subs = event_bus.subscriber_count
     drain_task = asyncio.create_task(_collect_one(queue, "domain_readiness_changed"))
-    await asyncio.sleep(0)
+    await _wait_for_subscriber(prior_subs)
 
     # Two identical healthy/inert observations — baseline record, no crossing.
     _publish_crossings(_report(stability="healthy"), now=0.0)
