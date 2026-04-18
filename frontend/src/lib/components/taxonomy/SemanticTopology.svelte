@@ -219,6 +219,14 @@
      *  + recreate the geometry. Without this, the ring keeps its first-build
      *  radius and visibly drifts from its parent domain. */
     lastSize: number;
+    /** Owning node's primary domain, captured at build/update time. The
+     *  per-frame LOD callback composes `DOMAIN_DIM_FACTOR` against this value
+     *  without having to traverse `sceneData.nodes` each tick. */
+    domain: string | null | undefined;
+    /** Owning node's `opacity` (from sceneData), captured at build/update
+     *  time. Composed into the per-frame opacity write so LOD attenuation
+     *  does not clobber per-node opacity. */
+    nodeOpacity: number;
     tween: TweenHandle | null;
   }
   const _readinessRings: Map<string, ReadinessRingEntry> = new Map();
@@ -272,6 +280,10 @@
     }
     existing.mesh.position.set(...node.position);
     if (camera?.position) existing.mesh.lookAt(camera.position);
+    // Keep per-frame LOD callback inputs in sync with the latest sceneData
+    // so dim + node-opacity composition doesn't lag behind rebuilds.
+    existing.domain = node.domain;
+    existing.nodeOpacity = node.opacity;
   }
 
   /** Per-entry teardown for a readiness ring: cancel any in-flight tween
@@ -640,6 +652,8 @@
         material: mat,
         lastTier: tier,
         lastSize: node.size,
+        domain: node.domain,
+        nodeOpacity: node.opacity,
         tween: null,
       });
     }
@@ -1398,9 +1412,15 @@
     // component lifetime and no-ops on an empty map. Iterating an empty
     // `_readinessRings` is O(0) — safe when no rings exist.
     const _removeRingLodUpdate = renderer!.addAnimationCallback(() => {
-      const opacity = READINESS_LOD_OPACITY[renderer!.lodTier];
+      const lodFactor = READINESS_LOD_OPACITY[renderer!.lodTier];
+      const highlighted = clustersStore.highlightedDomain;
       for (const entry of _readinessRings.values()) {
-        entry.material.opacity = opacity;
+        const dimFactor =
+          highlighted != null && entry.domain !== highlighted
+            ? DOMAIN_DIM_FACTOR
+            : 1.0;
+        entry.material.opacity =
+          lodFactor * READINESS_RING_OPACITY_FACTOR * entry.nodeOpacity * dimFactor;
       }
     });
 
