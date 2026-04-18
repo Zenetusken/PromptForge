@@ -39,7 +39,6 @@ from app.services.context_enrichment import EnrichedContext
 from app.services.heuristic_analyzer import HeuristicAnalysis
 from app.services.prompt_loader import PromptLoader
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -119,11 +118,15 @@ def _build_prompts_dir(root: Path) -> Path:
         "Deltas: {{score_deltas}}\nTrajectory: {{score_trajectory}}"
     )
     (prompts / "manifest.json").write_text(
-        '{"analyze.md": {"required": ["raw_prompt", "available_strategies", "known_domains"], "optional": []},'
-        '"optimize.md": {"required": ["raw_prompt", "analysis_summary", "strategy_instructions"], '
-        '"optional": ["codebase_context", "strategy_intelligence", "applied_patterns", "few_shot_examples", "divergence_alerts"]},'
+        '{"analyze.md": {"required": ["raw_prompt", "available_strategies", '
+        '"known_domains"], "optional": []},'
+        '"optimize.md": {"required": ["raw_prompt", "analysis_summary", '
+        '"strategy_instructions"], '
+        '"optional": ["codebase_context", "strategy_intelligence", '
+        '"applied_patterns", "few_shot_examples", "divergence_alerts"]},'
         '"scoring.md": {"required": [], "optional": []},'
-        '"suggest.md": {"required": ["optimized_prompt", "scores", "weaknesses", "strategy_used", "score_deltas", "score_trajectory"], "optional": []}}'
+        '"suggest.md": {"required": ["optimized_prompt", "scores", "weaknesses", '
+        '"strategy_used", "score_deltas", "score_trajectory"], "optional": []}}'
     )
     (strategies / "chain-of-thought.md").write_text(
         "---\nname: chain-of-thought\n---\n\nThink step by step."
@@ -740,14 +743,13 @@ class TestClassificationAgreement:
         """A single seeded prompt must produce exactly one record() call
         with heuristic labels (from enrichment.analysis) + LLM labels
         (from the analyze phase result)."""
+        # Swap in a fresh singleton so counts start at 0 and tests are
+        # order-independent.
+        import app.services.classification_agreement as ca_module
         from app.services.classification_agreement import (
             ClassificationAgreement,
             get_classification_agreement,
         )
-
-        # Swap in a fresh singleton so counts start at 0 and tests are
-        # order-independent.
-        import app.services.classification_agreement as ca_module
         original = ca_module._agreement
         ca_module._agreement = ClassificationAgreement()
         try:
@@ -789,12 +791,11 @@ class TestClassificationAgreement:
     ) -> None:
         """Heuristic and LLM labels diverging must still record — the
         agreement counters expose the mismatch rate, not suppress it."""
+        import app.services.classification_agreement as ca_module
         from app.services.classification_agreement import (
             ClassificationAgreement,
             get_classification_agreement,
         )
-
-        import app.services.classification_agreement as ca_module
         original = ca_module._agreement
         ca_module._agreement = ClassificationAgreement()
         try:
@@ -844,12 +845,11 @@ class TestClassificationAgreement:
         """Without a context_service (legacy callers), heuristic analysis
         isn't computed by the batch itself — no record() fires, keeping
         the legacy path behavior-preserving."""
+        import app.services.classification_agreement as ca_module
         from app.services.classification_agreement import (
             ClassificationAgreement,
             get_classification_agreement,
         )
-
-        import app.services.classification_agreement as ca_module
         original = ca_module._agreement
         ca_module._agreement = ClassificationAgreement()
         try:
