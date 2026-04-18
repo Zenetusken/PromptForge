@@ -728,10 +728,10 @@ class ContextEnrichmentService:
 
         ``preferences_snapshot``, when provided, gates optional layers:
         - ``enable_strategy_intelligence``: if ``False``, skip strategy intelligence.
-          Falls back to ``enable_adaptation`` for backward compat.
 
         Content capping is applied inline: ``codebase_context`` at
-        ``MAX_CODEBASE_CONTEXT_CHARS``; ``strategy_intelligence`` at ``MAX_ADAPTATION_CHARS``.
+        ``MAX_CODEBASE_CONTEXT_CHARS``; ``strategy_intelligence`` at
+        ``MAX_STRATEGY_INTELLIGENCE_CHARS``.
         """
         import time as _time
         _t_enrich_start = _time.monotonic()
@@ -977,10 +977,7 @@ class ContextEnrichmentService:
         if skip_si:
             skipped_layers.append("strategy_intelligence")
         else:
-            enable_si = prefs.get(
-                "enable_strategy_intelligence",
-                prefs.get("enable_adaptation", True),
-            )
+            enable_si = prefs.get("enable_strategy_intelligence", True)
             if enable_si:
                 strategy_intel, si_fallback = await resolve_strategy_intelligence(
                     db, effective_task_type,
@@ -1289,10 +1286,10 @@ class ContextEnrichmentService:
         """Cap strategy intelligence to configured maximum."""
         if text is None:
             return None
-        capped = text[: settings.MAX_ADAPTATION_CHARS]
+        capped = text[: settings.MAX_STRATEGY_INTELLIGENCE_CHARS]
         if len(capped) < len(text):
             logger.info(
                 "Truncated strategy_intelligence from %d to %d chars",
-                len(text), settings.MAX_ADAPTATION_CHARS,
+                len(text), settings.MAX_STRATEGY_INTELLIGENCE_CHARS,
             )
         return capped

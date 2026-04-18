@@ -235,7 +235,7 @@ class TestEnrichSampling:
 
 class TestPreferencesGating:
     @pytest.mark.asyncio
-    async def test_disable_adaptation_via_preferences(self, db, tmp_path):
+    async def test_disable_strategy_intelligence_via_preferences(self, db, tmp_path):
         service = _build_service(tmp_path)
         result = await service.enrich(
             raw_prompt="Implement a REST API endpoint",
@@ -246,7 +246,7 @@ class TestPreferencesGating:
         assert result.context_sources["strategy_intelligence"] is False
 
     @pytest.mark.asyncio
-    async def test_adaptation_enabled_by_default(self, db, tmp_path):
+    async def test_strategy_intelligence_enabled_by_default(self, db, tmp_path):
         service = _build_service(tmp_path)
         result = await service.enrich(
             raw_prompt="Implement a REST API endpoint",
@@ -254,18 +254,6 @@ class TestPreferencesGating:
         )
         # Strategy intelligence key exists — may be None (no data) but was attempted
         assert "strategy_intelligence" in result.context_sources
-
-    @pytest.mark.asyncio
-    async def test_old_enable_adaptation_pref_still_works(self, db, tmp_path):
-        """Backward compat: old enable_adaptation=False disables strategy intelligence."""
-        service = _build_service(tmp_path)
-        result = await service.enrich(
-            raw_prompt="Implement a REST API endpoint",
-            tier="passthrough", db=db,
-            preferences_snapshot={"enable_adaptation": False},
-        )
-        assert result.strategy_intelligence is None
-        assert result.context_sources["strategy_intelligence"] is False
 
     @pytest.mark.asyncio
     async def test_strategy_intelligence_tracked_in_sources(self, db, tmp_path):

@@ -160,8 +160,7 @@ async def refine(
         # Fallback: strategy intelligence only (workspace guidance
         # requires ContextEnrichmentService which owns WorkspaceIntelligence)
         _enable_si = prefs_snapshot.get("pipeline", {}).get(
-            "enable_strategy_intelligence",
-            prefs_snapshot.get("pipeline", {}).get("enable_adaptation", True),
+            "enable_strategy_intelligence", True,
         )
         if _enable_si:
             try:

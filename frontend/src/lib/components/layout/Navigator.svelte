@@ -983,14 +983,14 @@
               <span class="data-value neon-yellow">auto-injected</span>
             </div>
             <div class="data-row">
-              <span class="data-label">Adaptation</span>
+              <span class="data-label">Strategy Intel</span>
               <button
                 class="toggle-track toggle-track--yellow"
-                class:toggle-track--on={preferencesStore.pipeline.enable_adaptation}
-                onclick={() => preferencesStore.setPipelineToggle('enable_adaptation', !preferencesStore.pipeline.enable_adaptation)}
+                class:toggle-track--on={preferencesStore.pipeline.enable_strategy_intelligence}
+                onclick={() => preferencesStore.setPipelineToggle('enable_strategy_intelligence', !preferencesStore.pipeline.enable_strategy_intelligence)}
                 role="switch"
-                aria-checked={preferencesStore.pipeline.enable_adaptation}
-                aria-label="Toggle Adaptation"
+                aria-checked={preferencesStore.pipeline.enable_strategy_intelligence}
+                aria-label="Toggle Strategy Intelligence"
               >
                 <span class="toggle-thumb"></span>
               </button>
@@ -1050,7 +1050,7 @@
             {#each [
               { label: 'Explore', key: 'enable_explore' },
               { label: 'Scoring', key: 'enable_scoring' },
-              { label: 'Adaptation', key: 'enable_adaptation' },
+              { label: 'Strategy Intel', key: 'enable_strategy_intelligence' },
             ] as { label, key }}
               <div class="data-row">
                 <span class="data-label">{label}</span>

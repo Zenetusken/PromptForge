@@ -557,8 +557,10 @@ async def run_sampling_pipeline(
 
     # Resolve blocked strategies (low approval rate) to filter from analyzer input
     blocked_strategies: set[str] = set()
-    adaptation_enabled = prefs.get("pipeline.enable_adaptation", prefs_snapshot)
-    if adaptation_enabled and not strategy_override:
+    strategy_intel_enabled = prefs.get(
+        "pipeline.enable_strategy_intelligence", prefs_snapshot,
+    )
+    if strategy_intel_enabled and not strategy_override:
         try:
             from app.models import StrategyAffinity
             from app.services.adaptation_tracker import AdaptationTracker
@@ -809,8 +811,7 @@ async def run_sampling_pipeline(
     #     Prefer pre-resolved value from enrichment service to avoid redundant DB queries.
     strategy_intelligence: str | None = pre_resolved_strategy_intelligence
     enable_si = prefs.get(
-        "pipeline.enable_strategy_intelligence",
-        prefs.get("pipeline.enable_adaptation", prefs_snapshot),
+        "pipeline.enable_strategy_intelligence", prefs_snapshot,
     )
     if not enable_si:
         strategy_intelligence = None

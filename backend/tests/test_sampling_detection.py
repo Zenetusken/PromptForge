@@ -327,7 +327,7 @@ class TestPreferencesForceTogglesAPI:
         )
         data_after = (await app_client.get("/api/preferences")).json()
 
-        for key in ("enable_explore", "enable_scoring", "enable_adaptation"):
+        for key in ("enable_explore", "enable_scoring", "enable_strategy_intelligence"):
             assert data_after["pipeline"][key] == data_before["pipeline"][key]
 
     async def test_disable_both_simultaneously(self, app_client):

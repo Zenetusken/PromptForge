@@ -32,7 +32,8 @@ class _PipelineUpdate(BaseModel):
 
     enable_explore: StrictBool | None = None
     enable_scoring: StrictBool | None = None
-    enable_adaptation: StrictBool | None = None
+    enable_strategy_intelligence: StrictBool | None = None
+    enable_llm_classification_fallback: StrictBool | None = None
     force_sampling: StrictBool | None = None
     force_passthrough: StrictBool | None = None
     optimizer_effort: Literal["low", "medium", "high", "max"] | None = None

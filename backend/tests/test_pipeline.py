@@ -239,7 +239,7 @@ class TestPipelineOrchestrator:
         prefs_path.write_text(json.dumps({
             "schema_version": 1,
             "models": {"analyzer": "sonnet", "optimizer": "opus", "scorer": "sonnet"},
-            "pipeline": {"enable_explore": True, "enable_scoring": False, "enable_adaptation": True},
+            "pipeline": {"enable_explore": True, "enable_scoring": False, "enable_strategy_intelligence": True},
             "defaults": {"strategy": "auto"},
         }))
 

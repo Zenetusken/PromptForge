@@ -388,7 +388,7 @@ describe('Navigator', () => {
     render(Navigator, { props: { active: 'settings' } });
     expect(screen.getByRole('switch', { name: 'Toggle Explore' })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Toggle Scoring' })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Toggle Adaptation' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Toggle Strategy Intel' })).toBeInTheDocument();
   });
 
   it('pipeline toggles reflect current preferences state (Explore ON by default)', () => {
@@ -787,12 +787,12 @@ describe('Navigator', () => {
     expect(screen.getByText('no repo')).toBeInTheDocument();
   });
 
-  it('shows Adaptation toggle in CONTEXT section in passthrough mode', () => {
+  it('shows Strategy Intelligence toggle in CONTEXT section in passthrough mode', () => {
     forgeStore.provider = null;
     preferencesStore.prefs.pipeline.force_passthrough = true;
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'settings' } });
-    expect(screen.getByRole('switch', { name: /Toggle Adaptation/i })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: /Toggle Strategy Intelligence/i })).toBeInTheDocument();
   });
 
   it('hides Models section in passthrough mode', () => {
@@ -834,17 +834,17 @@ describe('Navigator', () => {
     expect(screen.getByText('Effort')).toBeInTheDocument();
   });
 
-  it('clicking Adaptation toggle in CONTEXT section calls setPipelineToggle', async () => {
+  it('clicking Strategy Intelligence toggle in CONTEXT section calls setPipelineToggle', async () => {
     const user = userEvent.setup();
     forgeStore.provider = null;
     preferencesStore.prefs.pipeline.force_passthrough = true;
-    preferencesStore.prefs.pipeline.enable_adaptation = true;
+    preferencesStore.prefs.pipeline.enable_strategy_intelligence = true;
     const spy = vi.spyOn(preferencesStore, 'setPipelineToggle').mockResolvedValue(undefined);
     defaultFetchHandlers();
     render(Navigator, { props: { active: 'settings' } });
-    const toggle = screen.getByRole('switch', { name: /Toggle Adaptation/i });
+    const toggle = screen.getByRole('switch', { name: /Toggle Strategy Intelligence/i });
     await user.click(toggle);
-    expect(spy).toHaveBeenCalledWith('enable_adaptation', false);
+    expect(spy).toHaveBeenCalledWith('enable_strategy_intelligence', false);
     spy.mockRestore();
   });
 

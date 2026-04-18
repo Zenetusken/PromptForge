@@ -21,7 +21,7 @@ describe('PreferencesStore', () => {
         response: {
           schema_version: 1,
           models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
-          pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: false, force_passthrough: false },
+          pipeline: { enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true, force_sampling: false, force_passthrough: false },
           defaults: { strategy: 'chain-of-thought' },
         },
       }]);
@@ -39,7 +39,7 @@ describe('PreferencesStore', () => {
           response: {
             schema_version: 1,
             models: { analyzer: 'sonnet', optimizer: 'haiku', scorer: 'sonnet' },
-            pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: false, force_passthrough: false },
+            pipeline: { enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true, force_sampling: false, force_passthrough: false },
             defaults: { strategy: 'auto' },
           },
         },
@@ -59,7 +59,7 @@ describe('PreferencesStore', () => {
         response: {
           schema_version: 1,
           models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
-          pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: false, force_passthrough: false },
+          pipeline: { enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true, force_sampling: false, force_passthrough: false },
           defaults: { strategy: 'auto' },
         },
       }]);
@@ -75,7 +75,7 @@ describe('PreferencesStore', () => {
         response: {
           schema_version: 1,
           models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
-          pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: false, force_passthrough: false },
+          pipeline: { enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true, force_sampling: false, force_passthrough: false },
           defaults: { strategy: 'few-shot' },
         },
       }]);
@@ -91,7 +91,7 @@ describe('PreferencesStore', () => {
         response: {
           schema_version: 1,
           models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
-          pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: true, force_passthrough: false },
+          pipeline: { enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true, force_sampling: true, force_passthrough: false },
           defaults: { strategy: 'auto' },
         },
       }]);
@@ -107,7 +107,7 @@ describe('PreferencesStore', () => {
         response: {
           schema_version: 1,
           models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
-          pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: false, force_passthrough: true },
+          pipeline: { enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true, force_sampling: false, force_passthrough: true },
           defaults: { strategy: 'auto' },
         },
       }]);
@@ -123,7 +123,7 @@ describe('PreferencesStore', () => {
         response: {
           schema_version: 1,
           models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
-          pipeline: { enable_explore: true, enable_scoring: true, enable_adaptation: true, force_sampling: false, force_passthrough: false },
+          pipeline: { enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true, force_sampling: false, force_passthrough: false },
           defaults: { strategy: 'auto' },
         },
       }]);
@@ -201,7 +201,7 @@ describe('PreferencesStore', () => {
           schema_version: 1,
           models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
           pipeline: {
-            enable_explore: true, enable_scoring: true, enable_adaptation: true,
+            enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true,
             force_sampling: false, force_passthrough: false,
             optimizer_effort: 'high', analyzer_effort: 'low', scorer_effort: 'low',
           },
@@ -311,7 +311,7 @@ describe('PreferencesStore', () => {
           schema_version: 1,
           models: { analyzer: 'sonnet', optimizer: 'opus', scorer: 'sonnet' },
           pipeline: {
-            enable_explore: true, enable_scoring: true, enable_adaptation: true,
+            enable_explore: true, enable_scoring: true, enable_strategy_intelligence: true,
             force_sampling: false, force_passthrough: false,
             optimizer_effort: 'high', analyzer_effort: 'low', scorer_effort: 'low',
           },

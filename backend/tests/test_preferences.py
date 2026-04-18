@@ -32,8 +32,29 @@ class TestLoad:
         assert prefs["models"]["scorer"] == "sonnet"
         assert prefs["pipeline"]["enable_explore"] is True
         assert prefs["pipeline"]["enable_scoring"] is True
-        assert prefs["pipeline"]["enable_adaptation"] is True
+        assert prefs["pipeline"]["enable_strategy_intelligence"] is True
         assert prefs["defaults"]["strategy"] == "auto"
+
+    def test_legacy_enable_adaptation_key_migrates_on_load(
+        self, svc: PreferencesService, prefs_file: Path
+    ) -> None:
+        """Legacy preferences files migrate enable_adaptation → enable_strategy_intelligence."""
+        import json as _json
+        prefs_file.write_text(_json.dumps({
+            "schema_version": 1,
+            "pipeline": {
+                "enable_explore": True,
+                "enable_scoring": True,
+                "enable_adaptation": False,
+            },
+        }))
+        prefs = svc.load()
+        assert prefs["pipeline"]["enable_strategy_intelligence"] is False
+        assert "enable_adaptation" not in prefs["pipeline"]
+        # Second load from disk confirms migration persisted.
+        raw = _json.loads(prefs_file.read_text())
+        assert raw["pipeline"]["enable_strategy_intelligence"] is False
+        assert "enable_adaptation" not in raw["pipeline"]
 
     def test_creates_file_on_first_access(
         self, svc: PreferencesService, prefs_file: Path
@@ -232,7 +253,7 @@ class TestForceSampling:
             "pipeline": {
                 "enable_explore": True,
                 "enable_scoring": True,
-                "enable_adaptation": True,
+                "enable_strategy_intelligence": True,
             },
         }))
         prefs = svc.load()
@@ -287,7 +308,7 @@ class TestForcePassthrough:
             "pipeline": {
                 "enable_explore": True,
                 "enable_scoring": True,
-                "enable_adaptation": True,
+                "enable_strategy_intelligence": True,
                 "force_sampling": False,
             },
         }))
@@ -373,7 +394,7 @@ class TestEffortPreferences:
             "schema_version": 1,
             "models": {"analyzer": "sonnet", "optimizer": "opus", "scorer": "sonnet"},
             "pipeline": {"enable_explore": True, "enable_scoring": True,
-                         "enable_adaptation": True, "force_sampling": False,
+                         "enable_strategy_intelligence": True, "force_sampling": False,
                          "force_passthrough": False, "optimizer_effort": "high"},
             "defaults": {"strategy": "auto"},
         }))
@@ -425,7 +446,7 @@ class TestEffortPreferences:
             "schema_version": 1,
             "models": {"analyzer": "sonnet", "optimizer": "opus", "scorer": "sonnet"},
             "pipeline": {"enable_explore": True, "enable_scoring": True,
-                         "enable_adaptation": True, "force_sampling": False,
+                         "enable_strategy_intelligence": True, "force_sampling": False,
                          "force_passthrough": False, "optimizer_effort": "high",
                          "analyzer_effort": "turbo", "scorer_effort": "warp"},
             "defaults": {"strategy": "auto"},
@@ -467,7 +488,7 @@ class TestDomainReadinessNotifications:
             "schema_version": 1,
             "models": {"analyzer": "sonnet", "optimizer": "opus", "scorer": "sonnet"},
             "pipeline": {"enable_explore": True, "enable_scoring": True,
-                         "enable_adaptation": True, "force_sampling": False,
+                         "enable_strategy_intelligence": True, "force_sampling": False,
                          "force_passthrough": False, "optimizer_effort": "high"},
             "defaults": {"strategy": "auto"},
         }))

@@ -81,8 +81,9 @@ class Settings(BaseSettings):
     MAX_CODEBASE_CONTEXT_CHARS: int = Field(
         default=100000, description="Maximum codebase context characters injected into optimizer.",
     )
-    MAX_ADAPTATION_CHARS: int = Field(
-        default=5000, description="Maximum adaptation state characters injected into optimizer.",
+    MAX_STRATEGY_INTELLIGENCE_CHARS: int = Field(
+        default=5000,
+        description="Maximum strategy intelligence characters injected into optimizer.",
     )
     EXPLORE_MAX_PROMPT_CHARS: int = Field(
         default=20000, description="Maximum prompt characters sent to explore synthesis.",

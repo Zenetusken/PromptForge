@@ -44,7 +44,7 @@ DEFAULTS: dict[str, Any] = {
     "pipeline": {
         "enable_explore": True,
         "enable_scoring": True,
-        "enable_adaptation": True,
+        "enable_strategy_intelligence": True,
         "enable_llm_classification_fallback": True,
         "force_sampling": False,
         "force_passthrough": False,
@@ -71,10 +71,27 @@ DEFAULTS: dict[str, Any] = {
 }
 
 _PIPELINE_TOGGLES = (
-    "enable_explore", "enable_scoring", "enable_adaptation",
+    "enable_explore", "enable_scoring", "enable_strategy_intelligence",
     "enable_llm_classification_fallback",
     "force_sampling", "force_passthrough",
 )
+
+
+def _migrate_legacy_keys(disk: dict[str, Any]) -> bool:
+    """Rename legacy preference keys on load. Returns True if anything changed.
+
+    Keeps user's value when migrating. Idempotent — once the legacy key is
+    gone, this is a no-op. Called from ``load()`` before deep-merge with
+    DEFAULTS so the migrated value wins.
+    """
+    changed = False
+    pipeline = disk.get("pipeline")
+    if isinstance(pipeline, dict) and "enable_adaptation" in pipeline:
+        legacy_value = pipeline.pop("enable_adaptation")
+        # Do not overwrite a canonical key if the user already set both.
+        pipeline.setdefault("enable_strategy_intelligence", legacy_value)
+        changed = True
+    return changed
 
 _MODEL_MAP = {
     "sonnet": "MODEL_SONNET",
@@ -99,6 +116,10 @@ class PreferencesService:
 
         Creates the file with defaults if it does not exist or contains
         invalid JSON.  Always returns a *fresh* dict snapshot.
+
+        On first load after a rename, legacy keys are migrated in-place via
+        ``_migrate_legacy_keys`` and the file is rewritten with the
+        canonical schema.
         """
         disk: dict[str, Any] = {}
         if self._path.exists():
@@ -107,6 +128,10 @@ class PreferencesService:
             except (json.JSONDecodeError, OSError) as exc:
                 logger.warning("Corrupt preferences file — resetting to defaults: %s", exc)
                 disk = {}
+
+        migrated = _migrate_legacy_keys(disk)
+        if migrated:
+            logger.info("Migrated legacy preference keys to canonical schema")
 
         merged = self._deep_merge(copy.deepcopy(DEFAULTS), disk)
         self._sanitize(merged)
