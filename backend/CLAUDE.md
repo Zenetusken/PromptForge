@@ -59,7 +59,7 @@ Model IDs centralized in `config.py`: `MODEL_SONNET` (`claude-sonnet-4-6`), `MOD
 | `domains.py` | `GET /api/domains`, `POST /api/domains/{id}/promote`, `GET /api/domains/readiness`, `GET /api/domains/{id}/readiness` (`?fresh=true` bypass), `GET /api/domains/{id}/readiness/history` (`?hours=`, hourly buckets) |
 | `seed.py` | `POST /api/seed` (batch seeding), `GET /api/seed/agents` (agent metadata for UI) |
 | `update.py` | `GET /api/update/status`, `POST /api/update/apply` (202) |
-| `clusters.py` | CRUD, match, tree, stats, recluster, reassign, repair, activity (ring buffer + JSONL history). Activity endpoints MUST be before `{cluster_id}` dynamic route. Read endpoints use `db.autoflush=False`. Legacy 301 for `/api/patterns/*`, `/api/taxonomy/*`. Legacy 410 Gone on `/api/clusters/templates` + 400 on `PATCH {state: "template"}` (kept rate-limited for consistency) |
+| `clusters.py` | CRUD, match, tree, stats, recluster, reassign, repair, activity (ring buffer + JSONL history). Activity endpoints MUST be before `{cluster_id}` dynamic route. Read endpoints use `db.autoflush=False`. Legacy 410 Gone on `/api/clusters/templates` + 400 on `PATCH {state: "template"}` (kept rate-limited for consistency) |
 | `templates.py` | `GET /api/templates` (list, project filter), `GET /api/templates/{id}`, `POST /api/clusters/{id}/fork-template` (10/min), `POST /api/templates/{id}/retire`, `POST /api/templates/{id}/use` (30/min) — immutable forks minted via `TemplateService.fork_from_cluster()` |
 
 Shared: `app/utils/sse.py` (`format_sse()`), `app/dependencies/rate_limit.py` (in-memory via `limits`).

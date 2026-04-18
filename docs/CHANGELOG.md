@@ -4,6 +4,15 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Added
+- **Zero-LLM backup restore script** — `scripts/restore_from_backup.py` reads a pre-taxonomy backup DB and rehydrates optimizations into the current schema using only local embeddings + heuristic analyzer + cosine-based cluster assignment. Idempotent (SHA-16 dedupe on `raw_prompt`), supports `--dry-run`/`--limit`/`--force`, refuses to run while services are live. No LLM spend (~13s for 16 prompts).
+
+### Fixed
+- **Schema drift: `optimizations.improvement_score`** — `models.py` declared the column but no migration ever added it, breaking every new insert with `table has no column named improvement_score`. Added migration `938041e0f3dd` (forward-only idempotent `batch_alter_table`).
+
+### Removed
+- **12 legacy 301/307 redirects** — `/api/taxonomy/{tree,stats,node/{id},recluster}` and `/api/patterns/{families,families/{id},match,graph,stats,search}` handlers deleted from `clusters.py`. Pre-1.0 solo-dev project — no external consumers to preserve. ~90 LOC removed including 10 paired redirect tests in `test_clusters_router.py::TestLegacyRedirects`. `RedirectResponse` import dropped.
+
 ## v0.3.39 — 2026-04-18
 
 ### Added

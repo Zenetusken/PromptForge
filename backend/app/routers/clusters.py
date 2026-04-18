@@ -7,7 +7,6 @@ Replaces the separate /api/taxonomy/ and /api/patterns/ routers with a single
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import OperationalError
@@ -739,75 +738,3 @@ async def backfill_scores(
     except Exception as exc:
         logger.error("Score backfill failed: %s", exc, exc_info=True)
         raise HTTPException(500, "Score backfill failed") from exc
-
-
-# ---------------------------------------------------------------------------
-# Legacy 301 redirects
-# ---------------------------------------------------------------------------
-
-# Taxonomy legacy routes
-
-@router.get("/api/taxonomy/tree")
-async def legacy_taxonomy_tree(request: Request):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/tree{qs}", status_code=301)
-
-
-@router.get("/api/taxonomy/stats")
-async def legacy_taxonomy_stats(request: Request):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/stats{qs}", status_code=301)
-
-
-@router.get("/api/taxonomy/node/{node_id}")
-async def legacy_taxonomy_node(request: Request, node_id: str):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/{node_id}{qs}", status_code=301)
-
-
-@router.post("/api/taxonomy/recluster")
-async def legacy_taxonomy_recluster(request: Request):
-    return RedirectResponse(url="/api/clusters/recluster", status_code=307)
-
-
-# Patterns legacy routes
-
-@router.get("/api/patterns/families")
-async def legacy_patterns_families(request: Request):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/tree{qs}", status_code=301)
-
-
-@router.get("/api/patterns/families/{family_id}")
-async def legacy_patterns_family_detail(request: Request, family_id: str):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/{family_id}{qs}", status_code=301)
-
-
-@router.patch("/api/patterns/families/{family_id}")
-async def legacy_patterns_family_update(request: Request, family_id: str):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/{family_id}{qs}", status_code=307)
-
-
-@router.post("/api/patterns/match")
-async def legacy_patterns_match(request: Request):
-    return RedirectResponse(url="/api/clusters/match", status_code=307)
-
-
-@router.get("/api/patterns/graph")
-async def legacy_patterns_graph(request: Request):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/tree{qs}", status_code=301)
-
-
-@router.get("/api/patterns/stats")
-async def legacy_patterns_stats(request: Request):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/stats{qs}", status_code=301)
-
-
-@router.get("/api/patterns/search")
-async def legacy_patterns_search(request: Request):
-    qs = f"?{request.query_params}" if request.query_params else ""
-    return RedirectResponse(url=f"/api/clusters/tree{qs}", status_code=301)
