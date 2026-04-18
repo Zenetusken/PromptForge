@@ -1854,4 +1854,65 @@ describe('SemanticTopology — readiness ring overlay', () => {
       5,
     );
   });
+
+  it('readiness ring respects brand directive — no glow, no shadow, no rounded corners', async () => {
+    // Brand-guard contract: the `[data-readiness-ring]` DOM marker is a test
+    // sentinel (display:none span), not a visual element. It must never gain
+    // glow, drop-shadow, box-shadow, or rounded-corner styling — even if a
+    // future maintainer is tempted to decorate it. Industrial cyberpunk:
+    // 1px neon contours, zero effects.
+    _sceneOverride.value = {
+      nodes: [
+        {
+          id: 'd1',
+          position: [0, 0, 0] as [number, number, number],
+          color: '#b44aff',
+          size: 1,
+          opacity: 1,
+          persistence: 0.8,
+          state: 'domain',
+          label: 'backend',
+          visible: true,
+          coherence: 0.8,
+          avgScore: 7,
+          domain: 'backend',
+          memberCount: 30,
+          isSubDomain: false,
+          readinessTier: 'critical' as const,
+        },
+      ],
+      edges: [],
+    };
+
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    clustersStore.taxonomyTree = [
+      {
+        id: 'd1',
+        label: 'backend',
+        state: 'domain',
+        domain: 'backend',
+        member_count: 30,
+        parent_id: null,
+      } as any,
+    ];
+
+    const { container } = render(SemanticTopology);
+    await new Promise((r) => setTimeout(r, 50));
+    clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+    let marker: Element | null = null;
+    await vi.waitFor(() => {
+      marker = container.querySelector('[data-readiness-ring="d1"]');
+      expect(marker).toBeTruthy();
+    });
+
+    if (marker) {
+      const style = window.getComputedStyle(marker);
+      expect(style.filter).not.toContain('blur');
+      expect(style.filter).not.toContain('drop-shadow');
+      expect(style.boxShadow === '' || style.boxShadow === 'none').toBe(true);
+      expect(style.borderRadius === '' || style.borderRadius === '0px').toBe(true);
+    }
+  });
 });
