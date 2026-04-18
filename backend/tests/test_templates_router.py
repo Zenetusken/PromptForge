@@ -114,12 +114,14 @@ async def test_get_clusters_templates_returns_410(app_client):
 
 @pytest.mark.asyncio
 async def test_patch_cluster_state_template_returns_400(app_client, seeded_mature_cluster):
+    # Task 25: "template" removed from ClusterUpdateRequest.state Literal.
+    # Pydantic now rejects it at the schema boundary (422) before the handler
+    # runs. The router's 400 guard at lines 487-494 of clusters.py is now
+    # unreachable dead code; a later task may clean it up.
     r = await app_client.patch(
         f"/api/clusters/{seeded_mature_cluster}",
         json={"state": "template"},
     )
-    assert r.status_code == 400
-    detail = r.json()["detail"]
-    if isinstance(detail, dict):
-        detail = detail.get("detail", "")
-    assert "fork-template" in detail
+    assert r.status_code in (400, 422), (
+        f"Expected 400 or 422 when patching state='template'; got {r.status_code}"
+    )

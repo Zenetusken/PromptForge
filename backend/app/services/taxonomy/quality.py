@@ -47,8 +47,8 @@ class NodeMetrics:
 
     coherence: float
     separation: float
-    state: str  # 'candidate' | 'active' | 'mature' | 'template' | 'archived' | 'domain'
-    # Q-contributing states: candidate, active, mature, template
+    state: str  # 'candidate' | 'active' | 'mature' | 'archived' | 'domain'
+    # Q-contributing states: candidate, active, mature
     # Excluded from Q computation: domain, archived
     member_count: int = 1
 

@@ -1751,7 +1751,7 @@ class TaxonomyEngine:
             general_children_q = await db.execute(
                 select(PromptCluster).where(
                     PromptCluster.parent_id == general_node.id,
-                    PromptCluster.state.in_(["active", "mature", "template"]),
+                    PromptCluster.state.in_(["active", "mature"]),
                 )
             )
             general_children = list(general_children_q.scalars().all())
@@ -3634,7 +3634,7 @@ class TaxonomyEngine:
         # "archived" tab filters on the frontend side from this full set.
         # The topology component further filters to non-archived for rendering.
         query = select(PromptCluster).where(
-            PromptCluster.state.in_(["active", "candidate", "mature", "template", "domain", "archived", "project"])
+            PromptCluster.state.in_(["active", "candidate", "mature", "domain", "archived", "project"])
         )
         if min_persistence > 0:
             query = query.where(PromptCluster.persistence >= min_persistence)
@@ -3729,7 +3729,6 @@ class TaxonomyEngine:
         active = state_counts.get("active", 0)
         candidate = state_counts.get("candidate", 0)
         mature = state_counts.get("mature", 0)
-        template = state_counts.get("template", 0)
         archived = state_counts.get("archived", 0)
 
         # max_depth + leaf_count: lightweight projection (id + parent_id + state only)
@@ -3829,7 +3828,6 @@ class TaxonomyEngine:
                 "active": active,
                 "candidate": candidate,
                 "mature": mature,
-                "template": template,
                 "archived": archived,
                 "max_depth": max_depth,
                 "leaf_count": leaf_count,

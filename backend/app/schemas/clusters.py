@@ -89,7 +89,6 @@ class ClusterNodeCounts(BaseModel):
     candidate: int = 0
     archived: int = 0
     mature: int = 0
-    template: int = 0
     max_depth: int = 0
     leaf_count: int = 0
 
@@ -151,7 +150,7 @@ class ClusterUpdateRequest(BaseModel):
     # merge prevention), wrong warm-path merges, and corrupt tree topology.
     # Domain is set automatically by the taxonomy engine from optimization
     # classification and can only be changed via domain discovery/cold path.
-    state: Literal["candidate", "active", "mature", "template", "archived", "domain"] | None = None
+    state: Literal["candidate", "active", "mature", "archived", "domain"] | None = None
 
 
 class SimilarityEdge(BaseModel):
