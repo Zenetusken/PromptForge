@@ -11,6 +11,13 @@ const _tickFrame = () => {
   for (const cb of snapshot) cb();
 };
 
+// Module-level mutable LOD tier shared across the mocked renderer instance
+// and the tests. The production `TopologyRenderer.lodTier` getter returns
+// `'far' | 'mid' | 'near'` based on camera distance; in tests there is no
+// render loop driving `_checkLod()`, so tests flip this value directly to
+// simulate zoom-in/out. Reset in afterEach alongside the other shared state.
+const _lodTierOverride: { value: 'far' | 'mid' | 'near' } = { value: 'near' };
+
 // Mock topology modules before any imports that could trigger WebGL
 vi.mock('./TopologyRenderer', () => {
   class TopologyRenderer {
@@ -42,6 +49,9 @@ vi.mock('./TopologyRenderer', () => {
       (globalThis as any).__semTopLastScene = this.scene;
     }
     camera = { position: { distanceTo: () => 80 }, quaternion: { angleTo: () => 0 }, up: { clone: () => ({ negate: () => ({ multiplyScalar: () => ({}) }) }) } };
+    // Mirrors the public `lodTier` getter on the real TopologyRenderer. Reads
+    // from the module-level override so tests can flip tiers mid-frame.
+    get lodTier(): 'far' | 'mid' | 'near' { return _lodTierOverride.value; }
     start = () => {};
     dispose = () => {};
     resize = () => {};
@@ -408,12 +418,14 @@ describe('SemanticTopology — readiness ring overlay', () => {
     _sceneOverride.value = null;
     _useRealBuildSceneData.value = false;
     _animationCallbacks.length = 0;
+    _lodTierOverride.value = 'near';
   });
 
   afterEach(() => {
     _sceneOverride.value = null;
     _useRealBuildSceneData.value = false;
     _animationCallbacks.length = 0;
+    _lodTierOverride.value = 'near';
   });
 
   it('renders an invisible data-readiness-ring marker per domain node with a tier', async () => {
@@ -1555,5 +1567,113 @@ describe('SemanticTopology — readiness ring overlay', () => {
       2.0 * READINESS_RING_RADIUS_FACTOR + READINESS_RING_THICKNESS,
       5,
     );
+  });
+
+  it('attenuates ring opacity by renderer.lodTier each frame', async () => {
+    // Task 9: LOD attenuation. At far-camera distances the ring is a ghost
+    // (0.4), at mid distance it's half-weight (0.7), and at near distance
+    // it's fully lit (1.0). The contract is that a per-frame callback
+    // registered via `renderer.addAnimationCallback()` reads the public
+    // `renderer.lodTier` getter and writes `material.opacity` accordingly —
+    // making the LOD callback the FINAL opacity writer per frame (it runs
+    // after the dim-sweep `$effect` has already set opacity based on the
+    // domain highlight state).
+    //
+    // Under current HEAD: no LOD callback is registered. The dim-sweep
+    // `$effect` sets opacity to `node.opacity * READINESS_RING_OPACITY_FACTOR`
+    // = 1 * 0.9 = 0.9 at build time and leaves it there. Ticking an animation
+    // frame flips `lodTier` → 'far' in our mock but nothing consumes the tier,
+    // so opacity stays at 0.9 instead of dropping to 0.4. That's the RED
+    // failure this test locks in.
+    //
+    // Note on scope: this test asserts ONLY the opacity contract. It does
+    // NOT assert anything about `lookAt` call counts — the GREEN agent is
+    // free to either fold billboard re-orientation into the same LOD
+    // callback or keep them separate. The pre-existing billboard test
+    // (`re-orients ring meshes per animation frame, not just at build`)
+    // already covers the lookAt invariant.
+    const THREE = await import('three');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const RingGeometryClass = (THREE as any).RingGeometry;
+
+    _sceneOverride.value = {
+      nodes: [
+        {
+          id: 'd1',
+          position: [0, 0, 0] as [number, number, number],
+          color: '#b44aff',
+          size: 2,
+          opacity: 1,
+          persistence: 1,
+          state: 'domain',
+          label: 'backend',
+          visible: true,
+          coherence: 0.5,
+          avgScore: 7,
+          domain: 'backend',
+          memberCount: 10,
+          isSubDomain: false,
+          readinessTier: 'guarded' as const,
+        },
+      ],
+      edges: [],
+    };
+
+    const { clustersStore } = await import('$lib/stores/clusters.svelte');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    clustersStore.taxonomyTree = [
+      {
+        id: 'd1',
+        label: 'backend',
+        state: 'domain',
+        domain: 'backend',
+        member_count: 10,
+        parent_id: null,
+      } as any,
+    ];
+
+    const { container } = render(SemanticTopology);
+    await new Promise((r) => setTimeout(r, 50));
+    clustersStore.taxonomyTree = [...clustersStore.taxonomyTree];
+
+    // Wait for the ring to be built.
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll('[data-readiness-ring="d1"]').length).toBe(1);
+    });
+
+    // Reach into the scene to get the ring material. Same pattern as the
+    // dim-in-lockstep test above — rings live inside the isReadinessRingGroup
+    // tagged group, not at scene root.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lastScene = (globalThis as any).__semTopLastScene as
+      | { children: unknown[] }
+      | undefined;
+    expect(lastScene).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ringGroup = lastScene!.children.find((c: any) =>
+      c?.userData?.isReadinessRingGroup === true,
+    ) as { children: unknown[] } | undefined;
+    expect(ringGroup).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ring = ringGroup!.children.find((c: any) =>
+      c instanceof (THREE as any).Mesh && c.geometry instanceof RingGeometryClass,
+    ) as { material: { opacity: number } } | undefined;
+    expect(ring).toBeDefined();
+
+    // Flip to 'far' and tick. After the LOD callback fires, opacity must
+    // be 0.4 regardless of what the dim-sweep $effect wrote earlier.
+    _lodTierOverride.value = 'far';
+    _tickFrame();
+    expect(ring!.material.opacity).toBeCloseTo(0.4, 5);
+
+    // Flip to 'mid' and tick. opacity → 0.7.
+    _lodTierOverride.value = 'mid';
+    _tickFrame();
+    expect(ring!.material.opacity).toBeCloseTo(0.7, 5);
+
+    // Flip to 'near' and tick. opacity → 1.0 (fully lit).
+    _lodTierOverride.value = 'near';
+    _tickFrame();
+    expect(ring!.material.opacity).toBeCloseTo(1.0, 5);
   });
 });
