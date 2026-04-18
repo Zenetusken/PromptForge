@@ -72,6 +72,11 @@ def _report(
 
 @pytest.fixture(autouse=True)
 def _reset_state():
+    # Prior tests that exercise lifespan may have flipped ``_shutting_down``
+    # on the module-level ``event_bus`` singleton; once set, ``publish()``
+    # becomes a no-op for the rest of the session.  Reset it so these tests
+    # are order-independent.
+    event_bus._shutting_down = False  # type: ignore[attr-defined]
     clear_tier_history()
     clear_cache()
     yield
