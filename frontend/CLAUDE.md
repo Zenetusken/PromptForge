@@ -46,7 +46,8 @@ Key types: `HealthResponse`, `OptimizationResult`, `RefinementTurn`, `HistoryIte
 | `toast.svelte.ts` | Toast notification queue with `addToast()` API. Severity helpers: `success()`, `info()`, `warning()`, `error()` |
 | `readiness-notifications.svelte.ts` | SSE dispatcher for `domain_readiness_changed`. Maps tier transitions to toast severity via `readiness-tier.ts`. Gated by `preferences.domain_readiness_notifications`; per-row mute toggle stored in `localStorage` |
 | `routing.svelte.ts` | Derived routing state mirroring backend 5-tier priority chain. Reactive tier resolver |
-| `clusters.svelte.ts` | Cluster state: two-path pattern detection (typing 800ms + paste 300ms debounce, 30-char min, AbortController), persistent suggestion (no auto-dismiss), `applySuggestion()` returns `{ids, clusterLabel}`, tree/stats, detail, template spawning with `patternIds`, `StateFilter` + `filteredTaxonomyTree`, async `invalidateClusters()` with ghost-selection guard, seed batch progress. Activity panel state: `activityEvents`, `activityOpen`, `pushActivityEvent()`, `toggleActivity()`, `loadActivity()` with JSONL history fallback |
+| `clusters.svelte.ts` | Cluster state: two-path pattern detection (typing 800ms + paste 300ms debounce, 30-char min, AbortController), persistent suggestion (no auto-dismiss), `applySuggestion()` returns `{ids, clusterLabel}`, tree/stats, detail, `StateFilter` + `filteredTaxonomyTree`, async `invalidateClusters()` with ghost-selection guard, seed batch progress. Activity panel state: `activityEvents`, `activityOpen`, `pushActivityEvent()`, `toggleActivity()`, `loadActivity()` with JSONL history fallback. (Template spawning moved to `templates.svelte.ts`) |
+| `templates.svelte.ts` | Proven-templates store: `load(projectId)`, `spawn(templateId)` (records a use and returns the spawned optimization), `retire(templateId)`. List grouped by frozen domain in PROVEN TEMPLATES navigator section. Reacts to `taxonomy_changed` SSE (template fork/retire triggers via warm path). Halo ring rendering uses `HIGHLIGHT_COLOR_HEX` from `colors.ts` |
 | `domains.svelte.ts` | API-driven domain palette. `colorFor()` resolves domain→hex with keyword fallback. Invalidated on `domain_created`/`taxonomy_changed` SSE |
 | `passthrough-guide.svelte.ts` | Passthrough workflow guide modal (visibility, "don't show again") |
 | `sampling-guide.svelte.ts` | Sampling tier guide modal state |
@@ -64,11 +65,16 @@ Key types: `HealthResponse`, `OptimizationResult`, `RefinementTurn`, `HistoryIte
 
 ```
 src/lib/components/
-  layout/       # ActivityBar, Navigator, ClusterNavigator, EditorGroups, Inspector, StatusBar
+  layout/       # ActivityBar, Navigator, ClusterNavigator (reads templatesStore,
+                # renders PROVEN TEMPLATES section grouped by frozen domain),
+                # EditorGroups, Inspector (Templates collapsible section),
+                # StatusBar
   editor/       # PromptEdit, ForgeArtifact, PatternSuggestion, PassthroughView
   taxonomy/     # SemanticTopology, TopologyControls (diegetic UI — auto-hide controls,
                 # right-edge hover zone, Q key metrics, inline hint card),
-                # TopologyRenderer, TopologyData (state filter graph dimming),
+                # TopologyRenderer (growable halo pool around clusters with
+                # template_count > 0 — halos inherit domain color),
+                # TopologyData (state filter graph dimming, surfaces `template_count` on SceneNode),
                 # TopologyInteraction, TopologyLabels, TopologyWorker (5-force simulation),
                 # ActivityPanel (mission control terminal — severity-driven rows, path
                 # accent rails, auto-hide cluster links, expandable context cards;

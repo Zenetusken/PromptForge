@@ -95,7 +95,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 | Frontend | SvelteKit 2 (Svelte 5 runes), Tailwind CSS 4 |
 | Database | SQLite (WAL mode) |
 | Visualization | Three.js (3D taxonomy topology with LOD, raycasting, force layout) |
-| Taxonomy | Spectral clustering + HDBSCAN + adaptive cosine thresholds + UMAP 3D + OKLab coloring. Multi-project hierarchy (project → domain → sub-domain → cluster). Signal-driven sub-domain discovery with three-tier vocabulary (static + LLM-generated + dynamic TF-IDF) |
+| Taxonomy | Spectral clustering + HDBSCAN + adaptive cosine thresholds + UMAP 3D + OKLab coloring. Multi-project hierarchy (project → domain → sub-domain → cluster). Signal-driven sub-domain discovery with organic Haiku-generated qualifier vocabulary + dynamic TF-IDF (fully organic — no static dict). Immutable `PromptTemplate` entity forked from mature clusters; source cluster stays at `state='mature'` |
 | Embeddings | sentence-transformers (all-MiniLM-L6-v2, 384-dim, CPU). Dual-backend index: numpy (default) + hnswlib HNSW (auto at ≥1000 clusters) |
 | LLM | Configurable per phase — Opus, Sonnet, Haiku (via Settings) |
 | Scoring | Hybrid: LLM + heuristic blending per dimension, z-score normalization (≥30 samples), divergence detection |
@@ -135,6 +135,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Pattern extraction** — reusable techniques extracted from successful optimizations, stored as meta-patterns per cluster
 - **Cross-cluster injection** — universal techniques injected across topic boundaries, ranked by composite relevance
 - **Global pattern tier** — durable patterns promoted from meta-pattern siblings spanning 5+ clusters (single-project OK), injected with 1.3x relevance boost. Validated with demotion/re-promotion hysteresis, 500 retention cap. Injection effectiveness tracked in health endpoint
+- **Proven templates** — mature clusters that cross usage+score thresholds fork an immutable `PromptTemplate` row; the source cluster stays at `state='mature'`. Templates surface in a dedicated PROVEN TEMPLATES navigator section and render halo rings on the 3D topology. Warm-path Phase 0 auto-retires templates whose source degrades (avg_score<6.0) or is archived. CRUD + fork + retire + use via `/api/templates`
 - **Adaptive scheduling** — linear regression boundary with all-dirty vs per-project budget mode. Proportional quotas (min floor=3), per-project starvation guard, observable via `snapshot()`. Only changed clusters processed in split/merge phases
 - **Orphan recovery** — automatic detection and recovery of optimizations where hot-path extraction failed, with exponential backoff and health metrics
 - **3D taxonomy visualization** — Three.js interactive topology with LOD tiers, diegetic UI, state filter tabs, click-to-focus navigation, force-directed layout. Project nodes as dodecahedrons with rich hover tooltips and dedicated inspector mode
@@ -209,13 +210,13 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (2279 tests)
+# Backend tests (2351 tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
 # Frontend type check
 cd frontend && npx svelte-check
 
-# Frontend tests (1142 tests)
+# Frontend tests (1189 tests)
 cd frontend && npm test
 
 # Frontend build
@@ -244,7 +245,7 @@ cd frontend && npm run build
 | `/api/domains/{id}/promote` | POST | Promote cluster to domain |
 | `/api/domains/readiness` | GET | Batch readiness report (stability + emergence) across all domains |
 | `/api/domains/{id}/readiness` | GET | Single-domain readiness (three-source cascade + dissolution guards, `?fresh=true` bypass) |
-| `/api/domains/{id}/readiness/history` | GET | Hourly-bucketed readiness time-series (`?hours=24`, 30-day retention) |
+| `/api/domains/{id}/readiness/history` | GET | Hourly-bucketed readiness time-series (`?window=24h\|7d\|30d`, 30-day retention) |
 | `/api/clusters` | GET | List clusters (paginated, state/domain filter) |
 | `/api/clusters/{id}` | GET | Cluster detail (children, breadcrumb, optimizations, project breakdown) |
 | `/api/clusters/{id}` | PATCH | Rename/state override |
@@ -253,6 +254,11 @@ cd frontend && npm run build
 | `/api/clusters/stats` | GET | Q metrics + sparkline |
 | `/api/clusters/recluster` | POST | Cold-path refit |
 | `/api/clusters/activity` | GET | Taxonomy decision event feed |
+| `/api/templates` | GET | List proven templates (paginated, filter by project) |
+| `/api/templates/{id}` | GET | Single template detail |
+| `/api/clusters/{id}/fork-template` | POST | Fork an immutable template from a mature cluster |
+| `/api/templates/{id}/retire` | POST | Retire a template (sets state, decrements source cluster counter) |
+| `/api/templates/{id}/use` | POST | Record a template use (rate-limited: 30/min) |
 | `/api/seed` | POST | Batch-seed taxonomy |
 | `/api/seed/agents` | GET | List available seed agents |
 | `/api/update/status` | GET | Auto-update check result (version, tag, changelog) |
