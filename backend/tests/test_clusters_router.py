@@ -161,7 +161,12 @@ class TestClusterUpdate:
 
     @pytest.mark.asyncio
     async def test_update_cluster_state_template_returns_400(self, app_client, db_session):
-        """PATCH /api/clusters/{id} with state=template returns 400 (use fork-template)."""
+        """PATCH /api/clusters/{id} with state=template is rejected (use fork-template).
+
+        Task 25: "template" removed from ClusterUpdateRequest.state Literal.
+        Pydantic rejects at the schema boundary (422) before the router guard
+        (400 + 'fork-template' hint) can run. Both codes indicate rejection.
+        """
         cluster = PromptCluster(
             id="c3-promote-ok", label="test", state="active", domain="backend",
             task_type="coding", centroid_embedding=b'\x00' * 384,
@@ -171,12 +176,17 @@ class TestClusterUpdate:
         await db_session.commit()
 
         resp = await app_client.patch("/api/clusters/c3-promote-ok", json={"state": "template"})
-        assert resp.status_code == 400
-        assert "fork-template" in resp.json()["detail"]
+        assert resp.status_code in (400, 422), (
+            f"Expected 400 or 422 for state='template'; got {resp.status_code}"
+        )
 
     @pytest.mark.asyncio
     async def test_template_promotion_blocked_low_score(self, app_client, db_session):
-        """PATCH /api/clusters/{id} with state=template returns 400 regardless of score."""
+        """PATCH /api/clusters/{id} with state=template is rejected regardless of score.
+
+        Task 25: Pydantic Literal narrowing means 422 is now the expected code
+        (schema rejection before the 400 quality-gate handler runs).
+        """
         cluster = PromptCluster(
             id="c4-low-score", label="low-score", state="active", domain="backend",
             task_type="coding", centroid_embedding=b'\x00' * 384,
@@ -186,12 +196,17 @@ class TestClusterUpdate:
         await db_session.commit()
 
         resp = await app_client.patch("/api/clusters/c4-low-score", json={"state": "template"})
-        assert resp.status_code == 400
-        assert "fork-template" in resp.json()["detail"]
+        assert resp.status_code in (400, 422), (
+            f"Expected 400 or 422 for state='template'; got {resp.status_code}"
+        )
 
     @pytest.mark.asyncio
     async def test_template_promotion_blocked_no_members(self, app_client, db_session):
-        """PATCH /api/clusters/{id} with state=template returns 400 regardless of members."""
+        """PATCH /api/clusters/{id} with state=template is rejected regardless of members.
+
+        Task 25: Pydantic Literal narrowing means 422 is now the expected code
+        (schema rejection before the 400 quality-gate handler runs).
+        """
         cluster = PromptCluster(
             id="c5-no-members", label="empty", state="active", domain="backend",
             task_type="coding", centroid_embedding=b'\x00' * 384,
@@ -201,8 +216,9 @@ class TestClusterUpdate:
         await db_session.commit()
 
         resp = await app_client.patch("/api/clusters/c5-no-members", json={"state": "template"})
-        assert resp.status_code == 400
-        assert "fork-template" in resp.json()["detail"]
+        assert resp.status_code in (400, 422), (
+            f"Expected 400 or 422 for state='template'; got {resp.status_code}"
+        )
 
     @pytest.mark.asyncio
     async def test_update_cluster_not_found(self, app_client, db_session):

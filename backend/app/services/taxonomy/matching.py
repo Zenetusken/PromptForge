@@ -257,7 +257,7 @@ async def match_prompt(
     if result is None:
         node_result = await db.execute(
             select(PromptCluster).where(
-                PromptCluster.state.in_(["active", "candidate", "mature", "template"])
+                PromptCluster.state.in_(["active", "candidate", "mature"])
             )
         )
         all_nodes = list(node_result.scalars().all())

@@ -402,7 +402,7 @@ async def assign_cluster(
     _candidates_log: list[dict] = []  # Decision trace
 
     # ADR-005 Phase 2A: project-scoped candidate loading (Tier 1)
-    _candidate_states = ["candidate", "active", "mature", "template"]
+    _candidate_states = ["candidate", "active", "mature"]
     if project_id:
         project_domain_ids = await _get_project_domain_ids(db, project_id)
         if project_domain_ids:
