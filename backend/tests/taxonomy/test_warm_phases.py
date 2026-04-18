@@ -6,26 +6,37 @@ replicating the full warm-path flow end-to-end.
 
 from __future__ import annotations
 
-from dataclasses import fields
+import uuid
+from dataclasses import dataclass, fields
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from sqlalchemy import select
 
-from app.models import Optimization, PromptCluster
-from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD
+from app.models import Optimization, PromptCluster, PromptTemplate
+from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD, _utcnow
 from app.services.taxonomy.warm_phases import (
     AuditResult,
     DiscoverResult,
     PhaseResult,
     ReconcileResult,
     RefreshResult,
+    auto_retire_templates,
     phase_merge,
     phase_reconcile,
     phase_retire,
     phase_split_emerge,
+    reconcile_template_counts,
 )
+from app.services.template_service import TemplateService
 from tests.taxonomy.conftest import EMBEDDING_DIM, make_cluster_distribution
+
+
+@dataclass
+class _PhaseResultStub:
+    """Narrow stub matching the field surface used by auto_retire_templates."""
+    templates_auto_retired: int = 0
 
 # ---------------------------------------------------------------------------
 # Dataclass field contracts
@@ -805,3 +816,84 @@ async def test_phase_reconcile_cleans_leaked_patterns(db, mock_embedding, mock_p
         sa_select(MetaPattern).where(MetaPattern.cluster_id == active.id)
     )).scalars().all()
     assert len(remaining_active) == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 11: template lifecycle helpers (auto-retire + reconcile)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_auto_retire_fires_on_source_score_below_floor(db):
+    cluster = PromptCluster(
+        id="c_deg", label="deg", state="mature",
+        member_count=5, coherence=0.7, avg_score=5.5, template_count=0,
+    )
+    db.add(cluster)
+    await db.flush()
+    opt = Optimization(
+        id=uuid.uuid4().hex, cluster_id="c_deg",
+        raw_prompt="r", optimized_prompt="o",
+        strategy_used="auto", overall_score=7.5,
+    )
+    db.add(opt)
+    await db.flush()
+    await TemplateService().fork_from_cluster("c_deg", db)
+
+    result = _PhaseResultStub()
+    await auto_retire_templates(db, result)
+    assert result.templates_auto_retired == 1
+    tpl = (await db.execute(
+        select(PromptTemplate).where(PromptTemplate.source_cluster_id == "c_deg")
+    )).scalar_one()
+    assert tpl.retired_at is not None
+    assert tpl.retired_reason == "source_degraded"
+
+
+@pytest.mark.asyncio
+async def test_auto_retire_fires_on_source_dissolution(db):
+    cluster = PromptCluster(
+        id="c_dis", label="dis", state="mature", template_count=0,
+    )
+    db.add(cluster)
+    await db.flush()
+    db.add(Optimization(
+        id=uuid.uuid4().hex, cluster_id="c_dis",
+        raw_prompt="r", optimized_prompt="o",
+        strategy_used="auto", overall_score=7.5,
+    ))
+    await db.flush()
+    await TemplateService().fork_from_cluster("c_dis", db)
+    cluster.state = "archived"
+    await db.flush()
+
+    result = _PhaseResultStub()
+    await auto_retire_templates(db, result)
+    assert result.templates_auto_retired == 1
+    tpl = (await db.execute(
+        select(PromptTemplate).where(PromptTemplate.source_cluster_id == "c_dis")
+    )).scalar_one()
+    assert tpl.retired_reason == "source_dissolved"
+
+
+@pytest.mark.asyncio
+async def test_template_count_reconciled_in_phase_0(db):
+    cluster = PromptCluster(
+        id="c_skew", label="x", state="mature", template_count=5,  # wrong
+    )
+    db.add(cluster)
+    db.add(PromptTemplate(
+        id=uuid.uuid4().hex,
+        source_cluster_id="c_skew",
+        source_optimization_id=None,
+        project_id=None,
+        label="x", prompt="y", strategy="auto",
+        score=7.5, pattern_ids=[], domain_label="general",
+        promoted_at=_utcnow(),
+    ))
+    await db.flush()
+    await reconcile_template_counts(db)
+    cluster = (await db.execute(
+        select(PromptCluster).where(PromptCluster.id == "c_skew")
+    )).scalar_one()
+    assert cluster.template_count == 1

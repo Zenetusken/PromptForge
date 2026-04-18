@@ -38,7 +38,9 @@ from app.models import (
     MetaPattern,
     Optimization,
     PromptCluster,
+    PromptTemplate,
 )
+from app.services.prompt_lifecycle import AUTO_RETIRE_SOURCE_FLOOR
 from app.services.taxonomy._constants import (
     CANDIDATE_COHERENCE_FLOOR,
     DISSOLVE_COHERENCE_CEILING,
@@ -72,6 +74,7 @@ from app.services.taxonomy.family_ops import (
     merge_meta_pattern,
     score_to_centroid_weight,
 )
+from app.services.template_service import TemplateService
 from app.utils.text_cleanup import parse_domain
 
 if TYPE_CHECKING:
@@ -254,6 +257,7 @@ class ReconcileResult:
     outliers_ejected: int = 0
     templates_demoted: int = 0
     templates_archived: int = 0
+    templates_auto_retired: int = 0
 
 
 def _log_template_event(
@@ -270,6 +274,111 @@ def _log_template_event(
         )
     except RuntimeError:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Template lifecycle helpers (Phase 0 sub-steps). Extracted for direct
+# testability without TaxonomyEngine. See spec §Service layer §Auto-retirement
+# and §Q9 template_count reconciliation.
+# ---------------------------------------------------------------------------
+
+
+async def auto_retire_templates(db: AsyncSession, result) -> None:
+    """Retire templates whose source cluster has degraded or dissolved.
+
+    Two trigger sources (spec §Auto-retirement):
+    1. **Degraded**: mature clusters with live templates whose ``avg_score``
+       has fallen below ``AUTO_RETIRE_SOURCE_FLOOR`` (6.0 — 1.5 pts below
+       the 7.5 fork threshold, providing hysteresis).
+    2. **Dissolved**: archived clusters still holding a non-zero
+       ``template_count``.  The decrement inside
+       ``auto_retire_for_degraded_source()`` is self-draining: after one
+       sweep the cluster's ``template_count`` reaches 0 and it falls out of
+       future passes automatically.
+
+    Mutates ``result.templates_auto_retired``. ``result`` is a
+    ``ReconcileResult`` at runtime; tests pass a stub with the same attribute.
+
+    Phase ordering note: ``phase_reconcile`` (Phase 0) runs BEFORE
+    ``phase_retire`` (Phase 3) within the same warm cycle. This means a
+    cluster that gets archived by Phase 3 is NOT caught by this sweep in the
+    same cycle — it will be caught in the NEXT cycle's Phase 0 sweep. The
+    1-cycle lag is acceptable: templates remain live for ~60 seconds after
+    cluster archival, which is within the documented hysteresis window.
+    """
+    svc = TemplateService()
+
+    # 1. Degraded sources: mature, has live templates, avg_score below floor
+    degraded = (await db.execute(
+        select(PromptCluster.id).where(
+            PromptCluster.state == "mature",
+            PromptCluster.template_count > 0,
+            PromptCluster.avg_score < AUTO_RETIRE_SOURCE_FLOOR,
+        )
+    )).scalars().all()
+
+    # 2. Dissolved sources: archived with non-zero template_count
+    dissolved = (await db.execute(
+        select(PromptCluster.id).where(
+            PromptCluster.state == "archived",
+            PromptCluster.template_count > 0,
+        )
+    )).scalars().all()
+
+    for cid in degraded:
+        result.templates_auto_retired += await svc.auto_retire_for_degraded_source(
+            cid, db, reason="source_degraded"
+        )
+    for cid in dissolved:
+        result.templates_auto_retired += await svc.auto_retire_for_degraded_source(
+            cid, db, reason="source_dissolved"
+        )
+
+
+async def reconcile_template_counts(db: AsyncSession) -> None:
+    """Sync ``PromptCluster.template_count`` to the live count in ``prompt_templates``.
+
+    Spec §Q9. Covers drift from partially-completed auto-retire runs, concurrent
+    retire + cascade-NULL races, and any other skew.  Runs once per warm cycle
+    via ``phase_reconcile``; cheap because both subquery columns are indexed.
+
+    ORM approach chosen over raw SQL: a raw UPDATE…SET…subquery triggered
+    ``MissingGreenlet`` after SQLAlchemy's ``expire_all()`` call in the same
+    session, because SQLAlchemy could not lazy-load the expired attributes on
+    the connection that was already inside an async context.  The ORM approach
+    fetches only drifted rows (filtered by the WHERE clause) so there is no
+    N+1 penalty in the common case where counts are already correct.
+    """
+    # Subquery: live template count per source cluster (non-retired only)
+    live_count_sq = (
+        select(
+            PromptTemplate.source_cluster_id,
+            func.count().label("live_count"),
+        )
+        .where(PromptTemplate.retired_at.is_(None))
+        .group_by(PromptTemplate.source_cluster_id)
+        .subquery()
+    )
+
+    # Fetch clusters whose stored count differs from the live count.
+    # Outer join so clusters with zero live templates (not present in the
+    # subquery) are also caught when their stored count is non-zero.
+    drifted_q = await db.execute(
+        select(PromptCluster, live_count_sq.c.live_count).join(
+            live_count_sq,
+            PromptCluster.id == live_count_sq.c.source_cluster_id,
+            isouter=True,
+        ).where(
+            PromptCluster.template_count != func.coalesce(live_count_sq.c.live_count, 0),
+        )
+    )
+    rows = drifted_q.all()
+
+    for cluster_row, live_count in rows:
+        cluster_row.template_count = live_count if live_count is not None else 0
+
+    if rows:
+        await db.flush()
 
 
 @dataclass
@@ -929,13 +1038,54 @@ async def phase_reconcile(
     db: AsyncSession,
 ) -> ReconcileResult:
     """Reconcile member counts, coherence, scores, domain node repairs, and
-    archive zombie clusters.
+    archive zombie clusters.  Also runs two template lifecycle sub-steps:
+
+    * **template_count reconciliation** (``reconcile_template_counts``):
+      syncs ``PromptCluster.template_count`` to the actual live row count in
+      ``prompt_templates``.  Covers drift from concurrent retire + CASCADE
+      races (spec §Q9).
+
+    * **auto-retire** (``auto_retire_templates``): retires templates whose
+      source cluster has degraded below ``AUTO_RETIRE_SOURCE_FLOOR`` (6.0)
+      or has been archived/dissolved.  Replacement for the old
+      ``state='template'`` demotion sweep which was removed when the
+      migration converted all template clusters to ``state='mature'``
+      (spec §Migration + §Auto-retirement).
 
     Fix #10: queries nodes with ``state.notin_(EXCLUDED_STRUCTURAL_STATES)``
     instead of iterating over a stale ``active_nodes`` list.
     Fix #16: uses fresh query results from its own session.
     """
     result = ReconcileResult()
+
+    # --- Defensive sweep: legacy state='template' clusters ---
+    # On a migrated DB this query returns zero rows (migration converts all
+    # state='template' clusters to 'mature' and Task 16 will reject manual
+    # PATCH to state='template').  The check is retained as a safety net for
+    # users who restore a pre-migration backup or run the app against a DB
+    # that had the migration interrupted mid-way.  We log a single warning;
+    # no automatic demotion is done here because the /api/clusters PATCH
+    # endpoint has not yet been gated (Task 16 pending).
+    try:
+        legacy_template_q = await db.execute(
+            select(func.count()).where(PromptCluster.state == "template")
+        )
+        _legacy_count = legacy_template_q.scalar() or 0
+        if _legacy_count:
+            logger.warning(
+                "phase_reconcile: found %d cluster(s) with state='template'. "
+                "The migration (revision f1e2d3c4b5a6) should have converted "
+                "these to state='mature'. Run 'alembic upgrade head' or restore "
+                "from a post-migration backup.",
+                _legacy_count,
+            )
+            _log_template_event(
+                cluster_id="",
+                decision="legacy_template_state_detected",
+                context={"count": _legacy_count},
+            )
+    except Exception as _legacy_exc:
+        logger.debug("Legacy template state check failed (non-fatal): %s", _legacy_exc)
 
     # --- Member count + coherence reconciliation ---
     try:
@@ -1568,59 +1718,9 @@ async def phase_reconcile(
             stale_op_exc,
         )
 
-    # --- Template health check: demote degraded or empty templates ---
-    # Templates can degrade via merges, member reassignment, or score drift.
-    # Demotion threshold 5.5 provides 0.5-point hysteresis below the 6.0
-    # manual promotion gate, preventing promote-demote oscillation.
-    demote_score = 5.5
-    demote_coherence = 0.4
-    try:
-        template_nodes = [n for n in live_nodes if n.state == "template"]
-        for tpl in template_nodes:
-            _tpl_score = tpl.avg_score or 0
-            _tpl_coh = tpl.coherence or 0
-            _tpl_members = tpl.member_count or 0
-            _tpl_usage = tpl.usage_count or 0
-
-            if _tpl_members == 0 and _tpl_usage == 0:
-                # Empty + unused → archive
-                tpl.state = "archived"
-                result.templates_archived += 1
-                logger.info(
-                    "Template archived (empty+unused): id=%s label=%s",
-                    tpl.id, tpl.label,
-                )
-                _log_template_event(tpl.id, "template_archived_empty", {
-                    "member_count": _tpl_members, "usage_count": _tpl_usage,
-                })
-            elif _tpl_members == 0:
-                # Ghost template: no members but patterns still referenced
-                tpl.state = "mature"
-                result.templates_demoted += 1
-                logger.info(
-                    "Template demoted (ghost, 0 members): id=%s label=%s usage=%d",
-                    tpl.id, tpl.label, _tpl_usage,
-                )
-                _log_template_event(tpl.id, "template_demoted", {
-                    "reason": "ghost", "member_count": 0, "usage_count": _tpl_usage,
-                })
-            elif _tpl_score < demote_score or _tpl_coh < demote_coherence:
-                # Quality degraded below demotion threshold
-                tpl.state = "mature"
-                result.templates_demoted += 1
-                logger.info(
-                    "Template demoted (quality): id=%s label=%s score=%.1f coherence=%.3f",
-                    tpl.id, tpl.label, _tpl_score, _tpl_coh,
-                )
-                _log_template_event(tpl.id, "template_demoted", {
-                    "reason": "quality", "avg_score": _tpl_score,
-                    "coherence": _tpl_coh, "threshold_score": demote_score,
-                    "threshold_coherence": demote_coherence,
-                })
-        if result.templates_demoted or result.templates_archived:
-            await db.flush()
-    except Exception as tpl_exc:
-        logger.warning("Template health check failed (non-fatal): %s", tpl_exc)
+    # --- Template lifecycle (Phase 0 sub-steps, see spec §Auto-retirement + §Q9) ---
+    await reconcile_template_counts(db)
+    await auto_retire_templates(db, result)
 
     return result
 
