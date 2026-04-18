@@ -27,7 +27,7 @@ const MIN_PROMPT_LENGTH = 30;        // don't match fragments shorter than this
 /** Shape of a match result from the cluster match endpoint. */
 export type ClusterMatch = NonNullable<ClusterMatchResponse['match']>;
 
-export type StateFilter = null | 'active' | 'candidate' | 'mature' | 'template' | 'archived';
+export type StateFilter = null | 'active' | 'candidate' | 'mature' | 'archived';
 
 class ClusterStore {
   // Suggestion state
@@ -45,9 +45,6 @@ class ClusterStore {
   taxonomyStats = $state<ClusterStats | null>(null);
   taxonomyLoading = $state(false);
   taxonomyError = $state<string | null>(null);
-
-  // Templates
-  templates = $state<ClusterNode[]>([]);
 
   // Domain highlighting for cross-component filtering
   highlightedDomain = $state<string | null>(null);
@@ -70,10 +67,10 @@ class ClusterStore {
     const tree = this.taxonomyTree;
 
     // First pass: collect non-domain nodes that pass the filter.
-    // 'active' filter shows ALL living states (active + mature + template +
-    // candidate) — it represents the working taxonomy, not just the literal
-    // "active" lifecycle state.  Other filters are exact-match.
-    const _LIVING_STATES = new Set(['active', 'mature', 'template', 'candidate']);
+    // 'active' filter shows ALL living states (active + mature + candidate) —
+    // it represents the working taxonomy, not just the literal "active"
+    // lifecycle state.  Other filters are exact-match.
+    const _LIVING_STATES = new Set(['active', 'mature', 'candidate']);
     const childNodes = tree.filter(node => {
       if (node.state === 'domain') return false;
       if (isOrphanNode(node)) return false;
@@ -112,13 +109,12 @@ class ClusterStore {
   /** Canonical state breakdown from the filtered tree — excludes orphans and domains.
    *  Shared by TopologyControls footer, Inspector health counts, and any future consumer. */
   clusterCounts = $derived.by(() => {
-    let active = 0, candidate = 0, template = 0;
+    let active = 0, candidate = 0;
     for (const n of this.filteredTaxonomyTree) {
       if (n.state === 'active') active++;
       else if (n.state === 'candidate') candidate++;
-      else if (n.state === 'template') template++;
     }
-    return { active, candidate, template };
+    return { active, candidate };
   });
 
   // Internal — pattern detection
@@ -318,35 +314,6 @@ class ClusterStore {
     }
   }
 
-  /** Spawn a new optimization from a template cluster.
-   *  Returns the prompt, strategy, and label so the caller (ClusterNavigator)
-   *  can write them to forgeStore/editorStore without a circular import.
-   *  Returns null on empty optimizations or API failure. */
-  async spawnTemplate(clusterId: string): Promise<{ prompt: string; strategy: string | null; label: string; patternIds: string[] } | null> {
-    try {
-      const detail = await getClusterDetail(clusterId);
-      if (!detail?.optimizations?.length) return null;
-
-      // Find highest-scoring member
-      const best = detail.optimizations.reduce((a, b) =>
-        (b.overall_score ?? 0) > (a.overall_score ?? 0) ? b : a
-      );
-
-      // Collect template's meta-pattern IDs for explicit injection
-      const patternIds = (detail.meta_patterns ?? []).map((p) => p.id);
-
-      return {
-        prompt: best.raw_prompt ?? '',
-        strategy: detail.preferred_strategy ?? null,
-        label: detail.label,
-        patternIds,
-      };
-    } catch (err) {
-      console.warn('spawnTemplate failed:', err);
-      return null;
-    }
-  }
-
   /**
    * Reset last length tracking (call when prompt is cleared).
    */
@@ -438,7 +405,6 @@ class ClusterStore {
     this.taxonomyStats = null;
     this.taxonomyLoading = false;
     this.taxonomyError = null;
-    this.templates = [];
     this.similarityEdges = [];
     this.showSimilarityEdges = false;
     this.injectionEdges = [];
