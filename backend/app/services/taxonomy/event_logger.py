@@ -17,9 +17,24 @@ import threading
 from collections import deque
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
+
+# Accepted legacy context-dict state values. 'template' is tolerated for
+# backward compatibility with pre-v0.3.39 JSONL rows whose lifecycle_transition
+# events referenced PromptCluster.state='template'. This Literal is documentation
+# only — it is NOT enforced by Pydantic (the activity schema's context is
+# `dict`). Activity history renders verbatim — do NOT remap. See:
+#   docs/superpowers/specs/2026-04-18-template-architecture-design.md §Compat
+_LegacyClusterState = Literal[
+    "candidate", "active", "mature", "template", "archived", "domain", "project",
+]
+
+# Context-dict keys that may carry a legacy state value.
+_LEGACY_STATE_KEYS: tuple[str, ...] = (
+    "state", "old_state", "new_state", "previous_state", "winner_state",
+)
 
 # Maximum number of failed events to keep for retry on next successful delivery.
 _MAX_RETRY_QUEUE = 50
@@ -101,6 +116,12 @@ class TaxonomyEventLogger:
         # Bounded retry queue for events that failed cross-process
         # forwarding.  Drained on next successful delivery.
         self._retry_queue: deque[dict[str, Any]] = deque(maxlen=_MAX_RETRY_QUEUE)
+        # Diagnostic counter: number of pre-migration 'template' state values
+        # observed in event context dicts during ring-buffer reads. Used to
+        # track residual legacy event volume post-migration. Bounded to avoid
+        # unbounded growth in long-running processes. Exposed via /api/health.
+        self.legacy_state_observed: int = 0
+        self._LEGACY_STATE_CAP: int = 1_000_000
 
     # ------------------------------------------------------------------
     # Write
@@ -299,6 +320,20 @@ class TaxonomyEventLogger:
     # Read
     # ------------------------------------------------------------------
 
+    def _observe_legacy_state(self, context: dict[str, Any]) -> None:
+        """Increment the diagnostic counter if any legacy 'template' state is present.
+
+        Called from the ring-buffer reader path. Counts at most once per event
+        regardless of how many state keys carry the legacy value. NEVER remaps
+        the context dict — rendering is always verbatim.
+        """
+        if self.legacy_state_observed >= self._LEGACY_STATE_CAP:
+            return
+        for k in _LEGACY_STATE_KEYS:
+            if context.get(k) == "template":
+                self.legacy_state_observed += 1
+                return  # count at most once per event
+
     def get_recent(
         self,
         limit: int = 50,
@@ -312,7 +347,14 @@ class TaxonomyEventLogger:
         if op:
             events = [e for e in events if e.get("op") == op]
         events.reverse()  # newest first
-        return events[:limit]
+        result = events[:limit]
+        # Observe any legacy 'template' state values in the returned events.
+        # This is diagnostic only — context dicts are never mutated.
+        for ev in result:
+            ctx = ev.get("context")
+            if ctx:
+                self._observe_legacy_state(ctx)
+        return result
 
     def get_history(
         self,

@@ -102,6 +102,15 @@ class HealthResponse(BaseModel):
         default=None, description="Domain dissolution lifecycle stats.",
     )
     global_patterns: dict[str, int] = Field(default_factory=dict)
+    legacy_state_observed: int = Field(
+        default=0,
+        description=(
+            "Diagnostic counter: number of pre-migration 'template' state values "
+            "surfaced through /api/clusters/activity since last process restart. "
+            "Non-zero values indicate residual legacy events in the ring buffer "
+            "or JSONL history."
+        ),
+    )
     # Cross-service probe results (only populated when probes=True)
     services: dict[str, ServiceStatus] | None = Field(
         default=None, description="Live probe results for each service.",
@@ -439,6 +448,14 @@ async def health_check(
     except Exception:
         pass
 
+    # Diagnostic: legacy 'template' state observations in activity ring buffer
+    legacy_state_observed: int = 0
+    try:
+        from app.services.taxonomy.event_logger import get_event_logger
+        legacy_state_observed = get_event_logger().legacy_state_observed
+    except RuntimeError:
+        pass
+
     # Cross-service probes (skip when called as self-check to prevent recursion)
     services_result = None
     cross_service_result = None
@@ -484,6 +501,7 @@ async def health_check(
             "retired": gp_retired,
             "total": gp_active + gp_demoted + gp_retired,
         },
+        legacy_state_observed=legacy_state_observed,
         services=services_result,
         cross_service=cross_service_result,
         timestamp=datetime.now(UTC).isoformat(),
