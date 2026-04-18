@@ -6,12 +6,21 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ### Added
 - **Zero-LLM backup restore script** — `scripts/restore_from_backup.py` reads a pre-taxonomy backup DB and rehydrates optimizations into the current schema using only local embeddings + heuristic analyzer + cosine-based cluster assignment. Idempotent (SHA-16 dedupe on `raw_prompt`), supports `--dry-run`/`--limit`/`--force`, refuses to run while services are live. No LLM spend (~13s for 16 prompts).
+- **Lazy preferences migration** — `PreferencesService._migrate_legacy_keys()` rewrites `enable_adaptation` → `enable_strategy_intelligence` on first load and persists the renamed file. Idempotent, preserves the stored value.
+
+### Changed
+- **Preference key renamed: `enable_adaptation` → `enable_strategy_intelligence`** — the gate now matches the function it controls (`resolve_strategy_intelligence()`) and the template variable (`{{strategy_intelligence}}`). Fallback shims at 4 read sites removed; the nested `prefs.get(new, prefs.get(old, snapshot))` form was returning `None` in every branch and has been replaced with direct single-key reads. `_PipelineUpdate` PATCH schema gains the missing `enable_llm_classification_fallback` field. UI toggle label shortened to "Strategy Intel" to fit the compact card-terminal tier.
+- **Setting renamed: `MAX_ADAPTATION_CHARS` → `MAX_STRATEGY_INTELLIGENCE_CHARS`** — mirrors the preference-key rename. `.env.example` updated.
 
 ### Fixed
 - **Schema drift: `optimizations.improvement_score`** — `models.py` declared the column but no migration ever added it, breaking every new insert with `table has no column named improvement_score`. Added migration `938041e0f3dd` (forward-only idempotent `batch_alter_table`).
+- **Schema drift: `global_patterns.id` nullability** — primary key declared non-nullable in `models.py` but on-disk SQLite left it nullable. A stray `NULL` row would bypass ORM lookups and silently break promotion/demotion queries. Migration `e2dbcbacab3a` (forward-only, inspector-guarded).
 
 ### Removed
 - **12 legacy 301/307 redirects** — `/api/taxonomy/{tree,stats,node/{id},recluster}` and `/api/patterns/{families,families/{id},match,graph,stats,search}` handlers deleted from `clusters.py`. Pre-1.0 solo-dev project — no external consumers to preserve. ~90 LOC removed including 10 paired redirect tests in `test_clusters_router.py::TestLegacyRedirects`. `RedirectResponse` import dropped.
+- **`OptimizerInput` + `ResolvedContext` Pydantic classes** — orphan dataclasses in `schemas/pipeline_contracts.py` that were never instantiated in production, only in `test_contracts.py`. Paired test classes deleted alongside.
+- **`context_resolver.py` service** (~150 LOC) — superseded by `context_enrichment.py`; only caller was its own test. Paired `test_context_resolver.py` deleted.
+- **`AdaptationTracker.render_adaptation_state()` method** — never called in production. Class itself preserved (correctly names its feedback-tracking responsibility). Paired `prompts/adaptation.md` template deleted and manifest entry removed.
 
 ## v0.3.39 — 2026-04-18
 

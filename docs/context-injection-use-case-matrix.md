@@ -27,7 +27,7 @@ The enrichment engine consolidated 7 layers into 4 active context sources, gated
 | L2 | Heuristic Analysis | Negligible (regex + keyword) | Yes | None | Active (+ A1-A4 accuracy pipeline) |
 | L3a | Codebase Synthesis | Medium (Haiku LLM, cached) | No | Linked repo with completed index | Active |
 | L3b | Curated Retrieval | High (embedding search + 80K chars) | No | Linked repo with completed index | Active (task-gated) |
-| L4 | Adaptation State | Low (DB query) | No | `enable_adaptation` pref + feedback history | **Merged into strategy_intelligence** |
+| L4 | Adaptation State | Low (DB query) | No | `enable_strategy_intelligence` pref + feedback history | **Merged into strategy_intelligence** |
 | L5 | Applied Patterns | Medium (composite fusion + DB) | No | Taxonomy clusters with meta-patterns | Active |
 | L6 | Performance Signals | Low (DB aggregate) | No | Optimization history (3+ per strategy) | **Merged into strategy_intelligence** |
 | L7 | Few-shot Examples | Medium (dual embedding search) | No | Optimization history (score >= 7.5) | Active (within L5 pipeline) |
@@ -288,7 +288,7 @@ This is a pure function of observable state — no new preferences required.
   - Anti-patterns (from L6)
   - Domain keywords (from L6)
 - Single template variable: `{{strategy_intelligence}}`
-- Single preference gate: `enable_adaptation` (renamed to `enable_strategy_intelligence`)
+- Single preference gate: `enable_strategy_intelligence`
 
 **Savings:** 1 fewer layer to track, 1 fewer template variable, unified rendering.
 
