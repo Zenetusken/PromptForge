@@ -1527,6 +1527,12 @@ except ImportError:
     pass
 
 try:
+    from app.routers.templates import router as templates_router
+    app.include_router(templates_router)
+except ImportError:
+    pass
+
+try:
     from app.routers.update import router as update_router
     app.include_router(update_router)
 except ImportError:
