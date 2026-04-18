@@ -17,7 +17,7 @@ Everything backend developers need. For project overview, see root `CLAUDE.md`. 
 **Prompts & Strategies**: `prompt_loader.py` (template loading, startup validation), `strategy_loader.py` (file discovery, YAML frontmatter, hot-reload), `file_watcher.py` (watchfiles.awatch, publishes `strategy_changed` + `agent_changed`)
 **Batch Seeding**: `agent_loader.py` (seed agent file parser, frontmatter, hot-reload), `seed_orchestrator.py` (parallel agent dispatch, dedup), `batch_pipeline.py` (enriched pipeline: `run_single_prompt` with pattern injection + few-shot + strategy intelligence + domain resolution → `run_batch` → `bulk_persist` with quality gate ≥5.0 → `batch_taxonomy_assign` + `estimate_batch_cost`)
 **Routing**: `routing.py` (RoutingManager singleton, `resolve_route()` pure function — see Routing Internals below)
-**Taxonomy**: `taxonomy/` package (see Taxonomy Engine below). `taxonomy/sub_domain_readiness.py` — pure analytics module: `compute_qualifier_cascade()` shared primitive (consumed by `_propose_sub_domains()` AND `/api/domains/readiness` for zero-drift), `compute_domain_stability()`, `compute_sub_domain_emergence()`, `compute_domain_readiness()`. 30s `TTLCache` keyed by `(domain_id, member_count)`; `fresh=True` bypass
+**Taxonomy**: `taxonomy/` package (see Taxonomy Engine below). `taxonomy/sub_domain_readiness.py` — pure analytics module: `compute_qualifier_cascade()` shared primitive (consumed by `_propose_sub_domains()` AND `/api/domains/readiness` for zero-drift), `compute_domain_stability()`, `compute_sub_domain_emergence()`, `compute_domain_readiness()`, tier-crossing detector (`detect_tier_crossing()` with 2-cycle hysteresis + per-domain cooldown, publishes `domain_readiness_changed` SSE). `taxonomy/readiness_history.py` — JSONL snapshot writer (daily rotation, 30-day retention) + `query_history()` (hourly bucketing, backs `/api/domains/{id}/readiness/history`). 30s `TTLCache` keyed by `(domain_id, member_count)`; `fresh=True` bypass
 **Workspace**: `workspace_intelligence.py` (manifest-based stack detection + deep scanning), `roots_scanner.py` (agent guidance file discovery, SHA256 dedup), `codebase_explorer.py` (semantic retrieval + Haiku synthesis, SHA cache), `explore_cache.py` (TTL+LRU), `repo_index_service.py` (background indexing, `query_curated_context()`, `incremental_update()` periodic refresh)
 **Embeddings**: `embedding_service.py` (singleton `all-MiniLM-L6-v2`, 384-dim), `embedding_index.py` (dual-backend: `_NumpyBackend` default, `_HnswBackend` at ≥1000 clusters via `HNSW_CLUSTER_THRESHOLD`; stable `_id_to_label` mapping + tombstones; `project_filter` param on `search()`)
 **Domain**: `domain_resolver.py` (cached DB lookup, replaces `VALID_DOMAINS`, runtime `add_label()` for sub-domain registration), `domain_signal_loader.py` (keyword signals from domain metadata)
@@ -26,7 +26,7 @@ Everything backend developers need. For project overview, see root `CLAUDE.md`. 
 **Infrastructure**: `event_bus.py` (in-process pub/sub), `event_notification.py` (cross-process HTTP POST), `trace_logger.py` (per-phase JSONL, daily rotation), `taxonomy/event_logger.py` (decision JSONL + ring buffer + SSE, singleton via `get_event_logger()`), `mcp_session_file.py` (read/write/staleness), `orphan_recovery.py` (orphan detection + recovery + exponential backoff, module-level `recovery_service` singleton, piggybacked on warm-path timer)
 **Feedback**: `feedback_service.py` (CRUD + adaptation update), `adaptation_tracker.py` (strategy affinity, degenerate detection)
 **GitHub**: `github_service.py` (Fernet encrypt/decrypt), `github_client.py` (raw API, explicit token param)
-**Preferences**: `preferences.py` (file-based JSON, frozen snapshot per pipeline run, effort levels: `low`|`medium`|`high`|`max`)
+**Preferences**: `preferences.py` (file-based JSON, frozen snapshot per pipeline run, effort levels: `low`|`medium`|`high`|`max`, `domain_readiness_notifications` toggle gates readiness-tier toast dispatch)
 
 ## Model configuration
 
@@ -55,7 +55,7 @@ Model IDs centralized in `config.py`: `MODEL_SONNET` (`claude-sonnet-4-6`), `MOD
 | `github_repos.py` | `GET /api/repos`, link, linked, unlink, tree, files, branches, index-status, reindex |
 | `health.py` | `GET /api/health` (provider, tiers, scores, errors, domain_count, injection_stats, injection_effectiveness, recovery, global_patterns, project_count, classification_agreement) |
 | `events.py` | `GET /api/events` (SSE), `POST /api/events/_publish` (cross-process) |
-| `domains.py` | `GET /api/domains`, `POST /api/domains/{id}/promote`, `GET /api/domains/readiness`, `GET /api/domains/{id}/readiness` (`?fresh=true` bypass) |
+| `domains.py` | `GET /api/domains`, `POST /api/domains/{id}/promote`, `GET /api/domains/readiness`, `GET /api/domains/{id}/readiness` (`?fresh=true` bypass), `GET /api/domains/{id}/readiness/history` (`?hours=`, hourly buckets) |
 | `seed.py` | `POST /api/seed` (batch seeding), `GET /api/seed/agents` (agent metadata for UI) |
 | `update.py` | `GET /api/update/status`, `POST /api/update/apply` (202) |
 | `clusters.py` | CRUD, match, tree, stats, templates, recluster, reassign, repair, activity (ring buffer + JSONL history). Activity endpoints MUST be before `{cluster_id}` dynamic route. Read endpoints use `db.autoflush=False`. Legacy 301 for `/api/patterns/*`, `/api/taxonomy/*` |
@@ -160,7 +160,7 @@ Process singleton (`get_engine()`/`set_engine()`). **Hierarchy**: project → do
 
 **Performance**: `split_cluster()` uses 3-phase approach — sequential DB queries, parallel `asyncio.gather` on `generate_label()` calls, sequential object creation. Pattern extraction deferred to Phase 4 (Refresh) via `pattern_stale=True`. Phase 4 parallelizes both label generation AND pattern extraction across stale clusters (taxonomy context pre-computed sequentially, LLM calls in parallel — avoids concurrent DB session access).
 
-**Modules**: `engine.py`, `clustering.py`, `lifecycle.py`, `quality.py`, `projection.py`, `coloring.py`, `labeling.py`, `snapshot.py`, `sparkline.py`, `family_ops.py`, `matching.py`, `embedding_index.py` (dual-backend: `_NumpyBackend` + `_HnswBackend`, fallback to numpy on HNSW failure), `transformation_index.py`, `optimized_index.py`, `qualifier_index.py`, `fusion.py`, `warm_phases.py`, `warm_path.py`, `cold_path.py`, `split.py`, `event_logger.py`, `cluster_meta.py`, `global_patterns.py` (ADR-005 Phase 2B), `_constants.py`.
+**Modules**: `engine.py`, `clustering.py`, `lifecycle.py`, `quality.py`, `projection.py`, `coloring.py`, `labeling.py`, `snapshot.py`, `sparkline.py`, `family_ops.py`, `matching.py`, `embedding_index.py` (dual-backend: `_NumpyBackend` + `_HnswBackend`, fallback to numpy on HNSW failure), `transformation_index.py`, `optimized_index.py`, `qualifier_index.py`, `fusion.py`, `warm_phases.py`, `warm_path.py`, `cold_path.py`, `split.py`, `event_logger.py`, `cluster_meta.py`, `global_patterns.py` (ADR-005 Phase 2B), `readiness_history.py` (JSONL snapshot writer + hourly-bucketed `query_history`), `_constants.py` (readiness retention + bucket constants).
 
 ## Testing
 

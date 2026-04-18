@@ -43,7 +43,8 @@ Key types: `HealthResponse`, `OptimizationResult`, `RefinementTurn`, `HistoryIte
 | `github.svelte.ts` | GitHub Device Flow auth + token refresh, `connectionState` getter (5 states), `reconnect()`, repo picker, file browser (tree/content), branch list, index status, project selection. `_handleAuthError()` centralizes 401 detection across all methods |
 | `refinement.svelte.ts` | Refinement sessions: turns, branches, suggestions, score progression |
 | `preferences.svelte.ts` | Persistent user preferences loaded from backend |
-| `toast.svelte.ts` | Toast notification queue with `addToast()` API |
+| `toast.svelte.ts` | Toast notification queue with `addToast()` API. Severity helpers: `success()`, `info()`, `warning()`, `error()` |
+| `readiness-notifications.svelte.ts` | SSE dispatcher for `domain_readiness_changed`. Maps tier transitions to toast severity via `readiness-tier.ts`. Gated by `preferences.domain_readiness_notifications`; per-row mute toggle stored in `localStorage` |
 | `routing.svelte.ts` | Derived routing state mirroring backend 5-tier priority chain. Reactive tier resolver |
 | `clusters.svelte.ts` | Cluster state: two-path pattern detection (typing 800ms + paste 300ms debounce, 30-char min, AbortController), persistent suggestion (no auto-dismiss), `applySuggestion()` returns `{ids, clusterLabel}`, tree/stats, detail, template spawning with `patternIds`, `StateFilter` + `filteredTaxonomyTree`, async `invalidateClusters()` with ghost-selection guard, seed batch progress. Activity panel state: `activityEvents`, `activityOpen`, `pushActivityEvent()`, `toggleActivity()`, `loadActivity()` with JSONL history fallback |
 | `domains.svelte.ts` | API-driven domain palette. `colorFor()` resolves domain→hex with keyword fallback. Invalidated on `domain_created`/`taxonomy_changed` SSE |
@@ -71,8 +72,11 @@ src/lib/components/
                 # ActivityPanel (mission control terminal — severity-driven rows, path
                 # accent rails, auto-hide cluster links, expandable context cards;
                 # recognizes `readiness/*` + `vocab_generated_enriched` ops),
-                # DomainReadinessPanel, DomainStabilityMeter, SubDomainEmergenceList
+                # DomainReadinessPanel, DomainStabilityMeter, SubDomainEmergenceList,
+                # DomainReadinessSparkline (hourly-bucketed time-series, fetched from
+                #  /api/domains/{id}/readiness/history)
                 # (readiness surface: 1px-contour gauges, chromatic tier encoding,
+                #  per-domain rings overlaid on SemanticTopology via readiness-tier.ts,
                 #  `role="meter"` ARIA, zero-glow per brand spec),
                 # SeedModal (batch seeding modal — agent selector, progress bar, result card)
   refinement/   # RefinementTimeline, RefinementTurnCard, SuggestionChips,
@@ -133,6 +137,7 @@ Events received at `/api/events` via `EventSource`. Types that drive UI reactivi
 | `taxonomy_activity` | `clustersStore.pushActivityEvent()` — real-time feed to ActivityPanel. `readiness/*` ops feed readiness panel; `vocab_generated_enriched` surfaces vocab quality score |
 | `routing_state_changed` | Routing store update, tier availability toasts |
 | `domain_created` | Domain store invalidation |
+| `domain_readiness_changed` | `readinessNotificationsStore` dispatches severity-mapped toast (preference-gated, per-row mute respected); `readinessStore` invalidates cached report; SemanticTopology redraws the domain's readiness ring |
 | `seed_batch_progress` | `clustersStore.updateSeedProgress()` (persistent) + DOM CustomEvent for SeedModal. StatusBar shows progress when modal closed |
 | `preferences_changed` | Preferences store reload |
 | `agent_changed` | Seed agent list refresh (hot-reload on file change) |

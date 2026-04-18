@@ -131,7 +131,7 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 
 ### Knowledge Engine
 - **Evolutionary taxonomy** — self-organizing hierarchical clustering with multi-project isolation. Project → domain → sub-domain → cluster → optimizations. Fully organic domain and sub-domain discovery from user behavior via enriched Haiku-generated qualifier vocabulary (cluster centroid similarity matrix + intent labels + qualifier distribution fed forward, post-generation quality metric tracked). Unified lifecycle: domains and sub-domains re-evaluated every warm cycle with parameterized guards (consistency, age, member count, sub-domain anchoring). Graceful dissolution reparents clusters and merges meta-patterns — prompts are never lost. Qualifier-augmented embeddings (4th signal) enable cross-project specialization-aware clustering. No hardcoded domain assumptions — seed domains dissolve organically when unused (ADR-006)
-- **Domain readiness telemetry** — live `/api/domains/readiness` endpoints expose the three-source qualifier cascade (domain_raw > intent_label > tf_idf), adaptive promotion threshold, and dissolution 5-guard evaluation. Readiness panel + stability meter + emergence list render in the topology inspector so operators see which domains are warming toward a new sub-domain and which are approaching dissolution. 30s TTL cache keyed by `(domain_id, member_count)` so new optimizations naturally invalidate stale entries
+- **Domain readiness telemetry** — live `/api/domains/readiness` endpoints expose the three-source qualifier cascade (domain_raw > intent_label > tf_idf), adaptive promotion threshold, and dissolution 5-guard evaluation. Readiness panel + stability meter + emergence list + sparkline render in the topology inspector; per-domain rings overlay the 3D topology so operators see which domains are warming toward a new sub-domain and which are approaching dissolution. JSONL snapshot writer (30-day retention, hourly bucketing) feeds `/api/domains/{id}/readiness/history`. Tier-crossing detector (2-cycle hysteresis + per-domain cooldown) publishes `domain_readiness_changed` SSE events; a preference-gated toast dispatcher surfaces them in the UI. 30s TTL cache keyed by `(domain_id, member_count)` so new optimizations naturally invalidate stale entries
 - **Pattern extraction** — reusable techniques extracted from successful optimizations, stored as meta-patterns per cluster
 - **Cross-cluster injection** — universal techniques injected across topic boundaries, ranked by composite relevance
 - **Global pattern tier** — durable patterns promoted from meta-pattern siblings spanning 5+ clusters (single-project OK), injected with 1.3x relevance boost. Validated with demotion/re-promotion hysteresis, 500 retention cap. Injection effectiveness tracked in health endpoint
@@ -160,7 +160,8 @@ echo "ANTHROPIC_API_KEY=sk-..." > .env
 - **Session persistence** — page refresh restores your last optimization
 - **Markdown rendering** — optimized prompts rendered with brand-compliant markdown
 - **Production diff viewer** — unified and split modes with word-level highlighting
-- **Real-time events** — SSE-based event bus with toast notifications, connection health monitoring (latency percentiles, degradation detection, exponential backoff reconnection)
+- **Real-time events** — SSE-based event bus with toast notifications (add/success/info/warning/error), connection health monitoring (latency percentiles, degradation detection, exponential backoff reconnection)
+- **Readiness notifications** — `domain_readiness_changed` SSE events dispatched as severity-mapped toasts; per-row mute toggle + global `domain_readiness_notifications` preference
 - **Taxonomy Activity panel** — live feed of all taxonomy decision events with filters and expandable context
 - **Live pattern detection** — two-path system (typing: 800ms debounce + paste: 300ms) cosine-searches active clusters, suggests matches with 1-click apply. Zero-pattern matches suppressed
 - **Tier-aware UI** — accent color adapts to active routing tier (CLI/API, sampling, passthrough)
@@ -208,13 +209,13 @@ docker compose up --build -d
 ## Development
 
 ```bash
-# Backend tests (2253 tests)
+# Backend tests (2279 tests)
 cd backend && source .venv/bin/activate && pytest --cov=app -v
 
 # Frontend type check
 cd frontend && npx svelte-check
 
-# Frontend tests (1068 tests)
+# Frontend tests (1142 tests)
 cd frontend && npm test
 
 # Frontend build
@@ -243,6 +244,7 @@ cd frontend && npm run build
 | `/api/domains/{id}/promote` | POST | Promote cluster to domain |
 | `/api/domains/readiness` | GET | Batch readiness report (stability + emergence) across all domains |
 | `/api/domains/{id}/readiness` | GET | Single-domain readiness (three-source cascade + dissolution guards, `?fresh=true` bypass) |
+| `/api/domains/{id}/readiness/history` | GET | Hourly-bucketed readiness time-series (`?hours=24`, 30-day retention) |
 | `/api/clusters` | GET | List clusters (paginated, state/domain filter) |
 | `/api/clusters/{id}` | GET | Cluster detail (children, breadcrumb, optimizations, project breakdown) |
 | `/api/clusters/{id}` | PATCH | Rename/state override |
