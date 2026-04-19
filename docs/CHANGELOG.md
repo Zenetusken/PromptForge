@@ -4,6 +4,8 @@ All notable changes to Project Synthesis. Format follows [Keep a Changelog](http
 
 ## Unreleased
 
+## v0.3.40 — 2026-04-19
+
 ### Added
 - **Zero-LLM backup restore script** — `scripts/restore_from_backup.py` reads a pre-taxonomy backup DB and rehydrates optimizations into the current schema using only local embeddings + heuristic analyzer + cosine-based cluster assignment. Idempotent (SHA-16 dedupe on `raw_prompt`), supports `--dry-run`/`--limit`/`--force`, refuses to run while services are live. No LLM spend (~13s for 16 prompts).
 - **Lazy preferences migration** — `PreferencesService._migrate_legacy_keys()` rewrites `enable_adaptation` → `enable_strategy_intelligence` on first load and persists the renamed file. Idempotent, preserves the stored value.
