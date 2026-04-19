@@ -47,9 +47,11 @@ async def test_build_index_creates_meta(db_session):
     # get_branch_head_sha is what the service calls directly
     gc.get_branch_head_sha.return_value = "abc123"
     # get_tree returns one blob file
-    gc.get_tree.return_value = [
+    tree_items = [
         {"type": "blob", "path": "src/main.py", "sha": "fileshaabc", "size": 200}
     ]
+    gc.get_tree.return_value = tree_items
+    gc.get_tree_with_cache = AsyncMock(return_value=(tree_items, None))
     # get_file_content returns some Python source
     gc.get_file_content.return_value = "def main():\n    pass\n"
 
@@ -497,11 +499,28 @@ async def test_get_embeddings_by_paths_isolates_repo_branch(db_session):
 # Incremental update tests
 # ---------------------------------------------------------------------------
 
-def _make_incremental_svc(db, tree_items, file_contents, head_sha="new_sha"):
-    """Helper to build a RepoIndexService with mocked GitHub + embedding."""
+_UNSET = object()
+
+
+def _make_incremental_svc(
+    db, tree_items, file_contents, head_sha="new_sha",
+    *, tree_return=_UNSET, new_etag=None,
+):
+    """Helper to build a RepoIndexService with mocked GitHub + embedding.
+
+    ``tree_return`` optionally overrides the tree value returned from
+    ``get_tree_with_cache`` — e.g. pass ``None`` to simulate a 304 response.
+    Omit it to default to ``tree_items``.
+    ``new_etag`` is the etag returned alongside the tree.
+    """
     gc = AsyncMock()
     gc.get_branch_head_sha.return_value = head_sha
     gc.get_tree.return_value = tree_items
+
+    effective_tree = tree_items if tree_return is _UNSET else tree_return
+    gc.get_tree_with_cache = AsyncMock(
+        return_value=(effective_tree, new_etag),
+    )
 
     # Map (path) -> content for get_file_content
     content_map = file_contents or {}
@@ -905,6 +924,9 @@ class TestIncrementalUpdateErrors:
         gc = AsyncMock()
         gc.get_branch_head_sha.return_value = "new_sha"
         gc.get_tree.side_effect = GitHubApiError(403, "rate limit")
+        gc.get_tree_with_cache = AsyncMock(
+            side_effect=GitHubApiError(403, "rate limit")
+        )
         es = MagicMock()
         svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
 
@@ -922,10 +944,12 @@ class TestIncrementalUpdateErrors:
 
         gc = AsyncMock()
         gc.get_branch_head_sha.return_value = "new_sha"
-        gc.get_tree.return_value = [
+        tree_items = [
             {"path": "src/good.py", "sha": "sha1", "size": 50},
             {"path": "src/bad.py", "sha": "sha2", "size": 50},
         ]
+        gc.get_tree.return_value = tree_items
+        gc.get_tree_with_cache = AsyncMock(return_value=(tree_items, None))
 
         async def _read(_token, _repo, path, _ref):
             if "bad" in path:
@@ -961,9 +985,11 @@ class TestIncrementalUpdateErrors:
 
         gc = AsyncMock()
         gc.get_branch_head_sha.return_value = "new_sha"
-        gc.get_tree.return_value = [
+        tree_items = [
             {"path": "src/main.py", "sha": "sha1", "size": 50},
         ]
+        gc.get_tree.return_value = tree_items
+        gc.get_tree_with_cache = AsyncMock(return_value=(tree_items, None))
         gc.get_file_content = AsyncMock(return_value="def main(): pass")
 
         es = MagicMock()
@@ -1006,6 +1032,7 @@ class TestIncrementalUpdateErrors:
         gc = AsyncMock()
         gc.get_branch_head_sha.return_value = "new_sha"
         gc.get_tree.return_value = []  # Empty tree
+        gc.get_tree_with_cache = AsyncMock(return_value=([], None))
         es = MagicMock()
         svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
 
@@ -1480,8 +1507,12 @@ async def test_build_index_writes_phase_transitions(db_session):
     gc = AsyncMock()
     gc.get_branch_head_sha.return_value = "abc123"
 
-    async def _get_tree(*args, **kwargs):
-        # Read the live phase at the moment get_tree is invoked.
+    tree_items = [
+        {"type": "blob", "path": "src/main.py", "sha": "f1", "size": 100},
+    ]
+
+    async def _get_tree_with_cache(*args, **kwargs):
+        # Read the live phase at the moment get_tree_with_cache is invoked.
         meta_q = await db_session.execute(
             select(RepoIndexMeta).where(
                 RepoIndexMeta.repo_full_name == "owner/repo",
@@ -1490,11 +1521,10 @@ async def test_build_index_writes_phase_transitions(db_session):
         )
         meta = meta_q.scalars().first()
         captured_phases.append(getattr(meta, "index_phase", None))
-        return [
-            {"type": "blob", "path": "src/main.py", "sha": "f1", "size": 100},
-        ]
+        return (tree_items, None)
 
-    gc.get_tree.side_effect = _get_tree
+    gc.get_tree.return_value = tree_items
+    gc.get_tree_with_cache = AsyncMock(side_effect=_get_tree_with_cache)
     gc.get_file_content.return_value = "def main():\n    pass\n"
 
     es = MagicMock()
@@ -1556,9 +1586,11 @@ async def test_build_index_publishes_phase_change_events(db_session):
     try:
         gc = AsyncMock()
         gc.get_branch_head_sha.return_value = "shaXYZ"
-        gc.get_tree.return_value = [
+        tree_items = [
             {"type": "blob", "path": "src/main.py", "sha": "f1", "size": 100},
         ]
+        gc.get_tree.return_value = tree_items
+        gc.get_tree_with_cache = AsyncMock(return_value=(tree_items, None))
         gc.get_file_content.return_value = "def main():\n    pass\n"
 
         es = MagicMock()
@@ -1588,3 +1620,309 @@ async def test_build_index_publishes_phase_change_events(db_session):
     assert last["branch"] == "main"
     assert last["files_seen"] == 1
     assert last["files_total"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Curated cache invalidation on file-level changes (Fix #1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_incremental_update_invalidates_curated_cache_on_file_change(db_session):
+    """After a successful incremental_update that mutates files, the curated
+    retrieval cache MUST be invalidated — otherwise `query_curated_context()`
+    returns stale results keyed on (repo, branch, query, task_type, domain)
+    that point at now-obsolete `RepoFileIndex` content.
+    """
+    from app.services.repo_index_service import _curated_cache
+
+    # Seed: existing index with one file on old SHA, plus a cached retrieval.
+    vec = np.zeros(384, dtype=np.float32)
+    db_session.add(RepoIndexMeta(
+        repo_full_name="o/r", branch="main",
+        status="ready", file_count=1, head_sha="old_sha",
+    ))
+    db_session.add(RepoFileIndex(
+        repo_full_name="o/r", branch="main",
+        file_path="src/main.py", file_sha="old_file_sha",
+        content="old content", outline="old outline",
+        embedding=vec.tobytes(),
+    ))
+    await db_session.commit()
+
+    _curated_cache.clear()
+    _curated_cache["stale_key_for_or"] = (9_999_999_999.0, {"context": "stale"})
+    assert len(_curated_cache) == 1
+
+    tree = [{"path": "src/main.py", "sha": "new_file_sha", "size": 50}]
+    svc = _make_incremental_svc(
+        db_session, tree,
+        {"src/main.py": "def updated(): pass"},
+        head_sha="new_sha",
+    )
+    result = await svc.incremental_update("o/r", "main", "tok")
+
+    assert result["changed"] == 1
+    # Fix #1: the cache MUST be empty after a file-level change.
+    assert len(_curated_cache) == 0, (
+        "curated cache not invalidated after incremental_update — stale results will leak"
+    )
+
+
+@pytest.mark.asyncio
+async def test_incremental_update_invalidates_curated_cache_on_file_removed(db_session):
+    """Removal-only updates must also invalidate the cache: previously-indexed
+    files referenced by a cached retrieval may no longer exist in the repo.
+    """
+    from app.services.repo_index_service import _curated_cache
+
+    vec = np.zeros(384, dtype=np.float32)
+    db_session.add(RepoIndexMeta(
+        repo_full_name="o/r", branch="main",
+        status="ready", file_count=1, head_sha="old_sha",
+    ))
+    db_session.add(RepoFileIndex(
+        repo_full_name="o/r", branch="main",
+        file_path="src/gone.py", file_sha="sha_gone",
+        content="removed", outline="",
+        embedding=vec.tobytes(),
+    ))
+    await db_session.commit()
+
+    _curated_cache.clear()
+    _curated_cache["another_stale_key"] = (9_999_999_999.0, {"context": "old"})
+    assert len(_curated_cache) == 1
+
+    svc = _make_incremental_svc(db_session, [], {}, head_sha="new_sha")
+    result = await svc.incremental_update("o/r", "main", "tok")
+
+    assert result["removed"] == 1
+    assert len(_curated_cache) == 0, "cache not invalidated on file removal"
+
+
+@pytest.mark.asyncio
+async def test_incremental_update_preserves_cache_when_head_unchanged(db_session):
+    """When HEAD SHA is unchanged we short-circuit before any DB mutation;
+    the cache MUST NOT be flushed (no state has changed, wasting warm entries).
+    """
+    from app.services.repo_index_service import _curated_cache
+
+    db_session.add(RepoIndexMeta(
+        repo_full_name="o/r", branch="main",
+        status="ready", file_count=1, head_sha="same_sha",
+    ))
+    await db_session.commit()
+
+    _curated_cache.clear()
+    _curated_cache["warm_entry"] = (9_999_999_999.0, {"context": "warm"})
+    assert len(_curated_cache) == 1
+
+    svc = _make_incremental_svc(db_session, [], {}, head_sha="same_sha")
+    result = await svc.incremental_update("o/r", "main", "tok")
+
+    assert result["skipped_reason"] == "head_unchanged"
+    # Warm entry must survive — no state changed.
+    assert len(_curated_cache) == 1, "cache wrongly flushed on no-op update"
+
+
+# ---------------------------------------------------------------------------
+# ETag caching for GitHub tree fetches (Fix #2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_index_persists_tree_etag(db_session):
+    """On a fresh build, the ETag returned by get_tree_with_cache MUST be
+    persisted in RepoIndexMeta.tree_etag so the next fetch can send
+    If-None-Match and receive a free 304.
+    """
+    gc = AsyncMock()
+    gc.get_branch_head_sha.return_value = "head_sha_new"
+    gc.get_tree_with_cache = AsyncMock(
+        return_value=(
+            [{"type": "blob", "path": "src/main.py", "sha": "f1", "size": 100}],
+            'W/"fresh_etag"',
+        ),
+    )
+    gc.get_file_content.return_value = "def main(): pass"
+
+    es = MagicMock()
+    zero_vec = np.zeros(384, dtype=np.float32)
+    es.embed_texts.return_value = [zero_vec]
+    es.aembed_texts = AsyncMock(return_value=[zero_vec])
+
+    svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
+    await svc.build_index("owner/repo", "main", "tok")
+
+    meta = (await db_session.execute(
+        select(RepoIndexMeta).where(RepoIndexMeta.repo_full_name == "owner/repo")
+    )).scalar_one()
+    assert meta.tree_etag == 'W/"fresh_etag"', (
+        "build_index did not persist ETag — subsequent fetches will waste "
+        "primary rate-limit quota"
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_index_sends_stored_etag_and_short_circuits_on_304(db_session):
+    """When meta has a stored tree_etag AND existing file rows, build_index
+    MUST send If-None-Match. On 304, it MUST skip delete+re-embed and leave
+    the file rows intact.
+    """
+    vec = np.zeros(384, dtype=np.float32)
+    db_session.add(RepoIndexMeta(
+        repo_full_name="o/r", branch="main",
+        status="ready", file_count=1,
+        head_sha="old_head", tree_etag='W/"cached"',
+    ))
+    db_session.add(RepoFileIndex(
+        repo_full_name="o/r", branch="main",
+        file_path="src/keep.py", file_sha="f_keep",
+        content="keep me", outline="",
+        embedding=vec.tobytes(),
+    ))
+    await db_session.commit()
+
+    gc = AsyncMock()
+    gc.get_branch_head_sha.return_value = "new_head"
+    # 304: tree is None, etag echoed back.
+    gc.get_tree_with_cache = AsyncMock(return_value=(None, 'W/"cached"'))
+    gc.get_file_content = AsyncMock()  # must never be called
+
+    es = MagicMock()
+    es.aembed_texts = AsyncMock(return_value=[])
+    es.embed_texts = MagicMock(return_value=[])
+
+    svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
+    await svc.build_index("o/r", "main", "tok")
+
+    # Assert: we sent the cached etag
+    call_kwargs = gc.get_tree_with_cache.await_args.kwargs
+    assert call_kwargs.get("etag") == 'W/"cached"'
+
+    # Assert: no file content fetched (304 short-circuit)
+    gc.get_file_content.assert_not_awaited()
+
+    # Assert: existing row is still there
+    surviving = (await db_session.execute(
+        select(RepoFileIndex).where(RepoFileIndex.repo_full_name == "o/r")
+    )).scalars().all()
+    assert len(surviving) == 1
+    assert surviving[0].file_path == "src/keep.py"
+
+    # Assert: meta shows ready + updated head_sha, same etag
+    meta = (await db_session.execute(
+        select(RepoIndexMeta).where(RepoIndexMeta.repo_full_name == "o/r")
+    )).scalar_one()
+    assert meta.status == "ready"
+    assert meta.head_sha == "new_head"
+    assert meta.tree_etag == 'W/"cached"'
+
+
+@pytest.mark.asyncio
+async def test_build_index_fresh_build_sends_no_etag(db_session):
+    """First-time build (no meta exists) must NOT send an If-None-Match —
+    there is nothing cached to validate against.
+    """
+    gc = AsyncMock()
+    gc.get_branch_head_sha.return_value = "sha"
+    gc.get_tree_with_cache = AsyncMock(
+        return_value=(
+            [{"type": "blob", "path": "src/a.py", "sha": "x", "size": 10}],
+            'W/"new"',
+        ),
+    )
+    gc.get_file_content.return_value = "content"
+
+    es = MagicMock()
+    zero_vec = np.zeros(384, dtype=np.float32)
+    es.embed_texts.return_value = [zero_vec]
+    es.aembed_texts = AsyncMock(return_value=[zero_vec])
+
+    svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
+    await svc.build_index("o/r", "main", "tok")
+
+    call_kwargs = gc.get_tree_with_cache.await_args.kwargs
+    assert call_kwargs.get("etag") is None
+
+
+@pytest.mark.asyncio
+async def test_incremental_update_persists_tree_etag(db_session):
+    """incremental_update must capture the new ETag from the tree response
+    on a 200 OK so subsequent fetches can leverage 304.
+    """
+    vec = np.zeros(384, dtype=np.float32)
+    db_session.add(RepoIndexMeta(
+        repo_full_name="o/r", branch="main",
+        status="ready", file_count=1,
+        head_sha="old_sha", tree_etag=None,
+    ))
+    db_session.add(RepoFileIndex(
+        repo_full_name="o/r", branch="main",
+        file_path="src/main.py", file_sha="old_fs",
+        content="old", outline="",
+        embedding=vec.tobytes(),
+    ))
+    await db_session.commit()
+
+    tree = [{"path": "src/main.py", "sha": "new_fs", "size": 50}]
+    svc = _make_incremental_svc(
+        db_session, tree, {"src/main.py": "updated"},
+        head_sha="new_sha", new_etag='W/"tree_etag_2"',
+    )
+    result = await svc.incremental_update("o/r", "main", "tok")
+    assert result["changed"] == 1
+
+    meta = (await db_session.execute(
+        select(RepoIndexMeta).where(RepoIndexMeta.repo_full_name == "o/r")
+    )).scalar_one()
+    assert meta.tree_etag == 'W/"tree_etag_2"'
+
+
+@pytest.mark.asyncio
+async def test_incremental_update_skips_on_304_and_updates_head(db_session):
+    """When the tree fetch returns 304 (tree unchanged but HEAD may have
+    moved — e.g. tag push, empty merge), incremental_update MUST:
+      - skip the file-diff work,
+      - update meta.head_sha to the fresh value, and
+      - leave meta.tree_etag untouched.
+    """
+    vec = np.zeros(384, dtype=np.float32)
+    db_session.add(RepoIndexMeta(
+        repo_full_name="o/r", branch="main",
+        status="ready", file_count=1,
+        head_sha="old_sha", tree_etag='W/"stored"',
+    ))
+    db_session.add(RepoFileIndex(
+        repo_full_name="o/r", branch="main",
+        file_path="src/x.py", file_sha="fs_x",
+        content="x", outline="",
+        embedding=vec.tobytes(),
+    ))
+    await db_session.commit()
+
+    svc = _make_incremental_svc(
+        db_session, [], {}, head_sha="brand_new_head",
+        tree_return=None, new_etag='W/"stored"',  # 304 echo
+    )
+    result = await svc.incremental_update("o/r", "main", "tok")
+
+    assert result["skipped_reason"] == "tree_unchanged"
+    assert result["changed"] == 0
+    assert result["added"] == 0
+    assert result["removed"] == 0
+
+    # Sent the stored etag
+    call_kwargs = svc._gc.get_tree_with_cache.await_args.kwargs
+    assert call_kwargs.get("etag") == 'W/"stored"'
+
+    # Head advanced, etag preserved, file rows untouched
+    meta = (await db_session.execute(
+        select(RepoIndexMeta).where(RepoIndexMeta.repo_full_name == "o/r")
+    )).scalar_one()
+    assert meta.head_sha == "brand_new_head"
+    assert meta.tree_etag == 'W/"stored"'
+    rows = (await db_session.execute(
+        select(RepoFileIndex).where(RepoFileIndex.repo_full_name == "o/r")
+    )).scalars().all()
+    assert len(rows) == 1 and rows[0].file_path == "src/x.py"

@@ -386,6 +386,10 @@ class RepoIndexMeta(Base):
     files_total: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False,
     )
+    # ETag of the last successful GitHub tree fetch. Sent as If-None-Match
+    # on subsequent fetches so GitHub can return 304 Not Modified (free on
+    # the primary rate limit) when the tree is unchanged.
+    tree_etag: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False,

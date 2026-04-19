@@ -75,13 +75,50 @@ class GitHubClient:
         return data["commit"]["sha"]
 
     async def get_tree(self, token: str, full_name: str, branch: str) -> list[dict]:
+        """Fetch the recursive tree for a branch. Returns only blob entries.
+
+        Thin wrapper over :meth:`get_tree_with_cache` for callers that don't
+        care about ETag/caching semantics. Always hits the network.
+        """
+        tree, _etag = await self.get_tree_with_cache(token, full_name, branch)
+        return tree or []
+
+    async def get_tree_with_cache(
+        self,
+        token: str,
+        full_name: str,
+        branch: str,
+        *,
+        etag: str | None = None,
+    ) -> tuple[list[dict] | None, str | None]:
+        """Fetch the recursive tree with conditional-request support.
+
+        Sends ``If-None-Match: <etag>`` when ``etag`` is provided. Returns
+        ``(tree, new_etag)`` on 200 and ``(None, etag)`` on 304 Not Modified
+        — the ``None`` sentinel tells the caller to reuse its cached tree.
+
+        GitHub counts 304 responses as "no content served" for the primary
+        rate limit (see GitHub REST API docs), so ETag-aware polling is the
+        recommended pattern for repeated tree fetches.
+        """
+        headers = self._headers(token)
+        if etag:
+            headers["If-None-Match"] = etag
         resp = await self._client.get(
             f"{GITHUB_API}/repos/{full_name}/git/trees/{branch}",
-            headers=self._headers(token),
+            headers=headers,
             params={"recursive": "1"},
         )
+        if resp.status_code == 304:
+            return None, etag
         _check(resp)
-        return [item for item in resp.json().get("tree", []) if item["type"] == "blob"]
+        new_etag = resp.headers.get("ETag")
+        tree = [
+            item
+            for item in resp.json().get("tree", [])
+            if item["type"] == "blob"
+        ]
+        return tree, new_etag
 
     async def list_branches(
         self, token: str, full_name: str, per_page: int = 50,

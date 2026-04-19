@@ -547,7 +547,45 @@ class RepoIndexService:
 
         try:
             head_sha = await self._gc.get_branch_head_sha(token, repo_full_name, branch)
-            tree = await self._gc.get_tree(token, repo_full_name, branch)
+
+            # ETag-conditioned tree fetch. If the stored etag is still valid
+            # we get a 304 and can short-circuit the whole rebuild — GitHub
+            # counts 304 responses as "no content served" for the primary
+            # rate limit, so this is the cheap path. We only send the etag
+            # when we actually have cached rows to trust; a stale etag
+            # without rows would leave us with nothing to serve from.
+            etag_to_send: str | None = None
+            if meta.tree_etag and (meta.file_count or 0) > 0:
+                etag_to_send = meta.tree_etag
+            tree, new_tree_etag = await self._gc.get_tree_with_cache(
+                token, repo_full_name, branch, etag=etag_to_send,
+            )
+
+            if tree is None:
+                # 304 Not Modified. Reuse existing file rows; just refresh
+                # head_sha (which may have advanced via a tag or merge
+                # commit that didn't touch any tree blobs) and mark ready.
+                logger.info(
+                    "build_index: %s@%s tree unchanged (304) — "
+                    "reusing %d existing rows",
+                    repo_full_name, branch, meta.file_count or 0,
+                )
+                meta.status = "ready"
+                meta.index_phase = "embedding"
+                meta.head_sha = head_sha
+                meta.files_seen = meta.file_count or 0
+                meta.files_total = meta.file_count or 0
+                meta.error_message = None
+                meta.indexed_at = datetime.now(timezone.utc)
+                # tree_etag intentionally unchanged (304 echoed it).
+                await self._db.commit()
+                await _publish_phase_change(
+                    repo_full_name, branch,
+                    phase="embedding", status="ready",
+                    files_seen=meta.file_count or 0,
+                    files_total=meta.file_count or 0,
+                )
+                return
 
             code_ext = [
                 item for item in tree
@@ -633,7 +671,15 @@ class RepoIndexService:
             meta.files_total = len(indexable)
             meta.error_message = None
             meta.indexed_at = datetime.now(timezone.utc)
+            # Persist the fresh ETag so the next build_index can try 304.
+            if new_tree_etag:
+                meta.tree_etag = new_tree_etag
             await self._db.commit()
+            # Cache safety: a full rebuild replaced every RepoFileIndex row, so
+            # any cached curated retrieval keyed on (repo, branch, query, …) is
+            # now stale. Flush the TTL cache unconditionally. TTL is 5 minutes
+            # so warm-up cost is trivial; correctness over caching.
+            invalidate_curated_cache(repo_full_name)
             await _publish_phase_change(
                 repo_full_name, branch,
                 phase="embedding", status="ready",
@@ -1189,10 +1235,12 @@ class RepoIndexService:
             )
             return _result(skipped_reason="head_unchanged")
 
-        # ── Step 2: Fetch full tree (1 API call) ──────────────────────
+        # ── Step 2: Fetch full tree with ETag (1 API call, free on 304) ─
         t_tree = time.monotonic()
         try:
-            tree = await self._gc.get_tree(token, repo_full_name, branch)
+            tree, new_tree_etag = await self._gc.get_tree_with_cache(
+                token, repo_full_name, branch, etag=meta.tree_etag,
+            )
         except GitHubApiError as exc:
             reason = _classify_github_error(exc)
             logger.warning("incremental_update: %s tree fetch failed: %s (%s)", repo_tag, exc, reason)
@@ -1201,6 +1249,20 @@ class RepoIndexService:
             logger.warning("incremental_update: %s tree fetch failed: %s", repo_tag, exc)
             return _result(skipped_reason="network_error")
         tree_ms = (time.monotonic() - t_tree) * 1000
+
+        # 304: tree unchanged (HEAD may have moved via a tag / empty
+        # merge). Skip file-level diffing — just advance head_sha so the
+        # step-1 short-circuit catches the next poll.
+        if tree is None:
+            meta.head_sha = current_sha
+            await self._db.commit()
+            logger.info(
+                "incremental_update: %s tree unchanged (304) head=%s→%s "
+                "sha=%.0fms tree=%.0fms",
+                repo_tag, (meta.head_sha or "?")[:8], (current_sha or "?")[:8],
+                sha_ms, tree_ms,
+            )
+            return _result(skipped_reason="tree_unchanged")
 
         # Build lookup from current tree (only indexable files)
         tree_map: dict[str, dict] = {}
@@ -1331,7 +1393,15 @@ class RepoIndexService:
         new_count = (meta.file_count or 0) + len(added_items) - len(removed_paths)
         meta.file_count = max(0, new_count)  # guard against negative
         meta.indexed_at = datetime.now(timezone.utc)
+        # Persist the fresh ETag so subsequent polls can cash in on 304.
+        if new_tree_etag:
+            meta.tree_etag = new_tree_etag
         await self._db.commit()
+        # Cache safety: any file added/changed/removed invalidates curated
+        # retrievals keyed on (repo, branch, query, …). The head_unchanged
+        # short-circuit above and the no-diff early-return (line ~1253) both
+        # skip this path, so this flush only fires when state actually moved.
+        invalidate_curated_cache(repo_full_name)
 
         total_ms = (time.monotonic() - t_start) * 1000
         logger.info(
