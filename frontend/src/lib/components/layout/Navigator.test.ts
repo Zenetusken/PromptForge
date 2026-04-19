@@ -15,6 +15,10 @@ vi.mock('$lib/stores/github.svelte', () => {
     linkedRepo: null,
     loading: false,
     error: null,
+    // Real store exposes these as getters; tests set them as plain props.
+    connectionState: 'disconnected' as string,
+    phaseLabel: '' as string,
+    indexErrorText: null as string | null,
     checkAuth: vi.fn().mockResolvedValue(undefined),
     login: vi.fn(),
     unlinkRepo: vi.fn(),
@@ -23,6 +27,9 @@ vi.mock('$lib/stores/github.svelte', () => {
       this.linkedRepo = null;
       this.loading = false;
       this.error = null;
+      this.connectionState = 'disconnected';
+      this.phaseLabel = '';
+      this.indexErrorText = null;
     },
   };
   return { githubStore: store };
@@ -553,6 +560,31 @@ describe('Navigator', () => {
     const unlinkBtn = screen.getByRole('button', { name: /^UNLINK$/i });
     await user.click(unlinkBtn);
     expect(githubStore.unlinkRepo).toHaveBeenCalled();
+  });
+
+  it('renders compact "indexing" badge token (not verbose phaseLabel)', () => {
+    githubStore.user = { login: 'testuser', avatar_url: '' };
+    githubStore.linkedRepo = {
+      full_name: 'testuser/myrepo',
+      default_branch: 'main',
+      branch: 'main',
+      language: 'TypeScript',
+    };
+    // The real store exposes `connectionState` / `phaseLabel` as readonly getters;
+    // the test mock declares them as plain writable props, so override via the
+    // mutable mock reference (cast away the real store's readonly contract).
+    const mock = githubStore as unknown as {
+      connectionState: string;
+      phaseLabel: string;
+    };
+    mock.connectionState = 'indexing';
+    mock.phaseLabel = 'Fetching repo tree…';
+    defaultFetchHandlers();
+    render(Navigator, { props: { active: 'github' } });
+    // Visible badge must be the compact "indexing" token (matches StatusBar + fits
+    // the .connection-badge uppercase/letter-spaced styling); phaseLabel lives on tooltip.
+    expect(screen.getByText('indexing')).toBeInTheDocument();
+    expect(screen.queryByText('Fetching repo tree…')).not.toBeInTheDocument();
   });
 
   // ── History — error state ──────────────────────────────────────────────────

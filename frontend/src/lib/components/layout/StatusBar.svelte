@@ -133,22 +133,22 @@
       <span class="status-github" style="color: var(--color-text-dim)">{githubStore.linkedRepo?.full_name.split('/')[1]}</span>
     {:else if githubStore.connectionState === 'indexing'}
       <span
-        class="status-github"
+        class="status-github status-github--token"
         style="color: var(--color-neon-cyan)"
         use:tooltip={githubStore.phaseLabel}
-      >{githubStore.phaseLabel || 'indexing'}</span>
+      >indexing</span>
     {:else if githubStore.connectionState === 'error'}
       <span
-        class="status-github"
+        class="status-github status-github--token"
         style="color: var(--color-neon-red)"
         use:tooltip={githubStore.indexErrorText ?? 'Indexing failed'}
-      >index error</span>
+      >error</span>
     {:else if githubStore.connectionState === 'linked'}
-      <span class="status-github" style="color: var(--color-neon-cyan)">linked</span>
+      <span class="status-github status-github--token" style="color: var(--color-neon-cyan)">linked</span>
     {:else if githubStore.connectionState === 'expired'}
-      <span class="status-github" style="color: var(--color-neon-red)">expired</span>
+      <span class="status-github status-github--token" style="color: var(--color-neon-red)">expired</span>
     {:else if githubStore.connectionState === 'authenticated'}
-      <span class="status-github" style="color: var(--color-neon-yellow)">no repo</span>
+      <span class="status-github status-github--token" style="color: var(--color-neon-yellow)">no repo</span>
     {/if}
     {#if forgeStore.mcpDisconnected && !routing.isDegraded && !routing.isAutoFallback}
       <span class="status-disconnected" use:tooltip={STATUS_TOOLTIPS.mcp_disconnected}>disconnected</span>
@@ -327,6 +327,12 @@
     border: 1px solid var(--color-border-subtle);
     padding: 0 4px;
     white-space: nowrap;
+  }
+  /* Applied only to state-token labels (linked / indexing / error / expired / no repo)
+     — NOT to the 'ready' repo-name render, which is a data value shown in its natural case. */
+  .status-github--token {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   .status-seed {

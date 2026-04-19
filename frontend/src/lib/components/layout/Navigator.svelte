@@ -690,8 +690,8 @@
           <span
             class="connection-badge connection-badge--pulse"
             style="color: var(--color-neon-cyan)"
-            use:tooltip={githubStore.phaseLabel}
-          >{githubStore.phaseLabel || 'indexing'}</span>
+            use:tooltip={githubStore.phaseLabel || 'Indexing…'}
+          >indexing</span>
         {:else if githubStore.connectionState === 'error'}
           <span
             class="connection-badge"

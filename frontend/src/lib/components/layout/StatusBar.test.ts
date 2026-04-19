@@ -7,7 +7,39 @@ import { forgeStore } from '$lib/stores/forge.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { clustersStore } from '$lib/stores/clusters.svelte';
 import { sseHealthStore } from '$lib/stores/sse-health.svelte';
+import { githubStore } from '$lib/stores/github.svelte';
 import type { ClusterNode } from '$lib/api/clusters';
+import type { LinkedRepo, IndexStatus, GitHubUser } from '$lib/api/client';
+
+/** Minimal LinkedRepo fixture for status bar tests. */
+function mockLinkedRepo(overrides: Partial<LinkedRepo> = {}): LinkedRepo {
+  return {
+    full_name: 'user/example-repo',
+    default_branch: 'main',
+    branch: 'main',
+    language: 'TypeScript',
+    project_label: 'example-repo',
+    linked_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function mockUser(overrides: Partial<GitHubUser> = {}): GitHubUser {
+  return {
+    login: 'user',
+    avatar_url: 'https://avatars.example/u.png',
+    ...overrides,
+  };
+}
+
+function mockIndexStatus(overrides: Partial<IndexStatus> = {}): IndexStatus {
+  return {
+    status: 'indexing',
+    file_count: 0,
+    indexed_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
 
 /** Create a minimal active ClusterNode for tree population. */
 function mockClusterNode(id: string, overrides: Partial<ClusterNode> = {}): ClusterNode {
@@ -31,6 +63,7 @@ describe('StatusBar', () => {
     preferencesStore._reset();
     clustersStore._reset();
     sseHealthStore._reset();
+    githubStore._reset();
     vi.clearAllMocks();
   });
 
@@ -484,5 +517,49 @@ describe('StatusBar', () => {
     const sseEls = screen.getAllByText('SSE');
     const el = sseEls.find(e => e.closest('.status-sse'));
     expect(el?.closest('.status-sse')?.getAttribute('style')).toContain('var(--color-neon-yellow)');
+  });
+
+  // -----------------------------------------------------------------------
+  // GitHub status label consistency (matches Navigator badge tokens)
+  // -----------------------------------------------------------------------
+
+  it('renders "linked" state label with the uppercase-transforming modifier class', () => {
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    githubStore.user = mockUser();
+    githubStore.linkedRepo = mockLinkedRepo();
+    githubStore.indexStatus = null; // → connectionState === 'linked'
+    render(StatusBar);
+    const label = screen.getByText('linked');
+    expect(label).toHaveClass('status-github--token');
+  });
+
+  it('renders compact "error" token when connectionState is "error" (not "index error")', () => {
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    githubStore.user = mockUser();
+    githubStore.linkedRepo = mockLinkedRepo();
+    githubStore.indexStatus = mockIndexStatus({
+      status: 'error',
+      index_phase: 'error',
+      error_message: 'synthesis failed',
+    });
+    render(StatusBar);
+    // Matches Navigator's compact "error" badge — not verbose "index error"
+    expect(screen.getByText('error')).toBeInTheDocument();
+    expect(screen.queryByText('index error')).not.toBeInTheDocument();
+  });
+
+  it('renders compact "indexing" token when connectionState is "indexing" (phaseLabel moves to tooltip)', () => {
+    mockFetch([{ match: '/api/health', response: mockHealthResponse() }]);
+    githubStore.user = mockUser();
+    githubStore.linkedRepo = mockLinkedRepo();
+    githubStore.indexStatus = mockIndexStatus({
+      status: 'indexing',
+      index_phase: 'fetching_tree',
+    });
+    render(StatusBar);
+    // The visible token must be the compact word "indexing" — verbose phaseLabel
+    // ("Fetching repo tree…") belongs on the tooltip only.
+    expect(screen.getByText('indexing')).toBeInTheDocument();
+    expect(screen.queryByText('Fetching repo tree…')).not.toBeInTheDocument();
   });
 });
