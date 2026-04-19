@@ -525,6 +525,16 @@
               <span class="meta-label">Repo</span>
               <span class="meta-value font-mono">{activeResult.repo_full_name}</span>
             </div>
+            {#if activeResult.context_sources && activeResult.context_sources.codebase_context === false}
+              <div
+                class="meta-row meta-row--warning"
+                data-testid="codebase-context-warning"
+                use:tooltip={'Optimization ran without repository grounding — the B0 relevance gate skipped the codebase, or the index was not ready. Re-run after reindex for repo-grounded output.'}
+              >
+                <span class="meta-label">Context</span>
+                <span class="meta-value neon-yellow">no codebase context</span>
+              </div>
+            {/if}
           {/if}
           {#if activeResult?.scoring_mode && activeResult.scoring_mode !== 'skipped' && activeResult.scores}
             <div class="meta-row">

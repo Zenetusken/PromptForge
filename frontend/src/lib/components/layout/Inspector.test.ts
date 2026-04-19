@@ -462,6 +462,71 @@ describe('Inspector', () => {
     });
   });
 
+  // ── 9b. Codebase-context warning chip (Fix D) ──────────────────────────────
+  //
+  // When a repo is linked but the optimization ran without the codebase_context
+  // enrichment layer (B0 relevance gate fired, repo index not ready, or the
+  // enrichment profile was cold_start / knowledge_work), the Inspector surfaces
+  // a warning chip so the user can tell at a glance that the output was NOT
+  // grounded in their repo.
+
+  it('renders codebase-context warning chip when repo linked but codebase_context missing', async () => {
+    forgeStore.status = 'complete';
+    forgeStore.result = mockOptimizationResult({
+      repo_full_name: 'project-synthesis/ProjectSynthesis',
+      context_sources: {
+        heuristic_analysis: true,
+        codebase_context: false,
+        strategy_intelligence: true,
+        applied_patterns: false,
+      },
+    }) as any;
+    forgeStore.scores = mockDimensionScores();
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('project-synthesis/ProjectSynthesis')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('codebase-context-warning')).toBeInTheDocument();
+    expect(screen.getByText(/no codebase context/i)).toBeInTheDocument();
+  });
+
+  it('does NOT render codebase-context warning chip when no repo is linked', async () => {
+    forgeStore.status = 'complete';
+    forgeStore.result = mockOptimizationResult({
+      repo_full_name: null,
+      context_sources: { codebase_context: false },
+    }) as any;
+    forgeStore.scores = mockDimensionScores();
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('Strategy')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('codebase-context-warning')).toBeNull();
+  });
+
+  it('does NOT render codebase-context warning chip when codebase_context is true', async () => {
+    forgeStore.status = 'complete';
+    forgeStore.result = mockOptimizationResult({
+      repo_full_name: 'project-synthesis/ProjectSynthesis',
+      context_sources: { codebase_context: true },
+    }) as any;
+    forgeStore.scores = mockDimensionScores();
+    mockFetch([]);
+
+    render(Inspector);
+
+    await waitFor(() => {
+      expect(screen.getByText('project-synthesis/ProjectSynthesis')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('codebase-context-warning')).toBeNull();
+  });
+
   // ── 10. Feedback state sync via feedback-event ──────────────────────────────
 
   it('syncs feedback state when feedback-event fires for the current optimization', async () => {
