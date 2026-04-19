@@ -232,17 +232,40 @@ describe('GitHubStore', () => {
       expect(githubStore.connectionState).toBe('linked');
     });
 
-    it('returns linked when user + linkedRepo + indexStatus building', () => {
+    it('returns indexing when user + linkedRepo + indexStatus building', () => {
       githubStore.user = { login: 'test', avatar_url: '', github_user_id: '1' } as any;
       githubStore.linkedRepo = { full_name: 'o/r', default_branch: 'main', branch: null, language: null } as any;
       githubStore.indexStatus = { status: 'building', file_count: 0, indexed_at: null } as any;
-      expect(githubStore.connectionState).toBe('linked');
+      expect(githubStore.connectionState).toBe('indexing');
+    });
+
+    it('returns indexing when index_phase is synthesizing even if status is ready', () => {
+      githubStore.user = { login: 'test', avatar_url: '', github_user_id: '1' } as any;
+      githubStore.linkedRepo = { full_name: 'o/r', default_branch: 'main', branch: null, language: null } as any;
+      githubStore.indexStatus = {
+        status: 'ready', file_count: 42, indexed_at: '2026-01-01',
+        index_phase: 'synthesizing', synthesis_status: 'running',
+      } as any;
+      expect(githubStore.connectionState).toBe('indexing');
+    });
+
+    it('returns error when index_phase is error', () => {
+      githubStore.user = { login: 'test', avatar_url: '', github_user_id: '1' } as any;
+      githubStore.linkedRepo = { full_name: 'o/r', default_branch: 'main', branch: null, language: null } as any;
+      githubStore.indexStatus = {
+        status: 'error', file_count: 0, indexed_at: null,
+        index_phase: 'error', error_message: 'boom',
+      } as any;
+      expect(githubStore.connectionState).toBe('error');
     });
 
     it('returns ready when user + linkedRepo + indexStatus ready', () => {
       githubStore.user = { login: 'test', avatar_url: '', github_user_id: '1' } as any;
       githubStore.linkedRepo = { full_name: 'o/r', default_branch: 'main', branch: null, language: null } as any;
-      githubStore.indexStatus = { status: 'ready', file_count: 42, indexed_at: '2026-01-01' } as any;
+      githubStore.indexStatus = {
+        status: 'ready', file_count: 42, indexed_at: '2026-01-01',
+        index_phase: 'ready', synthesis_status: 'ready',
+      } as any;
       expect(githubStore.connectionState).toBe('ready');
     });
   });

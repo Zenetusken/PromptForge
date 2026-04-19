@@ -372,6 +372,12 @@ export interface IndexStatus {
   indexed_at: string | null;
   synthesis_status?: string | null;
   synthesis_error?: string | null;
+  // Phase-tracking fields (orthogonal to status + synthesis_status).
+  // Backfilled values: index_phase defaults to "pending" when absent.
+  index_phase?: string | null;
+  files_seen?: number;
+  files_total?: number;
+  error_message?: string | null;
 }
 export const githubTree = (owner: string, repo: string, branch?: string) =>
   apiFetch<{ tree: RepoTreeEntry[]; full_name: string; branch: string }>(

@@ -14,6 +14,7 @@
   import { updateStore } from '$lib/stores/update.svelte';
   import { refinementStore } from '$lib/stores/refinement.svelte';
   import { sseHealthStore } from '$lib/stores/sse-health.svelte';
+  import { githubStore } from '$lib/stores/github.svelte';
   import {
     dispatchReadinessCrossing,
     type ReadinessCrossingPayload,
@@ -164,6 +165,19 @@
         if (type === 'domain_created') {
           domainStore.invalidate();
           readinessStore.invalidate();
+        }
+        if (type === 'index_phase_changed') {
+          // Live per-phase state for the linked repo — updates connectionState
+          // through githubStore.applyPhaseEvent() (reactive $state mutation).
+          githubStore.applyPhaseEvent(data as {
+            repo_full_name: string;
+            branch: string;
+            phase: string;
+            status: string;
+            files_seen: number;
+            files_total: number;
+            error?: string;
+          });
         }
         if (type === 'domain_readiness_changed') {
           // `dispatchReadinessCrossing` checks two independent opt-outs (see

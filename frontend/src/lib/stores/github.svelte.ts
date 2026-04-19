@@ -40,13 +40,79 @@ class GitHubStore {
   treeLoading = $state(false);
   indexStatus = $state<IndexStatus | null>(null);
 
-  /** Unified connection state — single source of truth for all UI components. */
-  get connectionState(): 'disconnected' | 'expired' | 'authenticated' | 'linked' | 'ready' {
+  /** Unified connection state — single source of truth for all UI components.
+   *
+   *  State machine (post C1/C2/C3 — indexing phase is authoritative):
+   *    disconnected   → no GitHub user
+   *    expired        → session 401
+   *    authenticated  → user present, no repo linked
+   *    linked         → repo linked, no index_phase yet (fresh link)
+   *    indexing       → index_phase in {fetching_tree, embedding, synthesizing}
+   *                     OR status/synthesis_status still in progress
+   *    error          → index_phase="error" or file/synthesis status="error"
+   *    ready          → index_phase="ready" AND status="ready" AND
+   *                     synthesis_status in {"ready","skipped",null}
+   *
+   *  "ready" is now gated on BOTH file indexing AND synthesis completing —
+   *  not just file status. This closes the window where the UI claimed ready
+   *  while Haiku synthesis was still running (or had silently errored).
+   */
+  get connectionState(): 'disconnected' | 'expired' | 'authenticated' | 'linked' | 'indexing' | 'error' | 'ready' {
     if (this.authExpired) return 'expired';
     if (!this.user) return 'disconnected';
     if (!this.linkedRepo) return 'authenticated';
-    if (!this.indexStatus || ['building', 'pending', 'indexing'].includes(this.indexStatus.status)) return 'linked';
-    return 'ready';
+    if (!this.indexStatus) return 'linked';
+
+    const s = this.indexStatus;
+    const fileStatus = s.status;
+    const synthStatus = s.synthesis_status ?? null;
+    const phase = s.index_phase ?? null;
+
+    if (phase === 'error' || fileStatus === 'error' || synthStatus === 'error') {
+      return 'error';
+    }
+
+    const fileInFlight = ['pending', 'building', 'indexing'].includes(fileStatus);
+    const synthInFlight = !!synthStatus && ['pending', 'running'].includes(synthStatus);
+    const phaseInFlight = !!phase && ['fetching_tree', 'embedding', 'synthesizing'].includes(phase);
+
+    if (fileInFlight || synthInFlight || phaseInFlight) return 'indexing';
+
+    // Truly done: file index ready AND (synthesis ready OR skipped OR absent).
+    if (fileStatus === 'ready' && (synthStatus === null || ['ready', 'skipped'].includes(synthStatus))) {
+      // Phase must also be ready — belt-and-braces against missed SSE
+      // events leaving phase stale at "embedding" after synthesis finished.
+      if (phase === 'ready' || phase === null) return 'ready';
+    }
+
+    return 'indexing';
+  }
+
+  /** Human-readable phase label (for UI display). Falls back on status. */
+  get phaseLabel(): string {
+    if (!this.indexStatus) return '';
+    const phase = this.indexStatus.index_phase ?? null;
+    switch (phase) {
+      case 'fetching_tree': return 'Fetching repo tree…';
+      case 'embedding': return 'Embedding files…';
+      case 'synthesizing': return 'Synthesizing context…';
+      case 'ready': return 'Ready';
+      case 'error': return 'Error';
+      case 'pending':
+      case null:
+      default:
+        return this.indexStatus.status === 'ready' ? 'Ready' : 'Preparing…';
+    }
+  }
+
+  /** Surface error from any layer (file index or synthesis). */
+  get indexErrorText(): string | null {
+    if (!this.indexStatus) return null;
+    return (
+      this.indexStatus.error_message
+      || this.indexStatus.synthesis_error
+      || null
+    );
   }
 
   // File content viewer state
@@ -291,23 +357,66 @@ class GitHubStore {
     }
   }
 
-  /** Poll index status until file indexing and synthesis both settle, or fails. */
+  /** Poll index status until file indexing + synthesis settle, error, or timeout.
+   *
+   *  Polling remains as a safety net; primary signal is `index_phase_changed`
+   *  SSE (subscribed in `+page.svelte`). The two converge on the same state.
+   */
   private async pollIndexStatus() {
     let failures = 0;
-    for (let i = 0; i < 60; i++) { // max ~120s (synthesis can take time after file indexing)
+    for (let i = 0; i < 60; i++) { // max ~120s
       await new Promise(r => setTimeout(r, 2000));
       await this.loadIndexStatus();
       if (!this.indexStatus) {
         failures++;
-        if (failures >= 3) break; // stop after 3 consecutive failures
+        if (failures >= 3) break;
         continue;
       }
       failures = 0;
-      const filesInProgress = ['pending', 'indexing', 'building'].includes(this.indexStatus.status);
-      const synthStatus = this.indexStatus.synthesis_status;
-      const synthInProgress = !!synthStatus && ['pending', 'running'].includes(synthStatus);
-      if (!filesInProgress && !synthInProgress) break;
+      const state = this.connectionState;
+      if (state === 'ready' || state === 'error') break;
     }
+  }
+
+  /** Apply a live `index_phase_changed` SSE event to this.indexStatus.
+   *
+   *  Reactive: updating `.indexStatus` triggers all `$derived` consumers of
+   *  `connectionState`, `phaseLabel`, `indexErrorText` to re-render.
+   */
+  applyPhaseEvent(payload: {
+    repo_full_name: string;
+    branch: string;
+    phase: string;
+    status: string;
+    files_seen: number;
+    files_total: number;
+    error?: string;
+  }): void {
+    // Ignore events for other repos — multi-link safety.
+    if (this.linkedRepo && payload.repo_full_name !== this.linkedRepo.full_name) return;
+
+    const prev = this.indexStatus ?? {
+      status: payload.status,
+      file_count: 0,
+      indexed_at: null,
+    };
+    this.indexStatus = {
+      ...prev,
+      status: payload.status,
+      index_phase: payload.phase,
+      files_seen: payload.files_seen,
+      files_total: payload.files_total,
+      // Error surfaces from whichever layer reported it.
+      error_message: payload.phase === 'error' ? payload.error ?? null : prev.error_message ?? null,
+      synthesis_error: payload.phase === 'error' && payload.error
+        ? payload.error
+        : prev.synthesis_error ?? null,
+      synthesis_status: (
+        payload.phase === 'synthesizing' ? 'running'
+        : payload.phase === 'ready' ? 'ready'
+        : prev.synthesis_status ?? null
+      ),
+    };
   }
 
   async loadFileContent(filePath: string) {

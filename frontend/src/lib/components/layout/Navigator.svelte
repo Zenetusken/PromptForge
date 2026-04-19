@@ -685,9 +685,21 @@
       <header class="panel-header">
         <span class="section-heading">GitHub</span>
         {#if githubStore.connectionState === 'ready'}
-          <span class="connection-badge" style="color: var(--color-text-dim)">connected</span>
+          <span class="connection-badge" style="color: var(--color-text-dim)">ready</span>
+        {:else if githubStore.connectionState === 'indexing'}
+          <span
+            class="connection-badge connection-badge--pulse"
+            style="color: var(--color-neon-cyan)"
+            use:tooltip={githubStore.phaseLabel}
+          >{githubStore.phaseLabel || 'indexing'}</span>
+        {:else if githubStore.connectionState === 'error'}
+          <span
+            class="connection-badge"
+            style="color: var(--color-neon-red)"
+            use:tooltip={githubStore.indexErrorText ?? 'Indexing failed'}
+          >error</span>
         {:else if githubStore.connectionState === 'linked'}
-          <span class="connection-badge" style="color: var(--color-neon-cyan)">indexing</span>
+          <span class="connection-badge" style="color: var(--color-neon-cyan)">linked</span>
         {:else if githubStore.connectionState === 'expired'}
           <span class="connection-badge" style="color: var(--color-neon-red)">expired</span>
         {:else if githubStore.connectionState === 'authenticated'}
@@ -770,6 +782,33 @@
                       class:data-value--red={githubStore.indexStatus.synthesis_status === 'error'}
                     >
                       {githubStore.indexStatus.synthesis_status}
+                    </span>
+                  </div>
+                {/if}
+                <!-- Live phase + progress row (surfaces C1/C2 state machine) -->
+                {#if githubStore.indexStatus.index_phase && githubStore.indexStatus.index_phase !== 'ready' && githubStore.indexStatus.index_phase !== 'pending'}
+                  <div class="data-row"
+                    use:tooltip={githubStore.indexErrorText ?? githubStore.phaseLabel}
+                  >
+                    <span class="data-label">Phase</span>
+                    <span class="data-value"
+                      class:data-value--amber={githubStore.indexStatus.index_phase !== 'error'}
+                      class:data-value--red={githubStore.indexStatus.index_phase === 'error'}
+                    >
+                      {githubStore.phaseLabel}{#if (githubStore.indexStatus.files_total ?? 0) > 0 && githubStore.indexStatus.index_phase === 'embedding'}
+                        {' '}({githubStore.indexStatus.files_seen ?? 0}/{githubStore.indexStatus.files_total ?? 0})
+                      {/if}
+                    </span>
+                  </div>
+                {/if}
+                <!-- Error surface: always visible when connectionState==='error' -->
+                {#if githubStore.connectionState === 'error' && githubStore.indexErrorText}
+                  <div class="data-row data-row--error"
+                    use:tooltip={githubStore.indexErrorText}
+                  >
+                    <span class="data-label">Error</span>
+                    <span class="data-value data-value--red data-value--truncate">
+                      {githubStore.indexErrorText}
                     </span>
                   </div>
                 {/if}
@@ -1886,6 +1925,19 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin-left: auto;
+  }
+  /* Subtle breathing pulse — signals live work without motion glare. */
+  .connection-badge--pulse {
+    animation: badge-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+  .data-row--error {
+    border-top: 1px solid color-mix(in srgb, var(--color-neon-red) 25%, transparent);
+    margin-top: 4px;
+    padding-top: 4px;
   }
   .row-project {
     font-size: 9px;

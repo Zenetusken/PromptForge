@@ -131,8 +131,20 @@
     {/if}
     {#if githubStore.connectionState === 'ready'}
       <span class="status-github" style="color: var(--color-text-dim)">{githubStore.linkedRepo?.full_name.split('/')[1]}</span>
+    {:else if githubStore.connectionState === 'indexing'}
+      <span
+        class="status-github"
+        style="color: var(--color-neon-cyan)"
+        use:tooltip={githubStore.phaseLabel}
+      >{githubStore.phaseLabel || 'indexing'}</span>
+    {:else if githubStore.connectionState === 'error'}
+      <span
+        class="status-github"
+        style="color: var(--color-neon-red)"
+        use:tooltip={githubStore.indexErrorText ?? 'Indexing failed'}
+      >index error</span>
     {:else if githubStore.connectionState === 'linked'}
-      <span class="status-github" style="color: var(--color-neon-cyan)">indexing...</span>
+      <span class="status-github" style="color: var(--color-neon-cyan)">linked</span>
     {:else if githubStore.connectionState === 'expired'}
       <span class="status-github" style="color: var(--color-neon-red)">expired</span>
     {:else if githubStore.connectionState === 'authenticated'}
