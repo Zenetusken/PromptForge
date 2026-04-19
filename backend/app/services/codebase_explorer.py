@@ -194,6 +194,22 @@ class CodebaseExplorer:
             "file_contents": file_contents_str,
         })
 
+        # 8.5. Budget utilization log — payload chars vs the empirical cap so
+        # we can watch how close each live call sits to Haiku's ~60K-token
+        # effective ceiling (CLI baseline consumes ~140K of the 200K window).
+        # Reports both the rendered template size (actual LLM input) and the
+        # raw file_contents block (what EXPLORE_MAX_CONTEXT_CHARS gates on).
+        cap = settings.EXPLORE_MAX_CONTEXT_CHARS
+        payload_chars = len(rendered)
+        file_contents_chars = len(file_contents_str)
+        utilization = (file_contents_chars / cap * 100.0) if cap else 0.0
+        logger.info(
+            "explore_budget: repo=%s branch=%s files=%d payload_chars=%d "
+            "file_contents_chars=%d cap=%d utilization=%.1f%%",
+            repo_full_name, branch, len(file_paths_list),
+            payload_chars, file_contents_chars, cap, utilization,
+        )
+
         # 9. Single-shot synthesis via provider (with retry for transient errors)
         result: ExploreOutput = await call_provider_with_retry(
             self._provider,
@@ -203,9 +219,18 @@ class CodebaseExplorer:
             output_format=ExploreOutput,
         )
 
+        # Surface the provider's cache_read tokens so the CLI baseline
+        # (~140K tokens of built-in Claude Code system prompt) is visible
+        # alongside synthesis output.  Safe even when the provider never
+        # populated last_usage (defaults to TokenUsage zeros).
+        usage = getattr(self._provider, "last_usage", None)
+        cache_read_tokens = getattr(usage, "cache_read_tokens", 0) or 0
+        input_tokens = getattr(usage, "input_tokens", 0) or 0
         logger.info(
-            "explore_synthesis: repo=%s branch=%s files_read=%d synthesis_chars=%d",
+            "explore_synthesis: repo=%s branch=%s files_read=%d "
+            "synthesis_chars=%d input_tokens=%d cache_read_tokens=%d",
             repo_full_name, branch, len(file_paths_list), len(result.context),
+            input_tokens, cache_read_tokens,
         )
 
         # Cache the result

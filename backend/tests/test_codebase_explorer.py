@@ -249,3 +249,86 @@ async def test_explore_uses_cache(tmp_path):
     result3 = await explorer.explore("Write a different thing", "owner/repo", "main", "token")
     assert result3 == "Synthesized context"
     assert provider.complete_parsed.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Test 5: explore logs per-call budget utilization before the LLM call
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_explore_logs_budget_utilization(tmp_path, caplog):
+    """Per-call utilization log surfaces chars/cap ratio + file count.
+
+    Why: we're tuned to the empirical ~60K-token effective ceiling imposed
+    by the CLI baseline.  A per-call log lets us confirm live utilization
+    against the cap instead of guessing from synthesis_chars after the fact.
+    """
+    from app.providers.base import TokenUsage
+    from app.services.codebase_explorer import _explore_cache
+
+    _explore_cache._store.clear()
+
+    loader = _make_prompt_loader(tmp_path)
+    gc = _make_github_client(
+        tree_items=[
+            {"type": "blob", "path": f"src/f{i}.py", "sha": f"s{i}", "size": 500}
+            for i in range(5)
+        ],
+        file_contents="def fn():\n    return 42\n",
+    )
+    es = _make_embedding_service()
+    es.aembed_single = AsyncMock(return_value=np.zeros(384, dtype=np.float32))
+    es.aembed_texts = AsyncMock(
+        return_value=[np.zeros(384, dtype=np.float32) for _ in range(5)]
+    )
+    es.cosine_search.return_value = [(i, 0.9 - i * 0.01) for i in range(5)]
+
+    provider = _make_provider()
+    # Simulate CLI baseline (~140K tokens cached) so the log reflects it.
+    provider.last_usage = TokenUsage(
+        input_tokens=3_000,
+        output_tokens=400,
+        cache_read_tokens=140_000,
+        cache_creation_tokens=0,
+    )
+
+    explorer = CodebaseExplorer(
+        prompt_loader=loader,
+        github_client=gc,
+        embedding_service=es,
+        provider=provider,
+    )
+
+    with caplog.at_level("INFO", logger="app.services.codebase_explorer"):
+        result = await explorer.explore(
+            raw_prompt="Describe the codebase",
+            repo_full_name="owner/repo",
+            branch="main",
+            token="ghp_test",
+        )
+
+    assert result is not None
+
+    messages = [rec.getMessage() for rec in caplog.records]
+
+    # Pre-LLM utilization line: must expose payload chars, cap, and ratio.
+    budget_line = next(
+        (m for m in messages if m.startswith("explore_budget:")), None
+    )
+    assert budget_line is not None, (
+        "expected 'explore_budget: ...' log line before LLM call, got: "
+        + "\n".join(messages)
+    )
+    assert "files=" in budget_line
+    assert "payload_chars=" in budget_line
+    assert "cap=" in budget_line
+    assert "utilization=" in budget_line
+    assert "%" in budget_line
+
+    # Post-synthesis line: must surface provider cache_read so CLI baseline
+    # (~140K tokens) is visible against Haiku's 200K window.
+    synth_line = next(
+        (m for m in messages if m.startswith("explore_synthesis:")), None
+    )
+    assert synth_line is not None
+    assert "cache_read_tokens=140000" in synth_line
