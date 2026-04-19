@@ -1185,3 +1185,43 @@ class TestHybridRelevance:
         assert isinstance(info["domain_matches"], list)
         assert "taxonomy" in info["domain_matches"]
         assert "enrichment" in info["domain_matches"]
+
+    @pytest.mark.asyncio
+    async def test_low_cosine_with_domain_overlap_passes(self):
+        """Low cosine + domain term in prompt → PASS via domain_match.
+
+        Regression test for a real production miss: an audit prompt asking
+        'Is the MCP sampling method properly implemented?' against a linked
+        repo whose synthesis covers broad Project Synthesis architecture
+        produced cosine=0.147 (below the 0.20 floor) — but the prompt
+        contains 'mcp', 'sampling', and 'pipeline', which appear multiple
+        times in the synthesis.  Vocabulary overlap is a stronger signal
+        than embedding similarity for focused subsystem questions, and
+        must be able to override a low cosine.  Otherwise focused prompts
+        about one subsystem of a broad repo lose ALL codebase context.
+        """
+        import numpy as np
+
+        mock_es = AsyncMock()
+        # Force a low cosine by using near-orthogonal vectors.
+        prompt_vec = np.zeros(384, dtype=np.float32)
+        prompt_vec[0] = 1.0
+        synth_vec = np.zeros(384, dtype=np.float32)
+        synth_vec[1] = 0.95
+        synth_vec[0] = 0.1
+        synth_vec /= np.linalg.norm(synth_vec)
+        mock_es.aembed_single = AsyncMock(side_effect=[prompt_vec, synth_vec])
+
+        score, info = await compute_repo_relevance(
+            "Audit the MCP sampling method in the pipeline",
+            "mcp mcp mcp sampling sampling sampling pipeline pipeline pipeline "
+            "taxonomy taxonomy taxonomy enrichment enrichment enrichment",
+            mock_es,
+        )
+        assert score < 0.20, f"test setup: cosine must be below floor, got {score}"
+        assert info["decision"] == "pass", (
+            f"low cosine with domain overlap should pass via vocab match, "
+            f"got decision={info['decision']} reason={info['reason']}"
+        )
+        assert info["reason"] == "domain_match"
+        assert info["domain_overlap"] >= 1

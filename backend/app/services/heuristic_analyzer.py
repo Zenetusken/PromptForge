@@ -164,6 +164,10 @@ _TASK_TYPE_SIGNALS: dict[str, list[tuple[str, float]]] = {
         ("review", 0.7), ("assess", 0.9), ("critique", 0.8),
         ("pros and cons", 0.9), ("trade-off", 0.8), ("tradeoff", 0.8),
         ("investigate", 0.7), ("examine", 0.7),
+        # Inspection verbs (E.1): audit/diagnose/inspect are common analysis
+        # signals missing from the original set — prompts like "Audit X"
+        # previously scored 0 on analysis and drifted to data/general.
+        ("audit", 0.9), ("diagnose", 0.9), ("inspect", 0.8),
     ],
     "creative": [
         ("create", 0.5), ("brainstorm", 1.0), ("imagine", 0.9),
@@ -392,7 +396,10 @@ class HeuristicAnalyzer:
     ) -> HeuristicAnalysis:
         prompt_lower = raw_prompt.lower()
         words = prompt_lower.split()
-        first_sentence = prompt_lower.split(".")[0] if "." in prompt_lower else prompt_lower
+        # E.2: split on any sentence terminator (. ? !), not just `.` — otherwise
+        # prompts ending in `?` with no trailing period had first_sentence == whole,
+        # so every keyword received the 2x first-sentence boost.
+        first_sentence = re.split(r"[.?!]", prompt_lower, maxsplit=1)[0]
 
         # Layer 1: Keyword classification
         task_type, task_confidence, all_scores = self._classify(

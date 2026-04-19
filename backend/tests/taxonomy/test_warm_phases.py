@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Optimization, PromptCluster, PromptTemplate
 from app.services.taxonomy._constants import DEADLOCK_BREAKER_THRESHOLD, _utcnow
@@ -288,6 +288,50 @@ async def test_phase_reconcile_archives_orphan_domain_over_24h(
     await db.refresh(project)
     # Project member_count (child-domain count) should now be 0
     assert project.member_count == 0
+
+
+@pytest.mark.asyncio
+async def test_phase_reconcile_archives_orphan_with_null_created_at(
+    db, mock_embedding, mock_provider,
+):
+    """Domain nodes with NULL created_at are treated as old-enough to sweep.
+
+    Observed in production: a pre-existing Legacy/general domain migrated
+    from an older schema has `created_at=NULL` (the column was added by a
+    later migration without a backfill). The orphan sweep's
+    `created_at < cutoff` filter silently skips NULL rows, so the ghost
+    domain never ages out even after the grace period.
+
+    Treat NULL as 'old enough' — the node predates the column, so it has
+    survived at least one migration window, which is far longer than any
+    grace period we'd reasonably configure.
+    """
+    engine = _make_mock_engine(db, mock_embedding, mock_provider)
+
+    orphan = PromptCluster(
+        label="general",
+        state="domain",
+        domain="general",
+        centroid_embedding=np.random.randn(EMBEDDING_DIM).astype(np.float32).tobytes(),
+        member_count=0,
+        color_hex="#6366f1",
+    )
+    db.add(orphan)
+    await db.flush()
+    # Explicitly null out — the server default populates it on insert.
+    await db.execute(
+        text("UPDATE prompt_cluster SET created_at = NULL WHERE id = :id").bindparams(id=orphan.id)
+    )
+    await db.commit()
+    await db.refresh(orphan)
+    assert orphan.created_at is None, "test setup: created_at must be NULL"
+
+    result = await phase_reconcile(engine, db)
+
+    assert result.orphan_structural_nodes_archived >= 1
+    await db.refresh(orphan)
+    assert orphan.state == "archived"
+    assert orphan.archived_at is not None
 
 
 @pytest.mark.asyncio

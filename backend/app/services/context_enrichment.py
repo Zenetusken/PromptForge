@@ -187,23 +187,18 @@ async def compute_repo_relevance(
         / (np.linalg.norm(prompt_vec) * np.linalg.norm(synth_vec) + 1e-9)
     )
 
-    # Stage 1: cosine floor — clearly unrelated prompts
-    if cosine < REPO_RELEVANCE_FLOOR:
-        return cosine, {
-            "cosine": round(cosine, 4),
-            "domain_overlap": 0,
-            "domain_matches": [],
-            "domain_vocab_size": 0,
-            "decision": "skip",
-            "reason": "below_floor",
-        }
-
-    # Stage 2: domain entity overlap
+    # Compute domain overlap up-front so a strong vocabulary signal can
+    # override a low cosine.  Focused prompts about one subsystem of a
+    # broad repo routinely score below the cosine floor even when their
+    # core terms appear repeatedly in the repo's synthesis — for those,
+    # keyword match is a more reliable relevance signal than embedding
+    # cosine.  Cosine floor remains the tie-breaker when overlap is zero.
     domain_vocab = extract_domain_vocab(explore_synthesis)
     prompt_lower = raw_prompt.lower()
     matches = [w for w in domain_vocab if w in prompt_lower]
     overlap = len(matches)
 
+    # Decision 1: strong vocabulary overlap → pass regardless of cosine.
     if overlap >= REPO_DOMAIN_MIN_OVERLAP:
         return cosine, {
             "cosine": round(cosine, 4),
@@ -214,6 +209,20 @@ async def compute_repo_relevance(
             "reason": "domain_match",
         }
 
+    # Decision 2: no vocab overlap AND cosine below floor → clearly off-topic.
+    if cosine < REPO_RELEVANCE_FLOOR:
+        return cosine, {
+            "cosine": round(cosine, 4),
+            "domain_overlap": 0,
+            "domain_matches": [],
+            "domain_vocab_size": len(domain_vocab),
+            "decision": "skip",
+            "reason": "below_floor",
+        }
+
+    # Decision 3: cosine above floor but no vocabulary match — synthesis may
+    # be noise (e.g. sparse repo) or prompt genuinely disjoint.  Skip to
+    # avoid injecting misleading context.
     return cosine, {
         "cosine": round(cosine, 4),
         "domain_overlap": 0,

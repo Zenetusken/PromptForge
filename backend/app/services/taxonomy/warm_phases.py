@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -1543,12 +1543,18 @@ async def phase_reconcile(
         orphan_cutoff = _utcnow() - timedelta(
             hours=ORPHAN_STRUCTURAL_GRACE_HOURS
         )
+        # NULL created_at is treated as "old enough" — a node with a null
+        # timestamp predates the column (or was restored from a pre-migration
+        # backup), which is necessarily older than any practical grace period.
+        # Without this, legacy ghost domains escape the sweep indefinitely.
         orphan_candidates_q = await db.execute(
             select(PromptCluster).where(
                 PromptCluster.state == "domain",
                 PromptCluster.member_count == 0,
-                PromptCluster.created_at.isnot(None),
-                PromptCluster.created_at < orphan_cutoff,
+                or_(
+                    PromptCluster.created_at.is_(None),
+                    PromptCluster.created_at < orphan_cutoff,
+                ),
             )
         )
         orphan_ids: list[str] = []
@@ -1734,8 +1740,6 @@ async def phase_reconcile(
     # nearest active cluster.  backfill_orphans() handles this at startup,
     # but semi-orphans accumulate between restarts from split/merge/retire.
     try:
-        from sqlalchemy import or_
-
         active_ids_sq = select(PromptCluster.id).where(
             PromptCluster.state.in_(["active", "candidate", "mature", "template"])
         )

@@ -480,6 +480,97 @@ class TestCompoundKeywordSignals:
 
 
 # ---------------------------------------------------------------------------
+# E.1 / E.2: Audit verb + first-sentence boundary
+# ---------------------------------------------------------------------------
+
+
+class TestAuditAndFirstSentenceBoundary:
+    """Regression tests for Fix E — heuristic classifier drift.
+
+    Bug #1: ``audit``/``diagnose``/``inspect`` are common analysis verbs
+    but were missing from ``_TASK_TYPE_SIGNALS['analysis']``. Prompts
+    leading with "Audit ..." scored 0 on analysis and drifted to data
+    or general.
+
+    Bug #2: ``first_sentence = prompt_lower.split('.')[0]`` only split
+    on periods, so prompts ending in ``?`` with no trailing ``.`` had
+    ``first_sentence == whole_prompt`` and received the 2x positional
+    boost on EVERY keyword, not just the lead clause.
+    """
+
+    @pytest.mark.asyncio
+    async def test_audit_verb_classifies_as_analysis(self, db):
+        """Bug E.1: ``audit`` must be recognised as an analysis signal.
+
+        LLM fallback disabled to isolate pure heuristic scoring — without
+        the keyword, the prompt scores 0 and falls to "general".
+        """
+        analyzer = HeuristicAnalyzer()
+        result = await analyzer.analyze(
+            "Audit our deployment process and identify areas for improvement",
+            db,
+            enable_llm_fallback=False,
+        )
+        assert result.task_type == "analysis", (
+            f"'audit' should map to analysis, got {result.task_type}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_diagnose_verb_classifies_as_analysis(self, db):
+        """Bug E.1: ``diagnose`` is a synonym for audit/evaluate."""
+        analyzer = HeuristicAnalyzer()
+        result = await analyzer.analyze(
+            "Diagnose the root cause of the performance regression",
+            db,
+            enable_llm_fallback=False,
+        )
+        assert result.task_type == "analysis", (
+            f"'diagnose' should map to analysis, got {result.task_type}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_question_mark_terminates_first_sentence(self, db):
+        """Bug E.2: keywords past ``?`` must NOT receive the 2x first-sentence boost.
+
+        Leads with "Shall" (NOT a question-word in `is_question` detection,
+        so the question-form analysis boost is bypassed — isolates the
+        first_sentence boundary behavior).
+
+        Lead clause has 3 analysis signals (evaluate+assess+critique = 2.6).
+        Trailing clause has 5 data signals (pipeline+transform+data+aggregate+dataset = 3.5).
+
+        Broken split(".") with no period → first_sentence = whole prompt →
+        both categories get 2x → data wins 7.0 vs 5.2.
+
+        Fixed re.split(r"[.?!]") → first_sentence = lead clause →
+        analysis gets 2x (5.2), data gets 1x (3.5) → analysis wins.
+        """
+        analyzer = HeuristicAnalyzer()
+        result = await analyzer.analyze(
+            "Shall we evaluate, assess, and critique my approach? "
+            "It uses a pipeline to transform data and aggregate dataset values",
+            db,
+            enable_llm_fallback=False,
+        )
+        assert result.task_type == "analysis", (
+            f"lead-clause analysis verbs should outweigh post-`?` data terms, "
+            f"got {result.task_type}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_exclamation_terminates_first_sentence(self, db):
+        """Bug E.2: ``!`` boundary also terminates the first sentence."""
+        analyzer = HeuristicAnalyzer()
+        result = await analyzer.analyze(
+            "Please review and assess my draft! "
+            "It covers the pipeline, data transforms, and dataset aggregates",
+            db,
+            enable_llm_fallback=False,
+        )
+        assert result.task_type == "analysis"
+
+
+# ---------------------------------------------------------------------------
 # A2: Technical Verb Disambiguation
 # ---------------------------------------------------------------------------
 
