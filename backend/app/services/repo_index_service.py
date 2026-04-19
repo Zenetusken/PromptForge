@@ -39,6 +39,39 @@ _curated_cache: dict[str, tuple[float, object]] = {}  # key -> (timestamp, resul
 _CURATED_CACHE_TTL = 300  # 5 minutes
 
 
+async def _publish_phase_change(
+    repo_full_name: str,
+    branch: str,
+    *,
+    phase: str,
+    status: str,
+    files_seen: int = 0,
+    files_total: int = 0,
+    error: str | None = None,
+) -> None:
+    """Publish `index_phase_changed` SSE event — never raises.
+
+    C2 SSE wiring: frontend subscribes to know when to flip from "indexing"
+    to "ready", surface errors, and show progress. Import is local to avoid
+    a circular import via app.services.event_bus at module-load time.
+    """
+    try:
+        from app.services.event_bus import event_bus
+        payload = {
+            "repo_full_name": repo_full_name,
+            "branch": branch,
+            "phase": phase,
+            "status": status,
+            "files_seen": files_seen,
+            "files_total": files_total,
+        }
+        if error is not None:
+            payload["error"] = error
+        event_bus.publish("index_phase_changed", payload)
+    except Exception:
+        logger.debug("index_phase_changed publish failed", exc_info=True)
+
+
 def invalidate_curated_cache(repo_full_name: str | None = None) -> int:
     """Evict curated cache entries.
 
@@ -501,7 +534,16 @@ class RepoIndexService:
         logger.info("build_index started for %s@%s", repo_full_name, branch)
         meta = await self._get_or_create_meta(repo_full_name, branch)
         meta.status = "indexing"
-        await self._db.flush()
+        meta.index_phase = "fetching_tree"
+        meta.files_seen = 0
+        meta.files_total = 0
+        meta.error_message = None
+        await self._db.commit()
+        await _publish_phase_change(
+            repo_full_name, branch,
+            phase="fetching_tree", status="indexing",
+            files_seen=0, files_total=0,
+        )
 
         try:
             head_sha = await self._gc.get_branch_head_sha(token, repo_full_name, branch)
@@ -536,6 +578,16 @@ class RepoIndexService:
                     RepoFileIndex.repo_full_name == repo_full_name,
                     RepoFileIndex.branch == branch,
                 )
+            )
+
+            # Transition to embedding phase + record total file count
+            meta.index_phase = "embedding"
+            meta.files_total = len(indexable)
+            await self._db.commit()
+            await _publish_phase_change(
+                repo_full_name, branch,
+                phase="embedding", status="indexing",
+                files_seen=0, files_total=len(indexable),
             )
 
             # Phase 1-3: Read, outline, embed via shared pipeline
@@ -573,13 +625,20 @@ class RepoIndexService:
                 self._db.add(row)
                 file_count += 1
 
-            # Update meta
+            # Update meta — file indexing done; synthesis owns the flip to "ready".
             meta.status = "ready"
             meta.head_sha = head_sha
             meta.file_count = file_count
+            meta.files_seen = file_count
+            meta.files_total = len(indexable)
             meta.error_message = None
             meta.indexed_at = datetime.now(timezone.utc)
             await self._db.commit()
+            await _publish_phase_change(
+                repo_full_name, branch,
+                phase="embedding", status="ready",
+                files_seen=file_count, files_total=len(indexable),
+            )
             persist_ms = (time.monotonic() - t_persist) * 1000
             total_ms = (time.monotonic() - t_start) * 1000
 
@@ -595,8 +654,15 @@ class RepoIndexService:
         except Exception as exc:
             logger.exception("build_index failed for %s@%s", repo_full_name, branch)
             meta.status = "error"
+            meta.index_phase = "error"
             meta.error_message = str(exc)
             await self._db.commit()
+            await _publish_phase_change(
+                repo_full_name, branch,
+                phase="error", status="error",
+                files_seen=meta.files_seen, files_total=meta.files_total,
+                error=str(exc),
+            )
             raise
 
     async def query_relevant_files(

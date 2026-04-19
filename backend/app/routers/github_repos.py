@@ -47,9 +47,25 @@ async def _update_synthesis_status(
     On ``status="ready"``, clears any previous error.
     On ``status="error"``, preserves existing ``explore_synthesis`` text so
     stale-but-valid synthesis from a prior run remains usable by enrichment.
+
+    Also transitions ``index_phase`` so UI reflects the full pipeline:
+        running   → index_phase="synthesizing"
+        ready     → index_phase="ready"
+        error     → index_phase="error"
+        skipped   → index_phase="ready" (file index usable, no synthesis)
     """
     from app.database import async_session_factory
     from app.models import RepoIndexMeta
+    from app.services.repo_index_service import _publish_phase_change
+
+    # Map synthesis status → index_phase (UI state machine).
+    _phase_by_status = {
+        "running": "synthesizing",
+        "ready": "ready",
+        "error": "error",
+        "skipped": "ready",
+    }
+    new_phase = _phase_by_status.get(status)
 
     try:
         async with async_session_factory() as db:
@@ -65,7 +81,18 @@ async def _update_synthesis_status(
                 meta.synthesis_error = error
                 if synthesis_text is not None:
                     meta.explore_synthesis = synthesis_text
+                if new_phase is not None:
+                    meta.index_phase = new_phase
                 await db.commit()
+
+                if new_phase is not None:
+                    await _publish_phase_change(
+                        repo_full_name, branch,
+                        phase=new_phase, status=meta.status,
+                        files_seen=meta.files_seen or 0,
+                        files_total=meta.files_total or 0,
+                        error=error,
+                    )
     except Exception:
         logger.debug("_update_synthesis_status failed for %s@%s", repo_full_name, branch, exc_info=True)
 
@@ -427,7 +454,8 @@ async def get_index_status(
     linked = linked_q.scalar_one_or_none()
     if not linked:
         return {"status": "no_repo", "file_count": 0, "indexed_at": None,
-                "synthesis_status": None, "synthesis_error": None}
+                "synthesis_status": None, "synthesis_error": None,
+                "index_phase": None, "files_seen": 0, "files_total": 0}
 
     from app.models import RepoIndexMeta
 
@@ -440,7 +468,8 @@ async def get_index_status(
     meta = meta_q.scalars().first()
     if not meta:
         return {"status": "not_indexed", "file_count": 0, "indexed_at": None,
-                "synthesis_status": None, "synthesis_error": None}
+                "synthesis_status": None, "synthesis_error": None,
+                "index_phase": None, "files_seen": 0, "files_total": 0}
     return {
         "status": meta.status,
         "file_count": meta.file_count or 0,
@@ -448,6 +477,10 @@ async def get_index_status(
         "indexed_at": meta.indexed_at.isoformat() if meta.indexed_at else None,
         "synthesis_status": getattr(meta, "synthesis_status", "pending"),
         "synthesis_error": getattr(meta, "synthesis_error", None),
+        "index_phase": getattr(meta, "index_phase", "pending"),
+        "files_seen": getattr(meta, "files_seen", 0) or 0,
+        "files_total": getattr(meta, "files_total", 0) or 0,
+        "error_message": meta.error_message,
     }
 
 

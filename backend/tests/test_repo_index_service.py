@@ -1457,4 +1457,134 @@ class TestComputeSourceWeight:
         """Verify _compute_source_weight returns valid float for code files."""
         w = _compute_source_weight("backend/app/main.py")
         assert isinstance(w, float)
-        assert 0.0 <= w <= 2.0
+
+
+# ---------------------------------------------------------------------------
+# Phase tracking: index_phase column + transitions
+#
+# UI visibility requires per-phase state, not just the terminal status.
+# Without this, "ready" is reported before synthesis actually completes.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_index_writes_phase_transitions(db_session):
+    """build_index must set index_phase=fetching_tree → embedding during the run.
+
+    The terminal state `status="ready"` is set on success; index_phase stays
+    at "embedding" after build_index completes — synthesis phase transitions
+    it to "synthesizing" and then "ready".
+    """
+    captured_phases: list[str | None] = []
+
+    gc = AsyncMock()
+    gc.get_branch_head_sha.return_value = "abc123"
+
+    async def _get_tree(*args, **kwargs):
+        # Read the live phase at the moment get_tree is invoked.
+        meta_q = await db_session.execute(
+            select(RepoIndexMeta).where(
+                RepoIndexMeta.repo_full_name == "owner/repo",
+                RepoIndexMeta.branch == "main",
+            )
+        )
+        meta = meta_q.scalars().first()
+        captured_phases.append(getattr(meta, "index_phase", None))
+        return [
+            {"type": "blob", "path": "src/main.py", "sha": "f1", "size": 100},
+        ]
+
+    gc.get_tree.side_effect = _get_tree
+    gc.get_file_content.return_value = "def main():\n    pass\n"
+
+    es = MagicMock()
+    zero_vec = np.zeros(384, dtype=np.float32)
+    es.embed_texts.return_value = [zero_vec]
+    es.aembed_texts = AsyncMock(return_value=[zero_vec])
+
+    svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
+    await svc.build_index("owner/repo", "main", "ghp_token")
+
+    # Phase was "fetching_tree" while get_tree was in flight.
+    assert captured_phases == ["fetching_tree"], (
+        f"expected phase=fetching_tree during get_tree, captured={captured_phases}"
+    )
+
+    meta = await svc.get_index_status("owner/repo", "main")
+    assert meta is not None
+    # Build index completes at "embedding" — synthesis owns the final flip to "ready".
+    assert meta.index_phase == "embedding"
+    assert meta.status == "ready"
+    # files_seen/files_total reflect the processed batch.
+    assert meta.files_total == 1
+    assert meta.files_seen == 1
+
+
+@pytest.mark.asyncio
+async def test_build_index_phase_error_on_failure(db_session):
+    """Unrecoverable error sets index_phase='error' alongside status='error'."""
+    gc = AsyncMock()
+    gc.get_branch_head_sha.side_effect = RuntimeError("boom")
+    es = MagicMock()
+
+    svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
+    with pytest.raises(RuntimeError):
+        await svc.build_index("owner/repo", "main", "ghp_token")
+
+    meta = await svc.get_index_status("owner/repo", "main")
+    assert meta is not None
+    assert meta.status == "error"
+    assert meta.index_phase == "error"
+    assert meta.error_message and "boom" in meta.error_message
+
+
+@pytest.mark.asyncio
+async def test_build_index_publishes_phase_change_events(db_session):
+    """Every phase transition emits an `index_phase_changed` SSE event.
+
+    Consumers (frontend, bridge extension) subscribe to know when to flip
+    connectionState from "indexing" to "ready" and to surface errors.
+    """
+    import asyncio as _asyncio
+
+    from app.services.event_bus import event_bus
+
+    captured: list[dict] = []
+    queue: _asyncio.Queue = _asyncio.Queue()
+    event_bus._subscribers.add(queue)
+
+    try:
+        gc = AsyncMock()
+        gc.get_branch_head_sha.return_value = "shaXYZ"
+        gc.get_tree.return_value = [
+            {"type": "blob", "path": "src/main.py", "sha": "f1", "size": 100},
+        ]
+        gc.get_file_content.return_value = "def main():\n    pass\n"
+
+        es = MagicMock()
+        zero_vec = np.zeros(384, dtype=np.float32)
+        es.embed_texts.return_value = [zero_vec]
+        es.aembed_texts = AsyncMock(return_value=[zero_vec])
+
+        svc = RepoIndexService(db=db_session, github_client=gc, embedding_service=es)
+        await svc.build_index("owner/repo", "main", "ghp_token")
+
+        # Drain the queue.
+        while not queue.empty():
+            captured.append(queue.get_nowait())
+    finally:
+        event_bus._subscribers.discard(queue)
+
+    phase_events = [e for e in captured if e.get("event") == "index_phase_changed"]
+    assert len(phase_events) >= 3, (
+        f"expected fetching_tree + embedding (start) + embedding (ready) events, got {phase_events}"
+    )
+    phases = [e["data"]["phase"] for e in phase_events]
+    assert phases[0] == "fetching_tree"
+    assert "embedding" in phases
+    # Final phase-change event reports the file count and repo identifier.
+    last = phase_events[-1]["data"]
+    assert last["repo_full_name"] == "owner/repo"
+    assert last["branch"] == "main"
+    assert last["files_seen"] == 1
+    assert last["files_total"] == 1

@@ -374,6 +374,18 @@ class RepoIndexMeta(Base):
         String, default="pending", server_default="pending", nullable=False,
     )
     synthesis_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-phase tracking for UI visibility. Transitions:
+    #   pending → fetching_tree → embedding → synthesizing → ready
+    #   (any phase can jump to 'error' on failure)
+    index_phase: Mapped[str] = mapped_column(
+        String, default="pending", server_default="pending", nullable=False,
+    )
+    files_seen: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False,
+    )
+    files_total: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False,
