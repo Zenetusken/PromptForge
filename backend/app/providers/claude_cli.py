@@ -123,16 +123,38 @@ class ClaudeCLIProvider(LLMProvider):
 
         if proc.returncode != 0:
             stderr_text = stderr.decode(errors="replace")
-            lower = stderr_text.lower()
+            stdout_text = stdout.decode(errors="replace")
+
+            # The CLI emits structured errors to stdout as a JSON envelope even
+            # on non-zero exit (``is_error: true`` + ``api_error_status`` +
+            # ``result`` message). stderr is typically empty in that case, so
+            # we must parse stdout to surface the real cause. Without this,
+            # callers see only "Claude CLI exited with code 1: " and the
+            # underlying reason ("Prompt is too long", 429, etc.) is lost.
+            error_message = stderr_text
+            api_status: int | None = None
+            if not error_message.strip() and stdout_text.strip():
+                try:
+                    envelope = json.loads(stdout_text)
+                    if isinstance(envelope, dict) and envelope.get("is_error"):
+                        api_status = envelope.get("api_error_status")
+                        result_msg = str(envelope.get("result") or "").strip()
+                        status_part = f"HTTP {api_status}: " if api_status else ""
+                        error_message = f"{status_part}{result_msg}" or stdout_text
+                except (json.JSONDecodeError, TypeError):
+                    error_message = stdout_text
+
+            haystack = (error_message + " " + stderr_text).lower()
             retryable = (
-                "rate limit" in lower
-                or "overloaded" in lower
-                or "timeout" in lower
-                or "429" in stderr_text
-                or "529" in stderr_text
+                "rate limit" in haystack
+                or "overloaded" in haystack
+                or "timeout" in haystack
+                or "429" in haystack
+                or "529" in haystack
+                or api_status in (429, 529, 503)
             )
             raise ProviderError(
-                f"Claude CLI exited with code {proc.returncode}: {stderr_text}",
+                f"Claude CLI exited with code {proc.returncode}: {error_message}",
                 retryable=retryable,
             )
 

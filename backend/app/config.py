@@ -89,7 +89,16 @@ class Settings(BaseSettings):
         default=20000, description="Maximum prompt characters sent to explore synthesis.",
     )
     EXPLORE_MAX_CONTEXT_CHARS: int = Field(
-        default=700000, description="Maximum raw codebase characters for explore retrieval.",
+        default=250000,
+        description=(
+            "Maximum raw codebase characters for explore retrieval. Empirically "
+            "determined: Claude CLI (`claude -p`) prepends Claude Code's internal "
+            "system prompt (~140K tokens of baseline context), leaving only "
+            "~60K tokens (~300K chars at 1 token/4-5 chars) of Haiku's 200K-token "
+            "window for user content. 250K keeps us safely below that ceiling "
+            "even with raw_prompt (up to 20K), explore.md/explore-guidance.md "
+            "template boilerplate, JSON schema, and line-number prefixes."
+        ),
     )
     EXPLORE_MAX_FILES: int = Field(
         default=40, description="Maximum number of files retrieved during explore phase.",

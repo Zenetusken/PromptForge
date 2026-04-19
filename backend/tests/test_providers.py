@@ -426,6 +426,93 @@ class TestClaudeCLIProvider:
                     output_format=AnalysisResult,
                 )
 
+    @pytest.mark.asyncio
+    async def test_extracts_error_from_stdout_when_stderr_empty(self):
+        """When CLI exits with code 1 and empty stderr, the error message is
+        surfaced from the JSON envelope in stdout (api_error_status + result).
+
+        Reproduces the "Explore returned empty result" UX bug where the real
+        cause ("Prompt is too long", HTTP 400) was lost because we only read
+        stderr. Claude CLI returns the error body on stdout as a JSON envelope
+        even on non-zero exit.
+        """
+        import json
+
+        error_envelope = {
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 400,
+            "result": "Prompt is too long",
+            "duration_ms": 616,
+            "terminal_reason": "prompt_too_long",
+        }
+        stdout_json = json.dumps(error_envelope).encode()
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(return_value=(stdout_json, b""))
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = mock_proc
+
+            from app.providers.base import ProviderError
+            from app.providers.claude_cli import ClaudeCLIProvider
+
+            provider = ClaudeCLIProvider()
+            with pytest.raises(ProviderError) as excinfo:
+                await provider.complete_parsed(
+                    model="claude-haiku-4-5",
+                    system_prompt="You are an analyzer.",
+                    user_message="Analyze this.",
+                    output_format=AnalysisResult,
+                )
+
+        # The actual error message must surface — not be swallowed.
+        assert "Prompt is too long" in str(excinfo.value)
+        assert "400" in str(excinfo.value)
+        # "prompt_too_long" is not retryable — retrying the same oversized
+        # payload will fail identically.
+        assert excinfo.value.retryable is False
+
+    @pytest.mark.asyncio
+    async def test_extracts_rate_limit_from_stdout_as_retryable(self):
+        """Rate-limit errors in stdout envelope must be tagged retryable=True
+        so call_provider_with_retry can back off and retry.
+        """
+        import json
+
+        rate_limit_envelope = {
+            "type": "result",
+            "is_error": True,
+            "api_error_status": 429,
+            "result": "Rate limit exceeded",
+            "terminal_reason": "rate_limit",
+        }
+        stdout_json = json.dumps(rate_limit_envelope).encode()
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(return_value=(stdout_json, b""))
+
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = mock_proc
+
+            from app.providers.base import ProviderError
+            from app.providers.claude_cli import ClaudeCLIProvider
+
+            provider = ClaudeCLIProvider()
+            with pytest.raises(ProviderError) as excinfo:
+                await provider.complete_parsed(
+                    model="claude-haiku-4-5",
+                    system_prompt="You are an analyzer.",
+                    user_message="Analyze this.",
+                    output_format=AnalysisResult,
+                )
+
+        assert excinfo.value.retryable is True
+        assert "Rate limit" in str(excinfo.value) or "429" in str(excinfo.value)
+
 
 # ---------------------------------------------------------------------------
 # Detector
